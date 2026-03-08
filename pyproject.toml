@@ -1,0 +1,26 @@
+[project]
+name = "baker"
+version = "0.1.0"
+description = "Bakery shop operations tracker — capture first, organize later"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.1",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+web = ["fastapi>=0.110", "uvicorn>=0.29"]
+
+[project.scripts]
+baker = "baker.cli:app"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
