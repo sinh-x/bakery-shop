@@ -9,6 +9,15 @@ from rich.text import Text
 console = Console()
 
 
+def _row_get(row, key, default=""):
+    """Safely get a column from a sqlite3.Row."""
+    try:
+        val = row[key]
+        return val if val else default
+    except (IndexError, KeyError):
+        return default
+
+
 def print_event(row):
     """Print a single event row."""
     tags = row["tags"] if row["tags"] else ""
@@ -22,11 +31,13 @@ def print_event(row):
         "inventory": "cyan", "expense": "red", "delivery": "blue", "order": "magenta",
     }.get(row["type"], "white")
 
+    by_str = f"  by {row['logged_by']}" if _row_get(row, "logged_by") else ""
+
     console.print(
         f"  [dim]{row['id']:>4}[/dim]  [dim]{ts}[/dim]  "
         f"[{type_color}]{row['type']:>12}[/{type_color}]  "
         f"{row['summary']}"
-        f"[dim]{tag_str}{data_str}[/dim]"
+        f"[dim]{tag_str}{data_str}{by_str}[/dim]"
     )
 
 
@@ -36,11 +47,15 @@ def print_events_table(rows, title="Events"):
         console.print(f"  [dim]No {title.lower()} found.[/dim]")
         return
 
+    has_logged_by = any(_row_get(row, "logged_by") for row in rows)
+
     table = Table(title=title, show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=5)
     table.add_column("Time", style="dim", width=16)
     table.add_column("Type", width=12)
     table.add_column("Summary")
+    if has_logged_by:
+        table.add_column("By", style="cyan")
     table.add_column("Tags", style="dim")
 
     type_colors = {
@@ -51,12 +66,48 @@ def print_events_table(rows, title="Events"):
     for row in rows:
         color = type_colors.get(row["type"], "white")
         tags = row["tags"] if row["tags"] else ""
-        table.add_row(
+        cells = [
             str(row["id"]),
             row["timestamp"][:16],
             f"[{color}]{row['type']}[/{color}]",
             row["summary"],
-            tags,
+        ]
+        if has_logged_by:
+            cells.append(_row_get(row, "logged_by"))
+        cells.append(tags)
+        table.add_row(*cells)
+    console.print(table)
+
+
+def print_staff_table(rows, title="Staff"):
+    """Print staff members as a table."""
+    from baker.models.staff import ROLES
+
+    if not rows:
+        console.print(f"  [dim]No staff found.[/dim]")
+        return
+
+    table = Table(title=title, show_lines=False, padding=(0, 1))
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Name", style="bold")
+    table.add_column("Role")
+    table.add_column("Phone", style="dim")
+
+    for row in rows:
+        raw_roles = row["role"] or ""
+        # Show Vietnamese labels for known roles
+        labels = []
+        for r in raw_roles.split(","):
+            r = r.strip()
+            if r in ROLES:
+                labels.append(ROLES[r])
+            elif r:
+                labels.append(r)
+        table.add_row(
+            str(row["id"]),
+            row["name"],
+            ", ".join(labels),
+            row["phone"] or "",
         )
     console.print(table)
 
@@ -169,7 +220,7 @@ def print_order_detail(row):
     console.print(Panel("\n".join(lines), title=row["order_ref"], border_style="blue"))
 
 
-def print_dashboard(orders_due, low_stock, event_counts, total_events):
+def print_dashboard(orders_due, low_stock, event_counts, total_events, staff_counts=None):
     """Print the daily dashboard."""
     lines = []
 
@@ -198,6 +249,13 @@ def print_dashboard(orders_due, low_stock, event_counts, total_events):
     lines.append(f"[bold]TODAY'S ACTIVITY[/bold]  {total_events} event(s)")
     for row in event_counts:
         lines.append(f"  {row['type']:>12}: {row['cnt']}")
+
+    # Staff activity
+    if staff_counts:
+        lines.append("")
+        lines.append(f"[bold]STAFF ACTIVITY[/bold]")
+        for row in staff_counts:
+            lines.append(f"  {row['logged_by']:>12}: {row['cnt']} event(s)")
 
     from datetime import datetime
     title = f"Baker Dashboard: {datetime.now().strftime('%A, %B %d, %Y')}"

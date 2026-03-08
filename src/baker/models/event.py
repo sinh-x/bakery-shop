@@ -18,6 +18,7 @@ class Event:
     data: dict = field(default_factory=dict)
     tags: list[str] = field(default_factory=list)
     source: str = "cli"
+    logged_by: str = ""
     id: Optional[int] = None
     timestamp: Optional[str] = None
 
@@ -26,9 +27,9 @@ class Event:
 
     def save(self, conn) -> int:
         cursor = conn.execute(
-            "INSERT INTO events (type, summary, data, tags, source) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO events (type, summary, data, tags, source, logged_by) VALUES (?, ?, ?, ?, ?, ?)",
             (self.type, self.summary, json.dumps(self.data),
-             ",".join(self.tags), self.source),
+             ",".join(self.tags), self.source, self.logged_by),
         )
         self.id = cursor.lastrowid
         return self.id
@@ -44,4 +45,5 @@ class Event:
             data=json.loads(row["data"]) if row["data"] else {},
             tags=[t for t in tags_str.split(",") if t],
             source=row["source"],
+            logged_by=row["logged_by"] if "logged_by" in row.keys() else "",
         )

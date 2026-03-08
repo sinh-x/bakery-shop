@@ -23,9 +23,11 @@ def query_cmd():
 @click.option("--today", "today_only", is_flag=True, help="Today's events only")
 @click.option("--week", "week_only", is_flag=True, help="This week's events only")
 @click.option("--untagged", is_flag=True, help="Only untagged events")
+@click.option("--by", "logged_by", help="Filter by who logged the event")
+@click.option("--involving", help="Filter by person involved")
 @click.option("-n", "--limit", default=50, help="Max results")
 @click.option("--format", "fmt", type=click.Choice(["table", "csv", "json"]), default="table")
-def query_events(event_type, tag, search, since, until, today_only, week_only, untagged, limit, fmt):
+def query_events(event_type, tag, search, since, until, today_only, week_only, untagged, logged_by, involving, limit, fmt):
     """Search and filter events."""
     if today_only:
         since, until = today_range()
@@ -35,7 +37,8 @@ def query_events(event_type, tag, search, since, until, today_only, week_only, u
     with get_db() as conn:
         rows = fetch_events(
             conn, event_type=event_type, tags=list(tag) if tag else None,
-            search=search, since=since, until=until, untagged=untagged, limit=limit,
+            search=search, since=since, until=until, untagged=untagged,
+            logged_by=logged_by, involving=involving, limit=limit,
         )
 
         if fmt == "table":

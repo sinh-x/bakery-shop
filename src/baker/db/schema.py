@@ -62,10 +62,37 @@ CREATE TABLE IF NOT EXISTS schema_version (
 );
 """
 
+STAFF_AND_PEOPLE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS staff (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT UNIQUE NOT NULL,
+    role        TEXT DEFAULT '',
+    phone       TEXT DEFAULT '',
+    active      INTEGER DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS event_people (
+    event_id    INTEGER NOT NULL REFERENCES events(id),
+    staff_id    INTEGER NOT NULL REFERENCES staff(id),
+    role        TEXT NOT NULL DEFAULT 'involved',
+    PRIMARY KEY (event_id, staff_id, role)
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_people_staff ON event_people(staff_id);
+CREATE INDEX IF NOT EXISTS idx_event_people_event ON event_people(event_id);
+CREATE INDEX IF NOT EXISTS idx_events_logged_by ON events(logged_by);
+"""
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
         "sql": INITIAL_SCHEMA,
+    },
+    2: {
+        "description": "Staff tracking and event people",
+        "sql": "ALTER TABLE events ADD COLUMN logged_by TEXT DEFAULT '';\n"
+               + STAFF_AND_PEOPLE_SCHEMA,
     },
 }
 

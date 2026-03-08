@@ -29,33 +29,100 @@ def month_range():
     return start.strftime("%Y-%m-%dT00:00:00"), end.strftime("%Y-%m-%dT23:59:59")
 
 
-def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
-                 search=None, untagged=False, limit=50):
-    """Fetch events with optional filters."""
-    conditions = []
-    params = []
+def fetch_staff(conn, *, active_only=True):
+    """Fetch staff members."""
+    if active_only:
+        return conn.execute(
+            "SELECT * FROM staff WHERE active = 1 ORDER BY name"
+        ).fetchall()
+    return conn.execute("SELECT * FROM staff ORDER BY name").fetchall()
 
-    if event_type:
-        conditions.append("type = ?")
-        params.append(event_type)
-    if tags:
-        for tag in tags:
-            conditions.append("(',' || tags || ',') LIKE ?")
-            params.append(f"%,{tag},%")
+
+def find_staff_by_name(conn, name):
+    """Find a staff member by name (case-insensitive)."""
+    return conn.execute(
+        "SELECT * FROM staff WHERE LOWER(name) = LOWER(?)", (name,)
+    ).fetchone()
+
+
+def link_event_person(conn, event_id, staff_id, role="involved"):
+    """Create an event_people link."""
+    conn.execute(
+        "INSERT OR IGNORE INTO event_people (event_id, staff_id, role) VALUES (?, ?, ?)",
+        (event_id, staff_id, role),
+    )
+
+
+def fetch_events_by_person(conn, staff_name, *, limit=50):
+    """Fetch events where a person was logger or involved."""
+    return conn.execute(
+        """SELECT DISTINCT e.* FROM events e
+           LEFT JOIN event_people ep ON e.id = ep.event_id
+           LEFT JOIN staff s ON ep.staff_id = s.id
+           WHERE LOWER(e.logged_by) = LOWER(?)
+              OR LOWER(s.name) = LOWER(?)
+           ORDER BY e.timestamp DESC LIMIT ?""",
+        (staff_name, staff_name, limit),
+    ).fetchall()
+
+
+def count_events_by_logger(conn, since=None, until=None):
+    """Count events grouped by logged_by within a time range."""
+    conditions = ["logged_by != ''"]
+    params = []
     if since:
         conditions.append("timestamp >= ?")
         params.append(since)
     if until:
         conditions.append("timestamp <= ?")
         params.append(until)
+
+    where = " AND ".join(conditions)
+    return conn.execute(
+        f"SELECT logged_by, COUNT(*) as cnt FROM events WHERE {where} GROUP BY logged_by",
+        params,
+    ).fetchall()
+
+
+def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
+                 search=None, untagged=False, logged_by=None, involving=None,
+                 limit=50):
+    """Fetch events with optional filters."""
+    joins = []
+    conditions = []
+    params = []
+
+    if involving:
+        joins.append("JOIN event_people ep ON e.id = ep.event_id")
+        joins.append("JOIN staff s ON ep.staff_id = s.id")
+        conditions.append("LOWER(s.name) = LOWER(?)")
+        params.append(involving)
+
+    if event_type:
+        conditions.append("e.type = ?")
+        params.append(event_type)
+    if tags:
+        for tag in tags:
+            conditions.append("(',' || e.tags || ',') LIKE ?")
+            params.append(f"%,{tag},%")
+    if since:
+        conditions.append("e.timestamp >= ?")
+        params.append(since)
+    if until:
+        conditions.append("e.timestamp <= ?")
+        params.append(until)
     if search:
-        conditions.append("summary LIKE ?")
+        conditions.append("e.summary LIKE ?")
         params.append(f"%{search}%")
     if untagged:
-        conditions.append("(tags = '' OR tags IS NULL)")
+        conditions.append("(e.tags = '' OR e.tags IS NULL)")
+    if logged_by:
+        conditions.append("LOWER(e.logged_by) = LOWER(?)")
+        params.append(logged_by)
 
     where = " AND ".join(conditions) if conditions else "1=1"
-    query = f"SELECT * FROM events WHERE {where} ORDER BY timestamp DESC LIMIT ?"
+    join_clause = " ".join(joins)
+    query = f"SELECT DISTINCT e.* FROM events e {join_clause} WHERE {where} ORDER BY e.timestamp DESC LIMIT ?"
     params.append(limit)
 
     return conn.execute(query, params).fetchall()

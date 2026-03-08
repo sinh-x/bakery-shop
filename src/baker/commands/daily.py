@@ -2,7 +2,7 @@ import click
 from datetime import datetime
 
 from baker.db.connection import get_db
-from baker.db.queries import today_range, count_events_by_type
+from baker.db.queries import today_range, count_events_by_type, count_events_by_logger
 from baker.formatters.tables import console, print_dashboard
 
 
@@ -28,4 +28,8 @@ def daily_cmd():
         event_counts = count_events_by_type(conn, since=since, until=until)
         total_events = sum(r["cnt"] for r in event_counts)
 
-        print_dashboard(orders_due, low_stock, event_counts, total_events)
+        # Staff activity
+        staff_counts = count_events_by_logger(conn, since=since, until=until)
+
+        print_dashboard(orders_due, low_stock, event_counts, total_events,
+                        staff_counts=staff_counts)
