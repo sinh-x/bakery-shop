@@ -116,6 +116,18 @@ class VN {
   static const noProducts = 'Không có sản phẩm';
   static const apiError = 'Không thể kết nối máy chủ';
 
+  // Settings
+  static const settings = 'Cài đặt';
+  static const apiUrlLabel = 'Địa chỉ máy chủ';
+  static const apiUrlHint = 'http://hostname:8000';
+  static const apiUrlHelp = 'Nhập địa chỉ Tailscale của máy chủ';
+  static const testConnection = 'Kiểm tra kết nối';
+  static const connectionSuccess = 'Kết nối thành công';
+  static const connectionFailed = 'Không thể kết nối';
+  static const urlSaved = 'Đã lưu địa chỉ máy chủ';
+  static const urlEmpty = 'Vui lòng nhập địa chỉ';
+  static const testing = 'Đang kiểm tra...';
+
   // General
   static const remove = 'Xóa';
   static const save = 'Lưu';

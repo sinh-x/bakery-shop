@@ -30,6 +30,13 @@ class ProductCatalogScreen extends ConsumerWidget {
       child: Scaffold(
         appBar: AppBar(
           title: const Text(VN.tabProducts),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.settings),
+              tooltip: VN.settings,
+              onPressed: () => context.push('/settings'),
+            ),
+          ],
           bottom: TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,

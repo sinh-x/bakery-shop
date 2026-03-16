@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/products/product_catalog_screen.dart';
 import '../../features/products/product_form_screen.dart';
+import '../../features/settings/settings_screen.dart';
 import '../../providers/products_provider.dart';
 import '../widgets/coming_soon_screen.dart';
 import '../widgets/vietnamese_labels.dart';
@@ -59,6 +60,12 @@ final appRouter = GoRouter(
         final id = int.parse(state.pathParameters['id']!);
         return _ProductEditLoader(productId: id);
       },
+    ),
+    // Settings — full-screen (outside shell)
+    GoRoute(
+      path: '/settings',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const SettingsScreen(),
     ),
   ],
 );
