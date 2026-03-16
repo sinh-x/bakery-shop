@@ -91,6 +91,31 @@ class VN {
   // Search
   static const searchOrders = 'Tìm đơn hàng...';
 
+  // Product form
+  static const createProduct = 'Thêm sản phẩm';
+  static const editProduct = 'Sửa sản phẩm';
+  static const productName = 'Tên sản phẩm';
+  static const productCategory = 'Danh mục';
+  static const productPrice = 'Giá bán';
+  static const productCost = 'Giá vốn';
+  static const productNotes = 'Ghi chú công thức';
+  static const productPhoto = 'Ảnh sản phẩm';
+  static const choosePhoto = 'Chọn ảnh';
+  static const takePhoto = 'Chụp ảnh';
+  static const fromGallery = 'Chọn từ thư viện';
+  static const deleteProduct = 'Xóa sản phẩm';
+  static const deleteConfirm = 'Bạn có chắc muốn xóa sản phẩm này?';
+  static const productCreated = 'Đã thêm sản phẩm';
+  static const productUpdated = 'Đã cập nhật sản phẩm';
+  static const productDeleted = 'Đã xóa sản phẩm';
+  static const fieldRequired = 'Không được để trống';
+  static const invalidPrice = 'Giá không hợp lệ';
+  static const loading = 'Đang tải...';
+  static const errorLoading = 'Không thể tải dữ liệu';
+  static const retry = 'Thử lại';
+  static const noProducts = 'Không có sản phẩm';
+  static const apiError = 'Không thể kết nối máy chủ';
+
   // General
   static const remove = 'Xóa';
   static const save = 'Lưu';

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/products/product_catalog_screen.dart';
+import '../../features/products/product_form_screen.dart';
+import '../../providers/products_provider.dart';
 import '../widgets/coming_soon_screen.dart';
 import '../widgets/vietnamese_labels.dart';
 
@@ -42,8 +45,55 @@ final appRouter = GoRouter(
         ),
       ],
     ),
+    // Product create — full-screen (outside shell)
+    GoRoute(
+      path: '/products/new',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const ProductFormScreen(),
+    ),
+    // Product edit — full-screen (outside shell)
+    GoRoute(
+      path: '/products/:id/edit',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final id = int.parse(state.pathParameters['id']!);
+        return _ProductEditLoader(productId: id);
+      },
+    ),
   ],
 );
+
+/// Loads the product from the API before showing the edit form.
+class _ProductEditLoader extends ConsumerWidget {
+  const _ProductEditLoader({required this.productId});
+
+  final int productId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final productsAsync = ref.watch(productsProvider);
+    // Try to find the product in the already-loaded list.
+    return productsAsync.when(
+      loading: () => const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, _) => Scaffold(
+        appBar: AppBar(title: const Text(VN.editProduct)),
+        body: Center(child: Text(VN.apiError)),
+      ),
+      data: (products) {
+        final product = products.where((p) => p.id == productId).firstOrNull;
+        if (product == null) {
+          return Scaffold(
+            appBar: AppBar(title: const Text(VN.editProduct)),
+            body: const Center(child: Text(VN.noProducts)),
+          );
+        }
+        return ProductFormScreen(product: product);
+      },
+    );
+  }
+}
 
 class _ShellScaffold extends StatelessWidget {
   final Widget child;

@@ -27,6 +27,9 @@ dependencies:
   # Settings storage
   shared_preferences: ^2.3.0
 
+  # Image picker
+  image_picker: ^1.1.2
+
   # Utilities
   uuid: ^4.5.1
   intl: ^0.19.0
