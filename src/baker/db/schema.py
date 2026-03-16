@@ -84,6 +84,37 @@ CREATE INDEX IF NOT EXISTS idx_event_people_event ON event_people(event_id);
 CREATE INDEX IF NOT EXISTS idx_events_logged_by ON events(logged_by);
 """
 
+PHOTO_PATH_AND_SEED = """
+ALTER TABLE products ADD COLUMN photo_path TEXT DEFAULT '';
+"""
+
+SEED_PRODUCTS = [
+    # (name, category, base_price, cost, recipe_notes)
+    ("Bánh mì trắng", "bread", 10000, 5000, ""),
+    ("Bánh mì ngọt", "bread", 12000, 6000, "Nhân kem bơ"),
+    ("Bánh mì bơ tỏi", "bread", 15000, 7000, "Bơ tỏi phết mặt"),
+    ("Bánh mì socola", "bread", 15000, 7000, "Nhân socola"),
+    ("Bánh mì ruốc", "bread", 18000, 8000, "Ruốc heo"),
+    ("Bánh bông lan", "cake", 50000, 25000, "Bông lan cơ bản"),
+    ("Bánh bông lan trứng muối", "cake", 120000, 55000, "Nhân trứng muối"),
+    ("Bánh kem sinh nhật size S", "cake", 200000, 90000, "Đường kính 16cm"),
+    ("Bánh kem sinh nhật size M", "cake", 300000, 130000, "Đường kính 20cm"),
+    ("Bánh kem sinh nhật size L", "cake", 450000, 200000, "Đường kính 24cm"),
+    ("Bánh mousse chanh dây", "cake", 280000, 120000, "Mousse chanh dây"),
+    ("Bánh mousse socola", "cake", 280000, 120000, "Mousse socola đen"),
+    ("Bánh su kem", "pastry", 8000, 3500, "Nhân kem tươi"),
+    ("Bánh croissant", "pastry", 25000, 12000, "Bơ Pháp"),
+    ("Bánh croissant socola", "pastry", 30000, 14000, "Nhân socola"),
+    ("Bánh puff pastry xúc xích", "pastry", 20000, 9000, "Xúc xích quấn pastry"),
+    ("Bánh tart trứng", "pastry", 15000, 7000, "Trứng + kem sữa"),
+    ("Cookie socola chip", "cookie", 5000, 2000, "Socola chip"),
+    ("Cookie bơ đậu phộng", "cookie", 5000, 2000, "Đậu phộng rang"),
+    ("Cookie yến mạch nho khô", "cookie", 6000, 2500, "Yến mạch + nho khô"),
+    ("Bánh quy bơ", "cookie", 4000, 1500, "Bơ thơm"),
+    ("Bánh flan", "other", 12000, 5000, "Flan caramel"),
+    ("Bánh chuối nướng", "other", 35000, 15000, "Chuối + nước cốt dừa"),
+]
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -93,6 +124,11 @@ MIGRATIONS = {
         "description": "Staff tracking and event people",
         "sql": "ALTER TABLE events ADD COLUMN logged_by TEXT DEFAULT '';\n"
                + STAFF_AND_PEOPLE_SCHEMA,
+    },
+    3: {
+        "description": "Product photo_path column and seed 23 products",
+        "sql": PHOTO_PATH_AND_SEED,
+        "seed": SEED_PRODUCTS,
     },
 }
 
@@ -112,6 +148,18 @@ def ensure_schema(conn):
     for version in sorted(MIGRATIONS.keys()):
         if version > current_version:
             conn.executescript(MIGRATIONS[version]["sql"])
+
+            # Seed data if present
+            seed = MIGRATIONS[version].get("seed")
+            if seed:
+                for name, category, base_price, cost, recipe_notes in seed:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO products "
+                        "(name, category, base_price, cost, recipe_notes) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (name, category, base_price, cost, recipe_notes),
+                    )
+
             conn.execute(
                 "INSERT INTO schema_version (version, description) VALUES (?, ?)",
                 (version, MIGRATIONS[version]["description"]),
