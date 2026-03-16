@@ -21,21 +21,9 @@ class ProductCard extends StatelessWidget {
             Text(emoji, style: const TextStyle(fontSize: 28)),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product.name,
-                    style: theme.textTheme.titleMedium,
-                  ),
-                  if (product.unit.isNotEmpty)
-                    Text(
-                      product.unit,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                ],
+              child: Text(
+                product.name,
+                style: theme.textTheme.titleMedium,
               ),
             ),
             Text(
