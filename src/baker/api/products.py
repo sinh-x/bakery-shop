@@ -1,8 +1,10 @@
 """Product CRUD API routes."""
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from baker.config import PHOTOS_DIR
 from baker.db.connection import get_db
 
 
@@ -157,3 +159,68 @@ def delete_product(product_id: int):
             "UPDATE products SET active = 0 WHERE id = ?", (product_id,)
         )
         return {"message": f"Đã ngừng bán sản phẩm '{row['name']}'"}
+
+
+def _resize_and_save(data: bytes, dest: str, max_size: int = 1200) -> None:
+    """Resize image to max dimension and save as JPEG."""
+    from PIL import Image
+    import io
+
+    img = Image.open(io.BytesIO(data))
+    img = img.convert("RGB")
+
+    if max(img.size) > max_size:
+        img.thumbnail((max_size, max_size), Image.LANCZOS)
+
+    img.save(dest, "JPEG", quality=85)
+
+
+@router.post("/{product_id}/photo", status_code=200)
+async def upload_photo(product_id: int, file: UploadFile):
+    """Tải lên ảnh sản phẩm."""
+    # Verify product exists
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM products WHERE id = ?", (product_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
+
+    # Validate content type
+    if file.content_type and not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Tệp phải là hình ảnh")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Tệp rỗng")
+
+    PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
+    dest = str(PHOTOS_DIR / f"{product_id}.jpg")
+
+    try:
+        _resize_and_save(data, dest)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
+
+    # Store relative photo path in DB
+    photo_path = f"photos/products/{product_id}.jpg"
+    with get_db() as conn:
+        # Only update photo_path if column exists (migration v3)
+        try:
+            conn.execute(
+                "UPDATE products SET photo_path = ? WHERE id = ?",
+                (photo_path, product_id),
+            )
+        except Exception:
+            pass  # Column doesn't exist yet — photo is still saved on disk
+
+    return {"message": "Đã tải lên ảnh", "photo_path": photo_path}
+
+
+@router.get("/{product_id}/photo")
+def get_photo(product_id: int):
+    """Lấy ảnh sản phẩm."""
+    photo_file = PHOTOS_DIR / f"{product_id}.jpg"
+    if not photo_file.exists():
+        raise HTTPException(status_code=404, detail="Chưa có ảnh cho sản phẩm này")
+    return FileResponse(str(photo_file), media_type="image/jpeg")
