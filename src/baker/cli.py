@@ -24,6 +24,7 @@ from baker.commands.product import product_cmd
 from baker.commands.query import query_cmd
 from baker.commands.daily import daily_cmd
 from baker.commands.staff import staff_cmd
+from baker.commands.serve import serve_cmd
 
 app.add_command(log_cmd, "log")
 app.add_command(organize_cmd, "organize")
@@ -35,3 +36,4 @@ app.add_command(product_cmd, "product")
 app.add_command(query_cmd, "query")
 app.add_command(daily_cmd, "daily")
 app.add_command(staff_cmd, "staff")
+app.add_command(serve_cmd, "serve")
