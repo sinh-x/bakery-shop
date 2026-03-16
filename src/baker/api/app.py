@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from baker.api.products import router as products_router
 from baker.config import VERSION
 
 
@@ -25,5 +26,7 @@ def create_app() -> FastAPI:
     @app.get("/api/health")
     def health():
         return {"status": "ok", "version": VERSION}
+
+    app.include_router(products_router)
 
     return app
