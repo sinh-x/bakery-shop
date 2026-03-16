@@ -1,6 +1,6 @@
 class VN {
   // Navigation
-  static const appName = 'Tiệm Bánh';
+  static const appName = 'Đoàn Gia - Bánh Kem';
   static const tabDashboard = 'Tổng quan';
   static const tabOrders = 'Đơn hàng';
   static const tabProducts = 'Sản phẩm';
