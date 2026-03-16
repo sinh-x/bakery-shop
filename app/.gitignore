@@ -43,3 +43,15 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Unused platform directories (targeting Android + Linux only)
+/ios/
+/macos/
+/web/
+/windows/
+
+# Environment and metadata
+.envrc
+.metadata
+.flutter-plugins
+.flutter-plugins-dependencies
