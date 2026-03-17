@@ -180,11 +180,27 @@ def _migrate_v4_assign_codes(conn):
             (code, product_id),
         )
 
+    # Update category values from old slugs to new slugs
+    for old_cat, new_slug in _OLD_CATEGORY_TO_SLUG.items():
+        conn.execute(
+            "UPDATE products SET category = ? WHERE category = ?",
+            (new_slug, old_cat),
+        )
+
     # Add unique index after all codes are assigned
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_products_code "
         "ON products(product_code) WHERE product_code != ''"
     )
+
+
+def _migrate_v5_update_categories(conn):
+    """Update product categories from old slugs to new slugs (safety for existing v4 DBs)."""
+    for old_cat, new_slug in _OLD_CATEGORY_TO_SLUG.items():
+        conn.execute(
+            "UPDATE products SET category = ? WHERE category = ?",
+            (new_slug, old_cat),
+        )
 
 
 MIGRATIONS = {
@@ -206,6 +222,11 @@ MIGRATIONS = {
         "description": "Product codes and categories table",
         "sql": PRODUCT_CODE_AND_CATEGORIES_SCHEMA,
         "callable": _migrate_v4_assign_codes,
+    },
+    5: {
+        "description": "Update product categories to new slugs",
+        "sql": "",
+        "callable": _migrate_v5_update_categories,
     },
 }
 

@@ -23,10 +23,11 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
 
   Future<Product> createProduct({
     required String name,
-    String category = 'cake',
+    String category = 'banh_kem',
     double basePrice = 0,
     double cost = 0,
     String recipeNotes = '',
+    String? productCode,
   }) async {
     final service = ref.read(productServiceProvider);
     final product = await service.createProduct(
@@ -35,6 +36,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
       basePrice: basePrice,
       cost: cost,
       recipeNotes: recipeNotes,
+      productCode: productCode,
     );
     await refresh();
     return product;
@@ -47,6 +49,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
     double? basePrice,
     double? cost,
     String? recipeNotes,
+    String? productCode,
   }) async {
     final service = ref.read(productServiceProvider);
     final product = await service.updateProduct(
@@ -56,6 +59,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
       basePrice: basePrice,
       cost: cost,
       recipeNotes: recipeNotes,
+      productCode: productCode,
     );
     await refresh();
     return product;

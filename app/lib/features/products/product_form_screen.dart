@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/product.dart';
+import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 
@@ -28,6 +29,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late final TextEditingController _priceCtrl;
   late final TextEditingController _costCtrl;
   late final TextEditingController _notesCtrl;
+  late final TextEditingController _codeCtrl;
   late String _category;
   String? _pickedPhotoPath;
   bool _saving = false;
@@ -44,7 +46,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _costCtrl = TextEditingController(
         text: p != null && p.cost > 0 ? p.cost.toInt().toString() : '');
     _notesCtrl = TextEditingController(text: p?.recipeNotes ?? '');
-    _category = p?.category ?? 'cake';
+    _codeCtrl = TextEditingController(text: p?.productCode ?? '');
+    _category = p?.category ?? 'banh_kem';
   }
 
   @override
@@ -53,6 +56,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _priceCtrl.dispose();
     _costCtrl.dispose();
     _notesCtrl.dispose();
+    _codeCtrl.dispose();
     super.dispose();
   }
 
@@ -96,6 +100,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       final cost = double.tryParse(_costCtrl.text) ?? 0;
 
       Product saved;
+      final code = _codeCtrl.text.trim();
       if (_isEditing) {
         saved = await notifier.updateProduct(
           widget.product!.id,
@@ -104,6 +109,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           basePrice: price,
           cost: cost,
           recipeNotes: _notesCtrl.text.trim(),
+          productCode: code.isNotEmpty ? code : null,
         );
       } else {
         saved = await notifier.createProduct(
@@ -112,6 +118,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           basePrice: price,
           cost: cost,
           recipeNotes: _notesCtrl.text.trim(),
+          productCode: code.isNotEmpty ? code : null,
         );
       }
 
@@ -182,6 +189,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   @override
   Widget build(BuildContext context) {
     final baseUrl = ref.watch(apiBaseUrlProvider);
+    final categoriesAsync = ref.watch(categoriesProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -219,21 +227,67 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Category dropdown
-            DropdownButtonFormField<String>(
-              initialValue: _category,
+            // Product code
+            TextFormField(
+              controller: _codeCtrl,
               decoration: const InputDecoration(
-                labelText: VN.productCategory,
+                labelText: VN.productCode,
+                hintText: 'VD: BKS-16',
+                helperText: 'Tự động tạo nếu để trống',
               ),
-              items: categoryMap.entries
-                  .map((e) => DropdownMenuItem(
-                        value: e.key,
-                        child: Text(
-                            '${categoryEmojiMap[e.key] ?? ''} ${e.value}'),
-                      ))
-                  .toList(),
-              onChanged: (v) {
-                if (v != null) setState(() => _category = v);
+              textCapitalization: TextCapitalization.characters,
+            ),
+            const SizedBox(height: 16),
+
+            // Category dropdown (from API)
+            categoriesAsync.when(
+              loading: () => DropdownButtonFormField<String>(
+                value: _category,
+                decoration: const InputDecoration(labelText: VN.productCategory),
+                items: categoryMap.entries
+                    .map((e) => DropdownMenuItem(
+                          value: e.key,
+                          child: Text('${categoryEmojiMap[e.key] ?? ''} ${e.value}'),
+                        ))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) setState(() => _category = v);
+                },
+              ),
+              error: (err, st) => DropdownButtonFormField<String>(
+                value: categoryMap.containsKey(_category) ? _category : categoryMap.keys.first,
+                decoration: const InputDecoration(labelText: VN.productCategory),
+                items: categoryMap.entries
+                    .map((e) => DropdownMenuItem(
+                          value: e.key,
+                          child: Text('${categoryEmojiMap[e.key] ?? ''} ${e.value}'),
+                        ))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) setState(() => _category = v);
+                },
+              ),
+              data: (categories) {
+                final active = categories.where((c) => c.active == 1).toList();
+                // Ensure _category is valid
+                final validSlugs = active.map((c) => c.slug).toList();
+                if (!validSlugs.contains(_category) && validSlugs.isNotEmpty) {
+                  _category = validSlugs.first;
+                }
+                return DropdownButtonFormField<String>(
+                  value: _category,
+                  decoration: const InputDecoration(labelText: VN.productCategory),
+                  items: active
+                      .map((cat) => DropdownMenuItem(
+                            value: cat.slug,
+                            child: Text(
+                                '${categoryEmojiMap[cat.slug] ?? ''} ${cat.name}'),
+                          ))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) setState(() => _category = v);
+                  },
+                );
               },
             ),
             const SizedBox(height: 16),
