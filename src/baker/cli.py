@@ -1,16 +1,25 @@
 import click
 
+import baker.config
 from baker.db.connection import get_db
 from baker.db.schema import ensure_schema
 
 
 @click.group()
 @click.version_option(version="0.1.0", prog_name="baker")
-def app():
+@click.option(
+    "--config", "config_file",
+    default=None,
+    metavar="FILE",
+    help=f"Config file (default: {baker.config.DEFAULT_CONFIG_PATH})",
+)
+def app(config_file):
     """Baker -- Bakery shop operations tracker.
 
     Capture first, organize later.
     """
+    if config_file:
+        baker.config.reload(config_file)
     with get_db() as conn:
         ensure_schema(conn)
 

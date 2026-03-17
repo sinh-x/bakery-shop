@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from baker.config import PHOTOS_DIR
+import baker.config
 from baker.db.connection import get_db
 
 
@@ -194,8 +194,8 @@ async def upload_photo(product_id: int, file: UploadFile):
     if not data:
         raise HTTPException(status_code=400, detail="Tệp rỗng")
 
-    PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
-    dest = str(PHOTOS_DIR / f"{product_id}.jpg")
+    baker.config.PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
+    dest = str(baker.config.PHOTOS_DIR / f"{product_id}.jpg")
 
     try:
         _resize_and_save(data, dest)

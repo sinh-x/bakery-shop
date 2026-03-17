@@ -54,12 +54,8 @@ in {
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
 
-      environment = {
-        BAKER_CONFIG = "${configFile}";
-      };
-
       serviceConfig = {
-        ExecStart = "${cfg.package}/bin/baker serve";
+        ExecStart = "${cfg.package}/bin/baker --config ${configFile} serve";
         User = cfg.user;
         Restart = "on-failure";
         RestartSec = 5;

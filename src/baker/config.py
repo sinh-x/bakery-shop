@@ -6,32 +6,43 @@ import yaml
 APP_NAME = "baker"
 VERSION = "0.1.0"
 
-_DEFAULT_CONFIG_PATH = Path.home() / ".config" / "doangia" / "bakery" / "baker.yaml"
-_CONFIG_PATH = Path(os.environ.get("BAKER_CONFIG", _DEFAULT_CONFIG_PATH))
-
-
-def _load_config() -> dict:
-    if _CONFIG_PATH.exists():
-        with open(_CONFIG_PATH) as f:
-            return yaml.safe_load(f) or {}
-    return {}
-
-
-_cfg = _load_config()
+DEFAULT_CONFIG_PATH = Path.home() / ".config" / "doangia" / "bakery" / "baker.yaml"
 
 _project_root = Path(__file__).resolve().parents[2]
 _default_data_dir = _project_root / "data"
 
-DATA_DIR = Path(_cfg.get("data_dir", _default_data_dir)).expanduser()
-DB_PATH = Path(_cfg.get("db_path", DATA_DIR / "baker.db")).expanduser()
+# These are set at load time and updated by reload()
+DATA_DIR: Path
+DB_PATH: Path
+PHOTOS_DIR: Path
+HOST: str
+PORT: int
 
-# Photo storage
-PHOTOS_DIR = DATA_DIR / "photos" / "products"
 
-# Server
-HOST = _cfg.get("host", "0.0.0.0")
-PORT = int(_cfg.get("port", 2108))
+def _load_from(path: Path) -> dict:
+    if path.exists():
+        with open(path) as f:
+            return yaml.safe_load(f) or {}
+    return {}
 
-# Defaults
-DEFAULT_EVENT_TYPE = "note"
-ORDER_REF_PREFIX = "ORD"
+
+def reload(config_path: Path | str | None = None) -> None:
+    """Load (or reload) config from the given path.
+
+    Falls back to DEFAULT_CONFIG_PATH, then built-in defaults.
+    Called automatically on first import; call again with a path to switch configs.
+    """
+    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT
+
+    path = Path(config_path).expanduser() if config_path else DEFAULT_CONFIG_PATH
+    cfg = _load_from(path)
+
+    DATA_DIR = Path(cfg.get("data_dir", _default_data_dir)).expanduser()
+    DB_PATH = Path(cfg.get("db_path", DATA_DIR / "baker.db")).expanduser()
+    PHOTOS_DIR = DATA_DIR / "photos" / "products"
+    HOST = cfg.get("host", "0.0.0.0")
+    PORT = int(cfg.get("port", 2108))
+
+
+# Load defaults on import
+reload()
