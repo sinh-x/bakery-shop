@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.1] — 2026-03-17
+- chore: bump patch version — Nix packaging + NixOS auto-start module complete
+
 ## [0.2.0+10] — 2026-03-17
 - feat(nix): phase 4 - regression check — nix develop and nix develop .#flutter verified working
 
