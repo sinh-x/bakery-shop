@@ -2,10 +2,12 @@
 
 import click
 
+from baker.config import HOST, PORT
+
 
 @click.command("serve")
-@click.option("--host", default="0.0.0.0", help="Bind host")
-@click.option("--port", default=8000, type=int, help="Bind port")
+@click.option("--host", default=HOST, help="Bind host")
+@click.option("--port", default=PORT, type=int, help="Bind port")
 @click.option("--reload", is_flag=True, help="Auto-reload on code changes")
 def serve_cmd(host: str, port: int, reload: bool):
     """Start the Baker API server."""

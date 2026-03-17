@@ -1,0 +1,12 @@
+# Baker configuration — copy to ~/.config/doangia/bakery/baker.yaml
+
+# Data directory: where the database and product photos are stored.
+# Defaults to <project_root>/data when this file is absent.
+data_dir: ~/Documents/bakery-shop/data
+
+# Database path (optional — defaults to <data_dir>/baker.db)
+# db_path: ~/Documents/bakery-shop/data/baker.db
+
+# API server
+host: 0.0.0.0
+port: 2108
