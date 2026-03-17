@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import baker.config
+from baker.code_gen import generate_code
 from baker.db.connection import get_db
 
 
@@ -112,7 +113,10 @@ def create_product(product: ProductCreate):
                     detail=f"Mã sản phẩm '{product.product_code}' đã tồn tại",
                 )
 
-        code = product.product_code or ""
+        if product.product_code:
+            code = product.product_code
+        else:
+            code = generate_code(conn, product.category) or ""
         cursor = conn.execute(
             "INSERT INTO products (name, category, base_price, cost, recipe_notes, product_code) "
             "VALUES (?, ?, ?, ?, ?, ?)",
