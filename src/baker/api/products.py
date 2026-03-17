@@ -216,7 +216,7 @@ async def upload_photo(product_id: int, file: UploadFile):
 @router.get("/{product_id}/photo")
 def get_photo(product_id: int):
     """Lấy ảnh sản phẩm."""
-    photo_file = PHOTOS_DIR / f"{product_id}.jpg"
+    photo_file = baker.config.PHOTOS_DIR / f"{product_id}.jpg"
     if not photo_file.exists():
         raise HTTPException(status_code=404, detail="Chưa có ảnh cho sản phẩm này")
     return FileResponse(str(photo_file), media_type="image/jpeg")

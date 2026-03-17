@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.0+8] — 2026-03-17
+- fix(nix): replace StateDirectory with ExecStartPre mkdir for arbitrary dataDir
+
 ## [0.2.0+7] — 2026-03-17
 - chore(changelog): add prepare-commit-msg hook + backfill history
 
