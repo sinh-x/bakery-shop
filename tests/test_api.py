@@ -240,3 +240,203 @@ def test_upload_photo_updates_photo_path(api_client):
     resp = api_client.get("/api/products/1")
     assert resp.status_code == 200
     assert resp.json()["photo_path"] == "photos/products/1.jpg"
+
+
+# --- product_code field ---
+
+
+def test_seeded_product_has_product_code(api_client):
+    """Every seeded product must have a non-empty product_code."""
+    resp = api_client.get("/api/products")
+    assert resp.status_code == 200
+    for product in resp.json():
+        assert "product_code" in product
+        assert product["product_code"] != "", (
+            f"Product '{product['name']}' (id={product['id']}) has empty product_code"
+        )
+
+
+def test_product_code_matches_convention(api_client):
+    """Product #1 ('Bánh mì trắng') should have code BMI-01."""
+    resp = api_client.get("/api/products/1")
+    assert resp.status_code == 200
+    assert resp.json()["product_code"] == "BMI-01"
+
+
+# --- Filter by code ---
+
+
+def test_list_products_filter_by_code_partial(api_client):
+    """?code=BMI returns all Bánh mì products."""
+    resp = api_client.get("/api/products", params={"code": "BMI"})
+    assert resp.status_code == 200
+    products = resp.json()
+    assert len(products) > 0
+    assert all("BMI" in p["product_code"] for p in products)
+
+
+def test_list_products_filter_by_code_exact(api_client):
+    """?code=BMI-01 returns exactly one product."""
+    resp = api_client.get("/api/products", params={"code": "BMI-01"})
+    assert resp.status_code == 200
+    products = resp.json()
+    assert len(products) == 1
+    assert products[0]["product_code"] == "BMI-01"
+
+
+def test_list_products_filter_by_code_no_match(api_client):
+    resp = api_client.get("/api/products", params={"code": "ZZZNOMATCH"})
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+# --- Get by code ---
+
+
+def test_get_product_by_code(api_client):
+    resp = api_client.get("/api/products/code/BMI-01")
+    assert resp.status_code == 200
+    product = resp.json()
+    assert product["product_code"] == "BMI-01"
+    assert product["name"] == "Bánh mì trắng"
+
+
+def test_get_product_by_code_cake_variant(api_client):
+    resp = api_client.get("/api/products/code/BKS-16")
+    assert resp.status_code == 200
+    assert resp.json()["product_code"] == "BKS-16"
+
+
+def test_get_product_by_code_set(api_client):
+    resp = api_client.get("/api/products/code/BNG-S06")
+    assert resp.status_code == 200
+    assert resp.json()["product_code"] == "BNG-S06"
+
+
+def test_get_product_by_code_not_found(api_client):
+    resp = api_client.get("/api/products/code/NOTREAL")
+    assert resp.status_code == 404
+    assert "Không tìm thấy" in resp.json()["detail"]
+
+
+# --- Create with explicit code ---
+
+
+def test_create_product_with_explicit_code(api_client):
+    resp = api_client.post("/api/products", json={
+        "name": "Bánh test mã tùy chỉnh",
+        "category": "banh_mi",
+        "product_code": "BMI-99",
+    })
+    assert resp.status_code == 201
+    assert resp.json()["product_code"] == "BMI-99"
+
+
+def test_create_product_auto_generates_code(api_client):
+    """Creating without product_code should auto-generate one."""
+    resp = api_client.post("/api/products", json={
+        "name": "Bánh tự động mã",
+        "category": "banh_mi",
+    })
+    assert resp.status_code == 201
+    code = resp.json()["product_code"]
+    assert code.startswith("BMI-")
+    assert code != ""
+
+
+def test_create_product_invalid_code_format(api_client):
+    resp = api_client.post("/api/products", json={
+        "name": "Bánh mã sai",
+        "category": "banh_mi",
+        "product_code": "invalid-code",
+    })
+    assert resp.status_code == 422
+    assert "Mã sản phẩm không hợp lệ" in resp.json()["detail"]
+
+
+def test_create_product_duplicate_code(api_client):
+    """Attempting to use an already-assigned code should fail."""
+    resp = api_client.post("/api/products", json={
+        "name": "Bánh mã trùng",
+        "category": "banh_mi",
+        "product_code": "BMI-01",
+    })
+    assert resp.status_code == 409
+    assert "đã tồn tại" in resp.json()["detail"]
+
+
+# --- Update product_code ---
+
+
+def test_update_product_code(api_client):
+    resp = api_client.patch("/api/products/1", json={"product_code": "BMI-99"})
+    assert resp.status_code == 200
+    assert resp.json()["product_code"] == "BMI-99"
+
+
+def test_update_product_code_duplicate(api_client):
+    """PATCH with a code that belongs to another product should fail."""
+    # Product 1 = BMI-01, product 2 = BMI-02
+    resp = api_client.patch("/api/products/1", json={"product_code": "BMI-02"})
+    assert resp.status_code == 409
+    assert "đã tồn tại" in resp.json()["detail"]
+
+
+# --- Categories API ---
+
+
+def test_list_categories(api_client):
+    resp = api_client.get("/api/categories")
+    assert resp.status_code == 200
+    categories = resp.json()
+    assert len(categories) == 5
+
+
+def test_list_categories_has_seeded_slugs(api_client):
+    resp = api_client.get("/api/categories")
+    slugs = {c["slug"] for c in resp.json()}
+    assert slugs == {"banh_mi", "banh_kem", "banh_ngot", "cookie", "khac"}
+
+
+def test_list_categories_has_code_prefixes(api_client):
+    resp = api_client.get("/api/categories")
+    prefix_map = {c["slug"]: c["code_prefix"] for c in resp.json()}
+    assert prefix_map["banh_mi"] == "BMI"
+    assert prefix_map["banh_kem"] == "BKS"
+    assert prefix_map["banh_ngot"] == "BNG"
+    assert prefix_map["cookie"] == "CKI"
+    assert prefix_map["khac"] == "KHA"
+
+
+def test_create_category(api_client):
+    resp = api_client.post("/api/categories", json={
+        "slug": "tra_sua",
+        "name": "Trà sữa",
+        "code_prefix": "TRS",
+    })
+    assert resp.status_code == 201
+    cat = resp.json()
+    assert cat["slug"] == "tra_sua"
+    assert cat["name"] == "Trà sữa"
+    assert cat["code_prefix"] == "TRS"
+
+
+def test_create_category_appears_in_list(api_client):
+    api_client.post("/api/categories", json={
+        "slug": "che",
+        "name": "Chè",
+        "code_prefix": "CHE",
+    })
+    resp = api_client.get("/api/categories")
+    slugs = [c["slug"] for c in resp.json()]
+    assert "che" in slugs
+
+
+def test_create_category_duplicate_slug(api_client):
+    resp = api_client.post("/api/categories", json={
+        "slug": "banh_mi",
+        "name": "Duplicate",
+        "code_prefix": "DUP",
+    })
+    assert resp.status_code == 409
+    assert "đã tồn tại" in resp.json()["detail"]
