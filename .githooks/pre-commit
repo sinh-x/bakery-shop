@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Auto-bump build number on every commit/merge to develop.
+# Rules:
+#   - Only runs on the develop branch
+#   - Reads version from app/pubspec.yaml (format: MAJOR.MINOR.PATCH+BUILD)
+#   - Increments BUILD by 1, writes back to pubspec.yaml
+#   - Syncs MAJOR.MINOR.PATCH (no build number) to pyproject.toml
+#   - Stages both files so the bump is part of the same commit
+#
+# When bumping MAJOR.MINOR.PATCH manually:
+#   Set the build number to 0 in pubspec.yaml before committing.
+#   The hook will then write +1, giving a clean MAJOR.MINOR.PATCH+1.
+
+BRANCH=$(git branch --show-current)
+[ "$BRANCH" = "develop" ] || exit 0
+
+PUBSPEC="app/pubspec.yaml"
+PYPROJECT="pyproject.toml"
+
+# Read current version: e.g. "0.2.0+3"
+CURRENT=$(grep "^version:" "$PUBSPEC" | sed 's/^version: *//')
+BASE=$(echo "$CURRENT" | cut -d+ -f1)
+BUILD=$(echo "$CURRENT" | grep '+' | cut -d+ -f2)
+BUILD=${BUILD:-0}
+
+NEW_BUILD=$((BUILD + 1))
+NEW_VERSION="${BASE}+${NEW_BUILD}"
+
+# Update pubspec.yaml
+sed -i "s/^version: .*/version: ${NEW_VERSION}/" "$PUBSPEC"
+
+# Sync base version (no build number) to pyproject.toml
+sed -i "s/^version = \".*\"/version = \"${BASE}\"/" "$PYPROJECT"
+
+git add "$PUBSPEC" "$PYPROJECT"
+echo "[version] bumped to ${NEW_VERSION}"

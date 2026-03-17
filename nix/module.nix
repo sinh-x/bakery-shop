@@ -5,6 +5,13 @@
 
 let
   cfg = config.services.baker;
+
+  configFile = pkgs.writeText "baker.yaml" ''
+    data_dir: ${cfg.dataDir}
+    db_path: ${cfg.dataDir}/baker.db
+    host: ${cfg.host}
+    port: ${toString cfg.port}
+  '';
 in {
   options.services.baker = {
     enable = lib.mkEnableOption "Baker bakery operations API server";
@@ -47,18 +54,12 @@ in {
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
 
-      environment = {
-        BAKER_DATA_DIR = cfg.dataDir;
-        BAKER_DB = "${cfg.dataDir}/baker.db";
-      };
-
       serviceConfig = {
-        ExecStart = "${cfg.package}/bin/baker serve --port ${toString cfg.port} --host ${cfg.host}";
+        ExecStartPre = "${pkgs.coreutils}/bin/mkdir -p ${cfg.dataDir}";
+        ExecStart = "${cfg.package}/bin/baker --config ${configFile} serve";
         User = cfg.user;
         Restart = "on-failure";
         RestartSec = 5;
-        StateDirectory = "baker";
-        WorkingDirectory = cfg.dataDir;
       };
     };
   };

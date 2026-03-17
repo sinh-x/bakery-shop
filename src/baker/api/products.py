@@ -4,7 +4,8 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from baker.config import PHOTOS_DIR
+import baker.config
+from baker.code_gen import generate_code, validate_code_format
 from baker.db.connection import get_db
 
 
@@ -17,6 +18,7 @@ class ProductCreate(BaseModel):
     base_price: float = 0
     cost: float = 0
     recipe_notes: str = ""
+    product_code: str | None = None
 
 
 class ProductUpdate(BaseModel):
@@ -26,6 +28,7 @@ class ProductUpdate(BaseModel):
     cost: float | None = None
     recipe_notes: str | None = None
     active: int | None = None
+    product_code: str | None = None
 
 
 def _row_to_dict(row) -> dict:
@@ -37,6 +40,7 @@ def _row_to_dict(row) -> dict:
 def list_products(
     category: str | None = Query(None, description="Lọc theo danh mục"),
     active: int = Query(1, description="1 = đang bán, 0 = ngừng bán"),
+    code: str | None = Query(None, description="Lọc theo mã sản phẩm (partial match)"),
 ):
     """Danh sách sản phẩm."""
     with get_db() as conn:
@@ -47,6 +51,10 @@ def list_products(
             conditions.append("category = ?")
             params.append(category)
 
+        if code:
+            conditions.append("product_code LIKE ?")
+            params.append(f"%{code}%")
+
         where = " AND ".join(conditions)
         rows = conn.execute(
             f"SELECT * FROM products WHERE {where} ORDER BY category, name",
@@ -54,6 +62,18 @@ def list_products(
         ).fetchall()
 
         return [_row_to_dict(r) for r in rows]
+
+
+@router.get("/code/{code}")
+def get_product_by_code(code: str):
+    """Lấy sản phẩm theo mã code."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM products WHERE product_code = ?", (code,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
+        return _row_to_dict(row)
 
 
 @router.get("/{product_id}")
@@ -81,15 +101,35 @@ def create_product(product: ProductCreate):
                 status_code=409, detail=f"Sản phẩm '{product.name}' đã tồn tại"
             )
 
+        # Validate and check duplicate product_code
+        if product.product_code:
+            if not validate_code_format(product.product_code):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Mã sản phẩm không hợp lệ: '{product.product_code}' (định dạng: PREFIX-SUFFIX, ví dụ BMI-01)",
+                )
+            code_exists = conn.execute(
+                "SELECT id FROM products WHERE product_code = ?",
+                (product.product_code,),
+            ).fetchone()
+            if code_exists:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Mã sản phẩm '{product.product_code}' đã tồn tại",
+                )
+            code = product.product_code
+        else:
+            code = generate_code(conn, product.category) or ""
         cursor = conn.execute(
-            "INSERT INTO products (name, category, base_price, cost, recipe_notes) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO products (name, category, base_price, cost, recipe_notes, product_code) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 product.name,
                 product.category,
                 product.base_price,
                 product.cost,
                 product.recipe_notes,
+                code,
             ),
         )
         new_id = cursor.lastrowid
@@ -127,6 +167,22 @@ def update_product(product_id: int, product: ProductUpdate):
                 raise HTTPException(
                     status_code=409,
                     detail=f"Sản phẩm '{data['name']}' đã tồn tại",
+                )
+
+        # Check product_code uniqueness if being changed
+        if (
+            "product_code" in data
+            and data["product_code"]
+            and data["product_code"] != row["product_code"]
+        ):
+            code_exists = conn.execute(
+                "SELECT id FROM products WHERE product_code = ? AND id != ?",
+                (data["product_code"], product_id),
+            ).fetchone()
+            if code_exists:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Mã sản phẩm '{data['product_code']}' đã tồn tại",
                 )
 
         for field, value in data.items():
@@ -194,8 +250,8 @@ async def upload_photo(product_id: int, file: UploadFile):
     if not data:
         raise HTTPException(status_code=400, detail="Tệp rỗng")
 
-    PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
-    dest = str(PHOTOS_DIR / f"{product_id}.jpg")
+    baker.config.PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
+    dest = str(baker.config.PHOTOS_DIR / f"{product_id}.jpg")
 
     try:
         _resize_and_save(data, dest)
@@ -216,7 +272,7 @@ async def upload_photo(product_id: int, file: UploadFile):
 @router.get("/{product_id}/photo")
 def get_photo(product_id: int):
     """Lấy ảnh sản phẩm."""
-    photo_file = PHOTOS_DIR / f"{product_id}.jpg"
+    photo_file = baker.config.PHOTOS_DIR / f"{product_id}.jpg"
     if not photo_file.exists():
         raise HTTPException(status_code=404, detail="Chưa có ảnh cho sản phẩm này")
     return FileResponse(str(photo_file), media_type="image/jpeg")

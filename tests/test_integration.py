@@ -214,3 +214,48 @@ def test_full_product_lifecycle(api_client):
     # 6. Photo served via API
     resp = api_client.get(f"/api/products/{pid}/photo")
     assert resp.status_code == 200
+
+
+# --- product_code integration ---
+
+
+def test_create_product_code_visible_in_db(api_client):
+    """Auto-generated product_code is stored in DB (accessible by CLI)."""
+    resp = api_client.post("/api/products", json={
+        "name": "Bánh tích hợp có mã",
+        "category": "banh_mi",
+        "base_price": 15000,
+    })
+    assert resp.status_code == 201
+    api_code = resp.json()["product_code"]
+    assert api_code.startswith("BMI-")
+
+    # CLI reads DB directly — verify code is persisted
+    pid = resp.json()["id"]
+    row = _db_query_one("SELECT product_code FROM products WHERE id = ?", (pid,))
+    assert row is not None
+    assert row["product_code"] == api_code
+
+
+def test_update_product_code_visible_in_db(api_client):
+    """Updating product_code via API is reflected in DB."""
+    api_client.patch("/api/products/1", json={"product_code": "BMI-99"})
+
+    row = _db_query_one("SELECT product_code FROM products WHERE id = 1")
+    assert row["product_code"] == "BMI-99"
+
+
+def test_find_product_by_code_in_db(api_client):
+    """Seeded products can be looked up by code directly in DB — same as CLI code lookup."""
+    row = _db_query_one(
+        "SELECT * FROM products WHERE product_code = ?", ("BMI-01",)
+    )
+    assert row is not None
+    assert row["name"] == "Bánh mì trắng"
+
+
+def test_categories_table_seeded_in_db(api_client):
+    """Categories table has 5 seeded rows, queryable by CLI."""
+    rows = _db_query("SELECT slug FROM categories WHERE active = 1 ORDER BY slug")
+    slugs = [r["slug"] for r in rows]
+    assert slugs == ["banh_kem", "banh_mi", "banh_ngot", "cookie", "khac"]

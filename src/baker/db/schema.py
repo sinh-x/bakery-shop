@@ -115,6 +115,135 @@ SEED_PRODUCTS = [
     ("Bánh chuối nướng", "other", 35000, 15000, "Chuối + nước cốt dừa"),
 ]
 
+PRODUCT_CODE_AND_CATEGORIES_SCHEMA = """
+ALTER TABLE products ADD COLUMN product_code TEXT DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS categories (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug        TEXT UNIQUE NOT NULL,
+    name        TEXT NOT NULL,
+    code_prefix TEXT NOT NULL,
+    active      INTEGER DEFAULT 1
+);
+"""
+
+SEED_CATEGORIES = [
+    # (slug, name, code_prefix)
+    ("banh_mi", "Bánh mì", "BMI"),
+    ("banh_kem", "Bánh kem", "BKS"),
+    ("banh_ngot", "Bánh ngọt", "BNG"),
+    ("cookie", "Cookie", "CKI"),
+    ("khac", "Khác", "KHA"),
+]
+
+# Map old product categories to new category slugs
+_OLD_CATEGORY_TO_SLUG = {
+    "bread": "banh_mi",
+    "cake": "banh_kem",
+    "pastry": "banh_ngot",
+    "cookie": "cookie",
+    "other": "khac",
+}
+
+
+def _migrate_v4_assign_codes(conn):
+    """Seed categories and assign product codes to existing products."""
+    # Seed categories
+    for slug, name, code_prefix in SEED_CATEGORIES:
+        conn.execute(
+            "INSERT OR IGNORE INTO categories (slug, name, code_prefix) "
+            "VALUES (?, ?, ?)",
+            (slug, name, code_prefix),
+        )
+
+    # Build prefix lookup: old category -> code_prefix
+    slug_to_prefix = {slug: prefix for slug, _, prefix in SEED_CATEGORIES}
+    prefix_counters = {}
+
+    # Fetch all products ordered by id to assign codes deterministically
+    rows = conn.execute(
+        "SELECT id, category FROM products ORDER BY id"
+    ).fetchall()
+
+    for row in rows:
+        product_id = row[0]
+        old_cat = row[1]
+        slug = _OLD_CATEGORY_TO_SLUG.get(old_cat, "khac")
+        prefix = slug_to_prefix[slug]
+
+        count = prefix_counters.get(prefix, 0) + 1
+        prefix_counters[prefix] = count
+        code = f"{prefix}-{count:02d}"
+
+        conn.execute(
+            "UPDATE products SET product_code = ? WHERE id = ?",
+            (code, product_id),
+        )
+
+    # Update category values from old slugs to new slugs
+    for old_cat, new_slug in _OLD_CATEGORY_TO_SLUG.items():
+        conn.execute(
+            "UPDATE products SET category = ? WHERE category = ?",
+            (new_slug, old_cat),
+        )
+
+    # Add unique index after all codes are assigned
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_products_code "
+        "ON products(product_code) WHERE product_code != ''"
+    )
+
+
+def _migrate_v5_update_categories(conn):
+    """Update product categories from old slugs to new slugs (safety for existing v4 DBs)."""
+    for old_cat, new_slug in _OLD_CATEGORY_TO_SLUG.items():
+        conn.execute(
+            "UPDATE products SET category = ? WHERE category = ?",
+            (new_slug, old_cat),
+        )
+
+
+SEED_CAKE_VARIANTS = [
+    # (name, category, base_price, cost, recipe_notes, product_code)
+    # 16 cm
+    ("Bánh kem 16cm", "banh_kem", 200000, 90000, "Đường kính 16cm, thường", "BKS-16"),
+    ("Bánh kem 16cm cao", "banh_kem", 250000, 110000, "Đường kính 16cm, cao", "BKS-16C"),
+    ("Bánh kem 16cm nhiều tầng", "banh_kem", 350000, 160000, "Đường kính 16cm, nhiều tầng", "BKS-16T"),
+    # 18 cm
+    ("Bánh kem 18cm", "banh_kem", 250000, 110000, "Đường kính 18cm, thường", "BKS-18"),
+    ("Bánh kem 18cm cao", "banh_kem", 300000, 135000, "Đường kính 18cm, cao", "BKS-18C"),
+    ("Bánh kem 18cm nhiều tầng", "banh_kem", 450000, 200000, "Đường kính 18cm, nhiều tầng", "BKS-18T"),
+    # 20 cm
+    ("Bánh kem 20cm", "banh_kem", 350000, 160000, "Đường kính 20cm, thường", "BKS-20"),
+    ("Bánh kem 20cm cao", "banh_kem", 400000, 180000, "Đường kính 20cm, cao", "BKS-20C"),
+    ("Bánh kem 20cm nhiều tầng", "banh_kem", 600000, 270000, "Đường kính 20cm, nhiều tầng", "BKS-20T"),
+    # 22 cm
+    ("Bánh kem 22cm", "banh_kem", 450000, 200000, "Đường kính 22cm, thường", "BKS-22"),
+    ("Bánh kem 22cm cao", "banh_kem", 500000, 225000, "Đường kính 22cm, cao", "BKS-22C"),
+    ("Bánh kem 22cm nhiều tầng", "banh_kem", 750000, 340000, "Đường kính 22cm, nhiều tầng", "BKS-22T"),
+]
+
+SEED_SU_KEM_SETS = [
+    # (name, category, base_price, cost, recipe_notes, product_code)
+    ("Bánh su kem set 6", "banh_ngot", 45000, 19000, "Set 6 cái bánh su kem", "BNG-S06"),
+    ("Bánh su kem set 8", "banh_ngot", 58000, 25000, "Set 8 cái bánh su kem", "BNG-S08"),
+    ("Bánh su kem set 10", "banh_ngot", 70000, 30000, "Set 10 cái bánh su kem", "BNG-S10"),
+    ("Bánh su kem set 12", "banh_ngot", 82000, 36000, "Set 12 cái bánh su kem", "BNG-S12"),
+    ("Bánh su kem set 15", "banh_ngot", 100000, 44000, "Set 15 cái bánh su kem", "BNG-S15"),
+]
+
+
+def _migrate_v6_seed_variants(conn):
+    """Seed cake size×type variants and su kem set products."""
+    for name, cat, price, cost, notes, code in SEED_CAKE_VARIANTS + SEED_SU_KEM_SETS:
+        conn.execute(
+            "INSERT OR IGNORE INTO products "
+            "(name, category, base_price, cost, recipe_notes, product_code) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (name, cat, price, cost, notes, code),
+        )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -129,6 +258,21 @@ MIGRATIONS = {
         "description": "Product photo_path column and seed 23 products",
         "sql": PHOTO_PATH_AND_SEED,
         "seed": SEED_PRODUCTS,
+    },
+    4: {
+        "description": "Product codes and categories table",
+        "sql": PRODUCT_CODE_AND_CATEGORIES_SCHEMA,
+        "callable": _migrate_v4_assign_codes,
+    },
+    5: {
+        "description": "Update product categories to new slugs",
+        "sql": "",
+        "callable": _migrate_v5_update_categories,
+    },
+    6: {
+        "description": "Seed cake variants (16/18/20/22cm × thường/cao/tầng) and su kem sets",
+        "sql": "",
+        "callable": _migrate_v6_seed_variants,
     },
 }
 
@@ -159,6 +303,11 @@ def ensure_schema(conn):
                         "VALUES (?, ?, ?, ?, ?)",
                         (name, category, base_price, cost, recipe_notes),
                     )
+
+            # Run callable if present (for complex migrations)
+            callable_fn = MIGRATIONS[version].get("callable")
+            if callable_fn:
+                callable_fn(conn)
 
             conn.execute(
                 "INSERT INTO schema_version (version, description) VALUES (?, ?)",

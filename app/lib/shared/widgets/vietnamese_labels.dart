@@ -49,18 +49,21 @@ class VN {
   static const actions = 'Thao tác';
 
   // Product categories
-  static const catCake = 'Bánh kem';
-  static const catCupcake = 'Cupcake';
-  static const catTiramisuMousse = 'Tiramisu / Mousse';
-  static const catSandwich = 'Sandwich';
-  static const catBongLan = 'Bông lan trứng muối';
+  static const catBanhMi = 'Bánh mì';
+  static const catBanhKem = 'Bánh kem';
+  static const catBanhNgot = 'Bánh ngọt';
+  static const catCookie = 'Cookie';
+  static const catKhac = 'Khác';
 
   // Category emojis
-  static const emojiCake = '🎂';
-  static const emojiCupcake = '🧁';
-  static const emojiTiramisuMousse = '🍰';
-  static const emojiSandwich = '🥪';
-  static const emojiBongLan = '🍞';
+  static const emojiBanhMi = '🍞';
+  static const emojiBanhKem = '🎂';
+  static const emojiBanhNgot = '🧁';
+  static const emojiCookie = '🍪';
+  static const emojiKhac = '🍰';
+
+  // Product code
+  static const productCode = 'Mã sản phẩm';
 
   // Event types
   static const eventNote = 'Ghi chú';
@@ -136,22 +139,22 @@ class VN {
   static const currency = 'đ';
 }
 
-// Category mapping
+// Category mapping (new slugs)
 const categoryMap = {
-  'cake': VN.catCake,
-  'cupcake': VN.catCupcake,
-  'tiramisu_mousse': VN.catTiramisuMousse,
-  'sandwich': VN.catSandwich,
-  'bong_lan_trung_muoi': VN.catBongLan,
+  'banh_mi': VN.catBanhMi,
+  'banh_kem': VN.catBanhKem,
+  'banh_ngot': VN.catBanhNgot,
+  'cookie': VN.catCookie,
+  'khac': VN.catKhac,
 };
 
-// Category emoji mapping
+// Category emoji mapping (new slugs)
 const categoryEmojiMap = {
-  'cake': VN.emojiCake,
-  'cupcake': VN.emojiCupcake,
-  'tiramisu_mousse': VN.emojiTiramisuMousse,
-  'sandwich': VN.emojiSandwich,
-  'bong_lan_trung_muoi': VN.emojiBongLan,
+  'banh_mi': VN.emojiBanhMi,
+  'banh_kem': VN.emojiBanhKem,
+  'banh_ngot': VN.emojiBanhNgot,
+  'cookie': VN.emojiCookie,
+  'khac': VN.emojiKhac,
 };
 
 // Status mapping

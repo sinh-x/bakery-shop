@@ -2,6 +2,7 @@ import click
 
 from baker.db.connection import get_db
 from baker.formatters.tables import console
+from baker.code_gen import generate_code, validate_code_format
 
 from rich.table import Table
 
@@ -13,36 +14,63 @@ def product_cmd():
 
 @product_cmd.command("add")
 @click.argument("name")
-@click.option("--category", default="bread", help="Category (bread, pastry, cake, cookie, other)")
+@click.option("--category", default="bread", help="Category slug (banh_mi, banh_kem, banh_ngot, cookie, khac)")
 @click.option("--price", "base_price", type=float, default=0, help="Selling price")
 @click.option("--cost", type=float, default=0, help="Production cost")
 @click.option("--notes", "recipe_notes", default="", help="Recipe or production notes")
-def product_add(name, category, base_price, cost, recipe_notes):
+@click.option("--code", "product_code", default=None, help="Product code (e.g. BMI-01); auto-generated if omitted")
+def product_add(name, category, base_price, cost, recipe_notes, product_code):
     """Add a product to the catalog."""
     with get_db() as conn:
+        if product_code:
+            if not validate_code_format(product_code):
+                console.print(f"  [red]Mã không hợp lệ: '{product_code}' (định dạng: PREFIX-SUFFIX, ví dụ BMI-01)[/red]")
+                return
+            existing = conn.execute("SELECT id FROM products WHERE product_code = ?", (product_code,)).fetchone()
+            if existing:
+                console.print(f"  [red]Mã '{product_code}' đã tồn tại[/red]")
+                return
+            code = product_code
+        else:
+            code = generate_code(conn, category) or ""
+
         conn.execute(
-            "INSERT INTO products (name, category, base_price, cost, recipe_notes) VALUES (?, ?, ?, ?, ?)",
-            (name, category, base_price, cost, recipe_notes),
+            "INSERT INTO products (name, category, base_price, cost, recipe_notes, product_code) VALUES (?, ?, ?, ?, ?, ?)",
+            (name, category, base_price, cost, recipe_notes, code),
         )
         margin = base_price - cost if base_price and cost else 0
-        console.print(f"  [green]Added[/green] {name} (price: {base_price:.2f}, cost: {cost:.2f}, margin: {margin:.2f})")
+        code_display = f" [{code}]" if code else ""
+        console.print(f"  [green]Added[/green] {name}{code_display} (price: {base_price:.2f}, cost: {cost:.2f}, margin: {margin:.2f})")
 
 
 @product_cmd.command("list")
 @click.option("--category", help="Filter by category")
-def product_list(category):
+@click.option("--code", "code_filter", default=None, help="Filter by product code (partial match)")
+def product_list(category, code_filter):
     """List products."""
     with get_db() as conn:
+        conditions = ["active = 1"]
+        params = []
+
         if category:
-            rows = conn.execute("SELECT * FROM products WHERE category = ? AND active = 1 ORDER BY category, name", (category,)).fetchall()
-        else:
-            rows = conn.execute("SELECT * FROM products WHERE active = 1 ORDER BY category, name").fetchall()
+            conditions.append("category = ?")
+            params.append(category)
+        if code_filter:
+            conditions.append("product_code LIKE ?")
+            params.append(f"%{code_filter}%")
+
+        where = " AND ".join(conditions)
+        rows = conn.execute(
+            f"SELECT * FROM products WHERE {where} ORDER BY category, name",
+            params,
+        ).fetchall()
 
         if not rows:
             console.print("  [dim]No products found.[/dim]")
             return
 
         table = Table(title="Products", show_lines=False, padding=(0, 1))
+        table.add_column("Code", style="cyan")
         table.add_column("Name", style="bold")
         table.add_column("Category", style="dim")
         table.add_column("Price", justify="right")
@@ -53,6 +81,7 @@ def product_list(category):
             margin = row["base_price"] - row["cost"] if row["base_price"] and row["cost"] else 0
             margin_style = "green" if margin > 0 else "red" if margin < 0 else ""
             table.add_row(
+                row["product_code"] or "-",
                 row["name"],
                 row["category"],
                 f"{row['base_price']:.2f}" if row["base_price"] else "-",
@@ -63,17 +92,21 @@ def product_list(category):
 
 
 @product_cmd.command("edit")
-@click.argument("name")
+@click.argument("identifier")
 @click.option("--price", "base_price", type=float, help="Update price")
 @click.option("--cost", type=float, help="Update cost")
 @click.option("--notes", "recipe_notes", help="Update recipe notes")
 @click.option("--category", help="Update category")
-def product_edit(name, base_price, cost, recipe_notes, category):
-    """Edit a product."""
+@click.option("--code", "product_code", help="Update product code")
+def product_edit(identifier, base_price, cost, recipe_notes, category, product_code):
+    """Edit a product. IDENTIFIER can be a product code (e.g. BMI-01) or product name."""
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM products WHERE name = ?", (name,)).fetchone()
+        # Try by code first, then by name
+        row = conn.execute("SELECT * FROM products WHERE product_code = ?", (identifier,)).fetchone()
         if not row:
-            console.print(f"  [red]Product '{name}' not found[/red]")
+            row = conn.execute("SELECT * FROM products WHERE name = ?", (identifier,)).fetchone()
+        if not row:
+            console.print(f"  [red]Product '{identifier}' not found (tried code and name)[/red]")
             return
 
         updates = []
@@ -90,6 +123,19 @@ def product_edit(name, base_price, cost, recipe_notes, category):
         if category is not None:
             updates.append("category = ?")
             params.append(category)
+        if product_code is not None:
+            if not validate_code_format(product_code):
+                console.print(f"  [red]Mã không hợp lệ: '{product_code}' (định dạng: PREFIX-SUFFIX, ví dụ BMI-01)[/red]")
+                return
+            existing = conn.execute(
+                "SELECT id FROM products WHERE product_code = ? AND id != ?",
+                (product_code, row["id"]),
+            ).fetchone()
+            if existing:
+                console.print(f"  [red]Mã '{product_code}' đã tồn tại[/red]")
+                return
+            updates.append("product_code = ?")
+            params.append(product_code)
 
         if not updates:
             console.print("  [dim]Nothing to update[/dim]")
@@ -97,4 +143,5 @@ def product_edit(name, base_price, cost, recipe_notes, category):
 
         params.append(row["id"])
         conn.execute(f"UPDATE products SET {', '.join(updates)} WHERE id = ?", params)
-        console.print(f"  [green]Updated[/green] {name}")
+        display = row["product_code"] or row["name"]
+        console.print(f"  [green]Updated[/green] {display}")

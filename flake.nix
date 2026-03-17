@@ -30,6 +30,7 @@
           propagatedBuildInputs = with python.pkgs; [
             click
             rich
+            pyyaml
             fastapi
             uvicorn
             python-multipart
