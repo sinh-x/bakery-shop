@@ -20,11 +20,11 @@ def test_health(api_client):
 
 
 def test_list_products_returns_seeded(api_client):
-    """Migration v3 seeds 23 products — all should be listed."""
+    """Migrations seed 40 products (23 base + 12 cake variants + 5 su kem sets)."""
     resp = api_client.get("/api/products")
     assert resp.status_code == 200
     products = resp.json()
-    assert len(products) == 23
+    assert len(products) == 40
 
 
 def test_list_products_filter_by_category(api_client):

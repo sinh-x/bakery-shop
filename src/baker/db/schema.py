@@ -203,6 +203,47 @@ def _migrate_v5_update_categories(conn):
         )
 
 
+SEED_CAKE_VARIANTS = [
+    # (name, category, base_price, cost, recipe_notes, product_code)
+    # 16 cm
+    ("Bánh kem 16cm", "banh_kem", 200000, 90000, "Đường kính 16cm, thường", "BKS-16"),
+    ("Bánh kem 16cm cao", "banh_kem", 250000, 110000, "Đường kính 16cm, cao", "BKS-16C"),
+    ("Bánh kem 16cm nhiều tầng", "banh_kem", 350000, 160000, "Đường kính 16cm, nhiều tầng", "BKS-16T"),
+    # 18 cm
+    ("Bánh kem 18cm", "banh_kem", 250000, 110000, "Đường kính 18cm, thường", "BKS-18"),
+    ("Bánh kem 18cm cao", "banh_kem", 300000, 135000, "Đường kính 18cm, cao", "BKS-18C"),
+    ("Bánh kem 18cm nhiều tầng", "banh_kem", 450000, 200000, "Đường kính 18cm, nhiều tầng", "BKS-18T"),
+    # 20 cm
+    ("Bánh kem 20cm", "banh_kem", 350000, 160000, "Đường kính 20cm, thường", "BKS-20"),
+    ("Bánh kem 20cm cao", "banh_kem", 400000, 180000, "Đường kính 20cm, cao", "BKS-20C"),
+    ("Bánh kem 20cm nhiều tầng", "banh_kem", 600000, 270000, "Đường kính 20cm, nhiều tầng", "BKS-20T"),
+    # 22 cm
+    ("Bánh kem 22cm", "banh_kem", 450000, 200000, "Đường kính 22cm, thường", "BKS-22"),
+    ("Bánh kem 22cm cao", "banh_kem", 500000, 225000, "Đường kính 22cm, cao", "BKS-22C"),
+    ("Bánh kem 22cm nhiều tầng", "banh_kem", 750000, 340000, "Đường kính 22cm, nhiều tầng", "BKS-22T"),
+]
+
+SEED_SU_KEM_SETS = [
+    # (name, category, base_price, cost, recipe_notes, product_code)
+    ("Bánh su kem set 6", "banh_ngot", 45000, 19000, "Set 6 cái bánh su kem", "BNG-S06"),
+    ("Bánh su kem set 8", "banh_ngot", 58000, 25000, "Set 8 cái bánh su kem", "BNG-S08"),
+    ("Bánh su kem set 10", "banh_ngot", 70000, 30000, "Set 10 cái bánh su kem", "BNG-S10"),
+    ("Bánh su kem set 12", "banh_ngot", 82000, 36000, "Set 12 cái bánh su kem", "BNG-S12"),
+    ("Bánh su kem set 15", "banh_ngot", 100000, 44000, "Set 15 cái bánh su kem", "BNG-S15"),
+]
+
+
+def _migrate_v6_seed_variants(conn):
+    """Seed cake size×type variants and su kem set products."""
+    for name, cat, price, cost, notes, code in SEED_CAKE_VARIANTS + SEED_SU_KEM_SETS:
+        conn.execute(
+            "INSERT OR IGNORE INTO products "
+            "(name, category, base_price, cost, recipe_notes, product_code) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (name, cat, price, cost, notes, code),
+        )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -227,6 +268,11 @@ MIGRATIONS = {
         "description": "Update product categories to new slugs",
         "sql": "",
         "callable": _migrate_v5_update_categories,
+    },
+    6: {
+        "description": "Seed cake variants (16/18/20/22cm × thường/cao/tầng) and su kem sets",
+        "sql": "",
+        "callable": _migrate_v6_seed_variants,
     },
 }
 
