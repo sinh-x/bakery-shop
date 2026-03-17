@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.0+7] — 2026-03-17
+- chore(changelog): add prepare-commit-msg hook + backfill history
+
 ## [0.2.0+6] — 2026-03-17
 - feat(config): universal --config flag on CLI group
 

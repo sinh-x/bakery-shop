@@ -55,12 +55,11 @@ in {
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
+        ExecStartPre = "${pkgs.coreutils}/bin/mkdir -p ${cfg.dataDir}";
         ExecStart = "${cfg.package}/bin/baker --config ${configFile} serve";
         User = cfg.user;
         Restart = "on-failure";
         RestartSec = 5;
-        StateDirectory = "baker";
-        WorkingDirectory = cfg.dataDir;
       };
     };
   };
