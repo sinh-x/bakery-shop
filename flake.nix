@@ -152,5 +152,8 @@
 
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath linuxDeps;
         };
-      });
+      }) // {
+        # NixOS module (system-independent — exported outside eachDefaultSystem)
+        nixosModules.default = import ./nix/module.nix { inherit self; };
+      };
 }
