@@ -44,21 +44,30 @@ branches:
     example: hotfix/api-crash-on-empty-db
 
 versioning:
-  scheme: semver+build  # vMAJOR.MINOR.PATCH+BUILD
-  current: v0.2.0+1
+  scheme: semver+build  # MAJOR.MINOR.PATCH+BUILD
+  source_of_truth: app/pubspec.yaml  # format: "version: X.Y.Z+N"
+  pyproject_sync: pyproject.toml     # synced to X.Y.Z (no build number, Python PEP 440)
+
   build_number:
-    auto_bump: true      # every merge/PR into develop increments BUILD
-    scope: develop       # only merges into develop trigger auto-bump
-    format: integer      # 1, 2, 3, ...
-  manual_bump:
-    patch: bug fixes, hotfixes (e.g. v0.2.0 → v0.2.1)
-    minor: new features (e.g. v0.2.0 → v0.3.0)
-    major: breaking changes (e.g. v0.2.0 → v1.0.0)
-  examples:
-    - v0.2.0+1   # first merge into develop after v0.2.0 release
-    - v0.2.0+7   # seventh merge, still pre-release
-    - v0.3.0+1   # minor bump after release, build resets to 1
-  release_tagging: vMAJOR.MINOR.PATCH  # strip build number on main tag
+    rule: every commit or merge onto develop bumps BUILD by 1
+    scope: develop branch only (hook is a no-op on all other branches)
+    automation: .githooks/pre-commit (activated via git config core.hooksPath .githooks)
+    reset: set pubspec.yaml build to 0 before committing a version bump → hook writes +1
+
+  version_bump:
+    rule: MAJOR.MINOR.PATCH are bumped manually only
+    procedure:
+      1. Edit app/pubspec.yaml — set new X.Y.Z+0  (reset build to 0)
+      2. Commit on develop — hook auto-bumps to X.Y.Z+1
+    examples:
+      patch: 0.2.0+7 → edit to 0.2.1+0 → commit → 0.2.1+1
+      minor: 0.2.0+7 → edit to 0.3.0+0 → commit → 0.3.0+1
+      major: 0.2.0+7 → edit to 1.0.0+0 → commit → 1.0.0+1
+
+  release_tagging:
+    branch: main only
+    format: vMAJOR.MINOR.PATCH  # build number stripped on release tag
+    example: 0.3.0+14 released → tag v0.3.0 on main
 
 workflow:
   new_feature:
