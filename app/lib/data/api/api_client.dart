@@ -14,13 +14,15 @@ class ApiBaseUrlNotifier extends Notifier<String> {
   @override
   String build() {
     final prefs = ref.watch(sharedPreferencesProvider);
-    return prefs.getString(kApiUrlKey) ?? kDefaultApiUrl;
+    final url = prefs.getString(kApiUrlKey) ?? kDefaultApiUrl;
+    return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
   }
 
   Future<void> setUrl(String url) async {
+    final normalized = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
     final prefs = ref.read(sharedPreferencesProvider);
-    await prefs.setString(kApiUrlKey, url);
-    state = url;
+    await prefs.setString(kApiUrlKey, normalized);
+    state = normalized;
   }
 }
 
