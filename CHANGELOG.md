@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.2] — 2026-03-18
+
+### Added
+- Product codes (`product_code`) — human-readable codes for every product (e.g. `BMI-01`, `BKS-16`, `BNG-S06`)
+- Categories table — 5 seeded categories (bánh mì, bánh kem, bánh ngọt, cookie, khác), user-manageable via CLI and API
+- API: `GET /api/products?code=` filter, `GET /api/products/code/{code}` lookup, `GET /api/categories`, `POST /api/categories`
+- CLI: `baker product list` shows Code column, `baker product edit` accepts code as identifier, `baker category` commands
+- Flutter: product card shows code badge, product form has code field, catalog tabs load from API categories
+- Variant products seeded: bánh kem 16/18/20/22cm × thường/cao/tầng (12 variants) + bánh su kem sets (5 variants)
+- Test suite expanded to 113 tests including unit tests for code generation
+
+## [0.2.1+12] — 2026-03-17
+- chore: bump patch version 0.2.0 → 0.2.1
+
 ## [0.2.1] — 2026-03-17
 - chore: bump patch version — Nix packaging + NixOS auto-start module complete
 
