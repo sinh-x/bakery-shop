@@ -10,6 +10,9 @@ Convention:
 
 import re
 
+# Accepted format: 2-3 uppercase letters, dash, 1-4 uppercase letters/digits
+_CODE_FORMAT = re.compile(r"^[A-Z]{2,3}-[A-Z0-9]{1,4}$")
+
 # Map legacy product.category values → categories.slug
 _LEGACY_CATEGORY_MAP = {
     "bread": "banh_mi",
@@ -18,6 +21,11 @@ _LEGACY_CATEGORY_MAP = {
     "cookie": "cookie",
     "other": "khac",
 }
+
+
+def validate_code_format(code: str) -> bool:
+    """Return True if *code* matches the required format ^[A-Z]{2,3}-[A-Z0-9]{1,4}$."""
+    return bool(_CODE_FORMAT.match(code))
 
 
 def get_category_prefix(conn, category_slug: str) -> str | None:

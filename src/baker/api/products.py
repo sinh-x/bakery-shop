@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import baker.config
-from baker.code_gen import generate_code
+from baker.code_gen import generate_code, validate_code_format
 from baker.db.connection import get_db
 
 
@@ -101,8 +101,13 @@ def create_product(product: ProductCreate):
                 status_code=409, detail=f"Sản phẩm '{product.name}' đã tồn tại"
             )
 
-        # Check duplicate product_code
+        # Validate and check duplicate product_code
         if product.product_code:
+            if not validate_code_format(product.product_code):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Mã sản phẩm không hợp lệ: '{product.product_code}' (định dạng: PREFIX-SUFFIX, ví dụ BMI-01)",
+                )
             code_exists = conn.execute(
                 "SELECT id FROM products WHERE product_code = ?",
                 (product.product_code,),
@@ -112,8 +117,6 @@ def create_product(product: ProductCreate):
                     status_code=409,
                     detail=f"Mã sản phẩm '{product.product_code}' đã tồn tại",
                 )
-
-        if product.product_code:
             code = product.product_code
         else:
             code = generate_code(conn, product.category) or ""
