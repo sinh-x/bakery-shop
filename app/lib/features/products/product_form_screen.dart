@@ -202,8 +202,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             // Photo section
             _PhotoSection(
               productId: widget.product?.id,
-              hasExistingPhoto:
-                  widget.product != null && widget.product!.photoPath.isNotEmpty,
               pickedPhotoPath: _pickedPhotoPath,
               baseUrl: baseUrl,
               onPickPhoto: _pickPhoto,
@@ -298,14 +296,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 class _PhotoSection extends StatelessWidget {
   const _PhotoSection({
     required this.productId,
-    required this.hasExistingPhoto,
     required this.pickedPhotoPath,
     required this.baseUrl,
     required this.onPickPhoto,
   });
 
   final int? productId;
-  final bool hasExistingPhoto;
   final String? pickedPhotoPath;
   final String baseUrl;
   final VoidCallback onPickPhoto;
@@ -344,8 +340,8 @@ class _PhotoSection extends StatelessWidget {
       );
     }
 
-    // Show existing photo from API
-    if (hasExistingPhoto && productId != null) {
+    // Show existing photo from API (always try if product exists)
+    if (productId != null) {
       return Stack(
         fit: StackFit.expand,
         children: [

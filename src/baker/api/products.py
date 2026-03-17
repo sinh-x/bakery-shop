@@ -205,14 +205,10 @@ async def upload_photo(product_id: int, file: UploadFile):
     # Store relative photo path in DB
     photo_path = f"photos/products/{product_id}.jpg"
     with get_db() as conn:
-        # Only update photo_path if column exists (migration v3)
-        try:
-            conn.execute(
-                "UPDATE products SET photo_path = ? WHERE id = ?",
-                (photo_path, product_id),
-            )
-        except Exception:
-            pass  # Column doesn't exist yet — photo is still saved on disk
+        conn.execute(
+            "UPDATE products SET photo_path = ? WHERE id = ?",
+            (photo_path, product_id),
+        )
 
     return {"message": "Đã tải lên ảnh", "photo_path": photo_path}
 

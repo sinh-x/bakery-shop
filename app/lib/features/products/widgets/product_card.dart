@@ -19,8 +19,6 @@ class ProductCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final emoji = categoryEmojiMap[product.category] ?? '';
-    final hasPhoto = product.photoPath.isNotEmpty;
-
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -29,22 +27,19 @@ class ProductCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
-              if (hasPhoto)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    '$photoBaseUrl/api/products/${product.id}/photo',
-                    width: 48,
-                    height: 48,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, e, s) => Text(
-                      emoji,
-                      style: const TextStyle(fontSize: 28),
-                    ),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  '$photoBaseUrl/api/products/${product.id}/photo',
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, e, s) => Text(
+                    emoji,
+                    style: const TextStyle(fontSize: 28),
                   ),
-                )
-              else
-                Text(emoji, style: const TextStyle(fontSize: 28)),
+                ),
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
