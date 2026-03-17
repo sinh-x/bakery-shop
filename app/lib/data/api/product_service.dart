@@ -11,10 +11,12 @@ class ProductService {
 
   Future<List<Product>> listProducts({
     String? category,
+    String? code,
     int active = 1,
   }) async {
     final params = <String, dynamic>{'active': active};
     if (category != null) params['category'] = category;
+    if (code != null) params['code'] = code;
 
     final response = await _dio.get('/api/products', queryParameters: params);
     final list = response.data as List;
@@ -28,20 +30,28 @@ class ProductService {
     return Product.fromJson(response.data as Map<String, dynamic>);
   }
 
+  Future<Product> getProductByCode(String code) async {
+    final response = await _dio.get('/api/products/code/$code');
+    return Product.fromJson(response.data as Map<String, dynamic>);
+  }
+
   Future<Product> createProduct({
     required String name,
     String category = 'bread',
     double basePrice = 0,
     double cost = 0,
     String recipeNotes = '',
+    String? productCode,
   }) async {
-    final response = await _dio.post('/api/products', data: {
+    final data = <String, dynamic>{
       'name': name,
       'category': category,
       'base_price': basePrice,
       'cost': cost,
       'recipe_notes': recipeNotes,
-    });
+    };
+    if (productCode != null) data['product_code'] = productCode;
+    final response = await _dio.post('/api/products', data: data);
     return Product.fromJson(response.data as Map<String, dynamic>);
   }
 
@@ -53,6 +63,7 @@ class ProductService {
     double? cost,
     String? recipeNotes,
     int? active,
+    String? productCode,
   }) async {
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
@@ -61,6 +72,7 @@ class ProductService {
     if (cost != null) data['cost'] = cost;
     if (recipeNotes != null) data['recipe_notes'] = recipeNotes;
     if (active != null) data['active'] = active;
+    if (productCode != null) data['product_code'] = productCode;
 
     final response = await _dio.patch('/api/products/$id', data: data);
     return Product.fromJson(response.data as Map<String, dynamic>);

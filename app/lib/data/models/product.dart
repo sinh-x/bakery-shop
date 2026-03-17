@@ -14,6 +14,7 @@ sealed class Product with _$Product {
     @Default('') @JsonKey(name: 'recipe_notes') String recipeNotes,
     @Default(1) int active,
     @Default('') @JsonKey(name: 'photo_path') String photoPath,
+    @Default('') @JsonKey(name: 'product_code') String productCode,
   }) = _Product;
 
   factory Product.fromJson(Map<String, dynamic> json) =>
