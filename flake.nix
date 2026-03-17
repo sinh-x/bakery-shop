@@ -18,6 +18,25 @@
         };
         python = pkgs.python312;
 
+        # Baker Python package (CLI + web server)
+        baker = python.pkgs.buildPythonApplication {
+          pname = "baker";
+          version = "0.1.0";
+          src = self;
+          pyproject = true;
+
+          build-system = with python.pkgs; [ setuptools ];
+
+          propagatedBuildInputs = with python.pkgs; [
+            click
+            rich
+            fastapi
+            uvicorn
+            python-multipart
+            pillow
+          ];
+        };
+
         # Android SDK configuration (for Flutter app)
         androidComposition = pkgs.androidenv.composeAndroidPackages {
           cmdLineToolsVersion = "11.0";
@@ -62,6 +81,9 @@
         bakery-clean = pkgs.writeShellScriptBin "bakery-clean" "cd app && flutter clean && flutter pub get";
       in
       {
+        packages.baker = baker;
+        packages.default = baker;
+
         # Python CLI devShell (default)
         devShells.default = pkgs.mkShell {
           packages = [
