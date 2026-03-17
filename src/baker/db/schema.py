@@ -115,6 +115,78 @@ SEED_PRODUCTS = [
     ("Bánh chuối nướng", "other", 35000, 15000, "Chuối + nước cốt dừa"),
 ]
 
+PRODUCT_CODE_AND_CATEGORIES_SCHEMA = """
+ALTER TABLE products ADD COLUMN product_code TEXT DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS categories (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug        TEXT UNIQUE NOT NULL,
+    name        TEXT NOT NULL,
+    code_prefix TEXT NOT NULL,
+    active      INTEGER DEFAULT 1
+);
+"""
+
+SEED_CATEGORIES = [
+    # (slug, name, code_prefix)
+    ("banh_mi", "Bánh mì", "BMI"),
+    ("banh_kem", "Bánh kem", "BKS"),
+    ("banh_ngot", "Bánh ngọt", "BNG"),
+    ("cookie", "Cookie", "CKI"),
+    ("khac", "Khác", "KHA"),
+]
+
+# Map old product categories to new category slugs
+_OLD_CATEGORY_TO_SLUG = {
+    "bread": "banh_mi",
+    "cake": "banh_kem",
+    "pastry": "banh_ngot",
+    "cookie": "cookie",
+    "other": "khac",
+}
+
+
+def _migrate_v4_assign_codes(conn):
+    """Seed categories and assign product codes to existing products."""
+    # Seed categories
+    for slug, name, code_prefix in SEED_CATEGORIES:
+        conn.execute(
+            "INSERT OR IGNORE INTO categories (slug, name, code_prefix) "
+            "VALUES (?, ?, ?)",
+            (slug, name, code_prefix),
+        )
+
+    # Build prefix lookup: old category -> code_prefix
+    slug_to_prefix = {slug: prefix for slug, _, prefix in SEED_CATEGORIES}
+    prefix_counters = {}
+
+    # Fetch all products ordered by id to assign codes deterministically
+    rows = conn.execute(
+        "SELECT id, category FROM products ORDER BY id"
+    ).fetchall()
+
+    for row in rows:
+        product_id = row[0]
+        old_cat = row[1]
+        slug = _OLD_CATEGORY_TO_SLUG.get(old_cat, "khac")
+        prefix = slug_to_prefix[slug]
+
+        count = prefix_counters.get(prefix, 0) + 1
+        prefix_counters[prefix] = count
+        code = f"{prefix}-{count:02d}"
+
+        conn.execute(
+            "UPDATE products SET product_code = ? WHERE id = ?",
+            (code, product_id),
+        )
+
+    # Add unique index after all codes are assigned
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_products_code "
+        "ON products(product_code) WHERE product_code != ''"
+    )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -129,6 +201,11 @@ MIGRATIONS = {
         "description": "Product photo_path column and seed 23 products",
         "sql": PHOTO_PATH_AND_SEED,
         "seed": SEED_PRODUCTS,
+    },
+    4: {
+        "description": "Product codes and categories table",
+        "sql": PRODUCT_CODE_AND_CATEGORIES_SCHEMA,
+        "callable": _migrate_v4_assign_codes,
     },
 }
 
@@ -159,6 +236,11 @@ def ensure_schema(conn):
                         "VALUES (?, ?, ?, ?, ?)",
                         (name, category, base_price, cost, recipe_notes),
                     )
+
+            # Run callable if present (for complex migrations)
+            callable_fn = MIGRATIONS[version].get("callable")
+            if callable_fn:
+                callable_fn(conn)
 
             conn.execute(
                 "INSERT INTO schema_version (version, description) VALUES (?, ?)",

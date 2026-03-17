@@ -15,8 +15,6 @@ def use_memory_db(tmp_path, monkeypatch):
     baker.config.DB_PATH = Path(db_path)
     baker.config.DATA_DIR = tmp_path
     baker.config.PHOTOS_DIR = photos_dir
-    # Also patch the module-level import in products.py
-    monkeypatch.setattr("baker.api.products.PHOTOS_DIR", photos_dir)
     yield db_path
 
 
