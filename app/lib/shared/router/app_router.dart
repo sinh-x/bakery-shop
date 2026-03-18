@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/categories/category_management_screen.dart';
+import '../../features/events/event_log_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
@@ -42,7 +43,7 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/events',
           pageBuilder: (context, state) => const NoTransitionPage(
-            child: ComingSoonScreen(icon: Icons.event_note),
+            child: EventLogScreen(),
           ),
         ),
       ],
