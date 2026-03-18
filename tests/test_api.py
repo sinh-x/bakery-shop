@@ -170,7 +170,8 @@ def test_upload_photo(api_client):
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert "photo_path" in data
+    assert "hash" in data
+    assert "url" in data
     assert "Đã tải lên" in data["message"]
 
 
@@ -190,14 +191,15 @@ def test_upload_photo_and_serve(api_client):
 def test_upload_photo_resizes_large_image(api_client):
     """Images larger than 1200px should be resized."""
     image_data = _make_test_image(width=2000, height=1500)
-    api_client.post(
+    resp = api_client.post(
         "/api/products/1/photo",
         files={"file": ("big.jpg", image_data, "image/jpeg")},
     )
 
-    # Verify the saved photo is resized
+    # Verify the saved photo is resized (saved at flat hash path)
     import baker.config
-    photo_path = baker.config.PHOTOS_DIR / "1.jpg"
+    hash_hex = resp.json()["hash"]
+    photo_path = baker.config.DATA_DIR / "photos" / f"{hash_hex}.jpg"
     assert photo_path.exists()
     saved = Image.open(photo_path)
     assert max(saved.size) <= 1200
@@ -230,7 +232,7 @@ def test_get_photo_not_found(api_client):
 # --- Photo path in product data ---
 
 
-def test_upload_photo_updates_photo_path(api_client):
+def test_upload_photo_updates_photo_id(api_client):
     image_data = _make_test_image()
     api_client.post(
         "/api/products/1/photo",
@@ -239,7 +241,7 @@ def test_upload_photo_updates_photo_path(api_client):
 
     resp = api_client.get("/api/products/1")
     assert resp.status_code == 200
-    assert resp.json()["photo_path"] == "photos/products/1.jpg"
+    assert resp.json()["photo_id"] is not None
 
 
 # --- product_code field ---

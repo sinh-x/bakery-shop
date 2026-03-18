@@ -7,6 +7,7 @@ from pydantic import BaseModel
 import baker.config
 from baker.code_gen import generate_code, validate_code_format
 from baker.db.connection import get_db
+from baker.api.photos import save_photo
 
 
 router = APIRouter(prefix="/api/products", tags=["products"])
@@ -217,24 +218,9 @@ def delete_product(product_id: int):
         return {"message": f"Đã ngừng bán sản phẩm '{row['name']}'"}
 
 
-def _resize_and_save(data: bytes, dest: str, max_size: int = 1200) -> None:
-    """Resize image to max dimension and save as JPEG."""
-    from PIL import Image
-    import io
-
-    img = Image.open(io.BytesIO(data))
-    img = img.convert("RGB")
-
-    if max(img.size) > max_size:
-        img.thumbnail((max_size, max_size), Image.LANCZOS)
-
-    img.save(dest, "JPEG", quality=85)
-
-
 @router.post("/{product_id}/photo", status_code=200)
 async def upload_photo(product_id: int, file: UploadFile):
     """Tải lên ảnh sản phẩm."""
-    # Verify product exists
     with get_db() as conn:
         row = conn.execute(
             "SELECT id FROM products WHERE id = ?", (product_id,)
@@ -242,7 +228,6 @@ async def upload_photo(product_id: int, file: UploadFile):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-    # Validate content type
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Tệp phải là hình ảnh")
 
@@ -250,29 +235,39 @@ async def upload_photo(product_id: int, file: UploadFile):
     if not data:
         raise HTTPException(status_code=400, detail="Tệp rỗng")
 
-    baker.config.PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
-    dest = str(baker.config.PHOTOS_DIR / f"{product_id}.jpg")
-
     try:
-        _resize_and_save(data, dest)
+        hash_hex = save_photo(data, file.filename or "")
     except Exception:
         raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
 
-    # Store relative photo path in DB
-    photo_path = f"photos/products/{product_id}.jpg"
     with get_db() as conn:
-        conn.execute(
-            "UPDATE products SET photo_path = ? WHERE id = ?",
-            (photo_path, product_id),
-        )
+        photo_row = conn.execute(
+            "SELECT id FROM photos WHERE hash = ?", (hash_hex,)
+        ).fetchone()
+        if photo_row:
+            conn.execute(
+                "UPDATE products SET photo_id = ? WHERE id = ?",
+                (photo_row[0], product_id),
+            )
 
-    return {"message": "Đã tải lên ảnh", "photo_path": photo_path}
+    return {"message": "Đã tải lên ảnh", "hash": hash_hex, "url": f"/api/photos/{hash_hex}.jpg"}
 
 
 @router.get("/{product_id}/photo")
 def get_photo(product_id: int):
     """Lấy ảnh sản phẩm."""
-    photo_file = baker.config.PHOTOS_DIR / f"{product_id}.jpg"
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT ph.hash FROM products p "
+            "LEFT JOIN photos ph ON p.photo_id = ph.id "
+            "WHERE p.id = ?",
+            (product_id,),
+        ).fetchone()
+
+    if not row or not row["hash"]:
+        raise HTTPException(status_code=404, detail="Chưa có ảnh cho sản phẩm này")
+
+    photo_file = baker.config.DATA_DIR / "photos" / f"{row['hash']}.jpg"
     if not photo_file.exists():
         raise HTTPException(status_code=404, detail="Chưa có ảnh cho sản phẩm này")
     return FileResponse(str(photo_file), media_type="image/jpeg")
