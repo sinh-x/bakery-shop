@@ -41,6 +41,18 @@ bakery-test
 bakery-analyze
 ```
 
+## Deploy to Device
+
+```bash
+# Build release APK and install on all connected devices
+./tool/deploy.sh
+
+# Install only on a specific device (match by serial or model)
+./tool/deploy.sh Samsung
+```
+
+Requires `adb` (included in the Nix flutter devshell) and a USB-connected Android device with developer mode enabled.
+
 ## APK Installation
 
 Pre-built APKs are in `releases/`:
