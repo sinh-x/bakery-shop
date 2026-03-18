@@ -45,6 +45,56 @@ def db_status():
                 click.echo(f"  v{r['version']} ({r['applied_at'][:16]}): {r['description']}")
 
 
+@db_cmd.command("migrate")
+@click.option("--backup/--no-backup", default=True, help="Backup before migrating (default: yes)")
+@click.option("--dry-run", is_flag=True, help="Show pending migrations without applying them")
+def db_migrate(backup, dry_run):
+    """Apply pending schema migrations.
+
+    Automatically backs up the database before running migrations (use --no-backup to skip).
+    Safe to run multiple times — already-applied migrations are skipped.
+    """
+    import baker.config
+    from baker.db.schema import ensure_schema
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
+        ).fetchone()
+        current = 0
+        if row:
+            r = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+            current = r[0] if r[0] else 0
+
+        pending = [v for v in sorted(MIGRATIONS.keys()) if v > current]
+
+        if not pending:
+            click.echo(f"Already up to date (schema version {current}).")
+            return
+
+        click.echo(f"Current version: v{current}")
+        click.echo(f"Pending ({len(pending)}):")
+        for v in pending:
+            click.echo(f"  v{v}: {MIGRATIONS[v]['description']}")
+
+        if dry_run:
+            click.echo("\nDry run — no changes made.")
+            return
+
+        if backup:
+            import shutil
+            from datetime import datetime
+            src = baker.config.DB_PATH
+            if src.exists():
+                ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+                bak = src.parent / f"baker-backup-pre-migrate-{ts}.db"
+                shutil.copy2(src, bak)
+                click.echo(f"\nBackup: {bak}")
+
+        ensure_schema(conn)
+        click.echo(f"\nMigrations applied. Schema is now at v{max(MIGRATIONS.keys())}.")
+
+
 @db_cmd.command("backup")
 @click.option("--dest", default=None, help="Destination file path (default: same dir as DB, timestamped)")
 def db_backup(dest):
