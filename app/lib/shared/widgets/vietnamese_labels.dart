@@ -73,7 +73,36 @@ class VN {
   static const eventDelivery = 'Giao hàng';
   static const eventExpense = 'Chi phí';
 
-  // Event form
+  // Event types (chips)
+  static const typeIncident = 'Sự cố';
+
+  // Event log form
+  static const eventPrompt = 'Chuyện gì xảy ra?';
+  static const eventLogged = 'Đã ghi sự kiện';
+  static const loggedBy = 'Người ghi';
+  static const changeLogger = 'Đổi';
+  static const setYourName = 'Nhập tên của bạn';
+  static const addTag = 'Thêm';
+
+  // Event tags
+  static const tagIncident = 'Sự cố';
+  static const tagKnowledgeGap = 'Thiếu thông tin';
+  static const tagMaintenance = 'Bảo trì';
+  static const tagEquipment = 'Thiết bị';
+  static const tagPricing = 'Giá cả';
+  static const tagOrdering = 'Đặt hàng';
+  static const tagDecoration = 'Trang trí';
+  static const tagStaff = 'Nhân viên';
+
+  // Event history filters (Phase 5)
+  static const filterToday = 'Hôm nay';
+  static const filterWeek = 'Tuần này';
+  static const filterMonth = 'Tháng này';
+  static const filterAll = 'Tất cả';
+  static const searchEvents = 'Tìm sự kiện...';
+  static const noEvents = 'Chưa có sự kiện';
+
+  // Event form (legacy)
   static const eventType = 'Loại sự kiện';
   static const eventSummary = 'Mô tả sự kiện';
   static const logEvent = 'GHI SỰ KIỆN';
