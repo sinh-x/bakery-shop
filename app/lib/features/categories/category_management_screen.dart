@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models/category.dart';
 import '../../providers/categories_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+import 'category_form.dart';
 
 class CategoryManagementScreen extends ConsumerWidget {
   const CategoryManagementScreen({super.key});
@@ -39,9 +40,7 @@ class CategoryManagementScreen extends ConsumerWidget {
       ),
       floatingActionButton: FloatingActionButton(
         tooltip: VN.addCategory,
-        onPressed: () {
-          // Phase 4: show add-category form
-        },
+        onPressed: () => showCategoryForm(context),
         child: const Icon(Icons.add),
       ),
     );
@@ -146,9 +145,7 @@ class _ActiveCategoryTile extends ConsumerWidget {
             const Icon(Icons.chevron_right),
           ],
         ),
-        onTap: () {
-          // Phase 4: show edit-category form
-        },
+        onTap: () => showCategoryForm(context, category: category),
       ),
     );
   }
