@@ -353,7 +353,7 @@ def test_create_product_invalid_code_format(api_client):
         "product_code": "invalid-code",
     })
     assert resp.status_code == 422
-    assert "Mã sản phẩm không hợp lệ" in resp.json()["detail"]
+    assert "BMI-" in resp.json()["detail"]
 
 
 def test_create_product_duplicate_code(api_client):

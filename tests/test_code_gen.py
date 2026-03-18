@@ -34,6 +34,11 @@ def db_conn(use_memory_db):
     "AB-1",
     "AB-AB",
     "ABC-1234",
+    # Relaxed: 4-char prefix, long suffix, mixed-case suffix, single-char prefix
+    "ABCD-01",
+    "BMI-12345",
+    "BMI-0a",
+    "B-01",
 ])
 def test_validate_code_format_valid(code):
     assert validate_code_format(code) is True
@@ -41,14 +46,10 @@ def test_validate_code_format_valid(code):
 
 @pytest.mark.parametrize("code", [
     "",
-    "bmi-01",           # lowercase
+    "bmi-01",           # lowercase prefix
     "BMI01",            # no dash
-    "B-01",             # prefix too short (1 char)
-    "ABCD-01",          # prefix too long (4 chars)
     "BMI-",             # empty suffix
-    "BMI-12345",        # suffix too long (5 chars)
     "BMI 01",           # space instead of dash
-    "BMI-0a",           # lowercase in suffix
 ])
 def test_validate_code_format_invalid(code):
     assert validate_code_format(code) is False

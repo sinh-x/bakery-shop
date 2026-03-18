@@ -107,6 +107,11 @@ def update_category(category_id: int, update: CategoryUpdate):
         fields: list[str] = []
         values: list = []
 
+        old_prefix = existing["code_prefix"]
+        prefix_changed = (
+            update.code_prefix is not None and update.code_prefix != old_prefix
+        )
+
         if update.name is not None:
             fields.append("name = ?")
             values.append(update.name)
@@ -124,6 +129,16 @@ def update_category(category_id: int, update: CategoryUpdate):
         conn.execute(
             f"UPDATE categories SET {', '.join(fields)} WHERE id = ?", values
         )
+
+        # Cascade prefix change to ALL products in this category (including inactive)
+        if prefix_changed:
+            conn.execute(
+                "UPDATE products "
+                "SET product_code = ? || substr(product_code, length(?)+1) "
+                "WHERE category = ? AND product_code LIKE ?",
+                (update.code_prefix, old_prefix, existing["slug"], f"{old_prefix}-%"),
+            )
+
         row = conn.execute(
             "SELECT * FROM categories WHERE id = ?", (category_id,)
         ).fetchone()

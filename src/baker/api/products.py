@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import baker.config
-from baker.code_gen import generate_code, validate_code_format
+from baker.code_gen import generate_code, get_category_prefix
 from baker.db.connection import get_db
 from baker.api.photos import save_photo
 
@@ -102,23 +102,29 @@ def create_product(product: ProductCreate):
                 status_code=409, detail=f"Sản phẩm '{product.name}' đã tồn tại"
             )
 
-        # Validate and check duplicate product_code
+        # Resolve product_code: auto-prefix from category if needed
         if product.product_code:
-            if not validate_code_format(product.product_code):
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Mã sản phẩm không hợp lệ: '{product.product_code}' (định dạng: PREFIX-SUFFIX, ví dụ BMI-01)",
-                )
+            prefix = get_category_prefix(conn, product.category)
+            if "-" not in product.product_code:
+                # Suffix-only provided — auto-prefix
+                code = f"{prefix}-{product.product_code}" if prefix else product.product_code
+            else:
+                # Full code provided — validate prefix matches category
+                if prefix and not product.product_code.startswith(f"{prefix}-"):
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Mã sản phẩm phải bắt đầu bằng '{prefix}-' cho danh mục này",
+                    )
+                code = product.product_code
             code_exists = conn.execute(
                 "SELECT id FROM products WHERE product_code = ?",
-                (product.product_code,),
+                (code,),
             ).fetchone()
             if code_exists:
                 raise HTTPException(
                     status_code=409,
-                    detail=f"Mã sản phẩm '{product.product_code}' đã tồn tại",
+                    detail=f"Mã sản phẩm '{code}' đã tồn tại",
                 )
-            code = product.product_code
         else:
             code = generate_code(conn, product.category) or ""
         cursor = conn.execute(
@@ -169,6 +175,23 @@ def update_product(product_id: int, product: ProductUpdate):
                     status_code=409,
                     detail=f"Sản phẩm '{data['name']}' đã tồn tại",
                 )
+
+        # Resolve effective category (new or current)
+        effective_category = data.get("category", row["category"])
+
+        # Auto-prefix suffix-only product_code
+        if "product_code" in data and data["product_code"] and "-" not in data["product_code"]:
+            prefix = get_category_prefix(conn, effective_category)
+            if prefix:
+                data["product_code"] = f"{prefix}-{data['product_code']}"
+
+        # When category changes and no explicit product_code provided, update prefix
+        if "category" in data and data["category"] != row["category"] and "product_code" not in data:
+            new_prefix = get_category_prefix(conn, data["category"])
+            current_code = row["product_code"] or ""
+            if new_prefix and current_code and "-" in current_code:
+                old_suffix = current_code.split("-", 1)[1]
+                data["product_code"] = f"{new_prefix}-{old_suffix}"
 
         # Check product_code uniqueness if being changed
         if (
