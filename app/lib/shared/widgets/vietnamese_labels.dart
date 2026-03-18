@@ -119,6 +119,27 @@ class VN {
   static const noProducts = 'Không có sản phẩm';
   static const apiError = 'Không thể kết nối máy chủ';
 
+  // Category management
+  static const manageCategories = 'Quản lý danh mục';
+  static const addCategory = 'Thêm danh mục';
+  static const editCategory = 'Sửa danh mục';
+  static const categoryName = 'Tên danh mục';
+  static const codePrefix = 'Mã viết tắt';
+  static const codePrefixHint = 'VD: BMI, BKS';
+  static const codePrefixHelp = '2-4 ký tự in hoa, dùng tạo mã sản phẩm';
+  static const categorySlug = 'Slug';
+  static const deactivateCategory = 'Ẩn danh mục';
+  static const reactivateCategory = 'Hiện danh mục';
+  static const deactivateConfirm =
+      'Ẩn danh mục? Sản phẩm vẫn còn nhưng tab sẽ bị ẩn.';
+  static const hiddenCategories = 'Đã ẩn';
+  static const categoryCreated = 'Đã thêm danh mục';
+  static const categoryUpdated = 'Đã cập nhật danh mục';
+  static const categoryDeactivated = 'Đã ẩn danh mục';
+  static const categoryReactivated = 'Đã hiện danh mục';
+  static const noPrefixError = 'Mã viết tắt không được để trống';
+  static const prefixFormatError = 'Mã viết tắt phải 2-4 ký tự in hoa';
+
   // Settings
   static const settings = 'Cài đặt';
   static const apiUrlLabel = 'Địa chỉ máy chủ';

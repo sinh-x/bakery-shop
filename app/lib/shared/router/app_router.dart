@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/categories/category_management_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
@@ -60,6 +61,12 @@ final appRouter = GoRouter(
         final id = int.parse(state.pathParameters['id']!);
         return _ProductEditLoader(productId: id);
       },
+    ),
+    // Category management — full-screen (outside shell)
+    GoRoute(
+      path: '/categories/manage',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const CategoryManagementScreen(),
     ),
     // Settings — full-screen (outside shell)
     GoRoute(

@@ -58,6 +58,11 @@ class ProductCatalogScreen extends ConsumerWidget {
           title: const Text(VN.tabProducts),
           actions: [
             IconButton(
+              icon: const Icon(Icons.tune),
+              tooltip: VN.manageCategories,
+              onPressed: () => context.push('/categories/manage'),
+            ),
+            IconButton(
               icon: const Icon(Icons.settings),
               tooltip: VN.settings,
               onPressed: () => context.push('/settings'),

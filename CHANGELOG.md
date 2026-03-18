@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.2+3] — 2026-03-18
+- docs: add ROADMAP + unreleased v0.2.3-v0.2.5 to CHANGELOG
+
 ## [Unreleased — v0.2.x]
 
 ### Planned (approved, in implementation queue)
