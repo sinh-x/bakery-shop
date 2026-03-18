@@ -152,6 +152,20 @@ class VN {
   static const urlEmpty = 'Vui lòng nhập địa chỉ';
   static const testing = 'Đang kiểm tra...';
 
+  // Catalog gallery
+  static const catalogTitle = 'Bộ sưu tập';
+  static const addCatalogPhoto = 'Thêm ảnh mẫu';
+  static const editCatalogPhoto = 'Sửa ảnh';
+  static const deleteCatalogPhoto = 'Xóa ảnh';
+  static const deleteCatalogConfirm = 'Bạn có chắc muốn xóa ảnh này?';
+  static const captionLabel = 'Mô tả';
+  static const tagsLabel = 'Nhãn';
+  static const tagsHint = 'VD: hoa, hồng, sinh nhật';
+  static const noCatalogPhotos = 'Chưa có ảnh mẫu';
+  static const catalogPhotoAdded = 'Đã thêm ảnh mẫu';
+  static const catalogPhotoUpdated = 'Đã cập nhật ảnh';
+  static const catalogPhotoDeleted = 'Đã xóa ảnh';
+
   // General
   static const remove = 'Xóa';
   static const save = 'Lưu';

@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.2+4] — 2026-03-18
+- docs: mark v0.2.3 category management UI as done in ROADMAP
+
 ## [0.2.2+3] — 2026-03-18
 - docs: add ROADMAP + unreleased v0.2.3-v0.2.5 to CHANGELOG
 

@@ -7,10 +7,13 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/api_client.dart';
+import '../../data/models/catalog_photo.dart';
 import '../../data/models/product.dart';
+import '../../providers/catalog_provider.dart';
 import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+import 'widgets/catalog_photo_viewer.dart';
 
 /// Shared form for creating and editing products.
 class ProductFormScreen extends ConsumerStatefulWidget {
@@ -358,6 +361,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                     )
                   : Text(VN.save),
             ),
+
+            // Catalog gallery (editing only)
+            if (_isEditing) ...[
+              const SizedBox(height: 32),
+              _CatalogGallerySection(productId: widget.product!.id),
+            ],
           ],
         ),
       ),
@@ -452,6 +461,297 @@ class _PhotoSection extends StatelessWidget {
           shape: BoxShape.circle,
         ),
         child: const Icon(Icons.edit, color: Colors.white, size: 20),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Catalog gallery section
+// ---------------------------------------------------------------------------
+
+class _CatalogGallerySection extends ConsumerStatefulWidget {
+  const _CatalogGallerySection({required this.productId});
+
+  final int productId;
+
+  @override
+  ConsumerState<_CatalogGallerySection> createState() =>
+      _CatalogGallerySectionState();
+}
+
+class _CatalogGallerySectionState
+    extends ConsumerState<_CatalogGallerySection> {
+  bool _uploading = false;
+
+  Future<void> _pickAndUpload() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text(VN.takePhoto),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text(VN.fromGallery),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    final picker = ImagePicker();
+    final file = await picker.pickImage(source: source, maxWidth: 1200);
+    if (file == null) return;
+
+    setState(() => _uploading = true);
+    try {
+      await ref
+          .read(catalogProvider(widget.productId).notifier)
+          .addPhoto(file.path);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(VN.catalogPhotoAdded)),
+        );
+      }
+    } on DioException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message ?? VN.apiError)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _confirmDelete(CatalogPhoto photo) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(VN.deleteCatalogPhoto),
+        content: const Text(VN.deleteCatalogConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(VN.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(VN.remove),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await ref
+          .read(catalogProvider(widget.productId).notifier)
+          .deletePhoto(photo.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(VN.catalogPhotoDeleted)),
+        );
+      }
+    } on DioException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message ?? VN.apiError)),
+        );
+      }
+    }
+  }
+
+  void _openFullScreen(
+    List<CatalogPhoto> photos,
+    int initialIndex,
+    String baseUrl,
+  ) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (ctx) => CatalogPhotoViewer(
+          photos: photos,
+          initialIndex: initialIndex,
+          productId: widget.productId,
+          baseUrl: baseUrl,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final catalogAsync = ref.watch(catalogProvider(widget.productId));
+    final baseUrl = ref.watch(apiBaseUrlProvider);
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Text(VN.catalogTitle, style: theme.textTheme.titleMedium),
+              if (_uploading) ...[
+                const SizedBox(width: 12),
+                const SizedBox(
+                  height: 16,
+                  width: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ],
+            ],
+          ),
+        ),
+        catalogAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, st) => Text(
+            VN.errorLoading,
+            style: TextStyle(color: theme.colorScheme.error),
+          ),
+          data: (photos) => Column(
+            children: [
+              if (photos.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    VN.noCatalogPhotos,
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: Colors.grey),
+                  ),
+                ),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate:
+                    const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                ),
+                itemCount: photos.length + 1,
+                itemBuilder: (ctx, index) {
+                  if (index == photos.length) {
+                    return _AddPhotoCard(
+                      uploading: _uploading,
+                      onTap: _pickAndUpload,
+                    );
+                  }
+                  final photo = photos[index];
+                  final url =
+                      '$baseUrl/api/products/${widget.productId}/catalog/${photo.id}/photo';
+                  return _CatalogPhotoCard(
+                    url: url,
+                    onTap: () => _openFullScreen(photos, index, baseUrl),
+                    onDelete: () => _confirmDelete(photo),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AddPhotoCard extends StatelessWidget {
+  const _AddPhotoCard({required this.uploading, required this.onTap});
+
+  final bool uploading;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AspectRatio(
+      aspectRatio: 1,
+      child: Material(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: uploading ? null : onTap,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              uploading
+                  ? const CircularProgressIndicator()
+                  : const Icon(Icons.add_photo_alternate_outlined, size: 36),
+              const SizedBox(height: 8),
+              Text(
+                VN.addCatalogPhoto,
+                style: theme.textTheme.bodySmall,
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CatalogPhotoCard extends StatelessWidget {
+  const _CatalogPhotoCard({
+    required this.url,
+    required this.onTap,
+    required this.onDelete,
+  });
+
+  final String url;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: onDelete,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.network(
+              url,
+              fit: BoxFit.cover,
+              errorBuilder: (_, e, s) => Container(
+                color: Colors.grey[200],
+                child: const Icon(Icons.broken_image, color: Colors.grey),
+              ),
+            ),
+            Positioned(
+              top: 4,
+              right: 4,
+              child: GestureDetector(
+                onTap: onDelete,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.delete_outline,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
