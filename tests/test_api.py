@@ -440,3 +440,86 @@ def test_create_category_duplicate_slug(api_client):
     })
     assert resp.status_code == 409
     assert "đã tồn tại" in resp.json()["detail"]
+
+# --- include_inactive query param ---
+
+def test_list_categories_default_excludes_inactive(api_client):
+    # Deactivate one category
+    cats = api_client.get("/api/categories").json()
+    cat_id = cats[0]["id"]
+    api_client.patch(f"/api/categories/{cat_id}", json={"active": 0})
+    resp = api_client.get("/api/categories")
+    active_ids = [c["id"] for c in resp.json()]
+    assert cat_id not in active_ids
+
+
+def test_list_categories_include_inactive(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat_id = cats[0]["id"]
+    api_client.patch(f"/api/categories/{cat_id}", json={"active": 0})
+    resp = api_client.get("/api/categories", params={"include_inactive": 1})
+    all_ids = [c["id"] for c in resp.json()]
+    assert cat_id in all_ids
+
+
+# --- PATCH /api/categories/{id} ---
+
+def test_update_category_name(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = next(c for c in cats if c["slug"] == "khac")
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={"name": "Khác loại"})
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Khác loại"
+    assert resp.json()["slug"] == "khac"
+
+
+def test_update_category_code_prefix(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = next(c for c in cats if c["slug"] == "khac")
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={"code_prefix": "KHC"})
+    assert resp.status_code == 200
+    assert resp.json()["code_prefix"] == "KHC"
+
+
+def test_update_category_deactivate(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = cats[0]
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={"active": 0})
+    assert resp.status_code == 200
+    assert resp.json()["active"] == 0
+
+
+def test_update_category_reactivate(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = cats[0]
+    api_client.patch(f"/api/categories/{cat['id']}", json={"active": 0})
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={"active": 1})
+    assert resp.status_code == 200
+    assert resp.json()["active"] == 1
+
+
+def test_update_category_not_found(api_client):
+    resp = api_client.patch("/api/categories/99999", json={"name": "X"})
+    assert resp.status_code == 404
+
+
+def test_update_category_empty_name_rejected(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = cats[0]
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={"name": ""})
+    assert resp.status_code == 422
+
+
+def test_update_category_bad_prefix_rejected(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = cats[0]
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={"code_prefix": "x"})
+    assert resp.status_code == 422
+
+
+def test_update_category_no_fields_returns_unchanged(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = cats[0]
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={})
+    assert resp.status_code == 200
+    assert resp.json()["id"] == cat["id"]

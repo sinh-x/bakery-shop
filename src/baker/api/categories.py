@@ -1,7 +1,9 @@
 """Category CRUD API routes."""
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+import re
+
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, field_validator
 
 from baker.db.connection import get_db
 
@@ -14,18 +16,57 @@ class CategoryCreate(BaseModel):
     name: str
     code_prefix: str
 
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Tên danh mục không được để trống")
+        return v
+
+    @field_validator("code_prefix")
+    @classmethod
+    def code_prefix_format(cls, v: str) -> str:
+        if not re.fullmatch(r"[A-Z]{2,4}", v):
+            raise ValueError("Mã viết tắt phải 2-4 ký tự in hoa")
+        return v
+
+
+class CategoryUpdate(BaseModel):
+    name: str | None = None
+    code_prefix: str | None = None
+    active: int | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: str | None) -> str | None:
+        if v is not None and not v.strip():
+            raise ValueError("Tên danh mục không được để trống")
+        return v
+
+    @field_validator("code_prefix")
+    @classmethod
+    def code_prefix_format(cls, v: str | None) -> str | None:
+        if v is not None and not re.fullmatch(r"[A-Z]{2,4}", v):
+            raise ValueError("Mã viết tắt phải 2-4 ký tự in hoa")
+        return v
+
 
 def _row_to_dict(row) -> dict:
     return dict(row)
 
 
 @router.get("")
-def list_categories():
-    """Danh sách categories."""
+def list_categories(include_inactive: int = Query(0)):
+    """Danh sách categories. include_inactive=1 trả về cả categories đã ẩn."""
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM categories WHERE active = 1 ORDER BY slug"
-        ).fetchall()
+        if include_inactive:
+            rows = conn.execute(
+                "SELECT * FROM categories ORDER BY active DESC, slug"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM categories WHERE active = 1 ORDER BY slug"
+            ).fetchall()
         return [_row_to_dict(r) for r in rows]
 
 
@@ -49,5 +90,41 @@ def create_category(category: CategoryCreate):
         new_id = cursor.lastrowid
         row = conn.execute(
             "SELECT * FROM categories WHERE id = ?", (new_id,)
+        ).fetchone()
+        return _row_to_dict(row)
+
+
+@router.patch("/{category_id}")
+def update_category(category_id: int, update: CategoryUpdate):
+    """Cập nhật category (name, code_prefix, active)."""
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT * FROM categories WHERE id = ?", (category_id,)
+        ).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Category không tồn tại")
+
+        fields: list[str] = []
+        values: list = []
+
+        if update.name is not None:
+            fields.append("name = ?")
+            values.append(update.name)
+        if update.code_prefix is not None:
+            fields.append("code_prefix = ?")
+            values.append(update.code_prefix)
+        if update.active is not None:
+            fields.append("active = ?")
+            values.append(update.active)
+
+        if not fields:
+            return _row_to_dict(existing)
+
+        values.append(category_id)
+        conn.execute(
+            f"UPDATE categories SET {', '.join(fields)} WHERE id = ?", values
+        )
+        row = conn.execute(
+            "SELECT * FROM categories WHERE id = ?", (category_id,)
         ).fetchone()
         return _row_to_dict(row)
