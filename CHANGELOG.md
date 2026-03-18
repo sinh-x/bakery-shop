@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased — v0.2.x]
+
+### Planned (approved, in implementation queue)
+
+- **v0.2.3 — Category Management UI** (`feature/category-management-ui`)
+  - Flutter: manage icon on Products screen → Category Management Screen (add / edit / deactivate / reactivate)
+  - API: `PATCH /api/categories/{id}`, `GET /api/categories?include_inactive=1`
+
+- **v0.2.4 — Product Catalog Gallery** (`feature/product-catalog-gallery`)
+  - DB: new `product_catalog_photos` table (id, product_id, file_path, caption, tags, position)
+  - API: `GET/POST /api/products/{id}/catalog`, `PATCH/DELETE /api/products/{id}/catalog/{photo_id}`
+  - Flutter: gallery grid tab on product detail, full-screen viewer, add/edit/delete photo flows
+
+- **v0.2.5 — Event Logging UI** (`feature/event-logging-ui`)
+  - Replace Events "Coming Soon" tab with quick-log form + filterable event history
+  - API: `POST /api/events`, `GET /api/events` (with filters), `GET /api/events/{id}`
+  - Flutter: chip-based type/tag selector, logged-by preference, event history list
+
+---
+
 ## [0.2.2] — 2026-03-18
 
 ### Added
