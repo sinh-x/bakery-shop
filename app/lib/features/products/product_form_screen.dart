@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/catalog_photo.dart';
+import '../../data/models/category.dart';
 import '../../data/models/product.dart';
 import '../../providers/catalog_provider.dart';
 import '../../providers/categories_provider.dart';
@@ -17,10 +18,13 @@ import 'widgets/catalog_photo_viewer.dart';
 
 /// Shared form for creating and editing products.
 class ProductFormScreen extends ConsumerStatefulWidget {
-  const ProductFormScreen({super.key, this.product});
+  const ProductFormScreen({super.key, this.product, this.initialCategory});
 
   /// If null, we're creating a new product; otherwise editing.
   final Product? product;
+
+  /// Pre-selected category slug (e.g. from catalog tab).
+  final String? initialCategory;
 
   @override
   ConsumerState<ProductFormScreen> createState() => _ProductFormScreenState();
@@ -39,6 +43,15 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   bool get _isEditing => widget.product != null;
 
+  /// Extracts the suffix part after the first '-' in a product code.
+  /// E.g. "BKS-016" → "016", "BKS" → "BKS", "" → "".
+  static String _extractSuffix(String? fullCode) {
+    if (fullCode == null || fullCode.isEmpty || !fullCode.contains('-')) {
+      return fullCode ?? '';
+    }
+    return fullCode.substring(fullCode.indexOf('-') + 1);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -49,8 +62,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _costCtrl = TextEditingController(
         text: p != null && p.cost > 0 ? p.cost.toInt().toString() : '');
     _notesCtrl = TextEditingController(text: p?.recipeNotes ?? '');
-    _codeCtrl = TextEditingController(text: p?.productCode ?? '');
-    _category = p?.category ?? 'banh_kem';
+    // Store only the suffix portion so the prefix can be shown read-only.
+    _codeCtrl = TextEditingController(text: _extractSuffix(p?.productCode));
+    _category = widget.initialCategory ?? p?.category ?? 'banh_kem';
   }
 
   @override
@@ -103,7 +117,20 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       final cost = double.tryParse(_costCtrl.text) ?? 0;
 
       Product saved;
-      final code = _codeCtrl.text.trim();
+      // Build full product code: prefix (from category) + '-' + suffix (user input).
+      final suffix = _codeCtrl.text.trim();
+      final cats = ref.read(categoriesProvider).asData?.value;
+      final prefix = cats
+              ?.firstWhere(
+                (c) => c.slug == _category,
+                orElse: () =>
+                    const Category(id: 0, slug: '', name: '', codePrefix: '', active: 1),
+              )
+              .codePrefix ??
+          '';
+      final code = prefix.isNotEmpty && suffix.isNotEmpty
+          ? '$prefix-$suffix'
+          : suffix;
       if (_isEditing) {
         final orig = widget.product!;
         final newName = _nameCtrl.text.trim();
@@ -212,6 +239,18 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final baseUrl = ref.watch(apiBaseUrlProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
 
+    // Compute the read-only prefix for the current category.
+    final currentPrefix = categoriesAsync.maybeWhen(
+      data: (cats) => cats
+          .firstWhere(
+            (c) => c.slug == _category,
+            orElse: () =>
+                const Category(id: 0, slug: '', name: '', codePrefix: '', active: 1),
+          )
+          .codePrefix,
+      orElse: () => '',
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEditing ? VN.editProduct : VN.createProduct),
@@ -248,12 +287,13 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Product code
+            // Product code — prefix is read-only, user edits suffix only
             TextFormField(
               controller: _codeCtrl,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: VN.productCode,
-                hintText: 'VD: BKS-16',
+                prefixText: currentPrefix.isNotEmpty ? '$currentPrefix-' : null,
+                hintText: currentPrefix.isEmpty ? 'VD: BKS-16' : '16',
                 helperText: 'Tự động tạo nếu để trống',
               ),
               textCapitalization: TextCapitalization.characters,

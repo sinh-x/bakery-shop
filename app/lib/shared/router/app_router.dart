@@ -52,7 +52,9 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/products/new',
       parentNavigatorKey: _rootNavigatorKey,
-      builder: (context, state) => const ProductFormScreen(),
+      builder: (context, state) => ProductFormScreen(
+        initialCategory: state.uri.queryParameters['category'],
+      ),
     ),
     // Product edit — full-screen (outside shell)
     GoRoute(
