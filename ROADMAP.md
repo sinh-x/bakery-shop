@@ -14,7 +14,7 @@
 
 | Version | Feature | Branch | Status |
 |---------|---------|--------|--------|
-| v0.2.3 | Category Management UI | `feature/category-management-ui` | ⏳ Queued |
+| v0.2.3 | Category Management UI | `feature/category-management-ui` | ✅ Done (merged develop) |
 | v0.2.4 | Product Catalog Gallery | `feature/product-catalog-gallery` | ⏳ Queued |
 | v0.2.5 | Event Logging UI | `feature/event-logging-ui` | ⏳ Queued |
 
