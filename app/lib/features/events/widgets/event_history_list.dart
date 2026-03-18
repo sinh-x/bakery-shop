@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../data/models/event.dart';
 import '../../../providers/events_provider.dart';
@@ -297,7 +298,9 @@ class _EventCard extends StatelessWidget {
     final theme = Theme.of(context);
     final icon = _kTypeIcons[event.type] ?? Icons.event_note;
 
-    return Padding(
+    return InkWell(
+      onTap: () => context.push('/events/${event.id}', extra: event),
+      child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -377,6 +380,7 @@ class _EventCard extends StatelessWidget {
           ),
         ],
       ),
+    ),
     );
   }
 

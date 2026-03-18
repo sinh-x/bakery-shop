@@ -69,6 +69,26 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     state = state.whenData((events) => [event, ...events]);
   }
 
+  Future<void> updateEvent({
+    required int id,
+    String? summary,
+    String? type,
+    List<String>? tags,
+    String? loggedBy,
+  }) async {
+    final service = ref.read(eventServiceProvider);
+    final updated = await service.updateEvent(
+      id,
+      summary: summary,
+      type: type,
+      tags: tags,
+      loggedBy: loggedBy,
+    );
+    state = state.whenData(
+      (events) => events.map((e) => e.id == id ? updated : e).toList(),
+    );
+  }
+
   Future<void> refresh({
     String? type,
     String? tag,

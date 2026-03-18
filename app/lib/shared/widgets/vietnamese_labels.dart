@@ -74,7 +74,7 @@ class VN {
   static const eventExpense = 'Chi phí';
 
   // Event types (chips)
-  static const typeIncident = 'Sự cố';
+  static const typeIncident = 'Đồ điện/Dụng cụ làm bánh';
 
   // Event log form
   static const eventPrompt = 'Chuyện gì xảy ra?';
@@ -102,11 +102,17 @@ class VN {
   static const searchEvents = 'Tìm sự kiện...';
   static const noEvents = 'Chưa có sự kiện';
 
-  // Event form (legacy)
+  // Event form
   static const eventType = 'Loại sự kiện';
   static const eventSummary = 'Mô tả sự kiện';
   static const logEvent = 'GHI SỰ KIỆN';
   static const recentEvents = 'Sự kiện gần đây';
+  static const createEvent = 'Thêm sự kiện';
+  static const editEvent = 'Sửa sự kiện';
+  static const deleteEvent = 'Xóa sự kiện';
+  static const deleteEventConfirm = 'Bạn có chắc muốn xóa sự kiện này?';
+  static const eventDeleted = 'Đã xóa sự kiện';
+  static const eventUpdated = 'Đã cập nhật sự kiện';
 
   // Dashboard
   static const todayOrders = 'Đơn hàng hôm nay';

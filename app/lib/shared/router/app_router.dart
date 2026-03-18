@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/models/event.dart';
 import '../../features/categories/category_management_screen.dart';
-import '../../features/events/event_log_screen.dart';
+import '../../features/events/event_detail_screen.dart';
+import '../../features/events/event_form_screen.dart';
+import '../../features/events/event_list_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
@@ -43,7 +46,7 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/events',
           pageBuilder: (context, state) => const NoTransitionPage(
-            child: EventLogScreen(),
+            child: EventListScreen(),
           ),
         ),
       ],
@@ -63,6 +66,30 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final id = int.parse(state.pathParameters['id']!);
         return _ProductEditLoader(productId: id);
+      },
+    ),
+    // Event create — full-screen (outside shell)
+    GoRoute(
+      path: '/events/new',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const EventFormScreen(),
+    ),
+    // Event detail — full-screen (outside shell)
+    GoRoute(
+      path: '/events/:id',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final event = state.extra as BakeryEvent;
+        return EventDetailScreen(event: event);
+      },
+    ),
+    // Event edit — full-screen (outside shell)
+    GoRoute(
+      path: '/events/:id/edit',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final event = state.extra as BakeryEvent;
+        return EventFormScreen(event: event);
       },
     ),
     // Category management — full-screen (outside shell)

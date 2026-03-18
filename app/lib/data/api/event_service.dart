@@ -57,6 +57,22 @@ class EventService {
     final response = await _dio.get('/api/events/$id');
     return BakeryEvent.fromJson(response.data as Map<String, dynamic>);
   }
+
+  Future<BakeryEvent> updateEvent(
+    int id, {
+    String? summary,
+    String? type,
+    List<String>? tags,
+    String? loggedBy,
+  }) async {
+    final body = <String, dynamic>{};
+    if (summary != null) body['summary'] = summary;
+    if (type != null) body['type'] = type;
+    if (tags != null) body['tags'] = tags;
+    if (loggedBy != null) body['logged_by'] = loggedBy;
+    final response = await _dio.patch('/api/events/$id', data: body);
+    return BakeryEvent.fromJson(response.data as Map<String, dynamic>);
+  }
 }
 
 final eventServiceProvider = Provider<EventService>((ref) {
