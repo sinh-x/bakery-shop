@@ -184,3 +184,73 @@ def test_get_event_data_is_dict(api_client):
     resp = api_client.get(f"/api/events/{event_id}")
     assert resp.status_code == 200
     assert resp.json()["data"] == {"key": "value"}
+
+
+# --- PATCH /api/events/{id} ---
+
+
+def test_patch_event_summary(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Bản gốc"})
+    event_id = create_resp.json()["id"]
+    resp = api_client.patch(f"/api/events/{event_id}", json={"summary": "Đã chỉnh sửa"})
+    assert resp.status_code == 200
+    assert resp.json()["summary"] == "Đã chỉnh sửa"
+    assert resp.json()["id"] == event_id
+
+
+def test_patch_event_type(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Test", "type": "note"})
+    event_id = create_resp.json()["id"]
+    resp = api_client.patch(f"/api/events/{event_id}", json={"type": "incident"})
+    assert resp.status_code == 200
+    assert resp.json()["type"] == "incident"
+
+
+def test_patch_event_tags(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Test"})
+    event_id = create_resp.json()["id"]
+    resp = api_client.patch(f"/api/events/{event_id}", json={"tags": ["equipment", "maintenance"]})
+    assert resp.status_code == 200
+    assert resp.json()["tags"] == ["equipment", "maintenance"]
+
+
+def test_patch_event_clear_tags(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Test", "tags": ["old"]})
+    event_id = create_resp.json()["id"]
+    resp = api_client.patch(f"/api/events/{event_id}", json={"tags": []})
+    assert resp.status_code == 200
+    assert resp.json()["tags"] == []
+
+
+def test_patch_event_not_found(api_client):
+    resp = api_client.patch("/api/events/9999", json={"summary": "X"})
+    assert resp.status_code == 404
+    assert "Không tìm thấy" in resp.json()["detail"]
+
+
+def test_patch_event_empty_body(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Test"})
+    event_id = create_resp.json()["id"]
+    resp = api_client.patch(f"/api/events/{event_id}", json={})
+    assert resp.status_code == 400
+    assert "Không có gì" in resp.json()["detail"]
+
+
+def test_patch_event_empty_summary_rejected(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Test"})
+    event_id = create_resp.json()["id"]
+    resp = api_client.patch(f"/api/events/{event_id}", json={"summary": "   "})
+    assert resp.status_code == 422
+
+
+def test_patch_event_multiple_fields(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Gốc", "type": "note"})
+    event_id = create_resp.json()["id"]
+    resp = api_client.patch(f"/api/events/{event_id}", json={
+        "summary": "Cập nhật", "type": "incident", "tags": ["staff"],
+    })
+    assert resp.status_code == 200
+    ev = resp.json()
+    assert ev["summary"] == "Cập nhật"
+    assert ev["type"] == "incident"
+    assert ev["tags"] == ["staff"]

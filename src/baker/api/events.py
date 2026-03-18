@@ -93,3 +93,45 @@ def get_event(event_id: int):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
         return _row_to_dict(row)
+
+
+class EventUpdate(BaseModel):
+    summary: str | None = None
+    type: str | None = None
+    tags: list[str] | None = None
+
+
+@router.patch("/{event_id}")
+def update_event(event_id: int, body: EventUpdate):
+    """Cập nhật sự kiện (summary, type, tags)."""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
+
+        data = body.model_dump(exclude_unset=True)
+        if not data:
+            raise HTTPException(status_code=400, detail="Không có gì để cập nhật")
+
+        fields: list[str] = []
+        values: list = []
+
+        if "summary" in data:
+            if not data["summary"].strip():
+                raise HTTPException(status_code=422, detail="summary không được để trống")
+            fields.append("summary = ?")
+            values.append(data["summary"].strip())
+
+        if "type" in data:
+            fields.append("type = ?")
+            values.append(data["type"])
+
+        if "tags" in data:
+            fields.append("tags = ?")
+            values.append(",".join(data["tags"]))
+
+        values.append(event_id)
+        conn.execute(f"UPDATE events SET {', '.join(fields)} WHERE id = ?", values)
+
+        row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+        return _row_to_dict(row)
