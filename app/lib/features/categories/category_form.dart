@@ -6,6 +6,30 @@ import '../../data/models/category.dart';
 import '../../providers/categories_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 
+/// Curated icon set for category icons (name → IconData).
+const categoryIconsMap = <String, IconData>{
+  'cake': Icons.cake,
+  'bakery_dining': Icons.bakery_dining,
+  'breakfast_dining': Icons.breakfast_dining,
+  'coffee': Icons.coffee,
+  'local_cafe': Icons.local_cafe,
+  'restaurant': Icons.restaurant,
+  'local_dining': Icons.local_dining,
+  'icecream': Icons.icecream,
+  'fastfood': Icons.fastfood,
+  'set_meal': Icons.set_meal,
+  'local_pizza': Icons.local_pizza,
+  'storefront': Icons.storefront,
+  'shopping_basket': Icons.shopping_basket,
+  'local_grocery_store': Icons.local_grocery_store,
+  'emoji_food_beverage': Icons.emoji_food_beverage,
+  'ramen_dining': Icons.ramen_dining,
+  'rice_bowl': Icons.rice_bowl,
+  'bento': Icons.bento,
+  'star': Icons.star,
+  'favorite': Icons.favorite,
+};
+
 /// Show the add/edit category bottom sheet.
 ///
 /// Pass [category] for edit mode; omit for add mode.
@@ -35,6 +59,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _codePrefixCtrl;
   late final TextEditingController _slugCtrl;
+  late String _selectedIcon;
   bool _saving = false;
 
   bool get _isEditing => widget.category != null;
@@ -46,6 +71,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
     _nameCtrl = TextEditingController(text: c?.name ?? '');
     _codePrefixCtrl = TextEditingController(text: c?.codePrefix ?? '');
     _slugCtrl = TextEditingController(text: c?.slug ?? '');
+    _selectedIcon = c?.icon ?? '';
     if (!_isEditing) {
       _nameCtrl.addListener(_onNameChanged);
     }
@@ -104,12 +130,14 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
           widget.category!.id,
           name: _nameCtrl.text.trim(),
           codePrefix: _codePrefixCtrl.text.trim().toUpperCase(),
+          icon: _selectedIcon,
         );
       } else {
         await notifier.createCategory(
           name: _nameCtrl.text.trim(),
           slug: _slugCtrl.text.trim(),
           codePrefix: _codePrefixCtrl.text.trim().toUpperCase(),
+          icon: _selectedIcon,
         );
       }
       if (mounted) {
@@ -128,8 +156,58 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
     }
   }
 
+  Widget _buildIconPicker(ColorScheme colorScheme) {
+    final icons = categoryIconsMap.entries.toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(VN.categoryIcon, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 168,
+          child: GridView.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              crossAxisSpacing: 6,
+              mainAxisSpacing: 6,
+            ),
+            itemCount: icons.length + 1,
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                final selected = _selectedIcon.isEmpty;
+                return _IconCell(
+                  selected: selected,
+                  colorScheme: colorScheme,
+                  onTap: () => setState(() => _selectedIcon = ''),
+                  child: Icon(
+                    Icons.close,
+                    size: 20,
+                    color: selected ? colorScheme.onPrimaryContainer : Colors.grey,
+                  ),
+                );
+              }
+              final entry = icons[index - 1];
+              final selected = _selectedIcon == entry.key;
+              return _IconCell(
+                selected: selected,
+                colorScheme: colorScheme,
+                onTap: () => setState(() => _selectedIcon = entry.key),
+                child: Icon(
+                  entry.value,
+                  size: 20,
+                  color: selected ? colorScheme.onPrimaryContainer : null,
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -193,6 +271,8 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
             ),
+            const SizedBox(height: 16),
+            _buildIconPicker(colorScheme),
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -216,6 +296,39 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _IconCell extends StatelessWidget {
+  const _IconCell({
+    required this.selected,
+    required this.colorScheme,
+    required this.onTap,
+    required this.child,
+  });
+
+  final bool selected;
+  final ColorScheme colorScheme;
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        decoration: BoxDecoration(
+          color: selected ? colorScheme.primaryContainer : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? colorScheme.primary : Colors.grey.shade300,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Center(child: child),
       ),
     );
   }

@@ -5,8 +5,9 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import baker.config
-from baker.code_gen import generate_code, validate_code_format
+from baker.code_gen import generate_code, get_category_prefix
 from baker.db.connection import get_db
+from baker.api.photos import save_photo
 
 
 router = APIRouter(prefix="/api/products", tags=["products"])
@@ -101,23 +102,29 @@ def create_product(product: ProductCreate):
                 status_code=409, detail=f"Sản phẩm '{product.name}' đã tồn tại"
             )
 
-        # Validate and check duplicate product_code
+        # Resolve product_code: auto-prefix from category if needed
         if product.product_code:
-            if not validate_code_format(product.product_code):
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Mã sản phẩm không hợp lệ: '{product.product_code}' (định dạng: PREFIX-SUFFIX, ví dụ BMI-01)",
-                )
+            prefix = get_category_prefix(conn, product.category)
+            if "-" not in product.product_code:
+                # Suffix-only provided — auto-prefix
+                code = f"{prefix}-{product.product_code}" if prefix else product.product_code
+            else:
+                # Full code provided — validate prefix matches category
+                if prefix and not product.product_code.startswith(f"{prefix}-"):
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Mã sản phẩm phải bắt đầu bằng '{prefix}-' cho danh mục này",
+                    )
+                code = product.product_code
             code_exists = conn.execute(
                 "SELECT id FROM products WHERE product_code = ?",
-                (product.product_code,),
+                (code,),
             ).fetchone()
             if code_exists:
                 raise HTTPException(
                     status_code=409,
-                    detail=f"Mã sản phẩm '{product.product_code}' đã tồn tại",
+                    detail=f"Mã sản phẩm '{code}' đã tồn tại",
                 )
-            code = product.product_code
         else:
             code = generate_code(conn, product.category) or ""
         cursor = conn.execute(
@@ -169,6 +176,23 @@ def update_product(product_id: int, product: ProductUpdate):
                     detail=f"Sản phẩm '{data['name']}' đã tồn tại",
                 )
 
+        # Resolve effective category (new or current)
+        effective_category = data.get("category", row["category"])
+
+        # Auto-prefix suffix-only product_code
+        if "product_code" in data and data["product_code"] and "-" not in data["product_code"]:
+            prefix = get_category_prefix(conn, effective_category)
+            if prefix:
+                data["product_code"] = f"{prefix}-{data['product_code']}"
+
+        # When category changes and no explicit product_code provided, update prefix
+        if "category" in data and data["category"] != row["category"] and "product_code" not in data:
+            new_prefix = get_category_prefix(conn, data["category"])
+            current_code = row["product_code"] or ""
+            if new_prefix and current_code and "-" in current_code:
+                old_suffix = current_code.split("-", 1)[1]
+                data["product_code"] = f"{new_prefix}-{old_suffix}"
+
         # Check product_code uniqueness if being changed
         if (
             "product_code" in data
@@ -217,24 +241,9 @@ def delete_product(product_id: int):
         return {"message": f"Đã ngừng bán sản phẩm '{row['name']}'"}
 
 
-def _resize_and_save(data: bytes, dest: str, max_size: int = 1200) -> None:
-    """Resize image to max dimension and save as JPEG."""
-    from PIL import Image
-    import io
-
-    img = Image.open(io.BytesIO(data))
-    img = img.convert("RGB")
-
-    if max(img.size) > max_size:
-        img.thumbnail((max_size, max_size), Image.LANCZOS)
-
-    img.save(dest, "JPEG", quality=85)
-
-
 @router.post("/{product_id}/photo", status_code=200)
 async def upload_photo(product_id: int, file: UploadFile):
     """Tải lên ảnh sản phẩm."""
-    # Verify product exists
     with get_db() as conn:
         row = conn.execute(
             "SELECT id FROM products WHERE id = ?", (product_id,)
@@ -242,7 +251,6 @@ async def upload_photo(product_id: int, file: UploadFile):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-    # Validate content type
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Tệp phải là hình ảnh")
 
@@ -250,29 +258,39 @@ async def upload_photo(product_id: int, file: UploadFile):
     if not data:
         raise HTTPException(status_code=400, detail="Tệp rỗng")
 
-    baker.config.PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
-    dest = str(baker.config.PHOTOS_DIR / f"{product_id}.jpg")
-
     try:
-        _resize_and_save(data, dest)
+        hash_hex = save_photo(data, file.filename or "")
     except Exception:
         raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
 
-    # Store relative photo path in DB
-    photo_path = f"photos/products/{product_id}.jpg"
     with get_db() as conn:
-        conn.execute(
-            "UPDATE products SET photo_path = ? WHERE id = ?",
-            (photo_path, product_id),
-        )
+        photo_row = conn.execute(
+            "SELECT id FROM photos WHERE hash = ?", (hash_hex,)
+        ).fetchone()
+        if photo_row:
+            conn.execute(
+                "UPDATE products SET photo_id = ? WHERE id = ?",
+                (photo_row[0], product_id),
+            )
 
-    return {"message": "Đã tải lên ảnh", "photo_path": photo_path}
+    return {"message": "Đã tải lên ảnh", "hash": hash_hex, "url": f"/api/photos/{hash_hex}.jpg"}
 
 
 @router.get("/{product_id}/photo")
 def get_photo(product_id: int):
     """Lấy ảnh sản phẩm."""
-    photo_file = baker.config.PHOTOS_DIR / f"{product_id}.jpg"
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT ph.hash FROM products p "
+            "LEFT JOIN photos ph ON p.photo_id = ph.id "
+            "WHERE p.id = ?",
+            (product_id,),
+        ).fetchone()
+
+    if not row or not row["hash"]:
+        raise HTTPException(status_code=404, detail="Chưa có ảnh cho sản phẩm này")
+
+    photo_file = baker.config.DATA_DIR / "photos" / f"{row['hash']}.jpg"
     if not photo_file.exists():
         raise HTTPException(status_code=404, detail="Chưa có ảnh cho sản phẩm này")
     return FileResponse(str(photo_file), media_type="image/jpeg")

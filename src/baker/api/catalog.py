@@ -1,12 +1,11 @@
 """Catalog photo API routes — product gallery."""
 
-from pathlib import Path
-
 from fastapi import APIRouter, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import baker.config
-from baker.api.products import _resize_and_save
+from baker.api.photos import save_photo
 from baker.db.connection import get_db
 
 
@@ -21,18 +20,6 @@ class CatalogPhotoUpdate(BaseModel):
 
 def _row_to_dict(row) -> dict:
     return dict(row)
-
-
-def _catalog_dir(product_id: int) -> Path:
-    return baker.config.PHOTOS_DIR / str(product_id) / "catalog"
-
-
-def _catalog_file(product_id: int, photo_id: int) -> Path:
-    return _catalog_dir(product_id) / f"{photo_id}.jpg"
-
-
-def _catalog_path(product_id: int, photo_id: int) -> str:
-    return f"photos/products/{product_id}/catalog/{photo_id}.jpg"
 
 
 def _get_product_or_404(conn, product_id: int):
@@ -50,7 +37,10 @@ def list_catalog_photos(product_id: int):
     with get_db() as conn:
         _get_product_or_404(conn, product_id)
         rows = conn.execute(
-            "SELECT * FROM product_catalog_photos WHERE product_id = ? ORDER BY position, id",
+            "SELECT cp.*, ph.hash as photo_hash "
+            "FROM product_catalog_photos cp "
+            "LEFT JOIN photos ph ON cp.photo_id = ph.id "
+            "WHERE cp.product_id = ? ORDER BY cp.position, cp.id",
             (product_id,),
         ).fetchall()
         return [_row_to_dict(r) for r in rows]
@@ -74,45 +64,60 @@ async def upload_catalog_photo(
     if not data:
         raise HTTPException(status_code=400, detail="Tệp rỗng")
 
+    try:
+        hash_hex = save_photo(data, file.filename or "")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
+
     with get_db() as conn:
+        photo_row = conn.execute(
+            "SELECT id FROM photos WHERE hash = ?", (hash_hex,)
+        ).fetchone()
+        photo_id = photo_row[0] if photo_row else None
+
         result = conn.execute(
             "SELECT COALESCE(MAX(position), -1) + 1 FROM product_catalog_photos WHERE product_id = ?",
             (product_id,),
         ).fetchone()
         next_position = result[0]
 
-        # Insert placeholder record to obtain photo_id
         cursor = conn.execute(
-            "INSERT INTO product_catalog_photos (product_id, file_path, caption, tags, position) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (product_id, "", caption, tags, next_position),
+            "INSERT INTO product_catalog_photos "
+            "(product_id, file_path, caption, tags, position, photo_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (product_id, f"photos/{hash_hex}.jpg", caption, tags, next_position, photo_id),
         )
-        photo_id = cursor.lastrowid
+        new_id = cursor.lastrowid
 
-    # Save the file using the photo_id
-    catalog_dir = _catalog_dir(product_id)
-    catalog_dir.mkdir(parents=True, exist_ok=True)
-    dest = str(_catalog_file(product_id, photo_id))
-
-    try:
-        _resize_and_save(data, dest)
-    except Exception:
-        with get_db() as conn:
-            conn.execute(
-                "DELETE FROM product_catalog_photos WHERE id = ?", (photo_id,)
-            )
-        raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
-
-    file_path = _catalog_path(product_id, photo_id)
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE product_catalog_photos SET file_path = ? WHERE id = ?",
-            (file_path, photo_id),
-        )
         row = conn.execute(
-            "SELECT * FROM product_catalog_photos WHERE id = ?", (photo_id,)
+            "SELECT cp.*, ph.hash as photo_hash "
+            "FROM product_catalog_photos cp "
+            "LEFT JOIN photos ph ON cp.photo_id = ph.id "
+            "WHERE cp.id = ?",
+            (new_id,),
         ).fetchone()
         return _row_to_dict(row)
+
+
+@router.get("/{product_id}/catalog/{photo_id}/photo")
+def get_catalog_photo(product_id: int, photo_id: int):
+    """Lấy ảnh bộ sưu tập theo photo_id (phục vụ ảnh qua hash)."""
+    with get_db() as conn:
+        _get_product_or_404(conn, product_id)
+        row = conn.execute(
+            "SELECT ph.hash FROM product_catalog_photos cp "
+            "LEFT JOIN photos ph ON cp.photo_id = ph.id "
+            "WHERE cp.id = ? AND cp.product_id = ?",
+            (photo_id, product_id),
+        ).fetchone()
+
+    if not row or not row["hash"]:
+        raise HTTPException(status_code=404, detail="Không tìm thấy ảnh")
+
+    photo_file = baker.config.DATA_DIR / "photos" / f"{row['hash']}.jpg"
+    if not photo_file.exists():
+        raise HTTPException(status_code=404, detail="Không tìm thấy ảnh")
+    return FileResponse(str(photo_file), media_type="image/jpeg")
 
 
 @router.patch("/{product_id}/catalog/{photo_id}")
@@ -144,14 +149,18 @@ def update_catalog_photo(
         )
 
         row = conn.execute(
-            "SELECT * FROM product_catalog_photos WHERE id = ?", (photo_id,)
+            "SELECT cp.*, ph.hash as photo_hash "
+            "FROM product_catalog_photos cp "
+            "LEFT JOIN photos ph ON cp.photo_id = ph.id "
+            "WHERE cp.id = ?",
+            (photo_id,),
         ).fetchone()
         return _row_to_dict(row)
 
 
 @router.delete("/{product_id}/catalog/{photo_id}", status_code=200)
 def delete_catalog_photo(product_id: int, photo_id: int):
-    """Xóa ảnh bộ sưu tập và tệp trên đĩa."""
+    """Xóa ảnh bộ sưu tập (chỉ xóa bản ghi DB, giữ file hash trên đĩa)."""
     with get_db() as conn:
         _get_product_or_404(conn, product_id)
 
@@ -165,10 +174,5 @@ def delete_catalog_photo(product_id: int, photo_id: int):
         conn.execute(
             "DELETE FROM product_catalog_photos WHERE id = ?", (photo_id,)
         )
-
-    # Remove file from disk (best-effort)
-    photo_file = _catalog_file(product_id, photo_id)
-    if photo_file.exists():
-        photo_file.unlink()
 
     return {"message": "Đã xóa ảnh"}

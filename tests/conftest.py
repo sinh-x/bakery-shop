@@ -8,7 +8,7 @@ import pytest
 def use_memory_db(tmp_path, monkeypatch):
     """Use a temp file DB for each test and isolated photos dir."""
     db_path = str(tmp_path / "test.db")
-    photos_dir = tmp_path / "photos" / "products"
+    photos_dir = tmp_path / "photos"
     monkeypatch.setenv("BAKER_DB", db_path)
     # Patch config module
     import baker.config
