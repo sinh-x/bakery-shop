@@ -163,6 +163,7 @@ class VN {
   static const tagsHint = 'VD: hoa, hồng, sinh nhật';
   static const noCatalogPhotos = 'Chưa có ảnh mẫu';
   static const catalogPhotoAdded = 'Đã thêm ảnh mẫu';
+  static const catalogPhotoUpdated = 'Đã cập nhật ảnh';
   static const catalogPhotoDeleted = 'Đã xóa ảnh';
 
   // General

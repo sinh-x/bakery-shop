@@ -13,6 +13,7 @@ import '../../providers/catalog_provider.dart';
 import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+import 'widgets/catalog_photo_viewer.dart';
 
 /// Shared form for creating and editing products.
 class ProductFormScreen extends ConsumerStatefulWidget {
@@ -569,28 +570,18 @@ class _CatalogGallerySectionState
     }
   }
 
-  void _openFullScreen(String url) {
+  void _openFullScreen(
+    List<CatalogPhoto> photos,
+    int initialIndex,
+    String baseUrl,
+  ) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (ctx) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            iconTheme: const IconThemeData(color: Colors.white),
-          ),
-          body: Center(
-            child: InteractiveViewer(
-              child: Image.network(
-                url,
-                fit: BoxFit.contain,
-                errorBuilder: (_, e, s) => const Icon(
-                  Icons.broken_image,
-                  color: Colors.white54,
-                  size: 64,
-                ),
-              ),
-            ),
-          ),
+        builder: (ctx) => CatalogPhotoViewer(
+          photos: photos,
+          initialIndex: initialIndex,
+          productId: widget.productId,
+          baseUrl: baseUrl,
         ),
       ),
     );
@@ -661,7 +652,7 @@ class _CatalogGallerySectionState
                       '$baseUrl/api/products/${widget.productId}/catalog/${photo.id}/photo';
                   return _CatalogPhotoCard(
                     url: url,
-                    onTap: () => _openFullScreen(url),
+                    onTap: () => _openFullScreen(photos, index, baseUrl),
                     onDelete: () => _confirmDelete(photo),
                   );
                 },
