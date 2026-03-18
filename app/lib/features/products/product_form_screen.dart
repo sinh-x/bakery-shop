@@ -102,14 +102,29 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       Product saved;
       final code = _codeCtrl.text.trim();
       if (_isEditing) {
+        final orig = widget.product!;
+        final newName = _nameCtrl.text.trim();
+        final newNotes = _notesCtrl.text.trim();
+        final newCode = code.isNotEmpty ? code : null;
+        final hasChanges = newName != orig.name ||
+            _category != orig.category ||
+            price != orig.basePrice ||
+            cost != orig.cost ||
+            newNotes != orig.recipeNotes ||
+            newCode != orig.productCode;
+        if (!hasChanges) {
+          if (mounted) context.pop();
+          return;
+        }
         saved = await notifier.updateProduct(
-          widget.product!.id,
-          name: _nameCtrl.text.trim(),
-          category: _category,
-          basePrice: price,
-          cost: cost,
-          recipeNotes: _notesCtrl.text.trim(),
-          productCode: code.isNotEmpty ? code : null,
+          orig.id,
+          // Only send fields that actually changed to avoid false conflicts
+          name: newName != orig.name ? newName : null,
+          category: _category != orig.category ? _category : null,
+          basePrice: price != orig.basePrice ? price : null,
+          cost: cost != orig.cost ? cost : null,
+          recipeNotes: newNotes != orig.recipeNotes ? newNotes : null,
+          productCode: newCode != orig.productCode ? newCode : null,
         );
       } else {
         saved = await notifier.createProduct(
@@ -137,8 +152,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       }
     } on DioException catch (e) {
       if (mounted) {
+        final detail = e.response?.data is Map
+            ? e.response!.data['detail'] as String?
+            : null;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? VN.apiError)),
+          SnackBar(content: Text(detail ?? e.message ?? VN.apiError)),
         );
       }
     } finally {
