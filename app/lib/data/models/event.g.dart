@@ -7,11 +7,16 @@ part of 'event.dart';
 // **************************************************************************
 
 _BakeryEvent _$BakeryEventFromJson(Map<String, dynamic> json) => _BakeryEvent(
-  id: json['id'] as String,
+  id: (json['id'] as num).toInt(),
   timestamp: DateTime.parse(json['timestamp'] as String),
   type: json['type'] as String? ?? 'note',
   summary: json['summary'] as String,
-  loggedBy: json['loggedBy'] as String? ?? '',
+  tags:
+      (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ??
+      const <String>[],
+  loggedBy: json['logged_by'] as String? ?? '',
+  source: json['source'] as String? ?? 'app',
+  data: json['data'] as Map<String, dynamic>? ?? const <String, dynamic>{},
 );
 
 Map<String, dynamic> _$BakeryEventToJson(_BakeryEvent instance) =>
@@ -20,5 +25,8 @@ Map<String, dynamic> _$BakeryEventToJson(_BakeryEvent instance) =>
       'timestamp': instance.timestamp.toIso8601String(),
       'type': instance.type,
       'summary': instance.summary,
-      'loggedBy': instance.loggedBy,
+      'tags': instance.tags,
+      'logged_by': instance.loggedBy,
+      'source': instance.source,
+      'data': instance.data,
     };

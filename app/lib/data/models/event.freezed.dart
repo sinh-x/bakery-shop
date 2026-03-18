@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$BakeryEvent {
 
- String get id; DateTime get timestamp; String get type; String get summary; String get loggedBy;
+ int get id; DateTime get timestamp; String get type; String get summary; List<String> get tags;@JsonKey(name: 'logged_by') String get loggedBy; String get source; Map<String, dynamic> get data;
 /// Create a copy of BakeryEvent
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $BakeryEventCopyWith<BakeryEvent> get copyWith => _$BakeryEventCopyWithImpl<Bake
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is BakeryEvent&&(identical(other.id, id) || other.id == id)&&(identical(other.timestamp, timestamp) || other.timestamp == timestamp)&&(identical(other.type, type) || other.type == type)&&(identical(other.summary, summary) || other.summary == summary)&&(identical(other.loggedBy, loggedBy) || other.loggedBy == loggedBy));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BakeryEvent&&(identical(other.id, id) || other.id == id)&&(identical(other.timestamp, timestamp) || other.timestamp == timestamp)&&(identical(other.type, type) || other.type == type)&&(identical(other.summary, summary) || other.summary == summary)&&const DeepCollectionEquality().equals(other.tags, tags)&&(identical(other.loggedBy, loggedBy) || other.loggedBy == loggedBy)&&(identical(other.source, source) || other.source == source)&&const DeepCollectionEquality().equals(other.data, data));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,timestamp,type,summary,loggedBy);
+int get hashCode => Object.hash(runtimeType,id,timestamp,type,summary,const DeepCollectionEquality().hash(tags),loggedBy,source,const DeepCollectionEquality().hash(data));
 
 @override
 String toString() {
-  return 'BakeryEvent(id: $id, timestamp: $timestamp, type: $type, summary: $summary, loggedBy: $loggedBy)';
+  return 'BakeryEvent(id: $id, timestamp: $timestamp, type: $type, summary: $summary, tags: $tags, loggedBy: $loggedBy, source: $source, data: $data)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $BakeryEventCopyWith<$Res>  {
   factory $BakeryEventCopyWith(BakeryEvent value, $Res Function(BakeryEvent) _then) = _$BakeryEventCopyWithImpl;
 @useResult
 $Res call({
- String id, DateTime timestamp, String type, String summary, String loggedBy
+ int id, DateTime timestamp, String type, String summary, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source, Map<String, dynamic> data
 });
 
 
@@ -65,14 +65,17 @@ class _$BakeryEventCopyWithImpl<$Res>
 
 /// Create a copy of BakeryEvent
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? timestamp = null,Object? type = null,Object? summary = null,Object? loggedBy = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? timestamp = null,Object? type = null,Object? summary = null,Object? tags = null,Object? loggedBy = null,Object? source = null,Object? data = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
-as String,timestamp: null == timestamp ? _self.timestamp : timestamp // ignore: cast_nullable_to_non_nullable
+as int,timestamp: null == timestamp ? _self.timestamp : timestamp // ignore: cast_nullable_to_non_nullable
 as DateTime,type: null == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
 as String,summary: null == summary ? _self.summary : summary // ignore: cast_nullable_to_non_nullable
-as String,loggedBy: null == loggedBy ? _self.loggedBy : loggedBy // ignore: cast_nullable_to_non_nullable
-as String,
+as String,tags: null == tags ? _self.tags : tags // ignore: cast_nullable_to_non_nullable
+as List<String>,loggedBy: null == loggedBy ? _self.loggedBy : loggedBy // ignore: cast_nullable_to_non_nullable
+as String,source: null == source ? _self.source : source // ignore: cast_nullable_to_non_nullable
+as String,data: null == data ? _self.data : data // ignore: cast_nullable_to_non_nullable
+as Map<String, dynamic>,
   ));
 }
 
@@ -154,10 +157,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  DateTime timestamp,  String type,  String summary,  String loggedBy)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id,  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  Map<String, dynamic> data)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _BakeryEvent() when $default != null:
-return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.loggedBy);case _:
+return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_that.loggedBy,_that.source,_that.data);case _:
   return orElse();
 
 }
@@ -175,10 +178,10 @@ return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.loggedBy
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  DateTime timestamp,  String type,  String summary,  String loggedBy)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id,  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  Map<String, dynamic> data)  $default,) {final _that = this;
 switch (_that) {
 case _BakeryEvent():
-return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.loggedBy);}
+return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_that.loggedBy,_that.source,_that.data);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -192,10 +195,10 @@ return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.loggedBy
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  DateTime timestamp,  String type,  String summary,  String loggedBy)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id,  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  Map<String, dynamic> data)?  $default,) {final _that = this;
 switch (_that) {
 case _BakeryEvent() when $default != null:
-return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.loggedBy);case _:
+return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_that.loggedBy,_that.source,_that.data);case _:
   return null;
 
 }
@@ -207,14 +210,29 @@ return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.loggedBy
 @JsonSerializable()
 
 class _BakeryEvent implements BakeryEvent {
-  const _BakeryEvent({required this.id, required this.timestamp, this.type = 'note', required this.summary, this.loggedBy = ''});
+  const _BakeryEvent({required this.id, required this.timestamp, this.type = 'note', required this.summary, final  List<String> tags = const <String>[], @JsonKey(name: 'logged_by') this.loggedBy = '', this.source = 'app', final  Map<String, dynamic> data = const <String, dynamic>{}}): _tags = tags,_data = data;
   factory _BakeryEvent.fromJson(Map<String, dynamic> json) => _$BakeryEventFromJson(json);
 
-@override final  String id;
+@override final  int id;
 @override final  DateTime timestamp;
 @override@JsonKey() final  String type;
 @override final  String summary;
-@override@JsonKey() final  String loggedBy;
+ final  List<String> _tags;
+@override@JsonKey() List<String> get tags {
+  if (_tags is EqualUnmodifiableListView) return _tags;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_tags);
+}
+
+@override@JsonKey(name: 'logged_by') final  String loggedBy;
+@override@JsonKey() final  String source;
+ final  Map<String, dynamic> _data;
+@override@JsonKey() Map<String, dynamic> get data {
+  if (_data is EqualUnmodifiableMapView) return _data;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableMapView(_data);
+}
+
 
 /// Create a copy of BakeryEvent
 /// with the given fields replaced by the non-null parameter values.
@@ -229,16 +247,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BakeryEvent&&(identical(other.id, id) || other.id == id)&&(identical(other.timestamp, timestamp) || other.timestamp == timestamp)&&(identical(other.type, type) || other.type == type)&&(identical(other.summary, summary) || other.summary == summary)&&(identical(other.loggedBy, loggedBy) || other.loggedBy == loggedBy));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BakeryEvent&&(identical(other.id, id) || other.id == id)&&(identical(other.timestamp, timestamp) || other.timestamp == timestamp)&&(identical(other.type, type) || other.type == type)&&(identical(other.summary, summary) || other.summary == summary)&&const DeepCollectionEquality().equals(other._tags, _tags)&&(identical(other.loggedBy, loggedBy) || other.loggedBy == loggedBy)&&(identical(other.source, source) || other.source == source)&&const DeepCollectionEquality().equals(other._data, _data));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,timestamp,type,summary,loggedBy);
+int get hashCode => Object.hash(runtimeType,id,timestamp,type,summary,const DeepCollectionEquality().hash(_tags),loggedBy,source,const DeepCollectionEquality().hash(_data));
 
 @override
 String toString() {
-  return 'BakeryEvent(id: $id, timestamp: $timestamp, type: $type, summary: $summary, loggedBy: $loggedBy)';
+  return 'BakeryEvent(id: $id, timestamp: $timestamp, type: $type, summary: $summary, tags: $tags, loggedBy: $loggedBy, source: $source, data: $data)';
 }
 
 
@@ -249,7 +267,7 @@ abstract mixin class _$BakeryEventCopyWith<$Res> implements $BakeryEventCopyWith
   factory _$BakeryEventCopyWith(_BakeryEvent value, $Res Function(_BakeryEvent) _then) = __$BakeryEventCopyWithImpl;
 @override @useResult
 $Res call({
- String id, DateTime timestamp, String type, String summary, String loggedBy
+ int id, DateTime timestamp, String type, String summary, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source, Map<String, dynamic> data
 });
 
 
@@ -266,14 +284,17 @@ class __$BakeryEventCopyWithImpl<$Res>
 
 /// Create a copy of BakeryEvent
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? timestamp = null,Object? type = null,Object? summary = null,Object? loggedBy = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? timestamp = null,Object? type = null,Object? summary = null,Object? tags = null,Object? loggedBy = null,Object? source = null,Object? data = null,}) {
   return _then(_BakeryEvent(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
-as String,timestamp: null == timestamp ? _self.timestamp : timestamp // ignore: cast_nullable_to_non_nullable
+as int,timestamp: null == timestamp ? _self.timestamp : timestamp // ignore: cast_nullable_to_non_nullable
 as DateTime,type: null == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
 as String,summary: null == summary ? _self.summary : summary // ignore: cast_nullable_to_non_nullable
-as String,loggedBy: null == loggedBy ? _self.loggedBy : loggedBy // ignore: cast_nullable_to_non_nullable
-as String,
+as String,tags: null == tags ? _self._tags : tags // ignore: cast_nullable_to_non_nullable
+as List<String>,loggedBy: null == loggedBy ? _self.loggedBy : loggedBy // ignore: cast_nullable_to_non_nullable
+as String,source: null == source ? _self.source : source // ignore: cast_nullable_to_non_nullable
+as String,data: null == data ? _self._data : data // ignore: cast_nullable_to_non_nullable
+as Map<String, dynamic>,
   ));
 }
 
