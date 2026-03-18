@@ -16,7 +16,7 @@
 |---------|---------|--------|--------|
 | v0.2.3 | Category Management UI | `feature/category-management-ui` | ✅ Done (merged develop) |
 | v0.2.4 | Product Catalog Gallery | `feature/product-catalog-gallery` | ✅ Done (merged develop) |
-| v0.2.5 | Event Logging UI | `feature/event-logging-ui` | ⏳ Queued |
+| v0.2.5 | Event Logging UI | `feature/event-logging-ui` | ✅ Done (merged develop) |
 
 ### v0.2.3 — Category Management UI
 
