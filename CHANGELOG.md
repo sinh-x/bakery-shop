@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.2+7] — 2026-03-18
+- feat(tool): add deploy.sh for APK build and install to device
+
 ## [0.2.2+6] — 2026-03-18
 - docs: mark v0.2.5 event logging UI as done in ROADMAP
 
