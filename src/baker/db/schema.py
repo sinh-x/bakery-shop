@@ -244,6 +244,20 @@ def _migrate_v6_seed_variants(conn):
         )
 
 
+PRODUCT_CATALOG_PHOTOS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS product_catalog_photos (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id  INTEGER NOT NULL REFERENCES products(id),
+    file_path   TEXT NOT NULL,
+    caption     TEXT DEFAULT '',
+    tags        TEXT DEFAULT '',
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_photos_product ON product_catalog_photos(product_id);
+"""
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -273,6 +287,10 @@ MIGRATIONS = {
         "description": "Seed cake variants (16/18/20/22cm × thường/cao/tầng) and su kem sets",
         "sql": "",
         "callable": _migrate_v6_seed_variants,
+    },
+    7: {
+        "description": "Product catalog photos table for gallery feature",
+        "sql": PRODUCT_CATALOG_PHOTOS_SCHEMA,
     },
 }
 
