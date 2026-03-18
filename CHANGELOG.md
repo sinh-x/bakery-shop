@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.2+8] — 2026-03-19
+- docs: update CHANGELOG for v0.2.2+7 deploy script
+
 ## [0.2.2+7] — 2026-03-18
 - feat(tool): add deploy.sh for APK build and install to device
 
