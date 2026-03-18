@@ -23,12 +23,14 @@ class CategoriesNotifier extends AsyncNotifier<List<Category>> {
     required String name,
     required String slug,
     required String codePrefix,
+    String icon = '',
   }) async {
     final service = ref.read(categoryServiceProvider);
     final category = await service.createCategory(
       name: name,
       slug: slug,
       codePrefix: codePrefix,
+      icon: icon,
     );
     await refresh();
     return category;
@@ -39,6 +41,7 @@ class CategoriesNotifier extends AsyncNotifier<List<Category>> {
     String? name,
     String? codePrefix,
     int? active,
+    String? icon,
   }) async {
     final service = ref.read(categoryServiceProvider);
     final category = await service.updateCategory(
@@ -46,6 +49,7 @@ class CategoriesNotifier extends AsyncNotifier<List<Category>> {
       name: name,
       codePrefix: codePrefix,
       active: active,
+      icon: icon,
     );
     await refresh();
     return category;
@@ -57,6 +61,12 @@ class CategoriesNotifier extends AsyncNotifier<List<Category>> {
 
   Future<void> reactivateCategory(int id) async {
     await updateCategory(id, active: 1);
+  }
+
+  Future<void> reorderCategories(List<int> ids) async {
+    final service = ref.read(categoryServiceProvider);
+    await service.reorderCategories(ids);
+    await refresh();
   }
 }
 

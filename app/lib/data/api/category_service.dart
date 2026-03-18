@@ -23,11 +23,13 @@ class CategoryService {
     required String name,
     required String slug,
     required String codePrefix,
+    String icon = '',
   }) async {
     final data = <String, dynamic>{
       'name': name,
       'slug': slug,
       'code_prefix': codePrefix,
+      'icon': icon,
     };
     final response = await _dio.post('/api/categories', data: data);
     return Category.fromJson(response.data as Map<String, dynamic>);
@@ -38,13 +40,20 @@ class CategoryService {
     String? name,
     String? codePrefix,
     int? active,
+    String? icon,
   }) async {
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
     if (codePrefix != null) data['code_prefix'] = codePrefix;
     if (active != null) data['active'] = active;
+    if (icon != null) data['icon'] = icon;
     final response = await _dio.patch('/api/categories/$id', data: data);
     return Category.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<void> reorderCategories(List<int> ids) async {
+    final data = ids.map((id) => {'id': id}).toList();
+    await _dio.patch('/api/categories/reorder', data: data);
   }
 }
 

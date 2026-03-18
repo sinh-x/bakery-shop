@@ -47,48 +47,139 @@ class CategoryManagementScreen extends ConsumerWidget {
   }
 }
 
-class _CategoryList extends ConsumerWidget {
+class _CategoryList extends ConsumerStatefulWidget {
   const _CategoryList({required this.categories});
 
   final List<Category> categories;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final active = categories.where((c) => c.active == 1).toList();
-    final inactive = categories.where((c) => c.active == 0).toList();
+  ConsumerState<_CategoryList> createState() => _CategoryListState();
+}
 
-    return ListView(
-      children: [
-        for (final category in active) _ActiveCategoryTile(category: category),
+class _CategoryListState extends ConsumerState<_CategoryList> {
+  late List<Category> _activeCategories;
+
+  @override
+  void initState() {
+    super.initState();
+    _activeCategories = _sortedActive(widget.categories);
+  }
+
+  @override
+  void didUpdateWidget(_CategoryList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.categories != widget.categories) {
+      _activeCategories = _sortedActive(widget.categories);
+    }
+  }
+
+  List<Category> _sortedActive(List<Category> categories) {
+    return categories.where((c) => c.active == 1).toList()
+      ..sort((a, b) => a.position.compareTo(b.position));
+  }
+
+  Future<void> _onReorder(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex -= 1;
+    setState(() {
+      final item = _activeCategories.removeAt(oldIndex);
+      _activeCategories.insert(newIndex, item);
+    });
+    final ids = _activeCategories.map((c) => c.id).toList();
+    try {
+      await ref.read(categoriesProvider.notifier).reorderCategories(ids);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(VN.orderUpdated)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inactive =
+        widget.categories.where((c) => c.active == 0).toList();
+
+    return CustomScrollView(
+      slivers: [
+        SliverReorderableList(
+          itemCount: _activeCategories.length,
+          itemBuilder: (context, index) {
+            final category = _activeCategories[index];
+            return _ActiveCategoryTile(
+              key: ValueKey(category.id),
+              category: category,
+              index: index,
+            );
+          },
+          onReorder: _onReorder,
+        ),
         if (inactive.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text(
-              VN.hiddenCategories,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: Colors.grey,
-                  ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text(
+                VN.hiddenCategories,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Colors.grey,
+                    ),
+              ),
             ),
           ),
-          for (final category in inactive)
-            _InactiveCategoryTile(category: category),
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) =>
+                  _InactiveCategoryTile(category: inactive[index]),
+              childCount: inactive.length,
+            ),
+          ),
         ],
       ],
     );
   }
 }
 
+Widget _buildCategoryIcon(Category category, {bool muted = false}) {
+  if (category.icon.isNotEmpty) {
+    final iconData = categoryIconsMap[category.icon];
+    if (iconData != null) {
+      return Icon(
+        iconData,
+        size: 24,
+        color: muted ? Colors.grey : null,
+      );
+    }
+  }
+  final emoji = categoryEmojiMap[category.slug] ?? '🎂';
+  return Text(
+    emoji,
+    style: TextStyle(
+      fontSize: 24,
+      color: muted ? Colors.grey : null,
+    ),
+  );
+}
+
 class _ActiveCategoryTile extends ConsumerWidget {
-  const _ActiveCategoryTile({required this.category});
+  const _ActiveCategoryTile({
+    required super.key,
+    required this.category,
+    required this.index,
+  });
 
   final Category category;
+  final int index;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final emoji = categoryEmojiMap[category.slug] ?? '🎂';
-
     return Dismissible(
-      key: ValueKey(category.id),
+      key: ValueKey('dismiss_${category.id}'),
       direction: DismissDirection.endToStart,
       confirmDismiss: (_) async {
         final confirmed = await showDialog<bool>(
@@ -135,14 +226,17 @@ class _ActiveCategoryTile extends ConsumerWidget {
         child: const Icon(Icons.visibility_off, color: Colors.white),
       ),
       child: ListTile(
-        leading: Text(emoji, style: const TextStyle(fontSize: 24)),
+        leading: _buildCategoryIcon(category),
         title: Text(category.name),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             _CodePrefixBadge(codePrefix: category.codePrefix),
             const SizedBox(width: 4),
-            const Icon(Icons.chevron_right),
+            ReorderableDragStartListener(
+              index: index,
+              child: const Icon(Icons.drag_handle, color: Colors.grey),
+            ),
           ],
         ),
         onTap: () => showCategoryForm(context, category: category),
@@ -158,13 +252,8 @@ class _InactiveCategoryTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final emoji = categoryEmojiMap[category.slug] ?? '🎂';
-
     return ListTile(
-      leading: Text(
-        emoji,
-        style: const TextStyle(fontSize: 24, color: Colors.grey),
-      ),
+      leading: _buildCategoryIcon(category, muted: true),
       title: Text(
         category.name,
         style: const TextStyle(color: Colors.grey),

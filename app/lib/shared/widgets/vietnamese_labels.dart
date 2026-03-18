@@ -168,6 +168,8 @@ class VN {
   static const categoryReactivated = 'Đã hiện danh mục';
   static const noPrefixError = 'Mã viết tắt không được để trống';
   static const prefixFormatError = 'Mã viết tắt phải 2-4 ký tự in hoa';
+  static const categoryIcon = 'Biểu tượng';
+  static const orderUpdated = 'Đã cập nhật thứ tự';
 
   // Settings
   static const settings = 'Cài đặt';

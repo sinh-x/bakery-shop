@@ -15,6 +15,7 @@ class CategoryCreate(BaseModel):
     slug: str
     name: str
     code_prefix: str
+    icon: str = ""
 
     @field_validator("name")
     @classmethod
@@ -35,6 +36,7 @@ class CategoryUpdate(BaseModel):
     name: str | None = None
     code_prefix: str | None = None
     active: int | None = None
+    icon: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -51,6 +53,10 @@ class CategoryUpdate(BaseModel):
         return v
 
 
+class CategoryReorderItem(BaseModel):
+    id: int
+
+
 def _row_to_dict(row) -> dict:
     return dict(row)
 
@@ -61,11 +67,11 @@ def list_categories(include_inactive: int = Query(0)):
     with get_db() as conn:
         if include_inactive:
             rows = conn.execute(
-                "SELECT * FROM categories ORDER BY active DESC, slug"
+                "SELECT * FROM categories ORDER BY active DESC, position, slug"
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM categories WHERE active = 1 ORDER BY slug"
+                "SELECT * FROM categories WHERE active = 1 ORDER BY position, slug"
             ).fetchall()
         return [_row_to_dict(r) for r in rows]
 
@@ -83,15 +89,32 @@ def create_category(category: CategoryCreate):
                 detail=f"Category '{category.slug}' đã tồn tại",
             )
 
+        max_pos = conn.execute(
+            "SELECT COALESCE(MAX(position), -1) FROM categories"
+        ).fetchone()[0]
+
         cursor = conn.execute(
-            "INSERT INTO categories (slug, name, code_prefix) VALUES (?, ?, ?)",
-            (category.slug, category.name, category.code_prefix),
+            "INSERT INTO categories (slug, name, code_prefix, icon, position) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (category.slug, category.name, category.code_prefix, category.icon, max_pos + 1),
         )
         new_id = cursor.lastrowid
         row = conn.execute(
             "SELECT * FROM categories WHERE id = ?", (new_id,)
         ).fetchone()
         return _row_to_dict(row)
+
+
+@router.patch("/reorder")
+def reorder_categories(items: list[CategoryReorderItem]):
+    """Cập nhật thứ tự categories. items là danh sách {id} theo thứ tự mới."""
+    with get_db() as conn:
+        for idx, item in enumerate(items):
+            conn.execute(
+                "UPDATE categories SET position = ? WHERE id = ?",
+                (idx, item.id),
+            )
+    return {"ok": True, "count": len(items)}
 
 
 @router.patch("/{category_id}")
@@ -121,6 +144,9 @@ def update_category(category_id: int, update: CategoryUpdate):
         if update.active is not None:
             fields.append("active = ?")
             values.append(update.active)
+        if update.icon is not None:
+            fields.append("icon = ?")
+            values.append(update.icon)
 
         if not fields:
             return _row_to_dict(existing)
