@@ -102,7 +102,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     if (source == null) return;
 
     final picker = ImagePicker();
-    final file = await picker.pickImage(source: source, maxWidth: 1200);
+    final file = await picker.pickImage(source: source);
     if (file != null) {
       setState(() => _pickedPhotoPath = file.path);
     }
@@ -570,7 +570,7 @@ class _CatalogGallerySectionState
 
     if (source == ImageSource.gallery) {
       // Multi-select from gallery
-      final files = await picker.pickMultiImage(maxWidth: 1200);
+      final files = await picker.pickMultiImage();
       if (files.isEmpty) return;
 
       setState(() {
@@ -605,7 +605,7 @@ class _CatalogGallerySectionState
       }
     } else {
       // Camera: single photo only
-      final file = await picker.pickImage(source: source, maxWidth: 1200);
+      final file = await picker.pickImage(source: source);
       if (file == null) return;
 
       setState(() {
