@@ -88,7 +88,7 @@ class ProductService {
     });
     final response =
         await _dio.post('/api/products/$id/photo', data: formData);
-    return response.data['photo_path'] as String;
+    return response.data['url'] as String;
   }
 
   String getPhotoUrl(int id) {
