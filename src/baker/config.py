@@ -39,7 +39,7 @@ def reload(config_path: Path | str | None = None) -> None:
 
     DATA_DIR = Path(cfg.get("data_dir", _default_data_dir)).expanduser()
     DB_PATH = Path(cfg.get("db_path", DATA_DIR / "baker.db")).expanduser()
-    PHOTOS_DIR = DATA_DIR / "photos" / "products"
+    PHOTOS_DIR = DATA_DIR / "photos"
     HOST = cfg.get("host", "0.0.0.0")
     PORT = int(cfg.get("port", 2108))
 

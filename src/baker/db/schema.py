@@ -244,6 +244,93 @@ def _migrate_v6_seed_variants(conn):
         )
 
 
+PRODUCT_CATALOG_PHOTOS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS product_catalog_photos (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id  INTEGER NOT NULL REFERENCES products(id),
+    file_path   TEXT NOT NULL,
+    caption     TEXT DEFAULT '',
+    tags        TEXT DEFAULT '',
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalog_photos_product ON product_catalog_photos(product_id);
+"""
+
+PHOTOS_TABLE_AND_PHOTO_IDS_SCHEMA = """
+ALTER TABLE categories ADD COLUMN icon TEXT DEFAULT '';
+ALTER TABLE categories ADD COLUMN position INTEGER DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS photos (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    hash        TEXT UNIQUE NOT NULL,
+    original_name TEXT DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_photos_hash ON photos(hash);
+
+ALTER TABLE products ADD COLUMN photo_id INTEGER REFERENCES photos(id);
+ALTER TABLE product_catalog_photos ADD COLUMN photo_id INTEGER REFERENCES photos(id);
+"""
+
+
+def _migrate_v8_photos(conn):
+    """Hash existing photos, populate photos table, update FKs, copy files to flat dir."""
+    import hashlib
+    import shutil
+    import baker.config
+
+    flat_dir = baker.config.DATA_DIR / "photos"
+    flat_dir.mkdir(parents=True, exist_ok=True)
+
+    def _ensure_photo(src_path, original_name):
+        if not src_path.exists():
+            return None
+        data = src_path.read_bytes()
+        hash_hex = hashlib.sha256(data).hexdigest()
+        dest = flat_dir / f"{hash_hex}.jpg"
+        if not dest.exists():
+            shutil.copy2(src_path, dest)
+        row = conn.execute("SELECT id FROM photos WHERE hash = ?", (hash_hex,)).fetchone()
+        if row:
+            return row[0]
+        cursor = conn.execute(
+            "INSERT INTO photos (hash, original_name) VALUES (?, ?)",
+            (hash_hex, original_name),
+        )
+        return cursor.lastrowid
+
+    # Migrate product main photos
+    rows = conn.execute(
+        "SELECT id, photo_path FROM products WHERE photo_path != '' AND photo_path IS NOT NULL"
+    ).fetchall()
+    for row in rows:
+        photo_id = _ensure_photo(
+            baker.config.DATA_DIR / row["photo_path"], row["photo_path"]
+        )
+        if photo_id:
+            conn.execute(
+                "UPDATE products SET photo_id = ? WHERE id = ?", (photo_id, row["id"])
+            )
+
+    # Migrate catalog photos
+    rows = conn.execute(
+        "SELECT id, file_path FROM product_catalog_photos"
+        " WHERE file_path != '' AND file_path IS NOT NULL"
+    ).fetchall()
+    for row in rows:
+        photo_id = _ensure_photo(
+            baker.config.DATA_DIR / row["file_path"], row["file_path"]
+        )
+        if photo_id:
+            conn.execute(
+                "UPDATE product_catalog_photos SET photo_id = ? WHERE id = ?",
+                (photo_id, row["id"]),
+            )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -273,6 +360,15 @@ MIGRATIONS = {
         "description": "Seed cake variants (16/18/20/22cm × thường/cao/tầng) and su kem sets",
         "sql": "",
         "callable": _migrate_v6_seed_variants,
+    },
+    7: {
+        "description": "Product catalog photos table for gallery feature",
+        "sql": PRODUCT_CATALOG_PHOTOS_SCHEMA,
+    },
+    8: {
+        "description": "Photos table (flat hash storage), categories icon+position, product FK",
+        "sql": PHOTOS_TABLE_AND_PHOTO_IDS_SCHEMA,
+        "callable": _migrate_v8_photos,
     },
 }
 

@@ -6,11 +6,14 @@ part 'event.g.dart';
 @freezed
 sealed class BakeryEvent with _$BakeryEvent {
   const factory BakeryEvent({
-    required String id,
+    required int id,
     required DateTime timestamp,
     @Default('note') String type,
     required String summary,
-    @Default('') String loggedBy,
+    @Default(<String>[]) List<String> tags,
+    @JsonKey(name: 'logged_by') @Default('') String loggedBy,
+    @Default('app') String source,
+    @Default(<String, dynamic>{}) Map<String, dynamic> data,
   }) = _BakeryEvent;
 
   factory BakeryEvent.fromJson(Map<String, dynamic> json) =>

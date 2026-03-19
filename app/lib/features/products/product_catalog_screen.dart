@@ -53,56 +53,71 @@ class ProductCatalogScreen extends ConsumerWidget {
 
     return DefaultTabController(
       length: categories.length,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text(VN.tabProducts),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.settings),
-              tooltip: VN.settings,
-              onPressed: () => context.push('/settings'),
-            ),
-          ],
-          bottom: TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            tabs: categories.map((cat) {
-              final emoji = categoryEmojiMap[cat.slug] ?? '';
-              return Tab(text: '$emoji ${cat.name}');
-            }).toList(),
-          ),
-        ),
-        body: productsAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
-                const SizedBox(height: 16),
-                Text(
-                  VN.apiError,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                FilledButton.icon(
-                  onPressed: () =>
-                      ref.read(productsProvider.notifier).refresh(),
-                  icon: const Icon(Icons.refresh),
-                  label: const Text(VN.retry),
-                ),
-              ],
+      child: Builder(
+        builder: (innerContext) => Scaffold(
+          appBar: AppBar(
+            title: const Text(VN.tabProducts),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.tune),
+                tooltip: VN.manageCategories,
+                onPressed: () => context.push('/categories/manage'),
+              ),
+              IconButton(
+                icon: const Icon(Icons.settings),
+                tooltip: VN.settings,
+                onPressed: () => context.push('/settings'),
+              ),
+            ],
+            bottom: TabBar(
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              tabs: categories.map((cat) {
+                final icon = cat.icon.isNotEmpty
+                    ? cat.icon
+                    : (categoryEmojiMap[cat.slug] ?? '');
+                return Tab(text: '$icon ${cat.name}');
+              }).toList(),
             ),
           ),
-          data: (products) => _ProductTabs(
-            products: products,
-            categories: categories,
-            baseUrl: baseUrl,
+          body: productsAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  Text(
+                    VN.apiError,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(
+                    onPressed: () =>
+                        ref.read(productsProvider.notifier).refresh(),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text(VN.retry),
+                  ),
+                ],
+              ),
+            ),
+            data: (products) => _ProductTabs(
+              products: products,
+              categories: categories,
+              baseUrl: baseUrl,
+            ),
           ),
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => context.push('/products/new'),
-          child: const Icon(Icons.add),
+          floatingActionButton: FloatingActionButton(
+            onPressed: () {
+              final idx = DefaultTabController.of(innerContext).index;
+              final slug = categories.isNotEmpty
+                  ? categories[idx].slug
+                  : 'banh_kem';
+              innerContext.push('/products/new?category=$slug');
+            },
+            child: const Icon(Icons.add),
+          ),
         ),
       ),
     );
@@ -143,8 +158,14 @@ class _ProductTabs extends StatelessWidget {
         return Consumer(
           builder: (context, ref, _) => RefreshIndicator(
             onRefresh: () => ref.read(productsProvider.notifier).refresh(),
-            child: ListView.builder(
+            child: GridView.builder(
               padding: const EdgeInsets.all(12),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: 1.0,
+              ),
               itemCount: items.length,
               itemBuilder: (context, index) => ProductCard(
                 product: items[index],

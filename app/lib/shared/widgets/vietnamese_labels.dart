@@ -73,11 +73,46 @@ class VN {
   static const eventDelivery = 'Giao hàng';
   static const eventExpense = 'Chi phí';
 
+  // Event types (chips)
+  static const typeIncident = 'Đồ điện/Dụng cụ làm bánh';
+
+  // Event log form
+  static const eventPrompt = 'Chuyện gì xảy ra?';
+  static const eventLogged = 'Đã ghi sự kiện';
+  static const loggedBy = 'Người ghi';
+  static const changeLogger = 'Đổi';
+  static const setYourName = 'Nhập tên của bạn';
+  static const addTag = 'Thêm';
+
+  // Event tags
+  static const tagIncident = 'Sự cố';
+  static const tagKnowledgeGap = 'Thiếu thông tin';
+  static const tagMaintenance = 'Bảo trì';
+  static const tagEquipment = 'Thiết bị';
+  static const tagPricing = 'Giá cả';
+  static const tagOrdering = 'Đặt hàng';
+  static const tagDecoration = 'Trang trí';
+  static const tagStaff = 'Nhân viên';
+
+  // Event history filters (Phase 5)
+  static const filterToday = 'Hôm nay';
+  static const filterWeek = 'Tuần này';
+  static const filterMonth = 'Tháng này';
+  static const filterAll = 'Tất cả';
+  static const searchEvents = 'Tìm sự kiện...';
+  static const noEvents = 'Chưa có sự kiện';
+
   // Event form
   static const eventType = 'Loại sự kiện';
   static const eventSummary = 'Mô tả sự kiện';
   static const logEvent = 'GHI SỰ KIỆN';
   static const recentEvents = 'Sự kiện gần đây';
+  static const createEvent = 'Thêm sự kiện';
+  static const editEvent = 'Sửa sự kiện';
+  static const deleteEvent = 'Xóa sự kiện';
+  static const deleteEventConfirm = 'Bạn có chắc muốn xóa sự kiện này?';
+  static const eventDeleted = 'Đã xóa sự kiện';
+  static const eventUpdated = 'Đã cập nhật sự kiện';
 
   // Dashboard
   static const todayOrders = 'Đơn hàng hôm nay';
@@ -119,6 +154,29 @@ class VN {
   static const noProducts = 'Không có sản phẩm';
   static const apiError = 'Không thể kết nối máy chủ';
 
+  // Category management
+  static const manageCategories = 'Quản lý danh mục';
+  static const addCategory = 'Thêm danh mục';
+  static const editCategory = 'Sửa danh mục';
+  static const categoryName = 'Tên danh mục';
+  static const codePrefix = 'Mã viết tắt';
+  static const codePrefixHint = 'VD: BMI, BKS';
+  static const codePrefixHelp = '2-4 ký tự in hoa, dùng tạo mã sản phẩm';
+  static const categorySlug = 'Slug';
+  static const deactivateCategory = 'Ẩn danh mục';
+  static const reactivateCategory = 'Hiện danh mục';
+  static const deactivateConfirm =
+      'Ẩn danh mục? Sản phẩm vẫn còn nhưng tab sẽ bị ẩn.';
+  static const hiddenCategories = 'Đã ẩn';
+  static const categoryCreated = 'Đã thêm danh mục';
+  static const categoryUpdated = 'Đã cập nhật danh mục';
+  static const categoryDeactivated = 'Đã ẩn danh mục';
+  static const categoryReactivated = 'Đã hiện danh mục';
+  static const noPrefixError = 'Mã viết tắt không được để trống';
+  static const prefixFormatError = 'Mã viết tắt phải 2-4 ký tự in hoa';
+  static const categoryIcon = 'Biểu tượng';
+  static const orderUpdated = 'Đã cập nhật thứ tự';
+
   // Settings
   static const settings = 'Cài đặt';
   static const apiUrlLabel = 'Địa chỉ máy chủ';
@@ -130,6 +188,20 @@ class VN {
   static const urlSaved = 'Đã lưu địa chỉ máy chủ';
   static const urlEmpty = 'Vui lòng nhập địa chỉ';
   static const testing = 'Đang kiểm tra...';
+
+  // Catalog gallery
+  static const catalogTitle = 'Bộ sưu tập';
+  static const addCatalogPhoto = 'Thêm ảnh mẫu';
+  static const editCatalogPhoto = 'Sửa ảnh';
+  static const deleteCatalogPhoto = 'Xóa ảnh';
+  static const deleteCatalogConfirm = 'Bạn có chắc muốn xóa ảnh này?';
+  static const captionLabel = 'Mô tả';
+  static const tagsLabel = 'Nhãn';
+  static const tagsHint = 'VD: hoa, hồng, sinh nhật';
+  static const noCatalogPhotos = 'Chưa có ảnh mẫu';
+  static const catalogPhotoAdded = 'Đã thêm ảnh mẫu';
+  static const catalogPhotoUpdated = 'Đã cập nhật ảnh';
+  static const catalogPhotoDeleted = 'Đã xóa ảnh';
 
   // General
   static const remove = 'Xóa';

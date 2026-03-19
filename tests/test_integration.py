@@ -140,14 +140,15 @@ def test_upload_photo_creates_file_on_disk(api_client):
         files={"file": ("product.jpg", image_data, "image/jpeg")},
     )
     assert resp.status_code == 200
+    hash_hex = resp.json()["hash"]
 
-    # Photo file is on disk at the expected path
-    photo_path = baker.config.PHOTOS_DIR / "1.jpg"
+    # Photo file is on disk at the flat hash path
+    photo_path = baker.config.DATA_DIR / "photos" / f"{hash_hex}.jpg"
     assert photo_path.exists()
 
-    # DB has the photo_path (accessible by CLI)
-    row = _db_query_one("SELECT photo_path FROM products WHERE id = 1")
-    assert row["photo_path"] == "photos/products/1.jpg"
+    # DB has photo_id (accessible by CLI)
+    row = _db_query_one("SELECT photo_id FROM products WHERE id = 1")
+    assert row["photo_id"] is not None
 
 
 def test_upload_photo_then_serve_matches(api_client):
@@ -205,13 +206,10 @@ def test_full_product_lifecycle(api_client):
     assert row["base_price"] == 40000  # updated
     assert row["cost"] == 12000
     assert row["recipe_notes"] == "Công thức đã cập nhật"
-    assert row["photo_path"] == f"photos/products/{pid}.jpg"
+    assert row["photo_id"] is not None
     assert row["active"] == 1
 
-    # 5. Photo file exists on disk
-    assert (baker.config.PHOTOS_DIR / f"{pid}.jpg").exists()
-
-    # 6. Photo served via API
+    # 5. Photo served via API (GET /api/products/{pid}/photo uses hash internally)
     resp = api_client.get(f"/api/products/{pid}/photo")
     assert resp.status_code == 200
 

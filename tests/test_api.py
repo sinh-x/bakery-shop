@@ -170,7 +170,8 @@ def test_upload_photo(api_client):
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert "photo_path" in data
+    assert "hash" in data
+    assert "url" in data
     assert "Đã tải lên" in data["message"]
 
 
@@ -190,14 +191,15 @@ def test_upload_photo_and_serve(api_client):
 def test_upload_photo_resizes_large_image(api_client):
     """Images larger than 1200px should be resized."""
     image_data = _make_test_image(width=2000, height=1500)
-    api_client.post(
+    resp = api_client.post(
         "/api/products/1/photo",
         files={"file": ("big.jpg", image_data, "image/jpeg")},
     )
 
-    # Verify the saved photo is resized
+    # Verify the saved photo is resized (saved at flat hash path)
     import baker.config
-    photo_path = baker.config.PHOTOS_DIR / "1.jpg"
+    hash_hex = resp.json()["hash"]
+    photo_path = baker.config.DATA_DIR / "photos" / f"{hash_hex}.jpg"
     assert photo_path.exists()
     saved = Image.open(photo_path)
     assert max(saved.size) <= 1200
@@ -230,7 +232,7 @@ def test_get_photo_not_found(api_client):
 # --- Photo path in product data ---
 
 
-def test_upload_photo_updates_photo_path(api_client):
+def test_upload_photo_updates_photo_id(api_client):
     image_data = _make_test_image()
     api_client.post(
         "/api/products/1/photo",
@@ -239,7 +241,7 @@ def test_upload_photo_updates_photo_path(api_client):
 
     resp = api_client.get("/api/products/1")
     assert resp.status_code == 200
-    assert resp.json()["photo_path"] == "photos/products/1.jpg"
+    assert resp.json()["photo_id"] is not None
 
 
 # --- product_code field ---
@@ -351,7 +353,7 @@ def test_create_product_invalid_code_format(api_client):
         "product_code": "invalid-code",
     })
     assert resp.status_code == 422
-    assert "Mã sản phẩm không hợp lệ" in resp.json()["detail"]
+    assert "BMI-" in resp.json()["detail"]
 
 
 def test_create_product_duplicate_code(api_client):
@@ -440,3 +442,473 @@ def test_create_category_duplicate_slug(api_client):
     })
     assert resp.status_code == 409
     assert "đã tồn tại" in resp.json()["detail"]
+
+# --- include_inactive query param ---
+
+def test_list_categories_default_excludes_inactive(api_client):
+    # Deactivate one category
+    cats = api_client.get("/api/categories").json()
+    cat_id = cats[0]["id"]
+    api_client.patch(f"/api/categories/{cat_id}", json={"active": 0})
+    resp = api_client.get("/api/categories")
+    active_ids = [c["id"] for c in resp.json()]
+    assert cat_id not in active_ids
+
+
+def test_list_categories_include_inactive(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat_id = cats[0]["id"]
+    api_client.patch(f"/api/categories/{cat_id}", json={"active": 0})
+    resp = api_client.get("/api/categories", params={"include_inactive": 1})
+    all_ids = [c["id"] for c in resp.json()]
+    assert cat_id in all_ids
+
+
+# --- PATCH /api/categories/{id} ---
+
+def test_update_category_name(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = next(c for c in cats if c["slug"] == "khac")
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={"name": "Khác loại"})
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Khác loại"
+    assert resp.json()["slug"] == "khac"
+
+
+def test_update_category_code_prefix(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = next(c for c in cats if c["slug"] == "khac")
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={"code_prefix": "KHC"})
+    assert resp.status_code == 200
+    assert resp.json()["code_prefix"] == "KHC"
+
+
+def test_update_category_deactivate(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = cats[0]
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={"active": 0})
+    assert resp.status_code == 200
+    assert resp.json()["active"] == 0
+
+
+def test_update_category_reactivate(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = cats[0]
+    api_client.patch(f"/api/categories/{cat['id']}", json={"active": 0})
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={"active": 1})
+    assert resp.status_code == 200
+    assert resp.json()["active"] == 1
+
+
+def test_update_category_not_found(api_client):
+    resp = api_client.patch("/api/categories/99999", json={"name": "X"})
+    assert resp.status_code == 404
+
+
+def test_update_category_empty_name_rejected(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = cats[0]
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={"name": ""})
+    assert resp.status_code == 422
+
+
+def test_update_category_bad_prefix_rejected(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = cats[0]
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={"code_prefix": "x"})
+    assert resp.status_code == 422
+
+
+def test_update_category_no_fields_returns_unchanged(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = cats[0]
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={})
+    assert resp.status_code == 200
+    assert resp.json()["id"] == cat["id"]
+
+
+# --- Catalog photo upload ---
+
+
+def test_upload_catalog_photo(api_client):
+    image_data = _make_test_image()
+    resp = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("photo.jpg", image_data, "image/jpeg")},
+        data={"caption": "Bánh sinh nhật", "tags": "sinh nhật, hoa"},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert "id" in data
+    assert "file_path" in data
+    assert data["caption"] == "Bánh sinh nhật"
+    assert data["tags"] == "sinh nhật, hoa"
+    assert "position" in data
+
+
+def test_upload_catalog_photo_default_fields(api_client):
+    image_data = _make_test_image()
+    resp = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("photo.jpg", image_data, "image/jpeg")},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["caption"] == ""
+    assert data["tags"] == ""
+    assert data["position"] == 0
+
+
+def test_upload_catalog_photo_position_increments(api_client):
+    image_data = _make_test_image()
+    first = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("a.jpg", image_data, "image/jpeg")},
+    )
+    second = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("b.jpg", image_data, "image/jpeg")},
+    )
+    assert first.json()["position"] == 0
+    assert second.json()["position"] == 1
+
+
+# --- Catalog list ---
+
+
+def test_list_catalog_photos_empty(api_client):
+    resp = api_client.get("/api/products/1/catalog")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_list_catalog_photos_returns_uploaded(api_client):
+    image_data = _make_test_image()
+    api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("photo.jpg", image_data, "image/jpeg")},
+        data={"caption": "Bánh kem"},
+    )
+    resp = api_client.get("/api/products/1/catalog")
+    assert resp.status_code == 200
+    photos = resp.json()
+    assert len(photos) == 1
+    assert photos[0]["caption"] == "Bánh kem"
+
+
+def test_list_catalog_photos_ordered_by_position(api_client):
+    image_data = _make_test_image()
+    for _ in range(3):
+        api_client.post(
+            "/api/products/1/catalog",
+            files={"file": ("photo.jpg", image_data, "image/jpeg")},
+        )
+    photos = api_client.get("/api/products/1/catalog").json()
+    positions = [p["position"] for p in photos]
+    assert positions == sorted(positions)
+
+
+def test_list_catalog_photos_product_not_found(api_client):
+    resp = api_client.get("/api/products/9999/catalog")
+    assert resp.status_code == 404
+
+
+# --- Catalog PATCH ---
+
+
+def test_update_catalog_photo_caption(api_client):
+    image_data = _make_test_image()
+    photo = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("photo.jpg", image_data, "image/jpeg")},
+    ).json()
+    resp = api_client.patch(
+        f"/api/products/1/catalog/{photo['id']}",
+        json={"caption": "Mô tả mới"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["caption"] == "Mô tả mới"
+
+
+def test_update_catalog_photo_tags(api_client):
+    image_data = _make_test_image()
+    photo = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("photo.jpg", image_data, "image/jpeg")},
+    ).json()
+    resp = api_client.patch(
+        f"/api/products/1/catalog/{photo['id']}",
+        json={"tags": "hoa, đỏ"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["tags"] == "hoa, đỏ"
+
+
+def test_update_catalog_photo_position(api_client):
+    image_data = _make_test_image()
+    photo = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("photo.jpg", image_data, "image/jpeg")},
+    ).json()
+    resp = api_client.patch(
+        f"/api/products/1/catalog/{photo['id']}",
+        json={"position": 5},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["position"] == 5
+
+
+def test_update_catalog_photo_empty_body(api_client):
+    image_data = _make_test_image()
+    photo = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("photo.jpg", image_data, "image/jpeg")},
+    ).json()
+    resp = api_client.patch(f"/api/products/1/catalog/{photo['id']}", json={})
+    assert resp.status_code == 400
+    assert "Không có gì để cập nhật" in resp.json()["detail"]
+
+
+def test_update_catalog_photo_not_found(api_client):
+    resp = api_client.patch(
+        "/api/products/1/catalog/9999",
+        json={"caption": "x"},
+    )
+    assert resp.status_code == 404
+
+
+# --- Catalog DELETE ---
+
+
+def test_delete_catalog_photo(api_client):
+    image_data = _make_test_image()
+    photo = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("photo.jpg", image_data, "image/jpeg")},
+    ).json()
+    resp = api_client.delete(f"/api/products/1/catalog/{photo['id']}")
+    assert resp.status_code == 200
+    assert "xóa" in resp.json()["message"]
+
+    photos = api_client.get("/api/products/1/catalog").json()
+    assert all(p["id"] != photo["id"] for p in photos)
+
+
+def test_delete_catalog_photo_returns_404_on_refetch(api_client):
+    image_data = _make_test_image()
+    photo = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("photo.jpg", image_data, "image/jpeg")},
+    ).json()
+    api_client.delete(f"/api/products/1/catalog/{photo['id']}")
+    resp = api_client.delete(f"/api/products/1/catalog/{photo['id']}")
+    assert resp.status_code == 404
+
+
+def test_delete_catalog_photo_not_found(api_client):
+    resp = api_client.delete("/api/products/1/catalog/9999")
+    assert resp.status_code == 404
+
+
+# --- Catalog edge cases ---
+
+
+def test_upload_catalog_photo_product_not_found(api_client):
+    image_data = _make_test_image()
+    resp = api_client.post(
+        "/api/products/9999/catalog",
+        files={"file": ("photo.jpg", image_data, "image/jpeg")},
+    )
+    assert resp.status_code == 404
+
+
+def test_upload_catalog_photo_empty_file(api_client):
+    resp = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("empty.jpg", b"", "image/jpeg")},
+    )
+    assert resp.status_code == 400
+    assert "rỗng" in resp.json()["detail"]
+
+
+# --- POST /api/photos + GET /api/photos/{hash}.jpg ---
+
+
+def test_upload_photo_via_photos_endpoint(api_client):
+    image_data = _make_test_image()
+    resp = api_client.post(
+        "/api/photos",
+        files={"file": ("test.jpg", image_data, "image/jpeg")},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert "hash" in data
+    assert "url" in data
+    assert data["url"].startswith("/api/photos/")
+    assert data["url"].endswith(".jpg")
+
+
+def test_get_photo_by_hash(api_client):
+    image_data = _make_test_image()
+    upload_resp = api_client.post(
+        "/api/photos",
+        files={"file": ("test.jpg", image_data, "image/jpeg")},
+    )
+    assert upload_resp.status_code == 201
+    photo_hash = upload_resp.json()["hash"]
+    resp = api_client.get(f"/api/photos/{photo_hash}.jpg")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/jpeg"
+    assert len(resp.content) > 0
+
+
+def test_get_photo_by_hash_not_found(api_client):
+    resp = api_client.get("/api/photos/0000000000000000000000000000000000000000000000000000000000000000.jpg")
+    assert resp.status_code == 404
+    assert "Không tìm thấy" in resp.json()["detail"]
+
+
+def test_upload_photo_dedup(api_client):
+    """Uploading the same image twice should return the same hash."""
+    image_data = _make_test_image()
+    resp1 = api_client.post("/api/photos", files={"file": ("a.jpg", image_data, "image/jpeg")})
+    resp2 = api_client.post("/api/photos", files={"file": ("b.jpg", image_data, "image/jpeg")})
+    assert resp1.status_code == 201
+    assert resp2.status_code == 201
+    assert resp1.json()["hash"] == resp2.json()["hash"]
+
+
+def test_upload_photo_empty_file_rejected(api_client):
+    resp = api_client.post(
+        "/api/photos",
+        files={"file": ("empty.jpg", b"", "image/jpeg")},
+    )
+    assert resp.status_code == 400
+    assert "rỗng" in resp.json()["detail"]
+
+
+# --- PATCH /api/categories/reorder ---
+
+
+def test_reorder_categories(api_client):
+    cats = api_client.get("/api/categories").json()
+    # Reverse the order
+    reversed_ids = [{"id": c["id"]} for c in reversed(cats)]
+    resp = api_client.patch("/api/categories/reorder", json=reversed_ids)
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+    assert resp.json()["count"] == len(cats)
+
+
+def test_reorder_categories_reflected_in_list(api_client):
+    cats = api_client.get("/api/categories").json()
+    # Put last category first
+    new_order = [cats[-1]] + cats[:-1]
+    items = [{"id": c["id"]} for c in new_order]
+    api_client.patch("/api/categories/reorder", json=items)
+    updated = api_client.get("/api/categories").json()
+    # First category in list should be the one we put first
+    assert updated[0]["id"] == cats[-1]["id"]
+
+
+# --- Category icon in create/update ---
+
+
+def test_create_category_with_icon(api_client):
+    resp = api_client.post("/api/categories", json={
+        "slug": "nuoc_uong",
+        "name": "Nước uống",
+        "code_prefix": "NUO",
+        "icon": "local_cafe",
+    })
+    assert resp.status_code == 201
+    assert resp.json()["icon"] == "local_cafe"
+
+
+def test_create_category_default_icon_empty(api_client):
+    resp = api_client.post("/api/categories", json={
+        "slug": "test_slug",
+        "name": "Test",
+        "code_prefix": "TST",
+    })
+    assert resp.status_code == 201
+    assert resp.json()["icon"] == ""
+
+
+def test_update_category_icon(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = cats[0]
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={"icon": "cake"})
+    assert resp.status_code == 200
+    assert resp.json()["icon"] == "cake"
+
+
+def test_update_category_icon_clear(api_client):
+    cats = api_client.get("/api/categories").json()
+    cat = cats[0]
+    api_client.patch(f"/api/categories/{cat['id']}", json={"icon": "cake"})
+    resp = api_client.patch(f"/api/categories/{cat['id']}", json={"icon": ""})
+    assert resp.status_code == 200
+    assert resp.json()["icon"] == ""
+
+
+# --- Product code auto-prefix ---
+
+
+def test_create_product_suffix_only_auto_prefixes(api_client):
+    """Providing suffix '99' for banh_mi category should produce 'BMI-99'."""
+    resp = api_client.post("/api/products", json={
+        "name": "Bánh suffix test",
+        "category": "banh_mi",
+        "product_code": "99",
+    })
+    assert resp.status_code == 201
+    assert resp.json()["product_code"] == "BMI-99"
+
+
+def test_update_product_category_changes_prefix(api_client):
+    """Changing category without explicit code should update the prefix."""
+    # Create a banh_mi product (prefix BMI)
+    create_resp = api_client.post("/api/products", json={
+        "name": "Bánh prefix change test",
+        "category": "banh_mi",
+    })
+    assert create_resp.status_code == 201
+    product = create_resp.json()
+    product_id = product["id"]
+    old_code = product["product_code"]
+    assert old_code.startswith("BMI-")
+    old_suffix = old_code.split("-", 1)[1]
+
+    # Move to cookie category (prefix CKI)
+    resp = api_client.patch(f"/api/products/{product_id}", json={"category": "cookie"})
+    assert resp.status_code == 200
+    new_code = resp.json()["product_code"]
+    assert new_code == f"CKI-{old_suffix}"
+
+
+def test_update_category_prefix_cascades_to_products(api_client):
+    """Changing a category's code_prefix should update all products in that category."""
+    # Find the 'khac' category
+    cats = api_client.get("/api/categories").json()
+    khac = next(c for c in cats if c["slug"] == "khac")
+
+    # Create a product in khac
+    create_resp = api_client.post("/api/products", json={
+        "name": "Bánh cascade test",
+        "category": "khac",
+    })
+    assert create_resp.status_code == 201
+    product = create_resp.json()
+    old_code = product["product_code"]
+    assert old_code.startswith("KHA-")
+    suffix = old_code.split("-", 1)[1]
+
+    # Change khac's prefix from KHA to KHC
+    patch_resp = api_client.patch(f"/api/categories/{khac['id']}", json={"code_prefix": "KHC"})
+    assert patch_resp.status_code == 200
+
+    # Verify product's code was updated
+    prod_resp = api_client.get(f"/api/products/{product['id']}")
+    assert prod_resp.status_code == 200
+    assert prod_resp.json()["product_code"] == f"KHC-{suffix}"

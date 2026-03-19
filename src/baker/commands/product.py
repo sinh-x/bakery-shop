@@ -2,7 +2,7 @@ import click
 
 from baker.db.connection import get_db
 from baker.formatters.tables import console
-from baker.code_gen import generate_code, validate_code_format
+from baker.code_gen import generate_code, get_category_prefix
 
 from rich.table import Table
 
@@ -23,9 +23,10 @@ def product_add(name, category, base_price, cost, recipe_notes, product_code):
     """Add a product to the catalog."""
     with get_db() as conn:
         if product_code:
-            if not validate_code_format(product_code):
-                console.print(f"  [red]Mã không hợp lệ: '{product_code}' (định dạng: PREFIX-SUFFIX, ví dụ BMI-01)[/red]")
-                return
+            prefix = get_category_prefix(conn, category)
+            if "-" not in product_code:
+                # Suffix-only — auto-prefix from category
+                product_code = f"{prefix}-{product_code}" if prefix else product_code
             existing = conn.execute("SELECT id FROM products WHERE product_code = ?", (product_code,)).fetchone()
             if existing:
                 console.print(f"  [red]Mã '{product_code}' đã tồn tại[/red]")
@@ -123,10 +124,16 @@ def product_edit(identifier, base_price, cost, recipe_notes, category, product_c
         if category is not None:
             updates.append("category = ?")
             params.append(category)
+
+        # Resolve effective category for prefix lookups
+        effective_category = category if category is not None else row["category"]
+
         if product_code is not None:
-            if not validate_code_format(product_code):
-                console.print(f"  [red]Mã không hợp lệ: '{product_code}' (định dạng: PREFIX-SUFFIX, ví dụ BMI-01)[/red]")
-                return
+            if "-" not in product_code:
+                # Suffix-only — auto-prefix from effective category
+                prefix = get_category_prefix(conn, effective_category)
+                if prefix:
+                    product_code = f"{prefix}-{product_code}"
             existing = conn.execute(
                 "SELECT id FROM products WHERE product_code = ? AND id != ?",
                 (product_code, row["id"]),
@@ -136,6 +143,22 @@ def product_edit(identifier, base_price, cost, recipe_notes, category, product_c
                 return
             updates.append("product_code = ?")
             params.append(product_code)
+        elif category is not None and category != row["category"]:
+            # Category changed, no explicit code — update prefix
+            new_prefix = get_category_prefix(conn, category)
+            current_code = row["product_code"] or ""
+            if new_prefix and current_code and "-" in current_code:
+                old_suffix = current_code.split("-", 1)[1]
+                new_code = f"{new_prefix}-{old_suffix}"
+                dup = conn.execute(
+                    "SELECT id FROM products WHERE product_code = ? AND id != ?",
+                    (new_code, row["id"]),
+                ).fetchone()
+                if dup:
+                    console.print(f"  [yellow]Cảnh báo: Mã '{new_code}' đã tồn tại, giữ mã cũ[/yellow]")
+                else:
+                    updates.append("product_code = ?")
+                    params.append(new_code)
 
         if not updates:
             console.print("  [dim]Nothing to update[/dim]")
