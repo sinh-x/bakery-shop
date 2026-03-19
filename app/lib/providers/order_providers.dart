@@ -91,3 +91,9 @@ final orderDetailProvider =
     AsyncNotifierProvider.family<OrderDetailNotifier, Order, String>(
   (ref) => OrderDetailNotifier(ref),
 );
+
+/// Provides all active (non-terminal) orders for the dashboard view.
+final dashboardOrdersProvider = FutureProvider<List<Order>>((ref) async {
+  final service = ref.watch(orderServiceProvider);
+  return service.listActiveOrders();
+});

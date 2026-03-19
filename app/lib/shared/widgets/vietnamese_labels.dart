@@ -127,6 +127,7 @@ class VN {
   // Dashboard
   static const todayOrders = 'Đơn hàng hôm nay';
   static const upcomingDue = 'Sắp đến hạn';
+  static const overdueOrders = 'Quá hạn';
   static const recentActivity = 'Sự kiện gần đây';
 
   // Packing items

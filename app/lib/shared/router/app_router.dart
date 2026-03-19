@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/event.dart';
 import '../../features/categories/category_management_screen.dart';
+import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/events/event_detail_screen.dart';
 import '../../features/events/event_form_screen.dart';
 import '../../features/events/event_list_screen.dart';
@@ -15,7 +16,6 @@ import '../../features/products/product_catalog_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../providers/products_provider.dart';
-import '../widgets/coming_soon_screen.dart';
 import '../widgets/vietnamese_labels.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -32,7 +32,7 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/dashboard',
           pageBuilder: (context, state) => const NoTransitionPage(
-            child: ComingSoonScreen(icon: Icons.dashboard),
+            child: DashboardScreen(),
           ),
         ),
         GoRoute(

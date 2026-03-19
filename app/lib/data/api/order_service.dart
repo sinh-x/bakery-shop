@@ -98,6 +98,19 @@ class OrderService {
     );
     return Order.fromJson(response.data as Map<String, dynamic>);
   }
+
+  /// Fetches all active (non-terminal) orders for the dashboard view.
+  Future<List<Order>> listActiveOrders({int limit = 200}) async {
+    final response = await _dio.get(
+      '/api/orders',
+      queryParameters: {'limit': limit, 'offset': 0},
+    );
+    final list = response.data as List;
+    return list
+        .map((json) => Order.fromJson(json as Map<String, dynamic>))
+        .where((o) => o.status != 'completed' && o.status != 'cancelled')
+        .toList();
+  }
 }
 
 final orderServiceProvider = Provider<OrderService>((ref) {
