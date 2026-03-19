@@ -1,5 +1,6 @@
 """Order management API routes."""
 
+import json
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -160,7 +161,7 @@ def edit_order(ref: str, body: OrderEdit):
         if "items" in data:
             items = [_item_in_to_model(OrderItemIn(**i)) for i in data["items"]]
             total = sum(i.qty * i.price for i in items)
-            items_json = __import__("json").dumps([i.to_dict() for i in items])
+            items_json = json.dumps([i.to_dict() for i in items])
             updates.append("items = ?")
             updates.append("total_price = ?")
             params.append(items_json)
