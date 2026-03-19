@@ -7,6 +7,7 @@ import '../../features/categories/category_management_screen.dart';
 import '../../features/events/event_detail_screen.dart';
 import '../../features/events/event_form_screen.dart';
 import '../../features/events/event_list_screen.dart';
+import '../../features/orders/order_create_screen.dart';
 import '../../features/orders/order_list_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
 import '../../features/products/product_form_screen.dart';
@@ -51,6 +52,12 @@ final appRouter = GoRouter(
           ),
         ),
       ],
+    ),
+    // Order create — full-screen (outside shell)
+    GoRoute(
+      path: '/orders/new',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const OrderCreateScreen(),
     ),
     // Product create — full-screen (outside shell)
     GoRoute(

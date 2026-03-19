@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
@@ -72,6 +73,11 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text(VN.tabOrders)),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => context.push('/orders/new'),
+        tooltip: VN.createOrder,
+        child: const Icon(Icons.add),
+      ),
       body: Column(
         children: [
           // Search bar

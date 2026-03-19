@@ -189,6 +189,22 @@ class VN {
   static const urlEmpty = 'Vui lòng nhập địa chỉ';
   static const testing = 'Đang kiểm tra...';
 
+  // Delivery types (detailed)
+  static const deliveryBus = 'Giao xe khách';
+  static const deliveryDoor = 'Giao tận nơi';
+
+  // Order create form extras
+  static const dueTime = 'Giờ giao';
+  static const isBirthday = 'Sinh nhật';
+  static const birthdayAge = 'Tuổi khách hàng';
+  static const orderCreated = 'Đã tạo đơn hàng';
+  static const searchProducts = 'Tìm sản phẩm...';
+
+  // Time slots
+  static const timeSlotMorning = 'Sáng';
+  static const timeSlotAfternoon = 'Chiều';
+  static const timeSlotEvening = 'Tối';
+
   // Catalog gallery
   static const catalogTitle = 'Bộ sưu tập';
   static const addCatalogPhoto = 'Thêm ảnh mẫu';
