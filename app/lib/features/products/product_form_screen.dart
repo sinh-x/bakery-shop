@@ -540,6 +540,8 @@ class _CatalogGallerySection extends ConsumerStatefulWidget {
 class _CatalogGallerySectionState
     extends ConsumerState<_CatalogGallerySection> {
   bool _uploading = false;
+  int _uploadTotal = 0;
+  int _uploadDone = 0;
 
   Future<void> _pickAndUpload() async {
     final source = await showModalBottomSheet<ImageSource>(
@@ -565,28 +567,71 @@ class _CatalogGallerySectionState
     if (source == null) return;
 
     final picker = ImagePicker();
-    final file = await picker.pickImage(source: source, maxWidth: 1200);
-    if (file == null) return;
 
-    setState(() => _uploading = true);
-    try {
-      await ref
-          .read(catalogProvider(widget.productId).notifier)
-          .addPhoto(file.path);
+    if (source == ImageSource.gallery) {
+      // Multi-select from gallery
+      final files = await picker.pickMultiImage(maxWidth: 1200);
+      if (files.isEmpty) return;
+
+      setState(() {
+        _uploading = true;
+        _uploadTotal = files.length;
+        _uploadDone = 0;
+      });
+      int failed = 0;
+      for (final file in files) {
+        try {
+          await ref
+              .read(catalogProvider(widget.productId).notifier)
+              .addPhoto(file.path);
+          if (mounted) setState(() => _uploadDone++);
+        } on DioException {
+          failed++;
+        } catch (_) {
+          failed++;
+        }
+      }
       if (mounted) {
+        final added = files.length - failed;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.catalogPhotoAdded)),
+          SnackBar(
+            content: Text(
+              failed == 0
+                  ? (added == 1 ? VN.catalogPhotoAdded : 'Đã thêm $added ảnh mẫu')
+                  : 'Đã thêm $added ảnh, $failed ảnh lỗi',
+            ),
+          ),
         );
       }
-    } on DioException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? VN.apiError)),
-        );
+    } else {
+      // Camera: single photo only
+      final file = await picker.pickImage(source: source, maxWidth: 1200);
+      if (file == null) return;
+
+      setState(() {
+        _uploading = true;
+        _uploadTotal = 1;
+        _uploadDone = 0;
+      });
+      try {
+        await ref
+            .read(catalogProvider(widget.productId).notifier)
+            .addPhoto(file.path);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text(VN.catalogPhotoAdded)),
+          );
+        }
+      } on DioException catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.message ?? VN.apiError)),
+          );
+        }
       }
-    } finally {
-      if (mounted) setState(() => _uploading = false);
     }
+
+    if (mounted) setState(() => _uploading = false);
   }
 
   Future<void> _confirmDelete(CatalogPhoto photo) async {
@@ -666,6 +711,13 @@ class _CatalogGallerySectionState
                   width: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
+                if (_uploadTotal > 1) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    '$_uploadDone/$_uploadTotal',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
               ],
             ],
           ),
