@@ -40,13 +40,23 @@ class VN {
 
   // Order detail
   static const orderDetail = 'Chi tiết đơn hàng';
+  static const editOrder = 'Sửa đơn hàng';
   static const customer = 'Khách hàng';
   static const products = 'Sản phẩm';
   static const payment = 'Thanh toán';
   static const paid = 'Đã thanh toán';
+  static const partialPaid = 'Trả một phần';
   static const unpaid = 'Chưa thanh toán';
+  static const amountPaidLabel = 'Đã trả';
+  static const remainingLabel = 'Còn lại';
   static const packingChecklist = 'Danh sách đóng gói';
   static const actions = 'Thao tác';
+  static const cancelOrderTitle = 'Hủy đơn hàng';
+  static const cancelReasonLabel = 'Lý do hủy (tùy chọn)';
+  static const cancelReasonHint = 'Nhập lý do hủy...';
+  static const confirmCancelAction = 'Xác nhận hủy';
+  static const orderStatusUpdated = 'Đã cập nhật trạng thái';
+  static const orderEditSaved = 'Đã lưu thay đổi';
 
   // Product categories
   static const catBanhMi = 'Bánh mì';
@@ -266,6 +276,26 @@ const validTransitions = {
   'completed': <String>[],
   'cancelled': <String>[],
 };
+
+/// Returns the button label for transitioning to [targetStatus].
+String statusActionLabel(String targetStatus) {
+  switch (targetStatus) {
+    case 'confirmed':
+      return VN.actionConfirm;
+    case 'in_progress':
+      return VN.actionStart;
+    case 'ready':
+      return VN.actionReady;
+    case 'delivered':
+      return VN.actionDeliver;
+    case 'completed':
+      return VN.actionComplete;
+    case 'cancelled':
+      return VN.actionCancel;
+    default:
+      return targetStatus;
+  }
+}
 
 /// Format VND: 150000.0 → "150.000đ"
 String formatVND(double amount) {

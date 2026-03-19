@@ -52,6 +52,39 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
       return service.getOrder(orderRef);
     });
   }
+
+  Future<Order> transitionTo(String targetStatus, {String reason = ''}) async {
+    final service = ref.read(orderServiceProvider);
+    final updated =
+        await service.updateStatus(orderRef, targetStatus, reason: reason);
+    state = AsyncData(updated);
+    // Refresh the list so the status change is reflected there too.
+    ref.read(orderListProvider.notifier).refresh();
+    return updated;
+  }
+
+  Future<Order> save({
+    String? notes,
+    String? dueDate,
+    String? dueTime,
+    String? customerPhone,
+    String? deliveryAddress,
+    String? deliveryType,
+  }) async {
+    final service = ref.read(orderServiceProvider);
+    final updated = await service.editOrder(
+      orderRef,
+      notes: notes,
+      dueDate: dueDate,
+      dueTime: dueTime,
+      customerPhone: customerPhone,
+      deliveryAddress: deliveryAddress,
+      deliveryType: deliveryType,
+    );
+    state = AsyncData(updated);
+    ref.read(orderListProvider.notifier).refresh();
+    return updated;
+  }
 }
 
 final orderDetailProvider =

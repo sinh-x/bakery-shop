@@ -175,8 +175,11 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen> {
                   child: ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                     itemCount: filtered.length,
-                    itemBuilder: (context, index) =>
-                        _OrderCard(order: filtered[index]),
+                    itemBuilder: (context, index) => _OrderCard(
+                      order: filtered[index],
+                      onTap: () => context
+                          .push('/orders/${filtered[index].orderRef}'),
+                    ),
                   ),
                 );
               },
@@ -189,9 +192,10 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen> {
 }
 
 class _OrderCard extends StatelessWidget {
-  const _OrderCard({required this.order});
+  const _OrderCard({required this.order, this.onTap});
 
   final Order order;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -201,7 +205,10 @@ class _OrderCard extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -284,6 +291,7 @@ class _OrderCard extends StatelessWidget {
               ),
             ],
           ],
+        ),
         ),
       ),
     );
