@@ -64,9 +64,19 @@ class OrderItem:
     qty: int = 1
     price: float = 0.0
     notes: str = ""
+    product_id: str = ""
 
     def to_dict(self):
-        return {"product": self.product, "qty": self.qty, "price": self.price, "notes": self.notes}
+        return {"product": self.product, "qty": self.qty, "price": self.price, "notes": self.notes, "product_id": self.product_id}
+
+    def to_api_dict(self) -> dict:
+        return {
+            "productId": self.product_id,
+            "productName": self.product,
+            "quantity": self.qty,
+            "unitPrice": self.price,
+            "notes": self.notes,
+        }
 
     @staticmethod
     def parse(spec: str) -> "OrderItem":
@@ -104,6 +114,7 @@ class Order:
     delivery_address: str = ""
     customer_phone: str = ""
     notes: str = ""
+    amount_paid: float = 0.0
     id: Optional[int] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -121,10 +132,11 @@ class Order:
         cursor = conn.execute(
             """INSERT INTO orders (order_ref, customer_name, customer_phone, items,
                total_price, status, due_date, due_time, delivery_type,
-               delivery_address, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               delivery_address, notes, amount_paid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (self.order_ref, self.customer_name, self.customer_phone,
              items_json, self.total_price, self.status, self.due_date,
-             self.due_time, self.delivery_type, self.delivery_address, self.notes),
+             self.due_time, self.delivery_type, self.delivery_address, self.notes,
+             self.amount_paid),
         )
         self.id = cursor.lastrowid
 
@@ -176,5 +188,28 @@ class Order:
             items=items, total_price=row["total_price"], status=row["status"],
             due_date=row["due_date"], due_time=row["due_time"],
             delivery_type=row["delivery_type"], delivery_address=row["delivery_address"],
-            notes=row["notes"], created_at=row["created_at"], updated_at=row["updated_at"],
+            notes=row["notes"], amount_paid=row["amount_paid"] or 0.0,
+            created_at=row["created_at"], updated_at=row["updated_at"],
         )
+
+    def to_api_dict(self) -> dict:
+        """Return Dart-compatible camelCase JSON representation."""
+        return {
+            "id": str(self.id),
+            "orderRef": self.order_ref,
+            "customerName": self.customer_name,
+            "customerPhone": self.customer_phone,
+            "items": [i.to_api_dict() for i in self.items],
+            "totalPrice": self.total_price,
+            "status": self.status,
+            "dueDate": self.due_date,
+            "dueTime": self.due_time,
+            "deliveryType": self.delivery_type,
+            "deliveryAddress": self.delivery_address,
+            "notes": self.notes,
+            "amountPaid": self.amount_paid,
+            "isPaid": self.amount_paid > 0 and self.amount_paid >= self.total_price,
+            "packingChecklist": [],
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at,
+        }

@@ -374,6 +374,10 @@ MIGRATIONS = {
         "description": "Rename event type 'incident' to 'equipment'",
         "sql": "UPDATE events SET type = 'equipment' WHERE type = 'incident';",
     },
+    10: {
+        "description": "Add amount_paid to orders table",
+        "sql": "ALTER TABLE orders ADD COLUMN amount_paid REAL DEFAULT 0;",
+    },
 }
 
 
