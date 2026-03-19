@@ -370,6 +370,10 @@ MIGRATIONS = {
         "sql": PHOTOS_TABLE_AND_PHOTO_IDS_SCHEMA,
         "callable": _migrate_v8_photos,
     },
+    9: {
+        "description": "Rename event type 'incident' to 'equipment'",
+        "sql": "UPDATE events SET type = 'equipment' WHERE type = 'incident';",
+    },
 }
 
 

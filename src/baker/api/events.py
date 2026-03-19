@@ -13,7 +13,7 @@ from baker.models.event import Event
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
-VALID_TYPES = {"note", "incident", "production", "inventory", "expense", "delivery", "order"}
+VALID_TYPES = {"note", "equipment", "production", "inventory", "expense", "delivery", "order"}
 
 
 class EventCreate(BaseModel):

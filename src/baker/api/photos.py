@@ -28,7 +28,9 @@ def save_photo(data: bytes, original_name: str = "") -> str:
     dest = flat_dir / f"{hash_hex}.jpg"
 
     if not dest.exists():
+        from PIL import ImageOps
         img = Image.open(io.BytesIO(data))
+        img = ImageOps.exif_transpose(img)
         img = img.convert("RGB")
         if max(img.size) > 1200:
             img.thumbnail((1200, 1200), Image.LANCZOS)

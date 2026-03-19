@@ -39,6 +39,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late final TextEditingController _codeCtrl;
   late String _category;
   String? _pickedPhotoPath;
+  String _photoCacheBuster = '';
   bool _saving = false;
 
   bool get _isEditing => widget.product != null;
@@ -141,21 +142,31 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             price != orig.basePrice ||
             cost != orig.cost ||
             newNotes != orig.recipeNotes ||
-            newCode != orig.productCode;
+            newCode != orig.productCode ||
+            _pickedPhotoPath != null;
         if (!hasChanges) {
           if (mounted) context.pop();
           return;
         }
-        saved = await notifier.updateProduct(
-          orig.id,
-          // Only send fields that actually changed to avoid false conflicts
-          name: newName != orig.name ? newName : null,
-          category: _category != orig.category ? _category : null,
-          basePrice: price != orig.basePrice ? price : null,
-          cost: cost != orig.cost ? cost : null,
-          recipeNotes: newNotes != orig.recipeNotes ? newNotes : null,
-          productCode: newCode != orig.productCode ? newCode : null,
-        );
+        final hasFieldChanges = newName != orig.name ||
+            _category != orig.category ||
+            price != orig.basePrice ||
+            cost != orig.cost ||
+            newNotes != orig.recipeNotes ||
+            newCode != orig.productCode;
+        if (hasFieldChanges) {
+          saved = await notifier.updateProduct(
+            orig.id,
+            name: newName != orig.name ? newName : null,
+            category: _category != orig.category ? _category : null,
+            basePrice: price != orig.basePrice ? price : null,
+            cost: cost != orig.cost ? cost : null,
+            recipeNotes: newNotes != orig.recipeNotes ? newNotes : null,
+            productCode: newCode != orig.productCode ? newCode : null,
+          );
+        } else {
+          saved = orig;
+        }
       } else {
         saved = await notifier.createProduct(
           name: _nameCtrl.text.trim(),
@@ -169,6 +180,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
       if (_pickedPhotoPath != null) {
         await notifier.uploadPhoto(saved.id, _pickedPhotoPath!);
+        // Clear image cache so updated photo shows immediately
+        PaintingBinding.instance.imageCache.clear();
+        PaintingBinding.instance.imageCache.clearLiveImages();
       }
 
       if (mounted) {
@@ -273,6 +287,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               pickedPhotoPath: _pickedPhotoPath,
               baseUrl: baseUrl,
               onPickPhoto: _pickPhoto,
+              cacheBuster: _photoCacheBuster.isNotEmpty ? _photoCacheBuster : null,
             ),
             const SizedBox(height: 24),
 
@@ -420,12 +435,14 @@ class _PhotoSection extends StatelessWidget {
     required this.pickedPhotoPath,
     required this.baseUrl,
     required this.onPickPhoto,
+    this.cacheBuster,
   });
 
   final int? productId;
   final String? pickedPhotoPath;
   final String baseUrl;
   final VoidCallback onPickPhoto;
+  final String? cacheBuster;
 
   @override
   Widget build(BuildContext context) {
@@ -467,7 +484,7 @@ class _PhotoSection extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           Image.network(
-            '$baseUrl/api/products/$productId/photo',
+            '$baseUrl/api/products/$productId/photo${cacheBuster != null ? '?v=$cacheBuster' : ''}',
             fit: BoxFit.cover,
             errorBuilder: (_, e, s) => _placeholder(),
           ),

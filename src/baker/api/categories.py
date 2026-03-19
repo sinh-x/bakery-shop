@@ -158,6 +158,17 @@ def update_category(category_id: int, update: CategoryUpdate):
 
         # Cascade prefix change to ALL products in this category (including inactive)
         if prefix_changed:
+            # Abort if the new prefix is already used by another category's products
+            conflict = conn.execute(
+                "SELECT product_code FROM products "
+                "WHERE category != ? AND product_code LIKE ?",
+                (existing["slug"], f"{update.code_prefix}-%"),
+            ).fetchone()
+            if conflict:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Mã viết tắt '{update.code_prefix}' đã được dùng bởi danh mục khác",
+                )
             conn.execute(
                 "UPDATE products "
                 "SET product_code = ? || substr(product_code, length(?)+1) "

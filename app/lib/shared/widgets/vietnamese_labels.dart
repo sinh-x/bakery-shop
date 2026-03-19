@@ -74,7 +74,7 @@ class VN {
   static const eventExpense = 'Chi phí';
 
   // Event types (chips)
-  static const typeIncident = 'Đồ điện/Dụng cụ làm bánh';
+  static const typeEquipment = 'Đồ điện/Dụng cụ làm bánh';
 
   // Event log form
   static const eventPrompt = 'Chuyện gì xảy ra?';
