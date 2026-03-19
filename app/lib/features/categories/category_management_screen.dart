@@ -146,17 +146,9 @@ class _CategoryListState extends ConsumerState<_CategoryList> {
 }
 
 Widget _buildCategoryIcon(Category category, {bool muted = false}) {
-  if (category.icon.isNotEmpty) {
-    final iconData = categoryIconsMap[category.icon];
-    if (iconData != null) {
-      return Icon(
-        iconData,
-        size: 24,
-        color: muted ? Colors.grey : null,
-      );
-    }
-  }
-  final emoji = categoryEmojiMap[category.slug] ?? '🎂';
+  final emoji = category.icon.isNotEmpty
+      ? category.icon
+      : (categoryEmojiMap[category.slug] ?? '🎂');
   return Text(
     emoji,
     style: TextStyle(

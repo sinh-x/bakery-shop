@@ -13,7 +13,7 @@ class _EventType {
 
 const _kTypes = [
   _EventType('note', VN.eventNote, Icons.edit_note),
-  _EventType('incident', VN.typeIncident, Icons.warning_amber),
+  _EventType('equipment', VN.typeEquipment, Icons.warning_amber),
   _EventType('production', VN.eventProduction, Icons.bakery_dining),
   _EventType('inventory', VN.eventInventory, Icons.inventory_2),
   _EventType('expense', VN.eventExpense, Icons.payments),
@@ -171,7 +171,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
         ),
         const SizedBox(height: 12),
 
-        // Type chips — single-select, incident highlighted orange
+        // Type chips — single-select, equipment highlighted orange
         Wrap(
           spacing: 6,
           runSpacing: 4,
@@ -181,7 +181,7 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
               label: Text(t.label),
               avatar: Icon(t.icon, size: 16),
               selected: selected,
-              selectedColor: t.value == 'incident'
+              selectedColor: t.value == 'equipment'
                   ? Colors.orange.shade100
                   : colorScheme.primaryContainer,
               onSelected: (_) => setState(() => _selectedType = t.value),

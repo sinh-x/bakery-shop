@@ -6,29 +6,13 @@ import '../../data/models/category.dart';
 import '../../providers/categories_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 
-/// Curated icon set for category icons (name → IconData).
-const categoryIconsMap = <String, IconData>{
-  'cake': Icons.cake,
-  'bakery_dining': Icons.bakery_dining,
-  'breakfast_dining': Icons.breakfast_dining,
-  'coffee': Icons.coffee,
-  'local_cafe': Icons.local_cafe,
-  'restaurant': Icons.restaurant,
-  'local_dining': Icons.local_dining,
-  'icecream': Icons.icecream,
-  'fastfood': Icons.fastfood,
-  'set_meal': Icons.set_meal,
-  'local_pizza': Icons.local_pizza,
-  'storefront': Icons.storefront,
-  'shopping_basket': Icons.shopping_basket,
-  'local_grocery_store': Icons.local_grocery_store,
-  'emoji_food_beverage': Icons.emoji_food_beverage,
-  'ramen_dining': Icons.ramen_dining,
-  'rice_bowl': Icons.rice_bowl,
-  'bento': Icons.bento,
-  'star': Icons.star,
-  'favorite': Icons.favorite,
-};
+/// Curated emoji options for category icons.
+const categoryEmojiOptions = [
+  '🎂', '🧁', '🍰', '🍩', '🍪', '🍫',
+  '🍬', '🥐', '🍞', '🥖', '🧇', '🍮',
+  '🥧', '🍡', '🧃', '☕', '🍵', '🥤',
+  '🍽️', '🛒',
+];
 
 /// Show the add/edit category bottom sheet.
 ///
@@ -157,21 +141,20 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
   }
 
   Widget _buildIconPicker(ColorScheme colorScheme) {
-    final icons = categoryIconsMap.entries.toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(VN.categoryIcon, style: const TextStyle(fontSize: 12, color: Colors.grey)),
         const SizedBox(height: 8),
         SizedBox(
-          height: 168,
+          height: 120,
           child: GridView.builder(
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
               crossAxisSpacing: 6,
               mainAxisSpacing: 6,
             ),
-            itemCount: icons.length + 1,
+            itemCount: categoryEmojiOptions.length + 1,
             itemBuilder: (context, index) {
               if (index == 0) {
                 final selected = _selectedIcon.isEmpty;
@@ -186,17 +169,13 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                   ),
                 );
               }
-              final entry = icons[index - 1];
-              final selected = _selectedIcon == entry.key;
+              final emoji = categoryEmojiOptions[index - 1];
+              final selected = _selectedIcon == emoji;
               return _IconCell(
                 selected: selected,
                 colorScheme: colorScheme,
-                onTap: () => setState(() => _selectedIcon = entry.key),
-                child: Icon(
-                  entry.value,
-                  size: 20,
-                  color: selected ? colorScheme.onPrimaryContainer : null,
-                ),
+                onTap: () => setState(() => _selectedIcon = emoji),
+                child: Text(emoji, style: const TextStyle(fontSize: 20)),
               );
             },
           ),
