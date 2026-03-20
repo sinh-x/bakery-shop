@@ -242,6 +242,24 @@ class VN {
   static const catalogPhotoUpdated = 'Đã cập nhật ảnh';
   static const catalogPhotoDeleted = 'Đã xóa ảnh';
 
+  // Payment transactions
+  static const txnTypeDeposit = 'Đặt cọc';
+  static const txnTypePayment = 'Thanh toán';
+  static const txnTypeFullPayment = 'Thanh toán đủ';
+  static const txnTypeRefund = 'Hoàn tiền';
+  static const methodCash = 'Tiền mặt';
+  static const methodTransfer = 'Chuyển khoản';
+  static const addPayment = 'Thêm thanh toán';
+  static const depositSection = 'Đặt cọc ngay';
+  static const depositAmount = 'Số tiền đặt cọc';
+  static const paymentHistory = 'Lịch sử thanh toán';
+  static const paymentRecorded = 'Đã ghi thanh toán';
+  static const noPaymentHistory = 'Chưa có giao dịch';
+  static const paymentMethod = 'Hình thức';
+  static const paymentNotes = 'Ghi chú (tùy chọn)';
+  static const paymentAmountLabel = 'Số tiền';
+  static const txnType = 'Loại thanh toán';
+
   // General
   static const remove = 'Xóa';
   static const save = 'Lưu';
@@ -307,6 +325,32 @@ String statusActionLabel(String targetStatus) {
       return VN.actionCancel;
     default:
       return targetStatus;
+  }
+}
+
+String txnTypeLabel(String type) {
+  switch (type) {
+    case 'deposit':
+      return VN.txnTypeDeposit;
+    case 'payment':
+      return VN.txnTypePayment;
+    case 'full_payment':
+      return VN.txnTypeFullPayment;
+    case 'refund':
+      return VN.txnTypeRefund;
+    default:
+      return type;
+  }
+}
+
+String paymentMethodLabel(String method) {
+  switch (method) {
+    case 'cash':
+      return VN.methodCash;
+    case 'transfer':
+      return VN.methodTransfer;
+    default:
+      return method;
   }
 }
 

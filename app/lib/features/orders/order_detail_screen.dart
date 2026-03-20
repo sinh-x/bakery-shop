@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/order.dart';
+import '../../data/models/payment_transaction.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/order_photo_section.dart';
@@ -131,6 +132,26 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     }
   }
 
+  double _computePaid(List<PaymentTransaction> txns) {
+    var paid = 0.0;
+    for (final t in txns) {
+      if (t.type == 'refund') {
+        paid -= t.amount;
+      } else {
+        paid += t.amount;
+      }
+    }
+    return paid;
+  }
+
+  Future<void> _openAddPaymentSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _RecordPaymentSheet(orderRef: order.orderRef),
+    );
+  }
+
   Future<void> _showCancelDialog() async {
     final reasonCtrl = TextEditingController();
     final confirmed = await showDialog<bool>(
@@ -191,15 +212,20 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     final statusLabel = statusMap[order.status] ?? order.status;
     final transitions = validTransitions[order.status] ?? [];
 
-    final remaining = order.totalPrice - order.amountPaid;
-    final paymentColor = order.isPaid
+    final txnsAsync =
+        ref.watch(orderPaymentTransactionsProvider(order.orderRef));
+    final txns = txnsAsync.value ?? [];
+    final amountPaid =
+        txnsAsync.hasValue ? _computePaid(txns) : order.amountPaid;
+    final remaining = order.totalPrice - amountPaid;
+    final paymentColor = amountPaid >= order.totalPrice
         ? Colors.green
-        : order.amountPaid > 0
+        : amountPaid > 0
             ? Colors.orange
             : theme.colorScheme.error;
-    final paymentLabel = order.isPaid
+    final paymentLabel = amountPaid >= order.totalPrice
         ? VN.paid
-        : order.amountPaid > 0
+        : amountPaid > 0
             ? VN.partialPaid
             : VN.unpaid;
 
@@ -355,9 +381,9 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
               const SizedBox(height: 6),
               _PaymentRow(
                 label: VN.amountPaidLabel,
-                value: formatVND(order.amountPaid),
+                value: formatVND(amountPaid),
                 valueStyle: theme.textTheme.bodyMedium?.copyWith(
-                  color: order.amountPaid > 0 ? Colors.green : null,
+                  color: amountPaid > 0 ? Colors.green : null,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -392,6 +418,30 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             ],
           ),
         ),
+        const SizedBox(height: 12),
+
+        // ── Add payment button ────────────────────────────────────────
+        OutlinedButton.icon(
+          onPressed: _openAddPaymentSheet,
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text(VN.addPayment),
+        ),
+        const SizedBox(height: 16),
+
+        // ── Payment history ───────────────────────────────────────────
+        _SectionHeader(VN.paymentHistory),
+        if (txns.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              VN.noPaymentHistory,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          )
+        else
+          ...txns.map((t) => _TransactionTile(txn: t)),
 
         // ── Photos ────────────────────────────────────────────────────
         const SizedBox(height: 16),
@@ -518,6 +568,256 @@ class _PaymentRow extends StatelessWidget {
         Text(label, style: theme.textTheme.bodySmall),
         Text(value, style: valueStyle ?? theme.textTheme.bodySmall),
       ],
+    );
+  }
+}
+
+// ── Transaction tile ──────────────────────────────────────────────────────────
+
+Color _txnColor(String type) {
+  switch (type) {
+    case 'deposit':
+      return Colors.blue;
+    case 'payment':
+      return Colors.green;
+    case 'full_payment':
+      return Colors.teal;
+    case 'refund':
+      return Colors.orange;
+    default:
+      return Colors.grey;
+  }
+}
+
+class _TransactionTile extends StatelessWidget {
+  const _TransactionTile({required this.txn});
+
+  final PaymentTransaction txn;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = _txnColor(txn.type);
+    final typeLabel = txnTypeLabel(txn.type);
+    final methodLabel = paymentMethodLabel(txn.method);
+
+    String dateStr = '';
+    if (txn.createdAt != null) {
+      try {
+        final dt = DateTime.parse(txn.createdAt!);
+        dateStr = DateFormat('dd/MM HH:mm').format(dt);
+      } catch (_) {
+        dateStr = txn.createdAt!;
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: color.withAlpha(30),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: color.withAlpha(100)),
+            ),
+            child: Text(
+              typeLabel,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(methodLabel, style: theme.textTheme.bodySmall),
+                if (dateStr.isNotEmpty)
+                  Text(
+                    dateStr,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Text(
+            txn.type == 'refund'
+                ? '-${formatVND(txn.amount)}'
+                : formatVND(txn.amount),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: txn.type == 'refund' ? Colors.orange : Colors.green,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Record payment bottom sheet ───────────────────────────────────────────────
+
+class _RecordPaymentSheet extends ConsumerStatefulWidget {
+  const _RecordPaymentSheet({required this.orderRef});
+
+  final String orderRef;
+
+  @override
+  ConsumerState<_RecordPaymentSheet> createState() =>
+      _RecordPaymentSheetState();
+}
+
+class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
+  String _type = 'deposit';
+  String _method = 'cash';
+  final _amountCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    final amount = double.parse(_amountCtrl.text.trim());
+    setState(() => _submitting = true);
+    try {
+      await ref
+          .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
+          .record(
+            amount: amount,
+            type: _type,
+            method: _method,
+            notes: _notesCtrl.text.trim(),
+          );
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(VN.paymentRecorded)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${VN.apiError}: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    const types = [
+      ('deposit', VN.txnTypeDeposit),
+      ('payment', VN.txnTypePayment),
+      ('full_payment', VN.txnTypeFullPayment),
+      ('refund', VN.txnTypeRefund),
+    ];
+    const methods = [
+      ('cash', VN.methodCash),
+      ('transfer', VN.methodTransfer),
+    ];
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(VN.addPayment, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 16),
+            Text(VN.txnType, style: theme.textTheme.labelMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: types
+                  .map(
+                    (t) => ChoiceChip(
+                      label: Text(t.$2),
+                      selected: _type == t.$1,
+                      onSelected: (_) => setState(() => _type = t.$1),
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 12),
+            Text(VN.paymentMethod, style: theme.textTheme.labelMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: methods
+                  .map(
+                    (m) => ChoiceChip(
+                      label: Text(m.$2),
+                      selected: _method == m.$1,
+                      onSelected: (_) => setState(() => _method = m.$1),
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _amountCtrl,
+              decoration: const InputDecoration(
+                labelText: VN.paymentAmountLabel,
+                border: OutlineInputBorder(),
+                suffixText: 'đ',
+              ),
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return VN.fieldRequired;
+                final n = double.tryParse(v.trim());
+                if (n == null || n <= 0) return VN.invalidPrice;
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _notesCtrl,
+              decoration: const InputDecoration(
+                labelText: VN.paymentNotes,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: _submitting ? null : _submit,
+              child: _submitting
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text(VN.addPayment),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
     );
   }
 }

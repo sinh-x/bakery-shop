@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../data/api/order_service.dart';
+import '../../data/api/payment_transaction_service.dart';
 import '../../data/models/product.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
@@ -47,6 +48,10 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   String _deliveryType = 'pickup';
   bool _isBirthday = false;
 
+  bool _depositEnabled = false;
+  final _depositAmountCtrl = TextEditingController();
+  String _depositMethod = 'cash';
+
   final List<_SelectedItem> _items = [];
   final List<_PendingPhoto> _pendingPhotos = [];
   final _picker = ImagePicker();
@@ -65,6 +70,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     _addressCtrl.dispose();
     _notesCtrl.dispose();
     _ageCtrl.dispose();
+    _depositAmountCtrl.dispose();
     super.dispose();
   }
 
@@ -182,6 +188,20 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             newOrder.orderRef,
             pending.file,
             tags: pending.tags.join(','),
+          );
+        }
+      }
+
+      // Record initial deposit if provided
+      if (_depositEnabled) {
+        final amount = double.tryParse(_depositAmountCtrl.text.trim());
+        if (amount != null && amount > 0) {
+          final txnService = ref.read(paymentTransactionServiceProvider);
+          await txnService.createTransaction(
+            newOrder.orderRef,
+            amount: amount,
+            type: 'deposit',
+            method: _depositMethod,
           );
         }
       }
@@ -408,6 +428,51 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               maxLines: 3,
             ),
             const SizedBox(height: 20),
+
+            // ── Deposit ───────────────────────────────────────────────
+            CheckboxListTile(
+              value: _depositEnabled,
+              onChanged: (v) => setState(() => _depositEnabled = v ?? false),
+              title: const Text(VN.depositSection),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+            ),
+            if (_depositEnabled) ...[
+              TextFormField(
+                controller: _depositAmountCtrl,
+                decoration: const InputDecoration(
+                  labelText: VN.depositAmount,
+                  border: OutlineInputBorder(),
+                  suffixText: 'đ',
+                ),
+                keyboardType: TextInputType.number,
+                validator: (v) {
+                  if (!_depositEnabled) return null;
+                  if (v == null || v.trim().isEmpty) return VN.fieldRequired;
+                  final amount = double.tryParse(v.trim());
+                  if (amount == null || amount <= 0) return VN.invalidPrice;
+                  return null;
+                },
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text(VN.methodCash),
+                    selected: _depositMethod == 'cash',
+                    onSelected: (_) => setState(() => _depositMethod = 'cash'),
+                  ),
+                  ChoiceChip(
+                    label: const Text(VN.methodTransfer),
+                    selected: _depositMethod == 'transfer',
+                    onSelected: (_) =>
+                        setState(() => _depositMethod = 'transfer'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
 
             // ── Photos ────────────────────────────────────────────────
             _SectionHeader(VN.pendingPhotosLabel),
