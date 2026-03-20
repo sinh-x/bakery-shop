@@ -42,6 +42,8 @@ class WorkItemUpdate(BaseModel):
     unitPrice: Optional[float] = None
     notes: Optional[str] = None
     position: Optional[int] = None
+    isBirthday: Optional[bool] = None
+    age: Optional[int] = None
 
 
 class WorkItemStatusTransition(BaseModel):
@@ -114,6 +116,8 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
             "unitPrice": "unit_price",
             "notes": "notes",
             "position": "position",
+            "isBirthday": "is_birthday",
+            "age": "age",
         }
         updates = []
         params: list = []

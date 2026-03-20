@@ -93,6 +93,28 @@ def test_create_work_item_order_not_found(api_client):
 # --- Update work item ---
 
 
+def test_update_work_item_birthday_and_age(api_client):
+    """PATCH can update isBirthday and age fields."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref)
+    item_id = item["id"]
+    resp = api_client.patch(f"/api/orders/{ref}/items/{item_id}", json={
+        "isBirthday": True,
+        "age": 5,
+    })
+    assert resp.status_code == 200
+    updated = resp.json()
+    assert updated["isBirthday"] is True
+    assert updated["age"] == 5
+    # Can clear age by setting isBirthday to false
+    resp2 = api_client.patch(f"/api/orders/{ref}/items/{item_id}", json={
+        "isBirthday": False,
+    })
+    assert resp2.status_code == 200
+    assert resp2.json()["isBirthday"] is False
+
+
 def test_update_work_item_notes(api_client):
     order = _create_order(api_client)
     ref = order["orderRef"]

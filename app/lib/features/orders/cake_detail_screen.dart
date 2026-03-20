@@ -84,6 +84,7 @@ class CakeDetailScreen extends ConsumerStatefulWidget {
 
 class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
   bool _transitioning = false;
+  bool _saving = false;
 
   Future<void> _onTransition(WorkItem item, String targetStatus) async {
     if (_transitioning) return;
@@ -111,6 +112,41 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
       }
     } finally {
       if (mounted) setState(() => _transitioning = false);
+    }
+  }
+
+  Future<void> _onSave(
+    WorkItem item, {
+    required String notes,
+    required bool isBirthday,
+    int? age,
+    required double unitPrice,
+  }) async {
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(orderWorkItemsProvider(widget.orderRef).notifier)
+          .edit(
+            item.id,
+            notes: notes,
+            isBirthday: isBirthday,
+            age: age,
+            unitPrice: unitPrice,
+          );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(VN.orderEditSaved)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${VN.apiError}: $e')),
+        );
+        rethrow;
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -174,7 +210,15 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
             photos: photos,
             baseUrl: baseUrl,
             transitioning: _transitioning,
+            saving: _saving,
             onTransition: (t) => _onTransition(item, t),
+            onSave: (notes, isBirthday, age, unitPrice) => _onSave(
+              item,
+              notes: notes,
+              isBirthday: isBirthday,
+              age: age,
+              unitPrice: unitPrice,
+            ),
           );
         },
       ),
@@ -182,26 +226,96 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
   }
 }
 
-class _CakeDetailBody extends StatelessWidget {
+class _CakeDetailBody extends StatefulWidget {
   const _CakeDetailBody({
     required this.item,
     required this.photos,
     required this.baseUrl,
     required this.transitioning,
+    required this.saving,
     required this.onTransition,
+    required this.onSave,
   });
 
   final WorkItem item;
   final List<OrderPhoto> photos;
   final String baseUrl;
   final bool transitioning;
+  final bool saving;
   final ValueChanged<String> onTransition;
+  final Future<void> Function(
+    String notes,
+    bool isBirthday,
+    int? age,
+    double unitPrice,
+  ) onSave;
+
+  @override
+  State<_CakeDetailBody> createState() => _CakeDetailBodyState();
+}
+
+class _CakeDetailBodyState extends State<_CakeDetailBody> {
+  bool _editing = false;
+  late TextEditingController _notesCtrl;
+  late TextEditingController _ageCtrl;
+  late TextEditingController _priceCtrl;
+  late bool _isBirthday;
+
+  @override
+  void initState() {
+    super.initState();
+    _notesCtrl = TextEditingController();
+    _ageCtrl = TextEditingController();
+    _priceCtrl = TextEditingController();
+    _isBirthday = false;
+  }
+
+  @override
+  void dispose() {
+    _notesCtrl.dispose();
+    _ageCtrl.dispose();
+    _priceCtrl.dispose();
+    super.dispose();
+  }
+
+  void _startEdit() {
+    _notesCtrl.text = widget.item.notes;
+    _ageCtrl.text = widget.item.age?.toString() ?? '';
+    // ×1000 convention: store 150000, display 150
+    _priceCtrl.text = widget.item.unitPrice > 0
+        ? (widget.item.unitPrice / 1000).toStringAsFixed(0)
+        : '';
+    _isBirthday = widget.item.isBirthday;
+    setState(() => _editing = true);
+  }
+
+  void _cancelEdit() {
+    setState(() => _editing = false);
+  }
+
+  Future<void> _submit() async {
+    final rawPrice = double.tryParse(_priceCtrl.text.trim());
+    final unitPrice = rawPrice != null ? rawPrice * 1000 : widget.item.unitPrice;
+    final age = _isBirthday ? int.tryParse(_ageCtrl.text.trim()) : null;
+
+    try {
+      await widget.onSave(
+        _notesCtrl.text.trim(),
+        _isBirthday,
+        age,
+        unitPrice,
+      );
+      if (mounted) setState(() => _editing = false);
+    } catch (_) {
+      // Error already shown by parent via snackbar; stay in edit mode
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = _workItemStatusColors[item.status] ?? Colors.grey;
-    final statusLabel = workItemStatusLabel(item.status);
+    final statusColor = _workItemStatusColors[widget.item.status] ?? Colors.grey;
+    final statusLabel = workItemStatusLabel(widget.item.status);
     const allStatuses = ['pending', 'working', 'ready', 'delivered'];
 
     return ListView(
@@ -238,57 +352,154 @@ class _CakeDetailBody extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        // ── Product info ──────────────────────────────────────────────
+        // ── Product name (always read-only) ───────────────────────────
         Text(
-          item.productName,
+          widget.item.productName,
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.bold,
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          '${item.quantity} × ${formatVND(item.unitPrice)}',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.outline,
-          ),
-        ),
 
-        // ── Birthday / age ────────────────────────────────────────────
-        if (item.isBirthday) ...[
-          const SizedBox(height: 10),
+        if (!_editing) ...[
+          // ── Read mode: qty × price ────────────────────────────────
+          Text(
+            '${widget.item.quantity} × ${formatVND(widget.item.unitPrice)}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.outline,
+            ),
+          ),
+
+          // ── Birthday / age ────────────────────────────────────────
+          if (widget.item.isBirthday) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Text('🎂', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 6),
+                Text(
+                  widget.item.age != null
+                      ? '${VN.birthdayWithAge} ${widget.item.age} tuổi'
+                      : VN.birthdayWithAge,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.pink.shade700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          // ── Notes ─────────────────────────────────────────────────
+          if (widget.item.notes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _SectionLabel('Ghi chú'),
+            const SizedBox(height: 4),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                widget.item.notes,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+          ],
+
+          // ── Edit button ───────────────────────────────────────────
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: widget.saving ? null : _startEdit,
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            label: const Text('Chỉnh sửa'),
+          ),
+        ] else ...[
+          // ── Edit mode ─────────────────────────────────────────────
+
+          // Unit price field
+          const SizedBox(height: 12),
+          TextField(
+            controller: _priceCtrl,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: 'Đơn giá (×1.000đ)',
+              hintText: 'VD: 150 → 150.000đ',
+              border: const OutlineInputBorder(),
+              suffixText: '.000đ',
+              isDense: true,
+            ),
+          ),
+
+          // Birthday toggle
+          const SizedBox(height: 12),
           Row(
             children: [
-              const Text('🎂', style: TextStyle(fontSize: 16)),
-              const SizedBox(width: 6),
-              Text(
-                item.age != null
-                    ? '${VN.birthdayWithAge} ${item.age} tuổi'
-                    : VN.birthdayWithAge,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: Colors.pink.shade700,
-                  fontWeight: FontWeight.w600,
+              Checkbox(
+                value: _isBirthday,
+                onChanged: (v) => setState(() {
+                  _isBirthday = v ?? false;
+                  if (!_isBirthday) _ageCtrl.clear();
+                }),
+              ),
+              const Text(VN.isBirthday),
+            ],
+          ),
+
+          // Age field (only when birthday)
+          if (_isBirthday) ...[
+            const SizedBox(height: 8),
+            TextField(
+              controller: _ageCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: VN.birthdayAge,
+                hintText: 'VD: 7',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+
+          // Notes field
+          const SizedBox(height: 12),
+          TextField(
+            controller: _notesCtrl,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: VN.notes,
+              hintText: 'Ghi chú cho sản phẩm này...',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+
+          // Save / Cancel buttons
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton(
+                  onPressed: widget.saving ? null : _submit,
+                  child: widget.saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text(VN.save),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: widget.saving ? null : _cancelEdit,
+                  child: const Text(VN.cancel),
                 ),
               ),
             ],
-          ),
-        ],
-
-        // ── Notes ─────────────────────────────────────────────────────
-        if (item.notes.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _SectionLabel('Ghi chú'),
-          const SizedBox(height: 4),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              item.notes,
-              style: theme.textTheme.bodyMedium,
-            ),
           ),
         ],
 
@@ -296,7 +507,7 @@ class _CakeDetailBody extends StatelessWidget {
         const SizedBox(height: 16),
         _SectionLabel(VN.perItemPhotos),
         const SizedBox(height: 8),
-        if (photos.isEmpty)
+        if (widget.photos.isEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
@@ -311,18 +522,18 @@ class _CakeDetailBody extends StatelessWidget {
             height: 100,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: photos.length,
+              itemCount: widget.photos.length,
               separatorBuilder: (_, _) => const SizedBox(width: 8),
               itemBuilder: (ctx, index) {
-                final photo = photos[index];
-                final url = '$baseUrl/api/photos/${photo.photoHash}.jpg';
+                final photo = widget.photos[index];
+                final url = '${widget.baseUrl}/api/photos/${photo.photoHash}.jpg';
                 return GestureDetector(
                   onTap: () => Navigator.of(ctx).push(
                     MaterialPageRoute<void>(
                       builder: (_) => OrderPhotoViewer(
-                        photos: photos,
+                        photos: widget.photos,
                         initialIndex: index,
-                        baseUrl: baseUrl,
+                        baseUrl: widget.baseUrl,
                       ),
                     ),
                   ),
@@ -355,14 +566,14 @@ class _CakeDetailBody extends StatelessWidget {
         const SizedBox(height: 16),
         _SectionLabel('Chuyển trạng thái'),
         const SizedBox(height: 8),
-        if (transitioning)
+        if (widget.transitioning)
           const Center(child: CircularProgressIndicator())
         else
           Wrap(
             spacing: 6,
             runSpacing: 6,
             children: allStatuses.map((s) {
-              final isCurrent = s == item.status;
+              final isCurrent = s == widget.item.status;
               final color = _workItemStatusColors[s] ?? Colors.grey;
               return FilterChip(
                 label: Text(workItemStatusLabel(s)),
@@ -376,7 +587,7 @@ class _CakeDetailBody extends StatelessWidget {
                   color: isCurrent ? color : null,
                   fontWeight: isCurrent ? FontWeight.bold : null,
                 ),
-                onSelected: isCurrent ? null : (_) => onTransition(s),
+                onSelected: isCurrent ? null : (_) => widget.onTransition(s),
                 visualDensity: VisualDensity.compact,
               );
             }).toList(),

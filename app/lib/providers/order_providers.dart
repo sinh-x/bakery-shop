@@ -209,6 +209,8 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     double? unitPrice,
     String? notes,
     int? position,
+    bool? isBirthday,
+    int? age,
   }) async {
     final service = ref.read(workItemServiceProvider);
     final updated = await service.updateWorkItem(
@@ -219,6 +221,8 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
       unitPrice: unitPrice,
       notes: notes,
       position: position,
+      isBirthday: isBirthday,
+      age: age,
     );
     final current = state.value ?? [];
     state = AsyncData(

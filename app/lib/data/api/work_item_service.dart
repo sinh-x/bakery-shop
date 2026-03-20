@@ -49,6 +49,8 @@ class WorkItemService {
     double? unitPrice,
     String? notes,
     int? position,
+    bool? isBirthday,
+    int? age,
   }) async {
     final body = <String, dynamic>{};
     if (productName != null) body['productName'] = productName;
@@ -56,6 +58,8 @@ class WorkItemService {
     if (unitPrice != null) body['unitPrice'] = unitPrice;
     if (notes != null) body['notes'] = notes;
     if (position != null) body['position'] = position;
+    if (isBirthday != null) body['isBirthday'] = isBirthday;
+    if (age != null) body['age'] = age;
 
     final response = await _dio.patch(
       '/api/orders/$orderRef/items/$itemId',
