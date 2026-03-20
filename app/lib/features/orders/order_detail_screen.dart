@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../data/api/api_client.dart';
 import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+import 'widgets/order_photo_section.dart';
 
 const _statusColors = {
   'new': Colors.blue,
@@ -389,6 +391,13 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
               ),
             ],
           ),
+        ),
+
+        // ── Photos ────────────────────────────────────────────────────
+        const SizedBox(height: 16),
+        OrderPhotoSection(
+          orderRef: order.orderRef,
+          baseUrl: ref.watch(apiBaseUrlProvider),
         ),
 
         // ── Status actions ────────────────────────────────────────────

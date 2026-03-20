@@ -216,6 +216,18 @@ class VN {
   static const timeSlotAfternoon = 'Chiều';
   static const timeSlotEvening = 'Tối';
 
+  // Order photos
+  static const orderPhotos = 'Ảnh đơn hàng';
+  static const addOrderPhoto = 'Thêm ảnh';
+  static const noOrderPhotos = 'Chưa có ảnh';
+  static const deleteOrderPhotoConfirm = 'Xóa ảnh này khỏi đơn?';
+  static const orderPhotoDeleted = 'Đã xóa ảnh';
+  static const orderPhotoAdded = 'Đã thêm ảnh';
+  static const editPhotoTags = 'Chọn nhãn ảnh';
+  static const photoTagsUpdated = 'Đã cập nhật nhãn';
+  static const pendingPhotosLabel = 'Ảnh đính kèm';
+  static const uploadingPhotos = 'Đang tải ảnh lên...';
+
   // Catalog gallery
   static const catalogTitle = 'Bộ sưu tập';
   static const addCatalogPhoto = 'Thêm ảnh mẫu';

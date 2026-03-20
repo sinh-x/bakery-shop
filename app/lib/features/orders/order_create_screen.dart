@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../data/api/order_service.dart';
@@ -8,12 +11,20 @@ import '../../data/models/product.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+import 'widgets/order_photo_section.dart';
 
 // Holds a product and its selected quantity for the order
 class _SelectedItem {
   final Product product;
   int quantity = 1;
   _SelectedItem({required this.product});
+}
+
+// Holds a pending photo (before upload) for the order create form
+class _PendingPhoto {
+  final File file;
+  Set<String> tags;
+  _PendingPhoto({required this.file, Set<String>? tags}) : tags = tags ?? {};
 }
 
 class OrderCreateScreen extends ConsumerStatefulWidget {
@@ -37,6 +48,8 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   bool _isBirthday = false;
 
   final List<_SelectedItem> _items = [];
+  final List<_PendingPhoto> _pendingPhotos = [];
+  final _picker = ImagePicker();
   bool _submitting = false;
 
   bool get _needsAddress =>
@@ -85,6 +98,27 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     if (picked != null) setState(() => _dueTime = picked);
   }
 
+  Future<void> _pickPhotos() async {
+    final files = await _picker.pickMultiImage(imageQuality: 85);
+    if (files.isEmpty || !mounted) return;
+    setState(() {
+      for (final f in files) {
+        _pendingPhotos.add(_PendingPhoto(file: File(f.path)));
+      }
+    });
+  }
+
+  Future<void> _editPendingTags(int index) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => _PendingTagEditSheet(
+        initialTags: _pendingPhotos[index].tags,
+        onSaved: (tags) => setState(() => _pendingPhotos[index].tags = tags),
+      ),
+    );
+  }
+
   Future<void> _openProductPicker() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -121,7 +155,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       final userNotes = _notesCtrl.text.trim();
       if (userNotes.isNotEmpty) notesParts.add(userNotes);
 
-      await service.createOrder(
+      final newOrder = await service.createOrder(
         customerName: _nameCtrl.text.trim(),
         customerPhone: _phoneCtrl.text.trim(),
         items: _items
@@ -140,6 +174,17 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         deliveryAddress: _addressCtrl.text.trim(),
         notes: notesParts.join(' '),
       );
+
+      // Upload pending photos after order is created
+      if (_pendingPhotos.isNotEmpty) {
+        for (final pending in _pendingPhotos) {
+          await service.uploadOrderPhoto(
+            newOrder.orderRef,
+            pending.file,
+            tags: pending.tags.join(','),
+          );
+        }
+      }
 
       await ref.read(orderListProvider.notifier).refresh();
 
@@ -362,6 +407,130 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               ),
               maxLines: 3,
             ),
+            const SizedBox(height: 20),
+
+            // ── Photos ────────────────────────────────────────────────
+            _SectionHeader(VN.pendingPhotosLabel),
+            if (_pendingPhotos.isNotEmpty) ...[
+              SizedBox(
+                height: 134,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.only(bottom: 4),
+                  itemCount: _pendingPhotos.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                  itemBuilder: (ctx, index) {
+                    final pending = _pendingPhotos[index];
+                    return SizedBox(
+                      width: 90,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.file(
+                                  pending.file,
+                                  width: 90,
+                                  height: 90,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              // Remove button
+                              Positioned(
+                                top: 4,
+                                left: 4,
+                                child: GestureDetector(
+                                  onTap: () => setState(
+                                    () => _pendingPhotos.removeAt(index),
+                                  ),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Icon(
+                                      Icons.close,
+                                      color: Colors.white,
+                                      size: 14,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              // Tag edit button
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: GestureDetector(
+                                  onTap: () => _editPendingTags(index),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Icon(
+                                      Icons.label_outline,
+                                      color: Colors.white,
+                                      size: 14,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (pending.tags.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 2,
+                              runSpacing: 2,
+                              children: pending.tags.map((key) {
+                                final tagDef = kOrderPhotoTags
+                                    .where((t) => t.key == key)
+                                    .firstOrNull;
+                                final color = tagDef?.color ?? Colors.grey;
+                                final label = tagDef?.label ?? key;
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: color.withAlpha(30),
+                                    borderRadius: BorderRadius.circular(3),
+                                    border: Border.all(
+                                      color: color.withAlpha(100),
+                                      width: 0.5,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    label,
+                                    style: TextStyle(
+                                      fontSize: 8,
+                                      color: color,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            OutlinedButton.icon(
+              onPressed: _pickPhotos,
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              label: const Text(VN.addOrderPhoto),
+            ),
             const SizedBox(height: 24),
 
             // ── Submit ────────────────────────────────────────────────
@@ -473,6 +642,88 @@ class _SelectedItemTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Pending photo tag editor ───────────────────────────────────────────────────
+
+class _PendingTagEditSheet extends StatefulWidget {
+  const _PendingTagEditSheet({
+    required this.initialTags,
+    required this.onSaved,
+  });
+
+  final Set<String> initialTags;
+  final ValueChanged<Set<String>> onSaved;
+
+  @override
+  State<_PendingTagEditSheet> createState() => _PendingTagEditSheetState();
+}
+
+class _PendingTagEditSheetState extends State<_PendingTagEditSheet> {
+  late Set<String> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = Set<String>.from(widget.initialTags);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            VN.editPhotoTags,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: kOrderPhotoTags.map((tag) {
+              final selected = _selected.contains(tag.key);
+              return FilterChip(
+                label: Text(tag.label),
+                selected: selected,
+                onSelected: (val) {
+                  setState(() {
+                    if (val) {
+                      _selected.add(tag.key);
+                    } else {
+                      _selected.remove(tag.key);
+                    }
+                  });
+                },
+                selectedColor: tag.color.withAlpha(50),
+                checkmarkColor: tag.color,
+                side: BorderSide(
+                  color: selected ? tag.color : Colors.grey.shade300,
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: () {
+              widget.onSaved(_selected);
+              Navigator.pop(context);
+            },
+            child: const Text(VN.save),
+          ),
+          const SizedBox(height: 8),
+        ],
       ),
     );
   }
