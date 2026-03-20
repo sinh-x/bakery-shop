@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../data/api/api_client.dart';
 import '../../data/models/order.dart';
 import '../../data/models/payment_transaction.dart';
+import '../../data/models/work_item.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/order_photo_section.dart';
@@ -19,6 +20,65 @@ const _statusColors = {
   'completed': Colors.grey,
   'cancelled': Colors.red,
 };
+
+const _workItemStatusColors = {
+  'pending': Colors.grey,
+  'working': Colors.orange,
+  'ready': Colors.green,
+  'delivered': Colors.teal,
+};
+
+/// Shows a reason dialog for a status transition.
+/// Returns the trimmed reason string, or null if cancelled.
+Future<String?> _showReasonDialog(
+  BuildContext context,
+  String targetStatus,
+) async {
+  final ctrl = TextEditingController();
+  final isCancel = targetStatus == 'cancelled';
+  try {
+    return await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          title: Text(isCancel ? VN.cancelOrderTitle : VN.statusReasonTitle),
+          content: TextField(
+            controller: ctrl,
+            decoration: const InputDecoration(
+              labelText: VN.statusReasonLabel,
+              hintText: VN.statusReasonHint,
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 2,
+            autofocus: true,
+            onChanged: (_) => setS(() {}),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text(VN.cancel),
+            ),
+            FilledButton(
+              style: isCancel
+                  ? FilledButton.styleFrom(
+                      backgroundColor: Theme.of(ctx).colorScheme.error,
+                    )
+                  : null,
+              onPressed: ctrl.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: Text(
+                isCancel ? VN.confirmCancelAction : VN.confirmStatusChange,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  } finally {
+    ctrl.dispose();
+  }
+}
 
 class OrderDetailScreen extends ConsumerWidget {
   const OrderDetailScreen({super.key, required this.orderRef});
@@ -107,15 +167,13 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
   }
 
   Future<void> _onTransition(String targetStatus) async {
-    if (targetStatus == 'cancelled') {
-      await _showCancelDialog();
-      return;
-    }
+    final reason = await _showReasonDialog(context, targetStatus);
+    if (reason == null || !mounted) return;
     setState(() => _transitioning = true);
     try {
       await ref
           .read(orderDetailProvider(order.orderRef).notifier)
-          .transitionTo(targetStatus);
+          .transitionTo(targetStatus, reason: reason);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text(VN.orderStatusUpdated)),
@@ -150,59 +208,6 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       isScrollControlled: true,
       builder: (_) => _RecordPaymentSheet(orderRef: order.orderRef),
     );
-  }
-
-  Future<void> _showCancelDialog() async {
-    final reasonCtrl = TextEditingController();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text(VN.cancelOrderTitle),
-        content: TextField(
-          controller: reasonCtrl,
-          decoration: const InputDecoration(
-            labelText: VN.cancelReasonLabel,
-            hintText: VN.cancelReasonHint,
-            border: OutlineInputBorder(),
-          ),
-          maxLines: 3,
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(VN.cancel),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(VN.confirmCancelAction),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    setState(() => _transitioning = true);
-    try {
-      await ref
-          .read(orderDetailProvider(order.orderRef).notifier)
-          .transitionTo('cancelled', reason: reasonCtrl.text.trim());
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.orderStatusUpdated)),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _transitioning = false);
-    }
   }
 
   @override
@@ -360,6 +365,10 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             ),
           ],
         ),
+        const SizedBox(height: 16),
+
+        // ── Work items ────────────────────────────────────────────────
+        _WorkItemSection(orderRef: order.orderRef, order: order),
         const SizedBox(height: 16),
 
         // ── Payment ───────────────────────────────────────────────────
@@ -815,6 +824,304 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                   : const Text(VN.addPayment),
             ),
             const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Work item section ─────────────────────────────────────────────────────────
+
+class _WorkItemSection extends ConsumerStatefulWidget {
+  const _WorkItemSection({required this.orderRef, required this.order});
+
+  final String orderRef;
+  final Order order;
+
+  @override
+  ConsumerState<_WorkItemSection> createState() => _WorkItemSectionState();
+}
+
+class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
+  bool _expanded = true;
+  bool _transitioning = false;
+
+  String? _deriveOrderStatus(List<WorkItem> items) {
+    if (items.isEmpty) return null;
+    if (items.every((i) => i.status == 'delivered')) return 'delivered';
+    if (items.every((i) => i.status == 'ready')) return 'ready';
+    if (items.any((i) => i.status == 'working')) return 'in_progress';
+    return null;
+  }
+
+  Future<void> _applyAutoUpdateOrderStatus(
+    String suggestedStatus,
+    List<WorkItem> items,
+  ) async {
+    final currentStatus =
+        ref.read(orderDetailProvider(widget.orderRef)).value?.status ??
+            widget.order.status;
+    final transitions = validTransitions[currentStatus] ?? [];
+    if (!transitions.contains(suggestedStatus)) return;
+    if (currentStatus == suggestedStatus) return;
+
+    final statusLabel = statusMap[suggestedStatus] ?? suggestedStatus;
+    final isMultiCake = items.length > 1;
+
+    if (isMultiCake) {
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text(VN.autoUpdateOrderTitle),
+          content: Text(
+            'Tất cả ${items.length} sản phẩm đã đạt ngưỡng.\n'
+            'Cập nhật đơn hàng sang "$statusLabel"?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text(VN.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text(VN.confirmStatusChange),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+
+    try {
+      await ref
+          .read(orderDetailProvider(widget.orderRef).notifier)
+          .transitionTo(
+            suggestedStatus,
+            reason: 'Tự động cập nhật theo trạng thái sản phẩm',
+          );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(VN.orderStatusUpdated)),
+        );
+      }
+    } catch (_) {
+      // Auto-derive failure is silent — order may not be in a valid state
+    }
+  }
+
+  Future<void> _onTransitionWorkItem(WorkItem item, String targetStatus) async {
+    if (_transitioning) return;
+    final reason = await _showReasonDialog(context, targetStatus);
+    if (reason == null || !mounted) return;
+
+    setState(() => _transitioning = true);
+    try {
+      await ref
+          .read(orderWorkItemsProvider(widget.orderRef).notifier)
+          .transitionStatus(item.id, targetStatus, reason: reason);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(VN.workItemStatusChanged)),
+        );
+      }
+      // Auto-derive order status from updated work items
+      final items =
+          ref.read(orderWorkItemsProvider(widget.orderRef)).value ?? [];
+      final suggestedStatus = _deriveOrderStatus(items);
+      if (suggestedStatus != null && mounted) {
+        await _applyAutoUpdateOrderStatus(suggestedStatus, items);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${VN.apiError}: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _transitioning = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final itemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          borderRadius: BorderRadius.circular(4),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    VN.workItemsSection,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  color: theme.colorScheme.primary,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded)
+          itemsAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+            error: (e, _) => Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 8),
+              child: Text(
+                VN.apiError,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ),
+            data: (items) {
+              if (items.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 4),
+                  child: Text(
+                    VN.noWorkItems,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
+                  ),
+                );
+              }
+              return Column(
+                children: [
+                  const SizedBox(height: 4),
+                  ...items.map(
+                    (item) => _WorkItemCard(
+                      item: item,
+                      onTransition: _transitioning
+                          ? null
+                          : (t) => _onTransitionWorkItem(item, t),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+      ],
+    );
+  }
+}
+
+class _WorkItemCard extends StatelessWidget {
+  const _WorkItemCard({required this.item, required this.onTransition});
+
+  final WorkItem item;
+  final ValueChanged<String>? onTransition;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final statusColor = _workItemStatusColors[item.status] ?? Colors.grey;
+    final statusLabel = workItemStatusLabel(item.status);
+    const allStatuses = ['pending', 'working', 'ready', 'delivered'];
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Status badge + product name
+            Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: statusColor.withAlpha(30),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: statusColor.withAlpha(100)),
+                  ),
+                  child: Text(
+                    statusLabel,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: statusColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    item.productName,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            // Qty × price
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '${item.quantity} × ${formatVND(item.unitPrice)}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+            ),
+            // Notes
+            if (item.notes.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  item.notes,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            // Status transition chips
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: allStatuses.map((s) {
+                final isCurrent = s == item.status;
+                final color = _workItemStatusColors[s] ?? Colors.grey;
+                return FilterChip(
+                  label: Text(workItemStatusLabel(s)),
+                  selected: isCurrent,
+                  selectedColor: color.withAlpha(40),
+                  checkmarkColor: color,
+                  side: BorderSide(
+                    color: isCurrent ? color : Colors.grey.shade300,
+                  ),
+                  labelStyle: TextStyle(
+                    color: isCurrent ? color : null,
+                    fontWeight: isCurrent ? FontWeight.bold : null,
+                    fontSize: 12,
+                  ),
+                  onSelected: isCurrent || onTransition == null
+                      ? null
+                      : (_) => onTransition!(s),
+                  visualDensity: VisualDensity.compact,
+                );
+              }).toList(),
+            ),
           ],
         ),
       ),

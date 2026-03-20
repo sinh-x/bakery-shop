@@ -260,6 +260,22 @@ class VN {
   static const paymentAmountLabel = 'Số tiền';
   static const txnType = 'Loại thanh toán';
 
+  // Work item statuses
+  static const workItemPending = 'Chờ xử lý';
+  static const workItemWorking = 'Đang làm';
+  static const workItemReady = 'Sẵn sàng';
+  static const workItemDelivered = 'Đã giao';
+
+  // Work items section
+  static const workItemsSection = 'Chi tiết sản xuất';
+  static const noWorkItems = 'Chưa có chi tiết sản xuất';
+  static const workItemStatusChanged = 'Đã cập nhật trạng thái sản phẩm';
+  static const statusReasonTitle = 'Lý do thay đổi';
+  static const statusReasonLabel = 'Lý do (bắt buộc)';
+  static const statusReasonHint = 'Nhập lý do...';
+  static const confirmStatusChange = 'Xác nhận';
+  static const autoUpdateOrderTitle = 'Cập nhật đơn hàng';
+
   // General
   static const remove = 'Xóa';
   static const save = 'Lưu';
@@ -353,6 +369,17 @@ String paymentMethodLabel(String method) {
       return method;
   }
 }
+
+// Work item status mapping
+const workItemStatusMap = {
+  'pending': VN.workItemPending,
+  'working': VN.workItemWorking,
+  'ready': VN.workItemReady,
+  'delivered': VN.workItemDelivered,
+};
+
+String workItemStatusLabel(String status) =>
+    workItemStatusMap[status] ?? status;
 
 /// Format VND: 150000.0 → "150.000đ"
 String formatVND(double amount) {
