@@ -344,6 +344,78 @@ CREATE TABLE IF NOT EXISTS order_photos (
 CREATE INDEX IF NOT EXISTS idx_order_photos_order ON order_photos(order_id);
 """
 
+ORDER_ITEMS_AND_PAYMENT_TRANSACTIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS order_items (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id        INTEGER NOT NULL REFERENCES orders(id),
+    product_id      TEXT DEFAULT '',
+    product_name    TEXT NOT NULL,
+    quantity        INTEGER NOT NULL DEFAULT 1,
+    unit_price      REAL NOT NULL DEFAULT 0,
+    notes           TEXT DEFAULT '',
+    position        INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+
+CREATE TABLE IF NOT EXISTS payment_transactions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id        INTEGER NOT NULL REFERENCES orders(id),
+    amount          REAL NOT NULL,
+    type            TEXT NOT NULL DEFAULT 'deposit',
+    method          TEXT NOT NULL DEFAULT 'cash',
+    note            TEXT DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_order ON payment_transactions(order_id);
+"""
+
+
+def _migrate_v12_data(conn):
+    """Migrate orders.items JSON → order_items rows; amount_paid > 0 → deposit transaction."""
+    import json
+
+    rows = conn.execute("SELECT * FROM orders").fetchall()
+    for row in rows:
+        order_id = row["id"]
+
+        # Migrate items JSON -> order_items
+        items_json = row["items"]
+        if items_json:
+            try:
+                items = json.loads(items_json)
+            except (json.JSONDecodeError, TypeError):
+                items = []
+            for position, item in enumerate(items):
+                conn.execute(
+                    """INSERT OR IGNORE INTO order_items
+                       (order_id, product_id, product_name, quantity, unit_price, notes, position)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        order_id,
+                        item.get("product_id", ""),
+                        item.get("product", ""),
+                        item.get("qty", 1),
+                        item.get("price", 0),
+                        item.get("notes", ""),
+                        position,
+                    ),
+                )
+
+        # Migrate amount_paid > 0 → deposit transaction
+        amount_paid = row["amount_paid"] or 0
+        if amount_paid > 0:
+            conn.execute(
+                """INSERT INTO payment_transactions
+                   (order_id, amount, type, method, note)
+                   VALUES (?, ?, 'deposit', 'cash', 'Migrated from amount_paid')""",
+                (order_id, amount_paid),
+            )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -394,6 +466,11 @@ MIGRATIONS = {
     11: {
         "description": "Order photos table for decoration references and chat screenshots",
         "sql": ORDER_PHOTOS_SCHEMA,
+    },
+    12: {
+        "description": "order_items and payment_transactions tables with data migration",
+        "sql": ORDER_ITEMS_AND_PAYMENT_TRANSACTIONS_SCHEMA,
+        "callable": _migrate_v12_data,
     },
 }
 

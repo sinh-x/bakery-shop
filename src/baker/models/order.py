@@ -150,7 +150,7 @@ class Order:
         return self.id
 
     @staticmethod
-    def update_status(conn, order_ref: str, new_status: str, reason: str = "") -> bool:
+    def update_status(conn, order_ref: str, new_status: str, reason: str) -> bool:
         row = conn.execute(
             "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
             (order_ref, order_ref),
@@ -159,7 +159,15 @@ class Order:
             return False
 
         current = row["status"]
-        if not validate_transition(current, new_status):
+
+        # Validate target is a known status value
+        try:
+            OrderStatus(new_status)
+        except ValueError:
+            return False
+
+        # Non-standard transitions require a reason to proceed
+        if not validate_transition(current, new_status) and not reason:
             return False
 
         conn.execute(
@@ -179,16 +187,23 @@ class Order:
         return True
 
     @staticmethod
-    def from_row(row) -> "Order":
+    def from_row(row, conn=None) -> "Order":
         items_data = json.loads(row["items"]) if row["items"] else []
         items = [OrderItem(**i) for i in items_data]
+
+        if conn is not None:
+            from baker.models.payment_transaction import PaymentTransaction
+            amount_paid = PaymentTransaction.total_for_order(conn, row["id"])
+        else:
+            amount_paid = row["amount_paid"] or 0.0
+
         return Order(
             id=row["id"], order_ref=row["order_ref"],
             customer_name=row["customer_name"], customer_phone=row["customer_phone"],
             items=items, total_price=row["total_price"], status=row["status"],
             due_date=row["due_date"], due_time=row["due_time"],
             delivery_type=row["delivery_type"], delivery_address=row["delivery_address"],
-            notes=row["notes"], amount_paid=row["amount_paid"] or 0.0,
+            notes=row["notes"], amount_paid=amount_paid,
             created_at=row["created_at"], updated_at=row["updated_at"],
         )
 
