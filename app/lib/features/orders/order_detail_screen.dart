@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/order.dart';
+import '../../data/models/order_photo.dart';
 import '../../data/models/payment_transaction.dart';
 import '../../data/models/work_item.dart';
 import '../../providers/order_providers.dart';
@@ -477,11 +478,13 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         else
           ...txns.map((t) => _TransactionTile(txn: t)),
 
-        // ── Photos ────────────────────────────────────────────────────
+        // ── Photos (order-level only — per-item photos shown in work items section) ────
         const SizedBox(height: 16),
+        _SectionHeader(VN.orderPhotosSection),
         OrderPhotoSection(
           orderRef: order.orderRef,
           baseUrl: ref.watch(apiBaseUrlProvider),
+          orderLevelOnly: true,
         ),
 
         // ── Status actions ────────────────────────────────────────────
@@ -1032,15 +1035,25 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
                   ),
                 );
               }
+              final allPhotos = ref.watch(orderPhotosProvider(widget.orderRef)).value ?? [];
+              final baseUrl = ref.watch(apiBaseUrlProvider);
               return Column(
                 children: [
                   const SizedBox(height: 4),
                   ...items.map(
                     (item) => _WorkItemCard(
                       item: item,
+                      photos: allPhotos.where((p) {
+                        final wId = p.workItemId;
+                        return wId != null && wId == int.tryParse(item.id);
+                      }).toList(),
+                      baseUrl: baseUrl,
                       onTransition: _transitioning
                           ? null
                           : (t) => _onTransitionWorkItem(item, t),
+                      onTap: () => context.push(
+                        '/orders/${widget.orderRef}/items/${item.id}',
+                      ),
                     ),
                   ),
                 ],
@@ -1053,10 +1066,19 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
 }
 
 class _WorkItemCard extends StatelessWidget {
-  const _WorkItemCard({required this.item, required this.onTransition});
+  const _WorkItemCard({
+    required this.item,
+    required this.onTransition,
+    required this.photos,
+    required this.baseUrl,
+    required this.onTap,
+  });
 
   final WorkItem item;
   final ValueChanged<String>? onTransition;
+  final List<OrderPhoto> photos;
+  final String baseUrl;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1067,92 +1089,180 @@ class _WorkItemCard extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Status badge + product name
-            Row(
-              children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: statusColor.withAlpha(30),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: statusColor.withAlpha(100)),
-                  ),
-                  child: Text(
-                    statusLabel,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: statusColor,
-                      fontWeight: FontWeight.bold,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Status badge + product name + chevron
+              Row(
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: statusColor.withAlpha(30),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: statusColor.withAlpha(100)),
+                    ),
+                    child: Text(
+                      statusLabel,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: statusColor,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    item.productName,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      item.productName,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            // Qty × price
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                '${item.quantity} × ${formatVND(item.unitPrice)}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.outline,
-                ),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: theme.colorScheme.outline,
+                  ),
+                ],
               ),
-            ),
-            // Notes
-            if (item.notes.isNotEmpty)
+              // Qty × price
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  item.notes,
+                  '${item.quantity} × ${formatVND(item.unitPrice)}',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    fontStyle: FontStyle.italic,
+                    color: theme.colorScheme.outline,
                   ),
                 ),
               ),
-            // Status transition chips
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: allStatuses.map((s) {
-                final isCurrent = s == item.status;
-                final color = _workItemStatusColors[s] ?? Colors.grey;
-                return FilterChip(
-                  label: Text(workItemStatusLabel(s)),
-                  selected: isCurrent,
-                  selectedColor: color.withAlpha(40),
-                  checkmarkColor: color,
-                  side: BorderSide(
-                    color: isCurrent ? color : Colors.grey.shade300,
+              // Birthday badge + age
+              if (item.isBirthday)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    children: [
+                      const Text('🎂', style: TextStyle(fontSize: 13)),
+                      const SizedBox(width: 4),
+                      Text(
+                        item.age != null
+                            ? '${VN.birthdayWithAge} ${item.age} tuổi'
+                            : VN.birthdayWithAge,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.pink.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
-                  labelStyle: TextStyle(
-                    color: isCurrent ? color : null,
-                    fontWeight: isCurrent ? FontWeight.bold : null,
-                    fontSize: 12,
+                ),
+              // Notes
+              if (item.notes.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    item.notes,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontStyle: FontStyle.italic,
+                    ),
                   ),
-                  onSelected: isCurrent || onTransition == null
-                      ? null
-                      : (_) => onTransition!(s),
-                  visualDensity: VisualDensity.compact,
-                );
-              }).toList(),
-            ),
-          ],
+                ),
+              // Per-item photos
+              if (photos.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _WorkItemPhotoStrip(photos: photos, baseUrl: baseUrl),
+              ],
+              // Status transition chips
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: allStatuses.map((s) {
+                  final isCurrent = s == item.status;
+                  final color = _workItemStatusColors[s] ?? Colors.grey;
+                  return FilterChip(
+                    label: Text(workItemStatusLabel(s)),
+                    selected: isCurrent,
+                    selectedColor: color.withAlpha(40),
+                    checkmarkColor: color,
+                    side: BorderSide(
+                      color: isCurrent ? color : Colors.grey.shade300,
+                    ),
+                    labelStyle: TextStyle(
+                      color: isCurrent ? color : null,
+                      fontWeight: isCurrent ? FontWeight.bold : null,
+                      fontSize: 12,
+                    ),
+                    onSelected: isCurrent || onTransition == null
+                        ? null
+                        : (_) => onTransition!(s),
+                    visualDensity: VisualDensity.compact,
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+// ── Per-item photo strip (read-only thumbnails in work item card) ─────────────
+
+class _WorkItemPhotoStrip extends StatelessWidget {
+  const _WorkItemPhotoStrip({required this.photos, required this.baseUrl});
+
+  final List<OrderPhoto> photos;
+  final String baseUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 72,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: photos.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 6),
+        itemBuilder: (ctx, index) {
+          final photo = photos[index];
+          final url = '$baseUrl/api/photos/${photo.photoHash}.jpg';
+          return GestureDetector(
+            onTap: () => Navigator.of(ctx).push(
+              MaterialPageRoute<void>(
+                builder: (_) => OrderPhotoViewer(
+                  photos: photos,
+                  initialIndex: index,
+                  baseUrl: baseUrl,
+                ),
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.network(
+                url,
+                width: 68,
+                height: 68,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Container(
+                  width: 68,
+                  height: 68,
+                  decoration: BoxDecoration(
+                    color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.broken_image, size: 24),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

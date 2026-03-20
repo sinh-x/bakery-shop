@@ -59,15 +59,21 @@ Set<String> _parseTags(String tags) {
 
 /// Photo gallery section shown in Order Detail and Order Edit screens.
 /// Reads from [orderPhotosProvider], supports upload, delete, and tag editing.
+///
+/// When [orderLevelOnly] is true, only shows photos with null [workItemId]
+/// (i.e., order-level photos not linked to a specific work item).
 class OrderPhotoSection extends ConsumerStatefulWidget {
   const OrderPhotoSection({
     super.key,
     required this.orderRef,
     required this.baseUrl,
+    this.orderLevelOnly = false,
   });
 
   final String orderRef;
   final String baseUrl;
+  /// When true, only show photos with workItemId == null (order-level photos).
+  final bool orderLevelOnly;
 
   @override
   ConsumerState<OrderPhotoSection> createState() => _OrderPhotoSectionState();
@@ -157,7 +163,7 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
   void _openViewer(List<OrderPhoto> photos, int initialIndex) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => _OrderPhotoViewer(
+        builder: (_) => OrderPhotoViewer(
           photos: photos,
           initialIndex: initialIndex,
           baseUrl: widget.baseUrl,
@@ -219,7 +225,10 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
               ),
             ),
           ),
-          data: (photos) {
+          data: (allPhotos) {
+            final photos = widget.orderLevelOnly
+                ? allPhotos.where((p) => p.workItemId == null).toList()
+                : allPhotos;
             if (photos.isEmpty) {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -349,8 +358,11 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
 
 // ── Full-screen viewer ─────────────────────────────────────────────────────────
 
-class _OrderPhotoViewer extends StatefulWidget {
-  const _OrderPhotoViewer({
+/// Full-screen photo viewer — navigates pages, shows tag overlays.
+/// Can be used from order detail, cake detail, and other screens.
+class OrderPhotoViewer extends StatefulWidget {
+  const OrderPhotoViewer({
+    super.key,
     required this.photos,
     required this.initialIndex,
     required this.baseUrl,
@@ -361,10 +373,10 @@ class _OrderPhotoViewer extends StatefulWidget {
   final String baseUrl;
 
   @override
-  State<_OrderPhotoViewer> createState() => _OrderPhotoViewerState();
+  State<OrderPhotoViewer> createState() => _OrderPhotoViewerState();
 }
 
-class _OrderPhotoViewerState extends State<_OrderPhotoViewer> {
+class _OrderPhotoViewerState extends State<OrderPhotoViewer> {
   late PageController _pageController;
   late int _currentIndex;
 

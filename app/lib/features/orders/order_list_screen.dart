@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+import 'cake_queue_screen.dart';
 
 // Status display order for filter chips
 const _filterStatuses = [
@@ -34,13 +35,23 @@ class OrderListScreen extends ConsumerStatefulWidget {
   ConsumerState<OrderListScreen> createState() => _OrderListScreenState();
 }
 
-class _OrderListScreenState extends ConsumerState<OrderListScreen> {
+class _OrderListScreenState extends ConsumerState<OrderListScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
   String? _selectedStatus;
   String _searchQuery = '';
   final _searchController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() => setState(() {}));
+  }
+
+  @override
   void dispose() {
+    _tabController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -70,121 +81,143 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen> {
   @override
   Widget build(BuildContext context) {
     final ordersAsync = ref.watch(orderListProvider);
+    final isOrdersTab = _tabController.index == 0;
 
     return Scaffold(
-      appBar: AppBar(title: const Text(VN.tabOrders)),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/orders/new'),
-        tooltip: VN.createOrder,
-        child: const Icon(Icons.add),
+      appBar: AppBar(
+        title: const Text(VN.tabOrders),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: VN.orderListTab),
+            Tab(text: VN.cakeQueue),
+          ],
+        ),
       ),
-      body: Column(
+      floatingActionButton: isOrdersTab
+          ? FloatingActionButton(
+              onPressed: () => context.push('/orders/new'),
+              tooltip: VN.createOrder,
+              child: const Icon(Icons.add),
+            )
+          : null,
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: VN.searchOrders,
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = '');
-                        },
-                      )
-                    : null,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                isDense: true,
-              ),
-              onChanged: (v) => setState(() => _searchQuery = v),
-            ),
-          ),
-
-          // Status filter chips
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilterChip(
-                    label: const Text(VN.filterAll),
-                    selected: _selectedStatus == null,
-                    onSelected: (_) => _onStatusSelected(null),
+          // ── Tab 0: Order list ──────────────────────────────────────
+          Column(
+            children: [
+              // Search bar
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: VN.searchOrders,
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    isDense: true,
                   ),
+                  onChanged: (v) => setState(() => _searchQuery = v),
                 ),
-                ..._filterStatuses.map(
-                  (s) => Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      label: Text(statusMap[s] ?? s),
-                      selected: _selectedStatus == s,
-                      selectedColor:
-                          (_statusColors[s] ?? Colors.grey).withAlpha(50),
-                      onSelected: (_) => _onStatusSelected(
-                        _selectedStatus == s ? null : s,
+              ),
+
+              // Status filter chips
+              SizedBox(
+                height: 44,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 4),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: FilterChip(
+                        label: const Text(VN.filterAll),
+                        selected: _selectedStatus == null,
+                        onSelected: (_) => _onStatusSelected(null),
                       ),
                     ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Order list
-          Expanded(
-            child: ordersAsync.when(
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(VN.apiError),
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: _onRefresh,
-                      child: const Text(VN.retry),
+                    ..._filterStatuses.map(
+                      (s) => Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          label: Text(statusMap[s] ?? s),
+                          selected: _selectedStatus == s,
+                          selectedColor:
+                              (_statusColors[s] ?? Colors.grey).withAlpha(50),
+                          onSelected: (_) => _onStatusSelected(
+                            _selectedStatus == s ? null : s,
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
-              data: (orders) {
-                final filtered = _applySearch(orders);
-                if (filtered.isEmpty) {
-                  return Center(
-                    child: Text(
-                      _searchQuery.isNotEmpty || _selectedStatus != null
-                          ? 'Không có đơn hàng phù hợp'
-                          : 'Chưa có đơn hàng',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  );
-                }
-                return RefreshIndicator(
-                  onRefresh: _onRefresh,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) => _OrderCard(
-                      order: filtered[index],
-                      onTap: () => context
-                          .push('/orders/${filtered[index].orderRef}'),
+
+              // Order list
+              Expanded(
+                child: ordersAsync.when(
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (e, _) => Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(VN.apiError),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: _onRefresh,
+                          child: const Text(VN.retry),
+                        ),
+                      ],
                     ),
                   ),
-                );
-              },
-            ),
+                  data: (orders) {
+                    final filtered = _applySearch(orders);
+                    if (filtered.isEmpty) {
+                      return Center(
+                        child: Text(
+                          _searchQuery.isNotEmpty || _selectedStatus != null
+                              ? 'Không có đơn hàng phù hợp'
+                              : 'Chưa có đơn hàng',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      );
+                    }
+                    return RefreshIndicator(
+                      onRefresh: _onRefresh,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) => _OrderCard(
+                          order: filtered[index],
+                          onTap: () => context
+                              .push('/orders/${filtered[index].orderRef}'),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
+
+          // ── Tab 1: Cake queue ──────────────────────────────────────
+          const CakeQueueContent(),
         ],
       ),
     );

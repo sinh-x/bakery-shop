@@ -277,6 +277,17 @@ class VN {
   static const confirmStatusChange = 'Xác nhận';
   static const autoUpdateOrderTitle = 'Cập nhật đơn hàng';
 
+  // Cake queue & cake detail
+  static const cakeQueue = 'Làm bánh';
+  static const orderListTab = 'Đơn hàng';
+  static const cakeDetail = 'Chi tiết bánh';
+  static const viewOrder = 'Xem đơn hàng';
+  static const noCakeQueueItems = 'Không có sản phẩm cần làm';
+  static const includeReadyFilter = 'Bao gồm sẵn sàng';
+  static const perItemPhotos = 'Ảnh sản phẩm';
+  static const birthdayWithAge = 'Sinh nhật';
+  static const orderPhotosSection = 'Ảnh đơn hàng (chung)';
+
   // General
   static const remove = 'Xóa';
   static const save = 'Lưu';

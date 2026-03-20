@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/cake_queue_item.dart';
 import '../models/work_item.dart';
 import 'api_client.dart';
 
@@ -78,6 +79,18 @@ class WorkItemService {
       data: {'status': status, 'reason': reason},
     );
     return WorkItem.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Fetch cross-order cake queue: pending + working items (optionally include ready).
+  /// Calls GET /api/work-items. Returns items sorted by due date ascending.
+  Future<List<CakeQueueItem>> listCakeQueue({bool includeReady = false}) async {
+    final params = <String, dynamic>{};
+    if (includeReady) params['include_ready'] = 'true';
+    final response = await _dio.get('/api/work-items', queryParameters: params);
+    final list = response.data as List;
+    return list
+        .map((json) => CakeQueueItem.fromJson(json as Map<String, dynamic>))
+        .toList();
   }
 }
 

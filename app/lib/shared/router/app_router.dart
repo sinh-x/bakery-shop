@@ -8,6 +8,7 @@ import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/events/event_detail_screen.dart';
 import '../../features/events/event_form_screen.dart';
 import '../../features/events/event_list_screen.dart';
+import '../../features/orders/cake_detail_screen.dart';
 import '../../features/orders/order_create_screen.dart';
 import '../../features/orders/order_detail_screen.dart';
 import '../../features/orders/order_edit_screen.dart';
@@ -77,6 +78,16 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final orderRef = state.pathParameters['id']!;
         return OrderEditScreen(orderRef: orderRef);
+      },
+    ),
+    // Cake detail — full-screen (outside shell)
+    GoRoute(
+      path: '/orders/:id/items/:itemId',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final orderRef = state.pathParameters['id']!;
+        final workItemId = state.pathParameters['itemId']!;
+        return CakeDetailScreen(orderRef: orderRef, workItemId: workItemId);
       },
     ),
     // Product create — full-screen (outside shell)
