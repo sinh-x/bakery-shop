@@ -140,6 +140,30 @@ def test_create_order_with_all_fields(api_client):
     assert order["notes"] == "Thêm nến sinh nhật"
 
 
+def test_create_order_with_deposit(api_client):
+    resp = api_client.post("/api/orders", json={
+        "customerName": "Test deposit",
+        "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 300000}],
+        "deposit": {"amount": 100000, "method": "transfer"},
+    })
+    assert resp.status_code == 201
+    order = resp.json()
+    assert order["amountPaid"] == 100000
+    assert len(order["paymentTransactions"]) == 1
+    txn = order["paymentTransactions"][0]
+    assert txn["amount"] == 100000
+    assert txn["type"] == "deposit"
+    assert txn["method"] == "transfer"
+
+
+def test_create_order_includes_work_items_and_transactions(api_client):
+    order = _create_order(api_client)
+    assert "workItems" in order
+    assert "paymentTransactions" in order
+    assert isinstance(order["workItems"], list)
+    assert isinstance(order["paymentTransactions"], list)
+
+
 # --- Get order ---
 
 
@@ -163,6 +187,16 @@ def test_get_order_not_found(api_client):
     resp = api_client.get("/api/orders/ORD-NOTEXIST")
     assert resp.status_code == 404
     assert "Không tìm thấy" in resp.json()["detail"]
+
+
+def test_get_order_includes_work_items_and_transactions(api_client):
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = api_client.get(f"/api/orders/{ref}")
+    assert resp.status_code == 200
+    detail = resp.json()
+    assert "workItems" in detail
+    assert "paymentTransactions" in detail
 
 
 # --- Edit order ---
@@ -221,7 +255,9 @@ def test_edit_order_not_found(api_client):
 def test_status_transition_new_to_confirmed(api_client):
     created = _create_order(api_client)
     ref = created["orderRef"]
-    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "confirmed"})
+    resp = api_client.post(
+        f"/api/orders/{ref}/status", json={"status": "confirmed", "reason": "Khách xác nhận"}
+    )
     assert resp.status_code == 200
     assert resp.json()["status"] == "confirmed"
 
@@ -230,7 +266,10 @@ def test_status_full_flow(api_client):
     created = _create_order(api_client)
     ref = created["orderRef"]
     for status in ["confirmed", "in_progress", "ready", "delivered", "completed"]:
-        resp = api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+        resp = api_client.post(
+            f"/api/orders/{ref}/status",
+            json={"status": status, "reason": "Tiến độ bình thường"},
+        )
         assert resp.status_code == 200
         assert resp.json()["status"] == status
 
@@ -246,24 +285,92 @@ def test_status_cancel(api_client):
     assert resp.json()["status"] == "cancelled"
 
 
-def test_status_invalid_transition(api_client):
+def test_status_requires_reason(api_client):
     created = _create_order(api_client)
     ref = created["orderRef"]
-    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "delivered"})
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "confirmed"})
     assert resp.status_code == 422
-    assert "Không thể chuyển" in resp.json()["detail"]
+    assert "Lý do" in resp.json()["detail"]
+
+
+def test_status_requires_reason_even_for_forward_transition(api_client):
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    resp = api_client.post(
+        f"/api/orders/{ref}/status", json={"status": "confirmed", "reason": ""}
+    )
+    assert resp.status_code == 422
 
 
 def test_status_bad_value(api_client):
     created = _create_order(api_client)
     ref = created["orderRef"]
-    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "invalid_status"})
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "invalid_status", "reason": "test"},
+    )
     assert resp.status_code == 422
 
 
 def test_status_transition_not_found(api_client):
-    resp = api_client.post("/api/orders/ORD-NOTEXIST/status", json={"status": "confirmed"})
+    resp = api_client.post(
+        "/api/orders/ORD-NOTEXIST/status",
+        json={"status": "confirmed", "reason": "test"},
+    )
     assert resp.status_code == 404
+
+
+# --- Backward status transitions ---
+
+
+def test_status_backward_transition_allowed_with_reason(api_client):
+    """Non-standard (backward) transitions are allowed when a reason is provided."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    # Forward to completed first
+    for status in ["confirmed", "in_progress", "ready", "delivered", "completed"]:
+        api_client.post(
+            f"/api/orders/{ref}/status",
+            json={"status": status, "reason": "Tiến độ"},
+        )
+    # Backward: completed → in_progress
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "in_progress", "reason": "Cần chỉnh sửa thêm"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "in_progress"
+
+
+def test_status_backward_from_cancelled_allowed_with_reason(api_client):
+    """Can reopen a cancelled order with a reason."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "cancelled", "reason": "Khách hủy"},
+    )
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "confirmed", "reason": "Khách đặt lại"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "confirmed"
+
+
+def test_status_backward_requires_reason(api_client):
+    """Backward transitions without a reason are rejected."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "confirmed", "reason": "OK"},
+    )
+    # Try backward without reason
+    resp = api_client.post(
+        f"/api/orders/{ref}/status", json={"status": "new", "reason": ""}
+    )
+    assert resp.status_code == 422
 
 
 # --- Payment ---

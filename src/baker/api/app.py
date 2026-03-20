@@ -8,8 +8,10 @@ from baker.api.categories import router as categories_router
 from baker.api.events import router as events_router
 from baker.api.order_photos import router as order_photos_router
 from baker.api.orders import router as orders_router
+from baker.api.payment_transactions import router as payment_transactions_router
 from baker.api.photos import router as photos_router
 from baker.api.products import router as products_router
+from baker.api.work_items import router as work_items_router
 from baker.config import VERSION
 
 
@@ -40,5 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(events_router)
     app.include_router(orders_router)
     app.include_router(order_photos_router)
+    app.include_router(work_items_router)
+    app.include_router(payment_transactions_router)
 
     return app

@@ -7,7 +7,9 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from baker.db.connection import get_db
-from baker.models.order import Order, OrderItem, allowed_transitions, validate_transition
+from baker.models.order import Order, OrderItem, validate_transition
+from baker.models.payment_transaction import PaymentTransaction
+from baker.models.work_item import WorkItem
 
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -21,6 +23,11 @@ class OrderItemIn(BaseModel):
     notes: str = ""
 
 
+class DepositIn(BaseModel):
+    amount: float
+    method: str = "cash"
+
+
 class OrderCreate(BaseModel):
     customerName: str
     customerPhone: str = ""
@@ -30,6 +37,7 @@ class OrderCreate(BaseModel):
     deliveryType: str = "pickup"
     deliveryAddress: str = ""
     notes: str = ""
+    deposit: Optional[DepositIn] = None
 
 
 class OrderEdit(BaseModel):
@@ -60,6 +68,26 @@ def _item_in_to_model(item: OrderItemIn) -> OrderItem:
         notes=item.notes,
         product_id=item.productId,
     )
+
+
+def _order_detail(conn, row) -> dict:
+    """Build full order detail dict including work items and payment transactions."""
+    order = Order.from_row(row, conn)
+    result = order.to_api_dict()
+
+    item_rows = conn.execute(
+        "SELECT * FROM order_items WHERE order_id = ? ORDER BY position, id",
+        (row["id"],),
+    ).fetchall()
+    result["workItems"] = [WorkItem.from_row(r).to_api_dict() for r in item_rows]
+
+    txn_rows = conn.execute(
+        "SELECT * FROM payment_transactions WHERE order_id = ? ORDER BY id",
+        (row["id"],),
+    ).fetchall()
+    result["paymentTransactions"] = [PaymentTransaction.from_row(r).to_api_dict() for r in txn_rows]
+
+    return result
 
 
 @router.get("")
@@ -108,8 +136,17 @@ def create_order(body: OrderCreate):
         order.calculate_total()
         order.save(conn)
 
+        if body.deposit and body.deposit.amount > 0:
+            txn = PaymentTransaction(
+                order_id=order.id,
+                amount=body.deposit.amount,
+                type="deposit",
+                method=body.deposit.method,
+            )
+            txn.save(conn)
+
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
-        return Order.from_row(row).to_api_dict()
+        return _order_detail(conn, row)
 
 
 @router.get("/{ref}")
@@ -122,7 +159,7 @@ def get_order(ref: str):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
-        return Order.from_row(row).to_api_dict()
+        return _order_detail(conn, row)
 
 
 @router.patch("/{ref}")
@@ -178,12 +215,17 @@ def edit_order(ref: str, body: OrderEdit):
         )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return Order.from_row(updated).to_api_dict()
+        return _order_detail(conn, updated)
 
 
 @router.post("/{ref}/status")
 def transition_status(ref: str, body: StatusTransition):
-    """Chuyển trạng thái đơn hàng."""
+    """Chuyển trạng thái đơn hàng. Lý do bắt buộc cho mọi thay đổi."""
+    if not body.reason.strip():
+        raise HTTPException(
+            status_code=422, detail="Lý do là bắt buộc khi thay đổi trạng thái"
+        )
+
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
@@ -192,25 +234,17 @@ def transition_status(ref: str, body: StatusTransition):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 
-        current = row["status"]
-        if not validate_transition(current, body.status):
-            allowed = allowed_transitions(current)
-            raise HTTPException(
-                status_code=422,
-                detail=f"Không thể chuyển từ '{current}' sang '{body.status}'. Cho phép: {allowed}",
-            )
-
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:
             raise HTTPException(status_code=422, detail="Không thể chuyển trạng thái")
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return Order.from_row(updated).to_api_dict()
+        return _order_detail(conn, updated)
 
 
 @router.patch("/{ref}/payment")
 def update_payment(ref: str, body: PaymentUpdate):
-    """Cập nhật số tiền đã thanh toán."""
+    """Ghi nhận thanh toán (tạo giao dịch mới nếu số tiền > 0)."""
     if body.amountPaid < 0:
         raise HTTPException(status_code=422, detail="Số tiền thanh toán không được âm")
 
@@ -222,10 +256,14 @@ def update_payment(ref: str, body: PaymentUpdate):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 
-        conn.execute(
-            "UPDATE orders SET amount_paid = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') WHERE id = ?",
-            (body.amountPaid, row["id"]),
-        )
+        if body.amountPaid > 0:
+            txn = PaymentTransaction(
+                order_id=row["id"],
+                amount=body.amountPaid,
+                type="payment",
+                method="cash",
+            )
+            txn.save(conn)
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return Order.from_row(updated).to_api_dict()
+        return _order_detail(conn, updated)

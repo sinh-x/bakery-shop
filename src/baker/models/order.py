@@ -166,8 +166,8 @@ class Order:
         except ValueError:
             return False
 
-        # Non-standard transitions require a reason to proceed
-        if not validate_transition(current, new_status) and not reason:
+        # All transitions require a reason
+        if not reason:
             return False
 
         conn.execute(
