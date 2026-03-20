@@ -7,6 +7,69 @@ import '../../data/models/cake_queue_item.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 
+/// Delivery content widget — embedded inside the Orders tab as the third sub-view.
+/// Shows work items with status = 'ready' only.
+class DeliveryContent extends ConsumerStatefulWidget {
+  const DeliveryContent({super.key});
+
+  @override
+  ConsumerState<DeliveryContent> createState() => _DeliveryContentState();
+}
+
+class _DeliveryContentState extends ConsumerState<DeliveryContent> {
+  Future<void> _onRefresh() async {
+    await ref.read(deliveryQueueProvider.notifier).refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final queueAsync = ref.watch(deliveryQueueProvider);
+    final theme = Theme.of(context);
+
+    return queueAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(VN.apiError),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _onRefresh,
+              child: const Text(VN.retry),
+            ),
+          ],
+        ),
+      ),
+      data: (items) {
+        if (items.isEmpty) {
+          return Center(
+            child: Text(
+              VN.noDeliveryItems,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          );
+        }
+        return RefreshIndicator(
+          onRefresh: _onRefresh,
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            itemCount: items.length,
+            itemBuilder: (ctx, index) => _CakeQueueCard(
+              item: items[index],
+              onTap: () => ctx.push(
+                '/orders/${items[index].orderRef}/items/${items[index].id}',
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 const _statusColors = {
   'pending': Colors.grey,
   'working': Colors.orange,

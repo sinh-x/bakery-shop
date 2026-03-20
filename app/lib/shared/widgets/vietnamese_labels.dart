@@ -279,10 +279,12 @@ class VN {
 
   // Cake queue & cake detail
   static const cakeQueue = 'Làm bánh';
+  static const deliveryTab = 'Giao hàng';
   static const orderListTab = 'Đơn hàng';
   static const cakeDetail = 'Chi tiết bánh';
   static const viewOrder = 'Xem đơn hàng';
   static const noCakeQueueItems = 'Không có sản phẩm cần làm';
+  static const noDeliveryItems = 'Không có sản phẩm cần giao';
   static const includeReadyFilter = 'Bao gồm sẵn sàng';
   static const perItemPhotos = 'Ảnh sản phẩm';
   static const birthdayWithAge = 'Sinh nhật';

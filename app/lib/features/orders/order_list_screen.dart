@@ -55,7 +55,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() => setState(() {}));
   }
 
@@ -85,6 +85,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
       _wasNavigatedAway = false;
       ref.invalidate(orderListProvider);
       ref.invalidate(cakeQueueProvider);
+      ref.invalidate(deliveryQueueProvider);
     } else if (path != '/orders') {
       _wasNavigatedAway = true;
     }
@@ -144,6 +145,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
           tabs: const [
             Tab(text: VN.orderListTab),
             Tab(text: VN.cakeQueue),
+            Tab(text: VN.deliveryTab),
           ],
         ),
       ),
@@ -260,6 +262,9 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
 
           // ── Tab 1: Cake queue ──────────────────────────────────────
           const CakeQueueContent(),
+
+          // ── Tab 2: Delivery ────────────────────────────────────────
+          const DeliveryContent(),
         ],
       ),
     );
