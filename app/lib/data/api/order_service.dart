@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/order.dart';
+import '../models/order_photo.dart';
 import 'api_client.dart';
 
 class OrderService {
@@ -97,6 +100,48 @@ class OrderService {
       data: {'amountPaid': amountPaid},
     );
     return Order.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  // ── Order Photos ──────────────────────────────────────────────────────────
+
+  Future<List<OrderPhoto>> listOrderPhotos(String orderRef) async {
+    final response = await _dio.get('/api/orders/$orderRef/photos');
+    final list = response.data as List;
+    return list
+        .map((json) => OrderPhoto.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<OrderPhoto> uploadOrderPhoto(
+    String orderRef,
+    File file, {
+    String tags = '',
+  }) async {
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(file.path),
+      'tags': tags,
+    });
+    final response = await _dio.post(
+      '/api/orders/$orderRef/photos',
+      data: formData,
+    );
+    return OrderPhoto.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<OrderPhoto> updatePhotoTags(
+    String orderRef,
+    int photoId,
+    String tags,
+  ) async {
+    final response = await _dio.patch(
+      '/api/orders/$orderRef/photos/$photoId',
+      data: {'tags': tags},
+    );
+    return OrderPhoto.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<void> deleteOrderPhoto(String orderRef, int photoId) async {
+    await _dio.delete('/api/orders/$orderRef/photos/$photoId');
   }
 
   /// Fetches all active (non-terminal) orders for the dashboard view.

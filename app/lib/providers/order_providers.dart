@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/api/order_service.dart';
 import '../data/models/order.dart';
+import '../data/models/order_photo.dart';
 
 class OrderListNotifier extends AsyncNotifier<List<Order>> {
   String? _statusFilter;
@@ -97,3 +100,55 @@ final dashboardOrdersProvider = FutureProvider<List<Order>>((ref) async {
   final service = ref.watch(orderServiceProvider);
   return service.listActiveOrders();
 });
+
+// Family provider for the photo list of a single order, keyed by orderRef.
+class OrderPhotosNotifier extends AsyncNotifier<List<OrderPhoto>> {
+  final String orderRef;
+
+  OrderPhotosNotifier(this.orderRef);
+
+  @override
+  Future<List<OrderPhoto>> build() async {
+    final service = ref.read(orderServiceProvider);
+    return service.listOrderPhotos(orderRef);
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final service = ref.read(orderServiceProvider);
+      return service.listOrderPhotos(orderRef);
+    });
+  }
+
+  Future<OrderPhoto> upload(File file, {String tags = ''}) async {
+    final service = ref.read(orderServiceProvider);
+    final photo = await service.uploadOrderPhoto(orderRef, file, tags: tags);
+    // Append to list optimistically.
+    final current = state.value ?? [];
+    state = AsyncData([...current, photo]);
+    return photo;
+  }
+
+  Future<OrderPhoto> updateTags(int photoId, String tags) async {
+    final service = ref.read(orderServiceProvider);
+    final updated = await service.updatePhotoTags(orderRef, photoId, tags);
+    final current = state.value ?? [];
+    state = AsyncData(
+      current.map((p) => p.id == photoId ? updated : p).toList(),
+    );
+    return updated;
+  }
+
+  Future<void> delete(int photoId) async {
+    final service = ref.read(orderServiceProvider);
+    await service.deleteOrderPhoto(orderRef, photoId);
+    final current = state.value ?? [];
+    state = AsyncData(current.where((p) => p.id != photoId).toList());
+  }
+}
+
+final orderPhotosProvider =
+    AsyncNotifierProvider.family<OrderPhotosNotifier, List<OrderPhoto>, String>(
+  (ref) => OrderPhotosNotifier(ref),
+);
