@@ -331,6 +331,19 @@ def _migrate_v8_photos(conn):
             )
 
 
+ORDER_PHOTOS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS order_photos (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    INTEGER NOT NULL REFERENCES orders(id),
+    photo_id    INTEGER NOT NULL REFERENCES photos(id),
+    tags        TEXT DEFAULT '',
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_photos_order ON order_photos(order_id);
+"""
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -377,6 +390,10 @@ MIGRATIONS = {
     10: {
         "description": "Add amount_paid to orders table",
         "sql": "ALTER TABLE orders ADD COLUMN amount_paid REAL DEFAULT 0;",
+    },
+    11: {
+        "description": "Order photos table for decoration references and chat screenshots",
+        "sql": ORDER_PHOTOS_SCHEMA,
     },
 }
 
