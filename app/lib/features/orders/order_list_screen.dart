@@ -191,17 +191,22 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen> {
   }
 }
 
-class _OrderCard extends StatelessWidget {
+class _OrderCard extends ConsumerWidget {
   const _OrderCard({required this.order, this.onTap});
 
   final Order order;
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final statusColor = _statusColors[order.status] ?? Colors.grey;
     final statusLabel = statusMap[order.status] ?? order.status;
+    final photosAsync = ref.watch(orderPhotosProvider(order.orderRef));
+    final photoCount = photosAsync.maybeWhen(
+      data: (photos) => photos.length,
+      orElse: () => 0,
+    );
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -213,7 +218,7 @@ class _OrderCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top row: order ref + status chip
+            // Top row: order ref + photo badge + status chip
             Row(
               children: [
                 Expanded(
@@ -224,6 +229,37 @@ class _OrderCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (photoCount > 0) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.photo_outlined,
+                          size: 11,
+                          color: theme.colorScheme.onSecondaryContainer,
+                        ),
+                        const SizedBox(width: 2),
+                        Text(
+                          '$photoCount ảnh',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSecondaryContainer,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,

@@ -25,7 +25,7 @@ class OrderPhotoTagDef {
 const kOrderPhotoTags = [
   OrderPhotoTagDef(
     key: 'mau-trang-tri',
-    label: 'Mau trang tri',
+    label: 'Màu trang trí',
     color: Color(0xFF1565C0),
   ),
   OrderPhotoTagDef(
@@ -45,7 +45,7 @@ const kOrderPhotoTags = [
   ),
   OrderPhotoTagDef(
     key: 'banh-hoan-thanh',
-    label: 'Banh hoan thanh',
+    label: 'Bánh hoàn thành',
     color: Color(0xFF2E7D32),
   ),
 ];
