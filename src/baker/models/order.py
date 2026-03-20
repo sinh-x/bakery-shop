@@ -84,6 +84,8 @@ class OrderItem:
     price: float = 0.0
     notes: str = ""
     product_id: str = ""
+    is_birthday: bool = False
+    age: Optional[int] = None
 
     def to_dict(self):
         return {"product": self.product, "qty": self.qty, "price": self.price, "notes": self.notes, "product_id": self.product_id}
@@ -95,6 +97,8 @@ class OrderItem:
             "quantity": self.qty,
             "unitPrice": self.price,
             "notes": self.notes,
+            "isBirthday": self.is_birthday,
+            "age": self.age,
         }
 
     @staticmethod

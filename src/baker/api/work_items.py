@@ -32,6 +32,8 @@ class WorkItemCreate(BaseModel):
     unitPrice: float = 0.0
     notes: str = ""
     position: int = 0
+    isBirthday: bool = False
+    age: Optional[int] = None
 
 
 class WorkItemUpdate(BaseModel):
@@ -82,6 +84,8 @@ def create_work_item(ref: str, body: WorkItemCreate):
             unit_price=body.unitPrice,
             notes=body.notes,
             position=body.position,
+            is_birthday=body.isBirthday,
+            age=body.age,
         )
         item.save(conn)
         row = conn.execute("SELECT * FROM order_items WHERE id = ?", (item.id,)).fetchone()

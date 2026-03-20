@@ -21,6 +21,8 @@ class OrderItemIn(BaseModel):
     quantity: int = 1
     unitPrice: float = 0.0
     notes: str = ""
+    isBirthday: bool = False
+    age: Optional[int] = None
 
 
 class DepositIn(BaseModel):
@@ -67,6 +69,8 @@ def _item_in_to_model(item: OrderItemIn) -> OrderItem:
         price=item.unitPrice,
         notes=item.notes,
         product_id=item.productId,
+        is_birthday=item.isBirthday,
+        age=item.age,
     )
 
 
@@ -135,6 +139,21 @@ def create_order(body: OrderCreate):
         )
         order.calculate_total()
         order.save(conn)
+
+        # Create order_items rows so work item IDs are available for photo linking
+        for position, item in enumerate(body.items):
+            work_item = WorkItem(
+                order_id=order.id,
+                product_id=item.productId,
+                product_name=item.productName,
+                quantity=item.quantity,
+                unit_price=item.unitPrice,
+                notes=item.notes,
+                position=position,
+                is_birthday=item.isBirthday,
+                age=item.age,
+            )
+            work_item.save(conn)
 
         if body.deposit and body.deposit.amount > 0:
             txn = PaymentTransaction(

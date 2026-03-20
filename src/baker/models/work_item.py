@@ -20,14 +20,16 @@ class WorkItem:
     product_id: str = ""
     position: int = 0
     status: str = "pending"
+    is_birthday: bool = False
+    age: Optional[int] = None
     id: Optional[int] = None
     created_at: Optional[str] = None
 
     def save(self, conn) -> int:
         cursor = conn.execute(
             """INSERT INTO order_items
-               (order_id, product_id, product_name, quantity, unit_price, notes, position, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (order_id, product_id, product_name, quantity, unit_price, notes, position, status, is_birthday, age)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 self.order_id,
                 self.product_id,
@@ -37,6 +39,8 @@ class WorkItem:
                 self.notes,
                 self.position,
                 self.status,
+                1 if self.is_birthday else 0,
+                self.age,
             ),
         )
         self.id = cursor.lastrowid
@@ -54,6 +58,7 @@ class WorkItem:
 
     @staticmethod
     def from_row(row) -> "WorkItem":
+        keys = row.keys() if hasattr(row, "keys") else []
         return WorkItem(
             id=row["id"],
             order_id=row["order_id"],
@@ -64,6 +69,8 @@ class WorkItem:
             notes=row["notes"] or "",
             position=row["position"],
             status=row["status"],
+            is_birthday=bool(row["is_birthday"]) if "is_birthday" in keys else False,
+            age=row["age"] if "age" in keys else None,
             created_at=row["created_at"],
         )
 
@@ -78,5 +85,7 @@ class WorkItem:
             "notes": self.notes,
             "position": self.position,
             "status": self.status,
+            "isBirthday": self.is_birthday,
+            "age": self.age,
             "createdAt": self.created_at,
         }

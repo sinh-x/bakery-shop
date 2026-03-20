@@ -6,10 +6,8 @@ import pytest
 # --- Helpers ---
 
 def _create_order(client, customer="Nguyễn Văn A"):
-    resp = client.post("/api/orders", json={
-        "customerName": customer,
-        "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000}],
-    })
+    # Create order without items so work_items list starts empty
+    resp = client.post("/api/orders", json={"customerName": customer})
     assert resp.status_code == 201
     return resp.json()
 
@@ -266,6 +264,55 @@ def test_work_item_status_not_found(api_client):
 
 
 # --- Migration: order_items table populated from orders.items JSON ---
+
+
+# --- Birthday / age fields (v13) ---
+
+
+def test_create_work_item_with_birthday(api_client):
+    """Work item created with isBirthday=True and age is stored and returned."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = api_client.post(f"/api/orders/{ref}/items", json={
+        "productName": "Bánh kem sinh nhật",
+        "unitPrice": 300000,
+        "isBirthday": True,
+        "age": 7,
+    })
+    assert resp.status_code == 201
+    item = resp.json()
+    assert item["isBirthday"] is True
+    assert item["age"] == 7
+
+
+def test_create_work_item_without_birthday_defaults(api_client):
+    """Work item created without birthday fields defaults to isBirthday=False, age=None."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = api_client.post(f"/api/orders/{ref}/items", json={"productName": "Bánh mì"})
+    assert resp.status_code == 201
+    item = resp.json()
+    assert item["isBirthday"] is False
+    assert item["age"] is None
+
+
+def test_order_creation_creates_work_items_with_birthday(api_client):
+    """Creating an order with items including birthday fields creates order_items rows."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "Khách hàng",
+        "items": [
+            {"productName": "Bánh kem 20cm", "unitPrice": 350000, "isBirthday": True, "age": 5},
+            {"productName": "Bánh mì", "unitPrice": 10000},
+        ],
+    })
+    assert resp.status_code == 201
+    order = resp.json()
+    work_items = order["workItems"]
+    assert len(work_items) == 2
+    assert work_items[0]["isBirthday"] is True
+    assert work_items[0]["age"] == 5
+    assert work_items[1]["isBirthday"] is False
+    assert work_items[1]["age"] is None
 
 
 def test_migration_v12_order_items_created(api_client):

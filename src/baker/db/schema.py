@@ -373,6 +373,12 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
 CREATE INDEX IF NOT EXISTS idx_payment_transactions_order ON payment_transactions(order_id);
 """
 
+PER_ITEM_BIRTHDAY_AND_PHOTO_LINK_SCHEMA = """
+ALTER TABLE order_items ADD COLUMN is_birthday INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE order_items ADD COLUMN age INTEGER DEFAULT NULL;
+ALTER TABLE order_photos ADD COLUMN work_item_id INTEGER DEFAULT NULL REFERENCES order_items(id);
+"""
+
 
 def _migrate_v12_data(conn):
     """Migrate orders.items JSON → order_items rows; amount_paid > 0 → deposit transaction."""
@@ -471,6 +477,10 @@ MIGRATIONS = {
         "description": "order_items and payment_transactions tables with data migration",
         "sql": ORDER_ITEMS_AND_PAYMENT_TRANSACTIONS_SCHEMA,
         "callable": _migrate_v12_data,
+    },
+    13: {
+        "description": "Per-item birthday/age fields and order_photos work_item_id FK",
+        "sql": PER_ITEM_BIRTHDAY_AND_PHOTO_LINK_SCHEMA,
     },
 }
 

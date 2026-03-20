@@ -1,5 +1,7 @@
 """Order photo API routes — decoration references and chat screenshots."""
 
+from typing import Optional
+
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
@@ -49,11 +51,23 @@ async def upload_order_photo(
     ref: str,
     file: UploadFile,
     tags: str = Form(""),
+    workItemId: Optional[str] = Form(None),
 ):
     """Tải lên ảnh cho đơn hàng (ảnh mẫu trang trí, chat screenshot, v.v.)."""
+    work_item_id: Optional[int] = int(workItemId) if workItemId else None
+
     with get_db() as conn:
         order = _get_order_or_404(conn, ref)
         order_id = order["id"]
+
+        # Validate work_item_id belongs to this order
+        if work_item_id is not None:
+            item_row = conn.execute(
+                "SELECT id FROM order_items WHERE id = ? AND order_id = ?",
+                (work_item_id, order_id),
+            ).fetchone()
+            if not item_row:
+                raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
 
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Tệp phải là hình ảnh")
@@ -73,14 +87,15 @@ async def upload_order_photo(
         ).fetchone()
         photo_id = photo_row[0] if photo_row else None
 
-        # Dedup: if same photo already attached to this order, return existing record
+        # Dedup: if same photo already attached to this order+work_item, return existing
         if photo_id is not None:
             existing = conn.execute(
                 "SELECT op.*, ph.hash as photo_hash "
                 "FROM order_photos op "
                 "LEFT JOIN photos ph ON op.photo_id = ph.id "
-                "WHERE op.order_id = ? AND op.photo_id = ?",
-                (order_id, photo_id),
+                "WHERE op.order_id = ? AND op.photo_id = ? AND "
+                "COALESCE(op.work_item_id, -1) = COALESCE(?, -1)",
+                (order_id, photo_id, work_item_id),
             ).fetchone()
             if existing:
                 return _row_to_dict(existing)
@@ -92,8 +107,9 @@ async def upload_order_photo(
         next_position = result[0]
 
         cursor = conn.execute(
-            "INSERT INTO order_photos (order_id, photo_id, tags, position) VALUES (?, ?, ?, ?)",
-            (order_id, photo_id, tags, next_position),
+            "INSERT INTO order_photos (order_id, photo_id, tags, position, work_item_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (order_id, photo_id, tags, next_position, work_item_id),
         )
         new_id = cursor.lastrowid
 

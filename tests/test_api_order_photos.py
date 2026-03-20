@@ -256,3 +256,79 @@ def test_photos_isolated_between_orders(api_client):
     _upload_photo(api_client, order_a["orderRef"])
     photos_b = api_client.get(f"/api/orders/{order_b['orderRef']}/photos").json()
     assert photos_b == []
+
+
+# --- Per-item photo linking (v13) ---
+
+
+def _upload_photo_with_item(client, ref, image_data=None, tags="", work_item_id=None):
+    if image_data is None:
+        image_data = _make_test_image()
+    data = {"tags": tags}
+    if work_item_id is not None:
+        data["workItemId"] = str(work_item_id)
+    return client.post(
+        f"/api/orders/{ref}/photos",
+        files={"file": ("photo.jpg", image_data, "image/jpeg")},
+        data=data,
+    )
+
+
+def _create_order_with_item(client):
+    """Create order with 1 item, return (order, work_item_id)."""
+    resp = client.post("/api/orders", json={
+        "customerName": "Test",
+        "items": [{"productName": "Bánh kem 16cm", "unitPrice": 200000}],
+    })
+    assert resp.status_code == 201
+    order = resp.json()
+    work_item_id = int(order["workItems"][0]["id"])
+    return order, work_item_id
+
+
+def test_upload_photo_with_work_item_id(api_client):
+    """Photo uploaded with workItemId stores the FK."""
+    order, work_item_id = _create_order_with_item(api_client)
+    ref = order["orderRef"]
+    resp = _upload_photo_with_item(api_client, ref, work_item_id=work_item_id)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["work_item_id"] == work_item_id
+
+
+def test_upload_photo_without_work_item_id_is_order_level(api_client):
+    """Photo uploaded without workItemId has null work_item_id (order-level)."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = _upload_photo(api_client, ref)
+    assert resp.status_code == 201
+    assert resp.json()["work_item_id"] is None
+
+
+def test_upload_photo_invalid_work_item_id(api_client):
+    """Photo upload with non-existent workItemId returns 404."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = _upload_photo_with_item(api_client, ref, work_item_id=99999)
+    assert resp.status_code == 404
+
+
+def test_upload_photo_work_item_wrong_order(api_client):
+    """Photo upload with workItemId from a different order returns 404."""
+    order_a, item_a_id = _create_order_with_item(api_client)
+    order_b = _create_order(api_client, customer="B")
+    ref_b = order_b["orderRef"]
+    resp = _upload_photo_with_item(api_client, ref_b, work_item_id=item_a_id)
+    assert resp.status_code == 404
+
+
+def test_dedup_per_item_photo(api_client):
+    """Same photo uploaded twice to same work_item returns existing record."""
+    order, work_item_id = _create_order_with_item(api_client)
+    ref = order["orderRef"]
+    image_data = _make_test_image()
+    first = _upload_photo_with_item(api_client, ref, image_data, work_item_id=work_item_id)
+    second = _upload_photo_with_item(api_client, ref, image_data, work_item_id=work_item_id)
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] == second.json()["id"]
