@@ -695,7 +695,7 @@ class _ExpandableItemCard extends StatefulWidget {
 }
 
 class _ExpandableItemCardState extends State<_ExpandableItemCard> {
-  bool _expanded = false;
+  bool _expanded = true;
   bool _isBirthday = false;
   late TextEditingController _notesCtrl;
   late TextEditingController _ageCtrl;
