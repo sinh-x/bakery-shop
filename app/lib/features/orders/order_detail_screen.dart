@@ -725,7 +725,8 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   void _onTypeSelected(String type) {
     setState(() => _type = type);
     if (type == 'full_payment' && widget.remaining > 0) {
-      _amountCtrl.text = widget.remaining.toStringAsFixed(0);
+      // Display the amount in thousands (user types 200 → means 200,000)
+      _amountCtrl.text = (widget.remaining / 1000).round().toString();
     }
   }
 
@@ -738,7 +739,8 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    final amount = double.parse(_amountCtrl.text.trim());
+    // Multiply by 1000: staff types 200 → actual amount 200,000
+    final amount = double.parse(_amountCtrl.text.trim()) * 1000;
     setState(() => _submitting = true);
     try {
       await ref
@@ -832,7 +834,8 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
               decoration: const InputDecoration(
                 labelText: VN.paymentAmountLabel,
                 border: OutlineInputBorder(),
-                suffixText: 'đ',
+                suffixText: ',000đ',
+                helperText: 'Nhập nghìn đồng (VD: 200 = 200.000đ)',
               ),
               keyboardType: TextInputType.number,
               autofocus: true,

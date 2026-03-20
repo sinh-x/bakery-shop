@@ -3,19 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/models/order.dart';
+import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'cake_queue_screen.dart';
 
-// Status display order for filter chips
-const _filterStatuses = [
-  'new',
-  'confirmed',
-  'in_progress',
-  'ready',
-  'delivered',
-  'completed',
-  'cancelled',
+// Group filter definitions for order list
+const _groupFilters = [
+  (id: 'all', label: 'Tất cả'),
+  (id: 'working', label: 'Đang làm'),
+  (id: 'ready', label: 'Sẵn sàng'),
+  (id: 'done', label: 'Xong'),
 ];
 
 const _statusColors = {
@@ -38,9 +36,21 @@ class OrderListScreen extends ConsumerStatefulWidget {
 class _OrderListScreenState extends ConsumerState<OrderListScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  String? _selectedStatus;
+  String _groupFilter = 'all';
   String _searchQuery = '';
   final _searchController = TextEditingController();
+
+  // Auto-refresh: detect when user navigates back to this screen
+  GoRouter? _goRouter;
+  bool _wasNavigatedAway = false;
+
+  void _addRouterListener() {
+    _goRouter?.routerDelegate.addListener(_handleRouteChange);
+  }
+
+  void _removeRouterListener() {
+    _goRouter?.routerDelegate.removeListener(_handleRouteChange);
+  }
 
   @override
   void initState() {
@@ -50,25 +60,68 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.of(context);
+    if (_goRouter != router) {
+      _removeRouterListener();
+      _goRouter = router;
+      _addRouterListener();
+    }
+  }
+
+  @override
   void dispose() {
+    _removeRouterListener();
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
-  Future<void> _onStatusSelected(String? status) async {
-    setState(() => _selectedStatus = status);
-    await ref.read(orderListProvider.notifier).filterByStatus(status);
+  void _handleRouteChange() {
+    if (!mounted) return;
+    final path = _goRouter!.state.uri.path;
+    if (path == '/orders' && _wasNavigatedAway) {
+      _wasNavigatedAway = false;
+      ref.invalidate(orderListProvider);
+      ref.invalidate(cakeQueueProvider);
+    } else if (path != '/orders') {
+      _wasNavigatedAway = true;
+    }
   }
 
   Future<void> _onRefresh() async {
     await ref.read(orderListProvider.notifier).refresh();
   }
 
-  List<Order> _applySearch(List<Order> orders) {
-    if (_searchQuery.isEmpty) return orders;
+  List<Order> _applyGroupFilter(List<Order> orders) {
+    switch (_groupFilter) {
+      case 'working':
+        return orders
+            .where((o) =>
+                o.status == 'new' ||
+                o.status == 'confirmed' ||
+                o.status == 'in_progress')
+            .toList();
+      case 'ready':
+        return orders.where((o) => o.status == 'ready').toList();
+      case 'done':
+        return orders
+            .where((o) =>
+                o.status == 'delivered' ||
+                o.status == 'completed' ||
+                o.status == 'cancelled')
+            .toList();
+      default:
+        return orders;
+    }
+  }
+
+  List<Order> _applyFilters(List<Order> orders) {
+    final grouped = _applyGroupFilter(orders);
+    if (_searchQuery.isEmpty) return grouped;
     final q = _searchQuery.toLowerCase();
-    return orders
+    return grouped
         .where(
           (o) =>
               o.orderRef.toLowerCase().contains(q) ||
@@ -134,37 +187,26 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                 ),
               ),
 
-              // Status filter chips
+              // Group status filter chips
               SizedBox(
                 height: 44,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(
                       horizontal: 12, vertical: 4),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FilterChip(
-                        label: const Text(VN.filterAll),
-                        selected: _selectedStatus == null,
-                        onSelected: (_) => _onStatusSelected(null),
-                      ),
-                    ),
-                    ..._filterStatuses.map(
-                      (s) => Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: FilterChip(
-                          label: Text(statusMap[s] ?? s),
-                          selected: _selectedStatus == s,
-                          selectedColor:
-                              (_statusColors[s] ?? Colors.grey).withAlpha(50),
-                          onSelected: (_) => _onStatusSelected(
-                            _selectedStatus == s ? null : s,
+                  children: _groupFilters
+                      .map(
+                        (g) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: FilterChip(
+                            label: Text(g.label),
+                            selected: _groupFilter == g.id,
+                            onSelected: (_) =>
+                                setState(() => _groupFilter = g.id),
                           ),
                         ),
-                      ),
-                    ),
-                  ],
+                      )
+                      .toList(),
                 ),
               ),
 
@@ -187,11 +229,11 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                     ),
                   ),
                   data: (orders) {
-                    final filtered = _applySearch(orders);
+                    final filtered = _applyFilters(orders);
                     if (filtered.isEmpty) {
                       return Center(
                         child: Text(
-                          _searchQuery.isNotEmpty || _selectedStatus != null
+                          _searchQuery.isNotEmpty || _groupFilter != 'all'
                               ? 'Không có đơn hàng phù hợp'
                               : 'Chưa có đơn hàng',
                           style: Theme.of(context).textTheme.bodyMedium,

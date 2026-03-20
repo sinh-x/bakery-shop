@@ -6,13 +6,17 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
+import '../../data/api/api_client.dart';
 import '../../data/api/order_service.dart';
 import '../../data/api/payment_transaction_service.dart';
 import '../../data/api/work_item_service.dart';
+import '../../data/models/category.dart';
 import '../../data/models/product.dart';
+import '../../providers/categories_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+import '../products/widgets/product_card.dart';
 import 'widgets/order_photo_section.dart';
 
 class OrderCreateScreen extends ConsumerStatefulWidget {
@@ -155,13 +159,13 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   }
 
   Future<void> _openProductPicker() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => _ProductPickerSheet(
-        selectedItems: _items,
-        onChanged: () => setState(() {}),
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => _ProductPickerPage(
+          selectedItems: _items,
+          onChanged: () => setState(() {}),
+        ),
       ),
     );
     setState(() {});
@@ -240,7 +244,9 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
 
       // Record initial deposit if provided
       if (_depositEnabled) {
-        final amount = double.tryParse(_depositAmountCtrl.text.trim());
+        final rawAmount = double.tryParse(_depositAmountCtrl.text.trim());
+        // Multiply by 1000: staff types 200 → actual amount 200,000
+        final amount = rawAmount != null ? rawAmount * 1000 : null;
         if (amount != null && amount > 0) {
           final txnService = ref.read(paymentTransactionServiceProvider);
           await txnService.createTransaction(
@@ -473,7 +479,8 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                 decoration: const InputDecoration(
                   labelText: VN.depositAmount,
                   border: OutlineInputBorder(),
-                  suffixText: 'đ',
+                  suffixText: ',000đ',
+                  helperText: 'Nhập nghìn đồng (VD: 200 = 200.000đ)',
                 ),
                 keyboardType: TextInputType.number,
                 validator: (v) {
@@ -1011,10 +1018,10 @@ class _PendingTagEditSheetState extends State<_PendingTagEditSheet> {
   }
 }
 
-// ── Product picker bottom sheet ───────────────────────────────────────────────
+// ── Product picker full-screen page ──────────────────────────────────────────
 
-class _ProductPickerSheet extends ConsumerStatefulWidget {
-  const _ProductPickerSheet({
+class _ProductPickerPage extends ConsumerStatefulWidget {
+  const _ProductPickerPage({
     required this.selectedItems,
     required this.onChanged,
   });
@@ -1023,186 +1030,205 @@ class _ProductPickerSheet extends ConsumerStatefulWidget {
   final VoidCallback onChanged;
 
   @override
-  ConsumerState<_ProductPickerSheet> createState() =>
-      _ProductPickerSheetState();
+  ConsumerState<_ProductPickerPage> createState() => _ProductPickerPageState();
 }
 
-class _ProductPickerSheetState extends ConsumerState<_ProductPickerSheet> {
-  String _search = '';
-  final _searchCtrl = TextEditingController();
+class _ProductPickerPageState extends ConsumerState<_ProductPickerPage> {
+  late Set<int> _selectedIds;
 
   @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _selectedIds =
+        widget.selectedItems.map((i) => i.product.id).toSet();
   }
 
-  int _getQty(Product product) {
-    return widget.selectedItems
-            .where((i) => i.product.id == product.id)
-            .firstOrNull
-            ?.quantity ??
-        0;
+  void _toggleProduct(Product product) {
+    setState(() {
+      if (_selectedIds.contains(product.id)) {
+        _selectedIds.remove(product.id);
+      } else {
+        _selectedIds.add(product.id);
+      }
+    });
   }
 
-  void _increment(Product product) {
-    final existing = widget.selectedItems
-        .where((i) => i.product.id == product.id)
-        .firstOrNull;
-    if (existing != null) {
-      existing.quantity++;
-    } else {
-      widget.selectedItems.add(DraftOrderItem(product: product));
+  void _onConfirm(List<Product> allProducts) {
+    // Remove items that were deselected
+    widget.selectedItems
+        .removeWhere((i) => !_selectedIds.contains(i.product.id));
+
+    // Add newly selected products (quantity = 1)
+    for (final id in _selectedIds) {
+      final alreadyAdded =
+          widget.selectedItems.any((i) => i.product.id == id);
+      if (!alreadyAdded) {
+        final product = allProducts.where((p) => p.id == id).firstOrNull;
+        if (product != null) {
+          widget.selectedItems.add(DraftOrderItem(product: product));
+        }
+      }
     }
-    setState(() {});
+
     widget.onChanged();
+    Navigator.of(context).pop();
   }
 
-  void _decrement(Product product) {
-    final existing = widget.selectedItems
-        .where((i) => i.product.id == product.id)
-        .firstOrNull;
-    if (existing == null) return;
-    if (existing.quantity <= 1) {
-      widget.selectedItems.remove(existing);
-    } else {
-      existing.quantity--;
+  Widget _buildGrid(
+    List<Category> categories,
+    List<Product> allProducts,
+    String baseUrl,
+  ) {
+    final activeCategories =
+        categories.where((c) => c.active == 1).toList();
+    final activeProducts =
+        allProducts.where((p) => p.active == 1).toList();
+
+    final appBar = _buildAppBar(allProducts, activeCategories);
+
+    if (activeCategories.isEmpty) {
+      return Scaffold(
+        appBar: appBar,
+        body: _buildCategoryGrid(activeProducts, baseUrl),
+      );
     }
-    setState(() {});
-    widget.onChanged();
+
+    return DefaultTabController(
+      length: activeCategories.length,
+      child: Scaffold(
+        appBar: appBar,
+        body: TabBarView(
+          children: activeCategories.map((cat) {
+            final catProducts = activeProducts
+                .where((p) => p.category == cat.slug)
+                .toList();
+            return catProducts.isEmpty
+                ? Center(
+                    child: Text(
+                      VN.noProducts,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                    ),
+                  )
+                : _buildCategoryGrid(catProducts, baseUrl);
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(
+    List<Product> allProducts,
+    List<Category> activeCategories,
+  ) {
+    return AppBar(
+      leading: IconButton(
+        icon: const Icon(Icons.close),
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+      title: Text(
+        _selectedIds.isEmpty
+            ? VN.selectProducts
+            : '${_selectedIds.length} đã chọn',
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.check),
+          tooltip: 'Xác nhận',
+          onPressed: () => _onConfirm(allProducts),
+        ),
+      ],
+      bottom: activeCategories.isNotEmpty
+          ? TabBar(
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              tabs: activeCategories.map((cat) {
+                final icon = cat.icon.isNotEmpty
+                    ? cat.icon
+                    : (categoryEmojiMap[cat.slug] ?? '');
+                return Tab(text: '$icon ${cat.name}');
+              }).toList(),
+            )
+          : null,
+    );
+  }
+
+  Widget _buildCategoryGrid(List<Product> products, String baseUrl) {
+    return GridView.builder(
+      padding: const EdgeInsets.all(8),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 1.0,
+      ),
+      itemCount: products.length,
+      itemBuilder: (_, i) {
+        final product = products[i];
+        final selected = _selectedIds.contains(product.id);
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            ProductCard(
+              product: product,
+              photoBaseUrl: baseUrl,
+              onTap: () => _toggleProduct(product),
+            ),
+            if (selected)
+              IgnorePointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withAlpha(100),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.check_circle,
+                      color: Colors.white,
+                      size: 52,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final categoriesAsync = ref.watch(categoriesProvider);
     final productsAsync = ref.watch(productsProvider);
-    final theme = Theme.of(context);
+    final baseUrl = ref.watch(apiBaseUrlProvider);
 
-    return Column(
-      children: [
-        // Handle
-        const SizedBox(height: 8),
-        Container(
-          width: 36,
-          height: 4,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.outlineVariant,
-            borderRadius: BorderRadius.circular(2),
+    return productsAsync.when(
+      loading: () => Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).pop(),
           ),
+          title: const Text(VN.selectProducts),
         ),
-        // Header
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 4, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  VN.selectProducts,
-                  style: theme.textTheme.titleMedium,
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
+        body: const Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, _) => Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).pop(),
           ),
+          title: const Text(VN.selectProducts),
         ),
-        // Search
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: TextField(
-            controller: _searchCtrl,
-            decoration: InputDecoration(
-              hintText: VN.searchProducts,
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _search.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _searchCtrl.clear();
-                        setState(() => _search = '');
-                      },
-                    )
-                  : null,
-              isDense: true,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
-              contentPadding: const EdgeInsets.symmetric(vertical: 8),
-            ),
-            onChanged: (v) => setState(() => _search = v),
-          ),
-        ),
-        // Product list
-        Expanded(
-          child: productsAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text(VN.apiError)),
-            data: (products) {
-              final active = products.where((p) => p.active == 1).toList();
-              final filtered = _search.isEmpty
-                  ? active
-                  : active
-                      .where(
-                        (p) =>
-                            p.name
-                                .toLowerCase()
-                                .contains(_search.toLowerCase()) ||
-                            p.productCode
-                                .toLowerCase()
-                                .contains(_search.toLowerCase()),
-                      )
-                      .toList();
-
-              if (filtered.isEmpty) {
-                return Center(child: Text(VN.noProducts));
-              }
-
-              return ListView.builder(
-                itemCount: filtered.length,
-                itemBuilder: (_, index) {
-                  final product = filtered[index];
-                  final qty = _getQty(product);
-                  final emoji = categoryEmojiMap[product.category] ?? '🍰';
-
-                  return ListTile(
-                    leading: Text(
-                      emoji,
-                      style: const TextStyle(fontSize: 28),
-                    ),
-                    title: Text(product.name),
-                    subtitle: Text(formatVND(product.basePrice)),
-                    trailing: qty == 0
-                        ? IconButton(
-                            icon: const Icon(Icons.add_circle_outline),
-                            onPressed: () => _increment(product),
-                          )
-                        : Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove_circle_outline),
-                                iconSize: 20,
-                                onPressed: () => _decrement(product),
-                              ),
-                              Text(
-                                '$qty',
-                                style: theme.textTheme.titleSmall,
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.add_circle_outline),
-                                iconSize: 20,
-                                onPressed: () => _increment(product),
-                              ),
-                            ],
-                          ),
-                  );
-                },
-              );
-            },
-          ),
-        ),
-      ],
+        body: Center(child: Text(VN.apiError)),
+      ),
+      data: (products) => categoriesAsync.when(
+        loading: () => _buildGrid([], products, baseUrl),
+        error: (e, _) => _buildGrid([], products, baseUrl),
+        data: (categories) => _buildGrid(categories, products, baseUrl),
+      ),
     );
   }
 }
