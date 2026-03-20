@@ -6,6 +6,7 @@ from typing import Optional
 class TransactionType(str, Enum):
     DEPOSIT = "deposit"
     PAYMENT = "payment"
+    FULL_PAYMENT = "full_payment"
     REFUND = "refund"
 
 

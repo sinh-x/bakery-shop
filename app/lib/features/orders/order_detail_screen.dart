@@ -228,11 +228,14 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     return paid;
   }
 
-  Future<void> _openAddPaymentSheet() async {
+  Future<void> _openAddPaymentSheet(double remaining) async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _RecordPaymentSheet(orderRef: order.orderRef),
+      builder: (_) => _RecordPaymentSheet(
+        orderRef: order.orderRef,
+        remaining: remaining,
+      ),
     );
   }
 
@@ -457,7 +460,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
 
         // ── Add payment button ────────────────────────────────────────
         OutlinedButton.icon(
-          onPressed: _openAddPaymentSheet,
+          onPressed: () => _openAddPaymentSheet(remaining),
           icon: const Icon(Icons.add, size: 18),
           label: const Text(VN.addPayment),
         ),
@@ -701,9 +704,10 @@ class _TransactionTile extends StatelessWidget {
 // ── Record payment bottom sheet ───────────────────────────────────────────────
 
 class _RecordPaymentSheet extends ConsumerStatefulWidget {
-  const _RecordPaymentSheet({required this.orderRef});
+  const _RecordPaymentSheet({required this.orderRef, required this.remaining});
 
   final String orderRef;
+  final double remaining;
 
   @override
   ConsumerState<_RecordPaymentSheet> createState() =>
@@ -717,6 +721,13 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   final _notesCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _submitting = false;
+
+  void _onTypeSelected(String type) {
+    setState(() => _type = type);
+    if (type == 'full_payment' && widget.remaining > 0) {
+      _amountCtrl.text = widget.remaining.toStringAsFixed(0);
+    }
+  }
 
   @override
   void dispose() {
@@ -795,7 +806,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                     (t) => ChoiceChip(
                       label: Text(t.$2),
                       selected: _type == t.$1,
-                      onSelected: (_) => setState(() => _type = t.$1),
+                      onSelected: (_) => _onTypeSelected(t.$1),
                     ),
                   )
                   .toList(),

@@ -99,6 +99,14 @@ def test_create_transaction_negative_amount_rejected(api_client):
     assert resp.status_code == 422
 
 
+def test_create_transaction_full_payment_type(api_client):
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000, type="full_payment")
+    assert txn["type"] == "full_payment"
+    assert txn["amount"] == 200000
+
+
 def test_create_transaction_invalid_type(api_client):
     order = _create_order(api_client)
     ref = order["orderRef"]
