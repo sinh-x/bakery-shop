@@ -204,7 +204,8 @@ def test_work_item_status_full_flow(api_client):
         assert resp.json()["status"] == status
 
 
-def test_work_item_status_requires_reason(api_client):
+def test_work_item_forward_without_reason_ok(api_client):
+    """Forward transitions (pending -> working) do not require a reason."""
     order = _create_order(api_client)
     ref = order["orderRef"]
     item = _create_item(api_client, ref)
@@ -213,8 +214,33 @@ def test_work_item_status_requires_reason(api_client):
         f"/api/orders/{ref}/items/{item_id}/status",
         json={"status": "working", "reason": ""},
     )
+    assert resp.status_code == 200
+
+
+def test_work_item_backward_requires_reason(api_client):
+    """Backward transitions require a reason."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref)
+    item_id = item["id"]
+    # Move forward: pending -> working
+    api_client.post(
+        f"/api/orders/{ref}/items/{item_id}/status",
+        json={"status": "working", "reason": ""},
+    )
+    # Backward without reason: working -> pending -> 422
+    resp = api_client.post(
+        f"/api/orders/{ref}/items/{item_id}/status",
+        json={"status": "pending", "reason": ""},
+    )
     assert resp.status_code == 422
     assert "Lý do" in resp.json()["detail"]
+    # With reason -> ok
+    resp = api_client.post(
+        f"/api/orders/{ref}/items/{item_id}/status",
+        json={"status": "pending", "reason": "Cần làm lại"},
+    )
+    assert resp.status_code == 200
 
 
 def test_work_item_status_invalid_value(api_client):

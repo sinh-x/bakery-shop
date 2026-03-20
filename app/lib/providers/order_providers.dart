@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/api/order_service.dart';
@@ -8,6 +9,7 @@ import '../data/api/work_item_service.dart';
 import '../data/models/order.dart';
 import '../data/models/order_photo.dart';
 import '../data/models/payment_transaction.dart';
+import '../data/models/product.dart';
 import '../data/models/work_item.dart';
 
 class OrderListNotifier extends AsyncNotifier<List<Order>> {
@@ -309,4 +311,85 @@ class OrderPaymentTransactionsNotifier
 final orderPaymentTransactionsProvider = AsyncNotifierProvider.family<
     OrderPaymentTransactionsNotifier, List<PaymentTransaction>, String>(
   (ref) => OrderPaymentTransactionsNotifier(ref),
+);
+
+// ── Order creation draft ──────────────────────────────────────────────────────
+
+/// A selected product in the order creation form.
+class DraftOrderItem {
+  final Product product;
+  int quantity;
+  DraftOrderItem({required this.product, this.quantity = 1});
+}
+
+/// A pending photo in the order creation form.
+class DraftPendingPhoto {
+  final File file;
+  Set<String> tags;
+  DraftPendingPhoto({required this.file, Set<String>? tags})
+      : tags = tags ?? {};
+}
+
+/// In-memory draft for the order creation form.
+class OrderDraft {
+  final String customerName;
+  final String customerPhone;
+  final List<DraftOrderItem> items;
+  final DateTime? dueDate;
+  final TimeOfDay? dueTime;
+  final String deliveryType;
+  final String deliveryAddress;
+  final bool isBirthday;
+  final String age;
+  final String notes;
+  final bool depositEnabled;
+  final String depositAmount;
+  final String depositMethod;
+  final List<DraftPendingPhoto> pendingPhotos;
+
+  OrderDraft({
+    this.customerName = '',
+    this.customerPhone = '',
+    List<DraftOrderItem>? items,
+    this.dueDate,
+    this.dueTime,
+    this.deliveryType = 'pickup',
+    this.deliveryAddress = '',
+    this.isBirthday = false,
+    this.age = '',
+    this.notes = '',
+    this.depositEnabled = false,
+    this.depositAmount = '',
+    this.depositMethod = 'cash',
+    List<DraftPendingPhoto>? pendingPhotos,
+  })  : items = items ?? [],
+        pendingPhotos = pendingPhotos ?? [];
+
+  bool get isNotEmpty =>
+      customerName.isNotEmpty ||
+      customerPhone.isNotEmpty ||
+      items.isNotEmpty ||
+      dueDate != null ||
+      dueTime != null ||
+      deliveryType != 'pickup' ||
+      deliveryAddress.isNotEmpty ||
+      isBirthday ||
+      age.isNotEmpty ||
+      notes.isNotEmpty ||
+      depositEnabled ||
+      depositAmount.isNotEmpty ||
+      pendingPhotos.isNotEmpty;
+}
+
+class OrderDraftNotifier extends Notifier<OrderDraft?> {
+  @override
+  OrderDraft? build() => null;
+
+  void save(OrderDraft draft) => state = draft;
+  void clear() => state = null;
+}
+
+final orderDraftProvider =
+    NotifierProvider<OrderDraftNotifier, OrderDraft?>(
+  OrderDraftNotifier.new,
 );

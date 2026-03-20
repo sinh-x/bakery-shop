@@ -14,20 +14,6 @@ import '../../providers/products_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/order_photo_section.dart';
 
-// Holds a product and its selected quantity for the order
-class _SelectedItem {
-  final Product product;
-  int quantity = 1;
-  _SelectedItem({required this.product});
-}
-
-// Holds a pending photo (before upload) for the order create form
-class _PendingPhoto {
-  final File file;
-  Set<String> tags;
-  _PendingPhoto({required this.file, Set<String>? tags}) : tags = tags ?? {};
-}
-
 class OrderCreateScreen extends ConsumerStatefulWidget {
   const OrderCreateScreen({super.key});
 
@@ -52,10 +38,11 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   final _depositAmountCtrl = TextEditingController();
   String _depositMethod = 'cash';
 
-  final List<_SelectedItem> _items = [];
-  final List<_PendingPhoto> _pendingPhotos = [];
+  final List<DraftOrderItem> _items = [];
+  final List<DraftPendingPhoto> _pendingPhotos = [];
   final _picker = ImagePicker();
   bool _submitting = false;
+  bool _submitted = false;
 
   bool get _needsAddress =>
       _deliveryType == 'bus' || _deliveryType == 'door';
@@ -64,7 +51,30 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       _items.fold(0, (sum, i) => sum + i.product.basePrice * i.quantity);
 
   @override
+  void initState() {
+    super.initState();
+    final draft = ref.read(orderDraftProvider);
+    if (draft != null) {
+      _nameCtrl.text = draft.customerName;
+      _phoneCtrl.text = draft.customerPhone;
+      _items.addAll(draft.items);
+      _dueDate = draft.dueDate;
+      _dueTime = draft.dueTime;
+      _deliveryType = draft.deliveryType;
+      _addressCtrl.text = draft.deliveryAddress;
+      _isBirthday = draft.isBirthday;
+      _ageCtrl.text = draft.age;
+      _notesCtrl.text = draft.notes;
+      _depositEnabled = draft.depositEnabled;
+      _depositAmountCtrl.text = draft.depositAmount;
+      _depositMethod = draft.depositMethod;
+      _pendingPhotos.addAll(draft.pendingPhotos);
+    }
+  }
+
+  @override
   void dispose() {
+    _saveDraft();
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     _addressCtrl.dispose();
@@ -72,6 +82,31 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     _ageCtrl.dispose();
     _depositAmountCtrl.dispose();
     super.dispose();
+  }
+
+  void _saveDraft() {
+    if (_submitted) return;
+    final draft = OrderDraft(
+      customerName: _nameCtrl.text,
+      customerPhone: _phoneCtrl.text,
+      items: List.of(_items),
+      dueDate: _dueDate,
+      dueTime: _dueTime,
+      deliveryType: _deliveryType,
+      deliveryAddress: _addressCtrl.text,
+      isBirthday: _isBirthday,
+      age: _ageCtrl.text,
+      notes: _notesCtrl.text,
+      depositEnabled: _depositEnabled,
+      depositAmount: _depositAmountCtrl.text,
+      depositMethod: _depositMethod,
+      pendingPhotos: List.of(_pendingPhotos),
+    );
+    if (draft.isNotEmpty) {
+      ref.read(orderDraftProvider.notifier).save(draft);
+    } else {
+      ref.read(orderDraftProvider.notifier).clear();
+    }
   }
 
   String _formatDateApi(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
@@ -109,7 +144,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     if (files.isEmpty || !mounted) return;
     setState(() {
       for (final f in files) {
-        _pendingPhotos.add(_PendingPhoto(file: File(f.path)));
+        _pendingPhotos.add(DraftPendingPhoto(file: File(f.path)));
       }
     });
   }
@@ -209,6 +244,8 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       await ref.read(orderListProvider.notifier).refresh();
 
       if (mounted) {
+        _submitted = true;
+        ref.read(orderDraftProvider.notifier).clear();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text(VN.orderCreated)),
         );
@@ -279,7 +316,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               )
             else
               ..._items.map(
-                (item) => _SelectedItemTile(
+                (item) => _DraftOrderItemTile(
                   item: item,
                   onRemove: () => setState(() => _items.remove(item)),
                   onQtyChanged: (q) => setState(() => item.quantity = q),
@@ -639,14 +676,14 @@ class _SectionHeader extends StatelessWidget {
 
 // ── Selected item tile ────────────────────────────────────────────────────────
 
-class _SelectedItemTile extends StatelessWidget {
-  const _SelectedItemTile({
+class _DraftOrderItemTile extends StatelessWidget {
+  const _DraftOrderItemTile({
     required this.item,
     required this.onRemove,
     required this.onQtyChanged,
   });
 
-  final _SelectedItem item;
+  final DraftOrderItem item;
   final VoidCallback onRemove;
   final ValueChanged<int> onQtyChanged;
 
@@ -802,7 +839,7 @@ class _ProductPickerSheet extends ConsumerStatefulWidget {
     required this.onChanged,
   });
 
-  final List<_SelectedItem> selectedItems;
+  final List<DraftOrderItem> selectedItems;
   final VoidCallback onChanged;
 
   @override
@@ -835,7 +872,7 @@ class _ProductPickerSheetState extends ConsumerState<_ProductPickerSheet> {
     if (existing != null) {
       existing.quantity++;
     } else {
-      widget.selectedItems.add(_SelectedItem(product: product));
+      widget.selectedItems.add(DraftOrderItem(product: product));
     }
     setState(() {});
     widget.onChanged();

@@ -28,6 +28,26 @@ const _workItemStatusColors = {
   'delivered': Colors.teal,
 };
 
+const _orderStatusRank = {
+  'new': 0,
+  'confirmed': 1,
+  'in_progress': 2,
+  'ready': 3,
+  'delivered': 4,
+  'completed': 5,
+  'cancelled': 5,
+};
+
+const _workItemStatusRank = {
+  'pending': 0,
+  'working': 1,
+  'ready': 2,
+  'delivered': 3,
+};
+
+bool _isBackward(String current, String target, Map<String, int> ranks) =>
+    (ranks[target] ?? 0) < (ranks[current] ?? 0);
+
 /// Shows a reason dialog for a status transition.
 /// Returns the trimmed reason string, or null if cancelled.
 Future<String?> _showReasonDialog(
@@ -167,8 +187,13 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
   }
 
   Future<void> _onTransition(String targetStatus) async {
-    final reason = await _showReasonDialog(context, targetStatus);
-    if (reason == null || !mounted) return;
+    String reason = '';
+    if (_isBackward(order.status, targetStatus, _orderStatusRank) ||
+        targetStatus == 'cancelled') {
+      final r = await _showReasonDialog(context, targetStatus);
+      if (r == null || !mounted) return;
+      reason = r;
+    }
     setState(() => _transitioning = true);
     try {
       await ref
@@ -913,8 +938,12 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
 
   Future<void> _onTransitionWorkItem(WorkItem item, String targetStatus) async {
     if (_transitioning) return;
-    final reason = await _showReasonDialog(context, targetStatus);
-    if (reason == null || !mounted) return;
+    String reason = '';
+    if (_isBackward(item.status, targetStatus, _workItemStatusRank)) {
+      final r = await _showReasonDialog(context, targetStatus);
+      if (r == null || !mounted) return;
+      reason = r;
+    }
 
     setState(() => _transitioning = true);
     try {

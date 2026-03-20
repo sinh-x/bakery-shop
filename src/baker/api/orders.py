@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from baker.db.connection import get_db
-from baker.models.order import Order, OrderItem, validate_transition
+from baker.models.order import Order, OrderItem, is_backward_transition, validate_transition
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
 
@@ -220,12 +220,7 @@ def edit_order(ref: str, body: OrderEdit):
 
 @router.post("/{ref}/status")
 def transition_status(ref: str, body: StatusTransition):
-    """Chuyển trạng thái đơn hàng. Lý do bắt buộc cho mọi thay đổi."""
-    if not body.reason.strip():
-        raise HTTPException(
-            status_code=422, detail="Lý do là bắt buộc khi thay đổi trạng thái"
-        )
-
+    """Chuyển trạng thái đơn hàng. Lý do bắt buộc khi lùi trạng thái."""
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
@@ -233,6 +228,11 @@ def transition_status(ref: str, body: StatusTransition):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        if is_backward_transition(row["status"], body.status) and not body.reason.strip():
+            raise HTTPException(
+                status_code=422, detail="Lý do là bắt buộc khi lùi trạng thái"
+            )
 
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:

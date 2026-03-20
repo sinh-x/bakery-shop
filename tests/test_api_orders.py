@@ -285,21 +285,31 @@ def test_status_cancel(api_client):
     assert resp.json()["status"] == "cancelled"
 
 
-def test_status_requires_reason(api_client):
+def test_status_forward_without_reason_ok(api_client):
+    """Forward transitions (new -> confirmed) do not require a reason."""
     created = _create_order(api_client)
     ref = created["orderRef"]
     resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "confirmed"})
-    assert resp.status_code == 422
-    assert "Lý do" in resp.json()["detail"]
+    assert resp.status_code == 200
 
 
-def test_status_requires_reason_even_for_forward_transition(api_client):
+def test_status_backward_requires_reason(api_client):
+    """Backward transitions require a reason."""
     created = _create_order(api_client)
     ref = created["orderRef"]
-    resp = api_client.post(
-        f"/api/orders/{ref}/status", json={"status": "confirmed", "reason": ""}
-    )
+    # Move forward: new -> confirmed -> in_progress
+    api_client.post(f"/api/orders/{ref}/status", json={"status": "confirmed"})
+    api_client.post(f"/api/orders/{ref}/status", json={"status": "in_progress"})
+    # Backward without reason: in_progress -> confirmed -> 422
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "confirmed", "reason": ""})
     assert resp.status_code == 422
+    assert "Lý do" in resp.json()["detail"]
+    # With reason -> ok
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "confirmed", "reason": "Cần xem lại"},
+    )
+    assert resp.status_code == 200
 
 
 def test_status_bad_value(api_client):

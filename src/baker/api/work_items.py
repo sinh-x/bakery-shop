@@ -10,6 +10,20 @@ from baker.models.work_item import WorkItem, WorkItemStatus
 
 router = APIRouter(prefix="/api/orders", tags=["work-items"])
 
+_WORK_ITEM_RANK = {
+    WorkItemStatus.PENDING: 0,
+    WorkItemStatus.WORKING: 1,
+    WorkItemStatus.READY: 2,
+    WorkItemStatus.DELIVERED: 3,
+}
+
+
+def _is_backward(current: str, target: str) -> bool:
+    try:
+        return _WORK_ITEM_RANK[WorkItemStatus(target)] < _WORK_ITEM_RANK[WorkItemStatus(current)]
+    except (ValueError, KeyError):
+        return False
+
 
 class WorkItemCreate(BaseModel):
     productId: str = ""
@@ -132,12 +146,7 @@ def delete_work_item(ref: str, item_id: int):
 
 @router.post("/{ref}/items/{item_id}/status")
 def transition_work_item_status(ref: str, item_id: int, body: WorkItemStatusTransition):
-    """Chuyển trạng thái công việc (bắt buộc có lý do)."""
-    if not body.reason.strip():
-        raise HTTPException(
-            status_code=422, detail="Lý do là bắt buộc khi thay đổi trạng thái"
-        )
-
+    """Chuyển trạng thái công việc. Lý do bắt buộc khi lùi trạng thái."""
     valid_statuses = [s.value for s in WorkItemStatus]
     if body.status not in valid_statuses:
         raise HTTPException(
@@ -153,6 +162,11 @@ def transition_work_item_status(ref: str, item_id: int, body: WorkItemStatusTran
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
+
+        if _is_backward(row["status"], body.status) and not body.reason.strip():
+            raise HTTPException(
+                status_code=422, detail="Lý do là bắt buộc khi lùi trạng thái"
+            )
 
         conn.execute(
             "UPDATE order_items SET status = ? WHERE id = ?",

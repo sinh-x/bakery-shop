@@ -27,6 +27,25 @@ TRANSITIONS = {
     OrderStatus.CANCELLED: [],
 }
 
+# Ordered for determining forward vs backward transitions
+_ORDER_STATUS_RANK = {
+    OrderStatus.NEW: 0,
+    OrderStatus.CONFIRMED: 1,
+    OrderStatus.IN_PROGRESS: 2,
+    OrderStatus.READY: 3,
+    OrderStatus.DELIVERED: 4,
+    OrderStatus.COMPLETED: 5,
+    OrderStatus.CANCELLED: 5,
+}
+
+
+def is_backward_transition(current: str, target: str) -> bool:
+    """Return True if transitioning to a lower-ranked status."""
+    try:
+        return _ORDER_STATUS_RANK[OrderStatus(target)] < _ORDER_STATUS_RANK[OrderStatus(current)]
+    except (ValueError, KeyError):
+        return False
+
 
 def validate_transition(current: str, target: str) -> bool:
     try:
@@ -166,8 +185,8 @@ class Order:
         except ValueError:
             return False
 
-        # All transitions require a reason
-        if not reason:
+        # Backward transitions require a reason
+        if is_backward_transition(current, new_status) and not reason:
             return False
 
         conn.execute(
