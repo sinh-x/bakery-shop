@@ -19,6 +19,8 @@ sealed class WorkItem with _$WorkItem {
     String? deliveryType,
     String? deliveryAddress,
     @Default(0) int position,
+    @Default(false) bool isBirthday,
+    int? age,
     String? createdAt,
     String? updatedAt,
   }) = _WorkItem;

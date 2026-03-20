@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$OrderPhoto {
 
- int get id;@JsonKey(name: 'order_id') int get orderId;@JsonKey(name: 'photo_hash') String get photoHash; String get tags; int get position;@JsonKey(name: 'created_at') String? get createdAt;
+ int get id;@JsonKey(name: 'order_id') int get orderId;@JsonKey(name: 'photo_hash') String get photoHash; String get tags; int get position;@JsonKey(name: 'work_item_id') int? get workItemId;@JsonKey(name: 'created_at') String? get createdAt;
 /// Create a copy of OrderPhoto
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $OrderPhotoCopyWith<OrderPhoto> get copyWith => _$OrderPhotoCopyWithImpl<OrderPh
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is OrderPhoto&&(identical(other.id, id) || other.id == id)&&(identical(other.orderId, orderId) || other.orderId == orderId)&&(identical(other.photoHash, photoHash) || other.photoHash == photoHash)&&(identical(other.tags, tags) || other.tags == tags)&&(identical(other.position, position) || other.position == position)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is OrderPhoto&&(identical(other.id, id) || other.id == id)&&(identical(other.orderId, orderId) || other.orderId == orderId)&&(identical(other.photoHash, photoHash) || other.photoHash == photoHash)&&(identical(other.tags, tags) || other.tags == tags)&&(identical(other.position, position) || other.position == position)&&(identical(other.workItemId, workItemId) || other.workItemId == workItemId)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,orderId,photoHash,tags,position,createdAt);
+int get hashCode => Object.hash(runtimeType,id,orderId,photoHash,tags,position,workItemId,createdAt);
 
 @override
 String toString() {
-  return 'OrderPhoto(id: $id, orderId: $orderId, photoHash: $photoHash, tags: $tags, position: $position, createdAt: $createdAt)';
+  return 'OrderPhoto(id: $id, orderId: $orderId, photoHash: $photoHash, tags: $tags, position: $position, workItemId: $workItemId, createdAt: $createdAt)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $OrderPhotoCopyWith<$Res>  {
   factory $OrderPhotoCopyWith(OrderPhoto value, $Res Function(OrderPhoto) _then) = _$OrderPhotoCopyWithImpl;
 @useResult
 $Res call({
- int id,@JsonKey(name: 'order_id') int orderId,@JsonKey(name: 'photo_hash') String photoHash, String tags, int position,@JsonKey(name: 'created_at') String? createdAt
+ int id,@JsonKey(name: 'order_id') int orderId,@JsonKey(name: 'photo_hash') String photoHash, String tags, int position,@JsonKey(name: 'work_item_id') int? workItemId,@JsonKey(name: 'created_at') String? createdAt
 });
 
 
@@ -65,14 +65,15 @@ class _$OrderPhotoCopyWithImpl<$Res>
 
 /// Create a copy of OrderPhoto
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? orderId = null,Object? photoHash = null,Object? tags = null,Object? position = null,Object? createdAt = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? orderId = null,Object? photoHash = null,Object? tags = null,Object? position = null,Object? workItemId = freezed,Object? createdAt = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int,orderId: null == orderId ? _self.orderId : orderId // ignore: cast_nullable_to_non_nullable
 as int,photoHash: null == photoHash ? _self.photoHash : photoHash // ignore: cast_nullable_to_non_nullable
 as String,tags: null == tags ? _self.tags : tags // ignore: cast_nullable_to_non_nullable
 as String,position: null == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
-as int,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as int,workItemId: freezed == workItemId ? _self.workItemId : workItemId // ignore: cast_nullable_to_non_nullable
+as int?,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String?,
   ));
 }
@@ -155,10 +156,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'order_id')  int orderId, @JsonKey(name: 'photo_hash')  String photoHash,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'order_id')  int orderId, @JsonKey(name: 'photo_hash')  String photoHash,  String tags,  int position, @JsonKey(name: 'work_item_id')  int? workItemId, @JsonKey(name: 'created_at')  String? createdAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _OrderPhoto() when $default != null:
-return $default(_that.id,_that.orderId,_that.photoHash,_that.tags,_that.position,_that.createdAt);case _:
+return $default(_that.id,_that.orderId,_that.photoHash,_that.tags,_that.position,_that.workItemId,_that.createdAt);case _:
   return orElse();
 
 }
@@ -176,10 +177,10 @@ return $default(_that.id,_that.orderId,_that.photoHash,_that.tags,_that.position
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'order_id')  int orderId, @JsonKey(name: 'photo_hash')  String photoHash,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'order_id')  int orderId, @JsonKey(name: 'photo_hash')  String photoHash,  String tags,  int position, @JsonKey(name: 'work_item_id')  int? workItemId, @JsonKey(name: 'created_at')  String? createdAt)  $default,) {final _that = this;
 switch (_that) {
 case _OrderPhoto():
-return $default(_that.id,_that.orderId,_that.photoHash,_that.tags,_that.position,_that.createdAt);}
+return $default(_that.id,_that.orderId,_that.photoHash,_that.tags,_that.position,_that.workItemId,_that.createdAt);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -193,10 +194,10 @@ return $default(_that.id,_that.orderId,_that.photoHash,_that.tags,_that.position
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id, @JsonKey(name: 'order_id')  int orderId, @JsonKey(name: 'photo_hash')  String photoHash,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id, @JsonKey(name: 'order_id')  int orderId, @JsonKey(name: 'photo_hash')  String photoHash,  String tags,  int position, @JsonKey(name: 'work_item_id')  int? workItemId, @JsonKey(name: 'created_at')  String? createdAt)?  $default,) {final _that = this;
 switch (_that) {
 case _OrderPhoto() when $default != null:
-return $default(_that.id,_that.orderId,_that.photoHash,_that.tags,_that.position,_that.createdAt);case _:
+return $default(_that.id,_that.orderId,_that.photoHash,_that.tags,_that.position,_that.workItemId,_that.createdAt);case _:
   return null;
 
 }
@@ -208,7 +209,7 @@ return $default(_that.id,_that.orderId,_that.photoHash,_that.tags,_that.position
 @JsonSerializable()
 
 class _OrderPhoto implements OrderPhoto {
-  const _OrderPhoto({required this.id, @JsonKey(name: 'order_id') required this.orderId, @JsonKey(name: 'photo_hash') required this.photoHash, this.tags = '', this.position = 0, @JsonKey(name: 'created_at') this.createdAt});
+  const _OrderPhoto({required this.id, @JsonKey(name: 'order_id') required this.orderId, @JsonKey(name: 'photo_hash') required this.photoHash, this.tags = '', this.position = 0, @JsonKey(name: 'work_item_id') this.workItemId, @JsonKey(name: 'created_at') this.createdAt});
   factory _OrderPhoto.fromJson(Map<String, dynamic> json) => _$OrderPhotoFromJson(json);
 
 @override final  int id;
@@ -216,6 +217,7 @@ class _OrderPhoto implements OrderPhoto {
 @override@JsonKey(name: 'photo_hash') final  String photoHash;
 @override@JsonKey() final  String tags;
 @override@JsonKey() final  int position;
+@override@JsonKey(name: 'work_item_id') final  int? workItemId;
 @override@JsonKey(name: 'created_at') final  String? createdAt;
 
 /// Create a copy of OrderPhoto
@@ -231,16 +233,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _OrderPhoto&&(identical(other.id, id) || other.id == id)&&(identical(other.orderId, orderId) || other.orderId == orderId)&&(identical(other.photoHash, photoHash) || other.photoHash == photoHash)&&(identical(other.tags, tags) || other.tags == tags)&&(identical(other.position, position) || other.position == position)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _OrderPhoto&&(identical(other.id, id) || other.id == id)&&(identical(other.orderId, orderId) || other.orderId == orderId)&&(identical(other.photoHash, photoHash) || other.photoHash == photoHash)&&(identical(other.tags, tags) || other.tags == tags)&&(identical(other.position, position) || other.position == position)&&(identical(other.workItemId, workItemId) || other.workItemId == workItemId)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,orderId,photoHash,tags,position,createdAt);
+int get hashCode => Object.hash(runtimeType,id,orderId,photoHash,tags,position,workItemId,createdAt);
 
 @override
 String toString() {
-  return 'OrderPhoto(id: $id, orderId: $orderId, photoHash: $photoHash, tags: $tags, position: $position, createdAt: $createdAt)';
+  return 'OrderPhoto(id: $id, orderId: $orderId, photoHash: $photoHash, tags: $tags, position: $position, workItemId: $workItemId, createdAt: $createdAt)';
 }
 
 
@@ -251,7 +253,7 @@ abstract mixin class _$OrderPhotoCopyWith<$Res> implements $OrderPhotoCopyWith<$
   factory _$OrderPhotoCopyWith(_OrderPhoto value, $Res Function(_OrderPhoto) _then) = __$OrderPhotoCopyWithImpl;
 @override @useResult
 $Res call({
- int id,@JsonKey(name: 'order_id') int orderId,@JsonKey(name: 'photo_hash') String photoHash, String tags, int position,@JsonKey(name: 'created_at') String? createdAt
+ int id,@JsonKey(name: 'order_id') int orderId,@JsonKey(name: 'photo_hash') String photoHash, String tags, int position,@JsonKey(name: 'work_item_id') int? workItemId,@JsonKey(name: 'created_at') String? createdAt
 });
 
 
@@ -268,14 +270,15 @@ class __$OrderPhotoCopyWithImpl<$Res>
 
 /// Create a copy of OrderPhoto
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? orderId = null,Object? photoHash = null,Object? tags = null,Object? position = null,Object? createdAt = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? orderId = null,Object? photoHash = null,Object? tags = null,Object? position = null,Object? workItemId = freezed,Object? createdAt = freezed,}) {
   return _then(_OrderPhoto(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int,orderId: null == orderId ? _self.orderId : orderId // ignore: cast_nullable_to_non_nullable
 as int,photoHash: null == photoHash ? _self.photoHash : photoHash // ignore: cast_nullable_to_non_nullable
 as String,tags: null == tags ? _self.tags : tags // ignore: cast_nullable_to_non_nullable
 as String,position: null == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
-as int,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as int,workItemId: freezed == workItemId ? _self.workItemId : workItemId // ignore: cast_nullable_to_non_nullable
+as int?,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String?,
   ));
 }

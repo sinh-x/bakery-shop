@@ -116,11 +116,14 @@ class OrderService {
     String orderRef,
     File file, {
     String tags = '',
+    int? workItemId,
   }) async {
-    final formData = FormData.fromMap({
+    final map = <String, dynamic>{
       'file': await MultipartFile.fromFile(file.path),
       'tags': tags,
-    });
+    };
+    if (workItemId != null) map['workItemId'] = workItemId.toString();
+    final formData = FormData.fromMap(map);
     final response = await _dio.post(
       '/api/orders/$orderRef/photos',
       data: formData,

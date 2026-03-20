@@ -11,6 +11,7 @@ sealed class OrderPhoto with _$OrderPhoto {
     @JsonKey(name: 'photo_hash') required String photoHash,
     @Default('') String tags,
     @Default(0) int position,
+    @JsonKey(name: 'work_item_id') int? workItemId,
     @JsonKey(name: 'created_at') String? createdAt,
   }) = _OrderPhoto;
 

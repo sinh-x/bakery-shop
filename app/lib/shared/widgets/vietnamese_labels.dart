@@ -227,6 +227,7 @@ class VN {
   static const photoTagsUpdated = 'Đã cập nhật nhãn';
   static const pendingPhotosLabel = 'Ảnh đính kèm';
   static const uploadingPhotos = 'Đang tải ảnh lên...';
+  static const itemPrice = 'Đơn giá';
 
   // Catalog gallery
   static const catalogTitle = 'Bộ sưu tập';

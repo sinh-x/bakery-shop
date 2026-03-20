@@ -12,6 +12,7 @@ _OrderPhoto _$OrderPhotoFromJson(Map<String, dynamic> json) => _OrderPhoto(
   photoHash: json['photo_hash'] as String,
   tags: json['tags'] as String? ?? '',
   position: (json['position'] as num?)?.toInt() ?? 0,
+  workItemId: (json['work_item_id'] as num?)?.toInt(),
   createdAt: json['created_at'] as String?,
 );
 
@@ -22,5 +23,6 @@ Map<String, dynamic> _$OrderPhotoToJson(_OrderPhoto instance) =>
       'photo_hash': instance.photoHash,
       'tags': instance.tags,
       'position': instance.position,
+      'work_item_id': instance.workItemId,
       'created_at': instance.createdAt,
     };

@@ -319,7 +319,23 @@ final orderPaymentTransactionsProvider = AsyncNotifierProvider.family<
 class DraftOrderItem {
   final Product product;
   int quantity;
-  DraftOrderItem({required this.product, this.quantity = 1});
+  String notes;
+  bool isBirthday;
+  String age;
+  List<String> pendingPhotoPaths;
+  double? customUnitPrice;
+
+  DraftOrderItem({
+    required this.product,
+    this.quantity = 1,
+    this.notes = '',
+    this.isBirthday = false,
+    this.age = '',
+    List<String>? pendingPhotoPaths,
+    this.customUnitPrice,
+  }) : pendingPhotoPaths = pendingPhotoPaths ?? [];
+
+  double get unitPrice => customUnitPrice ?? product.basePrice;
 }
 
 /// A pending photo in the order creation form.
@@ -339,8 +355,6 @@ class OrderDraft {
   final TimeOfDay? dueTime;
   final String deliveryType;
   final String deliveryAddress;
-  final bool isBirthday;
-  final String age;
   final String notes;
   final bool depositEnabled;
   final String depositAmount;
@@ -355,8 +369,6 @@ class OrderDraft {
     this.dueTime,
     this.deliveryType = 'pickup',
     this.deliveryAddress = '',
-    this.isBirthday = false,
-    this.age = '',
     this.notes = '',
     this.depositEnabled = false,
     this.depositAmount = '',
@@ -373,8 +385,6 @@ class OrderDraft {
       dueTime != null ||
       deliveryType != 'pickup' ||
       deliveryAddress.isNotEmpty ||
-      isBirthday ||
-      age.isNotEmpty ||
       notes.isNotEmpty ||
       depositEnabled ||
       depositAmount.isNotEmpty ||

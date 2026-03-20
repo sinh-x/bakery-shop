@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 
 import '../../data/api/order_service.dart';
 import '../../data/api/payment_transaction_service.dart';
+import '../../data/api/work_item_service.dart';
 import '../../data/models/product.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
@@ -27,12 +28,10 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   final _phoneCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
-  final _ageCtrl = TextEditingController();
 
   DateTime? _dueDate;
   TimeOfDay? _dueTime;
   String _deliveryType = 'pickup';
-  bool _isBirthday = false;
 
   bool _depositEnabled = false;
   final _depositAmountCtrl = TextEditingController();
@@ -48,7 +47,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       _deliveryType == 'bus' || _deliveryType == 'door';
 
   double get _totalPrice =>
-      _items.fold(0, (sum, i) => sum + i.product.basePrice * i.quantity);
+      _items.fold(0, (sum, i) => sum + i.unitPrice * i.quantity);
 
   @override
   void initState() {
@@ -62,8 +61,6 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       _dueTime = draft.dueTime;
       _deliveryType = draft.deliveryType;
       _addressCtrl.text = draft.deliveryAddress;
-      _isBirthday = draft.isBirthday;
-      _ageCtrl.text = draft.age;
       _notesCtrl.text = draft.notes;
       _depositEnabled = draft.depositEnabled;
       _depositAmountCtrl.text = draft.depositAmount;
@@ -79,7 +76,6 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     _phoneCtrl.dispose();
     _addressCtrl.dispose();
     _notesCtrl.dispose();
-    _ageCtrl.dispose();
     _depositAmountCtrl.dispose();
     super.dispose();
   }
@@ -94,8 +90,6 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       dueTime: _dueTime,
       deliveryType: _deliveryType,
       deliveryAddress: _addressCtrl.text,
-      isBirthday: _isBirthday,
-      age: _ageCtrl.text,
       notes: _notesCtrl.text,
       depositEnabled: _depositEnabled,
       depositAmount: _depositAmountCtrl.text,
@@ -186,38 +180,55 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     try {
       final service = ref.read(orderServiceProvider);
 
-      final notesParts = <String>[];
-      if (_isBirthday) {
-        final age = _ageCtrl.text.trim();
-        notesParts.add(
-          age.isNotEmpty ? '[${VN.isBirthday} - $age tuổi]' : '[${VN.isBirthday}]',
-        );
-      }
-      final userNotes = _notesCtrl.text.trim();
-      if (userNotes.isNotEmpty) notesParts.add(userNotes);
-
       final newOrder = await service.createOrder(
         customerName: _nameCtrl.text.trim(),
         customerPhone: _phoneCtrl.text.trim(),
-        items: _items
-            .map(
-              (i) => {
-                'productId': i.product.id.toString(),
-                'productName': i.product.name,
-                'quantity': i.quantity,
-                'unitPrice': i.product.basePrice,
-              },
-            )
-            .toList(),
+        items: _items.map((i) {
+          final m = <String, dynamic>{
+            'productId': i.product.id.toString(),
+            'productName': i.product.name,
+            'quantity': i.quantity,
+            'unitPrice': i.unitPrice,
+            'notes': i.notes,
+            'isBirthday': i.isBirthday,
+          };
+          if (i.isBirthday && i.age.isNotEmpty) {
+            final age = int.tryParse(i.age.trim());
+            if (age != null) m['age'] = age;
+          }
+          return m;
+        }).toList(),
         dueDate: _dueDate != null ? _formatDateApi(_dueDate!) : null,
         dueTime: _dueTime != null ? _formatTime(_dueTime!) : null,
         deliveryType: _deliveryType,
         deliveryAddress: _addressCtrl.text.trim(),
-        notes: notesParts.join(' '),
+        notes: _notesCtrl.text.trim(),
       );
 
-      // Upload pending photos after order is created
-      if (_pendingPhotos.isNotEmpty) {
+      // Upload photos (per-item + order-level)
+      final hasPerItemPhotos = _items.any((i) => i.pendingPhotoPaths.isNotEmpty);
+      if (hasPerItemPhotos || _pendingPhotos.isNotEmpty) {
+        final workItemSvc = ref.read(workItemServiceProvider);
+        final workItems = await workItemSvc.listWorkItems(newOrder.orderRef);
+        workItems.sort((a, b) => a.position.compareTo(b.position));
+
+        // Per-item photos mapped by position index
+        for (var idx = 0; idx < _items.length; idx++) {
+          final draftItem = _items[idx];
+          if (draftItem.pendingPhotoPaths.isEmpty) continue;
+          final workItemId = idx < workItems.length
+              ? int.tryParse(workItems[idx].id)
+              : null;
+          for (final path in draftItem.pendingPhotoPaths) {
+            await service.uploadOrderPhoto(
+              newOrder.orderRef,
+              File(path),
+              workItemId: workItemId,
+            );
+          }
+        }
+
+        // Order-level photos (no workItemId)
         for (final pending in _pendingPhotos) {
           await service.uploadOrderPhoto(
             newOrder.orderRef,
@@ -316,10 +327,12 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               )
             else
               ..._items.map(
-                (item) => _DraftOrderItemTile(
+                (item) => _ExpandableItemCard(
+                  key: ValueKey(item),
                   item: item,
                   onRemove: () => setState(() => _items.remove(item)),
                   onQtyChanged: (q) => setState(() => item.quantity = q),
+                  onStateChanged: () => setState(() {}),
                 ),
               ),
             OutlinedButton.icon(
@@ -433,26 +446,6 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               ),
             ],
             const SizedBox(height: 20),
-
-            // ── Options ───────────────────────────────────────────────
-            CheckboxListTile(
-              value: _isBirthday,
-              onChanged: (v) => setState(() => _isBirthday = v ?? false),
-              title: const Text(VN.isBirthday),
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: EdgeInsets.zero,
-            ),
-            if (_isBirthday) ...[
-              TextFormField(
-                controller: _ageCtrl,
-                decoration: const InputDecoration(
-                  labelText: VN.birthdayAge,
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 12),
-            ],
 
             // ── Notes ─────────────────────────────────────────────────
             TextFormField(
@@ -674,76 +667,263 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ── Selected item tile ────────────────────────────────────────────────────────
+// ── Expandable item card ───────────────────────────────────────────────────────
 
-class _DraftOrderItemTile extends StatelessWidget {
-  const _DraftOrderItemTile({
+class _ExpandableItemCard extends StatefulWidget {
+  const _ExpandableItemCard({
+    super.key,
     required this.item,
     required this.onRemove,
     required this.onQtyChanged,
+    required this.onStateChanged,
   });
 
   final DraftOrderItem item;
   final VoidCallback onRemove;
   final ValueChanged<int> onQtyChanged;
+  final VoidCallback onStateChanged;
+
+  @override
+  State<_ExpandableItemCard> createState() => _ExpandableItemCardState();
+}
+
+class _ExpandableItemCardState extends State<_ExpandableItemCard> {
+  bool _expanded = false;
+  bool _isBirthday = false;
+  late TextEditingController _notesCtrl;
+  late TextEditingController _ageCtrl;
+  late TextEditingController _priceCtrl;
+  final _picker = ImagePicker();
+
+  @override
+  void initState() {
+    super.initState();
+    _isBirthday = widget.item.isBirthday;
+    _notesCtrl = TextEditingController(text: widget.item.notes);
+    _ageCtrl = TextEditingController(text: widget.item.age);
+    _priceCtrl = TextEditingController(
+      text: widget.item.unitPrice.toInt().toString(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _notesCtrl.dispose();
+    _ageCtrl.dispose();
+    _priceCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickItemPhotos() async {
+    final files = await _picker.pickMultiImage(imageQuality: 85);
+    if (files.isEmpty || !mounted) return;
+    setState(() {
+      for (final f in files) {
+        widget.item.pendingPhotoPaths.add(f.path);
+      }
+    });
+    widget.onStateChanged();
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final emoji = categoryEmojiMap[item.product.category] ?? '🍰';
+    final emoji = categoryEmojiMap[widget.item.product.category] ?? '🍰';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        child: Row(
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 22)),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.product.name,
-                    style: theme.textTheme.bodyMedium,
+      child: Column(
+        children: [
+          // ── Header row ──────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(
+              children: [
+                Text(emoji, style: const TextStyle(fontSize: 22)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.item.product.name,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      Text(
+                        formatVND(widget.item.unitPrice),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.outline,
+                        ),
+                      ),
+                    ],
                   ),
-                  Text(
-                    formatVND(item.product.basePrice),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.outline,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.remove_circle_outline),
+                  iconSize: 20,
+                  onPressed: widget.item.quantity > 1
+                      ? () => widget.onQtyChanged(widget.item.quantity - 1)
+                      : widget.onRemove,
+                ),
+                SizedBox(
+                  width: 24,
+                  child: Text(
+                    '${widget.item.quantity}',
+                    style: theme.textTheme.titleSmall,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline),
+                  iconSize: 20,
+                  onPressed: () =>
+                      widget.onQtyChanged(widget.item.quantity + 1),
+                ),
+                IconButton(
+                  icon: Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  color: theme.colorScheme.error,
+                  onPressed: widget.onRemove,
+                ),
+              ],
+            ),
+          ),
+
+          // ── Expanded section ─────────────────────────────────────────
+          if (_expanded) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Price
+                  TextFormField(
+                    controller: _priceCtrl,
+                    decoration: const InputDecoration(
+                      labelText: VN.itemPrice,
+                      border: OutlineInputBorder(),
+                      suffixText: 'đ',
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (v) {
+                      final price = double.tryParse(v.trim());
+                      widget.item.customUnitPrice =
+                          price ?? widget.item.product.basePrice;
+                      widget.onStateChanged();
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  // Notes
+                  TextFormField(
+                    controller: _notesCtrl,
+                    decoration: const InputDecoration(
+                      labelText: VN.notes,
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    maxLines: 2,
+                    onChanged: (v) => widget.item.notes = v,
+                  ),
+                  const SizedBox(height: 4),
+                  // Birthday checkbox
+                  CheckboxListTile(
+                    value: _isBirthday,
+                    onChanged: (v) {
+                      setState(() => _isBirthday = v ?? false);
+                      widget.item.isBirthday = _isBirthday;
+                    },
+                    title: const Text(VN.isBirthday),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                  if (_isBirthday) ...[
+                    TextFormField(
+                      controller: _ageCtrl,
+                      decoration: const InputDecoration(
+                        labelText: VN.birthdayAge,
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.number,
+                      onChanged: (v) => widget.item.age = v,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  // Per-item photo thumbnails
+                  if (widget.item.pendingPhotoPaths.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      height: 80,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: widget.item.pendingPhotoPaths.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 6),
+                        itemBuilder: (ctx, idx) {
+                          final path = widget.item.pendingPhotoPaths[idx];
+                          return Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: Image.file(
+                                  File(path),
+                                  width: 70,
+                                  height: 70,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Positioned(
+                                top: 2,
+                                left: 2,
+                                child: GestureDetector(
+                                  onTap: () => setState(() {
+                                    widget.item.pendingPhotoPaths.removeAt(idx);
+                                  }),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: const Icon(
+                                      Icons.close,
+                                      color: Colors.white,
+                                      size: 12,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+                  OutlinedButton.icon(
+                    onPressed: _pickItemPhotos,
+                    icon: const Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 16,
+                    ),
+                    label: const Text(VN.addOrderPhoto),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
                     ),
                   ),
                 ],
               ),
             ),
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline),
-              iconSize: 20,
-              onPressed: item.quantity > 1
-                  ? () => onQtyChanged(item.quantity - 1)
-                  : onRemove,
-            ),
-            SizedBox(
-              width: 24,
-              child: Text(
-                '${item.quantity}',
-                style: theme.textTheme.titleSmall,
-                textAlign: TextAlign.center,
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline),
-              iconSize: 20,
-              onPressed: () => onQtyChanged(item.quantity + 1),
-            ),
-            IconButton(
-              icon: const Icon(Icons.close, size: 18),
-              color: theme.colorScheme.error,
-              onPressed: onRemove,
-            ),
           ],
-        ),
+        ],
       ),
     );
   }

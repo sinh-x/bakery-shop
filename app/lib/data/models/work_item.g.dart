@@ -20,6 +20,8 @@ _WorkItem _$WorkItemFromJson(Map<String, dynamic> json) => _WorkItem(
   deliveryType: json['deliveryType'] as String?,
   deliveryAddress: json['deliveryAddress'] as String?,
   position: (json['position'] as num?)?.toInt() ?? 0,
+  isBirthday: json['isBirthday'] as bool? ?? false,
+  age: (json['age'] as num?)?.toInt(),
   createdAt: json['createdAt'] as String?,
   updatedAt: json['updatedAt'] as String?,
 );
@@ -38,6 +40,8 @@ Map<String, dynamic> _$WorkItemToJson(_WorkItem instance) => <String, dynamic>{
   'deliveryType': instance.deliveryType,
   'deliveryAddress': instance.deliveryAddress,
   'position': instance.position,
+  'isBirthday': instance.isBirthday,
+  'age': instance.age,
   'createdAt': instance.createdAt,
   'updatedAt': instance.updatedAt,
 };
