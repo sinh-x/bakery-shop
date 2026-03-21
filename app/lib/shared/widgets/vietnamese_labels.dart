@@ -255,6 +255,8 @@ class VN {
   static const depositAmount = 'Số tiền đặt cọc';
   static const paymentHistory = 'Lịch sử thanh toán';
   static const paymentRecorded = 'Đã ghi thanh toán';
+  static const paymentUpdated = 'Đã cập nhật giao dịch';
+  static const editPayment = 'Sửa giao dịch';
   static const noPaymentHistory = 'Chưa có giao dịch';
   static const paymentMethod = 'Hình thức';
   static const paymentNotes = 'Ghi chú (tùy chọn)';

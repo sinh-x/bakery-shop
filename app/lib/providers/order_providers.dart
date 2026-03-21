@@ -302,6 +302,31 @@ class OrderPaymentTransactionsNotifier
     return txn;
   }
 
+  Future<PaymentTransaction> edit(
+    String txnId, {
+    required double amount,
+    required String type,
+    required String method,
+    required String notes,
+  }) async {
+    final service = ref.read(paymentTransactionServiceProvider);
+    final updated = await service.updateTransaction(
+      orderRef,
+      txnId,
+      amount: amount,
+      type: type,
+      method: method,
+      notes: notes,
+    );
+    final current = state.value ?? [];
+    state = AsyncData(
+      current.map((t) => t.id == txnId ? updated : t).toList(),
+    );
+    // Refresh order detail to update amountPaid.
+    ref.read(orderDetailProvider(orderRef).notifier).refresh();
+    return updated;
+  }
+
   Future<void> remove(String txnId) async {
     final service = ref.read(paymentTransactionServiceProvider);
     await service.deleteTransaction(orderRef, txnId);

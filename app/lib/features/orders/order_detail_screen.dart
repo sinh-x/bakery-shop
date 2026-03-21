@@ -239,6 +239,17 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     );
   }
 
+  Future<void> _openEditPaymentSheet(PaymentTransaction txn) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _EditPaymentSheet(
+        orderRef: order.orderRef,
+        txn: txn,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -479,7 +490,12 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             ),
           )
         else
-          ...txns.map((t) => _TransactionTile(txn: t)),
+          ...txns.map(
+            (t) => _TransactionTile(
+              txn: t,
+              onTap: () => _openEditPaymentSheet(t),
+            ),
+          ),
 
         // ── Photos (order-level only — per-item photos shown in work items section) ────
         const SizedBox(height: 16),
@@ -630,9 +646,10 @@ Color _txnColor(String type) {
 }
 
 class _TransactionTile extends StatelessWidget {
-  const _TransactionTile({required this.txn});
+  const _TransactionTile({required this.txn, this.onTap});
 
   final PaymentTransaction txn;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -651,7 +668,10 @@ class _TransactionTile extends StatelessWidget {
       }
     }
 
-    return Padding(
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
@@ -696,6 +716,7 @@ class _TransactionTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -864,6 +885,181 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Text(VN.addPayment),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Edit payment bottom sheet ─────────────────────────────────────────────────
+
+class _EditPaymentSheet extends ConsumerStatefulWidget {
+  const _EditPaymentSheet({required this.orderRef, required this.txn});
+
+  final String orderRef;
+  final PaymentTransaction txn;
+
+  @override
+  ConsumerState<_EditPaymentSheet> createState() => _EditPaymentSheetState();
+}
+
+class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
+  late String _type;
+  late String _method;
+  late final TextEditingController _amountCtrl;
+  late final TextEditingController _notesCtrl;
+  final _formKey = GlobalKey<FormState>();
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _type = widget.txn.type;
+    _method = widget.txn.method;
+    // Convert back from actual amount to thousands for display
+    _amountCtrl = TextEditingController(
+      text: (widget.txn.amount / 1000).round().toString(),
+    );
+    _notesCtrl = TextEditingController(text: widget.txn.notes);
+  }
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    final amount = double.parse(_amountCtrl.text.trim()) * 1000;
+    setState(() => _submitting = true);
+    try {
+      await ref
+          .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
+          .edit(
+            widget.txn.id,
+            amount: amount,
+            type: _type,
+            method: _method,
+            notes: _notesCtrl.text.trim(),
+          );
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(VN.paymentUpdated)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${VN.apiError}: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    const types = [
+      ('deposit', VN.txnTypeDeposit),
+      ('payment', VN.txnTypePayment),
+      ('full_payment', VN.txnTypeFullPayment),
+      ('refund', VN.txnTypeRefund),
+    ];
+    const methods = [
+      ('cash', VN.methodCash),
+      ('transfer', VN.methodTransfer),
+    ];
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(VN.editPayment, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 16),
+            Text(VN.txnType, style: theme.textTheme.labelMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: types
+                  .map(
+                    (t) => ChoiceChip(
+                      label: Text(t.$2),
+                      selected: _type == t.$1,
+                      onSelected: (_) => setState(() => _type = t.$1),
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 12),
+            Text(VN.paymentMethod, style: theme.textTheme.labelMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: methods
+                  .map(
+                    (m) => ChoiceChip(
+                      label: Text(m.$2),
+                      selected: _method == m.$1,
+                      onSelected: (_) => setState(() => _method = m.$1),
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _amountCtrl,
+              decoration: const InputDecoration(
+                labelText: VN.paymentAmountLabel,
+                border: OutlineInputBorder(),
+                suffixText: ',000đ',
+                helperText: 'Nhập nghìn đồng (VD: 200 = 200.000đ)',
+              ),
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return VN.fieldRequired;
+                final n = double.tryParse(v.trim());
+                if (n == null || n <= 0) return VN.invalidPrice;
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _notesCtrl,
+              decoration: const InputDecoration(
+                labelText: VN.paymentNotes,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: _submitting ? null : _submit,
+              child: _submitting
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text(VN.editPayment),
             ),
             const SizedBox(height: 8),
           ],

@@ -39,6 +39,26 @@ class PaymentTransactionService {
     return PaymentTransaction.fromJson(response.data as Map<String, dynamic>);
   }
 
+  Future<PaymentTransaction> updateTransaction(
+    String orderRef,
+    String txnId, {
+    double? amount,
+    String? type,
+    String? method,
+    String? notes,
+  }) async {
+    final data = <String, dynamic>{};
+    if (amount != null) data['amount'] = amount;
+    if (type != null) data['type'] = type;
+    if (method != null) data['method'] = method;
+    if (notes != null) data['note'] = notes;
+    final response = await _dio.patch(
+      '/api/orders/$orderRef/transactions/$txnId',
+      data: data,
+    );
+    return PaymentTransaction.fromJson(response.data as Map<String, dynamic>);
+  }
+
   Future<void> deleteTransaction(String orderRef, String txnId) async {
     await _dio.delete('/api/orders/$orderRef/transactions/$txnId');
   }

@@ -139,6 +139,94 @@ def test_create_transaction_order_not_found(api_client):
 # --- Delete transaction ---
 
 
+# --- Update transaction ---
+
+
+def test_update_transaction_amount(api_client):
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=100000)
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}",
+        json={"amount": 200000},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["amount"] == 200000
+    assert data["type"] == txn["type"]
+    assert data["method"] == txn["method"]
+
+
+def test_update_transaction_type_and_method(api_client):
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=50000, type="deposit", method="cash")
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}",
+        json={"type": "payment", "method": "transfer"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "payment"
+    assert data["method"] == "transfer"
+    assert data["amount"] == 50000  # unchanged
+
+
+def test_update_transaction_note(api_client):
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref)
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}",
+        json={"note": "ghi chú mới"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["note"] == "ghi chú mới"
+
+
+def test_update_transaction_not_found(api_client):
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/9999", json={"amount": 50000}
+    )
+    assert resp.status_code == 404
+
+
+def test_update_transaction_invalid_amount(api_client):
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref)
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}", json={"amount": 0}
+    )
+    assert resp.status_code == 422
+
+
+def test_update_transaction_invalid_type(api_client):
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref)
+    resp = api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}", json={"type": "invalid_type"}
+    )
+    assert resp.status_code == 422
+
+
+def test_update_transaction_amount_paid_reflects_update(api_client):
+    order = _create_order(api_client, total=300000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=100000)
+    api_client.patch(
+        f"/api/orders/{ref}/transactions/{txn['id']}", json={"amount": 200000}
+    )
+    detail = api_client.get(f"/api/orders/{ref}").json()
+    assert detail["amountPaid"] == 200000
+
+
+# --- Delete transaction ---
+
+
 def test_delete_transaction(api_client):
     order = _create_order(api_client)
     ref = order["orderRef"]
