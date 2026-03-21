@@ -81,7 +81,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     final picked = await showDatePicker(
       context: context,
       initialDate: _dueDate ?? DateTime.now().add(const Duration(days: 1)),
-      firstDate: DateTime(2020),
+      firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (picked != null) setState(() => _dueDate = picked);
