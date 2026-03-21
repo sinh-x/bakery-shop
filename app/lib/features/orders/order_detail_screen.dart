@@ -239,6 +239,17 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     );
   }
 
+  Future<void> _openTransactionDetail(PaymentTransaction txn) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _TransactionDetailSheet(
+        txn: txn,
+        onEdit: () => _openEditPaymentSheet(txn),
+      ),
+    );
+  }
+
   Future<void> _openEditPaymentSheet(PaymentTransaction txn) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -493,7 +504,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           ...txns.map(
             (t) => _TransactionTile(
               txn: t,
-              onTap: () => _openEditPaymentSheet(t),
+              onTap: () => _openTransactionDetail(t),
             ),
           ),
 
@@ -889,6 +900,119 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
             const SizedBox(height: 8),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Transaction detail sheet ──────────────────────────────────────────────────
+
+class _TransactionDetailSheet extends StatelessWidget {
+  const _TransactionDetailSheet({required this.txn, required this.onEdit});
+
+  final PaymentTransaction txn;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = _txnColor(txn.type);
+    final typeLabel = txnTypeLabel(txn.type);
+    final methodLabel = paymentMethodLabel(txn.method);
+
+    String dateStr = '';
+    if (txn.createdAt != null) {
+      try {
+        final dt = DateTime.parse(txn.createdAt!);
+        dateStr = DateFormat('dd/MM/yyyy HH:mm').format(dt);
+      } catch (_) {
+        dateStr = txn.createdAt!;
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: color.withAlpha(30),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: color.withAlpha(100)),
+                ),
+                child: Text(
+                  typeLabel,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                txn.type == 'refund'
+                    ? '-${formatVND(txn.amount)}'
+                    : formatVND(txn.amount),
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: txn.type == 'refund' ? Colors.orange : Colors.green,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _DetailRow(label: VN.paymentMethod, value: methodLabel),
+          if (dateStr.isNotEmpty)
+            _DetailRow(label: VN.txnType, value: dateStr),
+          if (txn.notes.isNotEmpty)
+            _DetailRow(label: VN.txnNoteLabel, value: txn.notes),
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              onEdit();
+            },
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            label: const Text(VN.editPayment),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(value, style: theme.textTheme.bodyMedium),
+          ),
+        ],
       ),
     );
   }

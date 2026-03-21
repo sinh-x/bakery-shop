@@ -257,6 +257,8 @@ class VN {
   static const paymentRecorded = 'Đã ghi thanh toán';
   static const paymentUpdated = 'Đã cập nhật giao dịch';
   static const editPayment = 'Sửa giao dịch';
+  static const txnDetails = 'Chi tiết giao dịch';
+  static const txnNoteLabel = 'Ghi chú';
   static const noPaymentHistory = 'Chưa có giao dịch';
   static const paymentMethod = 'Hình thức';
   static const paymentNotes = 'Ghi chú (tùy chọn)';
