@@ -1,0 +1,44 @@
+services:
+  baker-prod:
+    build: .
+    profiles: [prod]
+    ports:
+      - "2108:2108"
+    volumes:
+      - ./prod/data:/var/lib/baker
+    environment:
+      BAKER_DATA_DIR: /var/lib/baker
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2108/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  baker-dev:
+    build: .
+    profiles: [dev]
+    ports:
+      - "2108:2108"
+    volumes:
+      - ./data:/var/lib/baker
+    environment:
+      BAKER_DATA_DIR: /var/lib/baker
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2108/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
