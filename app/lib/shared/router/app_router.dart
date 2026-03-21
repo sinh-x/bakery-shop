@@ -4,14 +4,19 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/event.dart';
 import '../../features/categories/category_management_screen.dart';
+import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/events/event_detail_screen.dart';
 import '../../features/events/event_form_screen.dart';
 import '../../features/events/event_list_screen.dart';
+import '../../features/orders/cake_detail_screen.dart';
+import '../../features/orders/order_create_screen.dart';
+import '../../features/orders/order_detail_screen.dart';
+import '../../features/orders/order_edit_screen.dart';
+import '../../features/orders/order_list_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../providers/products_provider.dart';
-import '../widgets/coming_soon_screen.dart';
 import '../widgets/vietnamese_labels.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -28,13 +33,13 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/dashboard',
           pageBuilder: (context, state) => const NoTransitionPage(
-            child: ComingSoonScreen(icon: Icons.dashboard),
+            child: DashboardScreen(),
           ),
         ),
         GoRoute(
           path: '/orders',
           pageBuilder: (context, state) => const NoTransitionPage(
-            child: ComingSoonScreen(icon: Icons.receipt_long),
+            child: OrderListScreen(),
           ),
         ),
         GoRoute(
@@ -50,6 +55,40 @@ final appRouter = GoRouter(
           ),
         ),
       ],
+    ),
+    // Order create — full-screen (outside shell)
+    GoRoute(
+      path: '/orders/new',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const OrderCreateScreen(),
+    ),
+    // Order detail — full-screen (outside shell)
+    GoRoute(
+      path: '/orders/:id',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final orderRef = state.pathParameters['id']!;
+        return OrderDetailScreen(orderRef: orderRef);
+      },
+    ),
+    // Order edit — full-screen (outside shell)
+    GoRoute(
+      path: '/orders/:id/edit',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final orderRef = state.pathParameters['id']!;
+        return OrderEditScreen(orderRef: orderRef);
+      },
+    ),
+    // Cake detail — full-screen (outside shell)
+    GoRoute(
+      path: '/orders/:id/items/:itemId',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final orderRef = state.pathParameters['id']!;
+        final workItemId = state.pathParameters['itemId']!;
+        return CakeDetailScreen(orderRef: orderRef, workItemId: workItemId);
+      },
     ),
     // Product create — full-screen (outside shell)
     GoRoute(

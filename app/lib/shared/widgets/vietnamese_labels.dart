@@ -40,13 +40,23 @@ class VN {
 
   // Order detail
   static const orderDetail = 'Chi tiết đơn hàng';
+  static const editOrder = 'Sửa đơn hàng';
   static const customer = 'Khách hàng';
   static const products = 'Sản phẩm';
   static const payment = 'Thanh toán';
   static const paid = 'Đã thanh toán';
+  static const partialPaid = 'Trả một phần';
   static const unpaid = 'Chưa thanh toán';
+  static const amountPaidLabel = 'Đã trả';
+  static const remainingLabel = 'Còn lại';
   static const packingChecklist = 'Danh sách đóng gói';
   static const actions = 'Thao tác';
+  static const cancelOrderTitle = 'Hủy đơn hàng';
+  static const cancelReasonLabel = 'Lý do hủy (tùy chọn)';
+  static const cancelReasonHint = 'Nhập lý do hủy...';
+  static const confirmCancelAction = 'Xác nhận hủy';
+  static const orderStatusUpdated = 'Đã cập nhật trạng thái';
+  static const orderEditSaved = 'Đã lưu thay đổi';
 
   // Product categories
   static const catBanhMi = 'Bánh mì';
@@ -117,6 +127,7 @@ class VN {
   // Dashboard
   static const todayOrders = 'Đơn hàng hôm nay';
   static const upcomingDue = 'Sắp đến hạn';
+  static const overdueOrders = 'Quá hạn';
   static const recentActivity = 'Sự kiện gần đây';
 
   // Packing items
@@ -189,6 +200,35 @@ class VN {
   static const urlEmpty = 'Vui lòng nhập địa chỉ';
   static const testing = 'Đang kiểm tra...';
 
+  // Delivery types (detailed)
+  static const deliveryBus = 'Giao xe khách';
+  static const deliveryDoor = 'Giao tận nơi';
+
+  // Order create form extras
+  static const dueTime = 'Giờ giao';
+  static const isBirthday = 'Sinh nhật';
+  static const birthdayAge = 'Tuổi khách hàng';
+  static const orderCreated = 'Đã tạo đơn hàng';
+  static const searchProducts = 'Tìm sản phẩm...';
+
+  // Time slots
+  static const timeSlotMorning = 'Sáng';
+  static const timeSlotAfternoon = 'Chiều';
+  static const timeSlotEvening = 'Tối';
+
+  // Order photos
+  static const orderPhotos = 'Ảnh đơn hàng';
+  static const addOrderPhoto = 'Thêm ảnh';
+  static const noOrderPhotos = 'Chưa có ảnh';
+  static const deleteOrderPhotoConfirm = 'Xóa ảnh này khỏi đơn?';
+  static const orderPhotoDeleted = 'Đã xóa ảnh';
+  static const orderPhotoAdded = 'Đã thêm ảnh';
+  static const editPhotoTags = 'Chọn nhãn ảnh';
+  static const photoTagsUpdated = 'Đã cập nhật nhãn';
+  static const pendingPhotosLabel = 'Ảnh đính kèm';
+  static const uploadingPhotos = 'Đang tải ảnh lên...';
+  static const itemPrice = 'Đơn giá';
+
   // Catalog gallery
   static const catalogTitle = 'Bộ sưu tập';
   static const addCatalogPhoto = 'Thêm ảnh mẫu';
@@ -202,6 +242,57 @@ class VN {
   static const catalogPhotoAdded = 'Đã thêm ảnh mẫu';
   static const catalogPhotoUpdated = 'Đã cập nhật ảnh';
   static const catalogPhotoDeleted = 'Đã xóa ảnh';
+
+  // Payment transactions
+  static const txnTypeDeposit = 'Đặt cọc';
+  static const txnTypePayment = 'Thanh toán';
+  static const txnTypeFullPayment = 'Thanh toán đủ';
+  static const txnTypeRefund = 'Hoàn tiền';
+  static const methodCash = 'Tiền mặt';
+  static const methodTransfer = 'Chuyển khoản';
+  static const addPayment = 'Thêm thanh toán';
+  static const depositSection = 'Đặt cọc ngay';
+  static const depositAmount = 'Số tiền đặt cọc';
+  static const paymentHistory = 'Lịch sử thanh toán';
+  static const paymentRecorded = 'Đã ghi thanh toán';
+  static const paymentUpdated = 'Đã cập nhật giao dịch';
+  static const editPayment = 'Sửa giao dịch';
+  static const txnDetails = 'Chi tiết giao dịch';
+  static const txnNoteLabel = 'Ghi chú';
+  static const noPaymentHistory = 'Chưa có giao dịch';
+  static const paymentMethod = 'Hình thức';
+  static const paymentNotes = 'Ghi chú (tùy chọn)';
+  static const paymentAmountLabel = 'Số tiền';
+  static const txnType = 'Loại thanh toán';
+
+  // Work item statuses
+  static const workItemPending = 'Chờ xử lý';
+  static const workItemWorking = 'Đang làm';
+  static const workItemReady = 'Sẵn sàng';
+  static const workItemDelivered = 'Đã giao';
+
+  // Work items section
+  static const workItemsSection = 'Chi tiết sản xuất';
+  static const noWorkItems = 'Chưa có chi tiết sản xuất';
+  static const workItemStatusChanged = 'Đã cập nhật trạng thái sản phẩm';
+  static const statusReasonTitle = 'Lý do thay đổi';
+  static const statusReasonLabel = 'Lý do (bắt buộc)';
+  static const statusReasonHint = 'Nhập lý do...';
+  static const confirmStatusChange = 'Xác nhận';
+  static const autoUpdateOrderTitle = 'Cập nhật đơn hàng';
+
+  // Cake queue & cake detail
+  static const cakeQueue = 'Làm bánh';
+  static const deliveryTab = 'Giao hàng';
+  static const orderListTab = 'Đơn hàng';
+  static const cakeDetail = 'Chi tiết bánh';
+  static const viewOrder = 'Xem đơn hàng';
+  static const noCakeQueueItems = 'Không có sản phẩm cần làm';
+  static const noDeliveryItems = 'Không có sản phẩm cần giao';
+  static const includeReadyFilter = 'Bao gồm sẵn sàng';
+  static const perItemPhotos = 'Ảnh sản phẩm';
+  static const birthdayWithAge = 'Sinh nhật';
+  static const orderPhotosSection = 'Ảnh đơn hàng (chung)';
 
   // General
   static const remove = 'Xóa';
@@ -250,6 +341,63 @@ const validTransitions = {
   'completed': <String>[],
   'cancelled': <String>[],
 };
+
+/// Returns the button label for transitioning to [targetStatus].
+String statusActionLabel(String targetStatus) {
+  switch (targetStatus) {
+    case 'confirmed':
+      return VN.actionConfirm;
+    case 'in_progress':
+      return VN.actionStart;
+    case 'ready':
+      return VN.actionReady;
+    case 'delivered':
+      return VN.actionDeliver;
+    case 'completed':
+      return VN.actionComplete;
+    case 'cancelled':
+      return VN.actionCancel;
+    default:
+      return targetStatus;
+  }
+}
+
+String txnTypeLabel(String type) {
+  switch (type) {
+    case 'deposit':
+      return VN.txnTypeDeposit;
+    case 'payment':
+      return VN.txnTypePayment;
+    case 'full_payment':
+      return VN.txnTypeFullPayment;
+    case 'refund':
+      return VN.txnTypeRefund;
+    default:
+      return type;
+  }
+}
+
+String paymentMethodLabel(String method) {
+  switch (method) {
+    case 'cash':
+      return VN.methodCash;
+    case 'transfer':
+      return VN.methodTransfer;
+    default:
+      return method;
+  }
+}
+
+// Work item status mapping
+const workItemStatusMap = {
+  'pending': VN.workItemPending,
+  'working': VN.workItemWorking,
+  'ready': VN.workItemReady,
+  'delivered': VN.workItemDelivered,
+};
+
+String workItemStatusLabel(String status) =>
+    workItemStatusMap[status] ?? status;
 
 /// Format VND: 150000.0 → "150.000đ"
 String formatVND(double amount) {

@@ -27,6 +27,25 @@ TRANSITIONS = {
     OrderStatus.CANCELLED: [],
 }
 
+# Ordered for determining forward vs backward transitions
+_ORDER_STATUS_RANK = {
+    OrderStatus.NEW: 0,
+    OrderStatus.CONFIRMED: 1,
+    OrderStatus.IN_PROGRESS: 2,
+    OrderStatus.READY: 3,
+    OrderStatus.DELIVERED: 4,
+    OrderStatus.COMPLETED: 5,
+    OrderStatus.CANCELLED: 5,
+}
+
+
+def is_backward_transition(current: str, target: str) -> bool:
+    """Return True if transitioning to a lower-ranked status."""
+    try:
+        return _ORDER_STATUS_RANK[OrderStatus(target)] < _ORDER_STATUS_RANK[OrderStatus(current)]
+    except (ValueError, KeyError):
+        return False
+
 
 def validate_transition(current: str, target: str) -> bool:
     try:
@@ -64,9 +83,23 @@ class OrderItem:
     qty: int = 1
     price: float = 0.0
     notes: str = ""
+    product_id: str = ""
+    is_birthday: bool = False
+    age: Optional[int] = None
 
     def to_dict(self):
-        return {"product": self.product, "qty": self.qty, "price": self.price, "notes": self.notes}
+        return {"product": self.product, "qty": self.qty, "price": self.price, "notes": self.notes, "product_id": self.product_id}
+
+    def to_api_dict(self) -> dict:
+        return {
+            "productId": self.product_id,
+            "productName": self.product,
+            "quantity": self.qty,
+            "unitPrice": self.price,
+            "notes": self.notes,
+            "isBirthday": self.is_birthday,
+            "age": self.age,
+        }
 
     @staticmethod
     def parse(spec: str) -> "OrderItem":
@@ -104,6 +137,7 @@ class Order:
     delivery_address: str = ""
     customer_phone: str = ""
     notes: str = ""
+    amount_paid: float = 0.0
     id: Optional[int] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -121,10 +155,11 @@ class Order:
         cursor = conn.execute(
             """INSERT INTO orders (order_ref, customer_name, customer_phone, items,
                total_price, status, due_date, due_time, delivery_type,
-               delivery_address, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               delivery_address, notes, amount_paid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (self.order_ref, self.customer_name, self.customer_phone,
              items_json, self.total_price, self.status, self.due_date,
-             self.due_time, self.delivery_type, self.delivery_address, self.notes),
+             self.due_time, self.delivery_type, self.delivery_address, self.notes,
+             self.amount_paid),
         )
         self.id = cursor.lastrowid
 
@@ -138,7 +173,7 @@ class Order:
         return self.id
 
     @staticmethod
-    def update_status(conn, order_ref: str, new_status: str, reason: str = "") -> bool:
+    def update_status(conn, order_ref: str, new_status: str, reason: str) -> bool:
         row = conn.execute(
             "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
             (order_ref, order_ref),
@@ -147,7 +182,15 @@ class Order:
             return False
 
         current = row["status"]
-        if not validate_transition(current, new_status):
+
+        # Validate target is a known status value
+        try:
+            OrderStatus(new_status)
+        except ValueError:
+            return False
+
+        # Backward transitions require a reason
+        if is_backward_transition(current, new_status) and not reason:
             return False
 
         conn.execute(
@@ -167,14 +210,44 @@ class Order:
         return True
 
     @staticmethod
-    def from_row(row) -> "Order":
+    def from_row(row, conn=None) -> "Order":
         items_data = json.loads(row["items"]) if row["items"] else []
         items = [OrderItem(**i) for i in items_data]
+
+        if conn is not None:
+            from baker.models.payment_transaction import PaymentTransaction
+            amount_paid = PaymentTransaction.total_for_order(conn, row["id"])
+        else:
+            amount_paid = row["amount_paid"] or 0.0
+
         return Order(
             id=row["id"], order_ref=row["order_ref"],
             customer_name=row["customer_name"], customer_phone=row["customer_phone"],
             items=items, total_price=row["total_price"], status=row["status"],
             due_date=row["due_date"], due_time=row["due_time"],
             delivery_type=row["delivery_type"], delivery_address=row["delivery_address"],
-            notes=row["notes"], created_at=row["created_at"], updated_at=row["updated_at"],
+            notes=row["notes"], amount_paid=amount_paid,
+            created_at=row["created_at"], updated_at=row["updated_at"],
         )
+
+    def to_api_dict(self) -> dict:
+        """Return Dart-compatible camelCase JSON representation."""
+        return {
+            "id": str(self.id),
+            "orderRef": self.order_ref,
+            "customerName": self.customer_name,
+            "customerPhone": self.customer_phone,
+            "items": [i.to_api_dict() for i in self.items],
+            "totalPrice": self.total_price,
+            "status": self.status,
+            "dueDate": self.due_date,
+            "dueTime": self.due_time,
+            "deliveryType": self.delivery_type,
+            "deliveryAddress": self.delivery_address,
+            "notes": self.notes,
+            "amountPaid": self.amount_paid,
+            "isPaid": self.amount_paid > 0 and self.amount_paid >= self.total_price,
+            "packingChecklist": [],
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at,
+        }
