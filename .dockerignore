@@ -1,0 +1,11 @@
+app/
+.venv/
+.git/
+data/
+prod/
+nix/
+result/
+*.egg-info/
+__pycache__/
+tests/
+.claude/
