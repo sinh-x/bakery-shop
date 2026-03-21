@@ -5,9 +5,11 @@ import 'package:intl/intl.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/order.dart';
+import '../../data/models/work_item.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/order_photo_section.dart';
+import 'widgets/product_picker_page.dart';
 
 class OrderEditScreen extends ConsumerStatefulWidget {
   const OrderEditScreen({super.key, required this.orderRef});
@@ -29,6 +31,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   String _deliveryType = 'pickup';
   bool _saving = false;
   bool _initialized = false;
+
+  final _pendingNewItems = <DraftOrderItem>[];
 
   @override
   void dispose() {
@@ -89,6 +93,32 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
       initialTime: _dueTime ?? TimeOfDay.now(),
     );
     if (picked != null) setState(() => _dueTime = picked);
+  }
+
+  Future<void> _openProductPicker() async {
+    _pendingNewItems.clear();
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ProductPickerPage(
+          selectedItems: _pendingNewItems,
+          onChanged: _commitNewItems,
+        ),
+      ),
+    );
+  }
+
+  void _commitNewItems() {
+    final toAdd = List<DraftOrderItem>.from(_pendingNewItems);
+    for (final draft in toAdd) {
+      ref.read(orderWorkItemsProvider(widget.orderRef).notifier).add(
+            productName: draft.product.name,
+            productId: draft.product.productCode,
+            quantity: draft.quantity,
+            unitPrice: draft.unitPrice,
+            notes: draft.notes,
+          );
+    }
   }
 
   Future<void> _save() async {
@@ -274,6 +304,14 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                 ),
                 const SizedBox(height: 20),
 
+                // ── Work items ────────────────────────────────────────
+                _SectionHeader(VN.workItemsSection),
+                _WorkItemsSection(
+                  orderRef: widget.orderRef,
+                  onAddTap: _openProductPicker,
+                ),
+                const SizedBox(height: 20),
+
                 // ── Photos ────────────────────────────────────────────
                 OrderPhotoSection(
                   orderRef: widget.orderRef,
@@ -316,6 +354,301 @@ class _SectionHeader extends StatelessWidget {
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
               color: Theme.of(context).colorScheme.primary,
             ),
+      ),
+    );
+  }
+}
+
+// ── Work items section ────────────────────────────────────────────────────────
+
+class _WorkItemsSection extends ConsumerWidget {
+  const _WorkItemsSection({
+    required this.orderRef,
+    required this.onAddTap,
+  });
+
+  final String orderRef;
+  final VoidCallback onAddTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final workItemsAsync = ref.watch(orderWorkItemsProvider(orderRef));
+
+    return workItemsAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Text('${VN.apiError}: $e'),
+      data: (items) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ...items.map(
+            (item) => _WorkItemEditCard(orderRef: orderRef, item: item),
+          ),
+          if (items.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                VN.noWorkItems,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+            ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: onAddTap,
+            icon: const Icon(Icons.add, size: 16),
+            label: const Text(VN.addProduct),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Work item edit card ───────────────────────────────────────────────────────
+
+class _WorkItemEditCard extends ConsumerStatefulWidget {
+  const _WorkItemEditCard({
+    required this.orderRef,
+    required this.item,
+  });
+
+  final String orderRef;
+  final WorkItem item;
+
+  @override
+  ConsumerState<_WorkItemEditCard> createState() => _WorkItemEditCardState();
+}
+
+class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
+  bool _expanded = true;
+  bool _isBirthday = false;
+  late TextEditingController _notesCtrl;
+  late TextEditingController _ageCtrl;
+  late TextEditingController _priceCtrl;
+  late FocusNode _notesFocus;
+  late FocusNode _ageFocus;
+  late FocusNode _priceFocus;
+
+  @override
+  void initState() {
+    super.initState();
+    _isBirthday = widget.item.isBirthday;
+    _notesCtrl = TextEditingController(text: widget.item.notes);
+    _ageCtrl = TextEditingController(
+      text: widget.item.age != null ? '${widget.item.age}' : '',
+    );
+    _priceCtrl = TextEditingController(
+      text: widget.item.unitPrice.toInt().toString(),
+    );
+    _notesFocus = FocusNode()..addListener(_onNotesFocusChange);
+    _ageFocus = FocusNode()..addListener(_onAgeFocusChange);
+    _priceFocus = FocusNode()..addListener(_onPriceFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _notesCtrl.dispose();
+    _ageCtrl.dispose();
+    _priceCtrl.dispose();
+    _notesFocus.dispose();
+    _ageFocus.dispose();
+    _priceFocus.dispose();
+    super.dispose();
+  }
+
+  void _onNotesFocusChange() {
+    if (!_notesFocus.hasFocus) _editItem(notes: _notesCtrl.text);
+  }
+
+  void _onPriceFocusChange() {
+    if (!_priceFocus.hasFocus) {
+      final price = double.tryParse(_priceCtrl.text.trim());
+      if (price != null) _editItem(unitPrice: price);
+    }
+  }
+
+  void _onAgeFocusChange() {
+    if (!_ageFocus.hasFocus && _isBirthday) {
+      final age = int.tryParse(_ageCtrl.text.trim());
+      _editItem(age: age);
+    }
+  }
+
+  Future<void> _editItem({
+    String? notes,
+    double? unitPrice,
+    bool? isBirthday,
+    int? age,
+  }) async {
+    if (!mounted) return;
+    try {
+      await ref
+          .read(orderWorkItemsProvider(widget.orderRef).notifier)
+          .edit(widget.item.id,
+              notes: notes,
+              unitPrice: unitPrice,
+              isBirthday: isBirthday,
+              age: age);
+    } catch (_) {}
+  }
+
+  Future<void> _confirmRemove() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Xóa sản phẩm?'),
+        content: Text('Xóa "${widget.item.productName}" khỏi đơn hàng?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(VN.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              VN.remove,
+              style: TextStyle(
+                color: Theme.of(ctx).colorScheme.error,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true && mounted) {
+      try {
+        await ref
+            .read(orderWorkItemsProvider(widget.orderRef).notifier)
+            .remove(widget.item.id);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${VN.apiError}: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final item = widget.item;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 6),
+      child: Column(
+        children: [
+          // ── Header row ────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.productName,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      Text(
+                        formatVND(item.unitPrice),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  'x${item.quantity}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.outline,
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  color: theme.colorScheme.error,
+                  onPressed: _confirmRemove,
+                ),
+              ],
+            ),
+          ),
+
+          // ── Expanded section ──────────────────────────────────────
+          if (_expanded) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Price
+                  TextFormField(
+                    controller: _priceCtrl,
+                    focusNode: _priceFocus,
+                    decoration: const InputDecoration(
+                      labelText: VN.itemPrice,
+                      border: OutlineInputBorder(),
+                      suffixText: 'đ',
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                  const SizedBox(height: 8),
+                  // Notes
+                  TextFormField(
+                    controller: _notesCtrl,
+                    focusNode: _notesFocus,
+                    decoration: const InputDecoration(
+                      labelText: VN.notes,
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 4),
+                  // Birthday checkbox
+                  CheckboxListTile(
+                    value: _isBirthday,
+                    onChanged: (v) {
+                      final newVal = v ?? false;
+                      setState(() => _isBirthday = newVal);
+                      _editItem(isBirthday: newVal);
+                    },
+                    title: const Text(VN.isBirthday),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                  if (_isBirthday) ...[
+                    TextFormField(
+                      controller: _ageCtrl,
+                      focusNode: _ageFocus,
+                      decoration: const InputDecoration(
+                        labelText: VN.birthdayAge,
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
