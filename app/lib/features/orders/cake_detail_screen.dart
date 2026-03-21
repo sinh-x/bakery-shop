@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
-import '../../data/models/order_photo.dart';
 import '../../data/models/work_item.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
@@ -153,7 +152,6 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final itemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));
-    final photosAsync = ref.watch(orderPhotosProvider(widget.orderRef));
     final baseUrl = ref.watch(apiBaseUrlProvider);
 
     return Scaffold(
@@ -196,18 +194,9 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
               ),
             );
           }
-          final photos = photosAsync.value
-                  ?.where((p) {
-                    final wId = p.workItemId;
-                    return wId != null &&
-                        wId == int.tryParse(item.id);
-                  })
-                  .toList() ??
-              [];
-
           return _CakeDetailBody(
             item: item,
-            photos: photos,
+            orderRef: widget.orderRef,
             baseUrl: baseUrl,
             transitioning: _transitioning,
             saving: _saving,
@@ -229,7 +218,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
 class _CakeDetailBody extends StatefulWidget {
   const _CakeDetailBody({
     required this.item,
-    required this.photos,
+    required this.orderRef,
     required this.baseUrl,
     required this.transitioning,
     required this.saving,
@@ -238,7 +227,7 @@ class _CakeDetailBody extends StatefulWidget {
   });
 
   final WorkItem item;
-  final List<OrderPhoto> photos;
+  final String orderRef;
   final String baseUrl;
   final bool transitioning;
   final bool saving;
@@ -505,62 +494,11 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
 
         // ── Per-item photos ───────────────────────────────────────────
         const SizedBox(height: 16),
-        _SectionLabel(VN.perItemPhotos),
-        const SizedBox(height: 8),
-        if (widget.photos.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              VN.noOrderPhotos,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-          )
-        else
-          SizedBox(
-            height: 100,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: widget.photos.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (ctx, index) {
-                final photo = widget.photos[index];
-                final url = '${widget.baseUrl}/api/photos/${photo.photoHash}.jpg';
-                return GestureDetector(
-                  onTap: () => Navigator.of(ctx).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => OrderPhotoViewer(
-                        photos: widget.photos,
-                        initialIndex: index,
-                        baseUrl: widget.baseUrl,
-                      ),
-                    ),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      url,
-                      width: 100,
-                      height: 100,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          color: Theme.of(ctx)
-                              .colorScheme
-                              .surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.broken_image),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
+        OrderPhotoSection(
+          orderRef: widget.orderRef,
+          baseUrl: widget.baseUrl,
+          workItemId: int.tryParse(widget.item.id),
+        ),
 
         // ── Status transitions ────────────────────────────────────────
         const SizedBox(height: 16),
