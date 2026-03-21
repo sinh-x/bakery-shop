@@ -68,12 +68,15 @@ class OrderPhotoSection extends ConsumerStatefulWidget {
     required this.orderRef,
     required this.baseUrl,
     this.orderLevelOnly = false,
+    this.workItemId,
   });
 
   final String orderRef;
   final String baseUrl;
   /// When true, only show photos with workItemId == null (order-level photos).
   final bool orderLevelOnly;
+  /// When set, uploaded photos are linked to this work item ID.
+  final int? workItemId;
 
   @override
   ConsumerState<OrderPhotoSection> createState() => _OrderPhotoSectionState();
@@ -92,7 +95,7 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
       for (final xfile in files) {
         await ref
             .read(orderPhotosProvider(widget.orderRef).notifier)
-            .upload(File(xfile.path));
+            .upload(File(xfile.path), workItemId: widget.workItemId);
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

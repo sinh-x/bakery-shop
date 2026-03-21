@@ -127,9 +127,9 @@ class OrderPhotosNotifier extends AsyncNotifier<List<OrderPhoto>> {
     });
   }
 
-  Future<OrderPhoto> upload(File file, {String tags = ''}) async {
+  Future<OrderPhoto> upload(File file, {String tags = '', int? workItemId}) async {
     final service = ref.read(orderServiceProvider);
-    final photo = await service.uploadOrderPhoto(orderRef, file, tags: tags);
+    final photo = await service.uploadOrderPhoto(orderRef, file, tags: tags, workItemId: workItemId);
     // Append to list optimistically.
     final current = state.value ?? [];
     state = AsyncData([...current, photo]);
