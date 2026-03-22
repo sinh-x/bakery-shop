@@ -334,6 +334,12 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           label: VN.customerName,
           value: order.customerName,
         ),
+        if (order.source.isNotEmpty)
+          _InfoRow(
+            icon: Icons.campaign_outlined,
+            label: VN.orderSource,
+            value: order.source,
+          ),
         if (order.customerPhone.isNotEmpty)
           _InfoRow(
             icon: Icons.phone_outlined,
@@ -510,7 +516,6 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
 
         // ── Photos (all photos aggregated: order-level + per-item) ─────
         const SizedBox(height: 16),
-        _SectionHeader(VN.orderPhotosSection),
         OrderPhotoSection(
           orderRef: order.orderRef,
           baseUrl: ref.watch(apiBaseUrlProvider),

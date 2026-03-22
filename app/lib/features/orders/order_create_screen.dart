@@ -292,24 +292,6 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
             ),
-            // F2: Phone only for bus/door delivery
-            if (_needsAddress) ...[
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _phoneCtrl,
-                decoration: const InputDecoration(
-                  labelText: VN.customerPhone,
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.phone,
-                validator: (v) {
-                  if (_needsAddress && (v == null || v.trim().isEmpty)) {
-                    return VN.fieldRequired;
-                  }
-                  return null;
-                },
-              ),
-            ],
             const SizedBox(height: 20),
 
             // ── Products ──────────────────────────────────────────────
@@ -471,6 +453,21 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                   setState(() => _deliveryType = s.first),
             ),
             if (_needsAddress) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _phoneCtrl,
+                decoration: const InputDecoration(
+                  labelText: VN.customerPhone,
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.phone,
+                validator: (v) {
+                  if (_needsAddress && (v == null || v.trim().isEmpty)) {
+                    return VN.fieldRequired;
+                  }
+                  return null;
+                },
+              ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _addressCtrl,
