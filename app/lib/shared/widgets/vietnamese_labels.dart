@@ -205,6 +205,7 @@ class VN {
   static const deliveryDoor = 'Giao tận nơi';
 
   // Order create form extras
+  static const orderSource = 'Nguồn đặt hàng';
   static const dueTime = 'Giờ giao';
   static const isBirthday = 'Sinh nhật';
   static const birthdayAge = 'Tuổi khách hàng';
