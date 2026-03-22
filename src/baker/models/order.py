@@ -138,6 +138,7 @@ class Order:
     customer_phone: str = ""
     notes: str = ""
     amount_paid: float = 0.0
+    source: str = ""
     id: Optional[int] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -155,11 +156,11 @@ class Order:
         cursor = conn.execute(
             """INSERT INTO orders (order_ref, customer_name, customer_phone, items,
                total_price, status, due_date, due_time, delivery_type,
-               delivery_address, notes, amount_paid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               delivery_address, notes, amount_paid, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (self.order_ref, self.customer_name, self.customer_phone,
              items_json, self.total_price, self.status, self.due_date,
              self.due_time, self.delivery_type, self.delivery_address, self.notes,
-             self.amount_paid),
+             self.amount_paid, self.source),
         )
         self.id = cursor.lastrowid
 
@@ -227,6 +228,7 @@ class Order:
             due_date=row["due_date"], due_time=row["due_time"],
             delivery_type=row["delivery_type"], delivery_address=row["delivery_address"],
             notes=row["notes"], amount_paid=amount_paid,
+            source=row["source"] or "",
             created_at=row["created_at"], updated_at=row["updated_at"],
         )
 
@@ -245,6 +247,7 @@ class Order:
             "deliveryType": self.delivery_type,
             "deliveryAddress": self.delivery_address,
             "notes": self.notes,
+            "source": self.source,
             "amountPaid": self.amount_paid,
             "isPaid": self.amount_paid > 0 and self.amount_paid >= self.total_price,
             "packingChecklist": [],
