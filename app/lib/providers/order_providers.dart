@@ -389,6 +389,7 @@ class OrderDraft {
   final String depositAmount;
   final String depositMethod;
   final List<DraftPendingPhoto> pendingPhotos;
+  final String source;
 
   OrderDraft({
     this.customerName = '',
@@ -403,6 +404,7 @@ class OrderDraft {
     this.depositAmount = '',
     this.depositMethod = 'cash',
     List<DraftPendingPhoto>? pendingPhotos,
+    this.source = '',
   })  : items = items ?? [],
         pendingPhotos = pendingPhotos ?? [];
 
@@ -417,7 +419,8 @@ class OrderDraft {
       notes.isNotEmpty ||
       depositEnabled ||
       depositAmount.isNotEmpty ||
-      pendingPhotos.isNotEmpty;
+      pendingPhotos.isNotEmpty ||
+      source.isNotEmpty;
 }
 
 class OrderDraftNotifier extends Notifier<OrderDraft?> {

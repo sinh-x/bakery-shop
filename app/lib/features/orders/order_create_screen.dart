@@ -3,16 +3,15 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../data/api/order_service.dart';
 import '../../data/api/payment_transaction_service.dart';
 import '../../data/api/work_item_service.dart';
+import '../../providers/config_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/expandable_item_card.dart';
-import 'widgets/order_photo_section.dart';
 import 'widgets/product_picker_page.dart';
 
 class OrderCreateScreen extends ConsumerStatefulWidget {
@@ -32,19 +31,20 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   DateTime? _dueDate;
   TimeOfDay? _dueTime;
   String _deliveryType = 'pickup';
+  String _source = '';
 
   bool _depositEnabled = false;
   final _depositAmountCtrl = TextEditingController();
   String _depositMethod = 'cash';
 
   final List<DraftOrderItem> _items = [];
-  final List<DraftPendingPhoto> _pendingPhotos = [];
-  final _picker = ImagePicker();
   bool _submitting = false;
   bool _submitted = false;
 
   bool get _needsAddress =>
       _deliveryType == 'bus' || _deliveryType == 'door';
+
+  bool get _needsNotes => _deliveryType != 'pickup';
 
   double get _totalPrice =>
       _items.fold(0, (sum, i) => sum + i.unitPrice * i.quantity);
@@ -52,12 +52,13 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   @override
   void initState() {
     super.initState();
+    _dueDate = DateTime.now(); // F4: default to today
     final draft = ref.read(orderDraftProvider);
     if (draft != null) {
       _nameCtrl.text = draft.customerName;
       _phoneCtrl.text = draft.customerPhone;
       _items.addAll(draft.items);
-      _dueDate = draft.dueDate;
+      _dueDate = draft.dueDate ?? DateTime.now(); // F4: preserve draft or default today
       _dueTime = draft.dueTime;
       _deliveryType = draft.deliveryType;
       _addressCtrl.text = draft.deliveryAddress;
@@ -65,7 +66,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       _depositEnabled = draft.depositEnabled;
       _depositAmountCtrl.text = draft.depositAmount;
       _depositMethod = draft.depositMethod;
-      _pendingPhotos.addAll(draft.pendingPhotos);
+      _source = draft.source; // F1
     }
   }
 
@@ -94,7 +95,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       depositEnabled: _depositEnabled,
       depositAmount: _depositAmountCtrl.text,
       depositMethod: _depositMethod,
-      pendingPhotos: List.of(_pendingPhotos),
+      source: _source, // F1
     );
     if (draft.isNotEmpty) {
       ref.read(orderDraftProvider.notifier).save(draft);
@@ -118,40 +119,20 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: _dueDate ?? DateTime.now().add(const Duration(days: 1)),
+      initialDate: _dueDate ?? DateTime.now(), // F4: starts at today
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (picked != null) setState(() => _dueDate = picked);
   }
 
-  Future<void> _pickTime() async {
-    final picked = await showTimePicker(
+  // F5: Hour picker (replaces showTimePicker)
+  Future<void> _pickHour() async {
+    final picked = await showDialog<int>(
       context: context,
-      initialTime: _dueTime ?? TimeOfDay.now(),
+      builder: (ctx) => _HourPickerDialog(initialHour: _dueTime?.hour ?? 8),
     );
-    if (picked != null) setState(() => _dueTime = picked);
-  }
-
-  Future<void> _pickPhotos() async {
-    final files = await _picker.pickMultiImage(imageQuality: 85);
-    if (files.isEmpty || !mounted) return;
-    setState(() {
-      for (final f in files) {
-        _pendingPhotos.add(DraftPendingPhoto(file: File(f.path)));
-      }
-    });
-  }
-
-  Future<void> _editPendingTags(int index) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _PendingTagEditSheet(
-        initialTags: _pendingPhotos[index].tags,
-        onSaved: (tags) => setState(() => _pendingPhotos[index].tags = tags),
-      ),
-    );
+    if (picked != null) setState(() => _dueTime = TimeOfDay(hour: picked, minute: 0));
   }
 
   Future<void> _openProductPicker() async {
@@ -203,16 +184,16 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         deliveryType: _deliveryType,
         deliveryAddress: _addressCtrl.text.trim(),
         notes: _notesCtrl.text.trim(),
+        source: _source.isEmpty ? null : _source, // F1
       );
 
-      // Upload photos (per-item + order-level)
+      // Upload per-item photos (F6: order-level photos removed from creation)
       final hasPerItemPhotos = _items.any((i) => i.pendingPhotoPaths.isNotEmpty);
-      if (hasPerItemPhotos || _pendingPhotos.isNotEmpty) {
+      if (hasPerItemPhotos) {
         final workItemSvc = ref.read(workItemServiceProvider);
         final workItems = await workItemSvc.listWorkItems(newOrder.orderRef);
         workItems.sort((a, b) => a.position.compareTo(b.position));
 
-        // Per-item photos mapped by position index
         for (var idx = 0; idx < _items.length; idx++) {
           final draftItem = _items[idx];
           if (draftItem.pendingPhotoPaths.isEmpty) continue;
@@ -226,15 +207,6 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               workItemId: workItemId,
             );
           }
-        }
-
-        // Order-level photos (no workItemId)
-        for (final pending in _pendingPhotos) {
-          await service.uploadOrderPhoto(
-            newOrder.orderRef,
-            pending.file,
-            tags: pending.tags.join(','),
-          );
         }
       }
 
@@ -278,6 +250,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final sourcesAsync = ref.watch(orderSourcesProvider); // F1
 
     return Scaffold(
       appBar: AppBar(title: const Text(VN.createOrder)),
@@ -286,6 +259,27 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           children: [
+            // ── Source (F1) ───────────────────────────────────────────
+            _SectionHeader(VN.orderSource),
+            sourcesAsync.when(
+              data: (sources) => Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: sources
+                    .map((s) => ChoiceChip(
+                          label: Text(s),
+                          selected: _source == s,
+                          onSelected: (_) => setState(
+                            () => _source = _source == s ? '' : s,
+                          ),
+                        ))
+                    .toList(),
+              ),
+              loading: () => const SizedBox.shrink(),
+              error: (e, st) => const SizedBox.shrink(),
+            ),
+            const SizedBox(height: 12),
+
             // ── Customer ──────────────────────────────────────────────
             _SectionHeader(VN.customer),
             TextFormField(
@@ -298,21 +292,24 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
             ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _phoneCtrl,
-              decoration: const InputDecoration(
-                labelText: VN.customerPhone,
-                border: OutlineInputBorder(),
+            // F2: Phone only for bus/door delivery
+            if (_needsAddress) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _phoneCtrl,
+                decoration: const InputDecoration(
+                  labelText: VN.customerPhone,
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.phone,
+                validator: (v) {
+                  if (_needsAddress && (v == null || v.trim().isEmpty)) {
+                    return VN.fieldRequired;
+                  }
+                  return null;
+                },
               ),
-              keyboardType: TextInputType.phone,
-              validator: (v) {
-                if (_needsAddress && (v == null || v.trim().isEmpty)) {
-                  return VN.fieldRequired;
-                }
-                return null;
-              },
-            ),
+            ],
             const SizedBox(height: 20),
 
             // ── Products ──────────────────────────────────────────────
@@ -360,40 +357,79 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             ],
             const SizedBox(height: 20),
 
-            // ── Schedule ──────────────────────────────────────────────
+            // ── Schedule (F4 + F5) ────────────────────────────────────
             _SectionHeader(VN.dueDate),
-            Row(
+            // F4: Date button (always shows date, defaults to today)
+            OutlinedButton.icon(
+              onPressed: _pickDate,
+              icon: const Icon(Icons.calendar_today, size: 18),
+              label: Text(
+                _dueDate != null
+                    ? _formatDateDisplay(_dueDate!)
+                    : VN.dueDate,
+              ),
+              style: OutlinedButton.styleFrom(
+                alignment: Alignment.centerLeft,
+              ),
+            ),
+            const SizedBox(height: 12),
+            // F5: Time preset chips
+            Wrap(
+              spacing: 8,
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _pickDate,
-                    icon: const Icon(Icons.calendar_today, size: 18),
-                    label: Text(
-                      _dueDate != null
-                          ? _formatDateDisplay(_dueDate!)
-                          : VN.dueDate,
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      alignment: Alignment.centerLeft,
-                    ),
+                ChoiceChip(
+                  label: Text('${VN.timeSlotMorning} 8:00'),
+                  selected: _dueTime != null &&
+                      _dueTime!.hour == 8 &&
+                      _dueTime!.minute == 0,
+                  onSelected: (_) => setState(
+                    () => _dueTime = const TimeOfDay(hour: 8, minute: 0),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _pickTime,
-                    icon: const Icon(Icons.schedule, size: 18),
-                    label: Text(
-                      _dueTime != null ? _formatTime(_dueTime!) : VN.dueTime,
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      alignment: Alignment.centerLeft,
-                    ),
+                ChoiceChip(
+                  label: Text('${VN.timeSlotAfternoon} 14:00'),
+                  selected: _dueTime != null &&
+                      _dueTime!.hour == 14 &&
+                      _dueTime!.minute == 0,
+                  onSelected: (_) => setState(
+                    () => _dueTime = const TimeOfDay(hour: 14, minute: 0),
+                  ),
+                ),
+                ChoiceChip(
+                  label: Text('${VN.timeSlotEvening} 18:00'),
+                  selected: _dueTime != null &&
+                      _dueTime!.hour == 18 &&
+                      _dueTime!.minute == 0,
+                  onSelected: (_) => setState(
+                    () => _dueTime = const TimeOfDay(hour: 18, minute: 0),
                   ),
                 ),
               ],
             ),
             if (_dueTime != null) ...[
+              const SizedBox(height: 8),
+              // F5: Tappable hour label — opens hour picker
+              GestureDetector(
+                onTap: _pickHour,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.schedule,
+                      size: 16,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_dueTime!.hour}:00',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 6),
               Align(
                 alignment: Alignment.centerLeft,
@@ -449,17 +485,19 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             ],
             const SizedBox(height: 20),
 
-            // ── Notes ─────────────────────────────────────────────────
-            TextFormField(
-              controller: _notesCtrl,
-              decoration: const InputDecoration(
-                labelText: VN.notes,
-                border: OutlineInputBorder(),
-                alignLabelWithHint: true,
+            // ── Notes (F3: only for non-pickup) ───────────────────────
+            if (_needsNotes) ...[
+              TextFormField(
+                controller: _notesCtrl,
+                decoration: const InputDecoration(
+                  labelText: VN.notes,
+                  border: OutlineInputBorder(),
+                  alignLabelWithHint: true,
+                ),
+                maxLines: 3,
               ),
-              maxLines: 3,
-            ),
-            const SizedBox(height: 20),
+              const SizedBox(height: 20),
+            ],
 
             // ── Deposit ───────────────────────────────────────────────
             CheckboxListTile(
@@ -507,130 +545,6 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               const SizedBox(height: 12),
             ],
 
-            // ── Photos ────────────────────────────────────────────────
-            _SectionHeader(VN.pendingPhotosLabel),
-            if (_pendingPhotos.isNotEmpty) ...[
-              SizedBox(
-                height: 134,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.only(bottom: 4),
-                  itemCount: _pendingPhotos.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 8),
-                  itemBuilder: (ctx, index) {
-                    final pending = _pendingPhotos[index];
-                    return SizedBox(
-                      width: 90,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Stack(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.file(
-                                  pending.file,
-                                  width: 90,
-                                  height: 90,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                              // Remove button
-                              Positioned(
-                                top: 4,
-                                left: 4,
-                                child: GestureDetector(
-                                  onTap: () => setState(
-                                    () => _pendingPhotos.removeAt(index),
-                                  ),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(3),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black54,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Icon(
-                                      Icons.close,
-                                      color: Colors.white,
-                                      size: 14,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              // Tag edit button
-                              Positioned(
-                                top: 4,
-                                right: 4,
-                                child: GestureDetector(
-                                  onTap: () => _editPendingTags(index),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(3),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black54,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Icon(
-                                      Icons.label_outline,
-                                      color: Colors.white,
-                                      size: 14,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (pending.tags.isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Wrap(
-                              spacing: 2,
-                              runSpacing: 2,
-                              children: pending.tags.map((key) {
-                                final tagDef = kOrderPhotoTags
-                                    .where((t) => t.key == key)
-                                    .firstOrNull;
-                                final color = tagDef?.color ?? Colors.grey;
-                                final label = tagDef?.label ?? key;
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                    vertical: 1,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: color.withAlpha(30),
-                                    borderRadius: BorderRadius.circular(3),
-                                    border: Border.all(
-                                      color: color.withAlpha(100),
-                                      width: 0.5,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    label,
-                                    style: TextStyle(
-                                      fontSize: 8,
-                                      color: color,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ],
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            OutlinedButton.icon(
-              onPressed: _pickPhotos,
-              icon: const Icon(Icons.add_photo_alternate_outlined),
-              label: const Text(VN.addOrderPhoto),
-            ),
-            const SizedBox(height: 24),
-
             // ── Submit ────────────────────────────────────────────────
             FilledButton(
               onPressed: _submitting ? null : _submit,
@@ -670,85 +584,33 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ── Pending photo tag editor ───────────────────────────────────────────────────
+// ── Hour picker dialog (F5) ───────────────────────────────────────────────────
 
-class _PendingTagEditSheet extends StatefulWidget {
-  const _PendingTagEditSheet({
-    required this.initialTags,
-    required this.onSaved,
-  });
-
-  final Set<String> initialTags;
-  final ValueChanged<Set<String>> onSaved;
-
-  @override
-  State<_PendingTagEditSheet> createState() => _PendingTagEditSheetState();
-}
-
-class _PendingTagEditSheetState extends State<_PendingTagEditSheet> {
-  late Set<String> _selected;
-
-  @override
-  void initState() {
-    super.initState();
-    _selected = Set<String>.from(widget.initialTags);
-  }
+class _HourPickerDialog extends StatelessWidget {
+  const _HourPickerDialog({required this.initialHour});
+  final int initialHour;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            VN.editPhotoTags,
-            style: Theme.of(context).textTheme.titleMedium,
+    final controller = ScrollController(
+      initialScrollOffset: (initialHour * 48.0).clamp(0.0, 22 * 48.0),
+    );
+    return AlertDialog(
+      title: const Text(VN.dueTime),
+      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+      content: SizedBox(
+        width: 120,
+        height: 240,
+        child: ListView.builder(
+          controller: controller,
+          itemCount: 24,
+          itemBuilder: (ctx, hour) => ListTile(
+            title: Text('$hour:00'),
+            selected: hour == initialHour,
+            onTap: () => Navigator.pop(context, hour),
           ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: kOrderPhotoTags.map((tag) {
-              final selected = _selected.contains(tag.key);
-              return FilterChip(
-                label: Text(tag.label),
-                selected: selected,
-                onSelected: (val) {
-                  setState(() {
-                    if (val) {
-                      _selected.add(tag.key);
-                    } else {
-                      _selected.remove(tag.key);
-                    }
-                  });
-                },
-                selectedColor: tag.color.withAlpha(50),
-                checkmarkColor: tag.color,
-                side: BorderSide(
-                  color: selected ? tag.color : Colors.grey.shade300,
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: () {
-              widget.onSaved(_selected);
-              Navigator.pop(context);
-            },
-            child: const Text(VN.save),
-          ),
-          const SizedBox(height: 8),
-        ],
+        ),
       ),
     );
   }
 }
-

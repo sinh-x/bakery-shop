@@ -9,11 +9,15 @@ class ProductCard extends StatelessWidget {
     required this.product,
     required this.photoBaseUrl,
     this.onTap,
+    this.onLongPress,
+    this.showPriceBadge = false,
   });
 
   final Product product;
   final String photoBaseUrl;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final bool showPriceBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +27,7 @@ class ProductCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -40,13 +45,13 @@ class ProductCard extends StatelessWidget {
                 ),
               ),
             ),
-            // Gradient overlay + name + price at bottom
+            // Gradient overlay + name at bottom
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
               child: Container(
-                padding: const EdgeInsets.fromLTRB(8, 24, 8, 8),
+                padding: EdgeInsets.fromLTRB(8, 24, 8, showPriceBadge ? 48 : 8),
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
@@ -71,16 +76,38 @@ class ProductCard extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Text(
-                      formatVND(product.basePrice),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: Colors.white70,
+                    if (!showPriceBadge)
+                      Text(
+                        formatVND(product.basePrice),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: Colors.white70,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
             ),
+            // Price badge strip at very bottom (picker mode only)
+            // Card's clipBehavior handles rounded bottom corners
+            if (showPriceBadge)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  color: theme.colorScheme.primaryContainer,
+                  child: Text(
+                    formatVND(product.basePrice),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
           ],
         ),
       ),

@@ -21,6 +21,7 @@ sealed class Order with _$Order {
     @Default('pickup') String deliveryType,
     @Default('') String deliveryAddress,
     @Default('') String notes,
+    @Default('') String source,
     @Default(0.0) double amountPaid,
     @Default(false) bool isPaid,
     @Default([]) List<PackingItem> packingChecklist,

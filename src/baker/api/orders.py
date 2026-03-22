@@ -39,6 +39,7 @@ class OrderCreate(BaseModel):
     deliveryType: str = "pickup"
     deliveryAddress: str = ""
     notes: str = ""
+    source: str = ""
     deposit: Optional[DepositIn] = None
 
 
@@ -136,6 +137,7 @@ def create_order(body: OrderCreate):
             delivery_type=body.deliveryType,
             delivery_address=body.deliveryAddress,
             notes=body.notes,
+            source=body.source,
         )
         order.calculate_total()
         order.save(conn)

@@ -508,13 +508,12 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             ),
           ),
 
-        // ── Photos (order-level only — per-item photos shown in work items section) ────
+        // ── Photos (all photos aggregated: order-level + per-item) ─────
         const SizedBox(height: 16),
         _SectionHeader(VN.orderPhotosSection),
         OrderPhotoSection(
           orderRef: order.orderRef,
           baseUrl: ref.watch(apiBaseUrlProvider),
-          orderLevelOnly: true,
         ),
 
         // ── Status actions ────────────────────────────────────────────

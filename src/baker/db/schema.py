@@ -379,6 +379,36 @@ ALTER TABLE order_items ADD COLUMN age INTEGER DEFAULT NULL;
 ALTER TABLE order_photos ADD COLUMN work_item_id INTEGER DEFAULT NULL REFERENCES order_items(id);
 """
 
+APP_CONFIG_AND_ORDER_SOURCE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS app_config (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    config_key  TEXT NOT NULL,
+    config_value TEXT NOT NULL,
+    sort_order  INTEGER DEFAULT 0,
+    active      INTEGER DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_app_config_key_value ON app_config(config_key, config_value);
+ALTER TABLE orders ADD COLUMN source TEXT DEFAULT '';
+"""
+
+SEED_ORDER_SOURCES = [
+    ("order_source", "Facebook-DoanGia", 1),
+    ("order_source", "Zalo", 2),
+    ("order_source", "Facebook-Page-mới", 3),
+    ("order_source", "Tại tiệm", 4),
+    ("order_source", "Điện thoại", 5),
+]
+
+
+def _migrate_v14_seed_order_sources(conn):
+    """Seed order source config values into app_config."""
+    for config_key, config_value, sort_order in SEED_ORDER_SOURCES:
+        conn.execute(
+            "INSERT OR IGNORE INTO app_config (config_key, config_value, sort_order) VALUES (?, ?, ?)",
+            (config_key, config_value, sort_order),
+        )
+
 
 def _migrate_v12_data(conn):
     """Migrate orders.items JSON → order_items rows; amount_paid > 0 → deposit transaction."""
@@ -481,6 +511,11 @@ MIGRATIONS = {
     13: {
         "description": "Per-item birthday/age fields and order_photos work_item_id FK",
         "sql": PER_ITEM_BIRTHDAY_AND_PHOTO_LINK_SCHEMA,
+    },
+    14: {
+        "description": "app_config table for general config (order sources etc), source column on orders",
+        "sql": APP_CONFIG_AND_ORDER_SOURCE_SCHEMA,
+        "callable": _migrate_v14_seed_order_sources,
     },
 }
 
