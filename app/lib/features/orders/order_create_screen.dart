@@ -71,8 +71,13 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   }
 
   @override
-  void dispose() {
+  void deactivate() {
     _saveDraft();
+    super.deactivate();
+  }
+
+  @override
+  void dispose() {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     _addressCtrl.dispose();
@@ -194,6 +199,8 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         final workItems = await workItemSvc.listWorkItems(newOrder.orderRef);
         workItems.sort((a, b) => a.position.compareTo(b.position));
 
+        int totalPhotos = 0;
+        int failedPhotos = 0;
         for (var idx = 0; idx < _items.length; idx++) {
           final draftItem = _items[idx];
           if (draftItem.pendingPhotoPaths.isEmpty) continue;
@@ -201,12 +208,27 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               ? int.tryParse(workItems[idx].id)
               : null;
           for (final path in draftItem.pendingPhotoPaths) {
-            await service.uploadOrderPhoto(
-              newOrder.orderRef,
-              File(path),
-              workItemId: workItemId,
-            );
+            totalPhotos++;
+            try {
+              await service.uploadOrderPhoto(
+                newOrder.orderRef,
+                File(path),
+                workItemId: workItemId,
+              );
+            } catch (e) {
+              failedPhotos++;
+              debugPrint('Photo upload failed ($path): $e');
+            }
           }
+        }
+        if (failedPhotos > 0 && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Tải lên ảnh: ${totalPhotos - failedPhotos}/$totalPhotos thành công, $failedPhotos lỗi',
+              ),
+            ),
+          );
         }
       }
 
