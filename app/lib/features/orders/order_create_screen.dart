@@ -71,8 +71,13 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   }
 
   @override
-  void dispose() {
+  void deactivate() {
     _saveDraft();
+    super.deactivate();
+  }
+
+  @override
+  void dispose() {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     _addressCtrl.dispose();
@@ -194,6 +199,8 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         final workItems = await workItemSvc.listWorkItems(newOrder.orderRef);
         workItems.sort((a, b) => a.position.compareTo(b.position));
 
+        int totalPhotos = 0;
+        int failedPhotos = 0;
         for (var idx = 0; idx < _items.length; idx++) {
           final draftItem = _items[idx];
           if (draftItem.pendingPhotoPaths.isEmpty) continue;
@@ -201,12 +208,27 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               ? int.tryParse(workItems[idx].id)
               : null;
           for (final path in draftItem.pendingPhotoPaths) {
-            await service.uploadOrderPhoto(
-              newOrder.orderRef,
-              File(path),
-              workItemId: workItemId,
-            );
+            totalPhotos++;
+            try {
+              await service.uploadOrderPhoto(
+                newOrder.orderRef,
+                File(path),
+                workItemId: workItemId,
+              );
+            } catch (e) {
+              failedPhotos++;
+              debugPrint('Photo upload failed ($path): $e');
+            }
           }
+        }
+        if (failedPhotos > 0 && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Tải lên ảnh: ${totalPhotos - failedPhotos}/$totalPhotos thành công, $failedPhotos lỗi',
+              ),
+            ),
+          );
         }
       }
 
@@ -269,9 +291,15 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                     .map((s) => ChoiceChip(
                           label: Text(s),
                           selected: _source == s,
-                          onSelected: (_) => setState(
-                            () => _source = _source == s ? '' : s,
-                          ),
+                          onSelected: (_) => setState(() {
+                            final wasSelected = _source == s;
+                            _source = wasSelected ? '' : s;
+                            if (!wasSelected && s == 'Tại Tiệm' && _nameCtrl.text.isEmpty) {
+                              _nameCtrl.text = 'Khách Vãng Lai';
+                            } else if (wasSelected && s == 'Tại Tiệm' && _nameCtrl.text == 'Khách Vãng Lai') {
+                              _nameCtrl.text = '';
+                            }
+                          }),
                         ))
                     .toList(),
               ),
@@ -292,24 +320,6 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
             ),
-            // F2: Phone only for bus/door delivery
-            if (_needsAddress) ...[
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _phoneCtrl,
-                decoration: const InputDecoration(
-                  labelText: VN.customerPhone,
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.phone,
-                validator: (v) {
-                  if (_needsAddress && (v == null || v.trim().isEmpty)) {
-                    return VN.fieldRequired;
-                  }
-                  return null;
-                },
-              ),
-            ],
             const SizedBox(height: 20),
 
             // ── Products ──────────────────────────────────────────────
@@ -471,6 +481,21 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                   setState(() => _deliveryType = s.first),
             ),
             if (_needsAddress) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _phoneCtrl,
+                decoration: const InputDecoration(
+                  labelText: VN.customerPhone,
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.phone,
+                validator: (v) {
+                  if (_needsAddress && (v == null || v.trim().isEmpty)) {
+                    return VN.fieldRequired;
+                  }
+                  return null;
+                },
+              ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _addressCtrl,

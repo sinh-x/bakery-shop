@@ -67,14 +67,22 @@ class ProductCard extends StatelessWidget {
                       _CodeBadge(code: product.productCode),
                       const SizedBox(height: 2),
                     ],
-                    Text(
-                      product.name,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                      child: Text(
+                        product.name,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     if (!showPriceBadge)
                       Text(
@@ -125,7 +133,7 @@ class _CodeBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.white24,
+        color: Colors.black54,
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(

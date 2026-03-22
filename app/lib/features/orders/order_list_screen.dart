@@ -363,10 +363,31 @@ class _OrderCard extends ConsumerWidget {
 
             const SizedBox(height: 4),
 
-            // Customer name
-            Text(
-              order.customerName,
-              style: theme.textTheme.bodyMedium,
+            // Customer name + source badge
+            Row(
+              children: [
+                Text(
+                  order.customerName,
+                  style: theme.textTheme.bodyMedium,
+                ),
+                if (order.source.isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      order.source,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
 
             // Due date (if present)
