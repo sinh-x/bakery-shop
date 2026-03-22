@@ -37,11 +37,11 @@ def reload(config_path: Path | str | None = None) -> None:
     path = Path(config_path).expanduser() if config_path else DEFAULT_CONFIG_PATH
     cfg = _load_from(path)
 
-    DATA_DIR = Path(cfg.get("data_dir", _default_data_dir)).expanduser()
+    DATA_DIR = Path(os.environ.get("BAKER_DATA_DIR") or cfg.get("data_dir", _default_data_dir)).expanduser()
     DB_PATH = Path(cfg.get("db_path", DATA_DIR / "baker.db")).expanduser()
     PHOTOS_DIR = DATA_DIR / "photos"
-    HOST = cfg.get("host", "0.0.0.0")
-    PORT = int(cfg.get("port", 2108))
+    HOST = os.environ.get("BAKER_HOST") or cfg.get("host", "0.0.0.0")
+    PORT = int(os.environ.get("BAKER_PORT") or cfg.get("port", 2108))
 
 
 # Load defaults on import
