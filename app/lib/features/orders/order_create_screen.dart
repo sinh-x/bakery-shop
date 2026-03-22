@@ -291,9 +291,15 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                     .map((s) => ChoiceChip(
                           label: Text(s),
                           selected: _source == s,
-                          onSelected: (_) => setState(
-                            () => _source = _source == s ? '' : s,
-                          ),
+                          onSelected: (_) => setState(() {
+                            final wasSelected = _source == s;
+                            _source = wasSelected ? '' : s;
+                            if (!wasSelected && s == 'Tại Tiệm' && _nameCtrl.text.isEmpty) {
+                              _nameCtrl.text = 'Khách Vãng Lai';
+                            } else if (wasSelected && s == 'Tại Tiệm' && _nameCtrl.text == 'Khách Vãng Lai') {
+                              _nameCtrl.text = '';
+                            }
+                          }),
                         ))
                     .toList(),
               ),
