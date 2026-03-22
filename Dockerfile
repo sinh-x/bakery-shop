@@ -19,9 +19,11 @@ COPY --from=builder /install /usr/local
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-RUN useradd -r -s /bin/sh -d /var/lib/baker baker \
+ARG UID=1000
+ARG GID=100
+RUN useradd -u ${UID} -g ${GID} -s /bin/sh -d /var/lib/baker baker \
     && mkdir -p /var/lib/baker \
-    && chown baker:baker /var/lib/baker
+    && chown ${UID}:${GID} /var/lib/baker
 
 ENV BAKER_DATA_DIR=/var/lib/baker
 ENV BAKER_HOST=0.0.0.0

@@ -1,6 +1,7 @@
 services:
   baker-prod:
     build: .
+    image: baker-server
     profiles: [prod]
     ports:
       - "2108:2108"
@@ -20,19 +21,19 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
   baker-dev:
-    build: .
+    image: baker-server
     profiles: [dev]
     ports:
-      - "2108:2108"
+      - "2312:2312"
     volumes:
       - ./data:/var/lib/baker
     environment:
       BAKER_DATA_DIR: /var/lib/baker
+      BAKER_PORT: 2312
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2108/api/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2312/api/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
