@@ -26,6 +26,7 @@ class ProductPickerPage extends ConsumerStatefulWidget {
 
 class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
   late Set<int> _selectedIds;
+  bool _multiSelectMode = false;
 
   @override
   void initState() {
@@ -41,6 +42,23 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
       } else {
         _selectedIds.add(product.id);
       }
+    });
+  }
+
+  void _selectSingleProduct(Product product) {
+    final alreadyAdded =
+        widget.selectedItems.any((i) => i.product.id == product.id);
+    if (!alreadyAdded) {
+      widget.selectedItems.add(DraftOrderItem(product: product));
+    }
+    widget.onChanged();
+    Navigator.of(context).pop();
+  }
+
+  void _enterMultiSelectMode(Product product) {
+    setState(() {
+      _multiSelectMode = true;
+      _selectedIds.add(product.id);
     });
   }
 
@@ -119,16 +137,17 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
         onPressed: () => Navigator.of(context).pop(),
       ),
       title: Text(
-        _selectedIds.isEmpty
-            ? VN.selectProducts
-            : '${_selectedIds.length} đã chọn',
+        _multiSelectMode && _selectedIds.isNotEmpty
+            ? '${_selectedIds.length} đã chọn'
+            : VN.selectProducts,
       ),
       actions: [
-        IconButton(
-          icon: const Icon(Icons.check),
-          tooltip: 'Xác nhận',
-          onPressed: () => _onConfirm(allProducts),
-        ),
+        if (_multiSelectMode)
+          IconButton(
+            icon: const Icon(Icons.check),
+            tooltip: 'Xác nhận',
+            onPressed: () => _onConfirm(allProducts),
+          ),
       ],
       bottom: activeCategories.isNotEmpty
           ? TabBar(
@@ -164,7 +183,13 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
             ProductCard(
               product: product,
               photoBaseUrl: baseUrl,
-              onTap: () => _toggleProduct(product),
+              showPriceBadge: true,
+              onTap: _multiSelectMode
+                  ? () => _toggleProduct(product)
+                  : () => _selectSingleProduct(product),
+              onLongPress: _multiSelectMode
+                  ? null
+                  : () => _enterMultiSelectMode(product),
             ),
             if (selected)
               IgnorePointer(
