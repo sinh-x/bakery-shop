@@ -15,6 +15,7 @@ _WORK_ITEM_RANK = {
     WorkItemStatus.WORKING: 1,
     WorkItemStatus.READY: 2,
     WorkItemStatus.DELIVERED: 3,
+    WorkItemStatus.CANCELLED: 4,
 }
 
 
@@ -170,6 +171,11 @@ def transition_work_item_status(ref: str, item_id: int, body: WorkItemStatusTran
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
+
+        if row["status"] == WorkItemStatus.CANCELLED:
+            raise HTTPException(
+                status_code=422, detail="Không thể thay đổi trạng thái đã hủy"
+            )
 
         if _is_backward(row["status"], body.status) and not body.reason.strip():
             raise HTTPException(
