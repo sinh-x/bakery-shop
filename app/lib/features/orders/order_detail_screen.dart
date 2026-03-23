@@ -160,6 +160,7 @@ class _OrderDetailBody extends ConsumerStatefulWidget {
 
 class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
   bool _transitioning = false;
+  bool _syncing = false;
 
   Order get order => widget.order;
 
@@ -207,8 +208,49 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       if (mounted) {
         showTopSnackBar(context, '${VN.apiError}: $e');
       }
+      return;
     } finally {
       if (mounted) setState(() => _transitioning = false);
+    }
+    // Auto-sync work item status for single-item orders
+    final items =
+        ref.read(orderWorkItemsProvider(order.orderRef)).value ?? [];
+    if (items.length == 1 && !_syncing) {
+      _syncing = true;
+      try {
+        const orderToWorkItem = {
+          'new': 'pending',
+          'confirmed': 'pending',
+          'in_progress': 'working',
+          'ready': 'ready',
+          'delivered': 'delivered',
+          'completed': 'delivered',
+          'cancelled': 'cancelled',
+        };
+        final mappedStatus = orderToWorkItem[targetStatus];
+        if (mappedStatus != null) {
+          final item = items.first;
+          final allowedTransitions =
+              workItemValidTransitions[item.status] ?? [];
+          if (allowedTransitions.contains(mappedStatus)) {
+            final syncReason =
+                (_isBackward(item.status, mappedStatus, _workItemStatusRank) ||
+                        mappedStatus == 'cancelled')
+                    ? 'Tự động đồng bộ theo trạng thái đơn hàng'
+                    : '';
+            await ref
+                .read(orderWorkItemsProvider(order.orderRef).notifier)
+                .transitionStatus(item.id, mappedStatus, reason: syncReason);
+            if (mounted) {
+              showTopSnackBar(context, VN.autoSyncWorkItemStatus);
+            }
+          }
+        }
+      } catch (_) {
+        // Auto-sync failure is silent
+      } finally {
+        _syncing = false;
+      }
     }
   }
 
@@ -1200,6 +1242,7 @@ class _WorkItemSection extends ConsumerStatefulWidget {
 class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
   bool _expanded = true;
   bool _transitioning = false;
+  bool _syncing = false;
 
   String? _deriveOrderStatus(List<WorkItem> items) {
     if (items.isEmpty) return null;
@@ -1280,12 +1323,51 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
       if (mounted) {
         showTopSnackBar(context, VN.workItemStatusChanged);
       }
-      // Auto-derive order status from updated work items
       final items =
           ref.read(orderWorkItemsProvider(widget.orderRef)).value ?? [];
-      final suggestedStatus = _deriveOrderStatus(items);
-      if (suggestedStatus != null && mounted) {
-        await _applyAutoUpdateOrderStatus(suggestedStatus, items);
+      if (items.length == 1 && !_syncing) {
+        // Single-item order: direct bidirectional sync
+        _syncing = true;
+        try {
+          const workItemToOrder = {
+            'pending': 'new',
+            'working': 'in_progress',
+            'ready': 'ready',
+            'delivered': 'delivered',
+            'cancelled': 'cancelled',
+          };
+          final mappedStatus = workItemToOrder[targetStatus];
+          if (mappedStatus != null) {
+            final currentOrderStatus =
+                ref.read(orderDetailProvider(widget.orderRef)).value?.status ??
+                    widget.order.status;
+            final allowedTransitions = validTransitions[currentOrderStatus] ?? [];
+            if (allowedTransitions.contains(mappedStatus)) {
+              final syncReason =
+                  (_isBackward(currentOrderStatus, mappedStatus,
+                              _orderStatusRank) ||
+                          mappedStatus == 'cancelled')
+                      ? 'Tự động đồng bộ theo trạng thái sản phẩm'
+                      : '';
+              await ref
+                  .read(orderDetailProvider(widget.orderRef).notifier)
+                  .transitionTo(mappedStatus, reason: syncReason);
+              if (mounted) {
+                showTopSnackBar(context, VN.autoSyncOrderStatus);
+              }
+            }
+          }
+        } catch (_) {
+          // Auto-sync failure is silent
+        } finally {
+          _syncing = false;
+        }
+      } else if (items.length > 1) {
+        // Multi-item order: heuristic derive
+        final suggestedStatus = _deriveOrderStatus(items);
+        if (suggestedStatus != null && mounted) {
+          await _applyAutoUpdateOrderStatus(suggestedStatus, items);
+        }
       }
     } catch (e) {
       if (mounted) {

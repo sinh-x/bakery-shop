@@ -284,6 +284,8 @@ class VN {
   static const statusReasonHint = 'Nhập lý do...';
   static const confirmStatusChange = 'Xác nhận';
   static const autoUpdateOrderTitle = 'Cập nhật đơn hàng';
+  static const autoSyncWorkItemStatus = 'Đã đồng bộ trạng thái sản phẩm';
+  static const autoSyncOrderStatus = 'Đã đồng bộ trạng thái đơn hàng';
 
   // Cake queue & cake detail
   static const cakeQueue = 'Làm bánh';
