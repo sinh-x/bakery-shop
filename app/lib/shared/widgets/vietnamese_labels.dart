@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 class VN {
   // Navigation
   static const appName = 'Đoàn Gia - Bánh Kem';
@@ -271,6 +273,7 @@ class VN {
   static const workItemWorking = 'Đang làm';
   static const workItemReady = 'Sẵn sàng';
   static const workItemDelivered = 'Đã giao';
+  static const workItemCancelled = 'Đã hủy';
 
   // Work items section
   static const workItemsSection = 'Chi tiết sản xuất';
@@ -395,10 +398,29 @@ const workItemStatusMap = {
   'working': VN.workItemWorking,
   'ready': VN.workItemReady,
   'delivered': VN.workItemDelivered,
+  'cancelled': VN.workItemCancelled,
 };
 
 String workItemStatusLabel(String status) =>
     workItemStatusMap[status] ?? status;
+
+// Work item status colors
+const workItemStatusColors = {
+  'pending': Colors.grey,
+  'working': Colors.orange,
+  'ready': Colors.green,
+  'delivered': Colors.teal,
+  'cancelled': Colors.red,
+};
+
+// Valid work item transitions
+const workItemValidTransitions = {
+  'pending': ['working', 'cancelled'],
+  'working': ['ready', 'cancelled'],
+  'ready': ['delivered', 'cancelled'],
+  'delivered': ['cancelled'],
+  'cancelled': <String>[],
+};
 
 /// Format VND: 150000.0 → "150.000đ"
 String formatVND(double amount) {
