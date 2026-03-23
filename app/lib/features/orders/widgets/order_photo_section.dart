@@ -98,15 +98,11 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
             .upload(File(xfile.path), workItemId: widget.workItemId);
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.orderPhotoAdded)),
-        );
+        showTopSnackBar(context, VN.orderPhotoAdded);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
-        );
+        showTopSnackBar(context, '${VN.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _uploading = false);
@@ -139,15 +135,11 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
           .read(orderPhotosProvider(widget.orderRef).notifier)
           .delete(photo.id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.orderPhotoDeleted)),
-        );
+        showTopSnackBar(context, VN.orderPhotoDeleted);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
-        );
+        showTopSnackBar(context, '${VN.apiError}: $e');
       }
     }
   }
@@ -520,15 +512,11 @@ class _TagEditSheetState extends ConsumerState<_TagEditSheet> {
           .updateTags(widget.photo.id, tags);
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.photoTagsUpdated)),
-        );
+        showTopSnackBar(context, VN.photoTagsUpdated);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
-        );
+        showTopSnackBar(context, '${VN.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _saving = false);

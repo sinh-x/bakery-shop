@@ -99,15 +99,11 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
           .read(orderWorkItemsProvider(widget.orderRef).notifier)
           .transitionStatus(item.id, targetStatus, reason: reason);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.workItemStatusChanged)),
-        );
+        showTopSnackBar(context, VN.workItemStatusChanged);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
-        );
+        showTopSnackBar(context, '${VN.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _transitioning = false);
@@ -133,15 +129,11 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
             unitPrice: unitPrice,
           );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.orderEditSaved)),
-        );
+        showTopSnackBar(context, VN.orderEditSaved);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
-        );
+        showTopSnackBar(context, '${VN.apiError}: $e');
         rethrow;
       }
     } finally {

@@ -87,7 +87,6 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     if (summary.isEmpty) return;
 
     setState(() => _saving = true);
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final loggedBy = ref.read(loggedByProvider);
       if (_isEditing) {
@@ -99,9 +98,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
               loggedBy: loggedBy,
             );
         if (mounted) {
-          messenger.showSnackBar(
-            const SnackBar(content: Text(VN.eventUpdated)),
-          );
+          showTopSnackBar(context, VN.eventUpdated);
           context.pop();
         }
       } else {
@@ -112,15 +109,13 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
               loggedBy: loggedBy,
             );
         if (mounted) {
-          messenger.showSnackBar(
-            const SnackBar(content: Text(VN.eventLogged)),
-          );
+          showTopSnackBar(context, VN.eventLogged);
           context.pop();
         }
       }
     } catch (e) {
       if (mounted) {
-        messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+        showTopSnackBar(context, e.toString());
       }
     } finally {
       if (mounted) setState(() => _saving = false);

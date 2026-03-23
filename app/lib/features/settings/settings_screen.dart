@@ -65,18 +65,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _saveUrl() async {
     final url = _urlController.text.trim();
     if (url.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(VN.urlEmpty)),
-      );
+      showTopSnackBar(context, VN.urlEmpty);
       return;
     }
 
     await ref.read(apiBaseUrlProvider.notifier).setUrl(url);
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(VN.urlSaved)),
-      );
+      showTopSnackBar(context, VN.urlSaved);
     }
   }
 

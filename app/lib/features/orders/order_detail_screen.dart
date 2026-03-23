@@ -201,15 +201,11 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           .read(orderDetailProvider(order.orderRef).notifier)
           .transitionTo(targetStatus, reason: reason);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.orderStatusUpdated)),
-        );
+        showTopSnackBar(context, VN.orderStatusUpdated);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
-        );
+        showTopSnackBar(context, '${VN.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _transitioning = false);
@@ -789,15 +785,11 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
           );
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.paymentRecorded)),
-        );
+        showTopSnackBar(context, VN.paymentRecorded);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
-        );
+        showTopSnackBar(context, '${VN.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -1077,15 +1069,11 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
           );
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.paymentUpdated)),
-        );
+        showTopSnackBar(context, VN.paymentUpdated);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
-        );
+        showTopSnackBar(context, '${VN.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -1268,9 +1256,7 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
             reason: 'Tự động cập nhật theo trạng thái sản phẩm',
           );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.orderStatusUpdated)),
-        );
+        showTopSnackBar(context, VN.orderStatusUpdated);
       }
     } catch (_) {
       // Auto-derive failure is silent — order may not be in a valid state
@@ -1292,9 +1278,7 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
           .read(orderWorkItemsProvider(widget.orderRef).notifier)
           .transitionStatus(item.id, targetStatus, reason: reason);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.workItemStatusChanged)),
-        );
+        showTopSnackBar(context, VN.workItemStatusChanged);
       }
       // Auto-derive order status from updated work items
       final items =
@@ -1305,9 +1289,7 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
-        );
+        showTopSnackBar(context, '${VN.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _transitioning = false);

@@ -67,7 +67,6 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
     if (summary.isEmpty) return;
 
     setState(() => _saving = true);
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final loggedBy = ref.read(loggedByProvider);
       await ref.read(eventsProvider.notifier).logEvent(
@@ -77,14 +76,12 @@ class _EventLogFormState extends ConsumerState<EventLogForm> {
             loggedBy: loggedBy,
           );
       if (mounted) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text(VN.eventLogged)),
-        );
+        showTopSnackBar(context, VN.eventLogged);
         _reset();
       }
     } catch (e) {
       if (mounted) {
-        messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+        showTopSnackBar(context, e.toString());
       }
     } finally {
       if (mounted) setState(() => _saving = false);

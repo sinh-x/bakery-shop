@@ -422,6 +422,27 @@ const workItemValidTransitions = {
   'cancelled': <String>[],
 };
 
+/// Shows a SnackBar anchored to the top of the screen.
+void showTopSnackBar(
+  BuildContext context,
+  String message, {
+  Color? backgroundColor,
+}) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message),
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: backgroundColor,
+      margin: EdgeInsets.only(
+        top: 16,
+        left: 16,
+        right: 16,
+        bottom: MediaQuery.of(context).size.height - 100,
+      ),
+    ),
+  );
+}
+
 /// Format VND: 150000.0 → "150.000đ"
 String formatVND(double amount) {
   final formatted = amount.toInt().toString().replaceAllMapped(

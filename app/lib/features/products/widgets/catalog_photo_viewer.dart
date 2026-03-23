@@ -215,17 +215,12 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
             tags: _tagsCtrl.text.trim(),
           );
       if (mounted) {
-        final messenger = ScaffoldMessenger.of(context);
         Navigator.pop(context);
-        messenger.showSnackBar(
-          const SnackBar(content: Text(VN.catalogPhotoUpdated)),
-        );
+        showTopSnackBar(context, VN.catalogPhotoUpdated);
       }
     } on DioException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? VN.apiError)),
-        );
+        showTopSnackBar(context, e.message ?? VN.apiError);
       }
     } finally {
       if (mounted) setState(() => _saving = false);

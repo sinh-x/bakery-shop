@@ -186,12 +186,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                _isEditing ? VN.productUpdated : VN.productCreated),
-          ),
-        );
+        showTopSnackBar(context, _isEditing ? VN.productUpdated : VN.productCreated);
         context.pop();
       }
     } on DioException catch (e) {
@@ -199,9 +194,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         final detail = e.response?.data is Map
             ? e.response!.data['detail'] as String?
             : null;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(detail ?? e.message ?? VN.apiError)),
-        );
+        showTopSnackBar(context, detail ?? e.message ?? VN.apiError);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -232,16 +225,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     try {
       await ref.read(productsProvider.notifier).deleteProduct(widget.product!.id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.productDeleted)),
-        );
+        showTopSnackBar(context, VN.productDeleted);
         context.pop();
       }
     } on DioException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? VN.apiError)),
-        );
+        showTopSnackBar(context, e.message ?? VN.apiError);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -593,14 +582,11 @@ class _CatalogGallerySectionState
       }
       if (mounted) {
         final added = files.length - failed;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              failed == 0
+        showTopSnackBar(
+          context,
+          failed == 0
                   ? (added == 1 ? VN.catalogPhotoAdded : 'Đã thêm $added ảnh mẫu')
                   : 'Đã thêm $added ảnh, $failed ảnh lỗi',
-            ),
-          ),
         );
       }
     } else {
@@ -618,15 +604,11 @@ class _CatalogGallerySectionState
             .read(catalogProvider(widget.productId).notifier)
             .addPhoto(file.path);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text(VN.catalogPhotoAdded)),
-          );
+          showTopSnackBar(context, VN.catalogPhotoAdded);
         }
       } on DioException catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(e.message ?? VN.apiError)),
-          );
+          showTopSnackBar(context, e.message ?? VN.apiError);
         }
       }
     }
@@ -659,15 +641,11 @@ class _CatalogGallerySectionState
           .read(catalogProvider(widget.productId).notifier)
           .deletePhoto(photo.id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.catalogPhotoDeleted)),
-        );
+        showTopSnackBar(context, VN.catalogPhotoDeleted);
       }
     } on DioException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? VN.apiError)),
-        );
+        showTopSnackBar(context, e.message ?? VN.apiError);
       }
     }
   }
