@@ -1,0 +1,9 @@
+# Docker environment variables for bakery-shop
+#
+# Copy to .env at the project root and fill in your values.
+# Example: cp config/docker.example .env && nano .env
+
+# Tailscale domain for HTTPS — the hostname you registered with `tailscale cert`
+# Format: <your-machine-name>.<tailnet-name>.ts.net
+# Example: bakery.tail1234.ts.net
+DOMAIN=<your-hostname>.ts.net
