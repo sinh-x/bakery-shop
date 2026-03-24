@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.2+14] — 2026-03-24
+- chore: add CLAUDE.md placeholder and ignore certs/ directory
+
 ## [0.2.2+13] — 2026-03-24
 - chore: ignore web-build output directory
 

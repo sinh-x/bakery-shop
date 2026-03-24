@@ -265,13 +265,22 @@ def test_status_transition_new_to_confirmed(api_client):
 def test_status_full_flow(api_client):
     created = _create_order(api_client)
     ref = created["orderRef"]
-    for status in ["confirmed", "in_progress", "ready", "delivered", "completed"]:
+    total = created["totalPrice"]
+    for status in ["confirmed", "in_progress", "ready", "delivered"]:
         resp = api_client.post(
             f"/api/orders/{ref}/status",
             json={"status": status, "reason": "Tiến độ bình thường"},
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == status
+    # Pay full amount before completing
+    api_client.patch(f"/api/orders/{ref}/payment", json={"amountPaid": total})
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "completed", "reason": "Tiến độ bình thường"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "completed"
 
 
 def test_status_cancel(api_client):
@@ -459,3 +468,71 @@ def test_create_order_created_by_defaults_empty(api_client):
     assert resp.status_code == 201
     order = resp.json()
     assert order["createdBy"] == ""
+
+
+# --- Payment block on completion ---
+
+
+def test_complete_blocked_when_underpaid(api_client):
+    """Completing an underpaid order returns 422."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    # Advance to delivered (one step before completed)
+    for status in ["confirmed", "in_progress", "ready", "delivered"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+    # Attempt to complete without full payment
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "completed"})
+    assert resp.status_code == 422
+    assert "Chưa thanh toán đủ" in resp.json()["detail"]
+
+
+def test_complete_succeeds_when_fully_paid(api_client):
+    """Completing a fully paid order succeeds."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    total = created["totalPrice"]
+    for status in ["confirmed", "in_progress", "ready", "delivered"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+    api_client.patch(f"/api/orders/{ref}/payment", json={"amountPaid": total})
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "completed"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "completed"
+
+
+def test_complete_succeeds_when_overpaid(api_client):
+    """Completing an overpaid order is allowed."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    total = created["totalPrice"]
+    for status in ["confirmed", "in_progress", "ready", "delivered"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+    # Pay more than total
+    api_client.patch(f"/api/orders/{ref}/payment", json={"amountPaid": total + 50000})
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "completed"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "completed"
+
+
+def test_complete_free_order_no_payment_needed(api_client):
+    """An order with 0 total price can complete without payment."""
+    created = _create_order(api_client, items=[{"productName": "Miễn phí", "quantity": 1, "unitPrice": 0}])
+    ref = created["orderRef"]
+    for status in ["confirmed", "in_progress", "ready", "delivered"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "completed"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "completed"
+
+
+def test_complete_blocked_with_partial_payment(api_client):
+    """Completing with partial payment returns 422."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    total = created["totalPrice"]
+    for status in ["confirmed", "in_progress", "ready", "delivered"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+    # Pay half
+    api_client.patch(f"/api/orders/{ref}/payment", json={"amountPaid": total / 2})
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "completed"})
+    assert resp.status_code == 422
+    assert "còn thiếu" in resp.json()["detail"]

@@ -573,6 +573,8 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
               runSpacing: 8,
               children: transitions.map((t) {
                 final isCancel = t == 'cancelled';
+                final isCompletedBlocked =
+                    t == 'completed' && remaining > 0;
                 return isCancel
                     ? OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
@@ -584,7 +586,28 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                         label: Text(statusActionLabel(t)),
                       )
                     : FilledButton.icon(
-                        onPressed: () => _onTransition(t),
+                        onPressed: isCompletedBlocked
+                            ? () {
+                                ScaffoldMessenger.of(context)
+                                  ..clearSnackBars()
+                                  ..showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Chưa thanh toán đủ — còn thiếu ${formatVND(remaining)}',
+                                      ),
+                                      behavior: SnackBarBehavior.floating,
+                                      margin: const EdgeInsets.only(
+                                        bottom: 16, left: 16, right: 16,
+                                      ),
+                                    ),
+                                  );
+                              }
+                            : () => _onTransition(t),
+                        style: isCompletedBlocked
+                            ? FilledButton.styleFrom(
+                                backgroundColor: theme.disabledColor,
+                              )
+                            : null,
                         icon: Icon(_transitionIcon(t), size: 18),
                         label: Text(statusActionLabel(t)),
                       );

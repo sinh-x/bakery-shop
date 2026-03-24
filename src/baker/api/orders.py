@@ -259,6 +259,17 @@ def transition_status(ref: str, body: StatusTransition):
                 status_code=422, detail="Lý do là bắt buộc khi lùi trạng thái"
             )
 
+        # Block completion if not fully paid
+        if body.status == "completed":
+            total_paid = PaymentTransaction.total_for_order(conn, row["id"])
+            total_price = float(row["total_price"])
+            if total_paid < total_price:
+                remaining = total_price - total_paid
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu {remaining:,.0f}đ",
+                )
+
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:
             raise HTTPException(status_code=422, detail="Không thể chuyển trạng thái")
