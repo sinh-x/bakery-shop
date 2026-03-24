@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../data/api/order_service.dart';
 import '../data/api/payment_transaction_service.dart';
@@ -127,7 +126,7 @@ class OrderPhotosNotifier extends AsyncNotifier<List<OrderPhoto>> {
     });
   }
 
-  Future<OrderPhoto> upload(File file, {String tags = '', int? workItemId}) async {
+  Future<OrderPhoto> upload(XFile file, {String tags = '', int? workItemId}) async {
     final service = ref.read(orderServiceProvider);
     final photo = await service.uploadOrderPhoto(orderRef, file, tags: tags, workItemId: workItemId);
     // Append to list optimistically.
@@ -351,7 +350,7 @@ class DraftOrderItem {
   String notes;
   bool isBirthday;
   String age;
-  List<String> pendingPhotoPaths;
+  List<XFile> pendingPhotos;
   double? customUnitPrice;
 
   DraftOrderItem({
@@ -360,16 +359,16 @@ class DraftOrderItem {
     this.notes = '',
     this.isBirthday = false,
     this.age = '',
-    List<String>? pendingPhotoPaths,
+    List<XFile>? pendingPhotos,
     this.customUnitPrice,
-  }) : pendingPhotoPaths = pendingPhotoPaths ?? [];
+  }) : pendingPhotos = pendingPhotos ?? [];
 
   double get unitPrice => customUnitPrice ?? product.basePrice;
 }
 
 /// A pending photo in the order creation form.
 class DraftPendingPhoto {
-  final File file;
+  final XFile file;
   Set<String> tags;
   DraftPendingPhoto({required this.file, Set<String>? tags})
       : tags = tags ?? {};

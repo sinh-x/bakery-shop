@@ -1,0 +1,15 @@
+{$DOMAIN} {
+    tls /certs/{$DOMAIN}.crt /certs/{$DOMAIN}.key
+
+    # Reverse proxy API requests to baker backend (preserves /api/ prefix)
+    handle /api/* {
+        reverse_proxy baker-prod:2108
+    }
+
+    # Serve Flutter web app with SPA fallback
+    handle {
+        root * /srv/web
+        try_files {path} /index.html
+        file_server
+    }
+}

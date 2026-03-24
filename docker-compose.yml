@@ -21,6 +21,25 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+  caddy:
+    image: caddy:2-alpine
+    profiles: [prod]
+    ports:
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN to your .ts.net hostname}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web-build:/srv/web:ro
+      - ./certs:/certs:ro
+    depends_on:
+      - baker-prod
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
   baker-dev:
     image: baker-server
     profiles: [dev]

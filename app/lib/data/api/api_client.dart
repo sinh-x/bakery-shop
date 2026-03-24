@@ -1,7 +1,7 @@
-import 'dart:io';
-
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,7 +18,10 @@ class ApiBaseUrlNotifier extends Notifier<String> {
   @override
   String build() {
     final prefs = ref.watch(sharedPreferencesProvider);
-    final url = prefs.getString(kApiUrlKey) ?? kDefaultApiUrl;
+    // On web, default to empty string (relative URL — same origin as the web server).
+    // On mobile, default to the configured localhost URL.
+    final defaultUrl = kIsWeb ? '' : kDefaultApiUrl;
+    final url = prefs.getString(kApiUrlKey) ?? defaultUrl;
     return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
   }
 
@@ -45,18 +48,23 @@ Future<void> _loadDeviceInfo() async {
     final packageInfo = await PackageInfo.fromPlatform();
     _appVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
   } catch (_) {}
-  try {
-    final deviceInfo = DeviceInfoPlugin();
-    if (Platform.isAndroid) {
-      final android = await deviceInfo.androidInfo;
-      _deviceModel = '${android.brand} ${android.model}';
-      _osVersion = 'Android ${android.version.release}';
-    } else if (Platform.isIOS) {
-      final ios = await deviceInfo.iosInfo;
-      _deviceModel = ios.utsname.machine;
-      _osVersion = 'iOS ${ios.systemVersion}';
-    }
-  } catch (_) {}
+  if (kIsWeb) {
+    _deviceModel = 'Web Browser';
+    _osVersion = 'Web';
+  } else {
+    try {
+      final deviceInfo = DeviceInfoPlugin();
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        final android = await deviceInfo.androidInfo;
+        _deviceModel = '${android.brand} ${android.model}';
+        _osVersion = 'Android ${android.version.release}';
+      } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+        final ios = await deviceInfo.iosInfo;
+        _deviceModel = ios.utsname.machine;
+        _osVersion = 'iOS ${ios.systemVersion}';
+      }
+    } catch (_) {}
+  }
   _deviceInfoLoaded = true;
 }
 

@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../models/order.dart';
 import '../models/order_photo.dart';
@@ -118,12 +117,13 @@ class OrderService {
 
   Future<OrderPhoto> uploadOrderPhoto(
     String orderRef,
-    File file, {
+    XFile file, {
     String tags = '',
     int? workItemId,
   }) async {
+    final bytes = await file.readAsBytes();
     final map = <String, dynamic>{
-      'file': await MultipartFile.fromFile(file.path),
+      'file': MultipartFile.fromBytes(bytes, filename: file.name),
       'tags': tags,
     };
     if (workItemId != null) map['workItemId'] = workItemId.toString();

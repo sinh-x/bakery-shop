@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -194,7 +192,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       );
 
       // Upload per-item photos (F6: order-level photos removed from creation)
-      final hasPerItemPhotos = _items.any((i) => i.pendingPhotoPaths.isNotEmpty);
+      final hasPerItemPhotos = _items.any((i) => i.pendingPhotos.isNotEmpty);
       if (hasPerItemPhotos) {
         final workItemSvc = ref.read(workItemServiceProvider);
         final workItems = await workItemSvc.listWorkItems(newOrder.orderRef);
@@ -204,21 +202,21 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         int failedPhotos = 0;
         for (var idx = 0; idx < _items.length; idx++) {
           final draftItem = _items[idx];
-          if (draftItem.pendingPhotoPaths.isEmpty) continue;
+          if (draftItem.pendingPhotos.isEmpty) continue;
           final workItemId = idx < workItems.length
               ? int.tryParse(workItems[idx].id)
               : null;
-          for (final path in draftItem.pendingPhotoPaths) {
+          for (final xfile in draftItem.pendingPhotos) {
             totalPhotos++;
             try {
               await service.uploadOrderPhoto(
                 newOrder.orderRef,
-                File(path),
+                xfile,
                 workItemId: workItemId,
               );
             } catch (e) {
               failedPhotos++;
-              debugPrint('Photo upload failed ($path): $e');
+              debugPrint('Photo upload failed (${xfile.path}): $e');
             }
           }
         }
