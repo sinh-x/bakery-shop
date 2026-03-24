@@ -9,6 +9,7 @@ import '../../data/api/order_service.dart';
 import '../../data/api/payment_transaction_service.dart';
 import '../../data/api/work_item_service.dart';
 import '../../providers/config_provider.dart';
+import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/expandable_item_card.dart';
@@ -298,6 +299,31 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               error: (e, st) => const SizedBox.shrink(),
             ),
             const SizedBox(height: 12),
+
+            // ── Người tạo (auto-filled from settings) ─────────────────
+            Builder(builder: (context) {
+              final staffName = ref.watch(loggedByProvider);
+              if (staffName.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    const Icon(Icons.person, size: 16, color: Colors.grey),
+                    const SizedBox(width: 6),
+                    Text('${VN.createdBy}: ',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: Colors.grey)),
+                    Text(staffName,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(fontWeight: FontWeight.w500)),
+                  ],
+                ),
+              );
+            }),
 
             // ── Customer ──────────────────────────────────────────────
             _SectionHeader(VN.customer),
