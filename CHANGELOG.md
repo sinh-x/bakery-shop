@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.2+11] — 2026-03-24
+- fix: read VERSION dynamically from package metadata
+
 ## [0.2.2+10] — 2026-03-24
 - chore: update CHANGELOG and pubspec.lock for v0.2.2+9
 
