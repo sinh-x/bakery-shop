@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
+import '../../data/models/order.dart';
 import '../../data/models/work_item.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
@@ -22,6 +23,16 @@ const _workItemStatusRank = {
   'ready': 2,
   'delivered': 3,
   'cancelled': 4,
+};
+
+const _orderStatusRank = {
+  'new': 0,
+  'confirmed': 1,
+  'in_progress': 2,
+  'ready': 3,
+  'delivered': 4,
+  'completed': 5,
+  'cancelled': 5,
 };
 
 bool _isBackwardItem(String current, String target) =>
@@ -94,6 +105,7 @@ class CakeDetailScreen extends ConsumerStatefulWidget {
 class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
   bool _transitioning = false;
   bool _saving = false;
+  bool _syncing = false;
 
   Future<void> _onTransition(WorkItem item, String targetStatus) async {
     if (_transitioning) return;
@@ -110,6 +122,44 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
           .transitionStatus(item.id, targetStatus, reason: reason);
       if (mounted) {
         showTopSnackBar(context, VN.workItemStatusChanged);
+      }
+      // Auto-sync order status for single-item orders
+      final items =
+          ref.read(orderWorkItemsProvider(widget.orderRef)).value ?? [];
+      if (items.length == 1 && !_syncing) {
+        _syncing = true;
+        try {
+          const workItemToOrder = {
+            'pending': 'new',
+            'working': 'in_progress',
+            'ready': 'ready',
+            'delivered': 'delivered',
+            'cancelled': 'cancelled',
+          };
+          final mappedStatus = workItemToOrder[targetStatus];
+          if (mappedStatus != null) {
+            final currentOrderStatus =
+                ref.read(orderDetailProvider(widget.orderRef)).value?.status;
+            if (currentOrderStatus != null && mappedStatus != currentOrderStatus) {
+              final isBackward =
+                  (_orderStatusRank[mappedStatus] ?? 0) <
+                  (_orderStatusRank[currentOrderStatus] ?? 0);
+              final syncReason = (isBackward || mappedStatus == 'cancelled')
+                  ? 'Tự động đồng bộ theo trạng thái sản phẩm'
+                  : '';
+              await ref
+                  .read(orderDetailProvider(widget.orderRef).notifier)
+                  .transitionTo(mappedStatus, reason: syncReason);
+              if (mounted) {
+                showTopSnackBar(context, VN.autoSyncOrderStatus);
+              }
+            }
+          }
+        } catch (_) {
+          // Auto-sync failure is silent
+        } finally {
+          _syncing = false;
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -307,9 +357,7 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
     final theme = Theme.of(context);
     final statusColor = _workItemStatusColors[widget.item.status] ?? Colors.grey;
     final statusLabel = workItemStatusLabel(widget.item.status);
-    final validTransitions =
-        workItemValidTransitions[widget.item.status] ?? <String>[];
-    final allStatuses = <String>[widget.item.status, ...validTransitions];
+    const allStatuses = ['pending', 'working', 'ready', 'delivered'];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),

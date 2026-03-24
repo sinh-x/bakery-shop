@@ -232,9 +232,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         final mappedStatus = orderToWorkItem[targetStatus];
         if (mappedStatus != null) {
           final item = items.first;
-          final allowedTransitions =
-              workItemValidTransitions[item.status] ?? [];
-          if (allowedTransitions.contains(mappedStatus)) {
+          if (mappedStatus != item.status) {
             final syncReason =
                 (_isBackward(item.status, mappedStatus, _workItemStatusRank) ||
                         mappedStatus == 'cancelled')
@@ -306,7 +304,14 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     final theme = Theme.of(context);
     final statusColor = _statusColors[order.status] ?? Colors.grey;
     final statusLabel = statusMap[order.status] ?? order.status;
-    final transitions = validTransitions[order.status] ?? [];
+    final forwardTransitions = validTransitions[order.status] ?? [];
+    // Backward transitions: all statuses with lower rank than current
+    final currentRank = _orderStatusRank[order.status] ?? 0;
+    final backwardTransitions = _orderStatusRank.entries
+        .where((e) => e.value < currentRank && e.key != order.status)
+        .map((e) => e.key)
+        .toList();
+    final transitions = [...forwardTransitions, ...backwardTransitions];
 
     final txnsAsync =
         ref.watch(orderPaymentTransactionsProvider(order.orderRef));
@@ -573,44 +578,57 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
               runSpacing: 8,
               children: transitions.map((t) {
                 final isCancel = t == 'cancelled';
+                final isBackwardBtn = backwardTransitions.contains(t);
                 final isCompletedBlocked =
                     t == 'completed' && remaining > 0;
-                return isCancel
-                    ? OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: theme.colorScheme.error,
-                          side: BorderSide(color: theme.colorScheme.error),
-                        ),
-                        onPressed: () => _onTransition(t),
-                        icon: const Icon(Icons.cancel_outlined, size: 18),
-                        label: Text(statusActionLabel(t)),
-                      )
-                    : FilledButton.icon(
-                        onPressed: isCompletedBlocked
-                            ? () {
-                                ScaffoldMessenger.of(context)
-                                  ..clearSnackBars()
-                                  ..showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Chưa thanh toán đủ — còn thiếu ${formatVND(remaining)}',
-                                      ),
-                                      behavior: SnackBarBehavior.floating,
-                                      margin: const EdgeInsets.only(
-                                        bottom: 16, left: 16, right: 16,
-                                      ),
-                                    ),
-                                  );
-                              }
-                            : () => _onTransition(t),
-                        style: isCompletedBlocked
-                            ? FilledButton.styleFrom(
-                                backgroundColor: theme.disabledColor,
-                              )
-                            : null,
-                        icon: Icon(_transitionIcon(t), size: 18),
-                        label: Text(statusActionLabel(t)),
-                      );
+                if (isCancel) {
+                  return OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: theme.colorScheme.error,
+                      side: BorderSide(color: theme.colorScheme.error),
+                    ),
+                    onPressed: () => _onTransition(t),
+                    icon: const Icon(Icons.cancel_outlined, size: 18),
+                    label: Text(statusActionLabel(t)),
+                  );
+                }
+                if (isBackwardBtn) {
+                  return OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.orange.shade700,
+                      side: BorderSide(color: Colors.orange.shade300),
+                    ),
+                    onPressed: () => _onTransition(t),
+                    icon: const Icon(Icons.undo, size: 18),
+                    label: Text(statusActionLabel(t)),
+                  );
+                }
+                return FilledButton.icon(
+                  onPressed: isCompletedBlocked
+                      ? () {
+                          ScaffoldMessenger.of(context)
+                            ..clearSnackBars()
+                            ..showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Chưa thanh toán đủ — còn thiếu ${formatVND(remaining)}',
+                                ),
+                                behavior: SnackBarBehavior.floating,
+                                margin: const EdgeInsets.only(
+                                  bottom: 16, left: 16, right: 16,
+                                ),
+                              ),
+                            );
+                        }
+                      : () => _onTransition(t),
+                  style: isCompletedBlocked
+                      ? FilledButton.styleFrom(
+                          backgroundColor: theme.disabledColor,
+                        )
+                      : null,
+                  icon: Icon(_transitionIcon(t), size: 18),
+                  label: Text(statusActionLabel(t)),
+                );
               }).toList(),
             ),
         ],
@@ -1271,10 +1289,24 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
 
   String? _deriveOrderStatus(List<WorkItem> items) {
     if (items.isEmpty) return null;
-    if (items.every((i) => i.status == 'delivered')) return 'delivered';
-    if (items.every((i) => i.status == 'ready')) return 'ready';
-    if (items.any((i) => i.status == 'working')) return 'in_progress';
-    return null;
+    // Exclude cancelled items from min calculation
+    final active = items.where((i) => i.status != 'cancelled').toList();
+    if (active.isEmpty) return 'cancelled';
+    // Find minimum rank work item status
+    final minRank = active
+        .map((i) => _workItemStatusRank[i.status] ?? 0)
+        .reduce((a, b) => a < b ? a : b);
+    // Map back to order status via the minimum work item status
+    const workItemToOrder = {
+      'pending': 'new',
+      'working': 'in_progress',
+      'ready': 'ready',
+      'delivered': 'delivered',
+    };
+    final minWiStatus = active.firstWhere(
+      (i) => (_workItemStatusRank[i.status] ?? 0) == minRank,
+    ).status;
+    return workItemToOrder[minWiStatus];
   }
 
   Future<void> _applyAutoUpdateOrderStatus(
@@ -1284,8 +1316,6 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
     final currentStatus =
         ref.read(orderDetailProvider(widget.orderRef)).value?.status ??
             widget.order.status;
-    final transitions = validTransitions[currentStatus] ?? [];
-    if (!transitions.contains(suggestedStatus)) return;
     if (currentStatus == suggestedStatus) return;
 
     final statusLabel = statusMap[suggestedStatus] ?? suggestedStatus;
@@ -1317,11 +1347,16 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
     }
 
     try {
+      final syncReason =
+          (_isBackward(currentStatus, suggestedStatus, _orderStatusRank) ||
+                  suggestedStatus == 'cancelled')
+              ? 'Tự động cập nhật theo trạng thái sản phẩm'
+              : '';
       await ref
           .read(orderDetailProvider(widget.orderRef).notifier)
           .transitionTo(
             suggestedStatus,
-            reason: 'Tự động cập nhật theo trạng thái sản phẩm',
+            reason: syncReason,
           );
       if (mounted) {
         showTopSnackBar(context, VN.orderStatusUpdated);
@@ -1366,8 +1401,7 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
             final currentOrderStatus =
                 ref.read(orderDetailProvider(widget.orderRef)).value?.status ??
                     widget.order.status;
-            final allowedTransitions = validTransitions[currentOrderStatus] ?? [];
-            if (allowedTransitions.contains(mappedStatus)) {
+            if (mappedStatus != currentOrderStatus) {
               final syncReason =
                   (_isBackward(currentOrderStatus, mappedStatus,
                               _orderStatusRank) ||
