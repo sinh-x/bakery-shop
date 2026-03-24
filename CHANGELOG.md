@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.2+13] — 2026-03-24
+- chore: ignore web-build output directory
+
 ## [0.2.2+12] — 2026-03-24
 - feat(settings): DG-019 — staff picker, version display, auto-fill created_by, settings accessible from all screens
 
