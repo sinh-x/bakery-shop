@@ -430,6 +430,32 @@ def test_order_creation_creates_work_items_with_birthday(api_client):
     assert work_items[1]["age"] is None
 
 
+def test_patch_work_item_syncs_order_items_json(api_client):
+    """PATCH work item must regenerate orders.items JSON and recalculate total_price."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref, unitPrice=200000.0, quantity=1)
+    item_id = item["id"]
+
+    # Patch quantity and price
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}",
+        json={"quantity": 2, "unitPrice": 250000.0},
+    )
+    assert resp.status_code == 200
+
+    # GET order and verify items JSON and total_price are synced
+    order_resp = api_client.get(f"/api/orders/{ref}")
+    assert order_resp.status_code == 200
+    order_data = order_resp.json()
+
+    assert len(order_data["items"]) == 1
+    synced_item = order_data["items"][0]
+    assert synced_item["quantity"] == 2
+    assert synced_item["unitPrice"] == 250000.0
+    assert order_data["totalPrice"] == 500000.0
+
+
 def test_migration_v12_order_items_created(api_client):
     """Order created via old-style items JSON is accessible via work items endpoint."""
     from baker.db.connection import get_db

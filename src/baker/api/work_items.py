@@ -1,5 +1,6 @@
 """Work item API routes — per-order production tasks."""
 
+import json
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -50,6 +51,29 @@ class WorkItemUpdate(BaseModel):
 class WorkItemStatusTransition(BaseModel):
     status: str
     reason: str
+
+
+def _sync_order_items_json(conn, order_id: int) -> None:
+    """Regenerate orders.items JSON from order_items table and recalculate total_price."""
+    rows = conn.execute(
+        "SELECT product_name, quantity, unit_price, notes, product_id FROM order_items WHERE order_id = ?",
+        (order_id,),
+    ).fetchall()
+    items_json = json.dumps([
+        {
+            "product": r["product_name"],
+            "qty": r["quantity"],
+            "price": r["unit_price"],
+            "notes": r["notes"] or "",
+            "product_id": r["product_id"] or "",
+        }
+        for r in rows
+    ])
+    total_price = sum(r["quantity"] * r["unit_price"] for r in rows)
+    conn.execute(
+        "UPDATE orders SET items = ?, total_price = ? WHERE id = ?",
+        (items_json, total_price, order_id),
+    )
 
 
 def _resolve_order_id(conn, ref: str) -> int:
@@ -136,6 +160,7 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
             params,
         )
         updated = conn.execute("SELECT * FROM order_items WHERE id = ?", (item_id,)).fetchone()
+        _sync_order_items_json(conn, order_id)
         return WorkItem.from_row(updated).to_api_dict()
 
 
