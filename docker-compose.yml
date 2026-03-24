@@ -28,8 +28,8 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./prod/web:/srv/web:ro
-      - ./prod/certs:/certs:ro
+      - ./web-build:/srv/web:ro
+      - ./certs:/certs:ro
     depends_on:
       - baker-prod
     restart: unless-stopped
