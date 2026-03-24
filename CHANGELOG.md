@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.2+10] — 2026-03-24
+- chore: update CHANGELOG and pubspec.lock for v0.2.2+9
+
 ## [0.2.2+9] — 2026-03-24
 - feat(logging): DG-018 — server logging system + deploy.sh --debug flag
 

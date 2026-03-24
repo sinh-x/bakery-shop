@@ -6,7 +6,7 @@ from baker.db.schema import ensure_schema
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="baker")
+@click.version_option(version=baker.config.VERSION, prog_name="baker")
 @click.option(
     "--config", "config_file",
     default=None,

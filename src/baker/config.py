@@ -4,7 +4,11 @@ from pathlib import Path
 import yaml
 
 APP_NAME = "baker"
-VERSION = "0.1.0"
+try:
+    from importlib.metadata import version as _get_version
+    VERSION = _get_version("baker")
+except Exception:
+    VERSION = "0.0.0"
 
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "doangia" / "bakery" / "baker.yaml"
 
