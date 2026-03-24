@@ -27,6 +27,7 @@ const _workItemStatusColors = {
   'working': Colors.orange,
   'ready': Colors.green,
   'delivered': Colors.teal,
+  'cancelled': Colors.red,
 };
 
 const _orderStatusRank = {
@@ -44,6 +45,7 @@ const _workItemStatusRank = {
   'working': 1,
   'ready': 2,
   'delivered': 3,
+  'cancelled': 4,
 };
 
 bool _isBackward(String current, String target, Map<String, int> ranks) =>
