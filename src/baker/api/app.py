@@ -15,6 +15,7 @@ from baker.api.orders import router as orders_router
 from baker.api.payment_transactions import router as payment_transactions_router
 from baker.api.photos import router as photos_router
 from baker.api.products import router as products_router
+from baker.api.staff import router as staff_router
 from baker.api.work_items import router as work_items_router
 from baker.config import VERSION
 from baker.logging import setup_logging
@@ -60,5 +61,6 @@ def create_app() -> FastAPI:
     app.include_router(work_items_router)
     app.include_router(payment_transactions_router)
     app.include_router(cake_queue_router)
+    app.include_router(staff_router)
 
     return app

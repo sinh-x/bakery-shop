@@ -488,6 +488,28 @@ CREATE TABLE IF NOT EXISTS log_triggers (
 );
 """
 
+SEED_STAFF = [
+    # (name, role)
+    ("An", "staff"),
+    ("Ngan", "staff"),
+    ("Phuong", "staff"),
+    ("Sinh", "owner"),
+    ("Tan", "staff"),
+]
+
+
+def _migrate_v16_staff_and_created_by(conn):
+    """Seed 5 staff members and add created_by column to orders."""
+    for name, role in SEED_STAFF:
+        conn.execute(
+            "INSERT OR IGNORE INTO staff (name, role) VALUES (?, ?)",
+            (name, role),
+        )
+    conn.execute(
+        "ALTER TABLE orders ADD COLUMN created_by TEXT DEFAULT ''"
+    )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -556,6 +578,11 @@ MIGRATIONS = {
     15: {
         "description": "Server logs and log triggers tables for API logging system",
         "sql": SERVER_LOGS_AND_TRIGGERS_SCHEMA,
+    },
+    16: {
+        "description": "Seed staff table (5 members) and add created_by column to orders",
+        "sql": "",
+        "callable": _migrate_v16_staff_and_created_by,
     },
 }
 
