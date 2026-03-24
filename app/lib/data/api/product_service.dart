@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../models/product.dart';
 import 'api_client.dart';
@@ -82,9 +83,10 @@ class ProductService {
     await _dio.delete('/api/products/$id');
   }
 
-  Future<String> uploadPhoto(int id, String filePath) async {
+  Future<String> uploadPhoto(int id, XFile file) async {
+    final bytes = await file.readAsBytes();
     final formData = FormData.fromMap({
-      'file': await MultipartFile.fromFile(filePath),
+      'file': MultipartFile.fromBytes(bytes, filename: file.name),
     });
     final response =
         await _dio.post('/api/products/$id/photo', data: formData);

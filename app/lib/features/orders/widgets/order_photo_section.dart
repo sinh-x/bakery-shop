@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -95,7 +93,7 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
       for (final xfile in files) {
         await ref
             .read(orderPhotosProvider(widget.orderRef).notifier)
-            .upload(File(xfile.path), workItemId: widget.workItemId);
+            .upload(xfile, workItemId: widget.workItemId);
       }
       if (mounted) {
         showTopSnackBar(context, VN.orderPhotoAdded);

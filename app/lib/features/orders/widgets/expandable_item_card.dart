@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -56,7 +56,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
     if (files.isEmpty || !mounted) return;
     setState(() {
       for (final f in files) {
-        widget.item.pendingPhotoPaths.add(f.path);
+        widget.item.pendingPhotos.add(f);
       }
     });
     widget.onStateChanged();
@@ -196,33 +196,47 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     const SizedBox(height: 8),
                   ],
                   // Per-item photo thumbnails
-                  if (widget.item.pendingPhotoPaths.isNotEmpty) ...[
+                  if (widget.item.pendingPhotos.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     SizedBox(
                       height: 80,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
-                        itemCount: widget.item.pendingPhotoPaths.length,
+                        itemCount: widget.item.pendingPhotos.length,
                         separatorBuilder: (_, _) => const SizedBox(width: 6),
                         itemBuilder: (ctx, idx) {
-                          final path = widget.item.pendingPhotoPaths[idx];
+                          final xfile = widget.item.pendingPhotos[idx];
                           return Stack(
                             children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: Image.file(
-                                  File(path),
-                                  width: 70,
-                                  height: 70,
-                                  fit: BoxFit.cover,
-                                ),
+                              FutureBuilder<Uint8List>(
+                                future: xfile.readAsBytes(),
+                                builder: (ctx, snap) {
+                                  if (!snap.hasData) {
+                                    return ClipRRect(
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: const SizedBox(
+                                        width: 70,
+                                        height: 70,
+                                      ),
+                                    );
+                                  }
+                                  return ClipRRect(
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: Image.memory(
+                                      snap.data!,
+                                      width: 70,
+                                      height: 70,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  );
+                                },
                               ),
                               Positioned(
                                 top: 2,
                                 left: 2,
                                 child: GestureDetector(
                                   onTap: () => setState(() {
-                                    widget.item.pendingPhotoPaths.removeAt(idx);
+                                    widget.item.pendingPhotos.removeAt(idx);
                                   }),
                                   child: Container(
                                     padding: const EdgeInsets.all(2),

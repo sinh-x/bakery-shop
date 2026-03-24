@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../models/catalog_photo.dart';
 import 'api_client.dart';
@@ -19,12 +20,13 @@ class CatalogService {
 
   Future<CatalogPhoto> uploadCatalogPhoto(
     int productId,
-    String filePath, {
+    XFile file, {
     String caption = '',
     String tags = '',
   }) async {
+    final bytes = await file.readAsBytes();
     final formData = FormData.fromMap({
-      'file': await MultipartFile.fromFile(filePath),
+      'file': MultipartFile.fromBytes(bytes, filename: file.name),
       'caption': caption,
       'tags': tags,
     });

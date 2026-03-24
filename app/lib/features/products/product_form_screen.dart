@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -38,7 +38,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late final TextEditingController _notesCtrl;
   late final TextEditingController _codeCtrl;
   late String _category;
-  String? _pickedPhotoPath;
+  XFile? _pickedPhoto;
   String _photoCacheBuster = '';
   bool _saving = false;
 
@@ -104,7 +104,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final picker = ImagePicker();
     final file = await picker.pickImage(source: source);
     if (file != null) {
-      setState(() => _pickedPhotoPath = file.path);
+      setState(() => _pickedPhoto = file);
     }
   }
 
@@ -143,7 +143,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             cost != orig.cost ||
             newNotes != orig.recipeNotes ||
             newCode != orig.productCode ||
-            _pickedPhotoPath != null;
+            _pickedPhoto != null;
         if (!hasChanges) {
           if (mounted) context.pop();
           return;
@@ -178,8 +178,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         );
       }
 
-      if (_pickedPhotoPath != null) {
-        await notifier.uploadPhoto(saved.id, _pickedPhotoPath!);
+      if (_pickedPhoto != null) {
+        await notifier.uploadPhoto(saved.id, _pickedPhoto!);
         // Clear image cache so updated photo shows immediately
         PaintingBinding.instance.imageCache.clear();
         PaintingBinding.instance.imageCache.clearLiveImages();
@@ -273,7 +273,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             // Photo section
             _PhotoSection(
               productId: widget.product?.id,
-              pickedPhotoPath: _pickedPhotoPath,
+              pickedPhoto: _pickedPhoto,
               baseUrl: baseUrl,
               onPickPhoto: _pickPhoto,
               cacheBuster: _photoCacheBuster.isNotEmpty ? _photoCacheBuster : null,
@@ -421,14 +421,14 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 class _PhotoSection extends StatelessWidget {
   const _PhotoSection({
     required this.productId,
-    required this.pickedPhotoPath,
+    required this.pickedPhoto,
     required this.baseUrl,
     required this.onPickPhoto,
     this.cacheBuster,
   });
 
   final int? productId;
-  final String? pickedPhotoPath;
+  final XFile? pickedPhoto;
   final String baseUrl;
   final VoidCallback onPickPhoto;
   final String? cacheBuster;
@@ -453,17 +453,23 @@ class _PhotoSection extends StatelessWidget {
 
   Widget _buildContent() {
     // Show picked photo (not yet uploaded)
-    if (pickedPhotoPath != null) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.file(
-            File(pickedPhotoPath!),
-            fit: BoxFit.cover,
-            errorBuilder: (_, e, s) => _placeholder(),
-          ),
-          _overlayButton(),
-        ],
+    if (pickedPhoto != null) {
+      return FutureBuilder<Uint8List>(
+        future: pickedPhoto!.readAsBytes(),
+        builder: (ctx, snap) {
+          if (!snap.hasData) return _placeholder();
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.memory(
+                snap.data!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, e, s) => _placeholder(),
+              ),
+              _overlayButton(),
+            ],
+          );
+        },
       );
     }
 
@@ -572,7 +578,7 @@ class _CatalogGallerySectionState
         try {
           await ref
               .read(catalogProvider(widget.productId).notifier)
-              .addPhoto(file.path);
+              .addPhoto(file);
           if (mounted) setState(() => _uploadDone++);
         } on DioException {
           failed++;
@@ -602,7 +608,7 @@ class _CatalogGallerySectionState
       try {
         await ref
             .read(catalogProvider(widget.productId).notifier)
-            .addPhoto(file.path);
+            .addPhoto(file);
         if (mounted) {
           showTopSnackBar(context, VN.catalogPhotoAdded);
         }

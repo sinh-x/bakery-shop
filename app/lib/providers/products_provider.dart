@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../data/api/product_service.dart';
 import '../data/models/product.dart';
@@ -71,9 +72,9 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
     await refresh();
   }
 
-  Future<String> uploadPhoto(int id, String filePath) async {
+  Future<String> uploadPhoto(int id, XFile file) async {
     final service = ref.read(productServiceProvider);
-    final photoPath = await service.uploadPhoto(id, filePath);
+    final photoPath = await service.uploadPhoto(id, file);
     await refresh();
     return photoPath;
   }
