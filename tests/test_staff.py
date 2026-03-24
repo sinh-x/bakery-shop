@@ -6,10 +6,10 @@ runner = CliRunner()
 
 
 def test_staff_add():
-    result = runner.invoke(app, ["staff", "add", "Ân", "--role", "baker", "--role", "cashier"])
+    result = runner.invoke(app, ["staff", "add", "Hương", "--role", "baker", "--role", "cashier"])
     assert result.exit_code == 0
     assert "Added" in result.output
-    assert "Ân" in result.output
+    assert "Hương" in result.output
     assert "tho-nuong" in result.output and "thu-ngan" in result.output
 
 

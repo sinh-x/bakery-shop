@@ -24,7 +24,16 @@ class DashboardScreen extends ConsumerWidget {
     final ordersAsync = ref.watch(dashboardOrdersProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text(VN.tabDashboard)),
+      appBar: AppBar(
+        title: const Text(VN.tabDashboard),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: VN.settings,
+            onPressed: () => context.push('/settings'),
+          ),
+        ],
+      ),
       body: ordersAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(

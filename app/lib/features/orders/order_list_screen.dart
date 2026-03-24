@@ -140,6 +140,13 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text(VN.tabOrders),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: VN.settings,
+            onPressed: () => context.push('/settings'),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [

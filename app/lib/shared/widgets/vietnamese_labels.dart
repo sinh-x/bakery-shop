@@ -202,6 +202,20 @@ class VN {
   static const urlEmpty = 'Vui lòng nhập địa chỉ';
   static const testing = 'Đang kiểm tra...';
 
+  // Settings — staff picker
+  static const generalSettings = 'Cài đặt chung';
+  static const technicalSettings = 'Kỹ thuật';
+  static const staffPicker = 'Nhân viên';
+  static const staffPickerHint = 'Chọn nhân viên';
+  static const staffNameManual = 'Tên nhân viên (thủ công)';
+  static const staffNameHint = 'Nhập tên của bạn';
+  static const staffSaved = 'Đã lưu tên nhân viên';
+  static const appVersion = 'Phiên bản ứng dụng';
+  static const serverVersion = 'Phiên bản máy chủ';
+  static const serverVersionLoading = 'Đang tải...';
+  static const serverVersionError = 'Không thể kết nối';
+  static const createdBy = 'Người tạo';
+
   // Delivery types (detailed)
   static const deliveryBus = 'Giao xe khách';
   static const deliveryDoor = 'Giao tận nơi';

@@ -11,7 +11,16 @@ class EventListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text(VN.tabEvents)),
+      appBar: AppBar(
+        title: const Text(VN.tabEvents),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: VN.settings,
+            onPressed: () => context.push('/settings'),
+          ),
+        ],
+      ),
       body: const Padding(
         padding: EdgeInsets.symmetric(horizontal: 16),
         child: EventHistoryList(),
