@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.2+9] — 2026-03-24
+- feat(logging): DG-018 — server logging system + deploy.sh --debug flag
+
 ## [0.2.2+8] — 2026-03-19
 - docs: update CHANGELOG for v0.2.2+7 deploy script
 
