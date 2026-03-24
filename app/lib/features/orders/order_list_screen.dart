@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
@@ -10,10 +11,10 @@ import 'cake_queue_screen.dart';
 
 // Group filter definitions for order list
 const _groupFilters = [
-  (id: 'all', label: 'Tất cả'),
-  (id: 'working', label: 'Đang làm'),
+  (id: 'working', label: 'Cần làm'),
   (id: 'ready', label: 'Sẵn sàng'),
   (id: 'done', label: 'Xong'),
+  (id: 'all', label: 'Tất cả'),
 ];
 
 const _statusColors = {
@@ -36,7 +37,7 @@ class OrderListScreen extends ConsumerStatefulWidget {
 class _OrderListScreenState extends ConsumerState<OrderListScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  String _groupFilter = 'all';
+  String _groupFilter = 'working';
   String _searchQuery = '';
   final _searchController = TextEditingController();
 
@@ -102,14 +103,17 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
             .where((o) =>
                 o.status == 'new' ||
                 o.status == 'confirmed' ||
-                o.status == 'in_progress')
+                o.status == 'in_progress' ||
+                o.status == 'ready')
             .toList();
       case 'ready':
-        return orders.where((o) => o.status == 'ready').toList();
+        return orders
+            .where(
+                (o) => o.status == 'ready' || o.status == 'delivered')
+            .toList();
       case 'done':
         return orders
             .where((o) =>
-                o.status == 'delivered' ||
                 o.status == 'completed' ||
                 o.status == 'cancelled')
             .toList();
@@ -130,6 +134,46 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
               o.customerPhone.contains(q),
         )
         .toList();
+  }
+
+  /// Groups orders by due date, returning a mixed list of String headers and Order items.
+  /// Orders without a due date are placed first under "Chưa có ngày".
+  List<Object> _groupByDueDate(List<Order> orders) {
+    final noDue = <Order>[];
+    final byDate = <String, List<Order>>{};
+    final dateFormat = DateFormat('dd/MM/yyyy');
+
+    for (final o in orders) {
+      if (o.dueDate == null || o.dueDate!.isEmpty) {
+        noDue.add(o);
+      } else {
+        byDate.putIfAbsent(o.dueDate!, () => []).add(o);
+      }
+    }
+
+    // Sort date keys chronologically
+    final sortedDates = byDate.keys.toList()..sort();
+
+    final result = <Object>[];
+
+    // "Chưa có ngày" group at top
+    if (noDue.isNotEmpty) {
+      result.add('Chưa có ngày');
+      result.addAll(noDue);
+    }
+
+    for (final dateStr in sortedDates) {
+      // Format YYYY-MM-DD to dd/MM/yyyy for display
+      try {
+        final parsed = DateTime.parse(dateStr);
+        result.add(dateFormat.format(parsed));
+      } catch (_) {
+        result.add(dateStr);
+      }
+      result.addAll(byDate[dateStr]!);
+    }
+
+    return result;
   }
 
   @override
@@ -242,23 +286,31 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                     if (filtered.isEmpty) {
                       return Center(
                         child: Text(
-                          _searchQuery.isNotEmpty || _groupFilter != 'all'
+                          _searchQuery.isNotEmpty || _groupFilter != 'working'
                               ? 'Không có đơn hàng phù hợp'
-                              : 'Chưa có đơn hàng',
+                              : 'Không có đơn cần làm',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       );
                     }
+                    final grouped = _groupByDueDate(filtered);
                     return RefreshIndicator(
                       onRefresh: _onRefresh,
                       child: ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                        itemCount: filtered.length,
-                        itemBuilder: (context, index) => _OrderCard(
-                          order: filtered[index],
-                          onTap: () => context
-                              .push('/orders/${filtered[index].orderRef}'),
-                        ),
+                        itemCount: grouped.length,
+                        itemBuilder: (context, index) {
+                          final item = grouped[index];
+                          if (item is String) {
+                            return _DateHeader(label: item);
+                          }
+                          final order = item as Order;
+                          return _OrderCard(
+                            order: order,
+                            onTap: () =>
+                                context.push('/orders/${order.orderRef}'),
+                          );
+                        },
                       ),
                     );
                   },
@@ -273,6 +325,26 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
           // ── Tab 2: Delivery ────────────────────────────────────────
           const DeliveryContent(),
         ],
+      ),
+    );
+  }
+}
+
+class _DateHeader extends StatelessWidget {
+  const _DateHeader({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 4),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.primary,
+            ),
       ),
     );
   }
