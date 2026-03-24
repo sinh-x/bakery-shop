@@ -227,6 +227,8 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     state = AsyncData(
       current.map((i) => i.id == itemId ? updated : i).toList(),
     );
+    // Refresh order detail so Sản phẩm section and total_price reflect the change.
+    ref.read(orderDetailProvider(orderRef).notifier).refresh();
     return updated;
   }
 
