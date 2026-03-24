@@ -106,7 +106,6 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final notifier = ref.read(categoriesProvider.notifier);
       if (_isEditing) {
@@ -126,16 +125,12 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
       }
       if (mounted) {
         Navigator.of(context).pop();
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(_isEditing ? VN.categoryUpdated : VN.categoryCreated),
-          ),
-        );
+        showTopSnackBar(context, _isEditing ? VN.categoryUpdated : VN.categoryCreated);
       }
     } catch (e) {
       setState(() => _saving = false);
       if (mounted) {
-        messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+        showTopSnackBar(context, e.toString());
       }
     }
   }

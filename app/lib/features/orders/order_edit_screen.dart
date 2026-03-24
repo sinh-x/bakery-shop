@@ -135,16 +135,12 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             deliveryType: _deliveryType,
           );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.orderEditSaved)),
-        );
+        showTopSnackBar(context, VN.orderEditSaved);
         context.pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
-        );
+        showTopSnackBar(context, '${VN.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -524,9 +520,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
             .remove(widget.item.id);
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${VN.apiError}: $e')),
-          );
+          showTopSnackBar(context, '${VN.apiError}: $e');
         }
       }
     }

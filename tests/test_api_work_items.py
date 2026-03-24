@@ -285,6 +285,99 @@ def test_work_item_status_not_found(api_client):
     assert resp.status_code == 404
 
 
+# --- Cancelled status ---
+
+
+def test_cancel_work_item_from_pending(api_client):
+    """Transitioning from pending to cancelled succeeds (no reason required — forward transition)."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref)
+    item_id = item["id"]
+    resp = api_client.post(
+        f"/api/orders/{ref}/items/{item_id}/status",
+        json={"status": "cancelled", "reason": ""},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "cancelled"
+
+
+def test_cancel_work_item_from_working(api_client):
+    """Transitioning from working to cancelled succeeds."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref)
+    item_id = item["id"]
+    api_client.post(f"/api/orders/{ref}/items/{item_id}/status", json={"status": "working", "reason": ""})
+    resp = api_client.post(
+        f"/api/orders/{ref}/items/{item_id}/status",
+        json={"status": "cancelled", "reason": ""},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "cancelled"
+
+
+def test_cancel_work_item_from_ready(api_client):
+    """Transitioning from ready to cancelled succeeds."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref)
+    item_id = item["id"]
+    for status in ["working", "ready"]:
+        api_client.post(f"/api/orders/{ref}/items/{item_id}/status", json={"status": status, "reason": ""})
+    resp = api_client.post(
+        f"/api/orders/{ref}/items/{item_id}/status",
+        json={"status": "cancelled", "reason": ""},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "cancelled"
+
+
+def test_cancel_work_item_from_delivered(api_client):
+    """Transitioning from delivered to cancelled succeeds."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref)
+    item_id = item["id"]
+    for status in ["working", "ready", "delivered"]:
+        api_client.post(f"/api/orders/{ref}/items/{item_id}/status", json={"status": status, "reason": ""})
+    resp = api_client.post(
+        f"/api/orders/{ref}/items/{item_id}/status",
+        json={"status": "cancelled", "reason": ""},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "cancelled"
+
+
+def test_cancelled_is_terminal(api_client):
+    """Cannot transition FROM cancelled to any other status — cancelled is terminal."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref)
+    item_id = item["id"]
+    api_client.post(f"/api/orders/{ref}/items/{item_id}/status", json={"status": "cancelled", "reason": ""})
+    for target in ["pending", "working", "ready", "delivered"]:
+        resp = api_client.post(
+            f"/api/orders/{ref}/items/{item_id}/status",
+            json={"status": target, "reason": "Thử lại"},
+        )
+        assert resp.status_code == 422, f"Expected 422 transitioning from cancelled to {target}"
+
+
+def test_cancelled_is_valid_status_value(api_client):
+    """The API accepts 'cancelled' as a valid work item status string (not rejected as invalid)."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref)
+    item_id = item["id"]
+    resp = api_client.post(
+        f"/api/orders/{ref}/items/{item_id}/status",
+        json={"status": "cancelled", "reason": ""},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "cancelled"
+
+
 # --- Migration: order_items table populated from orders.items JSON ---
 
 

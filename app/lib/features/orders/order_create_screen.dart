@@ -156,9 +156,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng chọn ít nhất một sản phẩm')),
-      );
+      showTopSnackBar(context, 'Vui lòng chọn ít nhất một sản phẩm');
       return;
     }
 
@@ -222,13 +220,10 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
           }
         }
         if (failedPhotos > 0 && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Tải lên ảnh: ${totalPhotos - failedPhotos}/$totalPhotos thành công, $failedPhotos lỗi',
-              ),
-            ),
-          );
+          showTopSnackBar(
+          context,
+          'Tải lên ảnh: ${totalPhotos - failedPhotos}/$totalPhotos thành công, $failedPhotos lỗi',
+        );
         }
       }
 
@@ -253,16 +248,12 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       if (mounted) {
         _submitted = true;
         ref.read(orderDraftProvider.notifier).clear();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.orderCreated)),
-        );
+        showTopSnackBar(context, VN.orderCreated);
         context.pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
-        );
+        showTopSnackBar(context, '${VN.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _submitting = false);

@@ -13,6 +13,7 @@ const _workItemStatusColors = {
   'working': Colors.orange,
   'ready': Colors.green,
   'delivered': Colors.teal,
+  'cancelled': Colors.red,
 };
 
 const _workItemStatusRank = {
@@ -20,6 +21,7 @@ const _workItemStatusRank = {
   'working': 1,
   'ready': 2,
   'delivered': 3,
+  'cancelled': 4,
 };
 
 bool _isBackwardItem(String current, String target) =>
@@ -30,12 +32,13 @@ Future<String?> _showItemReasonDialog(
   String targetStatus,
 ) async {
   final ctrl = TextEditingController();
+  final isCancel = targetStatus == 'cancelled';
   try {
     return await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
-          title: const Text(VN.statusReasonTitle),
+          title: Text(isCancel ? VN.cancelOrderTitle : VN.statusReasonTitle),
           content: TextField(
             controller: ctrl,
             decoration: const InputDecoration(
@@ -53,10 +56,17 @@ Future<String?> _showItemReasonDialog(
               child: const Text(VN.cancel),
             ),
             FilledButton(
+              style: isCancel
+                  ? FilledButton.styleFrom(
+                      backgroundColor: Theme.of(ctx).colorScheme.error,
+                    )
+                  : null,
               onPressed: ctrl.text.trim().isEmpty
                   ? null
                   : () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text(VN.confirmStatusChange),
+              child: Text(
+                isCancel ? VN.confirmCancelAction : VN.confirmStatusChange,
+              ),
             ),
           ],
         ),
@@ -88,7 +98,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
   Future<void> _onTransition(WorkItem item, String targetStatus) async {
     if (_transitioning) return;
     String reason = '';
-    if (_isBackwardItem(item.status, targetStatus)) {
+    if (_isBackwardItem(item.status, targetStatus) || targetStatus == 'cancelled') {
       final r = await _showItemReasonDialog(context, targetStatus);
       if (r == null || !mounted) return;
       reason = r;
@@ -99,15 +109,11 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
           .read(orderWorkItemsProvider(widget.orderRef).notifier)
           .transitionStatus(item.id, targetStatus, reason: reason);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.workItemStatusChanged)),
-        );
+        showTopSnackBar(context, VN.workItemStatusChanged);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
-        );
+        showTopSnackBar(context, '${VN.apiError}: $e');
       }
     } finally {
       if (mounted) setState(() => _transitioning = false);
@@ -133,15 +139,11 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
             unitPrice: unitPrice,
           );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.orderEditSaved)),
-        );
+        showTopSnackBar(context, VN.orderEditSaved);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${VN.apiError}: $e')),
-        );
+        showTopSnackBar(context, '${VN.apiError}: $e');
         rethrow;
       }
     } finally {
@@ -305,7 +307,9 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
     final theme = Theme.of(context);
     final statusColor = _workItemStatusColors[widget.item.status] ?? Colors.grey;
     final statusLabel = workItemStatusLabel(widget.item.status);
-    const allStatuses = ['pending', 'working', 'ready', 'delivered'];
+    final validTransitions =
+        workItemValidTransitions[widget.item.status] ?? <String>[];
+    final allStatuses = <String>[widget.item.status, ...validTransitions];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),

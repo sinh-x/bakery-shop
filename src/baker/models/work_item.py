@@ -8,6 +8,7 @@ class WorkItemStatus(str, Enum):
     WORKING = "working"
     READY = "ready"
     DELIVERED = "delivered"
+    CANCELLED = "cancelled"
 
 
 @dataclass

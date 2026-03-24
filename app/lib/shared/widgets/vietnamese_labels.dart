@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 class VN {
   // Navigation
   static const appName = 'Đoàn Gia - Bánh Kem';
@@ -271,6 +273,7 @@ class VN {
   static const workItemWorking = 'Đang làm';
   static const workItemReady = 'Sẵn sàng';
   static const workItemDelivered = 'Đã giao';
+  static const workItemCancelled = 'Đã hủy';
 
   // Work items section
   static const workItemsSection = 'Chi tiết sản xuất';
@@ -281,6 +284,8 @@ class VN {
   static const statusReasonHint = 'Nhập lý do...';
   static const confirmStatusChange = 'Xác nhận';
   static const autoUpdateOrderTitle = 'Cập nhật đơn hàng';
+  static const autoSyncWorkItemStatus = 'Đã đồng bộ trạng thái sản phẩm';
+  static const autoSyncOrderStatus = 'Đã đồng bộ trạng thái đơn hàng';
 
   // Cake queue & cake detail
   static const cakeQueue = 'Làm bánh';
@@ -395,10 +400,50 @@ const workItemStatusMap = {
   'working': VN.workItemWorking,
   'ready': VN.workItemReady,
   'delivered': VN.workItemDelivered,
+  'cancelled': VN.workItemCancelled,
 };
 
 String workItemStatusLabel(String status) =>
     workItemStatusMap[status] ?? status;
+
+// Work item status colors
+const workItemStatusColors = {
+  'pending': Colors.grey,
+  'working': Colors.orange,
+  'ready': Colors.green,
+  'delivered': Colors.teal,
+  'cancelled': Colors.red,
+};
+
+// Valid work item transitions
+const workItemValidTransitions = {
+  'pending': ['working', 'cancelled'],
+  'working': ['ready', 'cancelled'],
+  'ready': ['delivered', 'cancelled'],
+  'delivered': ['cancelled'],
+  'cancelled': <String>[],
+};
+
+/// Shows a SnackBar anchored to the top of the screen.
+void showTopSnackBar(
+  BuildContext context,
+  String message, {
+  Color? backgroundColor,
+}) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message),
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: backgroundColor,
+      margin: EdgeInsets.only(
+        top: 16,
+        left: 16,
+        right: 16,
+        bottom: MediaQuery.of(context).size.height - 100,
+      ),
+    ),
+  );
+}
 
 /// Format VND: 150000.0 → "150.000đ"
 String formatVND(double amount) {
