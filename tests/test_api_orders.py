@@ -536,3 +536,87 @@ def test_complete_blocked_with_partial_payment(api_client):
     resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "completed"})
     assert resp.status_code == 422
     assert "còn thiếu" in resp.json()["detail"]
+
+
+# --- Bidirectional sync scenarios (DG-022) ---
+# These tests verify the backend supports all transitions that client-side
+# auto-sync will attempt. Sync is client-side Flutter logic; these ensure
+# the API allows the required transitions.
+
+
+def test_sync_order_backward_ready_to_in_progress(api_client):
+    """Backend supports order backward: ready → in_progress (with reason)."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    for status in ["confirmed", "in_progress", "ready"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "in_progress", "reason": "Tự động đồng bộ theo trạng thái sản phẩm"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "in_progress"
+
+
+def test_sync_order_non_adjacent_forward(api_client):
+    """Backend supports non-adjacent forward: new → in_progress."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "in_progress"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "in_progress"
+
+
+def test_sync_work_item_backward_ready_to_working(api_client):
+    """Backend supports WI backward: ready → working (with reason)."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    # Order has items from creation — get the work item
+    wi_resp = api_client.get(f"/api/orders/{ref}/items")
+    items = wi_resp.json()
+    assert len(items) >= 1
+    item_id = items[0]["id"]
+    # Forward: pending → working → ready
+    api_client.post(f"/api/orders/{ref}/items/{item_id}/status", json={"status": "working"})
+    api_client.post(f"/api/orders/{ref}/items/{item_id}/status", json={"status": "ready"})
+    # Backward: ready → working
+    resp = api_client.post(
+        f"/api/orders/{ref}/items/{item_id}/status",
+        json={"status": "working", "reason": "Tự động đồng bộ theo trạng thái đơn hàng"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "working"
+
+
+def test_sync_work_item_non_adjacent_forward(api_client):
+    """Backend supports WI non-adjacent forward: pending → ready."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    wi_resp = api_client.get(f"/api/orders/{ref}/items")
+    items = wi_resp.json()
+    assert len(items) >= 1
+    item_id = items[0]["id"]
+    # Non-adjacent: pending → ready (forward, no reason needed)
+    resp = api_client.post(
+        f"/api/orders/{ref}/items/{item_id}/status",
+        json={"status": "ready", "reason": ""},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ready"
+
+
+def test_sync_order_backward_auto_reason_required(api_client):
+    """Auto-sync backward transition requires a non-empty reason."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    for status in ["confirmed", "in_progress", "ready"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+    # Backward without reason → rejected
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "in_progress", "reason": ""},
+    )
+    assert resp.status_code == 422
