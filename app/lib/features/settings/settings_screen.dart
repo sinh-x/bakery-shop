@@ -15,7 +15,10 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
   // Server URL section
   late TextEditingController _urlController;
   bool _testing = false;
@@ -31,6 +34,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _urlController = TextEditingController();
     _manualNameCtrl = TextEditingController();
     _loadAppVersion();
@@ -48,6 +52,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   void dispose() {
+    _tabController.dispose();
     _urlController.dispose();
     _manualNameCtrl.dispose();
     super.dispose();
@@ -164,128 +169,156 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text(VN.settings)),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      appBar: AppBar(
+        title: const Text(VN.settings),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(icon: Icon(Icons.person), text: VN.generalSettings),
+            Tab(icon: Icon(Icons.settings), text: VN.technicalSettings),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          // ── Cài đặt chung ──────────────────────────────────────────
-          _SectionTitle(VN.generalSettings),
-          const SizedBox(height: 8),
-          Text(VN.staffPicker, style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
-
-          // Staff picker: dropdown if loaded, fallback text field on error
-          staffAsync.when(
-            data: (staffList) => staffList.isEmpty
-                ? _ManualNameField(
-                    controller: _manualNameCtrl,
-                    onSave: _saveManualName,
-                  )
-                : _StaffDropdown(
-                    staffList: staffList.map((s) => s.name).toList(),
-                    selected: currentStaff.isNotEmpty ? currentStaff : null,
-                    onSelected: _selectStaff,
-                  ),
-            loading: () => const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: CircularProgressIndicator(),
-              ),
-            ),
-            error: (_, _) => _ManualNameField(
-              controller: _manualNameCtrl,
-              onSave: _saveManualName,
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // ── Kỹ thuật ───────────────────────────────────────────────
-          _SectionTitle(VN.technicalSettings),
-          const SizedBox(height: 8),
-
-          // App version
-          _InfoRow(label: VN.appVersion, value: _appVersion.isEmpty ? '...' : _appVersion),
-          const SizedBox(height: 8),
-
-          // Server version
-          _InfoRow(label: VN.serverVersion, value: _serverVersion),
-          const SizedBox(height: 16),
-
-          // Server URL
-          Text(VN.apiUrlLabel, style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 4),
-          Text(
-            VN.apiUrlHelp,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _urlController,
-            decoration: const InputDecoration(
-              hintText: VN.apiUrlHint,
-              prefixIcon: Icon(Icons.dns),
-              border: OutlineInputBorder(),
-            ),
-            keyboardType: TextInputType.url,
-            autocorrect: false,
-            onChanged: (_) {
-              if (_testResult != null) setState(() => _testResult = null);
-            },
-          ),
-          const SizedBox(height: 16),
-          Row(
+          // ── Tab 1: Cài đặt chung ─────────────────────────────────
+          ListView(
+            padding: const EdgeInsets.all(16),
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _testing ? null : _testConnection,
-                  icon: _testing
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.wifi_find),
-                  label: Text(_testing ? VN.testing : VN.testConnection),
+              Text(VN.staffPicker,
+                  style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+
+              // Staff picker: dropdown if loaded, fallback text field on error
+              staffAsync.when(
+                data: (staffList) => staffList.isEmpty
+                    ? _ManualNameField(
+                        controller: _manualNameCtrl,
+                        onSave: _saveManualName,
+                      )
+                    : _StaffDropdown(
+                        staffList: staffList.map((s) => s.name).toList(),
+                        selected:
+                            currentStaff.isNotEmpty ? currentStaff : null,
+                        onSelected: _selectStaff,
+                      ),
+                loading: () => const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: CircularProgressIndicator(),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _saveUrl,
-                  icon: const Icon(Icons.save),
-                  label: const Text(VN.save),
+                error: (_, _) => _ManualNameField(
+                  controller: _manualNameCtrl,
+                  onSave: _saveManualName,
                 ),
               ),
             ],
           ),
-          if (_testResult != null) ...[
-            const SizedBox(height: 16),
-            Card(
-              color: _testResult!.success ? Colors.green.shade50 : Colors.red.shade50,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Icon(
-                      _testResult!.success ? Icons.check_circle : Icons.error,
-                      color: _testResult!.success ? Colors.green : Colors.red,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      _testResult!.success ? VN.connectionSuccess : VN.connectionFailed,
-                      style: TextStyle(
-                        color: _testResult!.success
-                            ? Colors.green.shade800
-                            : Colors.red.shade800,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+
+          // ── Tab 2: Kỹ thuật ──────────────────────────────────────
+          ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              // App version
+              _InfoRow(
+                  label: VN.appVersion,
+                  value: _appVersion.isEmpty ? '...' : _appVersion),
+              const SizedBox(height: 8),
+
+              // Server version
+              _InfoRow(label: VN.serverVersion, value: _serverVersion),
+              const SizedBox(height: 16),
+
+              // Server URL
+              Text(VN.apiUrlLabel,
+                  style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              Text(
+                VN.apiUrlHelp,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.grey),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: _urlController,
+                decoration: const InputDecoration(
+                  hintText: VN.apiUrlHint,
+                  prefixIcon: Icon(Icons.dns),
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                onChanged: (_) {
+                  if (_testResult != null) setState(() => _testResult = null);
+                },
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _testing ? null : _testConnection,
+                      icon: _testing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.wifi_find),
+                      label: Text(_testing ? VN.testing : VN.testConnection),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _saveUrl,
+                      icon: const Icon(Icons.save),
+                      label: const Text(VN.save),
+                    ),
+                  ),
+                ],
+              ),
+              if (_testResult != null) ...[
+                const SizedBox(height: 16),
+                Card(
+                  color: _testResult!.success
+                      ? Colors.green.shade50
+                      : Colors.red.shade50,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _testResult!.success
+                              ? Icons.check_circle
+                              : Icons.error,
+                          color: _testResult!.success
+                              ? Colors.green
+                              : Colors.red,
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          _testResult!.success
+                              ? VN.connectionSuccess
+                              : VN.connectionFailed,
+                          style: TextStyle(
+                            color: _testResult!.success
+                                ? Colors.green.shade800
+                                : Colors.red.shade800,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ],
       ),
     );
@@ -293,22 +326,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 }
 
 // ── Helper widgets ────────────────────────────────────────────────────────────
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.title);
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: Theme.of(context).colorScheme.primary,
-            fontWeight: FontWeight.bold,
-          ),
-    );
-  }
-}
 
 class _InfoRow extends StatelessWidget {
   const _InfoRow({required this.label, required this.value});

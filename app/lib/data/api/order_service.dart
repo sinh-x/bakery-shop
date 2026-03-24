@@ -44,6 +44,7 @@ class OrderService {
     String deliveryAddress = '',
     String notes = '',
     String? source,
+    String createdBy = '',
   }) async {
     final body = <String, dynamic>{
       'customerName': customerName,
@@ -56,6 +57,7 @@ class OrderService {
     if (dueDate != null) body['dueDate'] = dueDate;
     if (dueTime != null) body['dueTime'] = dueTime;
     if (source != null && source.isNotEmpty) body['source'] = source;
+    if (createdBy.isNotEmpty) body['createdBy'] = createdBy;
 
     final response = await _dio.post('/api/orders', data: body);
     return Order.fromJson(response.data as Map<String, dynamic>);

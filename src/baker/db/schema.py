@@ -490,11 +490,11 @@ CREATE TABLE IF NOT EXISTS log_triggers (
 
 SEED_STAFF = [
     # (name, role)
-    ("An", "staff"),
-    ("Ngan", "staff"),
-    ("Phuong", "staff"),
+    ("Ân", "staff"),
+    ("Ngân", "staff"),
+    ("Phượng", "staff"),
     ("Sinh", "owner"),
-    ("Tan", "staff"),
+    ("Tân", "staff"),
 ]
 
 
@@ -508,6 +508,21 @@ def _migrate_v16_staff_and_created_by(conn):
     conn.execute(
         "ALTER TABLE orders ADD COLUMN created_by TEXT DEFAULT ''"
     )
+
+
+def _migrate_v17_fix_staff_names(conn):
+    """Fix staff names to use proper Vietnamese diacritics."""
+    fixes = [
+        ("An", "Ân"),
+        ("Ngan", "Ngân"),
+        ("Phuong", "Phượng"),
+        ("Tan", "Tân"),
+    ]
+    for old_name, new_name in fixes:
+        conn.execute(
+            "UPDATE staff SET name = ? WHERE name = ?",
+            (new_name, old_name),
+        )
 
 
 MIGRATIONS = {
@@ -583,6 +598,11 @@ MIGRATIONS = {
         "description": "Seed staff table (5 members) and add created_by column to orders",
         "sql": "",
         "callable": _migrate_v16_staff_and_created_by,
+    },
+    17: {
+        "description": "Fix staff names to use Vietnamese diacritics",
+        "sql": "",
+        "callable": _migrate_v17_fix_staff_names,
     },
 }
 

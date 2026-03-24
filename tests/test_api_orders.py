@@ -442,3 +442,20 @@ def test_create_order_item_preserves_product_id(api_client):
     resp = api_client.post("/api/orders", json={"customerName": "Test", "items": items})
     assert resp.status_code == 201
     assert resp.json()["items"][0]["productId"] == "BKS-16"
+
+
+def test_create_order_with_created_by(api_client):
+    resp = api_client.post("/api/orders", json={
+        "customerName": "Test Created By",
+        "createdBy": "Ngân",
+    })
+    assert resp.status_code == 201
+    order = resp.json()
+    assert order["createdBy"] == "Ngân"
+
+
+def test_create_order_created_by_defaults_empty(api_client):
+    resp = api_client.post("/api/orders", json={"customerName": "Test Default"})
+    assert resp.status_code == 201
+    order = resp.json()
+    assert order["createdBy"] == ""

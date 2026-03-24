@@ -165,6 +165,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     try {
       final service = ref.read(orderServiceProvider);
 
+      final staffName = ref.read(loggedByProvider);
       final newOrder = await service.createOrder(
         customerName: _nameCtrl.text.trim(),
         customerPhone: _phoneCtrl.text.trim(),
@@ -189,6 +190,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         deliveryAddress: _addressCtrl.text.trim(),
         notes: _notesCtrl.text.trim(),
         source: _source.isEmpty ? null : _source, // F1
+        createdBy: staffName,
       );
 
       // Upload per-item photos (F6: order-level photos removed from creation)

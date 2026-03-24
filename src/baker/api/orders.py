@@ -42,6 +42,7 @@ class OrderCreate(BaseModel):
     notes: str = ""
     source: str = ""
     deposit: Optional[DepositIn] = None
+    createdBy: str = ""
 
 
 class OrderEdit(BaseModel):
@@ -139,6 +140,7 @@ def create_order(body: OrderCreate, request: Request):
             delivery_address=body.deliveryAddress,
             notes=body.notes,
             source=body.source,
+            created_by=body.createdBy,
         )
         order.calculate_total()
         order.save(conn)
