@@ -1,6 +1,7 @@
 """Unified photo API — hash-based flat storage."""
 
 import hashlib
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile
@@ -8,6 +9,8 @@ from fastapi.responses import FileResponse
 
 import baker.config
 from baker.db.connection import get_db
+
+logger = logging.getLogger("baker.server")
 
 
 router = APIRouter(prefix="/api/photos", tags=["photos"])
@@ -62,6 +65,7 @@ async def upload_photo(file: UploadFile):
     try:
         hash_hex = save_photo(data, file.filename or "")
     except Exception:
+        logger.exception("Photo upload failed for file: %s", file.filename)
         raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
 
     return {"hash": hash_hex, "url": f"/api/photos/{hash_hex}.jpg"}

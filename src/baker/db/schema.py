@@ -452,6 +452,42 @@ def _migrate_v12_data(conn):
             )
 
 
+SERVER_LOGS_AND_TRIGGERS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS server_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000', 'now', 'localtime')),
+    level       TEXT NOT NULL DEFAULT 'INFO',
+    method      TEXT DEFAULT '',
+    path        TEXT DEFAULT '',
+    status_code INTEGER DEFAULT 0,
+    duration_ms REAL DEFAULT 0,
+    client_ip   TEXT DEFAULT '',
+    device_model TEXT DEFAULT '',
+    app_version TEXT DEFAULT '',
+    os_version  TEXT DEFAULT '',
+    ref_type    TEXT DEFAULT '',
+    ref_id      INTEGER DEFAULT NULL,
+    message     TEXT DEFAULT '',
+    detail      TEXT DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_server_logs_timestamp ON server_logs(timestamp);
+CREATE INDEX IF NOT EXISTS idx_server_logs_level ON server_logs(level);
+CREATE INDEX IF NOT EXISTS idx_server_logs_path ON server_logs(path);
+CREATE INDEX IF NOT EXISTS idx_server_logs_ref ON server_logs(ref_type, ref_id);
+
+CREATE TABLE IF NOT EXISTS log_triggers (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    condition   TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    active      INTEGER DEFAULT 1,
+    cooldown_seconds INTEGER DEFAULT 300,
+    last_fired  TEXT DEFAULT NULL,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+"""
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -516,6 +552,10 @@ MIGRATIONS = {
         "description": "app_config table for general config (order sources etc), source column on orders",
         "sql": APP_CONFIG_AND_ORDER_SOURCE_SCHEMA,
         "callable": _migrate_v14_seed_order_sources,
+    },
+    15: {
+        "description": "Server logs and log triggers tables for API logging system",
+        "sql": SERVER_LOGS_AND_TRIGGERS_SCHEMA,
     },
 }
 

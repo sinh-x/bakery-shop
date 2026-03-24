@@ -1,5 +1,6 @@
 """Order photo API routes — decoration references and chat screenshots."""
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile
@@ -7,6 +8,8 @@ from pydantic import BaseModel
 
 from baker.api.photos import save_photo
 from baker.db.connection import get_db
+
+logger = logging.getLogger("baker.server")
 
 
 router = APIRouter(prefix="/api/orders", tags=["order-photos"])
@@ -79,6 +82,7 @@ async def upload_order_photo(
     try:
         hash_hex = save_photo(data, file.filename or "")
     except Exception:
+        logger.exception("Order photo upload failed for order %s, file: %s", ref, file.filename)
         raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
 
     with get_db() as conn:

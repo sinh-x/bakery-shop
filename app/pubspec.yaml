@@ -1,7 +1,7 @@
 name: bakery_app
 description: "Bakery management mobile app for Tiệm Bánh Ninh Diêm"
 publish_to: 'none'
-version: 0.2.2+8
+version: 0.2.2+9
 
 environment:
   sdk: ^3.11.0
@@ -29,6 +29,10 @@ dependencies:
 
   # Image picker
   image_picker: ^1.1.2
+
+  # Device info
+  device_info_plus: ^11.0.0
+  package_info_plus: ^8.0.0
 
   # Utilities
   uuid: ^4.5.1

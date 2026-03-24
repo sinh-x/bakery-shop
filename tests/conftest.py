@@ -15,6 +15,8 @@ def use_memory_db(tmp_path, monkeypatch):
     baker.config.DB_PATH = Path(db_path)
     baker.config.DATA_DIR = tmp_path
     baker.config.PHOTOS_DIR = photos_dir
+    baker.config.LOG_DIR = tmp_path / "logs"
+    baker.config.LOG_LEVEL = "INFO"
     yield db_path
 
 

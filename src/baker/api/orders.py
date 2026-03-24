@@ -3,10 +3,11 @@
 import json
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from baker.db.connection import get_db
+from baker.logging import log_context
 from baker.models.order import Order, OrderItem, is_backward_transition, validate_transition
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
@@ -125,7 +126,7 @@ def list_orders(
 
 
 @router.post("", status_code=201)
-def create_order(body: OrderCreate):
+def create_order(body: OrderCreate, request: Request):
     """Tạo đơn hàng mới."""
     with get_db() as conn:
         order = Order(
@@ -166,6 +167,7 @@ def create_order(body: OrderCreate):
             )
             txn.save(conn)
 
+        log_context(request, ref_type="order", ref_id=order.id)
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
         return _order_detail(conn, row)
 
