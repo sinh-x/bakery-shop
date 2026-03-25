@@ -137,3 +137,36 @@ final dailyChecklistProvider =
     AsyncNotifierProvider<DailyChecklistNotifier, DailyChecklistState>(
   DailyChecklistNotifier.new,
 );
+
+// ── Checklist history provider ─────────────────────────────────────────────
+
+class ChecklistHistoryNotifier
+    extends AsyncNotifier<List<Map<String, dynamic>>> {
+  @override
+  Future<List<Map<String, dynamic>>> build() async {
+    // default: last 7 days
+    final to = DateTime.now();
+    final from = to.subtract(const Duration(days: 6));
+    final service = ref.read(checklistServiceProvider);
+    return service.getHistory(
+      fromDate: _fmt(from),
+      toDate: _fmt(to),
+    );
+  }
+
+  Future<void> fetchRange(DateTime from, DateTime to) async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() {
+      final service = ref.read(checklistServiceProvider);
+      return service.getHistory(fromDate: _fmt(from), toDate: _fmt(to));
+    });
+  }
+
+  String _fmt(DateTime dt) =>
+      '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+}
+
+final checklistHistoryProvider =
+    AsyncNotifierProvider<ChecklistHistoryNotifier, List<Map<String, dynamic>>>(
+  ChecklistHistoryNotifier.new,
+);

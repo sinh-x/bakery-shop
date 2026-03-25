@@ -60,6 +60,11 @@ class _ChecklistScreenState extends ConsumerState<ChecklistScreen>
         title: const Text('Checklist hàng ngày'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'Lịch sử',
+            onPressed: () => context.push('/checklist/history'),
+          ),
+          IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Cấu hình',
             onPressed: () => context.push('/checklist/config'),

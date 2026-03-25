@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/models/event.dart';
 import '../../features/categories/category_management_screen.dart';
 import '../../features/checklist/checklist_config_screen.dart';
+import '../../features/checklist/checklist_history_screen.dart';
 import '../../features/checklist/checklist_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/events/event_detail_screen.dart';
@@ -69,6 +70,12 @@ final appRouter = GoRouter(
       path: '/checklist/config',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const ChecklistConfigScreen(),
+    ),
+    // Checklist history — full-screen (outside shell)
+    GoRoute(
+      path: '/checklist/history',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const ChecklistHistoryScreen(),
     ),
     // Order create — full-screen (outside shell)
     GoRoute(
