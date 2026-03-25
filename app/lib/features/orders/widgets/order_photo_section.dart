@@ -221,7 +221,11 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
           data: (allPhotos) {
             final photos = widget.orderLevelOnly
                 ? allPhotos.where((p) => p.workItemId == null).toList()
-                : allPhotos;
+                : widget.workItemId != null
+                    ? allPhotos
+                        .where((p) => p.workItemId == widget.workItemId)
+                        .toList()
+                    : allPhotos;
             if (photos.isEmpty) {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),

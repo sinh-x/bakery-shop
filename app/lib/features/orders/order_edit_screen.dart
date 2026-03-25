@@ -6,8 +6,10 @@ import 'package:intl/intl.dart';
 import '../../data/api/api_client.dart';
 import '../../data/models/order.dart';
 import '../../data/models/work_item.dart';
+import '../../providers/config_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+import 'widgets/hour_picker.dart';
 import 'widgets/order_photo_section.dart';
 import 'widgets/product_picker_page.dart';
 
@@ -22,10 +24,12 @@ class OrderEditScreen extends ConsumerStatefulWidget {
 
 class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _nameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
 
+  String _source = '';
   DateTime? _dueDate;
   TimeOfDay? _dueTime;
   String _deliveryType = 'pickup';
@@ -36,6 +40,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
   @override
   void dispose() {
+    _nameCtrl.dispose();
     _phoneCtrl.dispose();
     _addressCtrl.dispose();
     _notesCtrl.dispose();
@@ -45,9 +50,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   void _initFrom(Order order) {
     if (_initialized) return;
     _initialized = true;
+    _nameCtrl.text = order.customerName;
     _phoneCtrl.text = order.customerPhone;
     _addressCtrl.text = order.deliveryAddress;
     _notesCtrl.text = order.notes;
+    _source = order.source;
     _deliveryType = order.deliveryType;
     if (order.dueDate != null) {
       try {
@@ -87,12 +94,15 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     if (picked != null) setState(() => _dueDate = picked);
   }
 
+  // F5: Hour picker (replaces showTimePicker)
   Future<void> _pickTime() async {
-    final picked = await showTimePicker(
+    final picked = await showDialog<int>(
       context: context,
-      initialTime: _dueTime ?? TimeOfDay.now(),
+      builder: (ctx) => HourPickerDialog(initialHour: _dueTime?.hour ?? 8),
     );
-    if (picked != null) setState(() => _dueTime = picked);
+    if (picked != null) {
+      setState(() => _dueTime = TimeOfDay(hour: picked, minute: 0));
+    }
   }
 
   Future<void> _openProductPicker() async {
@@ -133,6 +143,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             deliveryAddress:
                 _needsAddress ? _addressCtrl.text.trim() : '',
             deliveryType: _deliveryType,
+            source: _source.isEmpty ? null : _source,
+            customerName: _nameCtrl.text.trim(),
           );
       if (mounted) {
         showTopSnackBar(context, VN.orderEditSaved);
@@ -149,8 +161,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final orderAsync = ref.watch(orderDetailProvider(widget.orderRef));
+    final sourcesAsync = ref.watch(orderSourcesProvider); // F1
 
     return Scaffold(
       appBar: AppBar(
@@ -178,27 +190,48 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               children: [
+                // ── Source (F1) ───────────────────────────────────────
+                _SectionHeader(VN.orderSource),
+                sourcesAsync.when(
+                  data: (sources) => Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: sources
+                        .map((s) => ChoiceChip(
+                              label: Text(s),
+                              selected: _source == s,
+                              onSelected: (_) => setState(() {
+                                final wasSelected = _source == s;
+                                _source = wasSelected ? '' : s;
+                                if (!wasSelected &&
+                                    s == 'Tại Tiệm' &&
+                                    _nameCtrl.text.isEmpty) {
+                                  _nameCtrl.text = 'Khách Vãng Lai';
+                                } else if (wasSelected &&
+                                    s == 'Tại Tiệm' &&
+                                    _nameCtrl.text == 'Khách Vãng Lai') {
+                                  _nameCtrl.text = '';
+                                }
+                              }),
+                            ))
+                        .toList(),
+                  ),
+                  loading: () => const SizedBox.shrink(),
+                  error: (e, st) => const SizedBox.shrink(),
+                ),
+                const SizedBox(height: 12),
+
                 // ── Customer info ─────────────────────────────────────
                 _SectionHeader(VN.customer),
-                // Show customer name as read-only (not editable in this form)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
-                    borderRadius: BorderRadius.circular(4),
+                TextFormField(
+                  controller: _nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: VN.customerName,
+                    border: OutlineInputBorder(),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.person_outline,
-                          size: 16, color: theme.colorScheme.outline),
-                      const SizedBox(width: 8),
-                      Text(
-                        order.customerName,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ],
-                  ),
+                  textCapitalization: TextCapitalization.words,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
@@ -245,6 +278,12 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 8),
+                // F5: preset time chips
+                HourPresetChips(
+                  selectedTime: _dueTime,
+                  onSelected: (t) => setState(() => _dueTime = t),
                 ),
                 const SizedBox(height: 20),
 
@@ -308,10 +347,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // ── Photos ────────────────────────────────────────────
+                // ── Order-level photos ────────────────────────────────
                 OrderPhotoSection(
                   orderRef: widget.orderRef,
                   baseUrl: ref.watch(apiBaseUrlProvider),
+                  orderLevelOnly: true,
                 ),
                 const SizedBox(height: 24),
 
@@ -477,6 +517,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
     double? unitPrice,
     bool? isBirthday,
     int? age,
+    int? quantity,
   }) async {
     if (!mounted) return;
     try {
@@ -486,7 +527,8 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
               notes: notes,
               unitPrice: unitPrice,
               isBirthday: isBirthday,
-              age: age);
+              age: age,
+              quantity: quantity);
     } catch (_) {}
   }
 
@@ -530,6 +572,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final item = widget.item;
+    final workItemId = int.tryParse(item.id);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -557,11 +600,30 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                     ],
                   ),
                 ),
-                Text(
-                  'x${item.quantity}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.outline,
+                // Quantity +/- controls
+                IconButton(
+                  icon: const Icon(Icons.remove, size: 18),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
                   ),
+                  onPressed: item.quantity > 1
+                      ? () => _editItem(quantity: item.quantity - 1)
+                      : null,
+                ),
+                Text(
+                  '${item.quantity}',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add, size: 18),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  onPressed: () => _editItem(quantity: item.quantity + 1),
                 ),
                 IconButton(
                   icon: Icon(
@@ -637,6 +699,15 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                       keyboardType: TextInputType.number,
                     ),
                     const SizedBox(height: 8),
+                  ],
+                  // Per-item photos
+                  if (workItemId != null) ...[
+                    const SizedBox(height: 8),
+                    OrderPhotoSection(
+                      orderRef: widget.orderRef,
+                      baseUrl: ref.watch(apiBaseUrlProvider),
+                      workItemId: workItemId,
+                    ),
                   ],
                 ],
               ),

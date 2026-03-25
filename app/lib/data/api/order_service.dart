@@ -71,6 +71,7 @@ class OrderService {
     String? deliveryType,
     String? deliveryAddress,
     String? notes,
+    String? source,
   }) async {
     final body = <String, dynamic>{};
     if (customerName != null) body['customerName'] = customerName;
@@ -80,6 +81,7 @@ class OrderService {
     if (deliveryType != null) body['deliveryType'] = deliveryType;
     if (deliveryAddress != null) body['deliveryAddress'] = deliveryAddress;
     if (notes != null) body['notes'] = notes;
+    if (source != null) body['source'] = source;
 
     final response = await _dio.patch('/api/orders/$ref', data: body);
     return Order.fromJson(response.data as Map<String, dynamic>);

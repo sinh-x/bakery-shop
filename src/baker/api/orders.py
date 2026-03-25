@@ -54,6 +54,7 @@ class OrderEdit(BaseModel):
     deliveryType: Optional[str] = None
     deliveryAddress: Optional[str] = None
     notes: Optional[str] = None
+    source: Optional[str] = None
 
 
 class StatusTransition(BaseModel):
@@ -213,6 +214,7 @@ def edit_order(ref: str, body: OrderEdit):
             "deliveryType": "delivery_type",
             "deliveryAddress": "delivery_address",
             "notes": "notes",
+            "source": "source",
         }
 
         for camel, snake in field_map.items():

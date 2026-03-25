@@ -78,6 +78,8 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
     String? customerPhone,
     String? deliveryAddress,
     String? deliveryType,
+    String? source,
+    String? customerName,
   }) async {
     final service = ref.read(orderServiceProvider);
     final updated = await service.editOrder(
@@ -88,6 +90,8 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
       customerPhone: customerPhone,
       deliveryAddress: deliveryAddress,
       deliveryType: deliveryType,
+      source: source,
+      customerName: customerName,
     );
     state = AsyncData(updated);
     ref.read(orderListProvider.notifier).refresh();

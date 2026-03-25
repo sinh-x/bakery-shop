@@ -11,6 +11,7 @@ import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/expandable_item_card.dart';
+import 'widgets/hour_picker.dart';
 import 'widgets/product_picker_page.dart';
 
 class OrderCreateScreen extends ConsumerStatefulWidget {
@@ -134,7 +135,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   Future<void> _pickHour() async {
     final picked = await showDialog<int>(
       context: context,
-      builder: (ctx) => _HourPickerDialog(initialHour: _dueTime?.hour ?? 8),
+      builder: (ctx) => HourPickerDialog(initialHour: _dueTime?.hour ?? 8),
     );
     if (picked != null) setState(() => _dueTime = TimeOfDay(hour: picked, minute: 0));
   }
@@ -401,37 +402,9 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             ),
             const SizedBox(height: 12),
             // F5: Time preset chips
-            Wrap(
-              spacing: 8,
-              children: [
-                ChoiceChip(
-                  label: Text('${VN.timeSlotMorning} 8:00'),
-                  selected: _dueTime != null &&
-                      _dueTime!.hour == 8 &&
-                      _dueTime!.minute == 0,
-                  onSelected: (_) => setState(
-                    () => _dueTime = const TimeOfDay(hour: 8, minute: 0),
-                  ),
-                ),
-                ChoiceChip(
-                  label: Text('${VN.timeSlotAfternoon} 14:00'),
-                  selected: _dueTime != null &&
-                      _dueTime!.hour == 14 &&
-                      _dueTime!.minute == 0,
-                  onSelected: (_) => setState(
-                    () => _dueTime = const TimeOfDay(hour: 14, minute: 0),
-                  ),
-                ),
-                ChoiceChip(
-                  label: Text('${VN.timeSlotEvening} 18:00'),
-                  selected: _dueTime != null &&
-                      _dueTime!.hour == 18 &&
-                      _dueTime!.minute == 0,
-                  onSelected: (_) => setState(
-                    () => _dueTime = const TimeOfDay(hour: 18, minute: 0),
-                  ),
-                ),
-              ],
+            HourPresetChips(
+              selectedTime: _dueTime,
+              onSelected: (t) => setState(() => _dueTime = t),
             ),
             if (_dueTime != null) ...[
               const SizedBox(height: 8),
@@ -626,33 +599,3 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ── Hour picker dialog (F5) ───────────────────────────────────────────────────
-
-class _HourPickerDialog extends StatelessWidget {
-  const _HourPickerDialog({required this.initialHour});
-  final int initialHour;
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = ScrollController(
-      initialScrollOffset: (initialHour * 48.0).clamp(0.0, 22 * 48.0),
-    );
-    return AlertDialog(
-      title: const Text(VN.dueTime),
-      contentPadding: const EdgeInsets.symmetric(vertical: 8),
-      content: SizedBox(
-        width: 120,
-        height: 240,
-        child: ListView.builder(
-          controller: controller,
-          itemCount: 24,
-          itemBuilder: (ctx, hour) => ListTile(
-            title: Text('$hour:00'),
-            selected: hour == initialHour,
-            onTap: () => Navigator.pop(context, hour),
-          ),
-        ),
-      ),
-    );
-  }
-}
