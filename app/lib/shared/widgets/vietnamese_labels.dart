@@ -7,6 +7,7 @@ class VN {
   static const tabOrders = 'Đơn hàng';
   static const tabProducts = 'Sản phẩm';
   static const tabEvents = 'Sự kiện';
+  static const tabChecklist = 'Checklist';
 
   // Order statuses
   static const statusNew = 'Mới';
