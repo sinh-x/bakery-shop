@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.2+15] — 2026-03-25
+- feat(orders): DG-030 edit order feature parity with create order
+
 ## [0.2.2+14] — 2026-03-24
 - chore: add CLAUDE.md placeholder and ignore certs/ directory
 
