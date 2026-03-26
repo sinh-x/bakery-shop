@@ -1,0 +1,10 @@
+# Rustic backup profile for baker
+# Repository: rclone:wasabi-sinh:baker-backup/dev
+# Key file: ~/.config/rustic/baker-key (plain-text password)
+
+# Forget policy: prune old snapshots while keeping recent backups
+[forget]
+keep_daily = 7
+keep_weekly = 4
+keep_monthly = 3
+prune = true
