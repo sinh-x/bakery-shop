@@ -23,7 +23,7 @@ in {
 
     scriptPath = lib.mkOption {
       type = lib.types.path;
-      default = "${self.packages.${pkgs.system}.baker}/scripts/wasabi-backup.sh";
+      default = /home/sinh/Documents/bakery-shop/scripts/wasabi-backup.sh;
       description = "Path to the backup script";
     };
   };
@@ -50,7 +50,7 @@ in {
       wantedBy = [ "timers.target" ];
 
       timerConfig = {
-        OnCalendar = "*-*-* *:00:00";
+        OnCalendar = "*-*-* 00/6:00:00";
         RandomizedDelaySec = "30m";
         Persistent = true;
       };

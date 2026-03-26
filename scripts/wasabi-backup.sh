@@ -36,7 +36,7 @@ DB_DST="$STAGING_DIR/baker.db"
 
 if [[ -f "$DB_SRC" ]]; then
     log "Backing up database: $DB_SRC"
-    /home/sinh/Documents/bakery-shop/.venv/bin/python -c "
+    python3 -c "
 import sqlite3
 import sys
 src = '$DB_SRC'
