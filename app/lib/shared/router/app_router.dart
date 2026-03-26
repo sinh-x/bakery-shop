@@ -4,6 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/event.dart';
 import '../../features/categories/category_management_screen.dart';
+import '../../features/checklist/checklist_config_screen.dart';
+import '../../features/checklist/checklist_history_screen.dart';
+import '../../features/checklist/checklist_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/events/event_detail_screen.dart';
 import '../../features/events/event_form_screen.dart';
@@ -54,7 +57,25 @@ final appRouter = GoRouter(
             child: EventListScreen(),
           ),
         ),
+        GoRoute(
+          path: '/checklist',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: ChecklistScreen(),
+          ),
+        ),
       ],
+    ),
+    // Checklist config — full-screen (outside shell)
+    GoRoute(
+      path: '/checklist/config',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const ChecklistConfigScreen(),
+    ),
+    // Checklist history — full-screen (outside shell)
+    GoRoute(
+      path: '/checklist/history',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const ChecklistHistoryScreen(),
     ),
     // Order create — full-screen (outside shell)
     GoRoute(
@@ -189,6 +210,7 @@ class _ShellScaffold extends StatelessWidget {
     if (location.startsWith('/orders')) return 1;
     if (location.startsWith('/products')) return 2;
     if (location.startsWith('/events')) return 3;
+    if (location.startsWith('/checklist')) return 4;
     return 0;
   }
 
@@ -202,6 +224,8 @@ class _ShellScaffold extends StatelessWidget {
         context.go('/products');
       case 3:
         context.go('/events');
+      case 4:
+        context.go('/checklist');
     }
   }
 
@@ -233,6 +257,11 @@ class _ShellScaffold extends StatelessWidget {
             icon: Icon(Icons.event_note_outlined),
             selectedIcon: Icon(Icons.event_note),
             label: VN.tabEvents,
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.checklist_outlined),
+            selectedIcon: Icon(Icons.checklist),
+            label: VN.tabChecklist,
           ),
         ],
       ),

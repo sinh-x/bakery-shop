@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.2+16] — 2026-03-26
+- feat(checklist): DG-028 daily opening/closing checklist for staff procedures
+
+## [0.2.2+15] — 2026-03-25
+- feat(orders): DG-030 edit order feature parity with create order
+
 ## [0.2.2+14] — 2026-03-24
 - chore: add CLAUDE.md placeholder and ignore certs/ directory
 

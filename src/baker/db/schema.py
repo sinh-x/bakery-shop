@@ -525,6 +525,59 @@ def _migrate_v17_fix_staff_names(conn):
         )
 
 
+CHECKLIST_SCHEMA = """
+CREATE TABLE IF NOT EXISTS checklist_templates (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    period      TEXT NOT NULL DEFAULT 'opening',
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    active      INTEGER DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_checklist_templates_period ON checklist_templates(period);
+
+CREATE TABLE IF NOT EXISTS checklist_entries (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_id     INTEGER NOT NULL REFERENCES checklist_templates(id),
+    checklist_date  TEXT NOT NULL,
+    completed       INTEGER NOT NULL DEFAULT 0,
+    completed_by    TEXT DEFAULT '',
+    completed_at    TEXT DEFAULT NULL,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_checklist_entries_unique ON checklist_entries(template_id, checklist_date);
+CREATE INDEX IF NOT EXISTS idx_checklist_entries_date ON checklist_entries(checklist_date);
+"""
+
+SEED_CHECKLIST_OPENING = [
+    ("Kiểm tra nhiệt độ tủ lạnh", "opening", 1),
+    ("Bật lò nướng & kiểm tra hoạt động", "opening", 2),
+    ("Kiểm tra nguyên liệu cần dùng trong ngày", "opening", 3),
+    ("Vệ sinh bàn làm việc & dụng cụ", "opening", 4),
+    ("Kiểm tra đơn hàng cần giao trong ngày", "opening", 5),
+    ("Sắp xếp bánh ra tủ trưng bày", "opening", 6),
+]
+
+SEED_CHECKLIST_CLOSING = [
+    ("Dọn dẹp & vệ sinh quầy bán hàng", "closing", 1),
+    ("Rửa sạch dụng cụ làm bánh", "closing", 2),
+    ("Kiểm tra & cất nguyên liệu thừa", "closing", 3),
+    ("Tắt lò nướng & kiểm tra thiết bị điện", "closing", 4),
+    ("Kiểm tra nhiệt độ tủ lạnh", "closing", 5),
+    ("Đếm tiền & ghi sổ doanh thu", "closing", 6),
+    ("Khóa cửa & kiểm tra an ninh", "closing", 7),
+]
+
+
+def _migrate_v18_seed_checklist(conn):
+    """Seed default opening and closing checklist items."""
+    for name, period, sort_order in SEED_CHECKLIST_OPENING + SEED_CHECKLIST_CLOSING:
+        conn.execute(
+            "INSERT OR IGNORE INTO checklist_templates (name, period, sort_order) VALUES (?, ?, ?)",
+            (name, period, sort_order),
+        )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -603,6 +656,11 @@ MIGRATIONS = {
         "description": "Fix staff names to use Vietnamese diacritics",
         "sql": "",
         "callable": _migrate_v17_fix_staff_names,
+    },
+    18: {
+        "description": "Checklist templates and entries tables with seed data",
+        "sql": CHECKLIST_SCHEMA,
+        "callable": _migrate_v18_seed_checklist,
     },
 }
 
