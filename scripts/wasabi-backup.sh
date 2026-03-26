@@ -9,10 +9,8 @@ DATA_DIR="${DATA_DIR:-/var/lib/baker}"
 STAGING_DIR="/tmp/baker-backup-staging"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
-# Rustic profile and repo
+# Rustic profile (baker.toml in ~/.config/rustic/)
 RUSTIC_PROFILE="baker"
-RUSTIC_KEY_FILE="$HOME/.config/rustic/baker-key"
-RUSTIC_REPO="rclone:wasabi-sinh:baker-backup/dev"
 
 log() {
     echo "[$TIMESTAMP] $*"
@@ -70,8 +68,6 @@ fi
 # Step 4: Run rustic backup on staging directory
 log "Running rustic backup..."
 rustic -P "$RUSTIC_PROFILE" \
-    --key-file "$RUSTIC_KEY_FILE" \
-    -r "$RUSTIC_REPO" \
     backup "$STAGING_DIR" \
     --tag "date=$(date '+%Y-%m-%d')" \
     --tag "host=$(hostname)" \
@@ -79,11 +75,9 @@ rustic -P "$RUSTIC_PROFILE" \
 
 log "Rustic backup complete"
 
-# Step 5: Run rustic forget --prune using baker profile's forget policy
+# Step 5: Run rustic forget --prune using retention policy
 log "Running rustic forget --prune..."
 rustic -P "$RUSTIC_PROFILE" \
-    --key-file "$RUSTIC_KEY_FILE" \
-    -r "$RUSTIC_REPO" \
     forget --prune \
     --keep-daily 7 \
     --keep-weekly 4 \
