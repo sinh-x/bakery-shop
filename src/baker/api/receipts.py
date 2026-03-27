@@ -1,603 +1,569 @@
 """Receipt image generation API for thermal printer.
 
-Generates three receipt types as PNG images:
-- Order summary receipt (internal use)
-- Work ticket receipt (production use)
-- Customer receipt (clean, customer-facing)
+Generates three receipt types as PNG images sized for 80mm thermal paper:
+- Order summary (internal): all items, payment details, notes
+- Work ticket (production): per-item or combined, with photo thumbnails
+- Customer receipt ("BIÊN NHẬN"): clean, customer-facing, matching paper bill style
 """
 
 import io
-import os
 from pathlib import Path
 from typing import Optional
 
+import baker.config
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
-
 from PIL import Image, ImageDraw, ImageFont
 
 from baker.db.connection import get_db
 from baker.models.payment_transaction import PaymentTransaction
 
-
 router = APIRouter(prefix="/api/orders", tags=["receipts"])
 
-# Receipt dimensions: 576px width (80mm at 203 DPI), variable height
-RECEIPT_WIDTH = 576
+# --- Constants ---
+
+RECEIPT_WIDTH = 576  # 80mm at 203 DPI
+MARGIN = 20
+CONTENT_WIDTH = RECEIPT_WIDTH - 2 * MARGIN
+THUMBNAIL_SIZE = 128
+LINE_GAP = 6
 
 # Font sizes
-FONT_SIZE_HEADER = 20
-FONT_SIZE_BODY = 16
-FONT_SIZE_SMALL = 12
+_SZ_TITLE = 24
+_SZ_SUBTITLE = 18
+_SZ_BODY = 16
+_SZ_SMALL = 12
 
-# Line heights
-LINE_HEIGHT = 22
-LINE_HEIGHT_SMALL = 18
-
-# Margins
-MARGIN_LEFT = 15
-MARGIN_RIGHT = 15
-MARGIN_TOP = 15
-MARGIN_BOTTOM = 15
-
-# Content width
-CONTENT_WIDTH = RECEIPT_WIDTH - MARGIN_LEFT - MARGIN_RIGHT
-
-# Photo thumbnail size for work tickets
-THUMBNAIL_SIZE = 128
+# Shop defaults (matching the physical biên nhận form, without ĐC 2)
+_SHOP_DEFAULTS = {
+    "receipt_shop_name": "TIỆM BÁNH ĐOÀN GIA",
+    "receipt_shop_specialty": "BÁNH KEM SINH NHẬT - RAU CÂU FLAN - BÔNG LAN TRỨNG MUỐI",
+    "receipt_shop_address": "Hòn Khói, Ninh Diêm, Ninh Hòa, Khánh Hòa",
+    "receipt_shop_phone": "0972 283 134 - 0968 187 434 - 0981 960 535",
+}
 
 
-def _get_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    """Load bundled NotoSans font at specified size."""
-    import baker
-    font_dir = Path(baker.__file__).parent / "assets" / "fonts"
-    font_name = "NotoSans-Bold.ttf" if bold else "NotoSans-Regular.ttf"
-    font_path = font_dir / font_name
-    return ImageFont.truetype(str(font_path), size)
+# --- Helpers ---
+
+def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+    import baker as _pkg
+    d = Path(_pkg.__file__).parent / "assets" / "fonts"
+    return ImageFont.truetype(str(d / ("NotoSans-Bold.ttf" if bold else "NotoSans-Regular.ttf")), size)
 
 
-def _format_vnd(amount: float) -> str:
-    """Format amount as Vietnamese currency string."""
-    if amount == int(amount):
-        return f"{int(amount):.0f}đ"
-    return f"{amount:,.0f}đ"
+def _format_vnd(amount) -> str:
+    """Format Vietnamese currency: 275000 → '275.000đ'."""
+    n = int(float(amount))
+    return f"{n:,}đ".replace(",", ".")
 
 
-def _draw_centered_text(draw: ImageDraw, y: int, text: str, font: ImageFont.FreeTypeFont, color: tuple[int, int, int]) -> int:
-    """Draw centered text, return the y coordinate after the text."""
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_width = bbox[2] - bbox[0]
-    x = (RECEIPT_WIDTH - text_width) // 2
-    draw.text((x, y), text, font=font, fill=color)
-    return y + (bbox[3] - bbox[1]) + 4
+def _th(text: str, font) -> int:
+    """Text height in pixels."""
+    bb = ImageDraw.Draw(Image.new("RGB", (1, 1))).textbbox((0, 0), text, font=font)
+    return bb[3] - bb[1]
 
 
-def _draw_text(draw: ImageDraw, x: int, y: int, text: str, font: ImageFont.FreeTypeFont, color: tuple[int, int, int] = (0, 0, 0)) -> int:
-    """Draw left-aligned text, return the y coordinate after the text."""
-    draw.text((x, y), text, font=font, fill=color)
-    bbox = draw.textbbox((0, 0), text, font=font)
-    return y + (bbox[3] - bbox[1])
+def _tw(text: str, font) -> int:
+    """Text width in pixels."""
+    bb = ImageDraw.Draw(Image.new("RGB", (1, 1))).textbbox((0, 0), text, font=font)
+    return bb[2] - bb[0]
 
 
-def _draw_right_text(draw: ImageDraw, right_x: int, y: int, text: str, font: ImageFont.FreeTypeFont, color: tuple[int, int, int] = (0, 0, 0)) -> int:
-    """Draw right-aligned text, return the y coordinate after the text."""
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_width = bbox[2] - bbox[0]
-    x = right_x - text_width
-    draw.text((x, y), text, font=font, fill=color)
-    return y + (bbox[3] - bbox[1])
+def _center(draw, y, text, font, color=(0, 0, 0)):
+    """Draw centered text. Return y after."""
+    w, h = _tw(text, font), _th(text, font)
+    draw.text(((RECEIPT_WIDTH - w) // 2, y), text, font=font, fill=color)
+    return y + h + LINE_GAP
 
 
-def _draw_separator(draw: ImageDraw, y: int, dash_gap: int = 4) -> int:
-    """Draw dashed separator line, return y coordinate after."""
-    draw.line([(MARGIN_LEFT, y), (RECEIPT_WIDTH - MARGIN_RIGHT, y)], fill=(180, 180, 180), width=1)
-    return y + LINE_HEIGHT_SMALL
+def _left(draw, y, text, font, color=(0, 0, 0), x=None):
+    """Draw left-aligned text at x (default MARGIN). Return y after."""
+    draw.text((x if x is not None else MARGIN, y), text, font=font, fill=color)
+    return y + _th(text, font) + LINE_GAP
 
 
-def _draw_double_line(draw: ImageDraw, y: int) -> int:
-    """Draw double-line separator, return y coordinate after."""
-    draw.line([(MARGIN_LEFT, y), (RECEIPT_WIDTH - MARGIN_RIGHT, y)], fill=(0, 0, 0), width=1)
-    draw.line([(MARGIN_LEFT, y + 4), (RECEIPT_WIDTH - MARGIN_RIGHT, y + 4)], fill=(0, 0, 0), width=1)
-    return y + LINE_HEIGHT
+def _right_at(draw, y, text, font, color=(0, 0, 0)):
+    """Draw right-aligned text at y. Return y after."""
+    w = _tw(text, font)
+    draw.text((RECEIPT_WIDTH - MARGIN - w, y), text, font=font, fill=color)
+    return y + _th(text, font) + LINE_GAP
 
 
-def _calculate_text_height(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> int:
-    """Calculate total height needed for wrapped text."""
-    words = text.split()
-    lines = []
-    current_line = ""
-    for word in words:
-        test_line = current_line + (" " if current_line else "") + word
-        bbox = ImageDraw.Draw(Image.new("RGB", (1, 1))).textbbox((0, 0), test_line, font=font)
-        test_width = bbox[2] - bbox[0]
-        if test_width <= max_width:
-            current_line = test_line
-        else:
-            if current_line:
-                lines.append(current_line)
-            current_line = word
-    if current_line:
-        lines.append(current_line)
-    bbox = ImageDraw.Draw(Image.new("RGB", (1, 1))).textbbox((0, 0), "Aj", font=font)
-    line_height = (bbox[3] - bbox[1]) + 4
-    return len(lines) * line_height
+def _row(draw, y, label, value, font_l, font_v=None, color_v=(0, 0, 0)):
+    """Draw label left + value right on same line. Return y after."""
+    if font_v is None:
+        font_v = font_l
+    draw.text((MARGIN, y), label, font=font_l, fill=(0, 0, 0))
+    w = _tw(value, font_v)
+    draw.text((RECEIPT_WIDTH - MARGIN - w, y), value, font=font_v, fill=color_v)
+    h = max(_th(label, font_l), _th(value, font_v))
+    return y + h + LINE_GAP
 
 
-def _wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
-    """Wrap text to fit within max_width, returning list of lines."""
+def _sep(draw, y):
+    """Thin separator line."""
+    draw.line([(MARGIN, y + 2), (RECEIPT_WIDTH - MARGIN, y + 2)], fill=(160, 160, 160), width=1)
+    return y + LINE_GAP + 6
+
+
+def _double(draw, y):
+    """Double separator line."""
+    draw.line([(MARGIN, y), (RECEIPT_WIDTH - MARGIN, y)], fill=(0, 0, 0), width=1)
+    draw.line([(MARGIN, y + 4), (RECEIPT_WIDTH - MARGIN, y + 4)], fill=(0, 0, 0), width=1)
+    return y + 12
+
+
+def _wrap(text, font, max_w):
+    """Word-wrap text to fit max_w. Return list of lines."""
     if not text:
         return []
     words = text.split()
-    lines = []
-    current_line = ""
+    lines, cur = [], ""
     for word in words:
-        test_line = current_line + (" " if current_line else "") + word
-        bbox = ImageDraw.Draw(Image.new("RGB", (1, 1))).textbbox((0, 0), test_line, font=font)
-        test_width = bbox[2] - bbox[0]
-        if test_width <= max_width:
-            current_line = test_line
+        test = cur + (" " if cur else "") + word
+        if _tw(test, font) <= max_w:
+            cur = test
         else:
-            if current_line:
-                lines.append(current_line)
-            current_line = word
-    if current_line:
-        lines.append(current_line)
+            if cur:
+                lines.append(cur)
+            cur = word
+    if cur:
+        lines.append(cur)
     return lines
 
 
-def _get_shop_config(conn) -> dict:
-    """Get receipt shop config from app_config table."""
-    config = {
-        "receipt_shop_name": "Bánh Kem Đoàn Gia",
-        "receipt_shop_address": "",
-        "receipt_shop_phone": "",
-    }
-    rows = conn.execute("SELECT config_key, config_value FROM app_config WHERE config_key LIKE 'receipt_%'").fetchall()
-    for row in rows:
-        if row["config_key"] in config:
-            config[row["config_key"]] = row["config_value"]
-    return config
+# --- Config ---
+
+def _shop_config(conn) -> dict:
+    cfg = dict(_SHOP_DEFAULTS)
+    rows = conn.execute(
+        "SELECT config_key, config_value FROM app_config WHERE config_key LIKE 'receipt_%'"
+    ).fetchall()
+    for r in rows:
+        if r["config_key"] in cfg:
+            cfg[r["config_key"]] = r["config_value"]
+    return cfg
 
 
-def _get_payment_status(order: dict, total_paid: float) -> tuple[str, str]:
-    """Get payment status display text and indicator."""
-    total_price = float(order.get("total_price", 0))
-    if total_paid >= total_price:
-        return "Đã thanh toán", "PAID"
-    elif total_paid > 0:
-        remaining = total_price - total_paid
-        return f"Còn nợ: {remaining:,.0f}đ", "PARTIAL"
-    else:
-        return "Chưa thanh toán", "UNPAID"
+# --- Header (matching physical biên nhận) ---
 
-
-def _get_order_photo_for_work_item(conn, order_id: int, work_item_id: int) -> Optional[bytes]:
-    """Get first photo bytes for a work item if available."""
-    row = conn.execute(
-        "SELECT hash FROM photos p JOIN order_photos op ON p.id = op.photo_id WHERE op.order_id = ? AND op.work_item_id = ? LIMIT 1",
-        (order_id, work_item_id),
-    ).fetchone()
-    if not row:
-        # Try getting any photo for the order
-        row = conn.execute(
-            "SELECT hash FROM photos p JOIN order_photos op ON p.id = op.photo_id WHERE op.order_id = ? LIMIT 1",
-            (order_id,),
-        ).fetchone()
-    if row:
-        photo_dir = Path(__file__).parent.parent.parent.parent / "data" / "photos"
-        photo_path = photo_dir / f"{row['hash']}.jpg"
-        if photo_path.exists():
-            with open(photo_path, "rb") as f:
-                return f.read()
-    return None
-
-
-def _render_header(draw: ImageDraw, y: int, shop_config: dict) -> int:
-    """Draw shop name header, return y after header."""
-    font_title = _get_font(FONT_SIZE_HEADER, bold=True)
-    y = _draw_centered_text(draw, y, shop_config["receipt_shop_name"], font_title, (0, 0, 0))
-    if shop_config["receipt_shop_address"]:
-        font_small = _get_font(FONT_SIZE_SMALL)
-        y = _draw_centered_text(draw, y, shop_config["receipt_shop_address"], font_small, (80, 80, 80))
-    if shop_config["receipt_shop_phone"]:
-        font_small = _get_font(FONT_SIZE_SMALL)
-        y = _draw_centered_text(draw, y, shop_config["receipt_shop_phone"], font_small, (80, 80, 80))
-    y += 4
-    y = _draw_double_line(draw, y)
+def _header(draw, y, cfg):
+    """Draw shop header: name, specialty, address, phone, then double line."""
+    # Shop name — large bold
+    y = _center(draw, y, cfg["receipt_shop_name"], _font(_SZ_TITLE, True))
+    # Specialty
+    spec = cfg.get("receipt_shop_specialty", "")
+    if spec:
+        y = _center(draw, y, spec, _font(_SZ_SMALL, True), (60, 60, 60))
+    # Address
+    addr = cfg.get("receipt_shop_address", "")
+    if addr:
+        y = _center(draw, y, addr, _font(_SZ_SMALL), (80, 80, 80))
+    # Phone
+    phone = cfg.get("receipt_shop_phone", "")
+    if phone:
+        y = _center(draw, y, f"☎ {phone}", _font(_SZ_SMALL), (80, 80, 80))
+    y = _double(draw, y)
     return y
 
 
-def _render_order_receipt(order_detail: dict, shop_config: dict, conn) -> Image.Image:
-    """Render order summary receipt (internal use).
+# --- Items table helpers ---
 
-    F2: shop name, order ref, date, customer, all items with name/qty/unit price/line total,
-    subtotal, payment status, amount paid, remaining balance, due date/time, delivery type, notes
-    """
-    font_body = _get_font(FONT_SIZE_BODY)
-    font_bold = _get_font(FONT_SIZE_BODY, bold=True)
-    font_small = _get_font(FONT_SIZE_SMALL)
+def _items_table(draw, y, work_items, show_unit_price=True):
+    """Draw items table with header + rows. Return y after."""
+    fb = _font(_SZ_BODY, True)
+    fr = _font(_SZ_BODY)
 
-    # Calculate required height
-    items = order_detail.get("items", [])
-    work_items = order_detail.get("workItems", [])
-    notes = order_detail.get("notes", "") or ""
-    delivery_address = order_detail.get("delivery_address", "") or ""
+    # Column positions
+    col_qty = MARGIN + 300
+    col_price = MARGIN + 370 if show_unit_price else MARGIN + 300
+    col_total = RECEIPT_WIDTH - MARGIN
 
-    num_lines = 20  # Base lines
-    for item in work_items:
-        item_name = item.get("product_name", "")
-        num_lines += _calculate_text_height(item_name, font_body, CONTENT_WIDTH - 200) // LINE_HEIGHT
-        num_lines += 1  # item row
-    num_lines += _calculate_text_height(notes, font_small, CONTENT_WIDTH) // LINE_HEIGHT_SMALL
-    num_lines += _calculate_text_height(delivery_address, font_small, CONTENT_WIDTH) // LINE_HEIGHT_SMALL
-
-    img_height = MARGIN_TOP + (num_lines * LINE_HEIGHT) + MARGIN_BOTTOM + 200
-    img = Image.new("RGB", (RECEIPT_WIDTH, img_height), "white")
-    draw = ImageDraw.Draw(img)
-
-    y = MARGIN_TOP
-    y = _render_header(draw, y, shop_config)
-
-    # Order reference - prominent
-    order_ref = order_detail.get("order_ref", "")
-    font_ref = _get_font(FONT_SIZE_HEADER, bold=True)
-    y = _draw_centered_text(draw, y, f"Mã đơn: {order_ref}", font_ref, (0, 0, 0))
+    # Header
+    draw.text((MARGIN, y), "SẢN PHẨM", font=fb, fill=(0, 0, 0))
+    draw.text((col_qty, y), "SL", font=fb, fill=(0, 0, 0))
+    if show_unit_price:
+        draw.text((col_price, y), "GIÁ", font=fb, fill=(0, 0, 0))
+    right_label = "T.TIỀN"
+    w = _tw(right_label, fb)
+    draw.text((col_total - w, y), right_label, font=fb, fill=(0, 0, 0))
+    y += _th("SẢN PHẨM", fb) + 4
+    draw.line([(MARGIN, y), (RECEIPT_WIDTH - MARGIN, y)], fill=(160, 160, 160), width=1)
     y += 4
 
-    # Date
-    created_at = order_detail.get("created_at", "")[:10] if order_detail.get("created_at") else ""
-    y = _draw_text(draw, MARGIN_LEFT, y, f"Ngày tạo: {created_at}", font_body)
-    y = _draw_separator(draw, y)
-
-    # Customer info
-    customer_name = order_detail.get("customer_name", "")
-    customer_phone = order_detail.get("customer_phone", "") or ""
-    y = _draw_text(draw, MARGIN_LEFT, y, f"Khách hàng: {customer_name}", font_body)
-    if customer_phone:
-        y = _draw_text(draw, MARGIN_LEFT, y, f"Điện thoại: {customer_phone}", font_body)
-    y = _draw_separator(draw, y)
-
-    # Items table header
-    draw.text((MARGIN_LEFT, y), "SẢN PHẨM", font=font_bold, fill=(0, 0, 0))
-    draw.text((MARGIN_LEFT + 220, y), "SL", font=font_bold, fill=(0, 0, 0))
-    draw.text((MARGIN_LEFT + 280, y), "ĐƠN GIÁ", font=font_bold, fill=(0, 0, 0))
-    draw.text((MARGIN_LEFT + 400, y), "T.TIỀN", font=font_bold, fill=(0, 0, 0))
-    y += LINE_HEIGHT
-    draw.line([(MARGIN_LEFT, y), (RECEIPT_WIDTH - MARGIN_RIGHT, y)], fill=(180, 180, 180), width=1)
-    y += 4
-
-    # Items
+    # Rows
     for item in work_items:
-        item_name = item.get("product_name", "")
+        name = item.get("productName", "") or item.get("product_name", "")
         qty = item.get("quantity", 1)
-        unit_price = float(item.get("unit_price", 0))
+        unit_price = float(item.get("unitPrice", 0) or item.get("unit_price", 0))
         line_total = qty * unit_price
 
-        # Draw item name (may wrap)
-        lines = _wrap_text(item_name, font_body, 210)
-        for i, line in enumerate(lines):
-            y = _draw_text(draw, MARGIN_LEFT, y, line, font_body)
-        y = _draw_text(draw, MARGIN_LEFT + 220, y - LINE_HEIGHT, str(qty), font_body)  # qty on first line
-        y = _draw_text(draw, MARGIN_LEFT + 280, y - LINE_HEIGHT, _format_vnd(unit_price), font_body)  # price on first line
-        y = _draw_text(draw, MARGIN_LEFT + 400, y - LINE_HEIGHT, _format_vnd(line_total), font_body)  # total on first line
+        # Item name (may wrap)
+        name_lines = _wrap(name, fr, 280)
+        row_y = y
+        for ln in name_lines:
+            draw.text((MARGIN, y), ln, font=fr, fill=(0, 0, 0))
+            y += _th(ln, fr) + 2
+
+        # Qty, price, total on the first line
+        draw.text((col_qty, row_y), str(qty), font=fr, fill=(0, 0, 0))
+        if show_unit_price:
+            draw.text((col_price, row_y), _format_vnd(unit_price), font=fr, fill=(0, 0, 0))
+        total_str = _format_vnd(line_total)
+        w = _tw(total_str, fr)
+        draw.text((col_total - w, row_y), total_str, font=fr, fill=(0, 0, 0))
 
         # Birthday info
-        if item.get("is_birthday"):
+        if item.get("isBirthday") or item.get("is_birthday"):
             age = item.get("age")
-            age_text = f"(Sinh nhật{(' - ' + str(age) + ' tuổi') if age else ''})"
-            y = _draw_text(draw, MARGIN_LEFT + 30, y, age_text, font_small, (150, 0, 0))
+            age_text = f"🎂 Sinh nhật{(' - ' + str(age) + ' tuổi') if age else ''}"
+            fs = _font(_SZ_SMALL)
+            draw.text((MARGIN + 20, y), age_text, font=fs, fill=(180, 0, 0))
+            y += _th(age_text, fs) + 2
 
-        y += 4
+        y += LINE_GAP
 
-    y = _draw_separator(draw, y)
+    return y
+
+
+# --- Receipt renderers ---
+
+def _render_order_receipt(order, cfg, conn) -> Image.Image:
+    """Order summary receipt (internal use)."""
+    work_items = order.get("workItems", [])
+    notes = order.get("notes", "") or ""
+
+    # Oversize canvas, crop later
+    img = Image.new("RGB", (RECEIPT_WIDTH, 2000), "white")
+    draw = ImageDraw.Draw(img)
+
+    fb = _font(_SZ_BODY)
+    fbb = _font(_SZ_BODY, True)
+    fs = _font(_SZ_SMALL)
+
+    y = MARGIN
+    y = _header(draw, y, cfg)
+
+    # Title
+    y = _center(draw, y, "TÓM TẮT ĐƠN HÀNG", _font(_SZ_SUBTITLE, True))
+    y = _sep(draw, y)
+
+    # Order ref
+    ref = order.get("orderRef", "") or order.get("order_ref", "")
+    y = _center(draw, y, f"Mã đơn: {ref}", _font(_SZ_SUBTITLE, True))
+
+    # Date
+    created = order.get("createdAt", "") or order.get("created_at", "")
+    if created:
+        y = _left(draw, y, f"Ngày tạo: {created[:10]}", fb)
+
+    # Customer
+    name = order.get("customerName", "") or order.get("customer_name", "")
+    phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
+    cust_line = f"Khách hàng: {name}"
+    if phone:
+        cust_line += f"    ĐT: {phone}"
+    y = _left(draw, y, cust_line, fb)
+    y = _sep(draw, y)
+
+    # Items table
+    y = _items_table(draw, y, work_items, show_unit_price=True)
+    y = _sep(draw, y)
 
     # Totals
-    total_price = float(order_detail.get("total_price", 0))
-    y = _draw_text(draw, MARGIN_LEFT, y, "TỔNG CỘNG:", font_bold)
-    y = _draw_right_text(draw, RECEIPT_WIDTH - MARGIN_RIGHT, y - LINE_HEIGHT, _format_vnd(total_price), font_bold)
+    total_price = float(order.get("totalPrice", 0) or order.get("total_price", 0))
+    y = _row(draw, y, "TỔNG CỘNG:", _format_vnd(total_price), fbb)
 
-    # Payment info
-    order_id = order_detail.get("id")
-    total_paid = 0.0
-    if order_id:
-        total_paid = PaymentTransaction.total_for_order(conn, order_id)
-    amount_paid = total_paid
-    remaining = total_price - amount_paid
+    # Payment
+    order_id = order.get("id")
+    total_paid = PaymentTransaction.total_for_order(conn, order_id) if order_id else 0.0
+    remaining = total_price - total_paid
 
-    y = _draw_text(draw, MARGIN_LEFT, y, "Đã thanh toán:", font_body)
-    y = _draw_right_text(draw, RECEIPT_WIDTH - MARGIN_RIGHT, y - LINE_HEIGHT, _format_vnd(amount_paid), font_body, (0, 100, 0))
-
+    y = _row(draw, y, "Đã thanh toán:", _format_vnd(total_paid), fb, color_v=(0, 100, 0))
     if remaining > 0:
-        y = _draw_text(draw, MARGIN_LEFT, y, "Còn nợ:", font_body)
-        y = _draw_right_text(draw, RECEIPT_WIDTH - MARGIN_RIGHT, y - LINE_HEIGHT, _format_vnd(remaining), font_body, (180, 0, 0))
+        y = _row(draw, y, "Còn lại:", _format_vnd(remaining), fb, color_v=(180, 0, 0))
+    y = _sep(draw, y)
 
-    status_text, _ = _get_payment_status(order_detail, total_paid)
-    y = _draw_text(draw, MARGIN_LEFT, y, f"Trạng thái: {status_text}", font_body)
-
-    y = _draw_separator(draw, y)
-
-    # Due date/time
-    due_date = order_detail.get("due_date", "")
-    due_time = order_detail.get("due_time", "") or ""
-    if due_date:
-        due_str = f"Ngày giao/nhận: {due_date}"
+    # Due date
+    due = order.get("dueDate", "") or order.get("due_date", "")
+    due_time = order.get("dueTime", "") or order.get("due_time", "") or ""
+    if due:
+        due_str = f"Ngày giao/nhận: {due}"
         if due_time:
             due_str += f" {due_time}"
-        y = _draw_text(draw, MARGIN_LEFT, y, due_str, font_bold)
+        y = _left(draw, y, due_str, fbb)
 
     # Delivery type
-    delivery_type = order_detail.get("delivery_type", "pickup")
-    delivery_type_display = "Nhận tại tiệm" if delivery_type == "pickup" else "Giao hàng"
-    y = _draw_text(draw, MARGIN_LEFT, y, f"Hình thức: {delivery_type_display}", font_body)
-    if delivery_type != "pickup" and delivery_address:
-        addr_lines = _wrap_text(delivery_address, font_small, CONTENT_WIDTH)
-        for line in addr_lines:
-            y = _draw_text(draw, MARGIN_LEFT, y, f"  {line}", font_small)
+    dtype = order.get("deliveryType", "") or order.get("delivery_type", "pickup")
+    dtype_vn = "Nhận tại tiệm" if dtype == "pickup" else "Giao hàng"
+    y = _left(draw, y, f"Hình thức: {dtype_vn}", fb)
+
+    daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
+    if dtype != "pickup" and daddr:
+        for ln in _wrap(daddr, fs, CONTENT_WIDTH - 20):
+            y = _left(draw, y, f"  {ln}", fs)
 
     # Notes
     if notes:
-        y = _draw_separator(draw, y)
-        y = _draw_text(draw, MARGIN_LEFT, y, "Ghi chú:", font_bold)
-        note_lines = _wrap_text(notes, font_small, CONTENT_WIDTH)
-        for line in note_lines:
-            y = _draw_text(draw, MARGIN_LEFT, y, line, font_small, (80, 80, 80))
+        y = _sep(draw, y)
+        y = _left(draw, y, "Ghi chú:", fbb)
+        for ln in _wrap(notes, fs, CONTENT_WIDTH):
+            y = _left(draw, y, ln, fs, (80, 80, 80))
 
     # Footer
-    y = _draw_double_line(draw, y + 10)
-    y = _draw_centered_text(draw, y, "--- Hết phiếu ---", font_small, (120, 120, 120))
+    y += 4
+    y = _double(draw, y)
+    y = _center(draw, y, "--- Hết phiếu ---", fs, (120, 120, 120))
 
-    # Crop to content
-    bbox = img.getbbox()
-    if bbox:
-        img = img.crop((0, 0, RECEIPT_WIDTH, bbox[3] + MARGIN_BOTTOM))
-
-    return img
+    return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
 
 
-def _render_work_ticket(order_detail: dict, work_item: dict, shop_config: dict, photo_bytes: Optional[bytes], conn) -> Image.Image:
-    """Render work ticket receipt (production use).
-
-    F3: shop name, order ref, product name, qty, unit price, notes,
-    birthday info (flag + age), decoration photo thumbnail 128x128,
-    due date/time, status
-    """
-    font_body = _get_font(FONT_SIZE_BODY)
-    font_bold = _get_font(FONT_SIZE_BODY, bold=True)
-    font_small = _get_font(FONT_SIZE_SMALL)
-
-    # Calculate required height
-    product_name = work_item.get("product_name", "")
-    notes = work_item.get("notes", "") or ""
-
-    num_lines = 15
-    num_lines += _calculate_text_height(product_name, font_body, CONTENT_WIDTH - THUMBNAIL_SIZE - 20) // LINE_HEIGHT
-    num_lines += _calculate_text_height(notes, font_small, CONTENT_WIDTH) // LINE_HEIGHT_SMALL
-    if photo_bytes:
-        num_lines += THUMBNAIL_SIZE // LINE_HEIGHT + 2
-
-    img_height = MARGIN_TOP + (num_lines * LINE_HEIGHT) + MARGIN_BOTTOM + 150
-    img = Image.new("RGB", (RECEIPT_WIDTH, img_height), "white")
+def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image:
+    """Work ticket receipt for production staff (single item)."""
+    img = Image.new("RGB", (RECEIPT_WIDTH, 2000), "white")
     draw = ImageDraw.Draw(img)
 
-    y = MARGIN_TOP
-    y = _render_header(draw, y, shop_config)
+    fb = _font(_SZ_BODY)
+    fbb = _font(_SZ_BODY, True)
+    fs = _font(_SZ_SMALL)
 
-    # PHIẾU LÀM VIỆC label
-    font_title = _get_font(FONT_SIZE_HEADER, bold=True)
-    y = _draw_centered_text(draw, y, "PHIẾU LÀM VIỆC", font_title, (0, 0, 0))
-    y = _draw_separator(draw, y)
+    y = MARGIN
+    y = _header(draw, y, cfg)
 
-    # Order reference
-    order_ref = order_detail.get("order_ref", "")
-    font_ref = _get_font(FONT_SIZE_HEADER, bold=True)
-    y = _draw_centered_text(draw, y, f"Mã đơn: {order_ref}", font_ref, (0, 0, 0))
-    y += 4
-    y = _draw_separator(draw, y)
+    # Title
+    y = _center(draw, y, "PHIẾU SẢN XUẤT", _font(_SZ_SUBTITLE, True))
+    y = _sep(draw, y)
+
+    # Order ref
+    ref = order.get("orderRef", "") or order.get("order_ref", "")
+    y = _center(draw, y, f"Mã đơn: {ref}", _font(_SZ_SUBTITLE, True))
+
+    # Customer
+    name = order.get("customerName", "") or order.get("customer_name", "")
+    if name:
+        y = _left(draw, y, f"Khách hàng: {name}", fb)
+    y = _sep(draw, y)
 
     # Product name
-    y = _draw_text(draw, MARGIN_LEFT, y, "Sản phẩm:", font_small)
-    y = _draw_text(draw, MARGIN_LEFT, y, product_name, font_bold)
-    if work_item.get("is_birthday"):
+    product = work_item.get("productName", "") or work_item.get("product_name", "")
+    y = _left(draw, y, product, _font(_SZ_SUBTITLE, True))
+
+    # Birthday
+    if work_item.get("isBirthday") or work_item.get("is_birthday"):
         age = work_item.get("age")
-        age_text = f"SINH NHẬT{(' - ' + str(age) + ' tuổi') if age else ''}"
-        y = _draw_text(draw, MARGIN_LEFT, y, age_text, font_bold, (150, 0, 0))
-    y += 4
+        age_text = f"🎂 SINH NHẬT{(' - ' + str(age) + ' tuổi') if age else ''}"
+        y = _left(draw, y, age_text, fbb, (180, 0, 0))
 
     # Qty and price
     qty = work_item.get("quantity", 1)
-    unit_price = float(work_item.get("unit_price", 0))
-    y = _draw_text(draw, MARGIN_LEFT, y, f"Số lượng: {qty}", font_body)
-    y = _draw_text(draw, MARGIN_LEFT, y, f"Đơn giá: {_format_vnd(unit_price)}", font_body)
-    y += 4
+    unit_price = float(work_item.get("unitPrice", 0) or work_item.get("unit_price", 0))
+    y = _row(draw, y, f"Số lượng: {qty}", _format_vnd(unit_price), fb)
 
-    # Photo thumbnail on the right side if available
-    x_photo = RECEIPT_WIDTH - MARGIN_RIGHT - THUMBNAIL_SIZE
+    # Photo thumbnail
     if photo_bytes:
         try:
-            photo_img = Image.open(io.BytesIO(photo_bytes))
-            photo_img = photo_img.convert("RGB")
-            photo_img.thumbnail((THUMBNAIL_SIZE, THUMBNAIL_SIZE), Image.LANCZOS)
-            # Paste on white background
-            thumb_bg = Image.new("RGB", (THUMBNAIL_SIZE, THUMBNAIL_SIZE), "white")
-            thumb_x = (THUMBNAIL_SIZE - photo_img.width) // 2
-            thumb_y = (THUMBNAIL_SIZE - photo_img.height) // 2
-            thumb_bg.paste(photo_img, (thumb_x, thumb_y))
-            img.paste(thumb_bg, (x_photo, y))
-            draw.rectangle([x_photo, y, x_photo + THUMBNAIL_SIZE, y + THUMBNAIL_SIZE], outline=(200, 200, 200), width=1)
-            y += THUMBNAIL_SIZE + 10
+            photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
+            photo.thumbnail((THUMBNAIL_SIZE, THUMBNAIL_SIZE), Image.LANCZOS)
+            x_photo = RECEIPT_WIDTH - MARGIN - THUMBNAIL_SIZE
+            bg = Image.new("RGB", (THUMBNAIL_SIZE, THUMBNAIL_SIZE), "white")
+            bg.paste(photo, ((THUMBNAIL_SIZE - photo.width) // 2, (THUMBNAIL_SIZE - photo.height) // 2))
+            img.paste(bg, (x_photo, y))
+            draw.rectangle([x_photo, y, x_photo + THUMBNAIL_SIZE, y + THUMBNAIL_SIZE], outline=(200, 200, 200))
+            y += THUMBNAIL_SIZE + LINE_GAP
         except Exception:
             pass
 
     # Notes
+    notes = work_item.get("notes", "") or ""
     if notes:
-        y = _draw_text(draw, MARGIN_LEFT, y, "Ghi chú:", font_small)
-        note_lines = _wrap_text(notes, font_small, CONTENT_WIDTH - (THUMBNAIL_SIZE + 20) if photo_bytes else CONTENT_WIDTH)
-        for line in note_lines:
-            y = _draw_text(draw, MARGIN_LEFT, y, line, font_small, (80, 80, 80))
+        y = _left(draw, y, "Ghi chú:", fbb)
+        for ln in _wrap(notes, fs, CONTENT_WIDTH):
+            y = _left(draw, y, ln, fs, (80, 80, 80))
 
-    y = _draw_separator(draw, y)
+    y = _sep(draw, y)
 
-    # Due date/time
-    due_date = order_detail.get("due_date", "")
-    due_time = order_detail.get("due_time", "") or ""
-    if due_date:
-        due_str = f"NGÀY GIAO: {due_date}"
+    # Due date (prominent)
+    due = order.get("dueDate", "") or order.get("due_date", "")
+    due_time = order.get("dueTime", "") or order.get("due_time", "") or ""
+    if due:
+        due_str = f"NGÀY GIAO: {due}"
         if due_time:
             due_str += f" {due_time}"
-        font_due = _get_font(FONT_SIZE_HEADER, bold=True)
-        y = _draw_centered_text(draw, y, due_str, font_due, (0, 0, 0))
+        y = _center(draw, y, due_str, _font(_SZ_SUBTITLE, True))
 
     # Status
     status = work_item.get("status", "pending")
-    status_display = {
-        "pending": "Chờ làm",
-        "in_progress": "Đang làm",
-        "done": "Xong",
-    }.get(status, status)
-    y = _draw_text(draw, MARGIN_LEFT, y, f"Trạng thái: {status_display}", font_body)
-
-    y = _draw_double_line(draw, y + 10)
-    y = _draw_centered_text(draw, y, "--- Phiếu sản xuất ---", font_small, (120, 120, 120))
-
-    # Crop to content
-    bbox = img.getbbox()
-    if bbox:
-        img = img.crop((0, 0, RECEIPT_WIDTH, bbox[3] + MARGIN_BOTTOM))
-
-    return img
-
-
-def _render_customer_receipt(order_detail: dict, shop_config: dict, conn) -> Image.Image:
-    """Render customer receipt (clean, customer-facing).
-
-    F4: shop name + contact, order ref, date, items (name, qty, price),
-    total, amount paid, remaining balance, due date, delivery info.
-    NO internal notes or statuses.
-    """
-    font_body = _get_font(FONT_SIZE_BODY)
-    font_bold = _get_font(FONT_SIZE_BODY, bold=True)
-    font_small = _get_font(FONT_SIZE_SMALL)
-
-    # Calculate required height
-    work_items = order_detail.get("workItems", [])
-    delivery_address = order_detail.get("delivery_address", "") or ""
-
-    num_lines = 15
-    for item in work_items:
-        item_name = item.get("product_name", "")
-        num_lines += _calculate_text_height(item_name, font_body, CONTENT_WIDTH - 150) // LINE_HEIGHT
-        num_lines += 1
-    num_lines += _calculate_text_height(delivery_address, font_small, CONTENT_WIDTH) // LINE_HEIGHT_SMALL
-
-    img_height = MARGIN_TOP + (num_lines * LINE_HEIGHT) + MARGIN_BOTTOM + 150
-    img = Image.new("RGB", (RECEIPT_WIDTH, img_height), "white")
-    draw = ImageDraw.Draw(img)
-
-    y = MARGIN_TOP
-    y = _render_header(draw, y, shop_config)
-
-    # Customer receipt header
-    font_title = _get_font(FONT_SIZE_HEADER, bold=True)
-    y = _draw_centered_text(draw, y, "HÓA ĐƠN", font_title, (0, 0, 0))
-    y = _draw_separator(draw, y)
-
-    # Order reference
-    order_ref = order_detail.get("order_ref", "")
-    font_ref = _get_font(FONT_SIZE_HEADER, bold=True)
-    y = _draw_centered_text(draw, y, f"Mã đơn: {order_ref}", font_ref, (0, 0, 0))
-    y += 4
-
-    # Date
-    created_at = order_detail.get("created_at", "")[:10] if order_detail.get("created_at") else ""
-    y = _draw_text(draw, MARGIN_LEFT, y, f"Ngày: {created_at}", font_body)
-    y = _draw_separator(draw, y)
-
-    # Customer info
-    customer_name = order_detail.get("customer_name", "")
-    customer_phone = order_detail.get("customer_phone", "") or ""
-    y = _draw_text(draw, MARGIN_LEFT, y, f"Khách hàng: {customer_name}", font_body)
-    if customer_phone:
-        y = _draw_text(draw, MARGIN_LEFT, y, f"Điện thoại: {customer_phone}", font_body)
-    y = _draw_separator(draw, y)
-
-    # Items header
-    draw.text((MARGIN_LEFT, y), "SẢN PHẨM", font=font_bold, fill=(0, 0, 0))
-    draw.text((MARGIN_LEFT + 240, y), "SL", font=font_bold, fill=(0, 0, 0))
-    draw.text((MARGIN_LEFT + 300, y), "T.TIỀN", font=font_bold, fill=(0, 0, 0))
-    y += LINE_HEIGHT
-    draw.line([(MARGIN_LEFT, y), (RECEIPT_WIDTH - MARGIN_RIGHT, y)], fill=(180, 180, 180), width=1)
-    y += 4
-
-    # Items (clean - no birthday flags, no internal notes)
-    for item in work_items:
-        item_name = item.get("product_name", "")
-        qty = item.get("quantity", 1)
-        unit_price = float(item.get("unit_price", 0))
-        line_total = qty * unit_price
-
-        lines = _wrap_text(item_name, font_body, 230)
-        for i, line in enumerate(lines):
-            y = _draw_text(draw, MARGIN_LEFT, y, line, font_body)
-        y = _draw_text(draw, MARGIN_LEFT + 240, y - LINE_HEIGHT, str(qty), font_body)
-        y = _draw_text(draw, MARGIN_LEFT + 300, y - LINE_HEIGHT, _format_vnd(line_total), font_body)
-        y += 4
-
-    y = _draw_separator(draw, y)
-
-    # Totals
-    total_price = float(order_detail.get("total_price", 0))
-    y = _draw_text(draw, MARGIN_LEFT, y, "TỔNG CỘNG:", font_bold)
-    y = _draw_right_text(draw, RECEIPT_WIDTH - MARGIN_RIGHT, y - LINE_HEIGHT, _format_vnd(total_price), font_bold)
-
-    # Payment info
-    order_id = order_detail.get("id")
-    total_paid = 0.0
-    if order_id:
-        total_paid = PaymentTransaction.total_for_order(conn, order_id)
-    amount_paid = total_paid
-    remaining = total_price - amount_paid
-
-    y = _draw_text(draw, MARGIN_LEFT, y, "Đã thanh toán:", font_body)
-    y = _draw_right_text(draw, RECEIPT_WIDTH - MARGIN_RIGHT, y - LINE_HEIGHT, _format_vnd(amount_paid), font_body, (0, 100, 0))
-
-    if remaining > 0:
-        y = _draw_text(draw, MARGIN_LEFT, y, "Còn nợ:", font_body)
-        y = _draw_right_text(draw, RECEIPT_WIDTH - MARGIN_RIGHT, y - LINE_HEIGHT, _format_vnd(remaining), font_body, (180, 0, 0))
-
-    y = _draw_separator(draw, y)
-
-    # Due date/time
-    due_date = order_detail.get("due_date", "")
-    due_time = order_detail.get("due_time", "") or ""
-    if due_date:
-        due_str = f"Ngày nhận: {due_date}"
-        if due_time:
-            due_str += f" {due_time}"
-        y = _draw_text(draw, MARGIN_LEFT, y, due_str, font_body)
-
-    # Delivery info
-    delivery_type = order_detail.get("delivery_type", "pickup")
-    delivery_type_display = "Nhận tại tiệm" if delivery_type == "pickup" else "Giao hàng"
-    y = _draw_text(draw, MARGIN_LEFT, y, f"Hình thức: {delivery_type_display}", font_body)
-    if delivery_type != "pickup" and delivery_address:
-        addr_lines = _wrap_text(delivery_address, font_small, CONTENT_WIDTH)
-        for line in addr_lines:
-            y = _draw_text(draw, MARGIN_LEFT, y, f"  {line}", font_small)
+    status_vn = {"pending": "Chờ làm", "in_progress": "Đang làm", "done": "Xong"}.get(status, status)
+    y = _left(draw, y, f"Trạng thái: {status_vn}", fb)
 
     # Footer
-    y = _draw_double_line(draw, y + 10)
-    y = _draw_centered_text(draw, y, "Cảm ơn quý khách!", font_body, (100, 100, 100))
+    y += 4
+    y = _double(draw, y)
+    y = _center(draw, y, "--- Phiếu sản xuất ---", fs, (120, 120, 120))
 
-    # Crop to content
-    bbox = img.getbbox()
-    if bbox:
-        img = img.crop((0, 0, RECEIPT_WIDTH, bbox[3] + MARGIN_BOTTOM))
+    return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
 
-    return img
 
+def _render_work_ticket_combined(order, cfg, conn) -> Image.Image:
+    """Combined work ticket for all items in an order."""
+    work_items = order.get("workItems", [])
+
+    img = Image.new("RGB", (RECEIPT_WIDTH, 3000), "white")
+    draw = ImageDraw.Draw(img)
+
+    fb = _font(_SZ_BODY)
+    fbb = _font(_SZ_BODY, True)
+    fs = _font(_SZ_SMALL)
+
+    y = MARGIN
+    y = _header(draw, y, cfg)
+
+    # Title
+    y = _center(draw, y, "PHIẾU SẢN XUẤT", _font(_SZ_SUBTITLE, True))
+    y = _sep(draw, y)
+
+    # Order ref
+    ref = order.get("orderRef", "") or order.get("order_ref", "")
+    y = _center(draw, y, f"Mã đơn: {ref}", _font(_SZ_SUBTITLE, True))
+
+    # Customer
+    name = order.get("customerName", "") or order.get("customer_name", "")
+    if name:
+        y = _left(draw, y, f"Khách hàng: {name}", fb)
+
+    # Due date (prominent at top)
+    due = order.get("dueDate", "") or order.get("due_date", "")
+    due_time = order.get("dueTime", "") or order.get("due_time", "") or ""
+    if due:
+        due_str = f"NGÀY GIAO: {due}"
+        if due_time:
+            due_str += f" {due_time}"
+        y = _center(draw, y, due_str, _font(_SZ_SUBTITLE, True))
+    y = _sep(draw, y)
+
+    # Each work item
+    for i, item in enumerate(work_items):
+        if i > 0:
+            y = _sep(draw, y)
+
+        product = item.get("productName", "") or item.get("product_name", "")
+        qty = item.get("quantity", 1)
+        y = _left(draw, y, f"{i + 1}. {product}  x{qty}", fbb)
+
+        if item.get("isBirthday") or item.get("is_birthday"):
+            age = item.get("age")
+            age_text = f"   🎂 Sinh nhật{(' - ' + str(age) + ' tuổi') if age else ''}"
+            y = _left(draw, y, age_text, fb, (180, 0, 0))
+
+        notes = item.get("notes", "") or ""
+        if notes:
+            for ln in _wrap(f"   Ghi chú: {notes}", fs, CONTENT_WIDTH - 20):
+                y = _left(draw, y, ln, fs, (80, 80, 80))
+
+    # Footer
+    y += 4
+    y = _double(draw, y)
+    y = _center(draw, y, "--- Phiếu sản xuất ---", fs, (120, 120, 120))
+
+    return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
+
+
+def _render_customer_receipt(order, cfg, conn) -> Image.Image:
+    """Customer receipt ('BIÊN NHẬN') matching the physical paper bill style."""
+    work_items = order.get("workItems", [])
+
+    img = Image.new("RGB", (RECEIPT_WIDTH, 2000), "white")
+    draw = ImageDraw.Draw(img)
+
+    fb = _font(_SZ_BODY)
+    fbb = _font(_SZ_BODY, True)
+    fs = _font(_SZ_SMALL)
+
+    y = MARGIN
+    y = _header(draw, y, cfg)
+
+    # Title — matching the paper form
+    y = _center(draw, y, "BIÊN NHẬN", _font(_SZ_SUBTITLE, True))
+    y = _sep(draw, y)
+
+    # Order ref
+    ref = order.get("orderRef", "") or order.get("order_ref", "")
+    y = _center(draw, y, f"Mã đơn: {ref}", _font(_SZ_SUBTITLE, True))
+
+    # Date
+    created = order.get("createdAt", "") or order.get("created_at", "")
+    if created:
+        y = _left(draw, y, f"Ngày: {created[:10]}", fb)
+
+    # Customer info — single line like the paper form: "Tên KH: ___  ĐT: ___"
+    name = order.get("customerName", "") or order.get("customer_name", "")
+    phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
+    cust_line = f"Tên khách hàng: {name}"
+    if phone:
+        cust_line += f"    ĐT: {phone}"
+    y = _left(draw, y, cust_line, fb)
+    y = _sep(draw, y)
+
+    # Items — simpler table (no unit price, matching paper "Nội dung" section)
+    y = _left(draw, y, "Nội dung:", fbb)
+    for item in work_items:
+        item_name = item.get("productName", "") or item.get("product_name", "")
+        qty = item.get("quantity", 1)
+        unit_price = float(item.get("unitPrice", 0) or item.get("unit_price", 0))
+        total = qty * unit_price
+
+        line = f"  - {item_name}  x{qty}"
+        draw.text((MARGIN, y), line, font=fb, fill=(0, 0, 0))
+        total_str = _format_vnd(total)
+        w = _tw(total_str, fb)
+        draw.text((RECEIPT_WIDTH - MARGIN - w, y), total_str, font=fb, fill=(0, 0, 0))
+        y += _th(line, fb) + LINE_GAP
+
+    y = _sep(draw, y)
+
+    # Totals — matching paper: Tiền / Đưa trước / Còn lại
+    total_price = float(order.get("totalPrice", 0) or order.get("total_price", 0))
+    y = _row(draw, y, "Tiền:", _format_vnd(total_price), fbb)
+
+    order_id = order.get("id")
+    total_paid = PaymentTransaction.total_for_order(conn, order_id) if order_id else 0.0
+    remaining = total_price - total_paid
+
+    y = _row(draw, y, "Đưa trước:", _format_vnd(total_paid), fb, color_v=(0, 100, 0))
+    if remaining > 0:
+        y = _row(draw, y, "Còn lại:", _format_vnd(remaining), fb, color_v=(180, 0, 0))
+    y = _sep(draw, y)
+
+    # Due date + delivery
+    due = order.get("dueDate", "") or order.get("due_date", "")
+    due_time = order.get("dueTime", "") or order.get("due_time", "") or ""
+    if due:
+        due_str = f"Ngày nhận: {due}"
+        if due_time:
+            due_str += f" {due_time}"
+        y = _left(draw, y, due_str, fb)
+
+    dtype = order.get("deliveryType", "") or order.get("delivery_type", "pickup")
+    dtype_vn = "Nhận tại tiệm" if dtype == "pickup" else "Giao hàng"
+    y = _left(draw, y, f"Hình thức: {dtype_vn}", fb)
+
+    daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
+    if dtype != "pickup" and daddr:
+        for ln in _wrap(daddr, fs, CONTENT_WIDTH - 20):
+            y = _left(draw, y, f"  {ln}", fs)
+
+    # Footer
+    y += 4
+    y = _double(draw, y)
+    y = _center(draw, y, "Cảm ơn quý khách!", fb, (100, 100, 100))
+
+    return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
+
+
+# --- Order detail builder ---
 
 def _order_detail(conn, row) -> dict:
-    """Build full order detail dict including work items and payment transactions."""
+    """Build full order detail dict from DB row."""
     from baker.models.order import Order
     from baker.models.work_item import WorkItem
 
@@ -609,23 +575,38 @@ def _order_detail(conn, row) -> dict:
         (row["id"],),
     ).fetchall()
     result["workItems"] = [WorkItem.from_row(r).to_api_dict() for r in item_rows]
-    result["id"] = row["id"]
+    result["id"] = row["id"]  # keep as int for PaymentTransaction lookup
 
     return result
 
+
+def _get_photo(conn, order_id: int, work_item_id: int) -> Optional[bytes]:
+    """Get first photo bytes for a work item."""
+    for query, params in [
+        ("SELECT hash FROM photos p JOIN order_photos op ON p.id = op.photo_id WHERE op.order_id = ? AND op.work_item_id = ? LIMIT 1", (order_id, work_item_id)),
+        ("SELECT hash FROM photos p JOIN order_photos op ON p.id = op.photo_id WHERE op.order_id = ? LIMIT 1", (order_id,)),
+    ]:
+        row = conn.execute(query, params).fetchone()
+        if row:
+            photo_path = baker.config.PHOTOS_DIR / f"{row['hash']}.jpg"
+            if photo_path.exists():
+                return photo_path.read_bytes()
+    return None
+
+
+# --- API endpoint ---
 
 @router.get("/{ref}/receipt")
 def get_receipt(
     ref: str,
     type: str = Query(..., description="Receipt type: order, work_ticket, or customer"),
-    item_id: Optional[int] = Query(None, description="Work item ID for work_ticket type"),
+    item_id: Optional[int] = Query(None, description="Work item ID (optional for work_ticket)"),
 ):
-    """Generate receipt image for an order.
+    """Generate receipt image as PNG.
 
-    Returns PNG image of the receipt.
-    - type=order: Order summary receipt (internal use)
-    - type=work_ticket: Work ticket for production (requires item_id)
-    - type=customer: Clean customer-facing receipt
+    - type=order: internal order summary
+    - type=work_ticket: production ticket (item_id for single item, omit for all items)
+    - type=customer: clean customer-facing receipt (BIÊN NHẬN)
     """
     with get_db() as conn:
         row = conn.execute(
@@ -635,32 +616,31 @@ def get_receipt(
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 
-        order_detail = _order_detail(conn, row)
-        shop_config = _get_shop_config(conn)
+        detail = _order_detail(conn, row)
+        cfg = _shop_config(conn)
 
-        # Render the appropriate receipt type
         if type == "order":
-            img = _render_order_receipt(order_detail, shop_config, conn)
+            img = _render_order_receipt(detail, cfg, conn)
         elif type == "work_ticket":
-            if item_id is None:
-                raise HTTPException(status_code=400, detail="item_id is required for work_ticket type")
-            # Find the work item (id may be string or int)
-            work_item = None
-            for wi in order_detail.get("workItems", []):
-                if str(wi.get("id")) == str(item_id):
-                    work_item = wi
-                    break
-            if not work_item:
-                raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
-            # Get photo for this work item
-            photo_bytes = _get_order_photo_for_work_item(conn, row["id"], item_id)
-            img = _render_work_ticket(order_detail, work_item, shop_config, photo_bytes, conn)
+            if item_id is not None:
+                # Single-item work ticket
+                work_item = None
+                for wi in detail.get("workItems", []):
+                    if str(wi.get("id")) == str(item_id):
+                        work_item = wi
+                        break
+                if not work_item:
+                    raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
+                photo = _get_photo(conn, row["id"], item_id)
+                img = _render_work_ticket(detail, work_item, cfg, photo, conn)
+            else:
+                # Combined work ticket for all items
+                img = _render_work_ticket_combined(detail, cfg, conn)
         elif type == "customer":
-            img = _render_customer_receipt(order_detail, shop_config, conn)
+            img = _render_customer_receipt(detail, cfg, conn)
         else:
-            raise HTTPException(status_code=400, detail="Invalid receipt type: must be order, work_ticket, or customer")
+            raise HTTPException(status_code=400, detail="Invalid type: order, work_ticket, or customer")
 
-        # Convert to PNG bytes
         buf = io.BytesIO()
         img.save(buf, format="PNG", quality=95)
         buf.seek(0)

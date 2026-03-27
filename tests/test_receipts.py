@@ -10,7 +10,7 @@ sys.path.insert(0, "src")
 
 from baker.api.receipts import (
     _format_vnd,
-    _wrap_text,
+    _wrap,
 )
 
 
@@ -18,14 +18,16 @@ class TestVNDFormatting:
     """Test Vietnamese currency formatting."""
 
     def test_whole_number(self):
-        assert _format_vnd(150000) == "150000đ"
+        assert _format_vnd(150000) == "150.000đ"
 
-    def test_with_decimals(self):
-        # Note: format uses , for thousands separator, not for decimals
-        assert _format_vnd(150000) == "150000đ"
+    def test_large_number(self):
+        assert _format_vnd(1500000) == "1.500.000đ"
 
     def test_zero(self):
         assert _format_vnd(0) == "0đ"
+
+    def test_small_number(self):
+        assert _format_vnd(5000) == "5.000đ"
 
 
 class TestTextWrapping:
@@ -34,13 +36,13 @@ class TestTextWrapping:
     def test_no_wrap_needed(self):
         from PIL import ImageFont
         font = ImageFont.load_default()
-        result = _wrap_text("Short text", font, 200)
+        result = _wrap("Short text", font, 200)
         assert result == ["Short text"]
 
     def test_wrap_long_text(self):
         from PIL import ImageFont
         font = ImageFont.load_default()
-        result = _wrap_text("This is a very long text that should be wrapped", font, 50)
+        result = _wrap("This is a very long text that should be wrapped", font, 50)
         assert len(result) > 1
 
 
@@ -125,8 +127,8 @@ class TestReceiptAPI:
         assert response.status_code == 200
         assert response.headers["content-type"] == "image/png"
 
-    def test_work_ticket_endpoint_without_item_id_fails(self, api_client):
-        """Test work ticket without item_id returns 400."""
+    def test_work_ticket_endpoint_without_item_id_returns_combined(self, api_client):
+        """Test work ticket without item_id returns combined ticket for all items."""
         # Create an order
         order_resp = api_client.post("/api/orders", json={
             "customerName": "Test",
@@ -137,7 +139,8 @@ class TestReceiptAPI:
         order_ref = order_resp.json()["orderRef"]
 
         response = api_client.get(f"/api/orders/{order_ref}/receipt?type=work_ticket")
-        assert response.status_code == 400
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
 
     def test_invalid_receipt_type_fails(self, api_client):
         """Test invalid receipt type returns 400."""
