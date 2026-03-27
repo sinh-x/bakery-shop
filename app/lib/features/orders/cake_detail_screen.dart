@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
+import '../../data/api/receipt_service.dart';
 import '../../data/models/work_item.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
@@ -213,6 +214,13 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
             icon: const Icon(Icons.receipt_long_outlined),
             tooltip: VN.viewOrder,
             onPressed: () => context.push('/orders/${widget.orderRef}'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.print_outlined),
+            tooltip: VN.printReceipt,
+            onPressed: () => context.push(
+              '/orders/${widget.orderRef}/receipt?type=${ReceiptType.workTicket.value}&item_id=${widget.workItemId}',
+            ),
           ),
         ],
       ),
