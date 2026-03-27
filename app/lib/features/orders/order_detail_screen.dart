@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../data/api/api_client.dart';
+import '../../data/api/receipt_service.dart';
 import '../../data/models/order.dart';
 import '../../data/models/order_photo.dart';
 import '../../data/models/payment_transaction.dart';
@@ -108,6 +109,57 @@ class OrderDetailScreen extends ConsumerWidget {
 
   final String orderRef;
 
+  void _showReceiptTypeSelector(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                VN.selectReceiptType,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.receipt_long),
+              title: const Text(VN.printOrderSummary),
+              onTap: () {
+                Navigator.pop(ctx);
+                context.push(
+                  '/orders/$orderRef/receipt?type=${ReceiptType.order.value}',
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.receipt),
+              title: const Text(VN.printWorkTicket),
+              onTap: () {
+                Navigator.pop(ctx);
+                context.push(
+                  '/orders/$orderRef/receipt?type=${ReceiptType.workTicket.value}',
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.person),
+              title: const Text(VN.printCustomerReceipt),
+              onTap: () {
+                Navigator.pop(ctx);
+                context.push(
+                  '/orders/$orderRef/receipt?type=${ReceiptType.customer.value}',
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final orderAsync = ref.watch(orderDetailProvider(orderRef));
@@ -127,6 +179,11 @@ class OrderDetailScreen extends ConsumerWidget {
                 ),
               ) ??
               const SizedBox.shrink(),
+          IconButton(
+            icon: const Icon(Icons.print_outlined),
+            tooltip: VN.printReceipt,
+            onPressed: () => _showReceiptTypeSelector(context),
+          ),
         ],
       ),
       body: orderAsync.when(

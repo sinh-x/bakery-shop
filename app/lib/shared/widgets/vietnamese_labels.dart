@@ -321,6 +321,17 @@ class VN {
   static const cancel = 'Hủy';
   static const back = 'Quay lại';
   static const currency = 'đ';
+
+  // Receipts
+  static const printReceipt = 'In';
+  static const printOrderSummary = 'Tóm tắt đơn hàng';
+  static const printWorkTicket = 'Phiếu sản xuất';
+  static const printCustomerReceipt = 'Hóa đơn khách hàng';
+  static const selectReceiptType = 'Chọn loại phiếu';
+  static const receiptPreview = 'Xem phiếu';
+  static const share = 'Chia sẻ';
+  static const saveToGallery = 'Lưu ảnh';
+  static const receiptSaved = 'Đã lưu ảnh phiếu';
 }
 
 // Category mapping (new slugs)
