@@ -43,6 +43,11 @@ dependencies:
   share_plus: ^10.1.4
   path_provider: ^2.1.5
 
+  # Bluetooth thermal printer
+  flutter_thermal_printer: ^2.0.1
+  esc_pos_utils_plus: ^2.0.4
+  image: ^4.8.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
