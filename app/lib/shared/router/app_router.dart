@@ -124,7 +124,7 @@ final appRouter = GoRouter(
         final itemId = itemIdStr != null ? int.tryParse(itemIdStr) : null;
         final receiptType = ReceiptType.values.firstWhere(
           (t) => t.value == typeValue,
-          orElse: () => ReceiptType.order,
+          orElse: () => ReceiptType.workTicket,
         );
         return ReceiptPreviewScreen(
           orderRef: orderRef,

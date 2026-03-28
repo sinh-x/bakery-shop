@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api_client.dart';
 
 enum ReceiptType {
-  order('order', 'Tóm tắt đơn hàng'),
   workTicket('work_ticket', 'Phiếu sản xuất'),
   customer('customer', 'Hóa đơn khách hàng');
 
@@ -29,10 +28,14 @@ class ReceiptService {
     required String orderRef,
     required ReceiptType type,
     int? itemId,
+    bool photos = true,
   }) async {
     final params = <String, dynamic>{'type': type.value};
     if (itemId != null) {
       params['item_id'] = itemId.toString();
+    }
+    if (!photos) {
+      params['photos'] = 'false';
     }
 
     final response = await _dio.get(
