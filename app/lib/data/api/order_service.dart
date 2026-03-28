@@ -72,6 +72,7 @@ class OrderService {
     String? deliveryAddress,
     String? notes,
     String? source,
+    String changedBy = '',
   }) async {
     final body = <String, dynamic>{};
     if (customerName != null) body['customerName'] = customerName;
@@ -82,6 +83,7 @@ class OrderService {
     if (deliveryAddress != null) body['deliveryAddress'] = deliveryAddress;
     if (notes != null) body['notes'] = notes;
     if (source != null) body['source'] = source;
+    if (changedBy.isNotEmpty) body['changedBy'] = changedBy;
 
     final response = await _dio.patch('/api/orders/$ref', data: body);
     return Order.fromJson(response.data as Map<String, dynamic>);
@@ -91,18 +93,26 @@ class OrderService {
     String ref,
     String status, {
     String reason = '',
+    String changedBy = '',
   }) async {
+    final body = <String, dynamic>{
+      'status': status,
+      'reason': reason,
+    };
+    if (changedBy.isNotEmpty) body['changedBy'] = changedBy;
     final response = await _dio.post(
       '/api/orders/$ref/status',
-      data: {'status': status, 'reason': reason},
+      data: body,
     );
     return Order.fromJson(response.data as Map<String, dynamic>);
   }
 
-  Future<Order> updatePayment(String ref, double amountPaid) async {
+  Future<Order> updatePayment(String ref, double amountPaid, {String changedBy = ''}) async {
+    final body = <String, dynamic>{'amountPaid': amountPaid};
+    if (changedBy.isNotEmpty) body['changedBy'] = changedBy;
     final response = await _dio.patch(
       '/api/orders/$ref/payment',
-      data: {'amountPaid': amountPaid},
+      data: body,
     );
     return Order.fromJson(response.data as Map<String, dynamic>);
   }
