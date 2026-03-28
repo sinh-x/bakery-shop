@@ -578,6 +578,21 @@ def _migrate_v18_seed_checklist(conn):
         )
 
 
+ORDER_HISTORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS order_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    INTEGER NOT NULL REFERENCES orders(id),
+    action_type TEXT NOT NULL,
+    field_name  TEXT DEFAULT '',
+    old_value   TEXT DEFAULT '',
+    new_value   TEXT DEFAULT '',
+    changed_by  TEXT DEFAULT '',
+    timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_order_history_order ON order_history(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_history_timestamp ON order_history(timestamp);
+"""
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -661,6 +676,10 @@ MIGRATIONS = {
         "description": "Checklist templates and entries tables with seed data",
         "sql": CHECKLIST_SCHEMA,
         "callable": _migrate_v18_seed_checklist,
+    },
+    19: {
+        "description": "Order history audit table for tracking all order changes",
+        "sql": ORDER_HISTORY_SCHEMA,
     },
 }
 
