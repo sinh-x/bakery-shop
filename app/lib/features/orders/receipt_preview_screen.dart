@@ -7,7 +7,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/api/receipt_service.dart';
+import '../../data/services/printer_service.dart';
 import '../../providers/printer_provider.dart';
+import '../../shared/widgets/printer_picker_dialog.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 
 class ReceiptPreviewScreen extends ConsumerStatefulWidget {
@@ -103,7 +105,43 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
     if (_imageBytes == null) return;
 
     final printerNotifier = ref.read(printerProvider.notifier);
+    final printerService = ref.read(printerServiceProvider);
 
+    // Check if printer is connected
+    final printerStatus = ref.read(printerProvider);
+    final currentStatus = printerStatus.value;
+    final isDisconnected =
+        currentStatus == null || currentStatus.state == PrinterState.disconnected;
+
+    // If disconnected, show the printer picker dialog
+    if (isDisconnected) {
+      final result = await showPrinterPickerDialog(
+        context: context,
+        imageBytes: _imageBytes!,
+        printerService: printerService,
+      );
+
+      if (!mounted) return;
+
+      switch (result) {
+        case PrinterPickerResult.success:
+          showTopSnackBar(context, VN.printSuccess);
+          break;
+        case PrinterPickerResult.failed:
+          // Error message is shown by the picker dialog itself
+          break;
+        case PrinterPickerResult.cancelled:
+          // User cancelled - do nothing
+          break;
+      }
+      return;
+    }
+
+    // Printer is connected - show loading dialog and print
+    _printWithConnectedPrinter(printerNotifier);
+  }
+
+  Future<void> _printWithConnectedPrinter(PrinterNotifier printerNotifier) async {
     // Show loading dialog
     showDialog(
       context: context,
