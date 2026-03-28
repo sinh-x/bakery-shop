@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.3.0+20] — 2026-03-28
+- feat(print): add runtime Bluetooth permission handling for Android 12+
+
 ## [0.3.0+2] — 2026-03-28
 - chore: update CHANGELOG for v0.3.0
 

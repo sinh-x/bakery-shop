@@ -1,8 +1,7 @@
 """Receipt image generation API for thermal printer.
 
-Generates three receipt types as PNG images sized for 80mm thermal paper:
-- Order summary (internal): all items, payment details, notes
-- Work ticket (production): per-item or combined, with photo thumbnails
+Generates two receipt types as PNG images sized for 80mm thermal paper:
+- Work ticket (Phiếu Nội Bộ): internal single-item receipt with photo thumbnails
 - Customer receipt ("BIÊN NHẬN"): clean, customer-facing, matching paper bill style
 """
 
@@ -52,9 +51,9 @@ def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
 
 
 def _format_vnd(amount) -> str:
-    """Format Vietnamese currency: 275000 → '275.000đ'."""
-    n = int(float(amount))
-    return f"{n:,}đ".replace(",", ".")
+    """Format Vietnamese currency: 275000 → '275' (shortened, divide by 1000, no suffix)."""
+    n = int(float(amount) / 1000)
+    return str(n)
 
 
 def _th(text: str, font) -> int:
@@ -159,205 +158,65 @@ def _header(draw, y, cfg):
     addr = cfg.get("receipt_shop_address", "")
     if addr:
         y = _center(draw, y, addr, _font(_SZ_SMALL), (80, 80, 80))
-    # Phone
+    # Phone — use ☎ if NotoSans supports it, otherwise fallback to SĐT:
     phone = cfg.get("receipt_shop_phone", "")
     if phone:
-        y = _center(draw, y, f"☎ {phone}", _font(_SZ_SMALL), (80, 80, 80))
+        y = _center(draw, y, f"SĐT: {phone}", _font(_SZ_SMALL), (80, 80, 80))
     y = _double(draw, y)
-    return y
-
-
-# --- Items table helpers ---
-
-def _items_table(draw, y, work_items, show_unit_price=True):
-    """Draw items table with header + rows. Return y after."""
-    fb = _font(_SZ_BODY, True)
-    fr = _font(_SZ_BODY)
-
-    # Column positions
-    col_qty = MARGIN + 300
-    col_price = MARGIN + 370 if show_unit_price else MARGIN + 300
-    col_total = RECEIPT_WIDTH - MARGIN
-
-    # Header
-    draw.text((MARGIN, y), "SẢN PHẨM", font=fb, fill=(0, 0, 0))
-    draw.text((col_qty, y), "SL", font=fb, fill=(0, 0, 0))
-    if show_unit_price:
-        draw.text((col_price, y), "GIÁ", font=fb, fill=(0, 0, 0))
-    right_label = "T.TIỀN"
-    w = _tw(right_label, fb)
-    draw.text((col_total - w, y), right_label, font=fb, fill=(0, 0, 0))
-    y += _th("SẢN PHẨM", fb) + 4
-    draw.line([(MARGIN, y), (RECEIPT_WIDTH - MARGIN, y)], fill=(160, 160, 160), width=1)
-    y += 4
-
-    # Rows
-    for item in work_items:
-        name = item.get("productName", "") or item.get("product_name", "")
-        qty = item.get("quantity", 1)
-        unit_price = float(item.get("unitPrice", 0) or item.get("unit_price", 0))
-        line_total = qty * unit_price
-
-        # Item name (may wrap)
-        name_lines = _wrap(name, fr, 280)
-        row_y = y
-        for ln in name_lines:
-            draw.text((MARGIN, y), ln, font=fr, fill=(0, 0, 0))
-            y += _th(ln, fr) + 2
-
-        # Qty, price, total on the first line
-        draw.text((col_qty, row_y), str(qty), font=fr, fill=(0, 0, 0))
-        if show_unit_price:
-            draw.text((col_price, row_y), _format_vnd(unit_price), font=fr, fill=(0, 0, 0))
-        total_str = _format_vnd(line_total)
-        w = _tw(total_str, fr)
-        draw.text((col_total - w, row_y), total_str, font=fr, fill=(0, 0, 0))
-
-        # Birthday info
-        if item.get("isBirthday") or item.get("is_birthday"):
-            age = item.get("age")
-            age_text = f"🎂 Sinh nhật{(' - ' + str(age) + ' tuổi') if age else ''}"
-            fs = _font(_SZ_SMALL)
-            draw.text((MARGIN + 20, y), age_text, font=fs, fill=(180, 0, 0))
-            y += _th(age_text, fs) + 2
-
-        y += LINE_GAP
-
     return y
 
 
 # --- Receipt renderers ---
 
-def _render_order_receipt(order, cfg, conn) -> Image.Image:
-    """Order summary receipt (internal use)."""
-    work_items = order.get("workItems", [])
-    notes = order.get("notes", "") or ""
+def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image:
+    """Internal receipt (Phiếu Nội Bộ) for production staff — single item per receipt.
 
-    # Oversize canvas, crop later
+    Shows: product name (large), qty, notes/remarks, photo, due date, birthday, delivery info.
+    NO shop header.
+    """
     img = Image.new("RGB", (RECEIPT_WIDTH, 2000), "white")
     draw = ImageDraw.Draw(img)
 
     fb = _font(_SZ_BODY)
     fbb = _font(_SZ_BODY, True)
     fs = _font(_SZ_SMALL)
+    ft = _font(_SZ_TITLE, True)   # large title font for product name
+    fs_title = _font(_SZ_SUBTITLE, True)
 
     y = MARGIN
-    y = _header(draw, y, cfg)
 
-    # Title
-    y = _center(draw, y, "TÓM TẮT ĐƠN HÀNG", _font(_SZ_SUBTITLE, True))
+    # Title — "PHIẾU NỘI BỘ" (no shop header)
+    y = _center(draw, y, "PHIẾU NỘI BỘ", fs_title)
     y = _sep(draw, y)
 
     # Order ref
     ref = order.get("orderRef", "") or order.get("order_ref", "")
-    y = _center(draw, y, f"Mã đơn: {ref}", _font(_SZ_SUBTITLE, True))
-
-    # Date
-    created = order.get("createdAt", "") or order.get("created_at", "")
-    if created:
-        y = _left(draw, y, f"Ngày tạo: {created[:10]}", fb)
+    y = _center(draw, y, f"Mã đơn: {ref}", fs_title)
 
     # Customer
     name = order.get("customerName", "") or order.get("customer_name", "")
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
-    cust_line = f"Khách hàng: {name}"
-    if phone:
-        cust_line += f"    ĐT: {phone}"
-    y = _left(draw, y, cust_line, fb)
-    y = _sep(draw, y)
-
-    # Items table
-    y = _items_table(draw, y, work_items, show_unit_price=True)
-    y = _sep(draw, y)
-
-    # Totals
-    total_price = float(order.get("totalPrice", 0) or order.get("total_price", 0))
-    y = _row(draw, y, "TỔNG CỘNG:", _format_vnd(total_price), fbb)
-
-    # Payment
-    order_id = order.get("id")
-    total_paid = PaymentTransaction.total_for_order(conn, order_id) if order_id else 0.0
-    remaining = total_price - total_paid
-
-    y = _row(draw, y, "Đã thanh toán:", _format_vnd(total_paid), fb, color_v=(0, 100, 0))
-    if remaining > 0:
-        y = _row(draw, y, "Còn lại:", _format_vnd(remaining), fb, color_v=(180, 0, 0))
-    y = _sep(draw, y)
-
-    # Due date
-    due = order.get("dueDate", "") or order.get("due_date", "")
-    due_time = order.get("dueTime", "") or order.get("due_time", "") or ""
-    if due:
-        due_str = f"Ngày giao/nhận: {due}"
-        if due_time:
-            due_str += f" {due_time}"
-        y = _left(draw, y, due_str, fbb)
-
-    # Delivery type
-    dtype = order.get("deliveryType", "") or order.get("delivery_type", "pickup")
-    dtype_vn = "Nhận tại tiệm" if dtype == "pickup" else "Giao hàng"
-    y = _left(draw, y, f"Hình thức: {dtype_vn}", fb)
-
-    daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
-    if dtype != "pickup" and daddr:
-        for ln in _wrap(daddr, fs, CONTENT_WIDTH - 20):
-            y = _left(draw, y, f"  {ln}", fs)
-
-    # Notes
-    if notes:
-        y = _sep(draw, y)
-        y = _left(draw, y, "Ghi chú:", fbb)
-        for ln in _wrap(notes, fs, CONTENT_WIDTH):
-            y = _left(draw, y, ln, fs, (80, 80, 80))
-
-    # Footer
-    y += 4
-    y = _double(draw, y)
-    y = _center(draw, y, "--- Hết phiếu ---", fs, (120, 120, 120))
-
-    return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
-
-
-def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image:
-    """Work ticket receipt for production staff (single item)."""
-    img = Image.new("RGB", (RECEIPT_WIDTH, 2000), "white")
-    draw = ImageDraw.Draw(img)
-
-    fb = _font(_SZ_BODY)
-    fbb = _font(_SZ_BODY, True)
-    fs = _font(_SZ_SMALL)
-
-    y = MARGIN
-    y = _header(draw, y, cfg)
-
-    # Title
-    y = _center(draw, y, "PHIẾU SẢN XUẤT", _font(_SZ_SUBTITLE, True))
-    y = _sep(draw, y)
-
-    # Order ref
-    ref = order.get("orderRef", "") or order.get("order_ref", "")
-    y = _center(draw, y, f"Mã đơn: {ref}", _font(_SZ_SUBTITLE, True))
-
-    # Customer
-    name = order.get("customerName", "") or order.get("customer_name", "")
     if name:
-        y = _left(draw, y, f"Khách hàng: {name}", fb)
+        cust_line = f"Khách hàng: {name}"
+        if phone:
+            cust_line += f" - SĐT: {phone}"
+        y = _left(draw, y, cust_line, fb)
     y = _sep(draw, y)
 
-    # Product name
+    # Product name — LARGE
     product = work_item.get("productName", "") or work_item.get("product_name", "")
-    y = _left(draw, y, product, _font(_SZ_SUBTITLE, True))
+    y = _left(draw, y, product, ft)
+    y += 4
 
     # Birthday
     if work_item.get("isBirthday") or work_item.get("is_birthday"):
         age = work_item.get("age")
-        age_text = f"🎂 SINH NHẬT{(' - ' + str(age) + ' tuổi') if age else ''}"
+        age_text = f"* SINH NHẬT *{(' - ' + str(age) + ' tuổi') if age else ''}"
         y = _left(draw, y, age_text, fbb, (180, 0, 0))
 
-    # Qty and price
+    # Qty (prominent)
     qty = work_item.get("quantity", 1)
-    unit_price = float(work_item.get("unitPrice", 0) or work_item.get("unit_price", 0))
-    y = _row(draw, y, f"Số lượng: {qty}", _format_vnd(unit_price), fb)
+    y = _left(draw, y, f"SỐ LƯỢNG: {qty}", fbb)
 
     # Photo thumbnail
     if photo_bytes:
@@ -373,7 +232,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
         except Exception:
             pass
 
-    # Notes
+    # Notes/remarks
     notes = work_item.get("notes", "") or ""
     if notes:
         y = _left(draw, y, "Ghi chú:", fbb)
@@ -389,81 +248,22 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
         due_str = f"NGÀY GIAO: {due}"
         if due_time:
             due_str += f" {due_time}"
-        y = _center(draw, y, due_str, _font(_SZ_SUBTITLE, True))
+        y = _center(draw, y, due_str, fs_title)
 
-    # Status
-    status = work_item.get("status", "pending")
-    status_vn = {"pending": "Chờ làm", "in_progress": "Đang làm", "done": "Xong"}.get(status, status)
-    y = _left(draw, y, f"Trạng thái: {status_vn}", fb)
+    # Delivery type + address
+    dtype = order.get("deliveryType", "") or order.get("delivery_type", "pickup")
+    dtype_vn = "Nhận tại tiệm" if dtype == "pickup" else "Giao hàng"
+    y = _left(draw, y, f"Hình thức: {dtype_vn}", fb)
 
-    # Footer
-    y += 4
-    y = _double(draw, y)
-    y = _center(draw, y, "--- Phiếu sản xuất ---", fs, (120, 120, 120))
-
-    return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
-
-
-def _render_work_ticket_combined(order, cfg, conn) -> Image.Image:
-    """Combined work ticket for all items in an order."""
-    work_items = order.get("workItems", [])
-
-    img = Image.new("RGB", (RECEIPT_WIDTH, 3000), "white")
-    draw = ImageDraw.Draw(img)
-
-    fb = _font(_SZ_BODY)
-    fbb = _font(_SZ_BODY, True)
-    fs = _font(_SZ_SMALL)
-
-    y = MARGIN
-    y = _header(draw, y, cfg)
-
-    # Title
-    y = _center(draw, y, "PHIẾU SẢN XUẤT", _font(_SZ_SUBTITLE, True))
-    y = _sep(draw, y)
-
-    # Order ref
-    ref = order.get("orderRef", "") or order.get("order_ref", "")
-    y = _center(draw, y, f"Mã đơn: {ref}", _font(_SZ_SUBTITLE, True))
-
-    # Customer
-    name = order.get("customerName", "") or order.get("customer_name", "")
-    if name:
-        y = _left(draw, y, f"Khách hàng: {name}", fb)
-
-    # Due date (prominent at top)
-    due = order.get("dueDate", "") or order.get("due_date", "")
-    due_time = order.get("dueTime", "") or order.get("due_time", "") or ""
-    if due:
-        due_str = f"NGÀY GIAO: {due}"
-        if due_time:
-            due_str += f" {due_time}"
-        y = _center(draw, y, due_str, _font(_SZ_SUBTITLE, True))
-    y = _sep(draw, y)
-
-    # Each work item
-    for i, item in enumerate(work_items):
-        if i > 0:
-            y = _sep(draw, y)
-
-        product = item.get("productName", "") or item.get("product_name", "")
-        qty = item.get("quantity", 1)
-        y = _left(draw, y, f"{i + 1}. {product}  x{qty}", fbb)
-
-        if item.get("isBirthday") or item.get("is_birthday"):
-            age = item.get("age")
-            age_text = f"   🎂 Sinh nhật{(' - ' + str(age) + ' tuổi') if age else ''}"
-            y = _left(draw, y, age_text, fb, (180, 0, 0))
-
-        notes = item.get("notes", "") or ""
-        if notes:
-            for ln in _wrap(f"   Ghi chú: {notes}", fs, CONTENT_WIDTH - 20):
-                y = _left(draw, y, ln, fs, (80, 80, 80))
+    daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
+    if dtype != "pickup" and daddr:
+        for ln in _wrap(daddr, fs, CONTENT_WIDTH - 20):
+            y = _left(draw, y, f"  {ln}", fs)
 
     # Footer
     y += 4
     y = _double(draw, y)
-    y = _center(draw, y, "--- Phiếu sản xuất ---", fs, (120, 120, 120))
+    y = _center(draw, y, "--- Phiếu nội bộ ---", fs, (120, 120, 120))
 
     return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
 
@@ -599,15 +399,20 @@ def _get_photo(conn, order_id: int, work_item_id: int) -> Optional[bytes]:
 @router.get("/{ref}/receipt")
 def get_receipt(
     ref: str,
-    type: str = Query(..., description="Receipt type: order, work_ticket, or customer"),
-    item_id: Optional[int] = Query(None, description="Work item ID (optional for work_ticket)"),
+    type: str = Query(..., description="Receipt type: work_ticket or customer"),
+    item_id: Optional[int] = Query(None, description="Work item ID (required for work_ticket)"),
 ):
     """Generate receipt image as PNG.
 
-    - type=order: internal order summary
-    - type=work_ticket: production ticket (item_id for single item, omit for all items)
+    - type=work_ticket: internal receipt (Phiếu Nội Bộ), single item, requires item_id
     - type=customer: clean customer-facing receipt (BIÊN NHẬN)
     """
+    if type == "order":
+        raise HTTPException(status_code=400, detail="type=order is no longer supported")
+
+    if type == "work_ticket" and item_id is None:
+        raise HTTPException(status_code=400, detail="item_id is required for work_ticket")
+
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
@@ -619,27 +424,21 @@ def get_receipt(
         detail = _order_detail(conn, row)
         cfg = _shop_config(conn)
 
-        if type == "order":
-            img = _render_order_receipt(detail, cfg, conn)
-        elif type == "work_ticket":
-            if item_id is not None:
-                # Single-item work ticket
-                work_item = None
-                for wi in detail.get("workItems", []):
-                    if str(wi.get("id")) == str(item_id):
-                        work_item = wi
-                        break
-                if not work_item:
-                    raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
-                photo = _get_photo(conn, row["id"], item_id)
-                img = _render_work_ticket(detail, work_item, cfg, photo, conn)
-            else:
-                # Combined work ticket for all items
-                img = _render_work_ticket_combined(detail, cfg, conn)
+        if type == "work_ticket":
+            # Single-item work ticket (Phiếu Nội Bộ)
+            work_item = None
+            for wi in detail.get("workItems", []):
+                if str(wi.get("id")) == str(item_id):
+                    work_item = wi
+                    break
+            if not work_item:
+                raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
+            photo = _get_photo(conn, row["id"], item_id)
+            img = _render_work_ticket(detail, work_item, cfg, photo, conn)
         elif type == "customer":
             img = _render_customer_receipt(detail, cfg, conn)
         else:
-            raise HTTPException(status_code=400, detail="Invalid type: order, work_ticket, or customer")
+            raise HTTPException(status_code=400, detail="Invalid type: work_ticket or customer")
 
         buf = io.BytesIO()
         img.save(buf, format="PNG", quality=95)
