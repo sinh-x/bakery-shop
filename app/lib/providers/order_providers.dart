@@ -10,6 +10,7 @@ import '../data/models/order_photo.dart';
 import '../data/models/payment_transaction.dart';
 import '../data/models/product.dart';
 import '../data/models/work_item.dart';
+import 'events_provider.dart';
 
 class OrderListNotifier extends AsyncNotifier<List<Order>> {
   String? _statusFilter;
@@ -63,8 +64,9 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
 
   Future<Order> transitionTo(String targetStatus, {String reason = ''}) async {
     final service = ref.read(orderServiceProvider);
+    final changedBy = ref.read(loggedByProvider);
     final updated =
-        await service.updateStatus(orderRef, targetStatus, reason: reason);
+        await service.updateStatus(orderRef, targetStatus, reason: reason, changedBy: changedBy);
     state = AsyncData(updated);
     // Refresh the list so the status change is reflected there too.
     ref.read(orderListProvider.notifier).refresh();
@@ -82,6 +84,7 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
     String? customerName,
   }) async {
     final service = ref.read(orderServiceProvider);
+    final changedBy = ref.read(loggedByProvider);
     final updated = await service.editOrder(
       orderRef,
       notes: notes,
@@ -92,6 +95,7 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
       deliveryType: deliveryType,
       source: source,
       customerName: customerName,
+      changedBy: changedBy,
     );
     state = AsyncData(updated);
     ref.read(orderListProvider.notifier).refresh();

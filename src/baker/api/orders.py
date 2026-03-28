@@ -55,15 +55,27 @@ class OrderEdit(BaseModel):
     deliveryAddress: Optional[str] = None
     notes: Optional[str] = None
     source: Optional[str] = None
+    changedBy: str = ""
 
 
 class StatusTransition(BaseModel):
     status: str
     reason: str = ""
+    changedBy: str = ""
 
 
 class PaymentUpdate(BaseModel):
     amountPaid: float
+    changedBy: str = ""
+
+
+def _log_order_history(conn, order_id, action_type, field_name="", old_value="", new_value="", changed_by=""):
+    """Insert an audit log entry into the order_history table."""
+    conn.execute(
+        """INSERT INTO order_history (order_id, action_type, field_name, old_value, new_value, changed_by)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (order_id, action_type, field_name, old_value, new_value, changed_by),
+    )
 
 
 def _item_in_to_model(item: OrderItemIn) -> OrderItem:
@@ -146,6 +158,8 @@ def create_order(body: OrderCreate, request: Request):
         order.calculate_total()
         order.save(conn)
 
+        _log_order_history(conn, order.id, "created", changed_by=body.createdBy)
+
         # Create order_items rows so work item IDs are available for photo linking
         for position, item in enumerate(body.items):
             work_item = WorkItem(
@@ -222,7 +236,8 @@ def edit_order(ref: str, body: OrderEdit):
                 updates.append(f"{snake} = ?")
                 params.append(data[camel])
 
-        if "items" in data:
+        items_changed = "items" in data
+        if items_changed:
             items = [_item_in_to_model(OrderItemIn(**i)) for i in data["items"]]
             total = sum(i.qty * i.price for i in items)
             items_json = json.dumps([i.to_dict() for i in items])
@@ -240,6 +255,14 @@ def edit_order(ref: str, body: OrderEdit):
             f"UPDATE orders SET {', '.join(updates)} WHERE id = ?",
             params,
         )
+
+        # Log each changed field with old/new values
+        changed_by = data.get("changedBy", "")
+        for camel, snake in field_map.items():
+            if camel in data:
+                _log_order_history(conn, row["id"], "field_edit", snake, str(row[snake]), str(data[camel]), changed_by)
+        if items_changed:
+            _log_order_history(conn, row["id"], "field_edit", "items", row["items"], items_json, changed_by)
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         return _order_detail(conn, updated)
@@ -276,6 +299,8 @@ def transition_status(ref: str, body: StatusTransition):
         if not success:
             raise HTTPException(status_code=422, detail="Không thể chuyển trạng thái")
 
+        _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, body.changedBy)
+
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         return _order_detail(conn, updated)
 
@@ -302,6 +327,10 @@ def update_payment(ref: str, body: PaymentUpdate):
                 method="cash",
             )
             txn.save(conn)
+            _log_order_history(
+                conn, row["id"], "payment", "amount",
+                old_value="", new_value=str(body.amountPaid), changed_by=body.changedBy,
+            )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         return _order_detail(conn, updated)
