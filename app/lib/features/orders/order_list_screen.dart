@@ -296,10 +296,12 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
               // Order list / Kanban view
               Expanded(
                 child: _viewMode == 'kanban'
-                    ? _KanbanPlaceholder(filteredCount: ordersAsync.maybeWhen(
-                          data: (orders) => _applyFilters(orders).length,
-                          orElse: () => 0,
-                        ))
+                    ? _KanbanBoard(
+                        filteredOrders: ordersAsync.maybeWhen(
+                          data: (orders) => _applyFilters(orders),
+                          orElse: () => <Order>[],
+                        ),
+                      )
                     : ordersAsync.when(
                         loading: () =>
                             const Center(child: CircularProgressIndicator()),
@@ -672,33 +674,344 @@ class _OrderCard extends ConsumerWidget {
   }
 }
 
-class _KanbanPlaceholder extends StatelessWidget {
-  const _KanbanPlaceholder({required this.filteredCount});
+/// Active Kanban columns in order workflow
+const _kanbanStatuses = ['new', 'confirmed', 'in_progress', 'ready'];
 
-  final int filteredCount;
+class _KanbanBoard extends StatelessWidget {
+  const _KanbanBoard({required this.filteredOrders});
+
+  final List<Order> filteredOrders;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    // Group orders by status for active columns
+    final ordersByStatus = <String, List<Order>>{};
+    for (final status in _kanbanStatuses) {
+      ordersByStatus[status] =
+          filteredOrders.where((o) => o.status == status).toList();
+    }
+
+    return ListView.builder(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      itemCount: _kanbanStatuses.length,
+      itemBuilder: (context, index) {
+        final status = _kanbanStatuses[index];
+        final orders = ordersByStatus[status] ?? [];
+        return _KanbanColumn(
+          status: status,
+          orders: orders,
+        );
+      },
+    );
+  }
+}
+
+class _KanbanColumn extends StatelessWidget {
+  const _KanbanColumn({required this.status, required this.orders});
+
+  final String status;
+  final List<Order> orders;
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = _statusColors[status] ?? Colors.grey;
+    final statusLabel = statusMap[status] ?? status;
+
+    return Container(
+      width: 280,
+      margin: const EdgeInsets.symmetric(horizontal: 4),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.view_kanban,
-            size: 64,
-            color: Theme.of(context).colorScheme.outline,
+          // Column header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: statusColor.withAlpha(30),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
+              border: Border.all(color: statusColor.withAlpha(100)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    statusLabel,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: statusColor,
+                        ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: statusColor.withAlpha(50),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${orders.length}',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: statusColor,
+                        ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Khanban (đang xây dựng)',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '$filteredCount đơn hàng',
-            style: Theme.of(context).textTheme.bodySmall,
+
+          // Order cards list
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(12),
+                ),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+              child: orders.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'Không có đơn',
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .outline,
+                                  ),
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(8),
+                      itemCount: orders.length,
+                      itemBuilder: (context, index) {
+                        final order = orders[index];
+                        return _KanbanCard(
+                          order: order,
+                          onTap: () =>
+                              context.push('/orders/${order.orderRef}'),
+                        );
+                      },
+                    ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _KanbanCard extends ConsumerWidget {
+  const _KanbanCard({required this.order, this.onTap});
+
+  final Order order;
+  final VoidCallback? onTap;
+
+  Color? _urgencyBorderColor() {
+    if (order.dueDate == null || order.dueDate!.isEmpty) return null;
+    try {
+      final due = DateTime.parse(order.dueDate!);
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final dueDateOnly = DateTime(due.year, due.month, due.day);
+      if (dueDateOnly.isBefore(today)) {
+        return Colors.red;
+      } else if (dueDateOnly.isAtSameMomentAs(today)) {
+        return Colors.amber;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  IconData _deliveryIcon() {
+    switch (order.deliveryType) {
+      case 'bus':
+        return Icons.directions_bus;
+      case 'door':
+        return Icons.local_shipping;
+      case 'pickup':
+      default:
+        return Icons.storefront;
+    }
+  }
+
+  String _productSummary() {
+    if (order.items.isEmpty) return '';
+    final first = order.items.first;
+    final name = first.productName;
+    if (order.items.length == 1) return name;
+    return '$name +${order.items.length - 1}';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final photosAsync = ref.watch(orderPhotosProvider(order.orderRef));
+    final baseUrl = ref.watch(apiBaseUrlProvider);
+    final urgencyColor = _urgencyBorderColor();
+
+    // Find first cake photo
+    final cakePhoto = photosAsync.maybeWhen(
+      data: (photos) {
+        try {
+          return photos.firstWhere((p) => p.workItemId != null);
+        } catch (_) {
+          return null;
+        }
+      },
+      orElse: () => null,
+    );
+    final cakePhotoUrl = cakePhoto != null
+        ? '$baseUrl/api/photos/${cakePhoto.photoHash}.jpg'
+        : null;
+
+    // Build left border
+    final borderColor = urgencyColor ?? Colors.transparent;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 6),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(color: borderColor, width: 4),
+            ),
+          ),
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Top row: customer name + delivery icon + photo thumbnail
+              Row(
+                children: [
+                  Icon(
+                    _deliveryIcon(),
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      order.customerName,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (cakePhotoUrl != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: CachedNetworkImage(
+                        imageUrl: cakePhotoUrl,
+                        width: 36,
+                        height: 36,
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          width: 36,
+                          height: 36,
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          child: const Center(
+                            child:
+                                SizedBox(width: 12, height: 12, child:
+                                CircularProgressIndicator(strokeWidth: 1.5)),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          width: 36,
+                          height: 36,
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            size: 16,
+                            color: theme.colorScheme.outline,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+
+              const SizedBox(height: 6),
+
+              // Product summary
+              if (order.items.isNotEmpty)
+                Text(
+                  _productSummary(),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+
+              const SizedBox(height: 4),
+
+              // Due date/time + price
+              if (order.dueDate != null)
+                Row(
+                  children: [
+                    Icon(
+                      Icons.schedule,
+                      size: 12,
+                      color: urgencyColor ?? theme.colorScheme.outline,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        order.dueTime != null
+                            ? '${order.dueDate} ${order.dueTime}'
+                            : order.dueDate!,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color:
+                              urgencyColor ?? theme.colorScheme.outline,
+                          fontWeight:
+                              urgencyColor != null ? FontWeight.w600 : null,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      formatVND(order.totalPrice),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Text(
+                  formatVND(order.totalPrice),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
