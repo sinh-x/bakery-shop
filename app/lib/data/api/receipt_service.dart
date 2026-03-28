@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'api_client.dart';
 
 enum ReceiptType {
-  order('order', 'Tóm tắt đơn hàng'),
   workTicket('work_ticket', 'Phiếu sản xuất'),
   customer('customer', 'Hóa đơn khách hàng');
 

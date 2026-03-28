@@ -324,7 +324,6 @@ class VN {
 
   // Receipts
   static const printReceipt = 'In';
-  static const printOrderSummary = 'Tóm tắt đơn hàng';
   static const printWorkTicket = 'Phiếu sản xuất';
   static const printCustomerReceipt = 'Hóa đơn khách hàng';
   static const selectReceiptType = 'Chọn loại phiếu';

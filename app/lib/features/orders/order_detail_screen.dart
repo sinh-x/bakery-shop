@@ -124,16 +124,6 @@ class OrderDetailScreen extends ConsumerWidget {
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.receipt_long),
-              title: const Text(VN.printOrderSummary),
-              onTap: () {
-                Navigator.pop(ctx);
-                context.push(
-                  '/orders/$orderRef/receipt?type=${ReceiptType.order.value}',
-                );
-              },
-            ),
-            ListTile(
               leading: const Icon(Icons.receipt),
               title: const Text(VN.printWorkTicket),
               onTap: () {
