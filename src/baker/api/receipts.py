@@ -407,6 +407,10 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
         age_suffix = f" SINH NHẬT{(' - ' + str(age) + ' tuổi') if age else ''}"
         y = _icon_text(draw, y, "\U0001F382", age_suffix, fbb, (180, 0, 0), x=MARGIN + 10)
 
+    # Extra item badge
+    if work_item.get("isExtra") or work_item.get("is_extra"):
+        y = _icon_text(draw, y, "\U0001F4E6", "PHỤ LIỆU", fbb, (0, 100, 180), x=MARGIN + 10)
+
     # Photo — larger, centered
     if photo_bytes:
         photo_size = 192
@@ -532,7 +536,10 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
     y = _sep(draw, y)
 
     for i, item in enumerate(work_items):
+        is_gift = item.get("isGift") or item.get("is_gift") or False
         item_name = item.get("productName", "") or item.get("product_name", "")
+        if is_gift:
+            item_name = f"{item_name} (Tặng)"
         qty = item.get("quantity", 1)
         unit_price = float(item.get("unitPrice", 0) or item.get("unit_price", 0))
         total = qty * unit_price
@@ -623,8 +630,21 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
     y = _double(draw, y)
 
     # --- Financial Summary ---
+    # Calculate subtotal (non-gift items only)
+    subtotal = sum(
+        item.get("quantity", 1) * float(item.get("unitPrice", 0) or item.get("unit_price", 0))
+        for item in work_items
+        if not (item.get("isGift") or item.get("is_gift"))
+    )
+    shipping_fee = float(order.get("shippingFee", 0) or order.get("shipping_fee", 0))
     total_price = float(order.get("totalPrice", 0) or order.get("total_price", 0))
-    y = _row(draw, y, "Tạm tính:", _format_vnd_full(total_price), fbb)
+
+    y = _row(draw, y, "Tạm tính:", _format_vnd_full(subtotal), fbb)
+    if shipping_fee > 0:
+        y = _row(draw, y, "Phí giao hàng:", _format_vnd_full(shipping_fee), fbb)
+        y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
+    else:
+        y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
 
     order_id = order.get("id")
     total_paid = PaymentTransaction.total_for_order(conn, order_id) if order_id else 0.0
