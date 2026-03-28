@@ -471,6 +471,12 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             label: VN.notes,
             value: order.notes,
           ),
+        if (order.createdBy.isNotEmpty)
+          _InfoRow(
+            icon: Icons.person_outline,
+            label: 'Người tạo',
+            value: order.createdBy,
+          ),
         const SizedBox(height: 16),
 
         // ── Items ─────────────────────────────────────────────────────

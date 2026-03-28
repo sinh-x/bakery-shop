@@ -22,6 +22,7 @@ sealed class Order with _$Order {
     @Default('') String deliveryAddress,
     @Default('') String notes,
     @Default('') String source,
+    @Default('') String createdBy,
     @Default(0.0) double amountPaid,
     @Default(false) bool isPaid,
     @Default([]) List<PackingItem> packingChecklist,
