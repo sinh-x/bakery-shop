@@ -30,6 +30,9 @@ dependencies:
   # Image picker
   image_picker: ^1.1.2
 
+  # Cached network images for photo thumbnails
+  cached_network_image: ^3.4.1
+
   # Device info
   device_info_plus: ^11.0.0
   package_info_plus: ^8.0.0

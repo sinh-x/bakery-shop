@@ -1,9 +1,11 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../data/api/api_client.dart';
 import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
@@ -425,10 +427,25 @@ class _OrderCard extends ConsumerWidget {
     final statusColor = _statusColors[order.status] ?? Colors.grey;
     final statusLabel = statusMap[order.status] ?? order.status;
     final photosAsync = ref.watch(orderPhotosProvider(order.orderRef));
+    final baseUrl = ref.watch(apiBaseUrlProvider);
     final photoCount = photosAsync.maybeWhen(
       data: (photos) => photos.length,
       orElse: () => 0,
     );
+    // Find the first cake photo (workItemId != null) for thumbnail
+    final cakePhoto = photosAsync.maybeWhen(
+      data: (photos) {
+        try {
+          return photos.firstWhere((p) => p.workItemId != null);
+        } catch (_) {
+          return null;
+        }
+      },
+      orElse: () => null,
+    );
+    final cakePhotoUrl = cakePhoto != null
+        ? '$baseUrl/api/photos/${cakePhoto.photoHash}.jpg'
+        : null;
     final urgencyColor = _urgencyBorderColor();
 
     // Build left border decoration
@@ -505,6 +522,40 @@ class _OrderCard extends ConsumerWidget {
                     ),
                     const SizedBox(width: 6),
                   ],
+                  // Cake photo thumbnail (first photo with workItemId set)
+                  if (cakePhotoUrl != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: CachedNetworkImage(
+                        imageUrl: cakePhotoUrl,
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          width: 40,
+                          height: 40,
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          child: const Center(
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          width: 40,
+                          height: 40,
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            size: 20,
+                            color: theme.colorScheme.outline,
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (cakePhotoUrl != null) const SizedBox(width: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
