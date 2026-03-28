@@ -1,30 +1,21 @@
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_thermal_printer/utils/printer.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
 import '../../data/services/printer_service.dart';
 import 'vietnamese_labels.dart';
 
 /// Result of the printer picker dialog.
 enum PrinterPickerResult {
-  /// User cancelled the picker.
   cancelled,
-
-  /// Printing completed successfully.
   success,
-
-  /// Printing failed.
   failed,
 }
 
 /// Shows the printer picker bottom sheet and handles the print flow.
-///
-/// Returns [PrinterPickerResult.success] if printing succeeded,
-/// [PrinterPickerResult.failed] if printing failed,
-/// [PrinterPickerResult.cancelled] if user cancelled.
 Future<PrinterPickerResult> showPrinterPickerDialog({
   required BuildContext context,
   required Uint8List imageBytes,
@@ -59,91 +50,79 @@ class PrinterPickerBottomSheet extends ConsumerStatefulWidget {
 
 class _PrinterPickerBottomSheetState
     extends ConsumerState<PrinterPickerBottomSheet> {
-  /// Current scan state.
-  _ScanState _scanState = _ScanState.scanning;
-
-  /// List of discovered printers.
-  List<Printer> _discoveredPrinters = [];
-
-  /// Error message if scan or connection failed.
+  _PickerState _state = _PickerState.loading;
+  List<DiscoveredPrinter> _devices = [];
   String? _errorMessage;
-
-  /// The printer being connected to (for display).
   String? _connectingToName;
-
-  StreamSubscription<List<Printer>>? _devicesSubscription;
-  Timer? _scanTimeout;
 
   @override
   void initState() {
     super.initState();
-    _startScan();
+    _loadBondedDevices();
   }
 
-  @override
-  void dispose() {
-    _devicesSubscription?.cancel();
-    _scanTimeout?.cancel();
-    widget.printerService.stopScan();
-    super.dispose();
-  }
-
-  Future<void> _startScan() async {
+  Future<void> _loadBondedDevices() async {
     setState(() {
-      _scanState = _ScanState.scanning;
+      _state = _PickerState.loading;
       _errorMessage = null;
-      _discoveredPrinters = [];
     });
 
-    // Listen to device discoveries
-    _devicesSubscription?.cancel();
-    _devicesSubscription = widget.printerService.devicesStream.listen(
-      (printers) {
-        if (mounted) {
-          setState(() {
-            _discoveredPrinters = printers;
-          });
-        }
-      },
-    );
-
-    // Start scanning
-    await widget.printerService.startScan();
-
-    // Timeout after 15 seconds
-    _scanTimeout?.cancel();
-    _scanTimeout = Timer(const Duration(seconds: 15), () {
-      if (mounted) {
-        _onScanComplete();
+    try {
+      // Check Bluetooth permission (Android 12+)
+      final hasPermission =
+          await PrintBluetoothThermal.isPermissionBluetoothGranted;
+      if (!hasPermission) {
+        setState(() {
+          _state = _PickerState.error;
+          _errorMessage =
+              'Cần cấp quyền Bluetooth. Vào Cài đặt > Ứng dụng > Đoàn Gia > Quyền > Bluetooth';
+        });
+        return;
       }
-    });
-  }
 
-  void _onScanComplete() {
-    widget.printerService.stopScan();
-    _devicesSubscription?.cancel();
+      final btEnabled = await widget.printerService.isBluetoothEnabled();
+      if (!btEnabled) {
+        setState(() {
+          _state = _PickerState.error;
+          _errorMessage = printerErrorMessage(PrinterError.bluetoothDisabled);
+        });
+        return;
+      }
 
-    if (mounted) {
+      final devices = await widget.printerService.getBondedDevices();
+      if (!mounted) return;
+
       setState(() {
-        if (_discoveredPrinters.isEmpty) {
-          _scanState = _ScanState.noDevices;
-          _errorMessage = VN.noPrinterFound;
-        } else {
-          _scanState = _ScanState.foundDevices;
-        }
+        _devices = devices;
+        _state =
+            devices.isEmpty ? _PickerState.noDevices : _PickerState.deviceList;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _state = _PickerState.error;
+        _errorMessage = printerErrorMessage(PrinterError.bluetoothScanFailed);
       });
     }
   }
 
-  Future<void> _onDeviceSelected(Printer printer) async {
+  Future<void> _onDeviceSelected(DiscoveredPrinter device, {bool testOnly = false}) async {
     setState(() {
-      _scanState = _ScanState.connecting;
-      _connectingToName = printer.name ?? printer.address;
+      _state = _PickerState.connecting;
+      _connectingToName = device.name;
     });
 
     try {
-      await widget.printerService.connectPrinter(printer);
-      await widget.printerService.printImage(widget.imageBytes);
+      await widget.printerService.connect(device.address);
+
+      setState(() => _state = _PickerState.printing);
+
+      if (testOnly) {
+        // Send plain text test to verify TSPL protocol
+        await widget.printerService.printTest();
+      } else {
+        await widget.printerService.printImage(widget.imageBytes);
+      }
 
       if (mounted) {
         Navigator.of(context).pop(PrinterPickerResult.success);
@@ -151,15 +130,17 @@ class _PrinterPickerBottomSheetState
     } on PrinterException catch (e) {
       if (mounted) {
         setState(() {
-          _scanState = _ScanState.error;
-          _errorMessage = printerErrorMessage(e.error);
+          _state = _PickerState.error;
+          _errorMessage =
+              '${printerErrorMessage(e.error)}\n\nKiểm tra máy in đã bật và không kết nối với ứng dụng khác';
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _scanState = _ScanState.error;
-          _errorMessage = VN.printerConnectionFailed;
+          _state = _PickerState.error;
+          _errorMessage =
+              '${VN.printerConnectionFailed}\n\nLỗi: $e';
         });
       }
     }
@@ -180,7 +161,7 @@ class _PrinterPickerBottomSheetState
             _buildHeader(),
             const Divider(height: 1),
             _buildContent(),
-            _buildRetryButton(),
+            _buildActions(),
           ],
         ),
       ),
@@ -204,7 +185,7 @@ class _PrinterPickerBottomSheetState
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          const Icon(Icons.bluetooth_searching, size: 24),
+          const Icon(Icons.bluetooth, size: 24),
           const SizedBox(width: 8),
           Text(
             VN.selectPrinter,
@@ -222,40 +203,30 @@ class _PrinterPickerBottomSheetState
   }
 
   Widget _buildContent() {
-    switch (_scanState) {
-      case _ScanState.scanning:
-        return _buildScanningContent();
-      case _ScanState.foundDevices:
+    switch (_state) {
+      case _PickerState.loading:
+        return _buildLoadingContent();
+      case _PickerState.deviceList:
         return _buildDeviceList();
-      case _ScanState.noDevices:
+      case _PickerState.noDevices:
         return _buildNoDevicesContent();
-      case _ScanState.connecting:
+      case _PickerState.connecting:
         return _buildConnectingContent();
-      case _ScanState.error:
+      case _PickerState.printing:
+        return _buildPrintingContent();
+      case _PickerState.error:
         return _buildErrorContent();
     }
   }
 
-  Widget _buildScanningContent() {
-    return Container(
-      padding: const EdgeInsets.all(32),
+  Widget _buildLoadingContent() {
+    return const Padding(
+      padding: EdgeInsets.all(32),
       child: Column(
         children: [
-          const CircularProgressIndicator(strokeWidth: 2),
-          const SizedBox(height: 16),
-          Text(
-            VN.scanning,
-            style: Theme.of(context).textTheme.bodyLarge,
-          ),
-          const SizedBox(height: 8),
-          if (_discoveredPrinters.isNotEmpty) ...[
-            Text(
-              '${_discoveredPrinters.length} thiết bị tìm thấy...',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-            ),
-          ],
+          CircularProgressIndicator(strokeWidth: 2),
+          SizedBox(height: 16),
+          Text('Đang tải danh sách thiết bị...'),
         ],
       ),
     );
@@ -268,15 +239,24 @@ class _PrinterPickerBottomSheetState
       ),
       child: ListView.builder(
         shrinkWrap: true,
-        itemCount: _discoveredPrinters.length,
+        itemCount: _devices.length,
         itemBuilder: (context, index) {
-          final printer = _discoveredPrinters[index];
+          final device = _devices[index];
           return ListTile(
             leading: const Icon(Icons.bluetooth),
-            title: Text(printer.name ?? 'Unknown'),
-            subtitle: Text(printer.address ?? ''),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _onDeviceSelected(printer),
+            title: Text(device.name),
+            subtitle: Text(device.address),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  onPressed: () => _onDeviceSelected(device, testOnly: true),
+                  child: const Text('Test'),
+                ),
+                const Icon(Icons.chevron_right),
+              ],
+            ),
+            onTap: () => _onDeviceSelected(device),
           );
         },
       ),
@@ -300,10 +280,11 @@ class _PrinterPickerBottomSheetState
           ),
           const SizedBox(height: 8),
           Text(
-            VN.noPrinterFound,
+            'Vui lòng ghép nối máy in trong Cài đặt Bluetooth của điện thoại trước',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.outline,
                 ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -333,6 +314,22 @@ class _PrinterPickerBottomSheetState
     );
   }
 
+  Widget _buildPrintingContent() {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        children: [
+          const CircularProgressIndicator(strokeWidth: 2),
+          const SizedBox(height: 16),
+          Text(
+            VN.printing,
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildErrorContent() {
     return Container(
       padding: const EdgeInsets.all(32),
@@ -354,9 +351,10 @@ class _PrinterPickerBottomSheetState
     );
   }
 
-  Widget _buildRetryButton() {
-    if (_scanState == _ScanState.scanning ||
-        _scanState == _ScanState.connecting) {
+  Widget _buildActions() {
+    if (_state == _PickerState.loading ||
+        _state == _PickerState.connecting ||
+        _state == _PickerState.printing) {
       return const SizedBox.shrink();
     }
 
@@ -364,10 +362,10 @@ class _PrinterPickerBottomSheetState
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          if (_scanState == _ScanState.error ||
-              _scanState == _ScanState.noDevices) ...[
+          if (_state == _PickerState.error ||
+              _state == _PickerState.noDevices) ...[
             FilledButton.icon(
-              onPressed: _startScan,
+              onPressed: _loadBondedDevices,
               icon: const Icon(Icons.refresh),
               label: const Text(VN.tapToRetry),
             ),
@@ -384,10 +382,11 @@ class _PrinterPickerBottomSheetState
   }
 }
 
-enum _ScanState {
-  scanning,
-  foundDevices,
+enum _PickerState {
+  loading,
+  deviceList,
   noDevices,
   connecting,
+  printing,
   error,
 }

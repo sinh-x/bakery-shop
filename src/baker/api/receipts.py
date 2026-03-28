@@ -28,11 +28,11 @@ CONTENT_WIDTH = RECEIPT_WIDTH - 2 * MARGIN
 THUMBNAIL_SIZE = 128
 LINE_GAP = 6
 
-# Font sizes
-_SZ_TITLE = 24
-_SZ_SUBTITLE = 18
-_SZ_BODY = 16
-_SZ_SMALL = 12
+# Font sizes (optimized for 203 DPI thermal print)
+_SZ_TITLE = 32
+_SZ_SUBTITLE = 24
+_SZ_BODY = 20
+_SZ_SMALL = 16
 
 # Shop defaults (matching the physical biên nhận form, without ĐC 2)
 _SHOP_DEFAULTS = {

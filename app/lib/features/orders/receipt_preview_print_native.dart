@@ -1,0 +1,53 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+
+import '../../data/services/printer_service.dart';
+import '../../shared/widgets/printer_picker_dialog.dart';
+import '../../shared/widgets/vietnamese_labels.dart';
+
+/// Native (Android/iOS) Bluetooth print via TSPL.
+Future<void> printNative(BuildContext context, Uint8List imageBytes, dynamic ref) async {
+  final widgetRef = ref as WidgetRef;
+  final printerService = widgetRef.read(printerServiceProvider);
+  await printerService.init();
+
+  // Try auto-reconnect to last printer
+  if (printerService.lastPrinterMac != null) {
+    try {
+      await printerService.connect(printerService.lastPrinterMac!);
+      await printerService.printImage(imageBytes);
+      if (context.mounted) {
+        showTopSnackBar(context, VN.printSuccess);
+      }
+      return;
+    } catch (_) {
+      // Fall through to picker
+    }
+  }
+
+  if (!context.mounted) return;
+  final result = await showPrinterPickerDialog(
+    context: context,
+    imageBytes: imageBytes,
+    printerService: printerService,
+  );
+
+  if (!context.mounted) return;
+  if (result == PrinterPickerResult.success) {
+    showTopSnackBar(context, VN.printSuccess);
+  }
+}
+
+/// No-op on native — web only.
+void printWeb(Uint8List imageBytes) {}
+
+/// Save image to app documents directory.
+Future<void> saveToFile(Uint8List imageBytes, String fileName) async {
+  final directory = await getApplicationDocumentsDirectory();
+  final file = File('${directory.path}/$fileName');
+  await file.writeAsBytes(imageBytes);
+}

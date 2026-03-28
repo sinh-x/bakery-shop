@@ -1,16 +1,17 @@
 import 'dart:typed_data';
-import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/api/receipt_service.dart';
-import '../../data/services/printer_service.dart';
-import '../../providers/printer_provider.dart';
-import '../../shared/widgets/printer_picker_dialog.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+
+import 'receipt_preview_print_stub.dart'
+    if (dart.library.io) 'receipt_preview_print_native.dart'
+    if (dart.library.js_interop) 'receipt_preview_print_web.dart'
+    as platform;
 
 class ReceiptPreviewScreen extends ConsumerStatefulWidget {
   const ReceiptPreviewScreen({
@@ -33,6 +34,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
   Uint8List? _imageBytes;
   String? _error;
   bool _loading = true;
+  bool _printing = false;
 
   @override
   void initState() {
@@ -64,16 +66,17 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
     }
   }
 
-  Future<void> _shareReceipt() async {
+  Future<void> _shareImage() async {
     if (_imageBytes == null) return;
     try {
-      final tempDir = await getTemporaryDirectory();
       final fileName =
           'receipt_${widget.orderRef}_${widget.receiptType.value}.png';
-      final file = File('${tempDir.path}/$fileName');
-      await file.writeAsBytes(_imageBytes!);
+
+      // Save to temp file then share
+      await platform.saveToFile(_imageBytes!, fileName);
+
       await Share.shareXFiles(
-        [XFile(file.path)],
+        [XFile.fromData(_imageBytes!, mimeType: 'image/png', name: fileName)],
         text: '${widget.receiptType.label} - ${widget.orderRef}',
       );
     } catch (e) {
@@ -83,14 +86,12 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
     }
   }
 
-  Future<void> _saveToGallery() async {
+  Future<void> _saveImage() async {
     if (_imageBytes == null) return;
     try {
-      final directory = await getApplicationDocumentsDirectory();
       final fileName =
           'receipt_${widget.orderRef}_${widget.receiptType.value}_${DateTime.now().millisecondsSinceEpoch}.png';
-      final file = File('${directory.path}/$fileName');
-      await file.writeAsBytes(_imageBytes!);
+      await platform.saveToFile(_imageBytes!, fileName);
       if (mounted) {
         showTopSnackBar(context, VN.receiptSaved);
       }
@@ -104,112 +105,17 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
   Future<void> _printReceipt() async {
     if (_imageBytes == null) return;
 
-    final printerNotifier = ref.read(printerProvider.notifier);
-    final printerService = ref.read(printerServiceProvider);
-
-    // Check if printer is connected
-    final printerStatus = ref.read(printerProvider);
-    final currentStatus = printerStatus.value;
-    final isDisconnected =
-        currentStatus == null || currentStatus.state == PrinterState.disconnected;
-
-    // If disconnected, show the printer picker dialog
-    if (isDisconnected) {
-      final result = await showPrinterPickerDialog(
-        context: context,
-        imageBytes: _imageBytes!,
-        printerService: printerService,
-      );
-
-      if (!mounted) return;
-
-      switch (result) {
-        case PrinterPickerResult.success:
-          showTopSnackBar(context, VN.printSuccess);
-          break;
-        case PrinterPickerResult.failed:
-          // Error message is shown by the picker dialog itself
-          break;
-        case PrinterPickerResult.cancelled:
-          // User cancelled - do nothing
-          break;
-      }
+    if (kIsWeb) {
+      platform.printWeb(_imageBytes!);
       return;
     }
 
-    // Printer is connected - show loading dialog and print
-    _printWithConnectedPrinter(printerNotifier);
-  }
-
-  Future<void> _printWithConnectedPrinter(PrinterNotifier printerNotifier) async {
-    // Show loading dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => Consumer(
-        builder: (context, ref, _) {
-          final state = ref.watch(printerProvider);
-          final status = state.value;
-
-          // Auto-dismiss on success after a short delay
-          if (status != null &&
-              status.state == PrinterState.connected &&
-              !status.isPrinting) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              Navigator.of(context).pop();
-              showTopSnackBar(context, VN.printSuccess);
-            });
-          }
-
-          return AlertDialog(
-            content: Row(
-              children: [
-                if (status?.isPrinting == true ||
-                    status?.state == PrinterState.printing)
-                  const CircularProgressIndicator(strokeWidth: 2)
-                else if (status?.state == PrinterState.connecting)
-                  const CircularProgressIndicator(strokeWidth: 2)
-                else if (status?.state == PrinterState.error)
-                  const Icon(Icons.error_outline, color: Colors.red)
-                else
-                  const CircularProgressIndicator(strokeWidth: 2),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Text(
-                    status?.isPrinting == true ||
-                            status?.state == PrinterState.printing
-                        ? VN.printing
-                        : status?.state == PrinterState.connecting
-                            ? VN.printerConnecting
-                            : status?.state == PrinterState.error
-                                ? (status?.errorMessage ?? VN.printFailed)
-                                : VN.printing,
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              if (status?.state != PrinterState.printing &&
-                  status?.isPrinting != true)
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text(VN.cancel),
-                ),
-            ],
-          );
-        },
-      ),
-    );
-
-    // Attempt to print
-    final success = await printerNotifier.printImage(_imageBytes!);
-
-    if (!success && mounted) {
-      Navigator.of(context).pop(); // Close the loading dialog
-      final errorState = ref.read(printerProvider).value;
-      if (errorState?.errorMessage != null) {
-        showTopSnackBar(context, errorState!.errorMessage!);
-      }
+    // Native Bluetooth print
+    setState(() => _printing = true);
+    try {
+      await platform.printNative(context, _imageBytes!, ref);
+    } finally {
+      if (mounted) setState(() => _printing = false);
     }
   }
 
@@ -282,25 +188,34 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _saveToGallery,
+                onPressed: _saveImage,
                 icon: const Icon(Icons.save_alt),
                 label: const Text(VN.saveToGallery),
               ),
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: FilledButton.icon(
-                onPressed: _shareReceipt,
+              child: OutlinedButton.icon(
+                onPressed: _shareImage,
                 icon: const Icon(Icons.share),
-                label: const Text(VN.share),
+                label: const Text('Chia sẻ'),
               ),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: FilledButton.icon(
-                onPressed: _printReceipt,
-                icon: const Icon(Icons.print),
-                label: const Text(VN.print),
+                onPressed: _printing ? null : _printReceipt,
+                icon: _printing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.print),
+                label: Text(_printing ? 'Đang in...' : VN.print),
                 style: FilledButton.styleFrom(
                   backgroundColor: Theme.of(context).colorScheme.secondary,
                 ),

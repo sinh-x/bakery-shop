@@ -1,11 +1,10 @@
-import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter_thermal_printer/flutter_thermal_printer.dart';
-import 'package:flutter_thermal_printer/utils/printer.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image/image.dart' as img;
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 /// Error types for printer operations.
 enum PrinterError {
@@ -60,21 +59,13 @@ class DiscoveredPrinter {
   });
 }
 
-/// Manages Bluetooth thermal printer discovery, connection, and printing.
-///
-/// This service is independent of the UI framework and can be tested
-/// standalone. It handles:
-/// - Scanning for nearby Bluetooth printers
-/// - Connecting to and disconnecting from a printer
-/// - Sending receipt images to the printer
-/// - Auto-reconnect to the last-used printer via SharedPreferences
+/// Manages Bluetooth Classic thermal printer discovery, connection, and printing.
 class PrinterService {
   static const String _lastPrinterMacKey = 'last_printer_mac';
 
   SharedPreferences? _prefs;
-  Printer? _connectedPrinter;
+  String? _connectedMac;
   String? _lastMac;
-  StreamSubscription<List<Printer>>? _devicesSubscription;
 
   /// Initializes the service. Must be called before any other methods.
   Future<void> init() async {
@@ -85,79 +76,72 @@ class PrinterService {
   /// Returns the last-used printer MAC address, or null if none saved.
   String? get lastPrinterMac => _lastMac;
 
-  /// Returns the currently connected printer, or null if not connected.
-  Printer? get connectedPrinter => _connectedPrinter;
-
   /// Returns true if a printer is currently connected.
-  bool get isConnected => _connectedPrinter != null;
+  bool get isConnected => _connectedMac != null;
 
-  /// Checks if Bluetooth is enabled on the device.
+  /// Checks if Bluetooth is available and enabled.
   Future<bool> isBluetoothEnabled() async {
-    return FlutterThermalPrinter.instance.isBleTurnedOn();
+    return await PrintBluetoothThermal.bluetoothEnabled;
   }
 
-  /// Starts scanning for Bluetooth printers.
+  /// Returns paired Bluetooth devices filtered to likely printers.
   ///
-  /// Scanned devices are emitted via [devicesStream].
-  /// Call [stopScan] to stop scanning.
-  Future<void> startScan() async {
-    _devicesSubscription?.cancel();
-    _devicesSubscription = FlutterThermalPrinter.instance.devicesStream.listen(
-      (_) {}, // We just need to ensure the stream is active
-    );
-    await FlutterThermalPrinter.instance.getPrinters(
-      connectionTypes: const [ConnectionType.BLE],
-      androidUsesFineLocation: true,
-    );
+  /// Filters by known thermal printer name patterns. If no matches,
+  /// returns all bonded devices as fallback.
+  Future<List<DiscoveredPrinter>> getBondedDevices() async {
+    final devices = await PrintBluetoothThermal.pairedBluetooths;
+    final all = devices
+        .map((d) => DiscoveredPrinter(
+              name: d.name,
+              address: d.macAdress,
+            ))
+        .toList();
+
+    final printers = all.where((d) => _looksLikePrinter(d.name)).toList();
+    return printers.isNotEmpty ? printers : all;
   }
 
-  /// Stops scanning for printers.
-  Future<void> stopScan() async {
-    await FlutterThermalPrinter.instance.stopScan();
-    _devicesSubscription?.cancel();
-    _devicesSubscription = null;
+  /// Heuristic: does this device name look like a thermal printer?
+  static bool _looksLikePrinter(String name) {
+    final lower = name.toLowerCase();
+    const patterns = [
+      'y41bt', 'flashlabel', 'printer', 'print', 'label',
+      'pos', 'tsc', 'xprinter', 'xp-', 'gprinter', 'epson',
+      'star', 'bixolon', 'munbyn', 'peripage', 'phomemo',
+      'niimbot', 'zebra', 'brother', 'rongta', 'hprt',
+    ];
+    return patterns.any((p) => lower.contains(p));
   }
-
-  /// Stream of discovered printers.
-  ///
-  /// Listen to this stream to receive updates when printers are found.
-  Stream<List<Printer>> get devicesStream =>
-      FlutterThermalPrinter.instance.devicesStream;
 
   /// Connects to a printer by MAC address.
   ///
   /// After connecting, saves the MAC to SharedPreferences for auto-reconnect.
-  /// Returns the connected [Printer] object.
-  Future<Printer> connect(String macAddress) async {
-    // Find the printer in the discovered devices
-    final printers = await _getPrintersWithTimeout();
-    Printer? printer = printers.firstWhere(
-      (p) => p.address == macAddress,
-      orElse: () => throw PrinterException(PrinterError.printerNotFound),
-    );
+  /// Retries once on failure with a short delay.
+  Future<void> connect(String macAddress) async {
+    // Disconnect any existing connection first
+    try {
+      await PrintBluetoothThermal.disconnect;
+    } catch (_) {}
+    _connectedMac = null;
 
-    final connected = await FlutterThermalPrinter.instance.connect(printer);
+    // First attempt
+    var connected =
+        await PrintBluetoothThermal.connect(macPrinterAddress: macAddress);
+
+    // Retry once after a short delay if first attempt fails
+    if (!connected) {
+      await Future.delayed(const Duration(seconds: 2));
+      connected =
+          await PrintBluetoothThermal.connect(macPrinterAddress: macAddress);
+    }
+
     if (!connected) {
       throw PrinterException(PrinterError.connectionFailed);
     }
 
-    printer = printer.copyWith(isConnected: true);
-    _connectedPrinter = printer;
+    _connectedMac = macAddress;
     _lastMac = macAddress;
     await _prefs?.setString(_lastPrinterMacKey, macAddress);
-    return printer;
-  }
-
-  /// Connects to a [Printer] object directly.
-  Future<void> connectPrinter(Printer printer) async {
-    final connected = await FlutterThermalPrinter.instance.connect(printer);
-    if (!connected) {
-      throw PrinterException(PrinterError.connectionFailed);
-    }
-
-    _connectedPrinter = printer.copyWith(isConnected: true);
-    _lastMac = printer.address;
-    await _prefs?.setString(_lastPrinterMacKey, printer.address!);
   }
 
   /// Connects to the last-used printer from SharedPreferences.
@@ -168,38 +152,35 @@ class PrinterService {
     if (_lastMac == null) return false;
 
     try {
-      // Ensure we have an up-to-date device list
-      await startScan();
-      await Future.delayed(const Duration(seconds: 3));
-      await stopScan();
-
       await connect(_lastMac!);
       return true;
     } catch (_) {
-      // Auto-reconnect failed — caller should show picker
       return false;
     }
   }
 
   /// Disconnects from the currently connected printer.
   Future<void> disconnect() async {
-    if (_connectedPrinter == null) return;
-
-    try {
-      await FlutterThermalPrinter.instance.disconnect(_connectedPrinter!);
-    } finally {
-      _connectedPrinter = null;
-    }
+    if (_connectedMac == null) return;
+    await PrintBluetoothThermal.disconnect;
+    _connectedMac = null;
   }
 
-  /// Sends a receipt PNG image to the connected printer.
+  /// Sends a receipt PNG image to the connected printer using TSPL commands.
   ///
-  /// The [imageBytes] should be a PNG image sized for 80mm thermal paper
-  /// (typically 576px wide at 203 DPI).
+  /// The Y41BT is a TSPL label printer. We convert the image to a 1-bit
+  /// bitmap and send it via TSPL BITMAP command.
   ///
   /// Throws [PrinterException] if not connected or printing fails.
   Future<void> printImage(Uint8List imageBytes) async {
-    if (_connectedPrinter == null) {
+    if (_connectedMac == null) {
+      throw PrinterException(PrinterError.connectionLost);
+    }
+
+    // Verify connection is still alive
+    final stillConnected = await PrintBluetoothThermal.connectionStatus;
+    if (!stillConnected) {
+      _connectedMac = null;
       throw PrinterException(PrinterError.connectionLost);
     }
 
@@ -210,28 +191,91 @@ class PrinterService {
         throw PrinterException(PrinterError.printFailed);
       }
 
-      // Ensure width is divisible by 8 (printer requirement)
-      final width = _makeDivisibleBy8(image.width);
-      final resized = img.copyResize(image, width: width);
-
-      // Convert to grayscale for thermal printer
+      // 76mm paper at 203 DPI = 608 dots, but use 576 (72 bytes) for margin
+      const printWidth = 576;
+      final resized = img.copyResize(image, width: printWidth);
       final grayscale = img.grayscale(resized);
 
-      // Generate ESC/POS raster data
-      final profile = await CapabilityProfile.load();
-      final generator = Generator(PaperSize.mm80, profile);
-      final rasterBytes = generator.imageRaster(grayscale);
+      final widthBytes = printWidth ~/ 8; // 72
+      final height = grayscale.height;
 
-      // Send to printer
-      await FlutterThermalPrinter.instance.printData(
-        _connectedPrinter!,
-        rasterBytes,
-        longData: true,
-      );
+      // Convert to 1-bit bitmap — threshold 128 (standard midpoint)
+      // with DENSITY 8 in TSPL for bold output
+      const threshold = 128;
+      final bitmapData = Uint8List(widthBytes * height);
+      var offset = 0;
+      for (int y = 0; y < height; y++) {
+        for (int xByte = 0; xByte < widthBytes; xByte++) {
+          int byte = 0;
+          for (int bit = 0; bit < 8; bit++) {
+            final x = xByte * 8 + bit;
+            final pixel = grayscale.getPixel(x, y);
+            // TSPL: bit 1 = white (no print), bit 0 = black (print)
+            if (pixel.r >= threshold) {
+              byte |= (0x80 >> bit);
+            }
+          }
+          bitmapData[offset++] = byte;
+        }
+      }
+
+      // Label height in mm (203 DPI ≈ 8 dots/mm)
+      final heightMm = (height / 8).ceil();
+
+      void tspl(List<int> target, String cmd) {
+        target.addAll(ascii.encode(cmd));
+        target.addAll([0x0D, 0x0A]); // \r\n
+      }
+
+      // Build complete TSPL command as one List<int>
+      // Plugin handles 16KB chunking internally via outputStream
+      final commands = <int>[];
+      tspl(commands, 'SIZE 76 mm,$heightMm mm');
+      tspl(commands, 'GAP 3 mm,0 mm');
+      tspl(commands, 'SPEED 3');
+      tspl(commands, 'DENSITY 8');
+      tspl(commands, 'DIRECTION 0,0');
+      tspl(commands, 'CLS');
+      commands.addAll(ascii.encode('BITMAP 0,0,$widthBytes,$height,0,'));
+      // Must use List<int>, not Uint8List — plugin casts to java.util.List
+      commands.addAll(List<int>.from(bitmapData));
+      commands.addAll([0x0D, 0x0A]);
+      tspl(commands, 'PRINT 1,1');
+
+      final result = await PrintBluetoothThermal.writeBytes(commands);
+      if (!result) {
+        throw PrinterException(PrinterError.printFailed);
+      }
     } catch (e) {
       if (e is PrinterException) rethrow;
       throw PrinterException(PrinterError.printFailed, cause: e);
     }
+  }
+
+  /// Prints a simple TSPL text test to verify protocol works.
+  Future<void> printTest() async {
+    if (_connectedMac == null) {
+      throw PrinterException(PrinterError.connectionLost);
+    }
+
+    final commands = <int>[];
+    void tspl(String cmd) {
+      commands.addAll(ascii.encode(cmd));
+      commands.addAll([0x0D, 0x0A]);
+    }
+
+    tspl('SIZE 76 mm,30 mm');
+    tspl('GAP 3 mm,0 mm');
+    tspl('SPEED 3');
+    tspl('DENSITY 8');
+    tspl('DIRECTION 0,0');
+    tspl('CLS');
+    tspl('TEXT 10,10,"4",0,1,1,"TIEM BANH DOAN GIA"');
+    tspl('TEXT 10,60,"3",0,1,1,"Test print - Bluetooth OK"');
+    tspl('TEXT 10,100,"2",0,1,1,"Y41BT TSPL Protocol"');
+    tspl('PRINT 1,1');
+
+    await PrintBluetoothThermal.writeBytes(commands);
   }
 
   /// Clears the last-used printer from storage.
@@ -242,45 +286,9 @@ class PrinterService {
 
   /// Disposes of resources. Call when done with the service.
   Future<void> dispose() async {
-    await stopScan();
     await disconnect();
   }
 
-  /// Helper to get printers list with a timeout.
-  Future<List<Printer>> _getPrintersWithTimeout({
-    Duration timeout = const Duration(seconds: 10),
-  }) async {
-    final completer = Completer<List<Printer>>();
-
-    Timer(timeout, () {
-      if (!completer.isCompleted) {
-        completer.complete([]);
-      }
-    });
-
-    final subscription = FlutterThermalPrinter.instance.devicesStream.listen(
-      (printers) {
-        if (!completer.isCompleted) {
-          completer.complete(printers);
-        }
-      },
-    );
-
-    await FlutterThermalPrinter.instance.getPrinters(
-      connectionTypes: const [ConnectionType.BLE],
-      androidUsesFineLocation: true,
-    );
-
-    final result = await completer.future;
-    subscription.cancel();
-    return result;
-  }
-
-  /// Make number divisible by 8 for printer compatibility.
-  int _makeDivisibleBy8(int number) {
-    if (number % 8 == 0) return number;
-    return number + (8 - (number % 8));
-  }
 }
 
 /// Exception thrown when a printer operation fails.
