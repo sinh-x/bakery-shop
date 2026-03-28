@@ -20,6 +20,7 @@ sealed class Order with _$Order {
     String? dueTime,
     @Default('pickup') String deliveryType,
     @Default('') String deliveryAddress,
+    @Default(0.0) double shippingFee,
     @Default('') String notes,
     @Default('') String source,
     @Default('') String createdBy,
