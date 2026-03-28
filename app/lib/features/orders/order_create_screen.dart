@@ -41,13 +41,23 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   bool _submitting = false;
   bool _submitted = false;
 
+  // Shipping fee state
+  double _shippingFee = 0.0;
+  // Track which extras have been auto-added (to avoid duplicates)
+  final Set<String> _autoGiftExtras = {};
+
   bool get _needsAddress =>
       _deliveryType == 'bus' || _deliveryType == 'door';
 
   bool get _needsNotes => _deliveryType != 'pickup';
 
-  double get _totalPrice =>
-      _items.fold(0, (sum, i) => sum + i.unitPrice * i.quantity);
+  // Total excludes gift items
+  double get _totalPrice => _items
+      .where((i) => !i.isGift)
+      .fold(0, (sum, i) => sum + i.unitPrice * i.quantity);
+
+  // Display total = items (excl gifts) + shipping fee
+  double get _displayTotal => _totalPrice + _shippingFee;
 
   @override
   void initState() {
@@ -121,6 +131,79 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     return VN.timeSlotEvening;
   }
 
+  void _updateShippingFeeForDeliveryType(String type) {
+    setState(() {
+      _deliveryType = type;
+      switch (type) {
+        case 'bus':
+          _shippingFee = 25000;
+          break;
+        case 'door':
+          _shippingFee = 20000; // default to first tier
+          break;
+        case 'pickup':
+        default:
+          _shippingFee = 0;
+          break;
+      }
+    });
+  }
+
+  void _setShippingFee(double fee) {
+    setState(() => _shippingFee = fee);
+  }
+
+  // Check if any cake (banh_kem) item totals >= 100k and auto-add gift extras
+  void _checkAutoGift() {
+    // Calculate total for cake items
+    double cakeTotal = 0;
+    for (final item in _items) {
+      // Check if it's a cake item (banh_kem category)
+      if (item.product.category == 'banh_kem' && !item.isExtra) {
+        cakeTotal += item.unitPrice * item.quantity;
+      }
+    }
+
+    // If cake total >= 100k, auto-add gift extras
+    if (cakeTotal >= 100000) {
+      // Auto-add Nến, Đĩa muỗng, Nón as gift items if not already added
+      final giftExtras = [
+        ('Nến', 5000),
+        ('Đĩa muỗng', 10000),
+        ('Nón', 5000),
+      ];
+
+      for (final (name, price) in giftExtras) {
+        if (!_autoGiftExtras.contains(name)) {
+          _autoGiftExtras.add(name);
+          _items.add(createExtraItem(name, price.toDouble(), isGift: true));
+        }
+      }
+    }
+  }
+
+  void _addExtra(String name, double price, {bool isGift = false}) {
+    setState(() {
+      // Check if already added as extra
+      final existing = _items.where(
+        (i) => i.isExtra && i.product.name == name && i.isGift == isGift,
+      );
+      if (existing.isEmpty) {
+        _items.add(createExtraItem(name, price, isGift: isGift));
+        if (isGift) {
+          _autoGiftExtras.add(name);
+        }
+      }
+    });
+  }
+
+  void _removeExtra(String name) {
+    setState(() {
+      _items.removeWhere((i) => i.isExtra && i.product.name == name);
+      _autoGiftExtras.remove(name);
+    });
+  }
+
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -150,7 +233,9 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         ),
       ),
     );
-    setState(() {});
+    setState(() {
+      _checkAutoGift();
+    });
   }
 
   Future<void> _submit() async {
@@ -176,6 +261,8 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             'unitPrice': i.unitPrice,
             'notes': i.notes,
             'isBirthday': i.isBirthday,
+            'isExtra': i.isExtra,
+            'isGift': i.isGift,
           };
           if (i.isBirthday && i.age.isNotEmpty) {
             final age = int.tryParse(i.age.trim());
@@ -183,6 +270,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
           }
           return m;
         }).toList(),
+        shippingFee: _shippingFee,
         dueDate: _dueDate != null ? _formatDateApi(_dueDate!) : null,
         dueTime: _dueTime != null ? _formatTime(_dueTime!) : null,
         deliveryType: _deliveryType,
@@ -358,7 +446,10 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                   key: ValueKey(item),
                   item: item,
                   onRemove: () => setState(() => _items.remove(item)),
-                  onQtyChanged: (q) => setState(() => item.quantity = q),
+                  onQtyChanged: (q) => setState(() {
+                    item.quantity = q;
+                    _checkAutoGift();
+                  }),
                   onStateChanged: () => setState(() {}),
                 ),
               ),
@@ -374,7 +465,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                 children: [
                   Text('${VN.total}: ', style: theme.textTheme.bodyMedium),
                   Text(
-                    formatVND(_totalPrice),
+                    formatVND(_displayTotal),
                     style: theme.textTheme.titleMedium?.copyWith(
                       color: theme.colorScheme.primary,
                       fontWeight: FontWeight.bold,
@@ -382,7 +473,31 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                   ),
                 ],
               ),
+              if (_shippingFee > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                        '(${VN.shippingFee}: ${formatVND(_shippingFee)})',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             ],
+            const SizedBox(height: 20),
+
+            // ── Extras (accessories) ──────────────────────────────────
+            _SectionHeader(VN.extras),
+            _ExtrasSection(
+              onExtraAdded: _addExtra,
+              onExtraRemoved: _removeExtra,
+              existingExtras: _items.where((i) => i.isExtra).map((i) => i.product.name).toSet(),
+            ),
             const SizedBox(height: 20),
 
             // ── Schedule (F4 + F5) ────────────────────────────────────
@@ -468,7 +583,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               ],
               selected: {_deliveryType},
               onSelectionChanged: (s) =>
-                  setState(() => _deliveryType = s.first),
+                  _updateShippingFeeForDeliveryType(s.first),
             ),
             if (_needsAddress) ...[
               const SizedBox(height: 12),
@@ -499,6 +614,35 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               ),
             ],
             const SizedBox(height: 20),
+
+            // ── Shipping Fee ───────────────────────────────────────────
+            if (_deliveryType == 'bus') ...[
+              _SectionHeader(VN.shippingFee),
+              Chip(
+                label: Text(
+                  '${VN.deliveryBus}: ${formatVND(25000)}',
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+                avatar: const Icon(Icons.directions_bus, size: 18),
+                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+              ),
+              const SizedBox(height: 16),
+            ] else if (_deliveryType == 'door') ...[
+              _SectionHeader(VN.shippingFee),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final fee in [20000.0, 30000.0, 40000.0, 50000.0])
+                    ChoiceChip(
+                      label: Text(formatVND(fee)),
+                      selected: _shippingFee == fee,
+                      onSelected: (_) => _setShippingFee(fee),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // ── Notes (F3: only for non-pickup) ───────────────────────
             if (_needsNotes) ...[
@@ -595,6 +739,85 @@ class _SectionHeader extends StatelessWidget {
               color: Theme.of(context).colorScheme.primary,
             ),
       ),
+    );
+  }
+}
+
+// ── Extras section ────────────────────────────────────────────────────────────
+
+class _ExtrasSection extends ConsumerWidget {
+  const _ExtrasSection({
+    required this.onExtraAdded,
+    required this.onExtraRemoved,
+    required this.existingExtras,
+  });
+
+  final void Function(String name, double price, {bool isGift}) onExtraAdded;
+  final void Function(String name) onExtraRemoved;
+  final Set<String> existingExtras;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final extrasAsync = ref.watch(orderExtrasProvider);
+    final theme = Theme.of(context);
+
+    return extrasAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (e, st) => const SizedBox.shrink(),
+      data: (extraValues) {
+        // Parse extras from config: "name|price" format
+        final extras = <(String, double)>[];
+        for (final v in extraValues) {
+          final parts = v.split('|');
+          if (parts.length == 2) {
+            final name = parts[0].trim();
+            final price = double.tryParse(parts[1].trim()) ?? 0;
+            extras.add((name, price));
+          }
+        }
+
+        if (extras.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Chưa có phụ kiện được cấu hình',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          );
+        }
+
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: extras.map((extra) {
+            final (name, price) = extra;
+            final isAdded = existingExtras.contains(name);
+            return FilterChip(
+              label: Text(
+                '$name (${formatVND(price)})',
+                style: TextStyle(
+                  color: isAdded
+                      ? theme.colorScheme.onPrimary
+                      : theme.colorScheme.onSurface,
+                ),
+              ),
+              selected: isAdded,
+              onSelected: (_) {
+                if (isAdded) {
+                  onExtraRemoved(name);
+                } else {
+                  onExtraAdded(name, price);
+                }
+              },
+              backgroundColor: theme.colorScheme.surface,
+              selectedColor: theme.colorScheme.primary,
+              checkmarkColor: theme.colorScheme.onPrimary,
+            );
+          }).toList(),
+        );
+      },
     );
   }
 }

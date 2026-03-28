@@ -559,6 +559,26 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             ),
           ],
         ),
+        if (order.shippingFee > 0) ...[
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${VN.shippingFee}:',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+              Text(
+                formatVND(order.shippingFee),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 16),
 
         // ── Work items ────────────────────────────────────────────────
@@ -576,6 +596,16 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           ),
           child: Column(
             children: [
+              if (order.shippingFee > 0) ...[
+                _PaymentRow(
+                  label: VN.shippingFee,
+                  value: formatVND(order.shippingFee),
+                  valueStyle: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.outline,
+                  ),
+                ),
+                const SizedBox(height: 4),
+              ],
               _PaymentRow(
                 label: VN.total,
                 value: formatVND(order.totalPrice),
@@ -1669,6 +1699,38 @@ class _WorkItemCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (item.isExtra) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: item.isGift
+                            ? Colors.green.withValues(alpha: 0.2)
+                            : Colors.grey.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.card_giftcard,
+                            size: 10,
+                            color: item.isGift ? Colors.green : Colors.grey,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            item.isGift ? VN.giftBadge : 'Trả phí',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: item.isGift ? Colors.green : Colors.grey,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(

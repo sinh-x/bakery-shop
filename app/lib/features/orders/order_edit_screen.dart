@@ -33,6 +33,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   DateTime? _dueDate;
   TimeOfDay? _dueTime;
   String _deliveryType = 'pickup';
+  double _shippingFee = 0.0;
   bool _saving = false;
   bool _initialized = false;
 
@@ -56,6 +57,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _notesCtrl.text = order.notes;
     _source = order.source;
     _deliveryType = order.deliveryType;
+    _shippingFee = order.shippingFee;
     if (order.dueDate != null) {
       try {
         _dueDate = DateFormat('yyyy-MM-dd').parse(order.dueDate!);
@@ -83,6 +85,28 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
   String _formatTime(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  void _updateShippingFeeForDeliveryType(String type) {
+    setState(() {
+      _deliveryType = type;
+      switch (type) {
+        case 'bus':
+          _shippingFee = 25000;
+          break;
+        case 'door':
+          _shippingFee = 20000;
+          break;
+        case 'pickup':
+        default:
+          _shippingFee = 0;
+          break;
+      }
+    });
+  }
+
+  void _setShippingFee(double fee) {
+    setState(() => _shippingFee = fee);
+  }
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -145,6 +169,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             deliveryType: _deliveryType,
             source: _source.isEmpty ? null : _source,
             customerName: _nameCtrl.text.trim(),
+            shippingFee: _shippingFee,
           );
       if (mounted) {
         showTopSnackBar(context, VN.orderEditSaved);
@@ -309,7 +334,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   ],
                   selected: {_deliveryType},
                   onSelectionChanged: (s) =>
-                      setState(() => _deliveryType = s.first),
+                      _updateShippingFeeForDeliveryType(s.first),
                 ),
                 if (_needsAddress) ...[
                   const SizedBox(height: 12),
@@ -326,6 +351,35 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   ),
                 ],
                 const SizedBox(height: 20),
+
+                // ── Shipping Fee ───────────────────────────────────────────
+                if (_deliveryType == 'bus') ...[
+                  _SectionHeader(VN.shippingFee),
+                  Chip(
+                    label: Text(
+                      '${VN.deliveryBus}: ${formatVND(25000)}',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    avatar: const Icon(Icons.directions_bus, size: 18),
+                    backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                  ),
+                  const SizedBox(height: 16),
+                ] else if (_deliveryType == 'door') ...[
+                  _SectionHeader(VN.shippingFee),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final fee in [20000.0, 30000.0, 40000.0, 50000.0])
+                        ChoiceChip(
+                          label: Text(formatVND(fee)),
+                          selected: _shippingFee == fee,
+                          onSelected: (_) => _setShippingFee(fee),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
                 // ── Notes ─────────────────────────────────────────────
                 TextFormField(
@@ -345,6 +399,10 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   orderRef: widget.orderRef,
                   onAddTap: _openProductPicker,
                 ),
+                const SizedBox(height: 20),
+
+                // ── Extras section ────────────────────────────────────
+                _EditExtrasSection(orderRef: widget.orderRef),
                 const SizedBox(height: 20),
 
                 // ── Order-level photos ────────────────────────────────
@@ -518,6 +576,8 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
     bool? isBirthday,
     int? age,
     int? quantity,
+    bool? isExtra,
+    bool? isGift,
   }) async {
     if (!mounted) return;
     try {
@@ -528,8 +588,14 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
               unitPrice: unitPrice,
               isBirthday: isBirthday,
               age: age,
-              quantity: quantity);
+              quantity: quantity,
+              isExtra: isExtra,
+              isGift: isGift);
     } catch (_) {}
+  }
+
+  void _toggleGift() {
+    _editItem(isGift: !widget.item.isGift);
   }
 
   Future<void> _confirmRemove() async {
@@ -625,6 +691,48 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                   ),
                   onPressed: () => _editItem(quantity: item.quantity + 1),
                 ),
+                // Gift toggle for extra items
+                if (item.isExtra) ...[
+                  const SizedBox(width: 4),
+                  Tooltip(
+                    message: VN.giftToggleTooltip,
+                    child: InkWell(
+                      onTap: _toggleGift,
+                      borderRadius: BorderRadius.circular(4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: item.isGift
+                              ? Colors.green.withValues(alpha: 0.2)
+                              : Colors.grey.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: item.isGift ? Colors.green : Colors.grey.shade300,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.card_giftcard,
+                              size: 14,
+                              color: item.isGift ? Colors.green : Colors.grey,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              VN.giftBadge,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: item.isGift ? Colors.green : Colors.grey,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 IconButton(
                   icon: Icon(
                     _expanded ? Icons.expand_less : Icons.expand_more,
@@ -714,6 +822,209 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+// ── Extras section for edit screen ────────────────────────────────────────────
+
+class _EditExtrasSection extends ConsumerWidget {
+  const _EditExtrasSection({required this.orderRef});
+
+  final String orderRef;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final workItemsAsync = ref.watch(orderWorkItemsProvider(orderRef));
+    final extrasAsync = ref.watch(orderExtrasProvider);
+    final theme = Theme.of(context);
+
+    return workItemsAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (e, st) => const SizedBox.shrink(),
+      data: (workItems) {
+        // Filter to only extra items
+        final extras = workItems.where((i) => i.isExtra).toList();
+
+        return extrasAsync.when(
+          loading: () => const SizedBox.shrink(),
+          error: (e, st) => const SizedBox.shrink(),
+          data: (extraValues) {
+            // Parse extras from config: "name|price" format
+            final presets = <(String, double)>[];
+            for (final v in extraValues) {
+              final parts = v.split('|');
+              if (parts.length == 2) {
+                final name = parts[0].trim();
+                final price = double.tryParse(parts[1].trim()) ?? 0;
+                presets.add((name, price));
+              }
+            }
+
+            // Get names of already-added extras
+            final addedExtraNames = extras.map((e) => e.productName).toSet();
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionHeader(VN.extras),
+                // Existing extras list
+                if (extras.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Chưa có phụ kiện',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                  )
+                else
+                  ...extras.map((extra) => _ExtraEditCard(
+                        orderRef: orderRef,
+                        item: extra,
+                        onRemove: () async {
+                          await ref
+                              .read(orderWorkItemsProvider(orderRef).notifier)
+                              .remove(extra.id);
+                        },
+                        onToggleGift: () async {
+                          await ref
+                              .read(orderWorkItemsProvider(orderRef).notifier)
+                              .edit(extra.id, isGift: !extra.isGift);
+                        },
+                      )),
+                const SizedBox(height: 8),
+                // Add extras from presets
+                if (presets.isNotEmpty) ...[
+                  Text(
+                    'Thêm phụ kiện:',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: presets.where((p) => !addedExtraNames.contains(p.$1)).map((preset) {
+                      final (name, price) = preset;
+                      return ActionChip(
+                        label: Text('$name (${formatVND(price)})'),
+                        onPressed: () async {
+                          await ref
+                              .read(orderWorkItemsProvider(orderRef).notifier)
+                              .add(
+                                productName: name,
+                                unitPrice: price,
+                                isExtra: true,
+                                isGift: false,
+                              );
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ExtraEditCard extends StatelessWidget {
+  const _ExtraEditCard({
+    required this.orderRef,
+    required this.item,
+    required this.onRemove,
+    required this.onToggleGift,
+  });
+
+  final String orderRef;
+  final WorkItem item;
+  final VoidCallback onRemove;
+  final VoidCallback onToggleGift;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            // Gift badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: item.isGift
+                    ? Colors.green.withValues(alpha: 0.2)
+                    : Colors.grey.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.card_giftcard,
+                    size: 12,
+                    color: item.isGift ? Colors.green : Colors.grey,
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    item.isGift ? VN.giftBadge : 'Trả phí',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: item.isGift ? Colors.green : Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.productName,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  Text(
+                    formatVND(item.unitPrice),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Gift toggle
+            IconButton(
+              icon: Icon(
+                item.isGift ? Icons.card_giftcard : Icons.money_off,
+                size: 18,
+                color: item.isGift ? Colors.green : Colors.grey,
+              ),
+              onPressed: onToggleGift,
+              tooltip: VN.toggleGift,
+            ),
+            // Remove
+            IconButton(
+              icon: Icon(
+                Icons.close,
+                size: 18,
+                color: theme.colorScheme.error,
+              ),
+              onPressed: onRemove,
+            ),
+          ],
+        ),
       ),
     );
   }

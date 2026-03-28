@@ -44,6 +44,7 @@ class OrderService {
     String notes = '',
     String? source,
     String createdBy = '',
+    double shippingFee = 0.0,
   }) async {
     final body = <String, dynamic>{
       'customerName': customerName,
@@ -52,6 +53,7 @@ class OrderService {
       'deliveryType': deliveryType,
       'deliveryAddress': deliveryAddress,
       'notes': notes,
+      'shippingFee': shippingFee,
     };
     if (dueDate != null) body['dueDate'] = dueDate;
     if (dueTime != null) body['dueTime'] = dueTime;
@@ -73,6 +75,7 @@ class OrderService {
     String? notes,
     String? source,
     String changedBy = '',
+    double? shippingFee,
   }) async {
     final body = <String, dynamic>{};
     if (customerName != null) body['customerName'] = customerName;
@@ -84,6 +87,7 @@ class OrderService {
     if (notes != null) body['notes'] = notes;
     if (source != null) body['source'] = source;
     if (changedBy.isNotEmpty) body['changedBy'] = changedBy;
+    if (shippingFee != null) body['shippingFee'] = shippingFee;
 
     final response = await _dio.patch('/api/orders/$ref', data: body);
     return Order.fromJson(response.data as Map<String, dynamic>);

@@ -348,6 +348,13 @@ class VN {
   static const connectingTo = 'Đang kết nối đến...';
   static const tapToRetry = 'Bấm để thử lại';
   static const noDevicesFound = 'Không có thiết bị nào';
+
+  // Shipping fee & extras
+  static const shippingFee = 'Phí giao hàng';
+  static const extras = 'Phụ kiện';
+  static const giftBadge = 'Tặng';
+  static const toggleGift = 'Tặng/Trả phí';
+  static const giftToggleTooltip = 'Bấm để chuyển giữa tặng và trả phí';
 }
 
 // Category mapping (new slugs)
