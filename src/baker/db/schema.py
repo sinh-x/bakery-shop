@@ -593,6 +593,34 @@ CREATE INDEX IF NOT EXISTS idx_order_history_order ON order_history(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_history_timestamp ON order_history(timestamp);
 """
 
+SHIPPING_FEE_AND_EXTRAS_SCHEMA = """
+ALTER TABLE orders ADD COLUMN shipping_fee REAL DEFAULT 0;
+ALTER TABLE order_items ADD COLUMN is_extra INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE order_items ADD COLUMN is_gift INTEGER NOT NULL DEFAULT 0;
+"""
+
+SEED_SHIPPING_AND_EXTRAS = [
+    ("shipping_fee_bus", "25000", 1),
+    ("shipping_fee_door", "20000", 1),
+    ("shipping_fee_door", "30000", 2),
+    ("shipping_fee_door", "40000", 3),
+    ("shipping_fee_door", "50000", 4),
+    ("order_extra", "Nến|5000", 1),
+    ("order_extra", "Đĩa muỗng|10000", 2),
+    ("order_extra", "Nón|5000", 3),
+    ("order_extra", "Pháo|10000", 4),
+]
+
+
+def _migrate_v20_seed_shipping_and_extras(conn):
+    """Seed shipping fee presets and extra item presets into app_config."""
+    for config_key, config_value, sort_order in SEED_SHIPPING_AND_EXTRAS:
+        conn.execute(
+            "INSERT OR IGNORE INTO app_config (config_key, config_value, sort_order) VALUES (?, ?, ?)",
+            (config_key, config_value, sort_order),
+        )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -680,6 +708,11 @@ MIGRATIONS = {
     19: {
         "description": "Order history audit table for tracking all order changes",
         "sql": ORDER_HISTORY_SCHEMA,
+    },
+    20: {
+        "description": "Add shipping_fee to orders, is_extra and is_gift to order_items, seed shipping presets and extras",
+        "sql": SHIPPING_FEE_AND_EXTRAS_SCHEMA,
+        "callable": _migrate_v20_seed_shipping_and_extras,
     },
 }
 

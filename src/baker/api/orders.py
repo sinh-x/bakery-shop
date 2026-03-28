@@ -24,6 +24,8 @@ class OrderItemIn(BaseModel):
     notes: str = ""
     isBirthday: bool = False
     age: Optional[int] = None
+    isExtra: bool = False
+    isGift: bool = False
 
 
 class DepositIn(BaseModel):
@@ -43,6 +45,7 @@ class OrderCreate(BaseModel):
     source: str = ""
     deposit: Optional[DepositIn] = None
     createdBy: str = ""
+    shippingFee: float = 0.0
 
 
 class OrderEdit(BaseModel):
@@ -55,6 +58,7 @@ class OrderEdit(BaseModel):
     deliveryAddress: Optional[str] = None
     notes: Optional[str] = None
     source: Optional[str] = None
+    shippingFee: Optional[float] = None
     changedBy: str = ""
 
 
@@ -87,6 +91,8 @@ def _item_in_to_model(item: OrderItemIn) -> OrderItem:
         product_id=item.productId,
         is_birthday=item.isBirthday,
         age=item.age,
+        is_extra=item.isExtra,
+        is_gift=item.isGift,
     )
 
 
@@ -154,6 +160,7 @@ def create_order(body: OrderCreate, request: Request):
             notes=body.notes,
             source=body.source,
             created_by=body.createdBy,
+            shipping_fee=body.shippingFee,
         )
         order.calculate_total()
         order.save(conn)
@@ -172,6 +179,8 @@ def create_order(body: OrderCreate, request: Request):
                 position=position,
                 is_birthday=item.isBirthday,
                 age=item.age,
+                is_extra=item.isExtra,
+                is_gift=item.isGift,
             )
             work_item.save(conn)
 
@@ -229,6 +238,7 @@ def edit_order(ref: str, body: OrderEdit):
             "deliveryAddress": "delivery_address",
             "notes": "notes",
             "source": "source",
+            "shippingFee": "shipping_fee",
         }
 
         for camel, snake in field_map.items():
@@ -237,13 +247,26 @@ def edit_order(ref: str, body: OrderEdit):
                 params.append(data[camel])
 
         items_changed = "items" in data
-        if items_changed:
-            items = [_item_in_to_model(OrderItemIn(**i)) for i in data["items"]]
-            total = sum(i.qty * i.price for i in items)
-            items_json = json.dumps([i.to_dict() for i in items])
-            updates.append("items = ?")
+        shipping_fee_changed = "shippingFee" in data
+        if items_changed or shipping_fee_changed:
+            if items_changed:
+                items = [_item_in_to_model(OrderItemIn(**i)) for i in data["items"]]
+                items_json = json.dumps([i.to_dict() for i in items])
+                updates.append("items = ?")
+                params.append(items_json)
+            else:
+                # Read existing items directly from DB JSON for total recalculation
+                raw_items = json.loads(row["items"])
+            current_shipping_fee = data.get("shippingFee", row["shipping_fee"])
+            if items_changed:
+                subtotal = sum(i.qty * i.price for i in items if not i.is_gift)
+            else:
+                subtotal = sum(
+                    i.get("quantity", i.get("qty", 1)) * i.get("unit_price", i.get("price", 0))
+                    for i in raw_items if not i.get("is_gift", False)
+                )
+            total = subtotal + current_shipping_fee
             updates.append("total_price = ?")
-            params.append(items_json)
             params.append(total)
 
         if not updates:

@@ -128,8 +128,9 @@ class OrderDetailScreen extends ConsumerWidget {
               title: const Text(VN.printWorkTicket),
               onTap: () {
                 Navigator.pop(ctx);
-                final workItems =
+                final allItems =
                     ref.read(orderWorkItemsProvider(orderRef)).value ?? [];
+                final workItems = allItems.where((i) => !i.isExtra).toList();
                 if (workItems.length == 1) {
                   context.push(
                     '/orders/$orderRef/receipt?type=${ReceiptType.workTicket.value}&item_id=${workItems.first.id}',
@@ -559,6 +560,26 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             ),
           ],
         ),
+        if (order.shippingFee > 0) ...[
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${VN.shippingFee}:',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+              Text(
+                formatVND(order.shippingFee),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 16),
 
         // ── Work items ────────────────────────────────────────────────
@@ -576,6 +597,16 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           ),
           child: Column(
             children: [
+              if (order.shippingFee > 0) ...[
+                _PaymentRow(
+                  label: VN.shippingFee,
+                  value: formatVND(order.shippingFee),
+                  valueStyle: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.outline,
+                  ),
+                ),
+                const SizedBox(height: 4),
+              ],
               _PaymentRow(
                 label: VN.total,
                 value: formatVND(order.totalPrice),
@@ -1588,12 +1619,14 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
                   ),
                 );
               }
+              final regularItems = items.where((i) => !i.isExtra).toList();
+              final extraItems = items.where((i) => i.isExtra).toList();
               final allPhotos = ref.watch(orderPhotosProvider(widget.orderRef)).value ?? [];
               final baseUrl = ref.watch(apiBaseUrlProvider);
               return Column(
                 children: [
                   const SizedBox(height: 4),
-                  ...items.map(
+                  ...regularItems.map(
                     (item) => _WorkItemCard(
                       item: item,
                       photos: allPhotos.where((p) {
@@ -1609,6 +1642,43 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
                       ),
                     ),
                   ),
+                  if (extraItems.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        VN.extras,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.outline,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: extraItems.map((item) {
+                        final label = item.isGift
+                            ? '${item.productName} (Tặng)'
+                            : '${item.productName} (${formatVND(item.unitPrice)})';
+                        return Chip(
+                          avatar: Icon(
+                            item.isGift ? Icons.card_giftcard : Icons.sell,
+                            size: 14,
+                            color: item.isGift ? Colors.green : theme.colorScheme.outline,
+                          ),
+                          label: Text(
+                            item.quantity > 1 ? '$label ×${item.quantity}' : label,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                          backgroundColor: item.isGift
+                              ? Colors.green.withValues(alpha: 0.1)
+                              : theme.colorScheme.surfaceContainerHighest,
+                          visualDensity: VisualDensity.compact,
+                        );
+                      }).toList(),
+                    ),
+                  ],
                 ],
               );
             },
@@ -1669,6 +1739,38 @@ class _WorkItemCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (item.isExtra) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: item.isGift
+                            ? Colors.green.withValues(alpha: 0.2)
+                            : Colors.grey.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.card_giftcard,
+                            size: 10,
+                            color: item.isGift ? Colors.green : Colors.grey,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            item.isGift ? VN.giftBadge : 'Trả phí',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: item.isGift ? Colors.green : Colors.grey,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(

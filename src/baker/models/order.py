@@ -86,9 +86,21 @@ class OrderItem:
     product_id: str = ""
     is_birthday: bool = False
     age: Optional[int] = None
+    is_extra: bool = False
+    is_gift: bool = False
 
     def to_dict(self):
-        return {"product": self.product, "qty": self.qty, "price": self.price, "notes": self.notes, "product_id": self.product_id}
+        return {
+            "product": self.product,
+            "qty": self.qty,
+            "price": self.price,
+            "notes": self.notes,
+            "product_id": self.product_id,
+            "is_birthday": self.is_birthday,
+            "age": self.age,
+            "is_extra": self.is_extra,
+            "is_gift": self.is_gift,
+        }
 
     def to_api_dict(self) -> dict:
         return {
@@ -99,6 +111,8 @@ class OrderItem:
             "notes": self.notes,
             "isBirthday": self.is_birthday,
             "age": self.age,
+            "isExtra": self.is_extra,
+            "isGift": self.is_gift,
         }
 
     @staticmethod
@@ -140,12 +154,15 @@ class Order:
     amount_paid: float = 0.0
     source: str = ""
     created_by: str = ""
+    shipping_fee: float = 0.0
     id: Optional[int] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
     def calculate_total(self):
-        self.total_price = sum(item.qty * item.price for item in self.items)
+        # Sum only non-gift items + shipping_fee
+        subtotal = sum(item.qty * item.price for item in self.items if not item.is_gift)
+        self.total_price = subtotal + self.shipping_fee
 
     def save(self, conn) -> int:
         if not self.order_ref:
@@ -157,11 +174,12 @@ class Order:
         cursor = conn.execute(
             """INSERT INTO orders (order_ref, customer_name, customer_phone, items,
                total_price, status, due_date, due_time, delivery_type,
-               delivery_address, notes, amount_paid, source, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               delivery_address, notes, amount_paid, source, created_by, shipping_fee)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (self.order_ref, self.customer_name, self.customer_phone,
              items_json, self.total_price, self.status, self.due_date,
              self.due_time, self.delivery_type, self.delivery_address, self.notes,
-             self.amount_paid, self.source, self.created_by),
+             self.amount_paid, self.source, self.created_by, self.shipping_fee),
         )
         self.id = cursor.lastrowid
 
@@ -231,6 +249,7 @@ class Order:
             notes=row["notes"], amount_paid=amount_paid,
             source=row["source"] or "",
             created_by=row["created_by"] if "created_by" in row.keys() else "",
+            shipping_fee=row["shipping_fee"] if "shipping_fee" in row.keys() else 0.0,
             created_at=row["created_at"], updated_at=row["updated_at"],
         )
 
@@ -252,6 +271,7 @@ class Order:
             "source": self.source,
             "createdBy": self.created_by,
             "amountPaid": self.amount_paid,
+            "shippingFee": self.shipping_fee,
             "isPaid": self.amount_paid > 0 and self.amount_paid >= self.total_price,
             "packingChecklist": [],
             "createdAt": self.created_at,

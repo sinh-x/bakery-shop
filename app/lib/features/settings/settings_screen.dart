@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../data/api/api_client.dart';
+import '../../data/api/config_service.dart';
+import '../../providers/config_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/staff_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
@@ -34,7 +36,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _urlController = TextEditingController();
     _manualNameCtrl = TextEditingController();
     _loadAppVersion();
@@ -176,6 +178,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           tabs: const [
             Tab(icon: Icon(Icons.person), text: VN.generalSettings),
             Tab(icon: Icon(Icons.settings), text: VN.technicalSettings),
+            Tab(icon: Icon(Icons.card_giftcard), text: VN.extrasSettings),
           ],
         ),
       ),
@@ -318,6 +321,207 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 ),
               ],
             ],
+          ),
+
+          // ── Tab 3: Phụ kiện đi kèm ────────────────────────────────
+          _ExtrasSettingsTab(),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Extras Settings Tab ────────────────────────────────────────────────────────
+
+class _ExtrasSettingsTab extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_ExtrasSettingsTab> createState() => _ExtrasSettingsTabState();
+}
+
+class _ExtrasSettingsTabState extends ConsumerState<_ExtrasSettingsTab> {
+  @override
+  Widget build(BuildContext context) {
+    final extrasAsync = ref.watch(orderExtrasProvider);
+
+    return Scaffold(
+      body: extrasAsync.when(
+        data: (extras) => extras.isEmpty
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.card_giftcard, size: 64, color: Colors.grey[400]),
+                    const SizedBox(height: 16),
+                    Text(VN.noExtras, style: TextStyle(color: Colors.grey[600])),
+                  ],
+                ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: extras.length,
+                itemBuilder: (context, index) {
+                  final extra = extras[index];
+                  // Parse "name|price" format
+                  final parts = extra.split('|');
+                  final name = parts.isNotEmpty ? parts[0] : extra;
+                  final price = parts.length > 1 ? parts[1] : '';
+                  return Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.card_giftcard, color: Colors.teal),
+                      title: Text(name),
+                      subtitle: price.isNotEmpty ? Text(formatVND(double.tryParse(price) ?? 0)) : null,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.blue),
+                            onPressed: () => _showEditDialog(context, extra, name, price),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () => _showDeleteDialog(context, extra),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, __) => Center(child: Text(VN.errorLoading)),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddDialog(context),
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  void _showAddDialog(BuildContext context) {
+    final nameCtrl = TextEditingController();
+    final priceCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(VN.addExtra),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: InputDecoration(
+                labelText: VN.extraName,
+                hintText: VN.extraNameHint,
+              ),
+              textCapitalization: TextCapitalization.words,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: priceCtrl,
+              decoration: InputDecoration(
+                labelText: VN.extraPrice,
+                hintText: VN.extraPriceHint,
+              ),
+              keyboardType: TextInputType.number,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(VN.cancel)),
+          FilledButton(
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              final price = priceCtrl.text.trim();
+              if (name.isEmpty || price.isEmpty) return;
+
+              final value = '$name|$price';
+              try {
+                await ref.read(configServiceProvider).createConfigValue('order_extra', value);
+                ref.invalidate(orderExtrasProvider);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) showTopSnackBar(context, VN.extraAdded);
+              } catch (e) {
+                if (mounted) showTopSnackBar(context, 'Error: $e', backgroundColor: Colors.red);
+              }
+            },
+            child: Text(VN.save),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditDialog(BuildContext context, String oldValue, String name, String price) {
+    final nameCtrl = TextEditingController(text: name);
+    final priceCtrl = TextEditingController(text: price);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(VN.editExtra),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: InputDecoration(labelText: VN.extraName),
+              textCapitalization: TextCapitalization.words,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: priceCtrl,
+              decoration: InputDecoration(labelText: VN.extraPrice),
+              keyboardType: TextInputType.number,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(VN.cancel)),
+          FilledButton(
+            onPressed: () async {
+              final newName = nameCtrl.text.trim();
+              final newPrice = priceCtrl.text.trim();
+              if (newName.isEmpty || newPrice.isEmpty) return;
+
+              final newValue = '$newName|$newPrice';
+              try {
+                await ref.read(configServiceProvider).updateConfigValue('order_extra', oldValue, newValue);
+                ref.invalidate(orderExtrasProvider);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) showTopSnackBar(context, VN.extraUpdated);
+              } catch (e) {
+                if (mounted) showTopSnackBar(context, 'Error: $e', backgroundColor: Colors.red);
+              }
+            },
+            child: Text(VN.save),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteDialog(BuildContext context, String value) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(VN.remove),
+        content: Text(VN.deleteExtraConfirm),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(VN.cancel)),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              try {
+                await ref.read(configServiceProvider).deleteConfigValue('order_extra', value);
+                ref.invalidate(orderExtrasProvider);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) showTopSnackBar(context, VN.extraDeleted);
+              } catch (e) {
+                if (mounted) showTopSnackBar(context, 'Error: $e', backgroundColor: Colors.red);
+              }
+            },
+            child: Text(VN.remove),
           ),
         ],
       ),

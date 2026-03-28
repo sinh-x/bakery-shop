@@ -55,7 +55,8 @@ fi
 # --- Docker rebuild & restart ---
 if [ "$DO_BACKEND" -eq 1 ]; then
   echo "--- Rebuilding Docker services (prod) ---"
-  docker compose --profile prod up -d --build
+  docker compose --profile prod build --no-cache baker-prod
+  docker compose --profile prod up -d
   echo ""
 fi
 

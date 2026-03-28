@@ -36,6 +36,8 @@ class WorkItemCreate(BaseModel):
     position: int = 0
     isBirthday: bool = False
     age: Optional[int] = None
+    isExtra: bool = False
+    isGift: bool = False
 
 
 class WorkItemUpdate(BaseModel):
@@ -46,6 +48,8 @@ class WorkItemUpdate(BaseModel):
     position: Optional[int] = None
     isBirthday: Optional[bool] = None
     age: Optional[int] = None
+    isExtra: Optional[bool] = None
+    isGift: Optional[bool] = None
 
 
 class WorkItemStatusTransition(BaseModel):
@@ -56,7 +60,7 @@ class WorkItemStatusTransition(BaseModel):
 def _sync_order_items_json(conn, order_id: int) -> None:
     """Regenerate orders.items JSON from order_items table and recalculate total_price."""
     rows = conn.execute(
-        "SELECT product_name, quantity, unit_price, notes, product_id FROM order_items WHERE order_id = ?",
+        "SELECT product_name, quantity, unit_price, notes, product_id, is_extra, is_gift FROM order_items WHERE order_id = ?",
         (order_id,),
     ).fetchall()
     items_json = json.dumps([
@@ -66,13 +70,19 @@ def _sync_order_items_json(conn, order_id: int) -> None:
             "price": r["unit_price"],
             "notes": r["notes"] or "",
             "product_id": r["product_id"] or "",
+            "is_extra": bool(r["is_extra"]),
+            "is_gift": bool(r["is_gift"]),
         }
         for r in rows
     ])
-    total_price = sum(r["quantity"] * r["unit_price"] for r in rows)
+    # Exclude gift items from total price calculation; include shipping_fee
+    subtotal = sum(r["quantity"] * r["unit_price"] for r in rows if not r["is_gift"])
+    shipping_fee = conn.execute(
+        "SELECT shipping_fee FROM orders WHERE id = ?", (order_id,),
+    ).fetchone()["shipping_fee"] or 0
     conn.execute(
         "UPDATE orders SET items = ?, total_price = ? WHERE id = ?",
-        (items_json, total_price, order_id),
+        (items_json, subtotal + shipping_fee, order_id),
     )
 
 
@@ -113,9 +123,12 @@ def create_work_item(ref: str, body: WorkItemCreate):
             position=body.position,
             is_birthday=body.isBirthday,
             age=body.age,
+            is_extra=body.isExtra,
+            is_gift=body.isGift,
         )
         item.save(conn)
         row = conn.execute("SELECT * FROM order_items WHERE id = ?", (item.id,)).fetchone()
+        _sync_order_items_json(conn, order_id)
         return WorkItem.from_row(row).to_api_dict()
 
 
@@ -143,6 +156,8 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
             "position": "position",
             "isBirthday": "is_birthday",
             "age": "age",
+            "isExtra": "is_extra",
+            "isGift": "is_gift",
         }
         updates = []
         params: list = []
@@ -176,6 +191,12 @@ def delete_work_item(ref: str, item_id: int):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
         conn.execute("DELETE FROM order_items WHERE id = ?", (item_id,))
+        # Recalculate total_price and sync orders.items JSON after deletion
+        _sync_order_items_json(conn, order_id)
+        conn.execute(
+            "UPDATE orders SET updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') WHERE id = ?",
+            (order_id,),
+        )
 
 
 @router.post("/{ref}/items/{item_id}/status")

@@ -55,7 +55,8 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
   }
 
   Future<void> refresh() async {
-    state = const AsyncLoading();
+    // Skip AsyncLoading to avoid destroying the form/scroll on edit screen.
+    // The initial load is handled by build(); refresh just updates data silently.
     state = await AsyncValue.guard(() async {
       final service = ref.read(orderServiceProvider);
       return service.getOrder(orderRef);
@@ -82,6 +83,7 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
     String? deliveryType,
     String? source,
     String? customerName,
+    double? shippingFee,
   }) async {
     final service = ref.read(orderServiceProvider);
     final changedBy = ref.read(loggedByProvider);
@@ -96,6 +98,7 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
       source: source,
       customerName: customerName,
       changedBy: changedBy,
+      shippingFee: shippingFee,
     );
     state = AsyncData(updated);
     ref.read(orderListProvider.notifier).refresh();
@@ -179,7 +182,6 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
   }
 
   Future<void> refresh() async {
-    state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final service = ref.read(workItemServiceProvider);
       return service.listWorkItems(orderRef);
@@ -193,6 +195,8 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     double unitPrice = 0.0,
     String notes = '',
     int position = 0,
+    bool isExtra = false,
+    bool isGift = false,
   }) async {
     final service = ref.read(workItemServiceProvider);
     final item = await service.createWorkItem(
@@ -203,9 +207,13 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
       unitPrice: unitPrice,
       notes: notes,
       position: position,
+      isExtra: isExtra,
+      isGift: isGift,
     );
     final current = state.value ?? [];
     state = AsyncData([...current, item]);
+    // Refresh order detail to update total/summary
+    await ref.read(orderDetailProvider(orderRef).notifier).refresh();
     return item;
   }
 
@@ -218,6 +226,8 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     int? position,
     bool? isBirthday,
     int? age,
+    bool? isExtra,
+    bool? isGift,
   }) async {
     final service = ref.read(workItemServiceProvider);
     final updated = await service.updateWorkItem(
@@ -230,13 +240,15 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
       position: position,
       isBirthday: isBirthday,
       age: age,
+      isExtra: isExtra,
+      isGift: isGift,
     );
     final current = state.value ?? [];
     state = AsyncData(
       current.map((i) => i.id == itemId ? updated : i).toList(),
     );
     // Refresh order detail so Sản phẩm section and total_price reflect the change.
-    ref.read(orderDetailProvider(orderRef).notifier).refresh();
+    await ref.read(orderDetailProvider(orderRef).notifier).refresh();
     return updated;
   }
 
@@ -246,6 +258,8 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     await service.deleteWorkItem(orderRef, itemId);
     final current = state.value ?? [];
     state = AsyncData(current.where((i) => i.id != itemId).toList());
+    // Refresh order detail to update total/summary
+    await ref.read(orderDetailProvider(orderRef).notifier).refresh();
   }
 
   Future<WorkItem> transitionStatus(
@@ -362,6 +376,8 @@ class DraftOrderItem {
   String age;
   List<XFile> pendingPhotos;
   double? customUnitPrice;
+  bool isExtra;
+  bool isGift;
 
   DraftOrderItem({
     required this.product,
@@ -371,9 +387,29 @@ class DraftOrderItem {
     this.age = '',
     List<XFile>? pendingPhotos,
     this.customUnitPrice,
+    this.isExtra = false,
+    this.isGift = false,
   }) : pendingPhotos = pendingPhotos ?? [];
 
   double get unitPrice => customUnitPrice ?? product.basePrice;
+}
+
+/// Creates a DraftOrderItem for an extra item (not from product catalog).
+/// Uses a placeholder product with id=0 and the extra name as product name.
+DraftOrderItem createExtraItem(String extraName, double extraPrice, {bool isGift = false}) {
+  final fakeProduct = Product(
+    id: 0,
+    name: extraName,
+    category: 'extra',
+    basePrice: extraPrice,
+  );
+  return DraftOrderItem(
+    product: fakeProduct,
+    quantity: 1,
+    isExtra: true,
+    isGift: isGift,
+    customUnitPrice: extraPrice,
+  );
 }
 
 /// A pending photo in the order creation form.

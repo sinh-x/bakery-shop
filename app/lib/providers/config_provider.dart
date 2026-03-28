@@ -31,3 +31,12 @@ final configValuesProvider =
 
 /// Convenience provider for order source options.
 final orderSourcesProvider = configValuesProvider('order_source');
+
+/// Shipping fee presets for bus delivery (fixed 25000).
+final shippingFeeBusProvider = configValuesProvider('shipping_fee_bus');
+
+/// Shipping fee presets for door delivery (tiered: 20000, 30000, 40000, 50000).
+final shippingFeeDoorProvider = configValuesProvider('shipping_fee_door');
+
+/// Extra items with prices (format: "name|price").
+final orderExtrasProvider = configValuesProvider('order_extra');

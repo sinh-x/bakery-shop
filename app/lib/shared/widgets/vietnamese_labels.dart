@@ -348,6 +348,28 @@ class VN {
   static const connectingTo = 'Đang kết nối đến...';
   static const tapToRetry = 'Bấm để thử lại';
   static const noDevicesFound = 'Không có thiết bị nào';
+
+  // Shipping fee & extras
+  static const shippingFee = 'Phí giao hàng';
+  static const extras = 'Phụ kiện';
+  static const giftBadge = 'Tặng';
+  static const toggleGift = 'Tặng/Trả phí';
+  static const giftToggleTooltip = 'Bấm để chuyển giữa tặng và trả phí';
+
+  // Extras management
+  static const extrasSettings = 'Phụ kiện đi kèm';
+  static const addExtra = 'Thêm phụ kiện';
+  static const editExtra = 'Sửa phụ kiện';
+  static const extraName = 'Tên phụ kiện';
+  static const extraPrice = 'Giá phụ kiện';
+  static const extraNameHint = 'VD: Nến, Đĩa muỗng';
+  static const extraPriceHint = 'VD: 5000';
+  static const extraFormatError = 'Định dạng: Tên|Giá (VD: Nến|5000)';
+  static const extraAdded = 'Đã thêm phụ kiện';
+  static const extraUpdated = 'Đã cập nhật phụ kiện';
+  static const extraDeleted = 'Đã xóa phụ kiện';
+  static const noExtras = 'Chưa có phụ kiện';
+  static const deleteExtraConfirm = 'Xóa phụ kiện này?';
 }
 
 // Category mapping (new slugs)

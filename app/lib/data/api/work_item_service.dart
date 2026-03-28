@@ -26,6 +26,8 @@ class WorkItemService {
     double unitPrice = 0.0,
     String notes = '',
     int position = 0,
+    bool isExtra = false,
+    bool isGift = false,
   }) async {
     final response = await _dio.post(
       '/api/orders/$orderRef/items',
@@ -36,6 +38,8 @@ class WorkItemService {
         'unitPrice': unitPrice,
         'notes': notes,
         'position': position,
+        'isExtra': isExtra,
+        'isGift': isGift,
       },
     );
     return WorkItem.fromJson(response.data as Map<String, dynamic>);
@@ -51,6 +55,8 @@ class WorkItemService {
     int? position,
     bool? isBirthday,
     int? age,
+    bool? isExtra,
+    bool? isGift,
   }) async {
     final body = <String, dynamic>{};
     if (productName != null) body['productName'] = productName;
@@ -60,6 +66,8 @@ class WorkItemService {
     if (position != null) body['position'] = position;
     if (isBirthday != null) body['isBirthday'] = isBirthday;
     if (age != null) body['age'] = age;
+    if (isExtra != null) body['isExtra'] = isExtra;
+    if (isGift != null) body['isGift'] = isGift;
 
     final response = await _dio.patch(
       '/api/orders/$orderRef/items/$itemId',

@@ -20,6 +20,8 @@ sealed class WorkItem with _$WorkItem {
     String? deliveryAddress,
     @Default(0) int position,
     @Default(false) bool isBirthday,
+    @Default(false) bool isExtra,
+    @Default(false) bool isGift,
     int? age,
     String? createdAt,
     String? updatedAt,
