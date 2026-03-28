@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -677,13 +678,13 @@ class _OrderCard extends ConsumerWidget {
 /// Active Kanban columns in order workflow
 const _kanbanStatuses = ['new', 'confirmed', 'in_progress', 'ready'];
 
-class _KanbanBoard extends StatelessWidget {
+class _KanbanBoard extends ConsumerWidget {
   const _KanbanBoard({required this.filteredOrders});
 
   final List<Order> filteredOrders;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // Group orders by status for active columns
     final ordersByStatus = <String, List<Order>>{};
     for (final status in _kanbanStatuses) {
@@ -707,16 +708,17 @@ class _KanbanBoard extends StatelessWidget {
   }
 }
 
-class _KanbanColumn extends StatelessWidget {
+class _KanbanColumn extends ConsumerWidget {
   const _KanbanColumn({required this.status, required this.orders});
 
   final String status;
   final List<Order> orders;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final statusColor = _statusColors[status] ?? Colors.grey;
     final statusLabel = statusMap[status] ?? status;
+    final targetIndex = _kanbanStatuses.indexOf(status);
 
     return Container(
       width: 280,
@@ -773,45 +775,108 @@ class _KanbanColumn extends StatelessWidget {
             ),
           ),
 
-          // Order cards list
+          // Order cards list with DragTarget
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                borderRadius: const BorderRadius.vertical(
-                  bottom: Radius.circular(12),
-                ),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-              ),
-              child: orders.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          'Không có đơn',
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
+            child: DragTarget<Order>(
+              onWillAcceptWithDetails: (details) {
+                // Only accept forward transitions
+                final sourceIndex = _kanbanStatuses.indexOf(details.data.status);
+                return targetIndex > sourceIndex;
+              },
+              onAcceptWithDetails: (details) async {
+                final order = details.data;
+                final targetStatusLabel = statusMap[status] ?? status;
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Chuyển trạng thái'),
+                    content: Text(
+                      'Chuyển đơn hàng "${order.customerName}" sang trạng thái "$targetStatusLabel"?',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Hủy'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: const Text('Xác nhận'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true && context.mounted) {
+                  await ref
+                      .read(orderDetailProvider(order.orderRef).notifier)
+                      .transitionTo(status);
+                }
+              },
+              builder: (context, candidateData, rejectedData) {
+                // Highlight column when a valid drag is hovering over it
+                final isHovering = candidateData.isNotEmpty;
+                return Container(
+                  decoration: BoxDecoration(
+                    color: isHovering
+                        ? statusColor.withAlpha(15)
+                        : Theme.of(context).colorScheme.surfaceContainerLow,
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(12),
+                    ),
+                    border: Border.all(
+                      color: isHovering
+                          ? statusColor.withAlpha(150)
+                          : Theme.of(context).colorScheme.outlineVariant,
+                      width: isHovering ? 2 : 1,
+                    ),
+                  ),
+                  child: orders.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              'Không có đơn',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
                                     color: Theme.of(context)
                                         .colorScheme
                                         .outline,
                                   ),
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(8),
+                          itemCount: orders.length,
+                          itemBuilder: (context, index) {
+                            final order = orders[index];
+                            return LongPressDraggable<Order>(
+                              data: order,
+                              onDragStarted: () =>
+                                  HapticFeedback.mediumImpact(),
+                              feedback: Material(
+                                elevation: 8,
+                                borderRadius: BorderRadius.circular(8),
+                                child: SizedBox(
+                                  width: 260,
+                                  child: _DragFeedbackCard(order: order),
+                                ),
+                              ),
+                              childWhenDragging: Opacity(
+                                opacity: 0.4,
+                                child: _KanbanCard(order: order, onTap: null),
+                              ),
+                              child: _KanbanCard(
+                                order: order,
+                                onTap: () =>
+                                    context.push('/orders/${order.orderRef}'),
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(8),
-                      itemCount: orders.length,
-                      itemBuilder: (context, index) {
-                        final order = orders[index];
-                        return _KanbanCard(
-                          order: order,
-                          onTap: () =>
-                              context.push('/orders/${order.orderRef}'),
-                        );
-                      },
-                    ),
+                );
+              },
             ),
           ),
         ],
@@ -1014,5 +1079,97 @@ class _KanbanCard extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+/// Simplified card shown as floating feedback during drag.
+class _DragFeedbackCard extends StatelessWidget {
+  const _DragFeedbackCard({required this.order});
+
+  final Order order;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final statusColor = _statusColors[order.status] ?? Colors.grey;
+
+    return Card(
+      color: theme.colorScheme.surface,
+      elevation: 8,
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    order.customerName,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            if (order.items.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                _productSummary(order),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            if (order.dueDate != null) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(
+                    Icons.schedule,
+                    size: 12,
+                    color: theme.colorScheme.outline,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      order.dueTime != null
+                          ? '${order.dueDate} ${order.dueTime}'
+                          : order.dueDate!,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _productSummary(Order order) {
+    if (order.items.isEmpty) return '';
+    final first = order.items.first;
+    final name = first.productName;
+    if (order.items.length == 1) return name;
+    return '$name +${order.items.length - 1}';
   }
 }
