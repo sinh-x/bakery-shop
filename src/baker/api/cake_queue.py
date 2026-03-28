@@ -58,6 +58,7 @@ def list_work_items_queue(
             FROM order_items oi
             JOIN orders o ON oi.order_id = o.id
             WHERE {status_clause}
+              AND COALESCE(oi.is_extra, 0) = 0
             ORDER BY o.due_date ASC NULLS LAST, o.due_time ASC NULLS LAST, oi.id ASC
             LIMIT ? OFFSET ?
             """,

@@ -70,16 +70,19 @@ def _sync_order_items_json(conn, order_id: int) -> None:
             "price": r["unit_price"],
             "notes": r["notes"] or "",
             "product_id": r["product_id"] or "",
-            "is_extra": bool(r["is_extra"]) if "is_extra" in r else False,
-            "is_gift": bool(r["is_gift"]) if "is_gift" in r else False,
+            "is_extra": bool(r["is_extra"]),
+            "is_gift": bool(r["is_gift"]),
         }
         for r in rows
     ])
-    # Exclude gift items from total price calculation
-    total_price = sum(r["quantity"] * r["unit_price"] for r in rows if not r["is_gift"])
+    # Exclude gift items from total price calculation; include shipping_fee
+    subtotal = sum(r["quantity"] * r["unit_price"] for r in rows if not r["is_gift"])
+    shipping_fee = conn.execute(
+        "SELECT shipping_fee FROM orders WHERE id = ?", (order_id,),
+    ).fetchone()["shipping_fee"] or 0
     conn.execute(
         "UPDATE orders SET items = ?, total_price = ? WHERE id = ?",
-        (items_json, total_price, order_id),
+        (items_json, subtotal + shipping_fee, order_id),
     )
 
 
@@ -188,18 +191,11 @@ def delete_work_item(ref: str, item_id: int):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
         conn.execute("DELETE FROM order_items WHERE id = ?", (item_id,))
-        # Recalculate total_price after deletion
-        remaining = conn.execute(
-            "SELECT quantity, unit_price, is_gift FROM order_items WHERE order_id = ?",
-            (order_id,),
-        ).fetchall()
-        shipping_fee = conn.execute(
-            "SELECT shipping_fee FROM orders WHERE id = ?", (order_id,),
-        ).fetchone()["shipping_fee"] or 0
-        subtotal = sum(r["quantity"] * r["unit_price"] for r in remaining if not r["is_gift"])
+        # Recalculate total_price and sync orders.items JSON after deletion
+        _sync_order_items_json(conn, order_id)
         conn.execute(
-            "UPDATE orders SET total_price = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') WHERE id = ?",
-            (subtotal + shipping_fee, order_id),
+            "UPDATE orders SET updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') WHERE id = ?",
+            (order_id,),
         )
 
 

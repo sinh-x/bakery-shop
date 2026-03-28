@@ -29,7 +29,7 @@ final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
 final appRouter = GoRouter(
   navigatorKey: _rootNavigatorKey,
-  initialLocation: '/products',
+  initialLocation: '/orders',
   routes: [
     ShellRoute(
       navigatorKey: _shellNavigatorKey,

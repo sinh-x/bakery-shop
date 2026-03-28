@@ -128,8 +128,9 @@ class OrderDetailScreen extends ConsumerWidget {
               title: const Text(VN.printWorkTicket),
               onTap: () {
                 Navigator.pop(ctx);
-                final workItems =
+                final allItems =
                     ref.read(orderWorkItemsProvider(orderRef)).value ?? [];
+                final workItems = allItems.where((i) => !i.isExtra).toList();
                 if (workItems.length == 1) {
                   context.push(
                     '/orders/$orderRef/receipt?type=${ReceiptType.workTicket.value}&item_id=${workItems.first.id}',
@@ -1618,12 +1619,14 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
                   ),
                 );
               }
+              final regularItems = items.where((i) => !i.isExtra).toList();
+              final extraItems = items.where((i) => i.isExtra).toList();
               final allPhotos = ref.watch(orderPhotosProvider(widget.orderRef)).value ?? [];
               final baseUrl = ref.watch(apiBaseUrlProvider);
               return Column(
                 children: [
                   const SizedBox(height: 4),
-                  ...items.map(
+                  ...regularItems.map(
                     (item) => _WorkItemCard(
                       item: item,
                       photos: allPhotos.where((p) {
@@ -1639,6 +1642,43 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
                       ),
                     ),
                   ),
+                  if (extraItems.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        VN.extras,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.outline,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: extraItems.map((item) {
+                        final label = item.isGift
+                            ? '${item.productName} (Tặng)'
+                            : '${item.productName} (${formatVND(item.unitPrice)})';
+                        return Chip(
+                          avatar: Icon(
+                            item.isGift ? Icons.card_giftcard : Icons.sell,
+                            size: 14,
+                            color: item.isGift ? Colors.green : theme.colorScheme.outline,
+                          ),
+                          label: Text(
+                            item.quantity > 1 ? '$label ×${item.quantity}' : label,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                          backgroundColor: item.isGift
+                              ? Colors.green.withValues(alpha: 0.1)
+                              : theme.colorScheme.surfaceContainerHighest,
+                          visualDensity: VisualDensity.compact,
+                        );
+                      }).toList(),
+                    ),
+                  ],
                 ],
               );
             },

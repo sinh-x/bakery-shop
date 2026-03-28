@@ -184,23 +184,34 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
 
   void _addExtra(String name, double price, {bool isGift = false}) {
     setState(() {
-      // Check if already added as extra
+      // Reuse existing item with same (name, isGift) — increment qty
       final existing = _items.where(
         (i) => i.isExtra && i.product.name == name && i.isGift == isGift,
-      );
-      if (existing.isEmpty) {
+      ).firstOrNull;
+      if (existing != null) {
+        existing.quantity += 1;
+      } else {
         _items.add(createExtraItem(name, price, isGift: isGift));
-        if (isGift) {
-          _autoGiftExtras.add(name);
-        }
+      }
+      if (isGift) _autoGiftExtras.add(name);
+    });
+  }
+
+  void _decrementExtra(DraftOrderItem item) {
+    setState(() {
+      if (item.quantity > 1) {
+        item.quantity -= 1;
+      } else {
+        _items.remove(item);
+        if (item.isGift) _autoGiftExtras.remove(item.product.name);
       }
     });
   }
 
-  void _removeExtra(String name) {
+  void _removeExtraItem(DraftOrderItem item) {
     setState(() {
-      _items.removeWhere((i) => i.isExtra && i.product.name == name);
-      _autoGiftExtras.remove(name);
+      _items.remove(item);
+      if (item.isGift) _autoGiftExtras.remove(item.product.name);
     });
   }
 
@@ -493,11 +504,58 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
 
             // ── Extras (accessories) ──────────────────────────────────
             _SectionHeader(VN.extras),
-            _ExtrasSection(
-              onExtraAdded: _addExtra,
-              onExtraRemoved: _removeExtra,
-              existingExtras: _items.where((i) => i.isExtra).map((i) => i.product.name).toSet(),
-            ),
+            // Show added extras with qty +/-
+            ..._items.where((i) => i.isExtra).map((item) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: item.isGift
+                          ? Colors.green.withValues(alpha: 0.2)
+                          : Colors.grey.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      item.isGift ? VN.giftBadge : 'Trả phí',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: item.isGift ? Colors.green : Colors.grey,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${item.product.name} (${formatVND(item.unitPrice)})',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.remove, size: 18),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    onPressed: () => _decrementExtra(item),
+                  ),
+                  Text('${item.quantity}', style: theme.textTheme.bodyMedium),
+                  IconButton(
+                    icon: const Icon(Icons.add, size: 18),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    onPressed: () => setState(() => item.quantity += 1),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close, size: 16, color: theme.colorScheme.error),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                    onPressed: () => _removeExtraItem(item),
+                  ),
+                ],
+              ),
+            )),
+            _ExtrasSection(onExtraAdded: _addExtra),
             const SizedBox(height: 20),
 
             // ── Schedule (F4 + F5) ────────────────────────────────────
@@ -746,15 +804,9 @@ class _SectionHeader extends StatelessWidget {
 // ── Extras section ────────────────────────────────────────────────────────────
 
 class _ExtrasSection extends ConsumerWidget {
-  const _ExtrasSection({
-    required this.onExtraAdded,
-    required this.onExtraRemoved,
-    required this.existingExtras,
-  });
+  const _ExtrasSection({required this.onExtraAdded});
 
   final void Function(String name, double price, {bool isGift}) onExtraAdded;
-  final void Function(String name) onExtraRemoved;
-  final Set<String> existingExtras;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -765,7 +817,6 @@ class _ExtrasSection extends ConsumerWidget {
       loading: () => const SizedBox.shrink(),
       error: (e, st) => const SizedBox.shrink(),
       data: (extraValues) {
-        // Parse extras from config: "name|price" format
         final extras = <(String, double)>[];
         for (final v in extraValues) {
           final parts = v.split('|');
@@ -793,27 +844,10 @@ class _ExtrasSection extends ConsumerWidget {
           runSpacing: 8,
           children: extras.map((extra) {
             final (name, price) = extra;
-            final isAdded = existingExtras.contains(name);
-            return FilterChip(
-              label: Text(
-                '$name (${formatVND(price)})',
-                style: TextStyle(
-                  color: isAdded
-                      ? theme.colorScheme.onPrimary
-                      : theme.colorScheme.onSurface,
-                ),
-              ),
-              selected: isAdded,
-              onSelected: (_) {
-                if (isAdded) {
-                  onExtraRemoved(name);
-                } else {
-                  onExtraAdded(name, price);
-                }
-              },
-              backgroundColor: theme.colorScheme.surface,
-              selectedColor: theme.colorScheme.primary,
-              checkmarkColor: theme.colorScheme.onPrimary,
+            return ActionChip(
+              avatar: const Icon(Icons.add, size: 16),
+              label: Text('$name (${formatVND(price)})'),
+              onPressed: () => onExtraAdded(name, price),
             );
           }).toList(),
         );

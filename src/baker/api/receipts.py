@@ -450,7 +450,8 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
         y = _left(draw, y, due_str, fbb)
 
     dtype = order.get("deliveryType", "") or order.get("delivery_type", "pickup")
-    dtype_vn = "Nhận tại tiệm" if dtype == "pickup" else "Giao hàng"
+    _DTYPE_VN = {"pickup": "Nhận tại tiệm", "bus": "Gửi xe buýt", "door": "Giao tận nơi"}
+    dtype_vn = _DTYPE_VN.get(dtype, dtype)
     y = _left(draw, y, f"Hình thức: {dtype_vn}", fb)
 
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
@@ -542,7 +543,7 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
             item_name = f"{item_name} (Tặng)"
         qty = item.get("quantity", 1)
         unit_price = float(item.get("unitPrice", 0) or item.get("unit_price", 0))
-        total = qty * unit_price
+        total = 0 if is_gift else qty * unit_price
 
         # Item row: name | SL | Giá | Thành tiền
         # Wrap product name within column width
@@ -671,7 +672,8 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
         y = _left(draw, y, due_str, fbb)
 
     dtype = order.get("deliveryType", "") or order.get("delivery_type", "pickup")
-    dtype_vn = "Nhận tại tiệm" if dtype == "pickup" else "Giao hàng"
+    _DTYPE_VN = {"pickup": "Nhận tại tiệm", "bus": "Gửi xe buýt", "door": "Giao tận nơi"}
+    dtype_vn = _DTYPE_VN.get(dtype, dtype)
     y = _left(draw, y, f"Hình thức: {dtype_vn}", fb)
 
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""

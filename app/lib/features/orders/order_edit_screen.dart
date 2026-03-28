@@ -842,19 +842,18 @@ class _EditExtrasSection extends ConsumerWidget {
     final workItemsAsync = ref.watch(orderWorkItemsProvider(orderRef));
     final extrasAsync = ref.watch(orderExtrasProvider);
     final theme = Theme.of(context);
+    final notifier = ref.read(orderWorkItemsProvider(orderRef).notifier);
 
     return workItemsAsync.when(
       loading: () => const SizedBox.shrink(),
       error: (e, st) => const SizedBox.shrink(),
       data: (workItems) {
-        // Filter to only extra items
         final extras = workItems.where((i) => i.isExtra).toList();
 
         return extrasAsync.when(
           loading: () => const SizedBox.shrink(),
           error: (e, st) => const SizedBox.shrink(),
           data: (extraValues) {
-            // Parse extras from config: "name|price" format
             final presets = <(String, double)>[];
             for (final v in extraValues) {
               final parts = v.split('|');
@@ -865,14 +864,10 @@ class _EditExtrasSection extends ConsumerWidget {
               }
             }
 
-            // Get names of already-added extras
-            final addedExtraNames = extras.map((e) => e.productName).toSet();
-
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _SectionHeader(VN.extras),
-                // Existing extras list
                 if (extras.isEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
@@ -884,51 +879,54 @@ class _EditExtrasSection extends ConsumerWidget {
                     ),
                   )
                 else
-                  ...extras.map((extra) => _ExtraEditCard(
-                        orderRef: orderRef,
+                  ...extras.map((extra) => _ExtraEditRow(
                         item: extra,
-                        onRemove: () async {
-                          await ref
-                              .read(orderWorkItemsProvider(orderRef).notifier)
-                              .remove(extra.id);
+                        onIncrement: () async {
+                          await notifier.edit(extra.id, quantity: extra.quantity + 1);
+                        },
+                        onDecrement: () async {
+                          if (extra.quantity > 1) {
+                            await notifier.edit(extra.id, quantity: extra.quantity - 1);
+                          } else {
+                            await notifier.remove(extra.id);
+                          }
                         },
                         onToggleGift: () async {
-                          await ref
-                              .read(orderWorkItemsProvider(orderRef).notifier)
-                              .edit(extra.id, isGift: !extra.isGift);
+                          await notifier.edit(extra.id, isGift: !extra.isGift);
+                        },
+                        onRemove: () async {
+                          await notifier.remove(extra.id);
                         },
                       )),
                 const SizedBox(height: 8),
-                // Add extras from presets
-                if (presets.isNotEmpty) ...[
-                  Text(
-                    'Thêm phụ kiện:',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.outline,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
+                if (presets.isNotEmpty)
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: presets.where((p) => !addedExtraNames.contains(p.$1)).map((preset) {
+                    children: presets.map((preset) {
                       final (name, price) = preset;
                       return ActionChip(
+                        avatar: const Icon(Icons.add, size: 16),
                         label: Text('$name (${formatVND(price)})'),
                         onPressed: () async {
-                          await ref
-                              .read(orderWorkItemsProvider(orderRef).notifier)
-                              .add(
-                                productName: name,
-                                unitPrice: price,
-                                isExtra: true,
-                                isGift: false,
-                              );
+                          // Reuse existing paid item if same name
+                          final existing = extras.where(
+                            (e) => e.productName == name && !e.isGift,
+                          ).firstOrNull;
+                          if (existing != null) {
+                            await notifier.edit(existing.id, quantity: existing.quantity + 1);
+                          } else {
+                            await notifier.add(
+                              productName: name,
+                              unitPrice: price,
+                              isExtra: true,
+                              isGift: false,
+                            );
+                          }
                         },
                       );
                     }).toList(),
                   ),
-                ],
               ],
             );
           },
@@ -938,96 +936,83 @@ class _EditExtrasSection extends ConsumerWidget {
   }
 }
 
-class _ExtraEditCard extends StatelessWidget {
-  const _ExtraEditCard({
-    required this.orderRef,
+class _ExtraEditRow extends StatelessWidget {
+  const _ExtraEditRow({
     required this.item,
-    required this.onRemove,
+    required this.onIncrement,
+    required this.onDecrement,
     required this.onToggleGift,
+    required this.onRemove,
   });
 
-  final String orderRef;
   final WorkItem item;
-  final VoidCallback onRemove;
+  final VoidCallback onIncrement;
+  final VoidCallback onDecrement;
   final VoidCallback onToggleGift;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 4),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          children: [
-            // Gift badge
-            Container(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          // Gift/paid badge
+          GestureDetector(
+            onTap: onToggleGift,
+            child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
                 color: item.isGift
                     ? Colors.green.withValues(alpha: 0.2)
                     : Colors.grey.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: item.isGift ? Colors.green : Colors.grey.shade300,
+                ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.card_giftcard,
-                    size: 12,
-                    color: item.isGift ? Colors.green : Colors.grey,
-                  ),
-                  const SizedBox(width: 2),
-                  Text(
-                    item.isGift ? VN.giftBadge : 'Trả phí',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: item.isGift ? Colors.green : Colors.grey,
-                    ),
-                  ),
-                ],
+              child: Text(
+                item.isGift ? VN.giftBadge : 'Trả phí',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: item.isGift ? Colors.green : Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.productName,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  Text(
-                    formatVND(item.unitPrice),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.outline,
-                    ),
-                  ),
-                ],
-              ),
+          ),
+          const SizedBox(width: 8),
+          // Name + price
+          Expanded(
+            child: Text(
+              '${item.productName} (${formatVND(item.unitPrice)})',
+              style: theme.textTheme.bodyMedium,
             ),
-            // Gift toggle
-            IconButton(
-              icon: Icon(
-                item.isGift ? Icons.card_giftcard : Icons.money_off,
-                size: 18,
-                color: item.isGift ? Colors.green : Colors.grey,
-              ),
-              onPressed: onToggleGift,
-              tooltip: VN.toggleGift,
-            ),
-            // Remove
-            IconButton(
-              icon: Icon(
-                Icons.close,
-                size: 18,
-                color: theme.colorScheme.error,
-              ),
-              onPressed: onRemove,
-            ),
-          ],
-        ),
+          ),
+          // Qty +/-
+          IconButton(
+            icon: const Icon(Icons.remove, size: 18),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            onPressed: onDecrement,
+          ),
+          Text('${item.quantity}', style: theme.textTheme.bodyMedium),
+          IconButton(
+            icon: const Icon(Icons.add, size: 18),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            onPressed: onIncrement,
+          ),
+          // Remove all
+          IconButton(
+            icon: Icon(Icons.close, size: 16, color: theme.colorScheme.error),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            onPressed: onRemove,
+          ),
+        ],
       ),
     );
   }

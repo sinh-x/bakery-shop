@@ -55,7 +55,8 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
   }
 
   Future<void> refresh() async {
-    state = const AsyncLoading();
+    // Skip AsyncLoading to avoid destroying the form/scroll on edit screen.
+    // The initial load is handled by build(); refresh just updates data silently.
     state = await AsyncValue.guard(() async {
       final service = ref.read(orderServiceProvider);
       return service.getOrder(orderRef);
@@ -181,7 +182,6 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
   }
 
   Future<void> refresh() async {
-    state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final service = ref.read(workItemServiceProvider);
       return service.listWorkItems(orderRef);
@@ -213,7 +213,7 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     final current = state.value ?? [];
     state = AsyncData([...current, item]);
     // Refresh order detail to update total/summary
-    ref.read(orderDetailProvider(orderRef).notifier).refresh();
+    await ref.read(orderDetailProvider(orderRef).notifier).refresh();
     return item;
   }
 
@@ -248,7 +248,7 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
       current.map((i) => i.id == itemId ? updated : i).toList(),
     );
     // Refresh order detail so Sản phẩm section and total_price reflect the change.
-    ref.read(orderDetailProvider(orderRef).notifier).refresh();
+    await ref.read(orderDetailProvider(orderRef).notifier).refresh();
     return updated;
   }
 
@@ -259,7 +259,7 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     final current = state.value ?? [];
     state = AsyncData(current.where((i) => i.id != itemId).toList());
     // Refresh order detail to update total/summary
-    ref.read(orderDetailProvider(orderRef).notifier).refresh();
+    await ref.read(orderDetailProvider(orderRef).notifier).refresh();
   }
 
   Future<WorkItem> transitionStatus(
