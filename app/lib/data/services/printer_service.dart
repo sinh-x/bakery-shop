@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image/image.dart' as img;
+import 'package:permission_handler/permission_handler.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -84,11 +85,30 @@ class PrinterService {
     return await PrintBluetoothThermal.bluetoothEnabled;
   }
 
+  /// Requests Bluetooth and location permissions required on Android 12+.
+  /// Returns true if all required permissions are granted.
+  Future<bool> requestPermissions() async {
+    final statuses = await [
+      Permission.bluetoothConnect,
+      Permission.bluetoothScan,
+      Permission.locationWhenInUse,
+    ].request();
+
+    return statuses.values.every(
+      (s) => s.isGranted || s.isLimited,
+    );
+  }
+
   /// Returns paired Bluetooth devices filtered to likely printers.
   ///
-  /// Filters by known thermal printer name patterns. If no matches,
-  /// returns all bonded devices as fallback.
+  /// Requests permissions first, then filters by known thermal printer
+  /// name patterns. If no matches, returns all bonded devices as fallback.
   Future<List<DiscoveredPrinter>> getBondedDevices() async {
+    final granted = await requestPermissions();
+    if (!granted) {
+      throw PrinterException(PrinterError.locationPermissionDenied);
+    }
+
     final devices = await PrintBluetoothThermal.pairedBluetooths;
     final all = devices
         .map((d) => DiscoveredPrinter(

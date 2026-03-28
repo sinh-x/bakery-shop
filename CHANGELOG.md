@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.3.0+2] — 2026-03-28
+- chore: update CHANGELOG for v0.3.0
+
 ## [0.3.0+1] — 2026-03-28
 - feat(print): DG-037 Bluetooth thermal printer integration (Y41BT TSPL protocol)
 - feat(print): auto-reconnect to last used printer
