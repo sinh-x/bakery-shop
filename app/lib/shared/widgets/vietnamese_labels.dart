@@ -332,6 +332,14 @@ class VN {
   static const share = 'Chia sẻ';
   static const saveToGallery = 'Lưu ảnh';
   static const receiptSaved = 'Đã lưu ảnh phiếu';
+
+  // Print
+  static const print = 'In';
+  static const printing = 'Đang in...';
+  static const printSuccess = 'In thành công';
+  static const printFailed = 'In thất bại';
+  static const printerNotConnected = 'Máy in chưa kết nối';
+  static const printerConnecting = 'Đang kết nối máy in...';
 }
 
 // Category mapping (new slugs)

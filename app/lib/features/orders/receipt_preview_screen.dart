@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/api/receipt_service.dart';
+import '../../providers/printer_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 
 class ReceiptPreviewScreen extends ConsumerStatefulWidget {
@@ -98,6 +99,82 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
     }
   }
 
+  Future<void> _printReceipt() async {
+    if (_imageBytes == null) return;
+
+    final printerNotifier = ref.read(printerProvider.notifier);
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Consumer(
+        builder: (context, ref, _) {
+          final state = ref.watch(printerProvider);
+          final status = state.value;
+
+          // Auto-dismiss on success after a short delay
+          if (status != null &&
+              status.state == PrinterState.connected &&
+              !status.isPrinting) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              Navigator.of(context).pop();
+              showTopSnackBar(context, VN.printSuccess);
+            });
+          }
+
+          return AlertDialog(
+            content: Row(
+              children: [
+                if (status?.isPrinting == true ||
+                    status?.state == PrinterState.printing)
+                  const CircularProgressIndicator(strokeWidth: 2)
+                else if (status?.state == PrinterState.connecting)
+                  const CircularProgressIndicator(strokeWidth: 2)
+                else if (status?.state == PrinterState.error)
+                  const Icon(Icons.error_outline, color: Colors.red)
+                else
+                  const CircularProgressIndicator(strokeWidth: 2),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    status?.isPrinting == true ||
+                            status?.state == PrinterState.printing
+                        ? VN.printing
+                        : status?.state == PrinterState.connecting
+                            ? VN.printerConnecting
+                            : status?.state == PrinterState.error
+                                ? (status?.errorMessage ?? VN.printFailed)
+                                : VN.printing,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              if (status?.state != PrinterState.printing &&
+                  status?.isPrinting != true)
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text(VN.cancel),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+
+    // Attempt to print
+    final success = await printerNotifier.printImage(_imageBytes!);
+
+    if (!success && mounted) {
+      Navigator.of(context).pop(); // Close the loading dialog
+      final errorState = ref.read(printerProvider).value;
+      if (errorState?.errorMessage != null) {
+        showTopSnackBar(context, errorState!.errorMessage!);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -172,12 +249,23 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
                 label: const Text(VN.saveToGallery),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             Expanded(
               child: FilledButton.icon(
                 onPressed: _shareReceipt,
                 icon: const Icon(Icons.share),
                 label: const Text(VN.share),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _printReceipt,
+                icon: const Icon(Icons.print),
+                label: const Text(VN.print),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.secondary,
+                ),
               ),
             ),
           ],
