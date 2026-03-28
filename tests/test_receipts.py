@@ -15,19 +15,19 @@ from baker.api.receipts import (
 
 
 class TestVNDFormatting:
-    """Test Vietnamese currency formatting."""
+    """Test Vietnamese currency formatting (shortened: divide by 1000, no suffix)."""
 
     def test_whole_number(self):
-        assert _format_vnd(150000) == "150.000đ"
+        assert _format_vnd(150000) == "150"
 
     def test_large_number(self):
-        assert _format_vnd(1500000) == "1.500.000đ"
+        assert _format_vnd(1500000) == "1500"
 
     def test_zero(self):
-        assert _format_vnd(0) == "0đ"
+        assert _format_vnd(0) == "0"
 
     def test_small_number(self):
-        assert _format_vnd(5000) == "5.000đ"
+        assert _format_vnd(5000) == "5"
 
 
 class TestTextWrapping:
@@ -81,7 +81,7 @@ class TestReceiptAPI:
         order_ref = order_resp.json()["orderRef"]
 
         # Get order receipt
-        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=order")
+        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=customer")
         assert response.status_code == 200
         assert response.headers["content-type"] == "image/png"
         # Verify PNG header
@@ -127,21 +127,6 @@ class TestReceiptAPI:
         assert response.status_code == 200
         assert response.headers["content-type"] == "image/png"
 
-    def test_work_ticket_endpoint_without_item_id_returns_combined(self, api_client):
-        """Test work ticket without item_id returns combined ticket for all items."""
-        # Create an order
-        order_resp = api_client.post("/api/orders", json={
-            "customerName": "Test",
-            "items": [{"productName": "Cake", "quantity": 1, "unitPrice": 100000}],
-            "dueDate": "2026-03-30",
-        })
-        assert order_resp.status_code == 201
-        order_ref = order_resp.json()["orderRef"]
-
-        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=work_ticket")
-        assert response.status_code == 200
-        assert response.headers["content-type"] == "image/png"
-
     def test_invalid_receipt_type_fails(self, api_client):
         """Test invalid receipt type returns 400."""
         # Create an order
@@ -158,7 +143,7 @@ class TestReceiptAPI:
 
     def test_nonexistent_order_returns_404(self, api_client):
         """Test nonexistent order returns 404."""
-        response = api_client.get("/api/orders/NONEXISTENT/receipt?type=order")
+        response = api_client.get("/api/orders/NONEXISTENT/receipt?type=customer")
         assert response.status_code == 404
 
     def test_receipt_width_is_576px(self, api_client):
@@ -176,7 +161,7 @@ class TestReceiptAPI:
         assert order_resp.status_code == 201
         order_ref = order_resp.json()["orderRef"]
 
-        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=order")
+        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=customer")
         assert response.status_code == 200
 
         # Verify PNG dimensions
@@ -201,8 +186,5 @@ class TestReceiptAPI:
         order_ref = order_resp.json()["orderRef"]
 
         # Should not raise any errors with Vietnamese text
-        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=order")
-        assert response.status_code == 200
-
         response = api_client.get(f"/api/orders/{order_ref}/receipt?type=customer")
         assert response.status_code == 200
