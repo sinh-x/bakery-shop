@@ -23,14 +23,16 @@ class WorkItem:
     status: str = "pending"
     is_birthday: bool = False
     age: Optional[int] = None
+    is_extra: bool = False
+    is_gift: bool = False
     id: Optional[int] = None
     created_at: Optional[str] = None
 
     def save(self, conn) -> int:
         cursor = conn.execute(
             """INSERT INTO order_items
-               (order_id, product_id, product_name, quantity, unit_price, notes, position, status, is_birthday, age)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (order_id, product_id, product_name, quantity, unit_price, notes, position, status, is_birthday, age, is_extra, is_gift)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 self.order_id,
                 self.product_id,
@@ -42,6 +44,8 @@ class WorkItem:
                 self.status,
                 1 if self.is_birthday else 0,
                 self.age,
+                1 if self.is_extra else 0,
+                1 if self.is_gift else 0,
             ),
         )
         self.id = cursor.lastrowid
@@ -72,6 +76,8 @@ class WorkItem:
             status=row["status"],
             is_birthday=bool(row["is_birthday"]) if "is_birthday" in keys else False,
             age=row["age"] if "age" in keys else None,
+            is_extra=bool(row["is_extra"]) if "is_extra" in keys else False,
+            is_gift=bool(row["is_gift"]) if "is_gift" in keys else False,
             created_at=row["created_at"],
         )
 
@@ -88,5 +94,7 @@ class WorkItem:
             "status": self.status,
             "isBirthday": self.is_birthday,
             "age": self.age,
+            "isExtra": self.is_extra,
+            "isGift": self.is_gift,
             "createdAt": self.created_at,
         }
