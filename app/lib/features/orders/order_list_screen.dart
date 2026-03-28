@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
@@ -41,6 +42,9 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   String _searchQuery = '';
   final _searchController = TextEditingController();
 
+  // View mode: 'list' or 'kanban'
+  String _viewMode = 'list';
+
   // Auto-refresh: detect when user navigates back to this screen
   GoRouter? _goRouter;
   bool _wasNavigatedAway = false;
@@ -53,11 +57,28 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     _goRouter?.routerDelegate.removeListener(_handleRouteChange);
   }
 
+  Future<void> _loadViewMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _viewMode = prefs.getString('order_view_mode') ?? 'list';
+    });
+  }
+
+  Future<void> _toggleViewMode() async {
+    final newMode = _viewMode == 'list' ? 'kanban' : 'list';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('order_view_mode', newMode);
+    setState(() {
+      _viewMode = newMode;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() => setState(() {}));
+    _loadViewMode();
   }
 
   @override
@@ -186,6 +207,13 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         title: const Text(VN.tabOrders),
         actions: [
           IconButton(
+            icon: Icon(
+              _viewMode == 'list' ? Icons.view_kanban : Icons.view_list,
+            ),
+            tooltip: _viewMode == 'list' ? 'Kanban' : 'Danh sách',
+            onPressed: _toggleViewMode,
+          ),
+          IconButton(
             icon: const Icon(Icons.settings),
             tooltip: VN.settings,
             onPressed: () => context.push('/settings'),
@@ -263,58 +291,64 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                 ),
               ),
 
-              // Order list
+              // Order list / Kanban view
               Expanded(
-                child: ordersAsync.when(
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
-                  error: (e, _) => Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(VN.apiError),
-                        const SizedBox(height: 8),
-                        TextButton(
-                          onPressed: _onRefresh,
-                          child: const Text(VN.retry),
+                child: _viewMode == 'kanban'
+                    ? _KanbanPlaceholder(filteredCount: ordersAsync.maybeWhen(
+                          data: (orders) => _applyFilters(orders).length,
+                          orElse: () => 0,
+                        ))
+                    : ordersAsync.when(
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (e, _) => Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(VN.apiError),
+                              const SizedBox(height: 8),
+                              TextButton(
+                                onPressed: _onRefresh,
+                                child: const Text(VN.retry),
+                              ),
+                            ],
+                          ),
                         ),
-                      ],
-                    ),
-                  ),
-                  data: (orders) {
-                    final filtered = _applyFilters(orders);
-                    if (filtered.isEmpty) {
-                      return Center(
-                        child: Text(
-                          _searchQuery.isNotEmpty || _groupFilter != 'working'
-                              ? 'Không có đơn hàng phù hợp'
-                              : 'Không có đơn cần làm',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      );
-                    }
-                    final grouped = _groupByDueDate(filtered);
-                    return RefreshIndicator(
-                      onRefresh: _onRefresh,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                        itemCount: grouped.length,
-                        itemBuilder: (context, index) {
-                          final item = grouped[index];
-                          if (item is String) {
-                            return _DateHeader(label: item);
+                        data: (orders) {
+                          final filtered = _applyFilters(orders);
+                          if (filtered.isEmpty) {
+                            return Center(
+                              child: Text(
+                                _searchQuery.isNotEmpty ||
+                                        _groupFilter != 'working'
+                                    ? 'Không có đơn hàng phù hợp'
+                                    : 'Không có đơn cần làm',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            );
                           }
-                          final order = item as Order;
-                          return _OrderCard(
-                            order: order,
-                            onTap: () =>
-                                context.push('/orders/${order.orderRef}'),
+                          final grouped = _groupByDueDate(filtered);
+                          return RefreshIndicator(
+                            onRefresh: _onRefresh,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                              itemCount: grouped.length,
+                              itemBuilder: (context, index) {
+                                final item = grouped[index];
+                                if (item is String) {
+                                  return _DateHeader(label: item);
+                                }
+                                final order = item as Order;
+                                return _OrderCard(
+                                  order: order,
+                                  onTap: () => context
+                                      .push('/orders/${order.orderRef}'),
+                                );
+                              },
+                            ),
                           );
                         },
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           ),
@@ -356,6 +390,35 @@ class _OrderCard extends ConsumerWidget {
   final Order order;
   final VoidCallback? onTap;
 
+  /// Returns the urgency border color: red for overdue, amber for same-day, null otherwise.
+  Color? _urgencyBorderColor() {
+    if (order.dueDate == null || order.dueDate!.isEmpty) return null;
+    try {
+      final due = DateTime.parse(order.dueDate!);
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final dueDateOnly = DateTime(due.year, due.month, due.day);
+      if (dueDateOnly.isBefore(today)) {
+        return Colors.red;
+      } else if (dueDateOnly.isAtSameMomentAs(today)) {
+        return Colors.amber;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  IconData _deliveryIcon() {
+    switch (order.deliveryType) {
+      case 'bus':
+        return Icons.directions_bus;
+      case 'door':
+        return Icons.local_shipping;
+      case 'pickup':
+      default:
+        return Icons.storefront;
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
@@ -366,148 +429,187 @@ class _OrderCard extends ConsumerWidget {
       data: (photos) => photos.length,
       orElse: () => 0,
     );
+    final urgencyColor = _urgencyBorderColor();
+
+    // Build left border decoration
+    final borderSides = <BorderSide>[];
+    if (urgencyColor != null) {
+      borderSides.add(BorderSide(color: urgencyColor, width: 4));
+    }
+    // Default grey border on left for structure (1px)
+    if (borderSides.isEmpty) {
+      borderSides.add(const BorderSide(color: Colors.transparent, width: 4));
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Top row: order ref + photo badge + status chip
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    order.orderRef,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                if (photoCount > 0) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.photo_outlined,
-                          size: 11,
-                          color: theme.colorScheme.onSecondaryContainer,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          '$photoCount ảnh',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSecondaryContainer,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                ],
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusColor.withAlpha(30),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: statusColor.withAlpha(120)),
-                  ),
-                  child: Text(
-                    statusLabel,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: statusColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(
+              left: borderSides.first,
             ),
-
-            const SizedBox(height: 4),
-
-            // Customer name + source badge
-            Row(
-              children: [
-                Text(
-                  order.customerName,
-                  style: theme.textTheme.bodyMedium,
-                ),
-                if (order.source.isNotEmpty) ...[
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Top row: order ref + delivery icon + photo badge + status chip
+              Row(
+                children: [
+                  // Delivery type icon
+                  Icon(
+                    _deliveryIcon(),
+                    size: 18,
+                    color: theme.colorScheme.primary,
+                  ),
                   const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      order.orderRef,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  if (photoCount > 0) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.secondaryContainer,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.photo_outlined,
+                            size: 11,
+                            color: theme.colorScheme.onSecondaryContainer,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            '$photoCount ảnh',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSecondaryContainer,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 2),
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(4),
+                      color: statusColor.withAlpha(30),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: statusColor.withAlpha(120)),
                     ),
                     child: Text(
-                      order.source,
+                      statusLabel,
                       style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onSecondaryContainer,
+                        color: statusColor,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ],
-              ],
-            ),
+              ),
 
-            // Due date (if present)
-            if (order.dueDate != null) ...[
               const SizedBox(height: 4),
+
+              // Customer name + source badge
               Row(
                 children: [
-                  Icon(
-                    Icons.schedule,
-                    size: 14,
-                    color: theme.colorScheme.outline,
-                  ),
-                  const SizedBox(width: 4),
                   Text(
-                    _formatDue(order.dueDate, order.dueTime),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.outline,
-                    ),
+                    order.customerName,
+                    style: theme.textTheme.bodyMedium,
                   ),
-                  const SizedBox(width: 12),
-                  Text(
-                    formatVND(order.totalPrice),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w600,
+                  if (order.source.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.secondaryContainer,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        order.source,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSecondaryContainer,
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
-            ] else ...[
-              const SizedBox(height: 4),
-              Text(
-                formatVND(order.totalPrice),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.w600,
+
+              // Notes preview (1 line, ellipsis) — only if non-empty
+              if (order.notes.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  order.notes,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.outline,
+                    fontStyle: FontStyle.italic,
+                  ),
                 ),
-              ),
+              ],
+
+              // Due date (if present)
+              if (order.dueDate != null) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.schedule,
+                      size: 14,
+                      color: theme.colorScheme.outline,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatDue(order.dueDate, order.dueTime),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: urgencyColor ?? theme.colorScheme.outline,
+                        fontWeight:
+                            urgencyColor != null ? FontWeight.w600 : null,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      formatVND(order.totalPrice),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ] else ...[
+                const SizedBox(height: 4),
+                Text(
+                  formatVND(order.totalPrice),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ],
-          ],
-        ),
+          ),
         ),
       ),
     );
@@ -516,5 +618,37 @@ class _OrderCard extends ConsumerWidget {
   String _formatDue(String? dueDate, String? dueTime) {
     if (dueDate == null) return '';
     return dueTime != null ? '$dueDate $dueTime' : dueDate;
+  }
+}
+
+class _KanbanPlaceholder extends StatelessWidget {
+  const _KanbanPlaceholder({required this.filteredCount});
+
+  final int filteredCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.view_kanban,
+            size: 64,
+            color: Theme.of(context).colorScheme.outline,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Khanban (đang xây dựng)',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$filteredCount đơn hàng',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
   }
 }
