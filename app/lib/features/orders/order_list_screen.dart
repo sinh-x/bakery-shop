@@ -13,13 +13,21 @@ import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'cake_queue_screen.dart';
 
-// Group filter definitions for order list
-const _groupFilters = [
-  (id: 'working', label: 'Cần làm'),
-  (id: 'ready', label: 'Sẵn sàng'),
-  (id: 'done', label: 'Xong'),
-  (id: 'all', label: 'Tất cả'),
+// Status filter chips for list view (mirrors Kanban column statuses + extras)
+// List view filters mirror Kanban columns (one column at a time)
+const _statusFilters = [
+  'new',
+  'confirmed',
+  'in_progress',
+  'ready',
+  'to_deliver',
+  'awaiting_payment',
 ];
+
+const _statusFilterLabels = {
+  'to_deliver': 'Giao hàng',
+  'awaiting_payment': 'Xác nhận thanh toán',
+};
 
 const _statusColors = {
   'new': Colors.blue,
@@ -29,6 +37,8 @@ const _statusColors = {
   'delivered': Colors.teal,
   'completed': Colors.grey,
   'cancelled': Colors.red,
+  'to_deliver': Colors.deepOrange,
+  'awaiting_payment': Colors.pink,
 };
 
 class OrderListScreen extends ConsumerStatefulWidget {
@@ -41,7 +51,7 @@ class OrderListScreen extends ConsumerStatefulWidget {
 class _OrderListScreenState extends ConsumerState<OrderListScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  String _groupFilter = 'working';
+  String _statusFilter = 'new';
   String _searchQuery = '';
   final _searchController = TextEditingController();
 
@@ -120,34 +130,48 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     await ref.read(orderListProvider.notifier).refresh();
   }
 
-  List<Order> _applyGroupFilter(List<Order> orders) {
-    switch (_groupFilter) {
-      case 'working':
-        return orders
-            .where((o) =>
-                o.status == 'new' ||
-                o.status == 'confirmed' ||
-                o.status == 'in_progress' ||
-                o.status == 'ready')
-            .toList();
+  List<Order> _applyStatusFilter(List<Order> orders) {
+    switch (_statusFilter) {
       case 'ready':
-        return orders
-            .where(
-                (o) => o.status == 'ready' || o.status == 'delivered')
-            .toList();
-      case 'done':
+        // Pickup-only ready orders (same as Kanban "Sẵn sàng" column)
         return orders
             .where((o) =>
-                o.status == 'completed' ||
-                o.status == 'cancelled')
+                o.status == 'ready' &&
+                o.deliveryType != 'bus' &&
+                o.deliveryType != 'door')
+            .toList();
+      case 'to_deliver':
+        // Ready orders needing delivery (same as Kanban "Giao hàng" column)
+        return orders
+            .where((o) =>
+                o.status == 'ready' &&
+                (o.deliveryType == 'bus' || o.deliveryType == 'door'))
+            .toList();
+      case 'awaiting_payment':
+        // Delivered but unpaid (same as Kanban "Xác nhận thanh toán" column)
+        return orders
+            .where((o) => o.status == 'delivered' && !o.isPaid)
             .toList();
       default:
-        return orders;
+        return orders.where((o) => o.status == _statusFilter).toList();
     }
   }
 
+  List<Order> _applySearchFilter(List<Order> orders) {
+    if (_searchQuery.isEmpty) return orders;
+    final q = _searchQuery.toLowerCase();
+    return orders
+        .where(
+          (o) =>
+              o.orderRef.toLowerCase().contains(q) ||
+              o.customerName.toLowerCase().contains(q) ||
+              o.customerPhone.contains(q),
+        )
+        .toList();
+  }
+
   List<Order> _applyFilters(List<Order> orders) {
-    final grouped = _applyGroupFilter(orders);
+    final grouped = _applyStatusFilter(orders);
     if (_searchQuery.isEmpty) return grouped;
     final q = _searchQuery.toLowerCase();
     return grouped
@@ -271,35 +295,50 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                 ),
               ),
 
-              // Group status filter chips
-              SizedBox(
-                height: 44,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 4),
-                  children: _groupFilters
-                      .map(
-                        (g) => Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: FilterChip(
-                            label: Text(g.label),
-                            selected: _groupFilter == g.id,
-                            onSelected: (_) =>
-                                setState(() => _groupFilter = g.id),
-                          ),
-                        ),
-                      )
-                      .toList(),
+              // Status filter chips (hidden in Kanban — columns already group by status)
+              if (_viewMode == 'list')
+                SizedBox(
+                  height: 44,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 4),
+                    children: _statusFilters
+                        .map(
+                          (s) {
+                            final color = _statusColors[s] ?? Colors.grey;
+                            final label = _statusFilterLabels[s] ?? statusMap[s] ?? s;
+                            final selected = _statusFilter == s;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: FilterChip(
+                                avatar: Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                label: Text(label),
+                                selected: selected,
+                                selectedColor: color.withAlpha(30),
+                                onSelected: (_) =>
+                                    setState(() => _statusFilter = s),
+                              ),
+                            );
+                          },
+                        )
+                        .toList(),
+                  ),
                 ),
-              ),
 
               // Order list / Kanban view
               Expanded(
                 child: _viewMode == 'kanban'
                     ? _KanbanBoard(
                         filteredOrders: ordersAsync.maybeWhen(
-                          data: (orders) => _applyFilters(orders),
+                          data: (orders) => _applySearchFilter(orders),
                           orElse: () => <Order>[],
                         ),
                       )
@@ -324,10 +363,9 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                           if (filtered.isEmpty) {
                             return Center(
                               child: Text(
-                                _searchQuery.isNotEmpty ||
-                                        _groupFilter != 'working'
+                                _searchQuery.isNotEmpty
                                     ? 'Không có đơn hàng phù hợp'
-                                    : 'Không có đơn cần làm',
+                                    : 'Không có đơn hàng',
                                 style: Theme.of(context).textTheme.bodyMedium,
                               ),
                             );
@@ -424,6 +462,37 @@ class _OrderCard extends ConsumerWidget {
     }
   }
 
+  Color _deliveryIconColor(Color defaultColor) {
+    switch (order.deliveryType) {
+      case 'bus':
+        return Colors.orange;
+      case 'door':
+        return Colors.deepOrange;
+      default:
+        return defaultColor;
+    }
+  }
+
+  bool get _isDelivery =>
+      order.deliveryType == 'bus' || order.deliveryType == 'door';
+
+  /// Returns true if the order is due within the next 2 hours.
+  bool _isDueWithin2Hours() {
+    if (order.dueDate == null || order.dueDate!.isEmpty) return false;
+    try {
+      final now = DateTime.now();
+      DateTime due;
+      if (order.dueTime != null && order.dueTime!.isNotEmpty) {
+        due = DateTime.parse('${order.dueDate!} ${order.dueTime!}');
+      } else {
+        due = DateTime.parse(order.dueDate!);
+      }
+      return due.isAfter(now) &&
+          due.difference(now).inMinutes <= 120;
+    } catch (_) {}
+    return false;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
@@ -450,6 +519,7 @@ class _OrderCard extends ConsumerWidget {
         ? '$baseUrl/api/photos/${cakePhoto.photoHash}.jpg'
         : null;
     final urgencyColor = _urgencyBorderColor();
+    final dueSoon = _isDueWithin2Hours();
 
     // Build left border decoration
     final borderSides = <BorderSide>[];
@@ -479,11 +549,11 @@ class _OrderCard extends ConsumerWidget {
               // Top row: order ref + delivery icon + photo badge + status chip
               Row(
                 children: [
-                  // Delivery type icon
+                  // Delivery type icon (colored for bus/door-to-door)
                   Icon(
                     _deliveryIcon(),
-                    size: 18,
-                    color: theme.colorScheme.primary,
+                    size: _isDelivery ? 20 : 18,
+                    color: _deliveryIconColor(theme.colorScheme.primary),
                   ),
                   const SizedBox(width: 6),
                   Expanded(
@@ -631,17 +701,34 @@ class _OrderCard extends ConsumerWidget {
                     Icon(
                       Icons.schedule,
                       size: 14,
-                      color: theme.colorScheme.outline,
+                      color: dueSoon ? Colors.red : (urgencyColor ?? theme.colorScheme.outline),
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      _formatDue(order.dueDate, order.dueTime),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: urgencyColor ?? theme.colorScheme.outline,
-                        fontWeight:
-                            urgencyColor != null ? FontWeight.w600 : null,
+                    if (dueSoon)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withAlpha(25),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.red.withAlpha(80)),
+                        ),
+                        child: Text(
+                          _formatDue(order.dueDate, order.dueTime),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      )
+                    else
+                      Text(
+                        _formatDue(order.dueDate, order.dueTime),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: urgencyColor ?? theme.colorScheme.outline,
+                          fontWeight:
+                              urgencyColor != null ? FontWeight.bold : null,
+                        ),
                       ),
-                    ),
                     const SizedBox(width: 12),
                     Text(
                       formatVND(order.totalPrice),
@@ -676,7 +763,9 @@ class _OrderCard extends ConsumerWidget {
 }
 
 /// Active Kanban columns in order workflow
-const _kanbanStatuses = ['new', 'confirmed', 'in_progress', 'ready'];
+/// 'to_deliver' is a virtual status for ready orders with bus/door delivery
+/// 'awaiting_payment' is a virtual status for delivered+unpaid orders
+const _kanbanStatuses = ['new', 'confirmed', 'in_progress', 'ready', 'to_deliver', 'awaiting_payment'];
 
 class _KanbanBoard extends ConsumerWidget {
   const _KanbanBoard({required this.filteredOrders});
@@ -686,10 +775,32 @@ class _KanbanBoard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Group orders by status for active columns
+    // 'awaiting_payment' is a virtual column: delivered orders that are not paid
     final ordersByStatus = <String, List<Order>>{};
     for (final status in _kanbanStatuses) {
-      ordersByStatus[status] =
-          filteredOrders.where((o) => o.status == status).toList();
+      if (status == 'to_deliver') {
+        // Ready orders that need delivery (bus/door-to-door)
+        ordersByStatus[status] = filteredOrders
+            .where((o) =>
+                o.status == 'ready' &&
+                (o.deliveryType == 'bus' || o.deliveryType == 'door'))
+            .toList();
+      } else if (status == 'ready') {
+        // Ready orders excluding delivery ones (pickup only)
+        ordersByStatus[status] = filteredOrders
+            .where((o) =>
+                o.status == 'ready' &&
+                o.deliveryType != 'bus' &&
+                o.deliveryType != 'door')
+            .toList();
+      } else if (status == 'awaiting_payment') {
+        ordersByStatus[status] = filteredOrders
+            .where((o) => o.status == 'delivered' && !o.isPaid)
+            .toList();
+      } else {
+        ordersByStatus[status] =
+            filteredOrders.where((o) => o.status == status).toList();
+      }
     }
 
     return ListView.builder(
@@ -717,7 +828,11 @@ class _KanbanColumn extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final statusColor = _statusColors[status] ?? Colors.grey;
-    final statusLabel = statusMap[status] ?? status;
+    final statusLabel = status == 'awaiting_payment'
+        ? 'Xác nhận thanh toán'
+        : status == 'to_deliver'
+            ? 'Giao hàng'
+            : (statusMap[status] ?? status);
     final targetIndex = _kanbanStatuses.indexOf(status);
 
     return Container(
@@ -779,6 +894,8 @@ class _KanbanColumn extends ConsumerWidget {
           Expanded(
             child: DragTarget<Order>(
               onWillAcceptWithDetails: (details) {
+                // Don't accept drops on virtual columns
+                if (status == 'awaiting_payment' || status == 'to_deliver') return false;
                 // Only accept forward transitions
                 final sourceIndex = _kanbanStatuses.indexOf(details.data.status);
                 return targetIndex > sourceIndex;
@@ -919,6 +1036,17 @@ class _KanbanCard extends ConsumerWidget {
     }
   }
 
+  Color _deliveryIconColor(Color defaultColor) {
+    switch (order.deliveryType) {
+      case 'bus':
+        return Colors.orange;
+      case 'door':
+        return Colors.deepOrange;
+      default:
+        return defaultColor;
+    }
+  }
+
   String _productSummary() {
     if (order.items.isEmpty) return '';
     final first = order.items.first;
@@ -973,7 +1101,7 @@ class _KanbanCard extends ConsumerWidget {
                   Icon(
                     _deliveryIcon(),
                     size: 16,
-                    color: theme.colorScheme.primary,
+                    color: _deliveryIconColor(theme.colorScheme.primary),
                   ),
                   const SizedBox(width: 4),
                   Expanded(

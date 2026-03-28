@@ -45,9 +45,9 @@ if [ "$DO_WEB" -eq 1 ]; then
   fi
 
   DEST="${REPO_ROOT}/web-build"
-  echo "Copying build to $DEST..."
-  rm -rf "$DEST"
-  cp -r "$BUILD_OUTPUT" "$DEST"
+  echo "Syncing build to $DEST..."
+  mkdir -p "$DEST"
+  rsync -a --delete "$BUILD_OUTPUT/" "$DEST/"
   echo "Web build ready."
   echo ""
 fi

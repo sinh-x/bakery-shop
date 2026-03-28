@@ -28,11 +28,11 @@ if [ ! -d "$BUILD_OUTPUT" ]; then
   exit 1
 fi
 
-# --- Copy to web-build/ ---
+# --- Sync to web-build/ (preserve directory inode for Docker bind mount) ---
 DEST="${REPO_ROOT}/web-build"
-echo "Copying build output to $DEST..."
-rm -rf "$DEST"
-cp -r "$BUILD_OUTPUT" "$DEST"
+echo "Syncing build output to $DEST..."
+mkdir -p "$DEST"
+rsync -a --delete "$BUILD_OUTPUT/" "$DEST/"
 echo "Web build ready at $DEST"
 
 # --- Optionally restart Caddy ---
