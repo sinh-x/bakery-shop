@@ -332,6 +332,23 @@ class VN {
   static const share = 'Chia sẻ';
   static const saveToGallery = 'Lưu ảnh';
   static const receiptSaved = 'Đã lưu ảnh phiếu';
+
+  // Print
+  static const print = 'In';
+  static const printing = 'Đang in...';
+  static const printSuccess = 'In thành công';
+  static const printFailed = 'In thất bại';
+  static const printerNotConnected = 'Máy in chưa kết nối';
+  static const printerConnecting = 'Đang kết nối máy in...';
+
+  // Printer picker
+  static const selectPrinter = 'Chọn máy in';
+  static const scanning = 'Đang tìm...';
+  static const noPrinterFound = 'Không tìm thấy máy in';
+  static const printerConnectionFailed = 'Kết nối thất bại';
+  static const connectingTo = 'Đang kết nối đến...';
+  static const tapToRetry = 'Bấm để thử lại';
+  static const noDevicesFound = 'Không có thiết bị nào';
 }
 
 // Category mapping (new slugs)

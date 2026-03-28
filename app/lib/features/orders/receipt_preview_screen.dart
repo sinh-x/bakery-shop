@@ -1,13 +1,17 @@
 import 'dart:typed_data';
-import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/api/receipt_service.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+
+import 'receipt_preview_print_stub.dart'
+    if (dart.library.io) 'receipt_preview_print_native.dart'
+    if (dart.library.js_interop) 'receipt_preview_print_web.dart'
+    as platform;
 
 class ReceiptPreviewScreen extends ConsumerStatefulWidget {
   const ReceiptPreviewScreen({
@@ -30,6 +34,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
   Uint8List? _imageBytes;
   String? _error;
   bool _loading = true;
+  bool _printing = false;
 
   @override
   void initState() {
@@ -61,16 +66,17 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
     }
   }
 
-  Future<void> _shareReceipt() async {
+  Future<void> _shareImage() async {
     if (_imageBytes == null) return;
     try {
-      final tempDir = await getTemporaryDirectory();
       final fileName =
           'receipt_${widget.orderRef}_${widget.receiptType.value}.png';
-      final file = File('${tempDir.path}/$fileName');
-      await file.writeAsBytes(_imageBytes!);
+
+      // Save to temp file then share
+      await platform.saveToFile(_imageBytes!, fileName);
+
       await Share.shareXFiles(
-        [XFile(file.path)],
+        [XFile.fromData(_imageBytes!, mimeType: 'image/png', name: fileName)],
         text: '${widget.receiptType.label} - ${widget.orderRef}',
       );
     } catch (e) {
@@ -80,14 +86,12 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
     }
   }
 
-  Future<void> _saveToGallery() async {
+  Future<void> _saveImage() async {
     if (_imageBytes == null) return;
     try {
-      final directory = await getApplicationDocumentsDirectory();
       final fileName =
           'receipt_${widget.orderRef}_${widget.receiptType.value}_${DateTime.now().millisecondsSinceEpoch}.png';
-      final file = File('${directory.path}/$fileName');
-      await file.writeAsBytes(_imageBytes!);
+      await platform.saveToFile(_imageBytes!, fileName);
       if (mounted) {
         showTopSnackBar(context, VN.receiptSaved);
       }
@@ -95,6 +99,23 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
       if (mounted) {
         showTopSnackBar(context, '${VN.apiError}: $e');
       }
+    }
+  }
+
+  Future<void> _printReceipt() async {
+    if (_imageBytes == null) return;
+
+    if (kIsWeb) {
+      platform.printWeb(_imageBytes!);
+      return;
+    }
+
+    // Native Bluetooth print
+    setState(() => _printing = true);
+    try {
+      await platform.printNative(context, _imageBytes!, ref);
+    } finally {
+      if (mounted) setState(() => _printing = false);
     }
   }
 
@@ -167,17 +188,37 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _saveToGallery,
+                onPressed: _saveImage,
                 icon: const Icon(Icons.save_alt),
                 label: const Text(VN.saveToGallery),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _shareImage,
+                icon: const Icon(Icons.share),
+                label: const Text('Chia sẻ'),
+              ),
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: FilledButton.icon(
-                onPressed: _shareReceipt,
-                icon: const Icon(Icons.share),
-                label: const Text(VN.share),
+                onPressed: _printing ? null : _printReceipt,
+                icon: _printing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.print),
+                label: Text(_printing ? 'Đang in...' : VN.print),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.secondary,
+                ),
               ),
             ),
           ],

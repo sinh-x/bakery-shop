@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.2.2+18] — 2026-03-28
+- chore: bump build number to 17
+
 ## [0.2.2+16] — 2026-03-26
 - feat(checklist): DG-028 daily opening/closing checklist for staff procedures
 
