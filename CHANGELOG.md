@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0+1] — 2026-03-28
+- feat(print): DG-037 Bluetooth thermal printer integration (Y41BT TSPL protocol)
+- feat(print): auto-reconnect to last used printer
+- feat(print): web browser print support via window.print()
+- feat(receipts): increased font sizes for thermal print readability
+- refactor: replaced PDF share with direct image share
+- chore: version bump to 0.3.0
+
 ## [0.2.2+18] — 2026-03-28
 - chore: bump build number to 17
 
