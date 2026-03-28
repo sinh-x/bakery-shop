@@ -105,15 +105,28 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
   Future<void> _printReceipt() async {
     if (_imageBytes == null) return;
 
-    if (kIsWeb) {
-      platform.printWeb(_imageBytes!);
-      return;
-    }
-
-    // Native Bluetooth print
     setState(() => _printing = true);
     try {
-      await platform.printNative(context, _imageBytes!, ref);
+      // Fetch a no-photos version for printing
+      final receiptService = ref.read(receiptServiceProvider);
+      final printBytes = await receiptService.fetchReceipt(
+        orderRef: widget.orderRef,
+        type: widget.receiptType,
+        itemId: widget.itemId,
+        photos: false,
+      );
+
+      if (!mounted) return;
+
+      if (kIsWeb) {
+        platform.printWeb(printBytes);
+      } else {
+        await platform.printNative(context, printBytes, ref);
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.apiError}: $e');
+      }
     } finally {
       if (mounted) setState(() => _printing = false);
     }

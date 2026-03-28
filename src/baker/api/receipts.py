@@ -50,10 +50,22 @@ def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(d / ("NotoSans-Bold.ttf" if bold else "NotoSans-Regular.ttf")), size)
 
 
+def _emoji_font(size: int) -> ImageFont.FreeTypeFont:
+    import baker as _pkg
+    d = Path(_pkg.__file__).parent / "assets" / "fonts"
+    return ImageFont.truetype(str(d / "NotoEmoji-Variable.ttf"), size)
+
+
 def _format_vnd(amount) -> str:
     """Format Vietnamese currency: 275000 → '275' (shortened, divide by 1000, no suffix)."""
     n = int(float(amount) / 1000)
     return str(n)
+
+
+def _format_vnd_full(amount) -> str:
+    """Full Vietnamese currency: 275000 → '275.000đ' (for financial summaries)."""
+    n = int(float(amount))
+    return f"{n:,}đ".replace(",", ".")
 
 
 def _th(text: str, font) -> int:
@@ -112,22 +124,123 @@ def _double(draw, y):
     return y + 12
 
 
+def _dots(draw, y, x_start, x_end, font, color=(180, 180, 180)):
+    """Draw dotted leader line from x_start to x_end at baseline of text."""
+    dot_w = _tw(".", font)
+    spacing = dot_w + 2
+    mid_y = y + _th("A", font) // 2
+    x = x_start + 4
+    while x + dot_w < x_end - 4:
+        draw.text((x, y), ".", font=font, fill=color)
+        x += spacing
+
+
+def _icon_text(draw, y, icon, text, text_font, color=(0, 0, 0), x=None, icon_size=None):
+    """Draw an emoji icon followed by text. Return y after."""
+    x = x if x is not None else MARGIN
+    sz = icon_size or text_font.size
+    ef = _emoji_font(sz)
+    draw.text((x, y), icon, font=ef, fill=color)
+    icon_w = _tw(icon, ef)
+    draw.text((x + icon_w + 3, y), text, font=text_font, fill=color)
+    h = max(_th(icon, ef), _th(text, text_font))
+    return y + h + LINE_GAP
+
+
+def _icon_text_centered(draw, y, icon, text, text_font, color=(0, 0, 0), icon_size=None):
+    """Draw centered emoji icon + text. Return y after."""
+    sz = icon_size or text_font.size
+    ef = _emoji_font(sz)
+    icon_w = _tw(icon, ef)
+    text_w = _tw(text, text_font)
+    total_w = icon_w + 3 + text_w
+    x = (RECEIPT_WIDTH - total_w) // 2
+    draw.text((x, y), icon, font=ef, fill=color)
+    draw.text((x + icon_w + 3, y), text, font=text_font, fill=color)
+    h = max(_th(icon, ef), _th(text, text_font))
+    return y + h + LINE_GAP
+
+
+import re as _re
+
+# Regex matching emoji characters (common ranges)
+_EMOJI_RE = _re.compile(
+    "["
+    "\U0000200D"          # zero width joiner
+    "\U00002600-\U000027BF"  # misc symbols
+    "\U0000FE00-\U0000FE0F"  # variation selectors
+    "\U0001F000-\U0001FAFF"  # all extended emoji blocks
+    "\U00002702-\U000027B0"  # dingbats
+    "\U0000FE0F"          # variation selector-16
+    "]+", _re.UNICODE
+)
+
+
+def _draw_mixed(draw, x, y, text, text_font, color=(0, 0, 0)):
+    """Draw text with mixed NotoSans + NotoEmoji fonts.
+
+    Splits text into emoji and non-emoji segments, rendering each
+    with the appropriate font. Returns x position after drawing.
+    """
+    ef = _emoji_font(text_font.size)
+    parts = _EMOJI_RE.split(text)
+    emojis = _EMOJI_RE.findall(text)
+
+    for i, part in enumerate(parts):
+        if part:
+            draw.text((x, y), part, font=text_font, fill=color)
+            x += _tw(part, text_font)
+        if i < len(emojis):
+            draw.text((x, y), emojis[i], font=ef, fill=color)
+            x += _tw(emojis[i], ef)
+    return x
+
+
+def _mixed_tw(text, text_font) -> int:
+    """Measure width of mixed emoji+text string."""
+    ef = _emoji_font(text_font.size)
+    parts = _EMOJI_RE.split(text)
+    emojis = _EMOJI_RE.findall(text)
+    w = 0
+    for i, part in enumerate(parts):
+        if part:
+            w += _tw(part, text_font)
+        if i < len(emojis):
+            w += _tw(emojis[i], ef)
+    return w
+
+
+_NOTE_LINE_GAP = 10  # extra spacing for note lines
+
+def _left_mixed(draw, y, text, font, color=(0, 0, 0), x=None):
+    """Draw left-aligned mixed emoji+text. Return y after with note-friendly spacing."""
+    x = x if x is not None else MARGIN
+    _draw_mixed(draw, x, y, text, font, color)
+    return y + _th("A", font) + _NOTE_LINE_GAP
+
+
 def _wrap(text, font, max_w):
-    """Word-wrap text to fit max_w. Return list of lines."""
+    """Word-wrap text to fit max_w. Handles embedded newlines. Return list of lines."""
     if not text:
         return []
-    words = text.split()
-    lines, cur = [], ""
-    for word in words:
-        test = cur + (" " if cur else "") + word
-        if _tw(test, font) <= max_w:
-            cur = test
-        else:
-            if cur:
-                lines.append(cur)
-            cur = word
-    if cur:
-        lines.append(cur)
+    paragraphs = text.split("\n")
+    lines = []
+    for para in paragraphs:
+        words = para.split()
+        if not words:
+            lines.append("")
+            continue
+        cur = ""
+        for word in words:
+            test = cur + (" " if cur else "") + word
+            if _tw(test, font) <= max_w:
+                cur = test
+            else:
+                if cur:
+                    lines.append(cur)
+                cur = word
+        if cur:
+            lines.append(cur)
     return lines
 
 
@@ -147,21 +260,31 @@ def _shop_config(conn) -> dict:
 # --- Header (matching physical biên nhận) ---
 
 def _header(draw, y, cfg):
-    """Draw shop header: name, specialty, address, phone, then double line."""
-    # Shop name — large bold
-    y = _center(draw, y, cfg["receipt_shop_name"], _font(_SZ_TITLE, True))
-    # Specialty
+    """Draw shop header: name (large), specialty, address, phones."""
+    # Shop name — large bold, prominent
+    y = _center(draw, y, cfg["receipt_shop_name"], _font(36, True))
+    y += 2
+
+    # Specialty — smaller, muted
     spec = cfg.get("receipt_shop_specialty", "")
     if spec:
-        y = _center(draw, y, spec, _font(_SZ_SMALL, True), (60, 60, 60))
-    # Address
+        # Title-case style for readability
+        y = _center(draw, y, spec, _font(_SZ_SMALL, True), (80, 80, 80))
+    y += 4
+
+    # Address with pin icon
     addr = cfg.get("receipt_shop_address", "")
     if addr:
-        y = _center(draw, y, addr, _font(_SZ_SMALL), (80, 80, 80))
-    # Phone — use ☎ if NotoSans supports it, otherwise fallback to SĐT:
+        y = _icon_text_centered(draw, y, "\U0001F4CD", addr, _font(_SZ_SMALL), (80, 80, 80))
+
+    # Phone numbers with phone icon
     phone = cfg.get("receipt_shop_phone", "")
     if phone:
-        y = _center(draw, y, f"SĐT: {phone}", _font(_SZ_SMALL), (80, 80, 80))
+        parts = [p.strip() for p in phone.split("-") if p.strip()]
+        phone_line = " \u2022 ".join(parts)
+        y = _icon_text_centered(draw, y, "\u260E", phone_line, _font(_SZ_SMALL), (80, 80, 80))
+
+    y += 8
     y = _double(draw, y)
     return y
 
@@ -193,72 +316,155 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
     ref = order.get("orderRef", "") or order.get("order_ref", "")
     y = _center(draw, y, f"Mã đơn: {ref}", fs_title)
 
-    # Customer
-    name = order.get("customerName", "") or order.get("customer_name", "")
-    phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
-    if name:
-        cust_line = f"Khách hàng: {name}"
-        if phone:
-            cust_line += f" - SĐT: {phone}"
-        y = _left(draw, y, cust_line, fb)
+    # Date
+    created = order.get("createdAt", "") or order.get("created_at", "")
+    if created:
+        y = _left(draw, y, f"Ngày: {created[:10]}", fb)
+    y += 4
+    y = _double(draw, y)
+
+    # --- Section 1: Customer Info ---
+    y = _left(draw, y, "KHÁCH HÀNG", fs_title)
     y = _sep(draw, y)
 
-    # Product name — LARGE
-    product = work_item.get("productName", "") or work_item.get("product_name", "")
-    y = _left(draw, y, product, ft)
+    name = order.get("customerName", "") or order.get("customer_name", "")
+    source = order.get("source", "") or ""
+    source_vn = "Tại tiệm" if source == "walk_in" else source.replace("_", " ").title() if source else ""
+    if name:
+        y = _left(draw, y, f"Tên: {name}", fb)
+    else:
+        y = _left(draw, y, "Tên: Khách tại tiệm", fb)
+    if source_vn:
+        y = _left(draw, y, f"Nguồn: {source_vn}", fb)
     y += 4
+    y = _double(draw, y)
+
+    # --- Section 2: Order Item (table layout matching customer receipt) ---
+    y = _left(draw, y, "SẢN PHẨM", fs_title)
+    y = _sep(draw, y)
+
+    # Table header
+    col_sl = MARGIN + 320
+    col_gia = MARGIN + 380
+    col_tt = RECEIPT_WIDTH - MARGIN
+
+    draw.text((MARGIN, y), "Sản phẩm", font=fbb, fill=(100, 100, 100))
+    draw.text((col_sl, y), "SL", font=fbb, fill=(100, 100, 100))
+    draw.text((col_gia, y), "Giá", font=fbb, fill=(100, 100, 100))
+    tt_label = "T.Tiền"
+    draw.text((col_tt - _tw(tt_label, fbb), y), tt_label, font=fbb, fill=(100, 100, 100))
+    y += _th("SL", fbb) + LINE_GAP + 4
+    y = _sep(draw, y)
+
+    # Category name (bold, own line) above product row
+    product = work_item.get("productName", "") or work_item.get("product_name", "")
+    pid = work_item.get("productId", "") or work_item.get("product_id", "")
+    if pid:
+        cat_name_row = conn.execute(
+            "SELECT c.name FROM products p JOIN categories c ON p.category = c.slug "
+            "WHERE p.id = ? OR p.product_code = ?",
+            (pid, pid),
+        ).fetchone()
+        if cat_name_row:
+            y = _left(draw, y, cat_name_row["name"], fbb)
+
+    # Product row with dotted leaders
+    qty = work_item.get("quantity", 1)
+    unit_price = float(work_item.get("unitPrice", 0) or work_item.get("unit_price", 0))
+    total = qty * unit_price
+
+    name_max_w = col_sl - MARGIN - 10
+    name_lines = _wrap(product, fb, name_max_w) or [product]
+
+    # First line: product name ....... SL ....... Giá ....... T.Tiền
+    draw.text((MARGIN, y), name_lines[0], font=fb, fill=(0, 0, 0))
+    name_end = MARGIN + _tw(name_lines[0], fb)
+    _dots(draw, y, name_end, col_sl - 4, fs)
+    qty_str = str(qty)
+    draw.text((col_sl, y), qty_str, font=fb, fill=(0, 0, 0))
+    sl_end = col_sl + _tw(qty_str, fb)
+    if unit_price > 0:
+        gia_str = _format_vnd(unit_price)
+        tt_str = _format_vnd(total)
+        tt_x = col_tt - _tw(tt_str, fbb)
+        _dots(draw, y, sl_end, col_gia - 4, fs)
+        draw.text((col_gia, y), gia_str, font=fb, fill=(0, 0, 0))
+        gia_end = col_gia + _tw(gia_str, fb)
+        _dots(draw, y, gia_end, tt_x - 4, fs)
+        draw.text((tt_x, y), tt_str, font=fbb, fill=(0, 0, 0))
+    else:
+        _dots(draw, y, sl_end, col_tt - 4, fs)
+    y += _th(name_lines[0], fb) + LINE_GAP
+
+    # Remaining name lines (overflow)
+    for nl in name_lines[1:]:
+        draw.text((MARGIN, y), nl, font=fb, fill=(0, 0, 0))
+        y += _th(nl, fb) + LINE_GAP
 
     # Birthday
     if work_item.get("isBirthday") or work_item.get("is_birthday"):
         age = work_item.get("age")
-        age_text = f"* SINH NHẬT *{(' - ' + str(age) + ' tuổi') if age else ''}"
-        y = _left(draw, y, age_text, fbb, (180, 0, 0))
+        age_suffix = f" SINH NHẬT{(' - ' + str(age) + ' tuổi') if age else ''}"
+        y = _icon_text(draw, y, "\U0001F382", age_suffix, fbb, (180, 0, 0), x=MARGIN + 10)
 
-    # Qty (prominent)
-    qty = work_item.get("quantity", 1)
-    y = _left(draw, y, f"SỐ LƯỢNG: {qty}", fbb)
-
-    # Photo thumbnail
+    # Photo — larger, centered
     if photo_bytes:
+        photo_size = 192
         try:
             photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
-            photo.thumbnail((THUMBNAIL_SIZE, THUMBNAIL_SIZE), Image.LANCZOS)
-            x_photo = RECEIPT_WIDTH - MARGIN - THUMBNAIL_SIZE
-            bg = Image.new("RGB", (THUMBNAIL_SIZE, THUMBNAIL_SIZE), "white")
-            bg.paste(photo, ((THUMBNAIL_SIZE - photo.width) // 2, (THUMBNAIL_SIZE - photo.height) // 2))
-            img.paste(bg, (x_photo, y))
-            draw.rectangle([x_photo, y, x_photo + THUMBNAIL_SIZE, y + THUMBNAIL_SIZE], outline=(200, 200, 200))
-            y += THUMBNAIL_SIZE + LINE_GAP
+            photo.thumbnail((photo_size, photo_size), Image.LANCZOS)
+            x_photo = (RECEIPT_WIDTH - photo.width) // 2
+            img.paste(photo, (x_photo, y))
+            draw.rectangle(
+                [x_photo, y, x_photo + photo.width, y + photo.height],
+                outline=(200, 200, 200),
+            )
+            y += photo.height + LINE_GAP
         except Exception:
             pass
 
-    # Notes/remarks
+    # Item notes
     notes = work_item.get("notes", "") or ""
     if notes:
         y = _left(draw, y, "Ghi chú:", fbb)
-        for ln in _wrap(notes, fs, CONTENT_WIDTH):
-            y = _left(draw, y, ln, fs, (80, 80, 80))
+        for ln in _wrap(notes, fb, CONTENT_WIDTH):
+            y = _left_mixed(draw, y, ln, fb, (80, 80, 80))
 
+    y += 4
+    y = _double(draw, y)
+
+    # --- Section 3: Delivery ---
+    y = _left(draw, y, "GIAO HÀNG", fs_title)
     y = _sep(draw, y)
 
-    # Due date (prominent)
     due = order.get("dueDate", "") or order.get("due_date", "")
     due_time = order.get("dueTime", "") or order.get("due_time", "") or ""
     if due:
-        due_str = f"NGÀY GIAO: {due}"
+        due_str = f"Ngày giao: {due}"
         if due_time:
             due_str += f" {due_time}"
-        y = _center(draw, y, due_str, fs_title)
+        y = _left(draw, y, due_str, fbb)
 
-    # Delivery type + address
     dtype = order.get("deliveryType", "") or order.get("delivery_type", "pickup")
     dtype_vn = "Nhận tại tiệm" if dtype == "pickup" else "Giao hàng"
     y = _left(draw, y, f"Hình thức: {dtype_vn}", fb)
 
+    phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
+    if phone:
+        y = _icon_text(draw, y, "\u260E", phone, fb)
+
     daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
     if dtype != "pickup" and daddr:
+        y = _left(draw, y, "Địa chỉ:", fbb)
         for ln in _wrap(daddr, fs, CONTENT_WIDTH - 20):
             y = _left(draw, y, f"  {ln}", fs)
+
+    # Order-level notes
+    order_notes = order.get("notes", "") or ""
+    if order_notes:
+        y = _left(draw, y, "Ghi chú:", fbb)
+        for ln in _wrap(order_notes, fb, CONTENT_WIDTH):
+            y = _left_mixed(draw, y, ln, fb, (80, 80, 80))
 
     # Footer
     y += 4
@@ -268,16 +474,19 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
     return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
 
 
-def _render_customer_receipt(order, cfg, conn) -> Image.Image:
-    """Customer receipt ('BIÊN NHẬN') matching the physical paper bill style."""
+def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
+    """Customer receipt ('BIÊN NHẬN') — full details with photos per item."""
     work_items = order.get("workItems", [])
+    order_id = order.get("id")
 
-    img = Image.new("RGB", (RECEIPT_WIDTH, 2000), "white")
+    # Taller canvas to accommodate photos
+    img = Image.new("RGB", (RECEIPT_WIDTH, 4000), "white")
     draw = ImageDraw.Draw(img)
 
     fb = _font(_SZ_BODY)
     fbb = _font(_SZ_BODY, True)
     fs = _font(_SZ_SMALL)
+    ft = _font(_SZ_TITLE, True)
 
     y = MARGIN
     y = _header(draw, y, cfg)
@@ -295,62 +504,172 @@ def _render_customer_receipt(order, cfg, conn) -> Image.Image:
     if created:
         y = _left(draw, y, f"Ngày: {created[:10]}", fb)
 
-    # Customer info — single line like the paper form: "Tên KH: ___  ĐT: ___"
-    name = order.get("customerName", "") or order.get("customer_name", "")
-    phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
-    cust_line = f"Tên khách hàng: {name}"
-    if phone:
-        cust_line += f"    ĐT: {phone}"
-    y = _left(draw, y, cust_line, fb)
+    # --- Section 1: Customer Info ---
+    y = _left(draw, y, "KHÁCH HÀNG", _font(_SZ_SUBTITLE, True))
     y = _sep(draw, y)
 
-    # Items — simpler table (no unit price, matching paper "Nội dung" section)
-    y = _left(draw, y, "Nội dung:", fbb)
-    for item in work_items:
+    name = order.get("customerName", "") or order.get("customer_name", "")
+    if name:
+        y = _left(draw, y, f"Tên: {name}", fb)
+    y += 4
+    y = _double(draw, y)
+
+    # --- Section 2: Order Items ---
+    y = _left(draw, y, "NỘI DUNG ĐƠN HÀNG", _font(_SZ_SUBTITLE, True))
+    y = _sep(draw, y)
+
+    # Table header
+    col_sl = MARGIN + 320  # SL column
+    col_gia = MARGIN + 380  # Giá column
+    col_tt = RECEIPT_WIDTH - MARGIN  # Thành tiền (right-aligned)
+
+    draw.text((MARGIN, y), "Sản phẩm", font=fbb, fill=(100, 100, 100))
+    draw.text((col_sl, y), "SL", font=fbb, fill=(100, 100, 100))
+    draw.text((col_gia, y), "Giá", font=fbb, fill=(100, 100, 100))
+    tt_label = "T.Tiền"
+    draw.text((col_tt - _tw(tt_label, fbb), y), tt_label, font=fbb, fill=(100, 100, 100))
+    y += _th("SL", fbb) + LINE_GAP + 4
+    y = _sep(draw, y)
+
+    for i, item in enumerate(work_items):
         item_name = item.get("productName", "") or item.get("product_name", "")
         qty = item.get("quantity", 1)
         unit_price = float(item.get("unitPrice", 0) or item.get("unit_price", 0))
         total = qty * unit_price
 
-        line = f"  - {item_name}  x{qty}"
-        draw.text((MARGIN, y), line, font=fb, fill=(0, 0, 0))
-        total_str = _format_vnd(total)
-        w = _tw(total_str, fb)
-        draw.text((RECEIPT_WIDTH - MARGIN - w, y), total_str, font=fb, fill=(0, 0, 0))
-        y += _th(line, fb) + LINE_GAP
+        # Item row: name | SL | Giá | Thành tiền
+        # Wrap product name within column width
+        name_max_w = col_sl - MARGIN - 10
+        name_lines = _wrap(item_name, fb, name_max_w) or [item_name]
 
-    y = _sep(draw, y)
+        # First line: product name ....... SL ....... Giá ....... T.Tiền
+        draw.text((MARGIN, y), name_lines[0], font=fb, fill=(0, 0, 0))
+        name_end = MARGIN + _tw(name_lines[0], fb)
+        _dots(draw, y, name_end, col_sl - 4, fs)
+        qty_str = str(qty)
+        draw.text((col_sl, y), qty_str, font=fb, fill=(0, 0, 0))
+        sl_end = col_sl + _tw(qty_str, fb)
+        if unit_price > 0:
+            gia_str = _format_vnd(unit_price)
+            tt_str = _format_vnd(total)
+            tt_x = col_tt - _tw(tt_str, fbb)
+            _dots(draw, y, sl_end, col_gia - 4, fs)
+            draw.text((col_gia, y), gia_str, font=fb, fill=(0, 0, 0))
+            gia_end = col_gia + _tw(gia_str, fb)
+            _dots(draw, y, gia_end, tt_x - 4, fs)
+            draw.text((tt_x, y), tt_str, font=fbb, fill=(0, 0, 0))
+        else:
+            _dots(draw, y, sl_end, col_tt - 4, fs)
+        y += _th(name_lines[0], fb) + LINE_GAP
 
-    # Totals — matching paper: Tiền / Đưa trước / Còn lại
+        # Remaining name lines (overflow)
+        for nl in name_lines[1:]:
+            draw.text((MARGIN, y), nl, font=fb, fill=(0, 0, 0))
+            y += _th(nl, fb) + LINE_GAP
+
+        # Birthday (sub-row)
+        if item.get("isBirthday") or item.get("is_birthday"):
+            age = item.get("age")
+            age_suffix = f" SINH NHẬT{(' - ' + str(age) + ' tuổi') if age else ''}"
+            y = _icon_text(draw, y, "\U0001F382", age_suffix, fbb, (180, 0, 0), x=MARGIN + 10)
+
+        # Photo — only for cake-category products, larger + centered, display only
+        item_id = item.get("id")
+        product_id = item.get("productId", "") or item.get("product_id", "")
+        is_cake = False
+        if product_id:
+            cat_row = conn.execute(
+                "SELECT category FROM products WHERE id = ? OR product_code = ?",
+                (product_id, product_id),
+            ).fetchone()
+            if cat_row and cat_row["category"] in ("cake", "banh_kem"):
+                is_cake = True
+        photo_size = 192  # larger than default 128
+        if show_photos and is_cake and order_id and item_id:
+            photo_bytes = _get_photo(conn, order_id, item_id)
+            if photo_bytes:
+                try:
+                    photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
+                    photo.thumbnail((photo_size, photo_size), Image.LANCZOS)
+                    x_photo = (RECEIPT_WIDTH - photo.width) // 2
+                    img.paste(photo, (x_photo, y))
+                    draw.rectangle(
+                        [x_photo, y, x_photo + photo.width, y + photo.height],
+                        outline=(200, 200, 200),
+                    )
+                    y += photo.height + LINE_GAP
+                except Exception:
+                    pass
+
+        # Notes/remarks (sub-row, indented, bold label + body font, mixed emoji)
+        notes = item.get("notes", "") or ""
+        if notes:
+            full = f"  Ghi chú: {notes}"
+            if "\n" not in notes and _mixed_tw(full, fb) <= CONTENT_WIDTH:
+                y = _left(draw, y, "  Ghi chú: ", fbb, (80, 80, 80))
+                y -= _th("Ghi chú:", fbb) + LINE_GAP  # back up
+                _draw_mixed(draw, MARGIN + _tw("  Ghi chú: ", fbb), y, notes, fb, (80, 80, 80))
+                y += _th("A", fb) + _NOTE_LINE_GAP
+            else:
+                y = _left(draw, y, "  Ghi chú:", fbb, (80, 80, 80))
+                for ln in _wrap(notes, fb, CONTENT_WIDTH - 20):
+                    y = _left_mixed(draw, y, f"    {ln}", fb, (80, 80, 80))
+
+        # Separator between items
+        if i < len(work_items) - 1:
+            y = _sep(draw, y)
+
+    y += 4
+    y = _double(draw, y)
+
+    # --- Financial Summary ---
     total_price = float(order.get("totalPrice", 0) or order.get("total_price", 0))
-    y = _row(draw, y, "Tiền:", _format_vnd(total_price), fbb)
+    y = _row(draw, y, "Tạm tính:", _format_vnd_full(total_price), fbb)
 
     order_id = order.get("id")
     total_paid = PaymentTransaction.total_for_order(conn, order_id) if order_id else 0.0
     remaining = total_price - total_paid
 
-    y = _row(draw, y, "Đưa trước:", _format_vnd(total_paid), fb, color_v=(0, 100, 0))
+    y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
     if remaining > 0:
-        y = _row(draw, y, "Còn lại:", _format_vnd(remaining), fb, color_v=(180, 0, 0))
+        y = _row(draw, y, "Còn lại:", _format_vnd_full(remaining), fbb, color_v=(180, 0, 0))
+    else:
+        y = _row(draw, y, "Còn lại:", "0đ", fb, color_v=(0, 100, 0))
+    y += 4
+    y = _double(draw, y)
+
+    # --- Section 3: Delivery ---
+    y = _left(draw, y, "GIAO HÀNG", _font(_SZ_SUBTITLE, True))
     y = _sep(draw, y)
 
-    # Due date + delivery
     due = order.get("dueDate", "") or order.get("due_date", "")
     due_time = order.get("dueTime", "") or order.get("due_time", "") or ""
     if due:
         due_str = f"Ngày nhận: {due}"
         if due_time:
             due_str += f" {due_time}"
-        y = _left(draw, y, due_str, fb)
+        y = _left(draw, y, due_str, fbb)
 
     dtype = order.get("deliveryType", "") or order.get("delivery_type", "pickup")
     dtype_vn = "Nhận tại tiệm" if dtype == "pickup" else "Giao hàng"
     y = _left(draw, y, f"Hình thức: {dtype_vn}", fb)
 
+    phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
+    if phone:
+        y = _icon_text(draw, y, "\u260E", phone, fb)
+
     daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
     if dtype != "pickup" and daddr:
+        y = _left(draw, y, f"Địa chỉ:", fbb)
         for ln in _wrap(daddr, fs, CONTENT_WIDTH - 20):
             y = _left(draw, y, f"  {ln}", fs)
+
+    # Order-level notes
+    order_notes = order.get("notes", "") or ""
+    if order_notes:
+        y = _left(draw, y, "Ghi chú:", fbb)
+        for ln in _wrap(order_notes, fb, CONTENT_WIDTH):
+            y = _left_mixed(draw, y, ln, fb, (80, 80, 80))
 
     # Footer
     y += 4
@@ -381,16 +700,16 @@ def _order_detail(conn, row) -> dict:
 
 
 def _get_photo(conn, order_id: int, work_item_id: int) -> Optional[bytes]:
-    """Get first photo bytes for a work item."""
-    for query, params in [
-        ("SELECT hash FROM photos p JOIN order_photos op ON p.id = op.photo_id WHERE op.order_id = ? AND op.work_item_id = ? LIMIT 1", (order_id, work_item_id)),
-        ("SELECT hash FROM photos p JOIN order_photos op ON p.id = op.photo_id WHERE op.order_id = ? LIMIT 1", (order_id,)),
-    ]:
-        row = conn.execute(query, params).fetchone()
-        if row:
-            photo_path = baker.config.PHOTOS_DIR / f"{row['hash']}.jpg"
-            if photo_path.exists():
-                return photo_path.read_bytes()
+    """Get first photo bytes attached to a specific work item only."""
+    row = conn.execute(
+        "SELECT hash FROM photos p JOIN order_photos op ON p.id = op.photo_id "
+        "WHERE op.order_id = ? AND op.work_item_id = ? LIMIT 1",
+        (order_id, work_item_id),
+    ).fetchone()
+    if row:
+        photo_path = baker.config.PHOTOS_DIR / f"{row['hash']}.jpg"
+        if photo_path.exists():
+            return photo_path.read_bytes()
     return None
 
 
@@ -401,6 +720,7 @@ def get_receipt(
     ref: str,
     type: str = Query(..., description="Receipt type: work_ticket or customer"),
     item_id: Optional[int] = Query(None, description="Work item ID (required for work_ticket)"),
+    photos: bool = Query(True, description="Include photos (set false for print version)"),
 ):
     """Generate receipt image as PNG.
 
@@ -433,10 +753,19 @@ def get_receipt(
                     break
             if not work_item:
                 raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
-            photo = _get_photo(conn, row["id"], item_id)
+            # Only fetch photo for cake-category products
+            photo = None
+            pid = work_item.get("productId", "") or work_item.get("product_id", "")
+            if pid:
+                cat_row = conn.execute(
+                    "SELECT category FROM products WHERE id = ? OR product_code = ?",
+                    (pid, pid),
+                ).fetchone()
+                if cat_row and cat_row["category"] in ("cake", "banh_kem"):
+                    photo = _get_photo(conn, row["id"], item_id)
             img = _render_work_ticket(detail, work_item, cfg, photo, conn)
         elif type == "customer":
-            img = _render_customer_receipt(detail, cfg, conn)
+            img = _render_customer_receipt(detail, cfg, conn, show_photos=photos)
         else:
             raise HTTPException(status_code=400, detail="Invalid type: work_ticket or customer")
 

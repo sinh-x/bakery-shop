@@ -28,10 +28,14 @@ class ReceiptService {
     required String orderRef,
     required ReceiptType type,
     int? itemId,
+    bool photos = true,
   }) async {
     final params = <String, dynamic>{'type': type.value};
     if (itemId != null) {
       params['item_id'] = itemId.toString();
+    }
+    if (!photos) {
+      params['photos'] = 'false';
     }
 
     final response = await _dio.get(

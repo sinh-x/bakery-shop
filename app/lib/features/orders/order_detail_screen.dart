@@ -109,7 +109,7 @@ class OrderDetailScreen extends ConsumerWidget {
 
   final String orderRef;
 
-  void _showReceiptTypeSelector(BuildContext context) {
+  void _showReceiptTypeSelector(BuildContext context, WidgetRef ref) {
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
@@ -128,9 +128,15 @@ class OrderDetailScreen extends ConsumerWidget {
               title: const Text(VN.printWorkTicket),
               onTap: () {
                 Navigator.pop(ctx);
-                context.push(
-                  '/orders/$orderRef/receipt?type=${ReceiptType.workTicket.value}',
-                );
+                final workItems =
+                    ref.read(orderWorkItemsProvider(orderRef)).value ?? [];
+                if (workItems.length == 1) {
+                  context.push(
+                    '/orders/$orderRef/receipt?type=${ReceiptType.workTicket.value}&item_id=${workItems.first.id}',
+                  );
+                } else if (workItems.isNotEmpty) {
+                  _showItemPicker(context, workItems);
+                }
               },
             ),
             ListTile(
@@ -143,6 +149,39 @@ class OrderDetailScreen extends ConsumerWidget {
                 );
               },
             ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showItemPicker(BuildContext context, List<WorkItem> items) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Chọn sản phẩm',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            for (final item in items)
+              ListTile(
+                leading: const Icon(Icons.cake_outlined),
+                title: Text(item.productName),
+                subtitle: Text('SL: ${item.quantity}'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push(
+                    '/orders/$orderRef/receipt?type=${ReceiptType.workTicket.value}&item_id=${item.id}',
+                  );
+                },
+              ),
             const SizedBox(height: 8),
           ],
         ),
@@ -172,7 +211,7 @@ class OrderDetailScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.print_outlined),
             tooltip: VN.printReceipt,
-            onPressed: () => _showReceiptTypeSelector(context),
+            onPressed: () => _showReceiptTypeSelector(context, ref),
           ),
         ],
       ),
