@@ -10,6 +10,7 @@ import '../../data/api/api_client.dart';
 import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../shared/vietnamese_search.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'cake_queue_screen.dart';
 
@@ -159,29 +160,26 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
 
   List<Order> _applySearchFilter(List<Order> orders) {
     if (_searchQuery.isEmpty) return orders;
-    final q = _searchQuery.toLowerCase();
-    return orders
-        .where(
-          (o) =>
-              o.orderRef.toLowerCase().contains(q) ||
-              o.customerName.toLowerCase().contains(q) ||
-              o.customerPhone.contains(q),
-        )
-        .toList();
+    return orders.where((o) => _orderMatchesSearch(o, _searchQuery)).toList();
   }
 
   List<Order> _applyFilters(List<Order> orders) {
     final grouped = _applyStatusFilter(orders);
     if (_searchQuery.isEmpty) return grouped;
-    final q = _searchQuery.toLowerCase();
-    return grouped
-        .where(
-          (o) =>
-              o.orderRef.toLowerCase().contains(q) ||
-              o.customerName.toLowerCase().contains(q) ||
-              o.customerPhone.contains(q),
-        )
-        .toList();
+    return grouped.where((o) => _orderMatchesSearch(o, _searchQuery)).toList();
+  }
+
+  /// Returns true if [order] matches the Vietnamese-aware [query] across
+  /// all searchable fields: orderRef, customerName, customerPhone, notes,
+  /// item.notes, and item.productName.
+  bool _orderMatchesSearch(Order order, String query) {
+    return vietnameseContains(order.orderRef, query) ||
+        vietnameseContains(order.customerName, query) ||
+        order.customerPhone.contains(query) ||
+        vietnameseContains(order.notes, query) ||
+        order.items.any((item) =>
+            vietnameseContains(item.notes, query) ||
+            vietnameseContains(item.productName, query));
   }
 
   /// Groups orders by due date, returning a mixed list of String headers and Order items.
