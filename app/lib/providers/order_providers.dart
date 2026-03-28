@@ -212,6 +212,8 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     );
     final current = state.value ?? [];
     state = AsyncData([...current, item]);
+    // Refresh order detail to update total/summary
+    ref.read(orderDetailProvider(orderRef).notifier).refresh();
     return item;
   }
 
@@ -256,6 +258,8 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     await service.deleteWorkItem(orderRef, itemId);
     final current = state.value ?? [];
     state = AsyncData(current.where((i) => i.id != itemId).toList());
+    // Refresh order detail to update total/summary
+    ref.read(orderDetailProvider(orderRef).notifier).refresh();
   }
 
   Future<WorkItem> transitionStatus(

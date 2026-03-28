@@ -472,13 +472,15 @@ class _WorkItemsSection extends ConsumerWidget {
     return workItemsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Text('${VN.apiError}: $e'),
-      data: (items) => Column(
+      data: (items) {
+        final regularItems = items.where((i) => !i.isExtra).toList();
+        return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ...items.map(
+          ...regularItems.map(
             (item) => _WorkItemEditCard(orderRef: orderRef, item: item),
           ),
-          if (items.isEmpty)
+          if (regularItems.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
@@ -495,7 +497,8 @@ class _WorkItemsSection extends ConsumerWidget {
             label: const Text(VN.addProduct),
           ),
         ],
-      ),
+      );
+      },
     );
   }
 }

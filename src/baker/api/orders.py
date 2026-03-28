@@ -249,16 +249,24 @@ def edit_order(ref: str, body: OrderEdit):
         items_changed = "items" in data
         shipping_fee_changed = "shippingFee" in data
         if items_changed or shipping_fee_changed:
-            items = [_item_in_to_model(OrderItemIn(**i)) for i in data["items"]]
-            # Get current shipping_fee if not changed
-            current_shipping_fee = data.get("shippingFee", row["shipping_fee"]) if shipping_fee_changed else row["shipping_fee"]
-            # Calculate total: sum of non-gift items + shipping_fee
-            subtotal = sum(i.qty * i.price for i in items if not i.is_gift)
+            if items_changed:
+                items = [_item_in_to_model(OrderItemIn(**i)) for i in data["items"]]
+                items_json = json.dumps([i.to_dict() for i in items])
+                updates.append("items = ?")
+                params.append(items_json)
+            else:
+                # Read existing items directly from DB JSON for total recalculation
+                raw_items = json.loads(row["items"])
+            current_shipping_fee = data.get("shippingFee", row["shipping_fee"])
+            if items_changed:
+                subtotal = sum(i.qty * i.price for i in items if not i.is_gift)
+            else:
+                subtotal = sum(
+                    i.get("quantity", i.get("qty", 1)) * i.get("unit_price", i.get("price", 0))
+                    for i in raw_items if not i.get("is_gift", False)
+                )
             total = subtotal + current_shipping_fee
-            items_json = json.dumps([i.to_dict() for i in items])
-            updates.append("items = ?")
             updates.append("total_price = ?")
-            params.append(items_json)
             params.append(total)
 
         if not updates:

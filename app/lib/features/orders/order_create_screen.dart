@@ -430,7 +430,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
 
             // ── Products ──────────────────────────────────────────────
             _SectionHeader(VN.products),
-            if (_items.isEmpty)
+            if (_items.where((i) => !i.isExtra).isEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
@@ -441,7 +441,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                 ),
               )
             else
-              ..._items.map(
+              ..._items.where((i) => !i.isExtra).map(
                 (item) => ExpandableItemCard(
                   key: ValueKey(item),
                   item: item,
