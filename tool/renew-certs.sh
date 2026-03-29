@@ -2,18 +2,19 @@
 # Renew TLS certificates via tailscale cert and restart Caddy.
 # Usage: ./tool/renew-certs.sh [<domain>]
 #   domain  Tailscale domain name (e.g. mymachine.tail1234.ts.net)
-#           Falls back to $BAKER_DOMAIN env var if not provided.
+#           Falls back to $DOMAIN from .env if not provided.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$(dirname "$0")/lib.sh"
+load_env
 
-# Resolve domain: argument takes priority over env var
-DOMAIN="${1:-${BAKER_DOMAIN:-}}"
+# Resolve domain: CLI arg > DOMAIN from env/.env > BAKER_DOMAIN (legacy)
+DOMAIN="${1:-${DOMAIN:-${BAKER_DOMAIN:-}}}"
 
 if [ -z "$DOMAIN" ]; then
   echo "ERROR: No domain specified."
   echo "Usage: $0 <domain>"
-  echo "  or set the BAKER_DOMAIN environment variable."
+  echo "  or set DOMAIN in .env (see config/docker.example)"
   exit 1
 fi
 
@@ -26,9 +27,6 @@ tailscale cert --cert-file "${CERT_DIR}/${DOMAIN}.crt" --key-file "${CERT_DIR}/$
 echo "Certificates written to $CERT_DIR"
 
 # --- Restart Caddy to pick up new certs ---
-echo "Restarting Caddy container..."
-cd "$REPO_ROOT"
-docker compose --profile prod restart caddy
-echo "Caddy restarted."
+restart_caddy
 
 echo "Done. Certificates renewed for $DOMAIN."

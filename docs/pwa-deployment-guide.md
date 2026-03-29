@@ -46,7 +46,11 @@ This writes cert files to `certs/` and restarts Caddy.
 ## Step 4: Deploy with Docker
 
 ```bash
-DOMAIN=your-hostname.tail12345.ts.net docker compose --profile prod up -d
+# First time only: set up .env with your Tailscale domain
+cp config/docker.example .env
+# Edit DOMAIN in .env if the default doesn't match your hostname
+
+docker compose --profile prod up -d
 ```
 
 This starts:

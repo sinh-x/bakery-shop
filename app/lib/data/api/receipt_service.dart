@@ -46,6 +46,29 @@ class ReceiptService {
 
     return Uint8List.fromList(response.data as List<int>);
   }
+
+  /// Triggers server-side thermal printing via the backend API.
+  ///
+  /// [orderRef] - The order reference (e.g., "ORD-260324-003")
+  /// [type] - The type of receipt: work ticket or customer receipt
+  /// [itemId] - Optional work item ID for work ticket receipts
+  ///
+  /// Returns true on success, throws on failure.
+  Future<void> printReceipt({
+    required String orderRef,
+    required ReceiptType type,
+    int? itemId,
+  }) async {
+    final params = <String, dynamic>{'type': type.value};
+    if (itemId != null) {
+      params['item_id'] = itemId.toString();
+    }
+
+    await _dio.post(
+      '/api/orders/$orderRef/print',
+      queryParameters: params,
+    );
+  }
 }
 
 final receiptServiceProvider = Provider<ReceiptService>((ref) {

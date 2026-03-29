@@ -9,6 +9,15 @@
     # Serve Flutter web app with SPA fallback
     handle {
         root * /srv/web
+
+        # Force revalidation of entry points so deploys propagate immediately
+        @nocache path /index.html /flutter_bootstrap.js /flutter_service_worker.js /manifest.json /version.json
+        header @nocache Cache-Control "no-cache, must-revalidate"
+
+        # Hashed assets can be cached long-term
+        @assets path /assets/* /canvaskit/*
+        header @assets Cache-Control "public, max-age=31536000, immutable"
+
         try_files {path} /index.html
         file_server
     }

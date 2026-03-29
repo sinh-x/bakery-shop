@@ -10,3 +10,4 @@ result
 web-build/
 certs/
 prod/data/
+.env
