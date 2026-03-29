@@ -480,62 +480,70 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
 
 
 def _render_bus_label(order, cfg) -> Image.Image:
-    """Bus shipping label — rotated landscape layout for 80mm thermal paper.
+    """Bus shipping label — landscape layout for 76×128mm label paper.
 
-    Displays: phone (large bold), address (large bold), order notes (medium bold), shop info (small, bottom).
-    The final image is rotated 90° CCW so text reads left-to-right when paper is held horizontally.
+    Draws text in virtual landscape (1024×576), then rotates 90° CCW
+    to produce a 576×1024 printer-ready image matching the label dimensions.
     """
-    # Create canvas: 576px tall × 576px wide (will be rotated to landscape)
-    canvas_h = 576
-    canvas_w = 576
-    img = Image.new("RGB", (canvas_w, canvas_h), "white")
+    # Label: 76mm wide × 128mm long → 576×1024 dots at 203 DPI
+    # Virtual landscape canvas: width=1024 (label length), height=576 (paper width)
+    label_len = 1024  # 128mm × 8 dots/mm
+    paper_w = RECEIPT_WIDTH  # 576 dots (72mm print area)
+    margin = MARGIN
+
+    img = Image.new("RGB", (label_len, paper_w), "white")
     draw = ImageDraw.Draw(img)
 
-    f_phone = _font(56, bold=True)
-    f_addr = _font(52, bold=True)
-    f_note = _font(36, bold=True)
-    f_shop = _font(16)
+    content_w = label_len - 2 * margin  # text wrap area
 
-    y = MARGIN
+    f_phone = _font(56, bold=True)
+    f_addr = _font(48, bold=True)
+    f_note = _font(32, bold=True)
+    f_shop = _font(18)
+
+    y = margin
+
+    def _lcenter(text, font):
+        """Center text within label_len width."""
+        nonlocal y
+        tw, th = _tw(text, font), _th(text, font)
+        draw.text(((label_len - tw) // 2, y), text, font=font, fill=(0, 0, 0))
+        y += th + LINE_GAP
 
     # Phone — largest, centered, bold
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
     if phone:
-        y = _center(draw, y, phone, f_phone)
+        _lcenter(phone, f_phone)
 
     # Address — large bold, centered, wrapped
     addr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
     if addr:
-        addr_lines = _wrap(addr, f_addr, CONTENT_WIDTH)
-        for ln in addr_lines:
-            y = _center(draw, y, ln, f_addr)
+        for ln in _wrap(addr, f_addr, content_w):
+            _lcenter(ln, f_addr)
 
     # Order notes — medium bold, centered, wrapped
     notes = order.get("notes", "") or ""
     if notes:
-        note_lines = _wrap(notes, f_note, CONTENT_WIDTH)
-        for ln in note_lines:
-            y = _center(draw, y, ln, f_note)
+        for ln in _wrap(notes, f_note, content_w):
+            _lcenter(ln, f_note)
 
     # Separator
-    y = _sep(draw, y)
+    draw.line([(margin, y + 2), (label_len - margin, y + 2)], fill=(160, 160, 160), width=1)
+    y += LINE_GAP + 6
 
-    # Shop info at bottom — small
+    # Shop info — small
     shop_name = cfg.get("receipt_shop_name", "")
     shop_phone = cfg.get("receipt_shop_phone", "")
     shop_addr = cfg.get("receipt_shop_address", "")
 
     if shop_name:
-        y = _center(draw, y, shop_name, f_shop)
+        _lcenter(shop_name, f_shop)
     if shop_phone:
-        y = _center(draw, y, shop_phone, f_shop)
+        _lcenter(shop_phone, f_shop)
     if shop_addr:
-        y = _center(draw, y, shop_addr, f_shop)
+        _lcenter(shop_addr, f_shop)
 
-    # Crop to content height before rotating
-    img = img.crop((0, 0, canvas_w, y + MARGIN))
-
-    # Rotate 90° CCW — landscape orientation for thermal printer
+    # Rotate 90° CCW → 576 wide × 1024 tall (matches printer paper)
     rotated = img.transpose(Image.Transpose.ROTATE_90)
 
     return rotated

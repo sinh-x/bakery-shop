@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.3.1+22] — 2026-03-29
+- fix(receipts): update shop address to 61 Hòn Khói
+
 ## [0.3.0+20] — 2026-03-28
 - feat(print): add runtime Bluetooth permission handling for Android 12+
 
