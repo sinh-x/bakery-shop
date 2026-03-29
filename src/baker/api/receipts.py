@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from PIL import Image, ImageDraw, ImageFont
 
 from baker.db.connection import get_db
+from baker.formatters import format_phone
 from baker.models.payment_transaction import PaymentTransaction
 
 router = APIRouter(prefix="/api/orders", tags=["receipts"])
@@ -456,7 +457,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
 
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
     if phone:
-        y = _icon_text(draw, y, "\u260E", phone, fb)
+        y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
 
     daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
     if dtype != "pickup" and daddr:
@@ -544,11 +545,7 @@ def _render_bus_label(order, cfg) -> Image.Image:
     # Phone — largest, centered, bold, formatted as xxxx-xxx-xxx or xxx-xxx-xxx
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
     if phone:
-        digits = "".join(c for c in phone if c.isdigit())
-        if len(digits) == 10:
-            phone = f"{digits[:4]}-{digits[4:7]}-{digits[7:]}"
-        elif len(digits) == 9:
-            phone = f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
+        phone = format_phone(phone)
         y = _draw_centered(y, phone, f_phone)
         y += section_gap
 
@@ -770,7 +767,7 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
 
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
     if phone:
-        y = _icon_text(draw, y, "\u260E", phone, fb)
+        y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
 
     daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
     if dtype != "pickup" and daddr:
