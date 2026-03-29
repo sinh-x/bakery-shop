@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.3.1+27] — 2026-03-29
+- fix(receipts): thick-thin double line separator on bus label
+
 ## [0.3.1+26] — 2026-03-29
 - fix(receipts): add section spacing between phone/address/notes on bus label
 

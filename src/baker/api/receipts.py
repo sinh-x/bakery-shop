@@ -541,9 +541,14 @@ def _render_bus_label(order, cfg) -> Image.Image:
     y = margin
     section_gap = 16  # extra spacing between phone / address / notes
 
-    # Phone — largest, centered, bold
+    # Phone — largest, centered, bold, formatted as xxxx-xxx-xxx or xxx-xxx-xxx
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
     if phone:
+        digits = "".join(c for c in phone if c.isdigit())
+        if len(digits) == 10:
+            phone = f"{digits[:4]}-{digits[4:7]}-{digits[7:]}"
+        elif len(digits) == 9:
+            phone = f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
         y = _draw_centered(y, phone, f_phone)
         y += section_gap
 
