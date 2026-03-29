@@ -103,24 +103,31 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
   }
 
   Future<void> _printReceipt() async {
-    if (_imageBytes == null) return;
-
     setState(() => _printing = true);
     try {
-      // Fetch a no-photos version for printing
       final receiptService = ref.read(receiptServiceProvider);
-      final printBytes = await receiptService.fetchReceipt(
-        orderRef: widget.orderRef,
-        type: widget.receiptType,
-        itemId: widget.itemId,
-        photos: false,
-      );
-
-      if (!mounted) return;
 
       if (kIsWeb) {
-        platform.printWeb(printBytes);
+        // Web: call server-side print API (no image fetch needed)
+        await receiptService.printReceipt(
+          orderRef: widget.orderRef,
+          type: widget.receiptType,
+          itemId: widget.itemId,
+        );
+        if (!mounted) return;
+        showTopSnackBar(context, VN.printSuccess);
       } else {
+        // Android/iOS: fetch image and print via Bluetooth
+        if (_imageBytes == null) return;
+        final printBytes = await receiptService.fetchReceipt(
+          orderRef: widget.orderRef,
+          type: widget.receiptType,
+          itemId: widget.itemId,
+          photos: false,
+        );
+
+        if (!mounted) return;
+
         await platform.printNative(context, printBytes, ref);
       }
     } catch (e) {
