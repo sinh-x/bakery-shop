@@ -505,18 +505,25 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                   ),
                 ),
                 Expanded(
-                  child: InkWell(
+                  child: GestureDetector(
                     onTap: () {
                       final digits =
                           order.customerPhone.replaceAll(RegExp(r'\D'), '');
                       launchUrl(Uri.parse('tel:$digits'));
                     },
-                    child: Text(
-                      formatPhone(order.customerPhone),
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context).colorScheme.primary,
-                            decoration: TextDecoration.underline,
-                          ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          formatPhone(order.customerPhone),
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.phone, size: 16,
+                            color: Theme.of(context).colorScheme.primary),
+                      ],
                     ),
                   ),
                 ),
