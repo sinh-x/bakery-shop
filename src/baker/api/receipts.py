@@ -37,7 +37,7 @@ _SZ_SMALL = 16
 _SHOP_DEFAULTS = {
     "receipt_shop_name": "TIỆM BÁNH ĐOÀN GIA",
     "receipt_shop_specialty": "BÁNH KEM SINH NHẬT - RAU CÂU FLAN - BÔNG LAN TRỨNG MUỐI",
-    "receipt_shop_address": "Hòn Khói, Ninh Diêm, Ninh Hòa, Khánh Hòa",
+    "receipt_shop_address": "61 Hòn Khói, Ninh Diêm, Ninh Hòa, Khánh Hòa",
     "receipt_shop_phone": "0972 283 134 - 0968 187 434 - 0981 960 535",
 }
 
