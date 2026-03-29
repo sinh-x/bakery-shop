@@ -3,7 +3,7 @@
 Deploying baker to lily using Docker Compose with HTTPS via Caddy.
 
 **Target:** lily server (NixOS + Docker + Tailscale)
-**Last updated:** 2026-03-29
+**Last updated:** 2026-03-29 (revised)
 
 ---
 
@@ -17,10 +17,11 @@ Deploying baker to lily using Docker Compose with HTTPS via Caddy.
   docker compose version
   ```
 - [ ] Tailscale set up on lily with a registered hostname (e.g., `lily.tail1234.ts.net`)
-- [ ] Tailscale HTTPS certs generated:
+- [ ] Tailscale HTTPS certs generated (certs expire ~90 days — you'll need to re-run this periodically):
   ```bash
   tailscale cert --cert-file=certs/lily.tail1234.ts.net.crt --key-file=certs/lily.tail1234.ts.net.key lily.tail1234.ts.net
   ```
+- [ ] USB printer (optional): if using thermal printing, verify `/dev/usb/lp0` exists on lily. The docker-compose mounts this device — skip if no printer.
 - [ ] Rustic backup tools installed (for automated backups):
   ```bash
   # Install rustic
@@ -128,6 +129,8 @@ docker images | grep baker-server
 
 ## 5. Deploy Web Build
 
+> **Important:** `web-build/` is gitignored and won't exist after a fresh clone. You MUST complete this section before starting containers (§6), or Caddy will fail to serve the web app.
+
 ### Option A: Build on Lily (requires Flutter)
 
 ```bash
@@ -229,26 +232,39 @@ The backup infrastructure uses rustic to backup to Wasabi S3. The backup script 
 ### 8.1 Prerequisites for Backup
 
 ```bash
-# Set up rclone remote (on lily, already configured with wasabi-sinh)
-# Verify rclone config exists
+# 1. Verify rclone remote "wasabi-sinh" is configured
 rclone config show wasabi-sinh
+# If not configured, run: rclone config  (create an S3-compatible remote named wasabi-sinh)
 
-# Create rustic password file
+# 2. Create rustic config directory
 mkdir -p ~/.config/rustic
-echo "your-rustic-password" > ~/.config/rustic/baker-key
-chmod 600 ~/.config/rustic/baker-key
 
-# Copy rustic config
-mkdir -p ~/.config/rustic
+# 3. Copy rustic config and add repository section
+#    The backup script uses profile "baker-prod", so the file MUST be named baker-prod.toml
 cp /srv/bakery-shop/config/rustic/baker.toml ~/.config/rustic/baker-prod.toml
+
+# 4. Add the [repository] section to the config
+#    IMPORTANT: The password must match the one used on the dev machine.
+#    Using a different password means you can't read existing snapshots.
+#    Get the password from the dev machine: grep password ~/.config/rustic/baker.toml
+cat >> ~/.config/rustic/baker-prod.toml << 'EOF'
+
+[repository]
+repository = "rclone:wasabi-sinh:baker-backup/dev2"
+password = "<paste the password from dev machine here>"
+EOF
+
+chmod 600 ~/.config/rustic/baker-prod.toml
 ```
 
 ### 8.2 Test Backup Manually
 
+> **Important:** Always set `DATA_DIR` explicitly. The script's default fallback is the dev machine path (`/home/sinh/Documents/bakery-shop/prod/data`) and will back up nothing useful on lily.
+
 ```bash
 cd /srv/bakery-shop
 
-# Run backup script
+# Run backup script — DATA_DIR is required on lily
 DATA_DIR=/srv/bakery-shop/prod/data ./scripts/wasabi-backup.sh
 
 # Check rustic snapshots
@@ -304,14 +320,16 @@ systemctl list-timers --all | grep baker
 
 ### 8.4 NixOS Backup Module (if using NixOS)
 
-If lily uses NixOS, add the backup module to the flake:
+If lily uses NixOS, add the backup module to the flake.
+
+> **Note:** `nix/backup.nix` is a function factory that takes `{ self }:` before the standard module args. You must call it with the flake's `self` reference.
 
 ```nix
 # In your NixOS configuration
 { inputs, ... }:
 {
   imports = [
-    /srv/bakery-shop/nix/backup.nix
+    (import /srv/bakery-shop/nix/backup.nix { self = inputs.self; })
   ];
 
   services.baker-backup = {
@@ -395,10 +413,10 @@ cat .env
 docker compose --profile prod logs baker-prod
 
 # Manually test
-docker exec -it bakery-shop-baker-prod-1 python -c "import urllib.request; urllib.request.urlopen('http://localhost:2108/api/health')"
+docker compose --profile prod exec baker-prod python -c "import urllib.request; urllib.request.urlopen('http://localhost:2108/api/health')"
 
 # Check if port is correct
-docker compose --profile prod exec baker-prod netstat -tlnp | grep 2108
+docker compose --profile prod exec baker-prod ss -tlnp | grep 2108
 ```
 
 ### Web app not loading
@@ -429,7 +447,73 @@ bash -n scripts/wasabi-backup.sh
 
 ---
 
-## 11. Security Notes
+## 11. Restore from Backup
+
+### 11.1 List Available Snapshots
+
+```bash
+rustic -P baker-prod snapshots
+```
+
+### 11.2 Restore a Snapshot
+
+```bash
+# Stop containers first
+cd /srv/bakery-shop
+docker compose --profile prod down
+
+# Restore latest snapshot to a temporary directory
+mkdir -p /tmp/baker-restore
+rustic -P baker-prod restore latest /tmp/baker-restore
+
+# The restored files are under the staging path structure
+# Copy baker.db back to prod data
+cp /tmp/baker-restore/tmp/baker-backup-staging/baker.db prod/data/baker.db
+
+# Restore photos if they exist
+if [ -d /tmp/baker-restore/tmp/baker-backup-staging/photos ]; then
+  cp -r /tmp/baker-restore/tmp/baker-backup-staging/photos prod/data/
+fi
+
+# Restart containers
+docker compose --profile prod up -d
+
+# Verify
+curl http://localhost:2108/api/health
+
+# Cleanup
+rm -rf /tmp/baker-restore
+```
+
+### 11.3 Restore a Specific Snapshot
+
+```bash
+# Pick a snapshot ID from the list
+rustic -P baker-prod snapshots
+
+# Restore by ID
+rustic -P baker-prod restore <snapshot-id> /tmp/baker-restore
+```
+
+---
+
+## 12. Tailscale Cert Renewal
+
+Tailscale certs expire after ~90 days. Caddy mounts them read-only, so there is no auto-renewal. You must re-generate manually:
+
+```bash
+cd /srv/bakery-shop
+tailscale cert --cert-file=certs/${DOMAIN}.crt --key-file=certs/${DOMAIN}.key ${DOMAIN}
+
+# Restart Caddy to pick up new certs
+docker compose --profile prod restart caddy
+```
+
+Consider setting a calendar reminder every 2 months.
+
+---
+
+## 13. Security Notes
 
 - **Rustic password**: Stored in `~/.config/rustic/baker-key` — keep this file secure
 - **Tailscale certs**: Stored in `certs/` directory — don't commit to git
@@ -438,7 +522,7 @@ bash -n scripts/wasabi-backup.sh
 
 ---
 
-## 12. Quick Reference
+## 14. Quick Reference
 
 | Command | Purpose |
 |---------|---------|
