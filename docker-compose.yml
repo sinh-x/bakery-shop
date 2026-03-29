@@ -1,6 +1,9 @@
 services:
   baker-prod:
-    build: .
+    build:
+      context: .
+      args:
+        UID: ${UID:-1000}
     image: baker-server
     profiles: [prod]
     ports:
