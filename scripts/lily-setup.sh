@@ -75,7 +75,7 @@ log "Waiting for health check..."
 for i in $(seq 1 30); do
   if curl -sf http://localhost:2108/api/health &>/dev/null; then
     log "Server is healthy!"
-    curl -s http://localhost:2108/api/health | python3 -m json.tool
+    curl -s http://localhost:2108/api/health
     break
   fi
   [[ $i -eq 30 ]] && { echo "ERROR: Health check failed. Check: docker compose --profile prod logs baker-prod"; exit 1; }
