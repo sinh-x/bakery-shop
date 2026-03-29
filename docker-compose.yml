@@ -3,7 +3,7 @@ services:
     build:
       context: .
       args:
-        UID: ${UID:-1000}
+        UID: ${BAKER_UID:-1000}
     image: baker-server
     profiles: [prod]
     ports:
