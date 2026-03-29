@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.3.1+26] — 2026-03-29
+- fix(receipts): add section spacing between phone/address/notes on bus label
+
 ## [0.3.1+25] — 2026-03-29
 - fix(receipts): anchor shop info to bottom, add specialty line, remove product list
 

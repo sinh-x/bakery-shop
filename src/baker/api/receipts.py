@@ -525,12 +525,15 @@ def _render_bus_label(order, cfg) -> Image.Image:
         shop_lines.append((shop_addr, f_shop))
 
     shop_h = sum(_th(t, f) + LINE_GAP for t, f in shop_lines)
-    sep_h = LINE_GAP + 6  # separator height
+    sep_h = 16  # double line separator height
 
     # Draw shop info anchored to bottom
     sy = paper_w - margin - shop_h
-    draw.line([(margin, sy - sep_h + 2), (label_len - margin, sy - sep_h + 2)],
-              fill=(160, 160, 160), width=1)
+    # Thick-thin double line separator
+    draw.line([(margin, sy - sep_h), (label_len - margin, sy - sep_h)],
+              fill=(0, 0, 0), width=3)
+    draw.line([(margin, sy - sep_h + 6), (label_len - margin, sy - sep_h + 6)],
+              fill=(0, 0, 0), width=1)
     for text, font in shop_lines:
         sy = _draw_centered(sy, text, font)
 
