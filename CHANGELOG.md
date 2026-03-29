@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.3.1+30] — 2026-03-29
+- chore: update CHANGELOG and pubspec.lock
+
 ## [0.3.1+29] — 2026-03-29
 - feat(deploy): add lily-setup script, fix deploy doc gaps
 
