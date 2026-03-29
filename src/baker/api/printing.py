@@ -15,10 +15,10 @@ from PIL import Image
 
 from baker.api.receipts import (
     _order_detail,
+    _render_bus_label,
     _render_customer_receipt,
     _render_work_ticket,
     _shop_config,
-    _get_photo,
 )
 from baker.db.connection import get_db
 from baker import usb_printer
@@ -48,10 +48,10 @@ def print_receipt(
     - type=work_ticket: internal work ticket (Phiếu Nội Bộ), single item, requires item_id
     - type=customer: customer receipt (BIÊN NHẬN)
     """
-    if type not in ("work_ticket", "customer"):
+    if type not in ("work_ticket", "customer", "bus_label"):
         raise HTTPException(
             status_code=400,
-            detail="Invalid type: must be 'work_ticket' or 'customer'",
+            detail="Invalid type: must be 'work_ticket', 'customer', or 'bus_label'",
         )
 
     if type == "work_ticket" and item_id is None:
@@ -72,7 +72,7 @@ def print_receipt(
         cfg = _shop_config(conn)
 
         if type == "work_ticket":
-            # Single-item work ticket (Phiếu Nội Bộ)
+            # Single-item work ticket (Phiếu Nội Bộ) — no photo for thermal print
             work_item = None
             for wi in detail.get("workItems", []):
                 if str(wi.get("id")) == str(item_id):
@@ -81,25 +81,16 @@ def print_receipt(
             if not work_item:
                 raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-            # Fetch photo for cake-category products
-            photo = None
-            pid = work_item.get("productId", "") or work_item.get("product_id", "")
-            if pid:
-                cat_row = conn.execute(
-                    "SELECT category FROM products WHERE id = ? OR product_code = ?",
-                    (pid, pid),
-                ).fetchone()
-                if cat_row and cat_row["category"] in ("cake", "banh_kem"):
-                    photo = _get_photo(conn, row["id"], item_id)
-
-            img = _render_work_ticket(detail, work_item, cfg, photo, conn)
+            img = _render_work_ticket(detail, work_item, cfg, None, conn)
 
         elif type == "customer":
             img = _render_customer_receipt(detail, cfg, conn, show_photos=False)
+        elif type == "bus_label":
+            img = _render_bus_label(detail, cfg)
         else:
             raise HTTPException(
                 status_code=400,
-                detail="Invalid type: must be 'work_ticket' or 'customer'",
+                detail="Invalid type: must be 'work_ticket', 'customer', or 'bus_label'",
             )
 
         png_bytes = _render_to_png(img)
