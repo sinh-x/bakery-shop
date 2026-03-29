@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.3.1+24] — 2026-03-29
+- fix(receipts): bigger fonts + product info on bus shipping label
+
 ## [0.3.1+23] — 2026-03-29
 - fix(receipts): match bus label to 76x128mm label paper dimensions
 

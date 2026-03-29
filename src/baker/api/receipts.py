@@ -498,61 +498,61 @@ def _render_bus_label(order, cfg) -> Image.Image:
 
     f_phone = _font(80, bold=True)
     f_addr = _font(64, bold=True)
-    f_item = _font(44, bold=True)
     f_note = _font(40, bold=True)
     f_shop = _font(18)
+    f_specialty = _font(16)
 
-    y = margin
-
-    def _lcenter(text, font, color=(0, 0, 0)):
-        """Center text within label_len width."""
-        nonlocal y
+    def _draw_centered(yy, text, font, color=(0, 0, 0)):
+        """Center text within label_len width. Return y after."""
         tw, th = _tw(text, font), _th(text, font)
-        draw.text(((label_len - tw) // 2, y), text, font=font, fill=color)
-        y += th + LINE_GAP
+        draw.text(((label_len - tw) // 2, yy), text, font=font, fill=color)
+        return yy + th + LINE_GAP
+
+    # --- Shop info: pre-calculate height, draw at bottom ---
+    shop_name = cfg.get("receipt_shop_name", "")
+    shop_specialty = cfg.get("receipt_shop_specialty", "")
+    shop_phone = cfg.get("receipt_shop_phone", "")
+    shop_addr = cfg.get("receipt_shop_address", "")
+
+    shop_lines = []
+    if shop_name:
+        shop_lines.append((shop_name, f_shop))
+    if shop_specialty:
+        shop_lines.append((shop_specialty, f_specialty))
+    if shop_phone:
+        shop_lines.append((shop_phone, f_shop))
+    if shop_addr:
+        shop_lines.append((shop_addr, f_shop))
+
+    shop_h = sum(_th(t, f) + LINE_GAP for t, f in shop_lines)
+    sep_h = LINE_GAP + 6  # separator height
+
+    # Draw shop info anchored to bottom
+    sy = paper_w - margin - shop_h
+    draw.line([(margin, sy - sep_h + 2), (label_len - margin, sy - sep_h + 2)],
+              fill=(160, 160, 160), width=1)
+    for text, font in shop_lines:
+        sy = _draw_centered(sy, text, font)
+
+    # --- Main content: draw from top ---
+    y = margin
 
     # Phone — largest, centered, bold
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
     if phone:
-        _lcenter(phone, f_phone)
+        y = _draw_centered(y, phone, f_phone)
 
     # Address — large bold, centered, wrapped
     addr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
     if addr:
         for ln in _wrap(addr, f_addr, content_w):
-            _lcenter(ln, f_addr)
-
-    # Product info — "Product × Qty" per item
-    work_items = order.get("workItems", [])
-    if work_items:
-        for item in work_items:
-            name = item.get("productName", "") or item.get("product_name", "")
-            qty = item.get("quantity", 1)
-            line = f"{name} × {qty}" if qty > 1 else name
-            for ln in _wrap(line, f_item, content_w):
-                _lcenter(ln, f_item)
+            y = _draw_centered(y, ln, f_addr)
 
     # Order notes — medium bold, centered, wrapped
     notes = order.get("notes", "") or ""
     if notes:
         for ln in _wrap(notes, f_note, content_w):
-            _lcenter(ln, f_note)
-
-    # Separator
-    draw.line([(margin, y + 2), (label_len - margin, y + 2)], fill=(160, 160, 160), width=1)
-    y += LINE_GAP + 6
-
-    # Shop info — small
-    shop_name = cfg.get("receipt_shop_name", "")
-    shop_phone = cfg.get("receipt_shop_phone", "")
-    shop_addr = cfg.get("receipt_shop_address", "")
-
-    if shop_name:
-        _lcenter(shop_name, f_shop)
-    if shop_phone:
-        _lcenter(shop_phone, f_shop)
-    if shop_addr:
-        _lcenter(shop_addr, f_shop)
+            y = _draw_centered(y, ln, f_note)
 
     # Rotate 90° CCW → 576 wide × 1024 tall (matches printer paper)
     rotated = img.transpose(Image.Transpose.ROTATE_90)
