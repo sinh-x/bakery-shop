@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 class VN {
   // Navigation
   static const appName = 'Đoàn Gia - Bánh Kem';
@@ -5,6 +7,7 @@ class VN {
   static const tabOrders = 'Đơn hàng';
   static const tabProducts = 'Sản phẩm';
   static const tabEvents = 'Sự kiện';
+  static const tabChecklist = 'Checklist';
 
   // Order statuses
   static const statusNew = 'Mới';
@@ -40,13 +43,23 @@ class VN {
 
   // Order detail
   static const orderDetail = 'Chi tiết đơn hàng';
+  static const editOrder = 'Sửa đơn hàng';
   static const customer = 'Khách hàng';
   static const products = 'Sản phẩm';
   static const payment = 'Thanh toán';
   static const paid = 'Đã thanh toán';
+  static const partialPaid = 'Trả một phần';
   static const unpaid = 'Chưa thanh toán';
+  static const amountPaidLabel = 'Đã trả';
+  static const remainingLabel = 'Còn lại';
   static const packingChecklist = 'Danh sách đóng gói';
   static const actions = 'Thao tác';
+  static const cancelOrderTitle = 'Hủy đơn hàng';
+  static const cancelReasonLabel = 'Lý do hủy (tùy chọn)';
+  static const cancelReasonHint = 'Nhập lý do hủy...';
+  static const confirmCancelAction = 'Xác nhận hủy';
+  static const orderStatusUpdated = 'Đã cập nhật trạng thái';
+  static const orderEditSaved = 'Đã lưu thay đổi';
 
   // Product categories
   static const catBanhMi = 'Bánh mì';
@@ -74,7 +87,7 @@ class VN {
   static const eventExpense = 'Chi phí';
 
   // Event types (chips)
-  static const typeIncident = 'Đồ điện/Dụng cụ làm bánh';
+  static const typeEquipment = 'Đồ điện/Dụng cụ làm bánh';
 
   // Event log form
   static const eventPrompt = 'Chuyện gì xảy ra?';
@@ -117,6 +130,7 @@ class VN {
   // Dashboard
   static const todayOrders = 'Đơn hàng hôm nay';
   static const upcomingDue = 'Sắp đến hạn';
+  static const overdueOrders = 'Quá hạn';
   static const recentActivity = 'Sự kiện gần đây';
 
   // Packing items
@@ -189,6 +203,50 @@ class VN {
   static const urlEmpty = 'Vui lòng nhập địa chỉ';
   static const testing = 'Đang kiểm tra...';
 
+  // Settings — staff picker
+  static const generalSettings = 'Cài đặt chung';
+  static const technicalSettings = 'Kỹ thuật';
+  static const staffPicker = 'Nhân viên';
+  static const staffPickerHint = 'Chọn nhân viên';
+  static const staffNameManual = 'Tên nhân viên (thủ công)';
+  static const staffNameHint = 'Nhập tên của bạn';
+  static const staffSaved = 'Đã lưu tên nhân viên';
+  static const appVersion = 'Phiên bản ứng dụng';
+  static const serverVersion = 'Phiên bản máy chủ';
+  static const serverVersionLoading = 'Đang tải...';
+  static const serverVersionError = 'Không thể kết nối';
+  static const createdBy = 'Người tạo';
+
+  // Delivery types (detailed)
+  static const deliveryBus = 'Giao xe khách';
+  static const deliveryDoor = 'Giao tận nơi';
+
+  // Order create form extras
+  static const orderSource = 'Nguồn đặt hàng';
+  static const dueTime = 'Giờ giao';
+  static const isBirthday = 'Sinh nhật';
+  static const birthdayAge = 'Tuổi khách hàng';
+  static const orderCreated = 'Đã tạo đơn hàng';
+  static const searchProducts = 'Tìm sản phẩm...';
+
+  // Time slots
+  static const timeSlotMorning = 'Sáng';
+  static const timeSlotAfternoon = 'Chiều';
+  static const timeSlotEvening = 'Tối';
+
+  // Order photos
+  static const orderPhotos = 'Ảnh đơn hàng';
+  static const addOrderPhoto = 'Thêm ảnh';
+  static const noOrderPhotos = 'Chưa có ảnh';
+  static const deleteOrderPhotoConfirm = 'Xóa ảnh này khỏi đơn?';
+  static const orderPhotoDeleted = 'Đã xóa ảnh';
+  static const orderPhotoAdded = 'Đã thêm ảnh';
+  static const editPhotoTags = 'Chọn nhãn ảnh';
+  static const photoTagsUpdated = 'Đã cập nhật nhãn';
+  static const pendingPhotosLabel = 'Ảnh đính kèm';
+  static const uploadingPhotos = 'Đang tải ảnh lên...';
+  static const itemPrice = 'Đơn giá';
+
   // Catalog gallery
   static const catalogTitle = 'Bộ sưu tập';
   static const addCatalogPhoto = 'Thêm ảnh mẫu';
@@ -203,12 +261,116 @@ class VN {
   static const catalogPhotoUpdated = 'Đã cập nhật ảnh';
   static const catalogPhotoDeleted = 'Đã xóa ảnh';
 
+  // Payment transactions
+  static const txnTypeDeposit = 'Đặt cọc';
+  static const txnTypePayment = 'Thanh toán';
+  static const txnTypeFullPayment = 'Thanh toán đủ';
+  static const txnTypeRefund = 'Hoàn tiền';
+  static const methodCash = 'Tiền mặt';
+  static const methodTransfer = 'Chuyển khoản';
+  static const addPayment = 'Thêm thanh toán';
+  static const depositSection = 'Đặt cọc ngay';
+  static const depositAmount = 'Số tiền đặt cọc';
+  static const paymentHistory = 'Lịch sử thanh toán';
+  static const paymentRecorded = 'Đã ghi thanh toán';
+  static const paymentUpdated = 'Đã cập nhật giao dịch';
+  static const editPayment = 'Sửa giao dịch';
+  static const txnDetails = 'Chi tiết giao dịch';
+  static const txnNoteLabel = 'Ghi chú';
+  static const noPaymentHistory = 'Chưa có giao dịch';
+  static const paymentMethod = 'Hình thức';
+  static const paymentNotes = 'Ghi chú (tùy chọn)';
+  static const paymentAmountLabel = 'Số tiền';
+  static const txnType = 'Loại thanh toán';
+
+  // Work item statuses
+  static const workItemPending = 'Chờ xử lý';
+  static const workItemWorking = 'Đang làm';
+  static const workItemReady = 'Sẵn sàng';
+  static const workItemDelivered = 'Đã giao';
+  static const workItemCancelled = 'Đã hủy';
+
+  // Work items section
+  static const workItemsSection = 'Chi tiết sản xuất';
+  static const noWorkItems = 'Chưa có chi tiết sản xuất';
+  static const workItemStatusChanged = 'Đã cập nhật trạng thái sản phẩm';
+  static const statusReasonTitle = 'Lý do thay đổi';
+  static const statusReasonLabel = 'Lý do (bắt buộc)';
+  static const statusReasonHint = 'Nhập lý do...';
+  static const confirmStatusChange = 'Xác nhận';
+  static const autoUpdateOrderTitle = 'Cập nhật đơn hàng';
+  static const autoSyncWorkItemStatus = 'Đã đồng bộ trạng thái sản phẩm';
+  static const autoSyncOrderStatus = 'Đã đồng bộ trạng thái đơn hàng';
+
+  // Cake queue & cake detail
+  static const cakeQueue = 'Làm bánh';
+  static const deliveryTab = 'Giao hàng';
+  static const orderListTab = 'Đơn hàng';
+  static const cakeDetail = 'Chi tiết bánh';
+  static const viewOrder = 'Xem đơn hàng';
+  static const noCakeQueueItems = 'Không có sản phẩm cần làm';
+  static const noDeliveryItems = 'Không có sản phẩm cần giao';
+  static const includeReadyFilter = 'Bao gồm sẵn sàng';
+  static const perItemPhotos = 'Ảnh sản phẩm';
+  static const birthdayWithAge = 'Sinh nhật';
+  static const orderPhotosSection = 'Ảnh đơn hàng (chung)';
+
   // General
   static const remove = 'Xóa';
   static const save = 'Lưu';
   static const cancel = 'Hủy';
   static const back = 'Quay lại';
   static const currency = 'đ';
+
+  // Receipts
+  static const printReceipt = 'In';
+  static const printWorkTicket = 'Phiếu nội bộ';
+  static const printCustomerReceipt = 'Hóa đơn khách hàng';
+  static const printBusLabel = 'Phiếu xe khách';
+  static const selectReceiptType = 'Chọn loại phiếu';
+  static const receiptPreview = 'Xem phiếu';
+  static const share = 'Chia sẻ';
+  static const saveToGallery = 'Lưu ảnh';
+  static const receiptSaved = 'Đã lưu ảnh phiếu';
+
+  // Print
+  static const print = 'In';
+  static const printing = 'Đang in...';
+  static const printSuccess = 'In thành công';
+  static const printFailed = 'In thất bại';
+  static const printerNotConnected = 'Máy in chưa kết nối';
+  static const printerConnecting = 'Đang kết nối máy in...';
+
+  // Printer picker
+  static const selectPrinter = 'Chọn máy in';
+  static const scanning = 'Đang tìm...';
+  static const noPrinterFound = 'Không tìm thấy máy in';
+  static const printerConnectionFailed = 'Kết nối thất bại';
+  static const connectingTo = 'Đang kết nối đến...';
+  static const tapToRetry = 'Bấm để thử lại';
+  static const noDevicesFound = 'Không có thiết bị nào';
+
+  // Shipping fee & extras
+  static const shippingFee = 'Phí giao hàng';
+  static const extras = 'Phụ kiện';
+  static const giftBadge = 'Tặng';
+  static const toggleGift = 'Tặng/Trả phí';
+  static const giftToggleTooltip = 'Bấm để chuyển giữa tặng và trả phí';
+
+  // Extras management
+  static const extrasSettings = 'Phụ kiện đi kèm';
+  static const addExtra = 'Thêm phụ kiện';
+  static const editExtra = 'Sửa phụ kiện';
+  static const extraName = 'Tên phụ kiện';
+  static const extraPrice = 'Giá phụ kiện';
+  static const extraNameHint = 'VD: Nến, Đĩa muỗng';
+  static const extraPriceHint = 'VD: 5000';
+  static const extraFormatError = 'Định dạng: Tên|Giá (VD: Nến|5000)';
+  static const extraAdded = 'Đã thêm phụ kiện';
+  static const extraUpdated = 'Đã cập nhật phụ kiện';
+  static const extraDeleted = 'Đã xóa phụ kiện';
+  static const noExtras = 'Chưa có phụ kiện';
+  static const deleteExtraConfirm = 'Xóa phụ kiện này?';
 }
 
 // Category mapping (new slugs)
@@ -250,6 +412,103 @@ const validTransitions = {
   'completed': <String>[],
   'cancelled': <String>[],
 };
+
+/// Returns the button label for transitioning to [targetStatus].
+String statusActionLabel(String targetStatus) {
+  switch (targetStatus) {
+    case 'confirmed':
+      return VN.actionConfirm;
+    case 'in_progress':
+      return VN.actionStart;
+    case 'ready':
+      return VN.actionReady;
+    case 'delivered':
+      return VN.actionDeliver;
+    case 'completed':
+      return VN.actionComplete;
+    case 'cancelled':
+      return VN.actionCancel;
+    default:
+      return targetStatus;
+  }
+}
+
+String txnTypeLabel(String type) {
+  switch (type) {
+    case 'deposit':
+      return VN.txnTypeDeposit;
+    case 'payment':
+      return VN.txnTypePayment;
+    case 'full_payment':
+      return VN.txnTypeFullPayment;
+    case 'refund':
+      return VN.txnTypeRefund;
+    default:
+      return type;
+  }
+}
+
+String paymentMethodLabel(String method) {
+  switch (method) {
+    case 'cash':
+      return VN.methodCash;
+    case 'transfer':
+      return VN.methodTransfer;
+    default:
+      return method;
+  }
+}
+
+// Work item status mapping
+const workItemStatusMap = {
+  'pending': VN.workItemPending,
+  'working': VN.workItemWorking,
+  'ready': VN.workItemReady,
+  'delivered': VN.workItemDelivered,
+  'cancelled': VN.workItemCancelled,
+};
+
+String workItemStatusLabel(String status) =>
+    workItemStatusMap[status] ?? status;
+
+// Work item status colors
+const workItemStatusColors = {
+  'pending': Colors.grey,
+  'working': Colors.orange,
+  'ready': Colors.green,
+  'delivered': Colors.teal,
+  'cancelled': Colors.red,
+};
+
+// Valid work item transitions
+const workItemValidTransitions = {
+  'pending': ['working', 'cancelled'],
+  'working': ['ready', 'cancelled'],
+  'ready': ['delivered', 'cancelled'],
+  'delivered': ['cancelled'],
+  'cancelled': <String>[],
+};
+
+/// Shows a SnackBar anchored to the top of the screen.
+void showTopSnackBar(
+  BuildContext context,
+  String message, {
+  Color? backgroundColor,
+}) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message),
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: backgroundColor,
+      margin: EdgeInsets.only(
+        top: 16,
+        left: 16,
+        right: 16,
+        bottom: MediaQuery.of(context).size.height - 100,
+      ),
+    ),
+  );
+}
 
 /// Format VND: 150000.0 → "150.000đ"
 String formatVND(double amount) {

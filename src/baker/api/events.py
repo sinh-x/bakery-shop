@@ -8,12 +8,12 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from baker.db.connection import get_db
-from baker.db.queries import fetch_events
+from baker.db.queries import fetch_events, find_staff_by_name, link_event_person
 from baker.models.event import Event
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
-VALID_TYPES = {"note", "incident", "production", "inventory", "expense", "delivery", "order"}
+VALID_TYPES = {"note", "equipment", "production", "inventory", "expense", "delivery", "order"}
 
 
 class EventCreate(BaseModel):
@@ -54,6 +54,13 @@ def create_event(body: EventCreate):
 
     with get_db() as conn:
         event_id = event.save(conn)
+
+        # Link logger to event_people if they exist in staff table
+        if body.logged_by:
+            staff = find_staff_by_name(conn, body.logged_by)
+            if staff:
+                link_event_person(conn, event_id, staff["id"], "logged_by")
+
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return _row_to_dict(row)
 
@@ -99,6 +106,7 @@ class EventUpdate(BaseModel):
     summary: str | None = None
     type: str | None = None
     tags: list[str] | None = None
+    logged_by: str | None = None
 
 
 @router.patch("/{event_id}")
@@ -129,6 +137,10 @@ def update_event(event_id: int, body: EventUpdate):
         if "tags" in data:
             fields.append("tags = ?")
             values.append(",".join(data["tags"]))
+
+        if "logged_by" in data:
+            fields.append("logged_by = ?")
+            values.append(data["logged_by"])
 
         values.append(event_id)
         conn.execute(f"UPDATE events SET {', '.join(fields)} WHERE id = ?", values)

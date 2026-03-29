@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../data/api/catalog_service.dart';
 import '../data/models/catalog_photo.dart';
@@ -25,14 +26,14 @@ class CatalogNotifier extends AsyncNotifier<List<CatalogPhoto>> {
   }
 
   Future<CatalogPhoto> addPhoto(
-    String filePath, {
+    XFile file, {
     String caption = '',
     String tags = '',
   }) async {
     final service = ref.read(catalogServiceProvider);
     final photo = await service.uploadCatalogPhoto(
       productId,
-      filePath,
+      file,
       caption: caption,
       tags: tags,
     );

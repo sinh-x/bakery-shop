@@ -560,14 +560,14 @@ def test_upload_catalog_photo_default_fields(api_client):
 
 
 def test_upload_catalog_photo_position_increments(api_client):
-    image_data = _make_test_image()
+    # Use different image sizes so they produce different hashes (dedup uses hash)
     first = api_client.post(
         "/api/products/1/catalog",
-        files={"file": ("a.jpg", image_data, "image/jpeg")},
+        files={"file": ("a.jpg", _make_test_image(100, 100), "image/jpeg")},
     )
     second = api_client.post(
         "/api/products/1/catalog",
-        files={"file": ("b.jpg", image_data, "image/jpeg")},
+        files={"file": ("b.jpg", _make_test_image(101, 101), "image/jpeg")},
     )
     assert first.json()["position"] == 0
     assert second.json()["position"] == 1
@@ -912,3 +912,14 @@ def test_update_category_prefix_cascades_to_products(api_client):
     prod_resp = api_client.get(f"/api/products/{product['id']}")
     assert prod_resp.status_code == 200
     assert prod_resp.json()["product_code"] == f"KHC-{suffix}"
+
+
+def test_update_category_prefix_conflict_returns_409(api_client):
+    """Changing a category's code_prefix to one already used by another category returns 409."""
+    cats = api_client.get("/api/categories").json()
+    khac = next(c for c in cats if c["slug"] == "khac")
+
+    # Try renaming 'khac' prefix to 'BMI' (already used by banh_mi)
+    resp = api_client.patch(f"/api/categories/{khac['id']}", json={"code_prefix": "BMI"})
+    assert resp.status_code == 409
+    assert "đã được dùng" in resp.json()["detail"]

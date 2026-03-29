@@ -1,0 +1,359 @@
+"""Order management API routes."""
+
+import json
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel
+
+from baker.db.connection import get_db
+from baker.logging import log_context
+from baker.models.order import Order, OrderItem, is_backward_transition, validate_transition
+from baker.models.payment_transaction import PaymentTransaction
+from baker.models.work_item import WorkItem
+
+
+router = APIRouter(prefix="/api/orders", tags=["orders"])
+
+
+class OrderItemIn(BaseModel):
+    productId: str = ""
+    productName: str
+    quantity: int = 1
+    unitPrice: float = 0.0
+    notes: str = ""
+    isBirthday: bool = False
+    age: Optional[int] = None
+    isExtra: bool = False
+    isGift: bool = False
+
+
+class DepositIn(BaseModel):
+    amount: float
+    method: str = "cash"
+
+
+class OrderCreate(BaseModel):
+    customerName: str
+    customerPhone: str = ""
+    items: list[OrderItemIn] = []
+    dueDate: Optional[str] = None
+    dueTime: Optional[str] = None
+    deliveryType: str = "pickup"
+    deliveryAddress: str = ""
+    notes: str = ""
+    source: str = ""
+    deposit: Optional[DepositIn] = None
+    createdBy: str = ""
+    shippingFee: float = 0.0
+
+
+class OrderEdit(BaseModel):
+    customerName: Optional[str] = None
+    customerPhone: Optional[str] = None
+    items: Optional[list[OrderItemIn]] = None
+    dueDate: Optional[str] = None
+    dueTime: Optional[str] = None
+    deliveryType: Optional[str] = None
+    deliveryAddress: Optional[str] = None
+    notes: Optional[str] = None
+    source: Optional[str] = None
+    shippingFee: Optional[float] = None
+    changedBy: str = ""
+
+
+class StatusTransition(BaseModel):
+    status: str
+    reason: str = ""
+    changedBy: str = ""
+
+
+class PaymentUpdate(BaseModel):
+    amountPaid: float
+    changedBy: str = ""
+
+
+def _log_order_history(conn, order_id, action_type, field_name="", old_value="", new_value="", changed_by=""):
+    """Insert an audit log entry into the order_history table."""
+    conn.execute(
+        """INSERT INTO order_history (order_id, action_type, field_name, old_value, new_value, changed_by)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (order_id, action_type, field_name, old_value, new_value, changed_by),
+    )
+
+
+def _item_in_to_model(item: OrderItemIn) -> OrderItem:
+    return OrderItem(
+        product=item.productName,
+        qty=item.quantity,
+        price=item.unitPrice,
+        notes=item.notes,
+        product_id=item.productId,
+        is_birthday=item.isBirthday,
+        age=item.age,
+        is_extra=item.isExtra,
+        is_gift=item.isGift,
+    )
+
+
+def _order_detail(conn, row) -> dict:
+    """Build full order detail dict including work items and payment transactions."""
+    order = Order.from_row(row, conn)
+    result = order.to_api_dict()
+
+    item_rows = conn.execute(
+        "SELECT * FROM order_items WHERE order_id = ? ORDER BY position, id",
+        (row["id"],),
+    ).fetchall()
+    result["workItems"] = [WorkItem.from_row(r).to_api_dict() for r in item_rows]
+
+    txn_rows = conn.execute(
+        "SELECT * FROM payment_transactions WHERE order_id = ? ORDER BY id",
+        (row["id"],),
+    ).fetchall()
+    result["paymentTransactions"] = [PaymentTransaction.from_row(r).to_api_dict() for r in txn_rows]
+
+    return result
+
+
+@router.get("")
+def list_orders(
+    status: Optional[str] = Query(None, description="Lọc theo trạng thái"),
+    due_date: Optional[str] = Query(None, description="Lọc theo ngày giao (YYYY-MM-DD)"),
+    limit: int = Query(50, description="Số lượng tối đa"),
+    offset: int = Query(0, description="Bỏ qua N đơn đầu"),
+):
+    """Danh sách đơn hàng."""
+    with get_db() as conn:
+        conditions = []
+        params: list = []
+
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+
+        if due_date:
+            conditions.append("due_date = ?")
+            params.append(due_date)
+
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        rows = conn.execute(
+            f"SELECT * FROM orders {where} ORDER BY id DESC LIMIT ? OFFSET ?",
+            params + [limit, offset],
+        ).fetchall()
+
+        return [Order.from_row(r).to_api_dict() for r in rows]
+
+
+@router.post("", status_code=201)
+def create_order(body: OrderCreate, request: Request):
+    """Tạo đơn hàng mới."""
+    with get_db() as conn:
+        order = Order(
+            customer_name=body.customerName,
+            customer_phone=body.customerPhone,
+            items=[_item_in_to_model(i) for i in body.items],
+            due_date=body.dueDate,
+            due_time=body.dueTime,
+            delivery_type=body.deliveryType,
+            delivery_address=body.deliveryAddress,
+            notes=body.notes,
+            source=body.source,
+            created_by=body.createdBy,
+            shipping_fee=body.shippingFee,
+        )
+        order.calculate_total()
+        order.save(conn)
+
+        _log_order_history(conn, order.id, "created", changed_by=body.createdBy)
+
+        # Create order_items rows so work item IDs are available for photo linking
+        for position, item in enumerate(body.items):
+            work_item = WorkItem(
+                order_id=order.id,
+                product_id=item.productId,
+                product_name=item.productName,
+                quantity=item.quantity,
+                unit_price=item.unitPrice,
+                notes=item.notes,
+                position=position,
+                is_birthday=item.isBirthday,
+                age=item.age,
+                is_extra=item.isExtra,
+                is_gift=item.isGift,
+            )
+            work_item.save(conn)
+
+        if body.deposit and body.deposit.amount > 0:
+            txn = PaymentTransaction(
+                order_id=order.id,
+                amount=body.deposit.amount,
+                type="deposit",
+                method=body.deposit.method,
+            )
+            txn.save(conn)
+
+        log_context(request, ref_type="order", ref_id=order.id)
+        row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
+        return _order_detail(conn, row)
+
+
+@router.get("/{ref}")
+def get_order(ref: str):
+    """Chi tiết đơn hàng theo order_ref hoặc id."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+        return _order_detail(conn, row)
+
+
+@router.patch("/{ref}")
+def edit_order(ref: str, body: OrderEdit):
+    """Cập nhật thông tin đơn hàng."""
+    data = body.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="Không có gì để cập nhật")
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        updates = []
+        params: list = []
+
+        field_map = {
+            "customerName": "customer_name",
+            "customerPhone": "customer_phone",
+            "dueDate": "due_date",
+            "dueTime": "due_time",
+            "deliveryType": "delivery_type",
+            "deliveryAddress": "delivery_address",
+            "notes": "notes",
+            "source": "source",
+            "shippingFee": "shipping_fee",
+        }
+
+        for camel, snake in field_map.items():
+            if camel in data:
+                updates.append(f"{snake} = ?")
+                params.append(data[camel])
+
+        items_changed = "items" in data
+        shipping_fee_changed = "shippingFee" in data
+        if items_changed or shipping_fee_changed:
+            if items_changed:
+                items = [_item_in_to_model(OrderItemIn(**i)) for i in data["items"]]
+                items_json = json.dumps([i.to_dict() for i in items])
+                updates.append("items = ?")
+                params.append(items_json)
+            else:
+                # Read existing items directly from DB JSON for total recalculation
+                raw_items = json.loads(row["items"])
+            current_shipping_fee = data.get("shippingFee", row["shipping_fee"])
+            if items_changed:
+                subtotal = sum(i.qty * i.price for i in items if not i.is_gift)
+            else:
+                subtotal = sum(
+                    i.get("quantity", i.get("qty", 1)) * i.get("unit_price", i.get("price", 0))
+                    for i in raw_items if not i.get("is_gift", False)
+                )
+            total = subtotal + current_shipping_fee
+            updates.append("total_price = ?")
+            params.append(total)
+
+        if not updates:
+            raise HTTPException(status_code=400, detail="Không có gì để cập nhật")
+
+        updates.append("updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')")
+        params.append(row["id"])
+        conn.execute(
+            f"UPDATE orders SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+
+        # Log each changed field with old/new values
+        changed_by = data.get("changedBy", "")
+        for camel, snake in field_map.items():
+            if camel in data:
+                _log_order_history(conn, row["id"], "field_edit", snake, str(row[snake]), str(data[camel]), changed_by)
+        if items_changed:
+            _log_order_history(conn, row["id"], "field_edit", "items", row["items"], items_json, changed_by)
+
+        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
+        return _order_detail(conn, updated)
+
+
+@router.post("/{ref}/status")
+def transition_status(ref: str, body: StatusTransition):
+    """Chuyển trạng thái đơn hàng. Lý do bắt buộc khi lùi trạng thái."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        if is_backward_transition(row["status"], body.status) and not body.reason.strip():
+            raise HTTPException(
+                status_code=422, detail="Lý do là bắt buộc khi lùi trạng thái"
+            )
+
+        # Block completion if not fully paid
+        if body.status == "completed":
+            total_paid = PaymentTransaction.total_for_order(conn, row["id"])
+            total_price = float(row["total_price"])
+            if total_paid < total_price:
+                remaining = total_price - total_paid
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu {remaining:,.0f}đ",
+                )
+
+        success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
+        if not success:
+            raise HTTPException(status_code=422, detail="Không thể chuyển trạng thái")
+
+        _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, body.changedBy)
+
+        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
+        return _order_detail(conn, updated)
+
+
+@router.patch("/{ref}/payment")
+def update_payment(ref: str, body: PaymentUpdate):
+    """Ghi nhận thanh toán (tạo giao dịch mới nếu số tiền > 0)."""
+    if body.amountPaid < 0:
+        raise HTTPException(status_code=422, detail="Số tiền thanh toán không được âm")
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        if body.amountPaid > 0:
+            txn = PaymentTransaction(
+                order_id=row["id"],
+                amount=body.amountPaid,
+                type="payment",
+                method="cash",
+            )
+            txn.save(conn)
+            _log_order_history(
+                conn, row["id"], "payment", "amount",
+                old_value="", new_value=str(body.amountPaid), changed_by=body.changedBy,
+            )
+
+        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
+        return _order_detail(conn, updated)

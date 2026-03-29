@@ -11,6 +11,8 @@ sealed class OrderItem with _$OrderItem {
     @Default(1) int quantity,
     required double unitPrice,
     @Default('') String notes,
+    @Default(false) bool isBirthday,
+    int? age,
   }) = _OrderItem;
 
   factory OrderItem.fromJson(Map<String, dynamic> json) =>

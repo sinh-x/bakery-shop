@@ -6,6 +6,8 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
+from . import format_phone
+
 console = Console()
 
 
@@ -107,7 +109,7 @@ def print_staff_table(rows, title="Staff"):
             str(row["id"]),
             row["name"],
             ", ".join(labels),
-            row["phone"] or "",
+            format_phone(row["phone"] or ""),
         )
     console.print(table)
 
@@ -194,7 +196,7 @@ def print_order_detail(row):
     lines.append(f"[bold]Order {row['order_ref']}[/bold]")
     lines.append(f"Customer: {row['customer_name']}")
     if row["customer_phone"]:
-        lines.append(f"Phone: {row['customer_phone']}")
+        lines.append(f"Phone: {format_phone(row['customer_phone'])}")
     lines.append("")
     lines.append("[bold]Items:[/bold]")
     for i in items_data:

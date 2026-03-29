@@ -20,7 +20,7 @@ def test_create_event_minimal(api_client):
 def test_create_event_full(api_client):
     resp = api_client.post("/api/events", json={
         "summary": "Sự cố tủ lạnh",
-        "type": "incident",
+        "type": "equipment",
         "tags": ["equipment", "maintenance"],
         "logged_by": "Diễm",
         "data": {"severity": "high"},
@@ -28,7 +28,7 @@ def test_create_event_full(api_client):
     })
     assert resp.status_code == 201
     ev = resp.json()
-    assert ev["type"] == "incident"
+    assert ev["type"] == "equipment"
     assert ev["tags"] == ["equipment", "maintenance"]
     assert ev["logged_by"] == "Diễm"
     assert ev["data"] == {"severity": "high"}
@@ -51,7 +51,7 @@ def test_create_event_missing_summary_rejected(api_client):
 def _seed_events(api_client):
     """Seed a few events for filter tests."""
     api_client.post("/api/events", json={
-        "summary": "Tủ lạnh hỏng", "type": "incident",
+        "summary": "Tủ lạnh hỏng", "type": "equipment",
         "tags": ["equipment"], "logged_by": "Diễm",
     })
     api_client.post("/api/events", json={
@@ -80,11 +80,11 @@ def test_list_events_empty_db(api_client):
 
 def test_list_events_filter_by_type(api_client):
     _seed_events(api_client)
-    resp = api_client.get("/api/events", params={"type": "incident"})
+    resp = api_client.get("/api/events", params={"type": "equipment"})
     assert resp.status_code == 200
     events = resp.json()
     assert len(events) == 1
-    assert events[0]["type"] == "incident"
+    assert events[0]["type"] == "equipment"
 
 
 def test_list_events_filter_by_tag(api_client):
@@ -201,9 +201,9 @@ def test_patch_event_summary(api_client):
 def test_patch_event_type(api_client):
     create_resp = api_client.post("/api/events", json={"summary": "Test", "type": "note"})
     event_id = create_resp.json()["id"]
-    resp = api_client.patch(f"/api/events/{event_id}", json={"type": "incident"})
+    resp = api_client.patch(f"/api/events/{event_id}", json={"type": "equipment"})
     assert resp.status_code == 200
-    assert resp.json()["type"] == "incident"
+    assert resp.json()["type"] == "equipment"
 
 
 def test_patch_event_tags(api_client):
@@ -247,10 +247,10 @@ def test_patch_event_multiple_fields(api_client):
     create_resp = api_client.post("/api/events", json={"summary": "Gốc", "type": "note"})
     event_id = create_resp.json()["id"]
     resp = api_client.patch(f"/api/events/{event_id}", json={
-        "summary": "Cập nhật", "type": "incident", "tags": ["staff"],
+        "summary": "Cập nhật", "type": "equipment", "tags": ["staff"],
     })
     assert resp.status_code == 200
     ev = resp.json()
     assert ev["summary"] == "Cập nhật"
-    assert ev["type"] == "incident"
+    assert ev["type"] == "equipment"
     assert ev["tags"] == ["staff"]

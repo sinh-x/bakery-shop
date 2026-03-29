@@ -75,6 +75,18 @@ async def upload_catalog_photo(
         ).fetchone()
         photo_id = photo_row[0] if photo_row else None
 
+        # Dedup: if same photo already in this product's catalog, return existing record
+        if photo_id is not None:
+            existing = conn.execute(
+                "SELECT cp.*, ph.hash as photo_hash "
+                "FROM product_catalog_photos cp "
+                "LEFT JOIN photos ph ON cp.photo_id = ph.id "
+                "WHERE cp.product_id = ? AND cp.photo_id = ?",
+                (product_id, photo_id),
+            ).fetchone()
+            if existing:
+                return _row_to_dict(existing)
+
         result = conn.execute(
             "SELECT COALESCE(MAX(position), -1) + 1 FROM product_catalog_photos WHERE product_id = ?",
             (product_id,),

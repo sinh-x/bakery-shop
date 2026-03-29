@@ -20,7 +20,11 @@ _Order _$OrderFromJson(Map<String, dynamic> json) => _Order(
   dueTime: json['dueTime'] as String?,
   deliveryType: json['deliveryType'] as String? ?? 'pickup',
   deliveryAddress: json['deliveryAddress'] as String? ?? '',
+  shippingFee: (json['shippingFee'] as num?)?.toDouble() ?? 0.0,
   notes: json['notes'] as String? ?? '',
+  source: json['source'] as String? ?? '',
+  createdBy: json['createdBy'] as String? ?? '',
+  amountPaid: (json['amountPaid'] as num?)?.toDouble() ?? 0.0,
   isPaid: json['isPaid'] as bool? ?? false,
   packingChecklist:
       (json['packingChecklist'] as List<dynamic>?)
@@ -43,7 +47,11 @@ Map<String, dynamic> _$OrderToJson(_Order instance) => <String, dynamic>{
   'dueTime': instance.dueTime,
   'deliveryType': instance.deliveryType,
   'deliveryAddress': instance.deliveryAddress,
+  'shippingFee': instance.shippingFee,
   'notes': instance.notes,
+  'source': instance.source,
+  'createdBy': instance.createdBy,
+  'amountPaid': instance.amountPaid,
   'isPaid': instance.isPaid,
   'packingChecklist': instance.packingChecklist,
   'createdAt': instance.createdAt.toIso8601String(),

@@ -6,7 +6,7 @@ from baker.db.schema import ensure_schema
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="baker")
+@click.version_option(version=baker.config.VERSION, prog_name="baker")
 @click.option(
     "--config", "config_file",
     default=None,
@@ -36,6 +36,7 @@ from baker.commands.daily import daily_cmd
 from baker.commands.staff import staff_cmd
 from baker.commands.serve import serve_cmd
 from baker.commands.db import db_cmd
+from baker.commands.server_log import server_log_cmd
 
 app.add_command(log_cmd, "log")
 app.add_command(organize_cmd, "organize")
@@ -50,3 +51,4 @@ app.add_command(daily_cmd, "daily")
 app.add_command(staff_cmd, "staff")
 app.add_command(serve_cmd, "serve")
 app.add_command(db_cmd)
+app.add_command(server_log_cmd, "server-log")

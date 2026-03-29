@@ -1,0 +1,13 @@
+# Docker environment variables for bakery-shop
+#
+# Copy this file to .env at the project root:
+#   cp config/docker.example .env
+#
+# Docker Compose auto-reads .env — no need to export manually.
+# All tool/ scripts also source .env for consistency.
+
+# Tailscale domain for HTTPS (used by Caddy and cert renewal)
+DOMAIN=drgnfly.tail10c2c6.ts.net
+
+# Rustic profile name for backup/restore (must match ~/.config/rustic/<name>.toml)
+RUSTIC_PROFILE=baker-prod

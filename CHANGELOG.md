@@ -1,5 +1,73 @@
 # Changelog
 
+## [0.3.1+30] — 2026-03-29
+- chore: update CHANGELOG and pubspec.lock
+
+## [0.3.1+29] — 2026-03-29
+- feat(deploy): add lily-setup script, fix deploy doc gaps
+
+## [0.3.1+28] — 2026-03-29
+- fix(receipts): format phone as xxxx-xxx-xxx on bus label
+
+## [0.3.1+27] — 2026-03-29
+- fix(receipts): thick-thin double line separator on bus label
+
+## [0.3.1+26] — 2026-03-29
+- fix(receipts): add section spacing between phone/address/notes on bus label
+
+## [0.3.1+25] — 2026-03-29
+- fix(receipts): anchor shop info to bottom, add specialty line, remove product list
+
+## [0.3.1+24] — 2026-03-29
+- fix(receipts): bigger fonts + product info on bus shipping label
+
+## [0.3.1+23] — 2026-03-29
+- fix(receipts): match bus label to 76x128mm label paper dimensions
+
+## [0.3.1+22] — 2026-03-29
+- fix(receipts): update shop address to 61 Hòn Khói
+
+## [0.3.0+20] — 2026-03-28
+- feat(print): add runtime Bluetooth permission handling for Android 12+
+
+## [0.3.0+2] — 2026-03-28
+- chore: update CHANGELOG for v0.3.0
+
+## [0.3.0+1] — 2026-03-28
+- feat(print): DG-037 Bluetooth thermal printer integration (Y41BT TSPL protocol)
+- feat(print): auto-reconnect to last used printer
+- feat(print): web browser print support via window.print()
+- feat(receipts): increased font sizes for thermal print readability
+- refactor: replaced PDF share with direct image share
+- chore: version bump to 0.3.0
+
+## [0.2.2+18] — 2026-03-28
+- chore: bump build number to 17
+
+## [0.2.2+16] — 2026-03-26
+- feat(checklist): DG-028 daily opening/closing checklist for staff procedures
+
+## [0.2.2+15] — 2026-03-25
+- feat(orders): DG-030 edit order feature parity with create order
+
+## [0.2.2+14] — 2026-03-24
+- chore: add CLAUDE.md placeholder and ignore certs/ directory
+
+## [0.2.2+13] — 2026-03-24
+- chore: ignore web-build output directory
+
+## [0.2.2+12] — 2026-03-24
+- feat(settings): DG-019 — staff picker, version display, auto-fill created_by, settings accessible from all screens
+
+## [0.2.2+11] — 2026-03-24
+- fix: read VERSION dynamically from package metadata
+
+## [0.2.2+10] — 2026-03-24
+- chore: update CHANGELOG and pubspec.lock for v0.2.2+9
+
+## [0.2.2+9] — 2026-03-24
+- feat(logging): DG-018 — server logging system + deploy.sh --debug flag
+
 ## [0.2.2+8] — 2026-03-19
 - docs: update CHANGELOG for v0.2.2+7 deploy script
 

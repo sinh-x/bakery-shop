@@ -50,12 +50,12 @@ def test_order_status_transition():
     assert result.exit_code == 0
 
 
-def test_order_invalid_transition():
+def test_order_forward_skip_transition():
     runner.invoke(app, ["order", "new", "Invalid Test", "--item", "Cake x1 @30"])
-    # new -> ready is not allowed
+    # new -> ready is a forward skip — allowed (no strict transition enforcement)
     result = runner.invoke(app, ["order", "status", "1", "ready"])
     assert result.exit_code == 0
-    assert "Cannot" in result.output
+    assert "ready" in result.output
 
 
 def test_order_cancel():

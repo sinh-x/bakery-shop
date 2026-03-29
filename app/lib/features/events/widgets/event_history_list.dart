@@ -17,7 +17,7 @@ const _kDateRangeLabels = {
 
 const _kTypeIcons = <String, IconData>{
   'note': Icons.edit_note,
-  'incident': Icons.warning_amber,
+  'equipment': Icons.warning_amber,
   'production': Icons.bakery_dining,
   'inventory': Icons.inventory_2,
   'expense': Icons.payments,
@@ -27,7 +27,7 @@ const _kTypeIcons = <String, IconData>{
 
 const _kTypeLabels = <String, String>{
   'note': VN.eventNote,
-  'incident': VN.typeIncident,
+  'equipment': VN.typeEquipment,
   'production': VN.eventProduction,
   'inventory': VN.eventInventory,
   'expense': VN.eventExpense,
@@ -37,7 +37,7 @@ const _kTypeLabels = <String, String>{
 
 Color _badgeColor(String type) {
   switch (type) {
-    case 'incident':
+    case 'equipment':
       return Colors.orange.shade100;
     case 'production':
       return Colors.amber.shade100;
@@ -56,7 +56,7 @@ Color _badgeColor(String type) {
 
 Color _iconColor(String type) {
   switch (type) {
-    case 'incident':
+    case 'equipment':
       return Colors.orange.shade700;
     case 'production':
       return Colors.amber.shade700;

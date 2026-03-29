@@ -1,18 +1,28 @@
 #!/usr/bin/env bash
-# Build release APK and install on a connected Android device.
-# Usage: ./tool/deploy.sh [device-name]
+# Build APK and install on a connected Android device.
+# Usage: ./tool/deploy.sh [--debug] [device-name]
+#   --debug      Build debug APK instead of release
 #   device-name  Optional substring to match against adb device serial/model.
 #                If omitted, installs on all connected devices.
 set -euo pipefail
 
 cd "$(dirname "$0")/../app"
 
-DEVICE_FILTER="${1:-}"
-APK_PATH="build/app/outputs/flutter-apk/app-release.apk"
+BUILD_MODE="release"
+DEVICE_FILTER=""
+
+for arg in "$@"; do
+  case "$arg" in
+    --debug) BUILD_MODE="debug" ;;
+    *) DEVICE_FILTER="$arg" ;;
+  esac
+done
+
+APK_PATH="build/app/outputs/flutter-apk/app-${BUILD_MODE}.apk"
 
 # --- Build ---
-echo "Building release APK..."
-flutter build apk --release
+echo "Building ${BUILD_MODE} APK..."
+flutter build apk --"${BUILD_MODE}"
 
 if [ ! -f "$APK_PATH" ]; then
   echo "ERROR: APK not found at $APK_PATH"

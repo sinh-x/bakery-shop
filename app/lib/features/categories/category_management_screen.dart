@@ -88,15 +88,11 @@ class _CategoryListState extends ConsumerState<_CategoryList> {
     try {
       await ref.read(categoriesProvider.notifier).reorderCategories(ids);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.orderUpdated)),
-        );
+        showTopSnackBar(context, VN.orderUpdated);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString())),
-        );
+        showTopSnackBar(context, e.toString());
       }
     }
   }
@@ -146,17 +142,9 @@ class _CategoryListState extends ConsumerState<_CategoryList> {
 }
 
 Widget _buildCategoryIcon(Category category, {bool muted = false}) {
-  if (category.icon.isNotEmpty) {
-    final iconData = categoryIconsMap[category.icon];
-    if (iconData != null) {
-      return Icon(
-        iconData,
-        size: 24,
-        color: muted ? Colors.grey : null,
-      );
-    }
-  }
-  final emoji = categoryEmojiMap[category.slug] ?? '🎂';
+  final emoji = category.icon.isNotEmpty
+      ? category.icon
+      : (categoryEmojiMap[category.slug] ?? '🎂');
   return Text(
     emoji,
     style: TextStyle(
@@ -205,15 +193,11 @@ class _ActiveCategoryTile extends ConsumerWidget {
               .read(categoriesProvider.notifier)
               .deactivateCategory(category.id);
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text(VN.categoryDeactivated)),
-            );
+            showTopSnackBar(context, VN.categoryDeactivated);
           }
         } catch (e) {
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(e.toString())),
-            );
+            showTopSnackBar(context, e.toString());
           }
         }
         // Return false — the provider refresh rebuilds the list
@@ -272,15 +256,11 @@ class _InactiveCategoryTile extends ConsumerWidget {
                     .read(categoriesProvider.notifier)
                     .reactivateCategory(category.id);
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text(VN.categoryReactivated)),
-                  );
+                  showTopSnackBar(context, VN.categoryReactivated);
                 }
               } catch (e) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(e.toString())),
-                  );
+                  showTopSnackBar(context, e.toString());
                 }
               }
             },

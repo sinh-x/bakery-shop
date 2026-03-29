@@ -331,6 +331,296 @@ def _migrate_v8_photos(conn):
             )
 
 
+ORDER_PHOTOS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS order_photos (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    INTEGER NOT NULL REFERENCES orders(id),
+    photo_id    INTEGER NOT NULL REFERENCES photos(id),
+    tags        TEXT DEFAULT '',
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_photos_order ON order_photos(order_id);
+"""
+
+ORDER_ITEMS_AND_PAYMENT_TRANSACTIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS order_items (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id        INTEGER NOT NULL REFERENCES orders(id),
+    product_id      TEXT DEFAULT '',
+    product_name    TEXT NOT NULL,
+    quantity        INTEGER NOT NULL DEFAULT 1,
+    unit_price      REAL NOT NULL DEFAULT 0,
+    notes           TEXT DEFAULT '',
+    position        INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+
+CREATE TABLE IF NOT EXISTS payment_transactions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id        INTEGER NOT NULL REFERENCES orders(id),
+    amount          REAL NOT NULL,
+    type            TEXT NOT NULL DEFAULT 'deposit',
+    method          TEXT NOT NULL DEFAULT 'cash',
+    note            TEXT DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_transactions_order ON payment_transactions(order_id);
+"""
+
+PER_ITEM_BIRTHDAY_AND_PHOTO_LINK_SCHEMA = """
+ALTER TABLE order_items ADD COLUMN is_birthday INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE order_items ADD COLUMN age INTEGER DEFAULT NULL;
+ALTER TABLE order_photos ADD COLUMN work_item_id INTEGER DEFAULT NULL REFERENCES order_items(id);
+"""
+
+APP_CONFIG_AND_ORDER_SOURCE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS app_config (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    config_key  TEXT NOT NULL,
+    config_value TEXT NOT NULL,
+    sort_order  INTEGER DEFAULT 0,
+    active      INTEGER DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_app_config_key_value ON app_config(config_key, config_value);
+ALTER TABLE orders ADD COLUMN source TEXT DEFAULT '';
+"""
+
+SEED_ORDER_SOURCES = [
+    ("order_source", "Facebook-DoanGia", 1),
+    ("order_source", "Zalo", 2),
+    ("order_source", "Facebook-Page-mới", 3),
+    ("order_source", "Tại tiệm", 4),
+    ("order_source", "Điện thoại", 5),
+]
+
+
+def _migrate_v14_seed_order_sources(conn):
+    """Seed order source config values into app_config."""
+    for config_key, config_value, sort_order in SEED_ORDER_SOURCES:
+        conn.execute(
+            "INSERT OR IGNORE INTO app_config (config_key, config_value, sort_order) VALUES (?, ?, ?)",
+            (config_key, config_value, sort_order),
+        )
+
+
+def _migrate_v12_data(conn):
+    """Migrate orders.items JSON → order_items rows; amount_paid > 0 → deposit transaction."""
+    import json
+
+    rows = conn.execute("SELECT * FROM orders").fetchall()
+    for row in rows:
+        order_id = row["id"]
+
+        # Migrate items JSON -> order_items
+        items_json = row["items"]
+        if items_json:
+            try:
+                items = json.loads(items_json)
+            except (json.JSONDecodeError, TypeError):
+                items = []
+            for position, item in enumerate(items):
+                conn.execute(
+                    """INSERT OR IGNORE INTO order_items
+                       (order_id, product_id, product_name, quantity, unit_price, notes, position)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        order_id,
+                        item.get("product_id", ""),
+                        item.get("product", ""),
+                        item.get("qty", 1),
+                        item.get("price", 0),
+                        item.get("notes", ""),
+                        position,
+                    ),
+                )
+
+        # Migrate amount_paid > 0 → deposit transaction
+        amount_paid = row["amount_paid"] or 0
+        if amount_paid > 0:
+            conn.execute(
+                """INSERT INTO payment_transactions
+                   (order_id, amount, type, method, note)
+                   VALUES (?, ?, 'deposit', 'cash', 'Migrated from amount_paid')""",
+                (order_id, amount_paid),
+            )
+
+
+SERVER_LOGS_AND_TRIGGERS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS server_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000', 'now', 'localtime')),
+    level       TEXT NOT NULL DEFAULT 'INFO',
+    method      TEXT DEFAULT '',
+    path        TEXT DEFAULT '',
+    status_code INTEGER DEFAULT 0,
+    duration_ms REAL DEFAULT 0,
+    client_ip   TEXT DEFAULT '',
+    device_model TEXT DEFAULT '',
+    app_version TEXT DEFAULT '',
+    os_version  TEXT DEFAULT '',
+    ref_type    TEXT DEFAULT '',
+    ref_id      INTEGER DEFAULT NULL,
+    message     TEXT DEFAULT '',
+    detail      TEXT DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_server_logs_timestamp ON server_logs(timestamp);
+CREATE INDEX IF NOT EXISTS idx_server_logs_level ON server_logs(level);
+CREATE INDEX IF NOT EXISTS idx_server_logs_path ON server_logs(path);
+CREATE INDEX IF NOT EXISTS idx_server_logs_ref ON server_logs(ref_type, ref_id);
+
+CREATE TABLE IF NOT EXISTS log_triggers (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    condition   TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    active      INTEGER DEFAULT 1,
+    cooldown_seconds INTEGER DEFAULT 300,
+    last_fired  TEXT DEFAULT NULL,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+"""
+
+SEED_STAFF = [
+    # (name, role)
+    ("Ân", "staff"),
+    ("Ngân", "staff"),
+    ("Phượng", "staff"),
+    ("Sinh", "owner"),
+    ("Tân", "staff"),
+]
+
+
+def _migrate_v16_staff_and_created_by(conn):
+    """Seed 5 staff members and add created_by column to orders."""
+    for name, role in SEED_STAFF:
+        conn.execute(
+            "INSERT OR IGNORE INTO staff (name, role) VALUES (?, ?)",
+            (name, role),
+        )
+    conn.execute(
+        "ALTER TABLE orders ADD COLUMN created_by TEXT DEFAULT ''"
+    )
+
+
+def _migrate_v17_fix_staff_names(conn):
+    """Fix staff names to use proper Vietnamese diacritics."""
+    fixes = [
+        ("An", "Ân"),
+        ("Ngan", "Ngân"),
+        ("Phuong", "Phượng"),
+        ("Tan", "Tân"),
+    ]
+    for old_name, new_name in fixes:
+        conn.execute(
+            "UPDATE staff SET name = ? WHERE name = ?",
+            (new_name, old_name),
+        )
+
+
+CHECKLIST_SCHEMA = """
+CREATE TABLE IF NOT EXISTS checklist_templates (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    period      TEXT NOT NULL DEFAULT 'opening',
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    active      INTEGER DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_checklist_templates_period ON checklist_templates(period);
+
+CREATE TABLE IF NOT EXISTS checklist_entries (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_id     INTEGER NOT NULL REFERENCES checklist_templates(id),
+    checklist_date  TEXT NOT NULL,
+    completed       INTEGER NOT NULL DEFAULT 0,
+    completed_by    TEXT DEFAULT '',
+    completed_at    TEXT DEFAULT NULL,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_checklist_entries_unique ON checklist_entries(template_id, checklist_date);
+CREATE INDEX IF NOT EXISTS idx_checklist_entries_date ON checklist_entries(checklist_date);
+"""
+
+SEED_CHECKLIST_OPENING = [
+    ("Kiểm tra nhiệt độ tủ lạnh", "opening", 1),
+    ("Bật lò nướng & kiểm tra hoạt động", "opening", 2),
+    ("Kiểm tra nguyên liệu cần dùng trong ngày", "opening", 3),
+    ("Vệ sinh bàn làm việc & dụng cụ", "opening", 4),
+    ("Kiểm tra đơn hàng cần giao trong ngày", "opening", 5),
+    ("Sắp xếp bánh ra tủ trưng bày", "opening", 6),
+]
+
+SEED_CHECKLIST_CLOSING = [
+    ("Dọn dẹp & vệ sinh quầy bán hàng", "closing", 1),
+    ("Rửa sạch dụng cụ làm bánh", "closing", 2),
+    ("Kiểm tra & cất nguyên liệu thừa", "closing", 3),
+    ("Tắt lò nướng & kiểm tra thiết bị điện", "closing", 4),
+    ("Kiểm tra nhiệt độ tủ lạnh", "closing", 5),
+    ("Đếm tiền & ghi sổ doanh thu", "closing", 6),
+    ("Khóa cửa & kiểm tra an ninh", "closing", 7),
+]
+
+
+def _migrate_v18_seed_checklist(conn):
+    """Seed default opening and closing checklist items."""
+    for name, period, sort_order in SEED_CHECKLIST_OPENING + SEED_CHECKLIST_CLOSING:
+        conn.execute(
+            "INSERT OR IGNORE INTO checklist_templates (name, period, sort_order) VALUES (?, ?, ?)",
+            (name, period, sort_order),
+        )
+
+
+ORDER_HISTORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS order_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    INTEGER NOT NULL REFERENCES orders(id),
+    action_type TEXT NOT NULL,
+    field_name  TEXT DEFAULT '',
+    old_value   TEXT DEFAULT '',
+    new_value   TEXT DEFAULT '',
+    changed_by  TEXT DEFAULT '',
+    timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_order_history_order ON order_history(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_history_timestamp ON order_history(timestamp);
+"""
+
+SHIPPING_FEE_AND_EXTRAS_SCHEMA = """
+ALTER TABLE orders ADD COLUMN shipping_fee REAL DEFAULT 0;
+ALTER TABLE order_items ADD COLUMN is_extra INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE order_items ADD COLUMN is_gift INTEGER NOT NULL DEFAULT 0;
+"""
+
+SEED_SHIPPING_AND_EXTRAS = [
+    ("shipping_fee_bus", "25000", 1),
+    ("shipping_fee_door", "20000", 1),
+    ("shipping_fee_door", "30000", 2),
+    ("shipping_fee_door", "40000", 3),
+    ("shipping_fee_door", "50000", 4),
+    ("order_extra", "Nến|5000", 1),
+    ("order_extra", "Đĩa muỗng|10000", 2),
+    ("order_extra", "Nón|5000", 3),
+    ("order_extra", "Pháo|10000", 4),
+]
+
+
+def _migrate_v20_seed_shipping_and_extras(conn):
+    """Seed shipping fee presets and extra item presets into app_config."""
+    for config_key, config_value, sort_order in SEED_SHIPPING_AND_EXTRAS:
+        conn.execute(
+            "INSERT OR IGNORE INTO app_config (config_key, config_value, sort_order) VALUES (?, ?, ?)",
+            (config_key, config_value, sort_order),
+        )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -369,6 +659,60 @@ MIGRATIONS = {
         "description": "Photos table (flat hash storage), categories icon+position, product FK",
         "sql": PHOTOS_TABLE_AND_PHOTO_IDS_SCHEMA,
         "callable": _migrate_v8_photos,
+    },
+    9: {
+        "description": "Rename event type 'incident' to 'equipment'",
+        "sql": "UPDATE events SET type = 'equipment' WHERE type = 'incident';",
+    },
+    10: {
+        "description": "Add amount_paid to orders table",
+        "sql": "ALTER TABLE orders ADD COLUMN amount_paid REAL DEFAULT 0;",
+    },
+    11: {
+        "description": "Order photos table for decoration references and chat screenshots",
+        "sql": ORDER_PHOTOS_SCHEMA,
+    },
+    12: {
+        "description": "order_items and payment_transactions tables with data migration",
+        "sql": ORDER_ITEMS_AND_PAYMENT_TRANSACTIONS_SCHEMA,
+        "callable": _migrate_v12_data,
+    },
+    13: {
+        "description": "Per-item birthday/age fields and order_photos work_item_id FK",
+        "sql": PER_ITEM_BIRTHDAY_AND_PHOTO_LINK_SCHEMA,
+    },
+    14: {
+        "description": "app_config table for general config (order sources etc), source column on orders",
+        "sql": APP_CONFIG_AND_ORDER_SOURCE_SCHEMA,
+        "callable": _migrate_v14_seed_order_sources,
+    },
+    15: {
+        "description": "Server logs and log triggers tables for API logging system",
+        "sql": SERVER_LOGS_AND_TRIGGERS_SCHEMA,
+    },
+    16: {
+        "description": "Seed staff table (5 members) and add created_by column to orders",
+        "sql": "",
+        "callable": _migrate_v16_staff_and_created_by,
+    },
+    17: {
+        "description": "Fix staff names to use Vietnamese diacritics",
+        "sql": "",
+        "callable": _migrate_v17_fix_staff_names,
+    },
+    18: {
+        "description": "Checklist templates and entries tables with seed data",
+        "sql": CHECKLIST_SCHEMA,
+        "callable": _migrate_v18_seed_checklist,
+    },
+    19: {
+        "description": "Order history audit table for tracking all order changes",
+        "sql": ORDER_HISTORY_SCHEMA,
+    },
+    20: {
+        "description": "Add shipping_fee to orders, is_extra and is_gift to order_items, seed shipping presets and extras",
+        "sql": SHIPPING_FEE_AND_EXTRAS_SCHEMA,
+        "callable": _migrate_v20_seed_shipping_and_extras,
     },
 }
 

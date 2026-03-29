@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -38,7 +38,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late final TextEditingController _notesCtrl;
   late final TextEditingController _codeCtrl;
   late String _category;
-  String? _pickedPhotoPath;
+  XFile? _pickedPhoto;
+  String _photoCacheBuster = '';
   bool _saving = false;
 
   bool get _isEditing => widget.product != null;
@@ -101,9 +102,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     if (source == null) return;
 
     final picker = ImagePicker();
-    final file = await picker.pickImage(source: source, maxWidth: 1200);
+    final file = await picker.pickImage(source: source);
     if (file != null) {
-      setState(() => _pickedPhotoPath = file.path);
+      setState(() => _pickedPhoto = file);
     }
   }
 
@@ -141,21 +142,31 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             price != orig.basePrice ||
             cost != orig.cost ||
             newNotes != orig.recipeNotes ||
-            newCode != orig.productCode;
+            newCode != orig.productCode ||
+            _pickedPhoto != null;
         if (!hasChanges) {
           if (mounted) context.pop();
           return;
         }
-        saved = await notifier.updateProduct(
-          orig.id,
-          // Only send fields that actually changed to avoid false conflicts
-          name: newName != orig.name ? newName : null,
-          category: _category != orig.category ? _category : null,
-          basePrice: price != orig.basePrice ? price : null,
-          cost: cost != orig.cost ? cost : null,
-          recipeNotes: newNotes != orig.recipeNotes ? newNotes : null,
-          productCode: newCode != orig.productCode ? newCode : null,
-        );
+        final hasFieldChanges = newName != orig.name ||
+            _category != orig.category ||
+            price != orig.basePrice ||
+            cost != orig.cost ||
+            newNotes != orig.recipeNotes ||
+            newCode != orig.productCode;
+        if (hasFieldChanges) {
+          saved = await notifier.updateProduct(
+            orig.id,
+            name: newName != orig.name ? newName : null,
+            category: _category != orig.category ? _category : null,
+            basePrice: price != orig.basePrice ? price : null,
+            cost: cost != orig.cost ? cost : null,
+            recipeNotes: newNotes != orig.recipeNotes ? newNotes : null,
+            productCode: newCode != orig.productCode ? newCode : null,
+          );
+        } else {
+          saved = orig;
+        }
       } else {
         saved = await notifier.createProduct(
           name: _nameCtrl.text.trim(),
@@ -167,17 +178,15 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         );
       }
 
-      if (_pickedPhotoPath != null) {
-        await notifier.uploadPhoto(saved.id, _pickedPhotoPath!);
+      if (_pickedPhoto != null) {
+        await notifier.uploadPhoto(saved.id, _pickedPhoto!);
+        // Clear image cache so updated photo shows immediately
+        PaintingBinding.instance.imageCache.clear();
+        PaintingBinding.instance.imageCache.clearLiveImages();
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                _isEditing ? VN.productUpdated : VN.productCreated),
-          ),
-        );
+        showTopSnackBar(context, _isEditing ? VN.productUpdated : VN.productCreated);
         context.pop();
       }
     } on DioException catch (e) {
@@ -185,9 +194,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         final detail = e.response?.data is Map
             ? e.response!.data['detail'] as String?
             : null;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(detail ?? e.message ?? VN.apiError)),
-        );
+        showTopSnackBar(context, detail ?? e.message ?? VN.apiError);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -218,16 +225,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     try {
       await ref.read(productsProvider.notifier).deleteProduct(widget.product!.id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.productDeleted)),
-        );
+        showTopSnackBar(context, VN.productDeleted);
         context.pop();
       }
     } on DioException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? VN.apiError)),
-        );
+        showTopSnackBar(context, e.message ?? VN.apiError);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -270,9 +273,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             // Photo section
             _PhotoSection(
               productId: widget.product?.id,
-              pickedPhotoPath: _pickedPhotoPath,
+              pickedPhoto: _pickedPhoto,
               baseUrl: baseUrl,
               onPickPhoto: _pickPhoto,
+              cacheBuster: _photoCacheBuster.isNotEmpty ? _photoCacheBuster : null,
             ),
             const SizedBox(height: 24),
 
@@ -417,15 +421,17 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 class _PhotoSection extends StatelessWidget {
   const _PhotoSection({
     required this.productId,
-    required this.pickedPhotoPath,
+    required this.pickedPhoto,
     required this.baseUrl,
     required this.onPickPhoto,
+    this.cacheBuster,
   });
 
   final int? productId;
-  final String? pickedPhotoPath;
+  final XFile? pickedPhoto;
   final String baseUrl;
   final VoidCallback onPickPhoto;
+  final String? cacheBuster;
 
   @override
   Widget build(BuildContext context) {
@@ -447,17 +453,23 @@ class _PhotoSection extends StatelessWidget {
 
   Widget _buildContent() {
     // Show picked photo (not yet uploaded)
-    if (pickedPhotoPath != null) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.file(
-            File(pickedPhotoPath!),
-            fit: BoxFit.cover,
-            errorBuilder: (_, e, s) => _placeholder(),
-          ),
-          _overlayButton(),
-        ],
+    if (pickedPhoto != null) {
+      return FutureBuilder<Uint8List>(
+        future: pickedPhoto!.readAsBytes(),
+        builder: (ctx, snap) {
+          if (!snap.hasData) return _placeholder();
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.memory(
+                snap.data!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, e, s) => _placeholder(),
+              ),
+              _overlayButton(),
+            ],
+          );
+        },
       );
     }
 
@@ -467,7 +479,7 @@ class _PhotoSection extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           Image.network(
-            '$baseUrl/api/products/$productId/photo',
+            '$baseUrl/api/products/$productId/photo${cacheBuster != null ? '?v=$cacheBuster' : ''}',
             fit: BoxFit.cover,
             errorBuilder: (_, e, s) => _placeholder(),
           ),
@@ -523,6 +535,8 @@ class _CatalogGallerySection extends ConsumerStatefulWidget {
 class _CatalogGallerySectionState
     extends ConsumerState<_CatalogGallerySection> {
   bool _uploading = false;
+  int _uploadTotal = 0;
+  int _uploadDone = 0;
 
   Future<void> _pickAndUpload() async {
     final source = await showModalBottomSheet<ImageSource>(
@@ -548,28 +562,64 @@ class _CatalogGallerySectionState
     if (source == null) return;
 
     final picker = ImagePicker();
-    final file = await picker.pickImage(source: source, maxWidth: 1200);
-    if (file == null) return;
 
-    setState(() => _uploading = true);
-    try {
-      await ref
-          .read(catalogProvider(widget.productId).notifier)
-          .addPhoto(file.path);
+    if (source == ImageSource.gallery) {
+      // Multi-select from gallery
+      final files = await picker.pickMultiImage();
+      if (files.isEmpty) return;
+
+      setState(() {
+        _uploading = true;
+        _uploadTotal = files.length;
+        _uploadDone = 0;
+      });
+      int failed = 0;
+      for (final file in files) {
+        try {
+          await ref
+              .read(catalogProvider(widget.productId).notifier)
+              .addPhoto(file);
+          if (mounted) setState(() => _uploadDone++);
+        } on DioException {
+          failed++;
+        } catch (_) {
+          failed++;
+        }
+      }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.catalogPhotoAdded)),
+        final added = files.length - failed;
+        showTopSnackBar(
+          context,
+          failed == 0
+                  ? (added == 1 ? VN.catalogPhotoAdded : 'Đã thêm $added ảnh mẫu')
+                  : 'Đã thêm $added ảnh, $failed ảnh lỗi',
         );
       }
-    } on DioException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? VN.apiError)),
-        );
+    } else {
+      // Camera: single photo only
+      final file = await picker.pickImage(source: source);
+      if (file == null) return;
+
+      setState(() {
+        _uploading = true;
+        _uploadTotal = 1;
+        _uploadDone = 0;
+      });
+      try {
+        await ref
+            .read(catalogProvider(widget.productId).notifier)
+            .addPhoto(file);
+        if (mounted) {
+          showTopSnackBar(context, VN.catalogPhotoAdded);
+        }
+      } on DioException catch (e) {
+        if (mounted) {
+          showTopSnackBar(context, e.message ?? VN.apiError);
+        }
       }
-    } finally {
-      if (mounted) setState(() => _uploading = false);
     }
+
+    if (mounted) setState(() => _uploading = false);
   }
 
   Future<void> _confirmDelete(CatalogPhoto photo) async {
@@ -597,15 +647,11 @@ class _CatalogGallerySectionState
           .read(catalogProvider(widget.productId).notifier)
           .deletePhoto(photo.id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(VN.catalogPhotoDeleted)),
-        );
+        showTopSnackBar(context, VN.catalogPhotoDeleted);
       }
     } on DioException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? VN.apiError)),
-        );
+        showTopSnackBar(context, e.message ?? VN.apiError);
       }
     }
   }
@@ -649,6 +695,13 @@ class _CatalogGallerySectionState
                   width: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
+                if (_uploadTotal > 1) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    '$_uploadDone/$_uploadTotal',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
               ],
             ],
           ),
