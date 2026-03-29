@@ -496,18 +496,19 @@ def _render_bus_label(order, cfg) -> Image.Image:
 
     content_w = label_len - 2 * margin  # text wrap area
 
-    f_phone = _font(56, bold=True)
-    f_addr = _font(48, bold=True)
-    f_note = _font(32, bold=True)
+    f_phone = _font(80, bold=True)
+    f_addr = _font(64, bold=True)
+    f_item = _font(44, bold=True)
+    f_note = _font(40, bold=True)
     f_shop = _font(18)
 
     y = margin
 
-    def _lcenter(text, font):
+    def _lcenter(text, font, color=(0, 0, 0)):
         """Center text within label_len width."""
         nonlocal y
         tw, th = _tw(text, font), _th(text, font)
-        draw.text(((label_len - tw) // 2, y), text, font=font, fill=(0, 0, 0))
+        draw.text(((label_len - tw) // 2, y), text, font=font, fill=color)
         y += th + LINE_GAP
 
     # Phone — largest, centered, bold
@@ -520,6 +521,16 @@ def _render_bus_label(order, cfg) -> Image.Image:
     if addr:
         for ln in _wrap(addr, f_addr, content_w):
             _lcenter(ln, f_addr)
+
+    # Product info — "Product × Qty" per item
+    work_items = order.get("workItems", [])
+    if work_items:
+        for item in work_items:
+            name = item.get("productName", "") or item.get("product_name", "")
+            qty = item.get("quantity", 1)
+            line = f"{name} × {qty}" if qty > 1 else name
+            for ln in _wrap(line, f_item, content_w):
+                _lcenter(ln, f_item)
 
     # Order notes — medium bold, centered, wrapped
     notes = order.get("notes", "") or ""

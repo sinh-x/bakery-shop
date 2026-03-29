@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.3.1+23] — 2026-03-29
+- fix(receipts): match bus label to 76x128mm label paper dimensions
+
 ## [0.3.1+22] — 2026-03-29
 - fix(receipts): update shop address to 61 Hòn Khói
 
