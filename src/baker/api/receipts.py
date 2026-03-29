@@ -479,6 +479,68 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
     return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
 
 
+def _render_bus_label(order, cfg) -> Image.Image:
+    """Bus shipping label — rotated landscape layout for 80mm thermal paper.
+
+    Displays: phone (large bold), address (large bold), order notes (medium bold), shop info (small, bottom).
+    The final image is rotated 90° CCW so text reads left-to-right when paper is held horizontally.
+    """
+    # Create canvas: 576px tall × 576px wide (will be rotated to landscape)
+    canvas_h = 576
+    canvas_w = 576
+    img = Image.new("RGB", (canvas_w, canvas_h), "white")
+    draw = ImageDraw.Draw(img)
+
+    f_phone = _font(56, bold=True)
+    f_addr = _font(52, bold=True)
+    f_note = _font(36, bold=True)
+    f_shop = _font(16)
+
+    y = MARGIN
+
+    # Phone — largest, centered, bold
+    phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
+    if phone:
+        y = _center(draw, y, phone, f_phone)
+
+    # Address — large bold, centered, wrapped
+    addr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
+    if addr:
+        addr_lines = _wrap(addr, f_addr, CONTENT_WIDTH)
+        for ln in addr_lines:
+            y = _center(draw, y, ln, f_addr)
+
+    # Order notes — medium bold, centered, wrapped
+    notes = order.get("notes", "") or ""
+    if notes:
+        note_lines = _wrap(notes, f_note, CONTENT_WIDTH)
+        for ln in note_lines:
+            y = _center(draw, y, ln, f_note)
+
+    # Separator
+    y = _sep(draw, y)
+
+    # Shop info at bottom — small
+    shop_name = cfg.get("receipt_shop_name", "")
+    shop_phone = cfg.get("receipt_shop_phone", "")
+    shop_addr = cfg.get("receipt_shop_address", "")
+
+    if shop_name:
+        y = _center(draw, y, shop_name, f_shop)
+    if shop_phone:
+        y = _center(draw, y, shop_phone, f_shop)
+    if shop_addr:
+        y = _center(draw, y, shop_addr, f_shop)
+
+    # Crop to content height before rotating
+    img = img.crop((0, 0, canvas_w, y + MARGIN))
+
+    # Rotate 90° CCW — landscape orientation for thermal printer
+    rotated = img.transpose(Image.Transpose.ROTATE_90)
+
+    return rotated
+
+
 def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
     """Customer receipt ('BIÊN NHẬN') — full details with photos per item."""
     work_items = order.get("workItems", [])
@@ -748,6 +810,7 @@ def get_receipt(
 
     - type=work_ticket: internal receipt (Phiếu Nội Bộ), single item, requires item_id
     - type=customer: clean customer-facing receipt (BIÊN NHẬN)
+    - type=bus_label: bus shipping label — phone, address, notes, rotated landscape
     """
     if type == "order":
         raise HTTPException(status_code=400, detail="type=order is no longer supported")
@@ -788,8 +851,10 @@ def get_receipt(
             img = _render_work_ticket(detail, work_item, cfg, photo, conn)
         elif type == "customer":
             img = _render_customer_receipt(detail, cfg, conn, show_photos=photos)
+        elif type == "bus_label":
+            img = _render_bus_label(detail, cfg)
         else:
-            raise HTTPException(status_code=400, detail="Invalid type: work_ticket or customer")
+            raise HTTPException(status_code=400, detail="Invalid type: work_ticket, customer, or bus_label")
 
         buf = io.BytesIO()
         img.save(buf, format="PNG", quality=95)
