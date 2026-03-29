@@ -4,7 +4,9 @@
 #   --restart-caddy  Restart the Caddy Docker container after copying build output
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$(dirname "$0")/lib.sh"
+load_env
+
 RESTART_CADDY=0
 
 for arg in "$@"; do
@@ -18,29 +20,10 @@ for arg in "$@"; do
   esac
 done
 
-# --- Build Flutter web ---
-echo "Building Flutter web (release)..."
-nix develop "${REPO_ROOT}/.#flutter" --command bash -c "cd '${REPO_ROOT}/app' && flutter build web --release"
+build_flutter_web
 
-BUILD_OUTPUT="${REPO_ROOT}/app/build/web"
-if [ ! -d "$BUILD_OUTPUT" ]; then
-  echo "ERROR: Flutter web build output not found at $BUILD_OUTPUT"
-  exit 1
-fi
-
-# --- Sync to web-build/ (preserve directory inode for Docker bind mount) ---
-DEST="${REPO_ROOT}/web-build"
-echo "Syncing build output to $DEST..."
-mkdir -p "$DEST"
-rsync -a --delete "$BUILD_OUTPUT/" "$DEST/"
-echo "Web build ready at $DEST"
-
-# --- Optionally restart Caddy ---
 if [ "$RESTART_CADDY" -eq 1 ]; then
-  echo "Restarting Caddy container..."
-  cd "$REPO_ROOT"
-  docker compose --profile prod restart caddy
-  echo "Caddy restarted."
+  restart_caddy
 fi
 
 echo "Done."

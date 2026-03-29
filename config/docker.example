@@ -1,9 +1,10 @@
 # Docker environment variables for bakery-shop
 #
-# Copy to .env at the project root and fill in your values.
-# Example: cp config/docker.example .env && nano .env
+# Copy this file to .env at the project root:
+#   cp config/docker.example .env
+#
+# Docker Compose auto-reads .env — no need to export manually.
+# All tool/ scripts also source .env for consistency.
 
-# Tailscale domain for HTTPS — the hostname you registered with `tailscale cert`
-# Format: <your-machine-name>.<tailnet-name>.ts.net
-# Example: bakery.tail1234.ts.net
-DOMAIN=<your-hostname>.ts.net
+# Tailscale domain for HTTPS (used by Caddy and cert renewal)
+DOMAIN=drgnfly.tail10c2c6.ts.net

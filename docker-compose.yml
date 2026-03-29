@@ -9,6 +9,8 @@ services:
       - ./prod/data:/var/lib/baker
     devices:
       - "/dev/usb/lp0:/dev/usb/lp0"
+    group_add:
+      - "20"  # host GID 'lp' — grants access to /dev/usb/lp0
     environment:
       BAKER_DATA_DIR: /var/lib/baker
     restart: unless-stopped
@@ -29,7 +31,7 @@ services:
     ports:
       - "443:443"
     environment:
-      DOMAIN: ${DOMAIN:?Set DOMAIN to your .ts.net hostname}
+      DOMAIN: ${DOMAIN:?DOMAIN not set — copy config/docker.example to .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./web-build:/srv/web:ro
