@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.1+29] — 2026-03-29
+- feat(deploy): add lily-setup script, fix deploy doc gaps
+
+## [0.3.1+28] — 2026-03-29
+- fix(receipts): format phone as xxxx-xxx-xxx on bus label
+
 ## [0.3.1+27] — 2026-03-29
 - fix(receipts): thick-thin double line separator on bus label
 
