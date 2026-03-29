@@ -150,6 +150,18 @@ class OrderDetailScreen extends ConsumerWidget {
                 );
               },
             ),
+            if (ref.read(orderDetailProvider(orderRef)).value?.deliveryType ==
+                'bus')
+              ListTile(
+                leading: const Icon(Icons.local_shipping),
+                title: const Text(VN.printBusLabel),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push(
+                    '/orders/$orderRef/receipt?type=${ReceiptType.busLabel.value}',
+                  );
+                },
+              ),
             const SizedBox(height: 8),
           ],
         ),
