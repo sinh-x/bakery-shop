@@ -536,17 +536,20 @@ def _render_bus_label(order, cfg) -> Image.Image:
 
     # --- Main content: draw from top ---
     y = margin
+    section_gap = 16  # extra spacing between phone / address / notes
 
     # Phone — largest, centered, bold
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
     if phone:
         y = _draw_centered(y, phone, f_phone)
+        y += section_gap
 
     # Address — large bold, centered, wrapped
     addr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
     if addr:
         for ln in _wrap(addr, f_addr, content_w):
             y = _draw_centered(y, ln, f_addr)
+        y += section_gap
 
     # Order notes — medium bold, centered, wrapped
     notes = order.get("notes", "") or ""

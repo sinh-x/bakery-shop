@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.3.1+25] — 2026-03-29
+- fix(receipts): anchor shop info to bottom, add specialty line, remove product list
+
 ## [0.3.1+24] — 2026-03-29
 - fix(receipts): bigger fonts + product info on bus shipping label
 
