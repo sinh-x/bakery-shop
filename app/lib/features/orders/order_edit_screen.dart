@@ -8,6 +8,7 @@ import '../../data/models/order.dart';
 import '../../data/models/work_item.dart';
 import '../../providers/config_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/hour_picker.dart';
 import 'widgets/order_photo_section.dart';
@@ -266,6 +267,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                     border: OutlineInputBorder(),
                   ),
                   keyboardType: TextInputType.phone,
+                  inputFormatters: [PhoneInputFormatter()],
                 ),
                 const SizedBox(height: 20),
 

@@ -9,6 +9,7 @@ import '../../data/api/work_item_service.dart';
 import '../../providers/config_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/expandable_item_card.dart';
 import 'widgets/hour_picker.dart';
@@ -652,6 +653,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.phone,
+                inputFormatters: [PhoneInputFormatter()],
                 validator: (v) {
                   if (_needsAddress && (v == null || v.trim().isEmpty)) {
                     return VN.fieldRequired;

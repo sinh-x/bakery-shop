@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/api/receipt_service.dart';
@@ -10,6 +11,7 @@ import '../../data/models/order_photo.dart';
 import '../../data/models/payment_transaction.dart';
 import '../../data/models/work_item.dart';
 import '../../providers/order_providers.dart';
+import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/order_photo_section.dart';
 
@@ -485,10 +487,48 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             value: order.source,
           ),
         if (order.customerPhone.isNotEmpty)
-          _InfoRow(
-            icon: Icons.phone_outlined,
-            label: VN.customerPhone,
-            value: order.customerPhone,
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.phone_outlined, size: 16,
+                    color: Theme.of(context).colorScheme.outline),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 96,
+                  child: Text(
+                    VN.customerPhone,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                  ),
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      final digits =
+                          order.customerPhone.replaceAll(RegExp(r'\D'), '');
+                      launchUrl(Uri.parse('tel:$digits'));
+                    },
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          formatPhone(order.customerPhone),
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(Icons.phone, size: 16,
+                            color: Theme.of(context).colorScheme.primary),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         if (order.dueDate != null)
           _InfoRow(
