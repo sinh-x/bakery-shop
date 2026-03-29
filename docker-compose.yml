@@ -7,6 +7,8 @@ services:
       - "2108:2108"
     volumes:
       - ./prod/data:/var/lib/baker
+    devices:
+      - "/dev/usb/lp0:/dev/usb/lp0"
     environment:
       BAKER_DATA_DIR: /var/lib/baker
     restart: unless-stopped
