@@ -7,7 +7,8 @@ import 'api_client.dart';
 
 enum ReceiptType {
   workTicket('work_ticket', 'Phiếu sản xuất'),
-  customer('customer', 'Hóa đơn khách hàng');
+  customer('customer', 'Hóa đơn khách hàng'),
+  busLabel('bus_label', 'Phiếu xe khách');
 
   const ReceiptType(this.value, this.label);
   final String value;

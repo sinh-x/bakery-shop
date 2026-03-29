@@ -326,6 +326,7 @@ class VN {
   static const printReceipt = 'In';
   static const printWorkTicket = 'Phiếu nội bộ';
   static const printCustomerReceipt = 'Hóa đơn khách hàng';
+  static const printBusLabel = 'Phiếu xe khách';
   static const selectReceiptType = 'Chọn loại phiếu';
   static const receiptPreview = 'Xem phiếu';
   static const share = 'Chia sẻ';
