@@ -324,6 +324,10 @@ def transition_status(ref: str, body: StatusTransition):
 
         _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, body.changedBy)
 
+        # Auto-sync extras/gifts to match the new order status (F4, F5)
+        from baker.api.work_items import _sync_extras_to_order_status
+        _sync_extras_to_order_status(conn, row["id"], body.status)
+
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         return _order_detail(conn, updated)
 

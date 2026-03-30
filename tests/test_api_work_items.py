@@ -485,3 +485,148 @@ def test_migration_v12_order_items_created(api_client):
     assert len(items) == 1
     assert items[0]["productName"] == "Bánh mì"
     assert items[0]["quantity"] == 2
+
+
+# --- Auto-sync: work item status → order status (DG-050 Phase 1) ---
+
+
+def _create_order_with_main_and_extra(api_client, customer="Khách hàng"):
+    """Create an order with 1 main item (cake) and 1 extra (candle)."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": customer,
+        "items": [
+            {"productName": "Bánh kem 16cm", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16", "isExtra": False},
+            {"productName": "Nến sinh nhật", "quantity": 1, "unitPrice": 10000, "productId": "CANDLE", "isExtra": True},
+        ],
+    })
+    assert resp.status_code == 201
+    return resp.json()
+
+
+def test_autosync_main_item_to_ready_updates_order(api_client):
+    """AC1: Given an order with 1 cake (main) + 1 extra, when the cake transitions to 'ready',
+    then the order auto-transitions to 'ready' via server-side logic."""
+    order = _create_order_with_main_and_extra(api_client)
+    ref = order["orderRef"]
+    items = order["workItems"]
+    cake = next(i for i in items if i["productName"] == "Bánh kem 16cm")
+    candle = next(i for i in items if i["productName"] == "Nến sinh nhật")
+
+    # Transition cake: pending → working → ready
+    api_client.post(f"/api/orders/{ref}/items/{cake['id']}/status", json={"status": "working", "reason": ""})
+    order_resp = api_client.get(f"/api/orders/{ref}")
+    assert order_resp.json()["status"] == "in_progress"  # working → in_progress
+
+    api_client.post(f"/api/orders/{ref}/items/{cake['id']}/status", json={"status": "ready", "reason": ""})
+    order_resp = api_client.get(f"/api/orders/{ref}")
+    assert order_resp.json()["status"] == "ready"
+
+    # AC2: extra also auto-transitions to ready
+    candle_resp = api_client.get(f"/api/orders/{ref}/items")
+    candle_state = next(i for i in candle_resp.json() if i["productName"] == "Nến sinh nhật")
+    assert candle_state["status"] == "ready"
+
+
+def test_autosync_single_main_item_order(api_client):
+    """AC5: Given a single-item order, when the item transitions, then the order still auto-syncs correctly."""
+    order = api_client.post("/api/orders", json={
+        "customerName": "Khách đơn lẻ",
+        "items": [{"productName": "Bánh mì", "quantity": 1, "unitPrice": 15000}],
+    }).json()
+    ref = order["orderRef"]
+    item_id = order["workItems"][0]["id"]
+
+    api_client.post(f"/api/orders/{ref}/items/{item_id}/status", json={"status": "working", "reason": ""})
+    order_resp = api_client.get(f"/api/orders/{ref}")
+    assert order_resp.json()["status"] == "in_progress"
+
+    api_client.post(f"/api/orders/{ref}/items/{item_id}/status", json={"status": "ready", "reason": ""})
+    order_resp = api_client.get(f"/api/orders/{ref}")
+    assert order_resp.json()["status"] == "ready"
+
+
+def test_autosync_main_cancelled_updates_order_to_cancelled(api_client):
+    """AC6: Given all main items are cancelled, when auto-sync runs, then the order transitions to 'cancelled'."""
+    order = api_client.post("/api/orders", json={
+        "customerName": "Khách hủy",
+        "items": [
+            {"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "isExtra": False},
+            {"productName": "Đĩa giấy", "quantity": 1, "unitPrice": 5000, "isExtra": True},
+        ],
+    }).json()
+    ref = order["orderRef"]
+    cake = order["workItems"][0]
+
+    # Cancel the main item
+    api_client.post(f"/api/orders/{ref}/items/{cake['id']}/status", json={"status": "cancelled", "reason": ""})
+    order_resp = api_client.get(f"/api/orders/{ref}")
+    assert order_resp.json()["status"] == "cancelled"
+
+
+def test_autosync_logs_auto_sync_in_order_history(api_client):
+    """AC7: Auto-synced transitions are logged in order_history with action_type='auto_sync'."""
+    from baker.db.connection import get_db
+
+    order = _create_order_with_main_and_extra(api_client)
+    ref = order["orderRef"]
+    cake = order["workItems"][0]
+
+    # Trigger auto-sync by transitioning cake to working
+    api_client.post(f"/api/orders/{ref}/items/{cake['id']}/status", json={"status": "working", "reason": ""})
+
+    # Check order_history for auto_sync entry
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM order_history WHERE order_id = (SELECT id FROM orders WHERE order_ref = ?) AND action_type = 'auto_sync'",
+            (ref,),
+        ).fetchall()
+        assert len(rows) >= 1
+        auto_sync_row = rows[0]
+        assert auto_sync_row["field_name"] == "status"
+        assert auto_sync_row["old_value"] == "new"
+        assert auto_sync_row["new_value"] == "in_progress"
+
+
+def test_autosync_does_not_auto_complete_order(api_client):
+    """AC8: Order never auto-transitions to 'completed' (requires payment gate)."""
+    order = api_client.post("/api/orders", json={
+        "customerName": "Khách lớn",
+        "items": [{"productName": "Bánh gig", "quantity": 1, "unitPrice": 500000}],
+    }).json()
+    ref = order["orderRef"]
+    item_id = order["workItems"][0]["id"]
+
+    # Transition item all the way to delivered
+    for status in ["working", "ready", "delivered"]:
+        api_client.post(f"/api/orders/{ref}/items/{item_id}/status", json={"status": status, "reason": ""})
+
+    order_resp = api_client.get(f"/api/orders/{ref}")
+    assert order_resp.json()["status"] == "delivered"
+    # Must NOT be 'completed' — that requires payment gate
+
+
+def test_autosync_extras_skip_already_at_target(api_client):
+    """F5: Skip extras that are already at target status or cancelled."""
+    order = api_client.post("/api/orders", json={
+        "customerName": "Khách test skip",
+        "items": [
+            {"productName": "Bánh chính", "quantity": 1, "unitPrice": 200000, "isExtra": False},
+            {"productName": "Nến", "quantity": 1, "unitPrice": 5000, "isExtra": True},
+        ],
+    }).json()
+    ref = order["orderRef"]
+    candle = order["workItems"][1]
+
+    # Manually set candle to ready first
+    api_client.post(f"/api/orders/{ref}/items/{candle['id']}/status", json={"status": "working", "reason": ""})
+    api_client.post(f"/api/orders/{ref}/items/{candle['id']}/status", json={"status": "ready", "reason": ""})
+
+    # Now transition main item to working → order should go to in_progress
+    cake = order["workItems"][0]
+    api_client.post(f"/api/orders/{ref}/items/{cake['id']}/status", json={"status": "working", "reason": ""})
+
+    # Candle should still be ready (skipped because already at target)
+    candle_state = api_client.get(f"/api/orders/{ref}/items").json()
+    candle_item = next(i for i in candle_state if i["productName"] == "Nến")
+    assert candle_item["status"] == "ready"
+
