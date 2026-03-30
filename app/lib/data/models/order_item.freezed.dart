@@ -221,8 +221,8 @@ class _OrderItem implements OrderItem {
 @override@JsonKey() final  String notes;
 @override@JsonKey() final  bool isBirthday;
 @override final  int? age;
-@Override@JsonKey() final  bool isExtra;
-@Override final  bool isGift;
+@override@JsonKey() final  bool isExtra;
+@override@JsonKey() final  bool isGift;
 
 /// Create a copy of OrderItem
 /// with the given fields replaced by the non-null parameter values.
