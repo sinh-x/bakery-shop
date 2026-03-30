@@ -34,6 +34,12 @@ _SZ_SUBTITLE = 24
 _SZ_BODY = 20
 _SZ_SMALL = 16
 
+# Font sizes for new internal receipt layout (readability from ~2m)
+_SZ_HUGE = 40       # due date at bottom (unused — 36pt used instead)
+_SZ_BIG = 36        # customer name, category, price, due date
+_SZ_MEDIUM = 28     # notes text, birthday
+_SZ_NORMAL = 24     # product name, section headers, title
+
 # Shop defaults (matching the physical biên nhận form, without ĐC 2)
 _SHOP_DEFAULTS = {
     "receipt_shop_name": "TIỆM BÁNH ĐOÀN GIA",
@@ -295,70 +301,55 @@ def _header(draw, y, cfg):
 def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image:
     """Internal receipt (Phiếu Nội Bộ) for production staff — single item per receipt.
 
-    Shows: product name (large), qty, notes/remarks, photo, due date, birthday, delivery info.
-    NO shop header.
+    New layout: delivery on top, product info BIG, notes prominent, bottom boxes for
+    customer name/source and due date/time. NO photo, NO table format.
     """
     img = Image.new("RGB", (RECEIPT_WIDTH, 2000), "white")
     draw = ImageDraw.Draw(img)
 
+    BOX_PAD = 8       # padding inside bottom boxes
+    BOX_GAP = 10     # gap between the two bottom boxes
+    BOX_STROKE = 2   # box border width
+
     fb = _font(_SZ_BODY)
     fbb = _font(_SZ_BODY, True)
     fs = _font(_SZ_SMALL)
-    ft = _font(_SZ_TITLE, True)   # large title font for product name
-    fs_title = _font(_SZ_SUBTITLE, True)
+    fbig = _font(_SZ_BIG, True)
+    fnormal = _font(_SZ_NORMAL, True)
+    fproduct = _font(_SZ_NORMAL)
 
     y = MARGIN
 
-    # Title — "PHIẾU NỘI BỘ" (no shop header)
-    y = _center(draw, y, "PHIẾU NỘI BỘ", fs_title)
-    y = _sep(draw, y)
+    # ── Header: title + order ref + date (compact) ──
+    y = _center(draw, y, "PHIẾU NỘI BỘ", fnormal)
 
-    # Order ref
     ref = order.get("orderRef", "") or order.get("order_ref", "")
-    y = _center(draw, y, f"Mã đơn: {ref}", fs_title)
-
-    # Date
     created = order.get("createdAt", "") or order.get("created_at", "")
+    header_line = f"Mã: {ref}"
     if created:
-        y = _left(draw, y, f"Ngày: {created[:10]}", fb)
-    y += 4
+        header_line += f"  •  {created[:10]}"
+    y = _center(draw, y, header_line, fs)
+    y += 10
+
+    # ── Delivery section (on top) ──
+    dtype = order.get("deliveryType", "") or order.get("delivery_type", "pickup")
+    _DTYPE_VN = {"pickup": "Nhận tại tiệm", "bus": "Gửi xe buýt", "door": "Giao tận nơi"}
+    dtype_vn = _DTYPE_VN.get(dtype, dtype)
+
+    phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
+    daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
+
+    y = _left(draw, y, f"GIAO HÀNG:  {dtype_vn}", fnormal)
+
+    if phone:
+        y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
+
+    if dtype != "pickup" and daddr:
+        y = _left(draw, y, f"Địa chỉ: {daddr}", fb)
+
     y = _double(draw, y)
 
-    # --- Section 1: Customer Info ---
-    y = _left(draw, y, "KHÁCH HÀNG", fs_title)
-    y = _sep(draw, y)
-
-    name = order.get("customerName", "") or order.get("customer_name", "")
-    source = order.get("source", "") or ""
-    source_vn = "Tại tiệm" if source == "walk_in" else source.replace("_", " ").title() if source else ""
-    if name:
-        y = _left(draw, y, f"Tên: {name}", fb)
-    else:
-        y = _left(draw, y, "Tên: Khách tại tiệm", fb)
-    if source_vn:
-        y = _left(draw, y, f"Nguồn: {source_vn}", fb)
-    y += 4
-    y = _double(draw, y)
-
-    # --- Section 2: Order Item (table layout matching customer receipt) ---
-    y = _left(draw, y, "SẢN PHẨM", fs_title)
-    y = _sep(draw, y)
-
-    # Table header
-    col_sl = MARGIN + 320
-    col_gia = MARGIN + 380
-    col_tt = RECEIPT_WIDTH - MARGIN
-
-    draw.text((MARGIN, y), "Sản phẩm", font=fbb, fill=(100, 100, 100))
-    draw.text((col_sl, y), "SL", font=fbb, fill=(100, 100, 100))
-    draw.text((col_gia, y), "Giá", font=fbb, fill=(100, 100, 100))
-    tt_label = "T.Tiền"
-    draw.text((col_tt - _tw(tt_label, fbb), y), tt_label, font=fbb, fill=(100, 100, 100))
-    y += _th("SL", fbb) + LINE_GAP + 4
-    y = _sep(draw, y)
-
-    # Category name (bold, own line) above product row
-    product = work_item.get("productName", "") or work_item.get("product_name", "")
+    # ── Product section (BIG: category, name, qty + price) ──
     pid = work_item.get("productId", "") or work_item.get("product_id", "")
     if pid:
         cat_name_row = conn.execute(
@@ -367,117 +358,152 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
             (pid, pid),
         ).fetchone()
         if cat_name_row:
-            y = _left(draw, y, cat_name_row["name"], fbb)
+            y = _left(draw, y, cat_name_row["name"].upper(), fbig)
 
-    # Product row with dotted leaders
+    product = work_item.get("productName", "") or work_item.get("product_name", "")
+    y = _left(draw, y, product, fproduct)
+
     qty = work_item.get("quantity", 1)
     unit_price = float(work_item.get("unitPrice", 0) or work_item.get("unit_price", 0))
-    total = qty * unit_price
 
-    name_max_w = col_sl - MARGIN - 10
-    name_lines = _wrap(product, fb, name_max_w) or [product]
-
-    # First line: product name ....... SL ....... Giá ....... T.Tiền
-    draw.text((MARGIN, y), name_lines[0], font=fb, fill=(0, 0, 0))
-    name_end = MARGIN + _tw(name_lines[0], fb)
-    _dots(draw, y, name_end, col_sl - 4, fs)
-    qty_str = str(qty)
-    draw.text((col_sl, y), qty_str, font=fb, fill=(0, 0, 0))
-    sl_end = col_sl + _tw(qty_str, fb)
+    # Qty and unit price on same line, both BIG
+    qty_price = f"SL: {qty}"
     if unit_price > 0:
-        gia_str = _format_vnd(unit_price)
-        tt_str = _format_vnd(total)
-        tt_x = col_tt - _tw(tt_str, fbb)
-        _dots(draw, y, sl_end, col_gia - 4, fs)
-        draw.text((col_gia, y), gia_str, font=fb, fill=(0, 0, 0))
-        gia_end = col_gia + _tw(gia_str, fb)
-        _dots(draw, y, gia_end, tt_x - 4, fs)
-        draw.text((tt_x, y), tt_str, font=fbb, fill=(0, 0, 0))
-    else:
-        _dots(draw, y, sl_end, col_tt - 4, fs)
-    y += _th(name_lines[0], fb) + LINE_GAP
+        qty_price += f"     {_format_vnd(unit_price)}"
+    y = _left(draw, y, qty_price, fbig)
 
-    # Remaining name lines (overflow)
-    for nl in name_lines[1:]:
-        draw.text((MARGIN, y), nl, font=fb, fill=(0, 0, 0))
-        y += _th(nl, fb) + LINE_GAP
-
-    # Birthday
+    # Birthday badge
     if work_item.get("isBirthday") or work_item.get("is_birthday"):
         age = work_item.get("age")
-        age_suffix = f" SINH NHẬT{(' - ' + str(age) + ' tuổi') if age else ''}"
-        y = _icon_text(draw, y, "\U0001F382", age_suffix, fbb, (180, 0, 0), x=MARGIN + 10)
+        age_text = f" SINH NHẬT"
+        if age and age != 999:
+            age_text += f" - {age} tuổi"
+        ef = _emoji_font(_SZ_MEDIUM)
+        tf = _font(_SZ_MEDIUM, True)
+        icon = "\U0001F382"
+        icon_w = _tw(icon, ef)
+        draw.text((MARGIN, y), icon, font=ef, fill=(180, 0, 0))
+        draw.text((MARGIN + icon_w + 4, y), age_text, font=tf, fill=(180, 0, 0))
+        y += max(_th(icon, ef), _th(age_text, tf)) + LINE_GAP
 
     # Extra item badge
     if work_item.get("isExtra") or work_item.get("is_extra"):
-        y = _icon_text(draw, y, "\U0001F4E6", "PHỤ LIỆU", fbb, (0, 100, 180), x=MARGIN + 10)
+        ef = _emoji_font(_SZ_MEDIUM)
+        tf = _font(_SZ_MEDIUM, True)
+        icon = "\U0001F4E6"
+        icon_w = _tw(icon, ef)
+        draw.text((MARGIN, y), icon, font=ef, fill=(0, 100, 180))
+        draw.text((MARGIN + icon_w + 4, y), " PHỤ LIỆU", font=tf, fill=(0, 100, 180))
+        y += max(_th(icon, ef), _th(" PHỤ LIỆU", tf)) + LINE_GAP
 
-    # Photo — larger, centered
-    if photo_bytes:
-        photo_size = 192
-        try:
-            photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
-            photo.thumbnail((photo_size, photo_size), Image.LANCZOS)
-            x_photo = (RECEIPT_WIDTH - photo.width) // 2
-            img.paste(photo, (x_photo, y))
-            draw.rectangle(
-                [x_photo, y, x_photo + photo.width, y + photo.height],
-                outline=(200, 200, 200),
-            )
-            y += photo.height + LINE_GAP
-        except Exception:
-            pass
-
-    # Item notes
-    notes = work_item.get("notes", "") or ""
-    if notes:
-        y = _left(draw, y, "Ghi chú:", fbb)
-        for ln in _wrap(notes, fb, CONTENT_WIDTH):
-            y = _left_mixed(draw, y, ln, fb, (80, 80, 80))
-
-    y += 4
     y = _double(draw, y)
 
-    # --- Section 3: Delivery ---
-    y = _left(draw, y, "GIAO HÀNG", fs_title)
-    y = _sep(draw, y)
+    # ── Notes section (BIG, prominent) ──
+    notes = work_item.get("notes", "") or ""
+    order_notes = order.get("notes", "") or ""
 
+    if notes or order_notes:
+        y = _left(draw, y, "GHI CHÚ", fnormal)
+        y = _sep(draw, y)
+
+        note_font = _font(_SZ_MEDIUM)
+        if notes:
+            for ln in _wrap(notes, note_font, CONTENT_WIDTH):
+                y = _left_mixed(draw, y, ln, note_font)
+
+        if order_notes:
+            if notes:
+                y += 4
+                y = _sep(draw, y)
+            y = _left(draw, y, "Ghi chú đơn:", _font(_SZ_BODY, True), (100, 100, 100))
+            for ln in _wrap(order_notes, note_font, CONTENT_WIDTH):
+                y = _left_mixed(draw, y, ln, note_font, (80, 80, 80))
+
+    # Thick separator before bottom boxes
+    y += 14  # padding above
+    draw.line([(MARGIN, y), (RECEIPT_WIDTH - MARGIN, y)], fill=(0, 0, 0), width=3)
+    y += 16  # padding below
+
+    # ── Bottom: Two side-by-side boxes [Customer + Source] | [Due Date/Time] ──
+    half_w = (RECEIPT_WIDTH - 2 * MARGIN - BOX_GAP) // 2
+    box_left_x = MARGIN
+    box_right_x = MARGIN + half_w + BOX_GAP
+
+    # --- Measure left box content: customer name + source ---
+    name = order.get("customerName", "") or order.get("customer_name", "") or "Khách tại tiệm"
+    source = order.get("source", "") or ""
+    source_vn = ""
+    if source:
+        source_vn = "Tại tiệm" if source == "walk_in" else source.replace("_", " ").replace("-", " ").title()
+    source_font = _font(_SZ_BODY)  # half of name size, black
+
+    name_lines = _wrap(name, fbig, half_w - 2 * BOX_PAD) or [name]
+    left_h = BOX_PAD
+    for ln in name_lines:
+        left_h += _th(ln, fbig) + LINE_GAP
+    if source_vn:
+        left_h += _th(source_vn, source_font) + LINE_GAP
+    left_h += BOX_PAD
+
+    # --- Measure right box content: due date/time ---
     due = order.get("dueDate", "") or order.get("due_date", "")
     due_time = order.get("dueTime", "") or order.get("due_time", "") or ""
+    due_short = ""
     if due:
-        due_str = f"Ngày giao: {due}"
-        if due_time:
-            due_str += f" {due_time}"
-        y = _left(draw, y, due_str, fbb)
+        parts = due.split("-")
+        if len(parts) == 3:
+            due_short = f"{parts[2]}/{parts[1]}"
+        else:
+            due_short = due
 
-    dtype = order.get("deliveryType", "") or order.get("delivery_type", "pickup")
-    _DTYPE_VN = {"pickup": "Nhận tại tiệm", "bus": "Gửi xe buýt", "door": "Giao tận nơi"}
-    dtype_vn = _DTYPE_VN.get(dtype, dtype)
-    y = _left(draw, y, f"Hình thức: {dtype_vn}", fb)
+    due_font = fbig
+    time_font = fbig
 
-    phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
-    if phone:
-        y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
+    right_h = BOX_PAD
+    if due_short:
+        right_h += _th(due_short, due_font) + LINE_GAP
+    if due_time:
+        right_h += _th(due_time, time_font) + LINE_GAP
+    elif not due_short:
+        right_h += _th("N/A", fb) + LINE_GAP
+    right_h += BOX_PAD
 
-    daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
-    if dtype != "pickup" and daddr:
-        y = _left(draw, y, "Địa chỉ:", fbb)
-        for ln in _wrap(daddr, fs, CONTENT_WIDTH - 20):
-            y = _left(draw, y, f"  {ln}", fs)
+    box_h = max(left_h, right_h)
 
-    # Order-level notes
-    order_notes = order.get("notes", "") or ""
-    if order_notes:
-        y = _left(draw, y, "Ghi chú:", fbb)
-        for ln in _wrap(order_notes, fb, CONTENT_WIDTH):
-            y = _left_mixed(draw, y, ln, fb, (80, 80, 80))
+    # Draw left box (customer)
+    draw.rectangle(
+        [box_left_x, y, box_left_x + half_w, y + box_h],
+        outline=(0, 0, 0), width=BOX_STROKE,
+    )
+    ty = y + BOX_PAD
+    for ln in name_lines:
+        draw.text((box_left_x + BOX_PAD, ty), ln, font=fbig, fill=(0, 0, 0))
+        ty += _th(ln, fbig) + LINE_GAP
+    if source_vn:
+        draw.text((box_left_x + BOX_PAD, ty), source_vn, font=source_font, fill=(0, 0, 0))
 
-    # Footer
-    y += 4
-    y = _double(draw, y)
-    y = _center(draw, y, "--- Phiếu nội bộ ---", fs, (120, 120, 120))
+    # Draw right box (due date/time)
+    draw.rectangle(
+        [box_right_x, y, box_right_x + half_w, y + box_h],
+        outline=(0, 0, 0), width=BOX_STROKE,
+    )
+    right_content_h = 0
+    if due_short:
+        right_content_h += _th(due_short, due_font) + LINE_GAP
+    if due_time:
+        right_content_h += _th(due_time, time_font) + LINE_GAP
+    ty = y + (box_h - right_content_h) // 2
+    if due_short:
+        dw = _tw(due_short, due_font)
+        draw.text((box_right_x + (half_w - dw) // 2, ty), due_short, font=due_font, fill=(0, 0, 0))
+        ty += _th(due_short, due_font) + LINE_GAP
+    if due_time:
+        tw = _tw(due_time, time_font)
+        draw.text((box_right_x + (half_w - tw) // 2, ty), due_time, font=time_font, fill=(0, 0, 0))
 
-    return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
+    y += box_h + MARGIN
+
+    return img.crop((0, 0, RECEIPT_WIDTH, y))
 
 
 def _render_bus_label(order, cfg) -> Image.Image:
