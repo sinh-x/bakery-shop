@@ -525,7 +525,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
 
         // ── Items ─────────────────────────────────────────────────────
         _SectionHeader(VN.products),
-        ...order.items.map(
+        ...order.items.where((item) => !item.isExtra).map(
           (item) => Padding(
             padding: const EdgeInsets.only(bottom: 6),
             child: Row(
@@ -557,6 +557,51 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             ),
           ),
         ),
+        if (order.items.any((item) => item.isExtra)) ...[
+          const SizedBox(height: 12),
+          _SectionHeader(VN.extras),
+          ...order.items.where((item) => item.isExtra).map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.productName,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                        Text(
+                          '${item.quantity} × ${formatVND(item.unitPrice)}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.outline,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (item.isGift)
+                    Text(
+                      VN.giftBadge,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.green,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    )
+                  else
+                    Text(
+                      formatVND(item.quantity * item.unitPrice),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
         const Divider(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
