@@ -263,7 +263,6 @@ class _OrderDetailBody extends ConsumerStatefulWidget {
 
 class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
   bool _transitioning = false;
-  bool _syncing = false;
 
   Order get order => widget.order;
 
@@ -304,6 +303,8 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       await ref
           .read(orderDetailProvider(order.orderRef).notifier)
           .transitionTo(targetStatus, reason: reason);
+      // Refresh work items to pick up server-synced extras
+      ref.read(orderWorkItemsProvider(order.orderRef).notifier).refresh();
       if (mounted) {
         showTopSnackBar(context, VN.orderStatusUpdated);
       }
@@ -311,47 +312,8 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       if (mounted) {
         showTopSnackBar(context, '${VN.apiError}: $e');
       }
-      return;
     } finally {
       if (mounted) setState(() => _transitioning = false);
-    }
-    // Auto-sync work item status for single-item orders
-    final items =
-        ref.read(orderWorkItemsProvider(order.orderRef)).value ?? [];
-    if (items.length == 1 && !_syncing) {
-      _syncing = true;
-      try {
-        const orderToWorkItem = {
-          'new': 'pending',
-          'confirmed': 'pending',
-          'in_progress': 'working',
-          'ready': 'ready',
-          'delivered': 'delivered',
-          'completed': 'delivered',
-          'cancelled': 'cancelled',
-        };
-        final mappedStatus = orderToWorkItem[targetStatus];
-        if (mappedStatus != null) {
-          final item = items.first;
-          if (mappedStatus != item.status) {
-            final syncReason =
-                (_isBackward(item.status, mappedStatus, _workItemStatusRank) ||
-                        mappedStatus == 'cancelled')
-                    ? 'Tự động đồng bộ theo trạng thái đơn hàng'
-                    : '';
-            await ref
-                .read(orderWorkItemsProvider(order.orderRef).notifier)
-                .transitionStatus(item.id, mappedStatus, reason: syncReason);
-            if (mounted) {
-              showTopSnackBar(context, VN.autoSyncWorkItemStatus);
-            }
-          }
-        }
-      } catch (_) {
-        // Auto-sync failure is silent
-      } finally {
-        _syncing = false;
-      }
     }
   }
 
@@ -1460,86 +1422,6 @@ class _WorkItemSection extends ConsumerStatefulWidget {
 class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
   bool _expanded = true;
   bool _transitioning = false;
-  bool _syncing = false;
-
-  String? _deriveOrderStatus(List<WorkItem> items) {
-    if (items.isEmpty) return null;
-    // Exclude cancelled items from min calculation
-    final active = items.where((i) => i.status != 'cancelled').toList();
-    if (active.isEmpty) return 'cancelled';
-    // Find minimum rank work item status
-    final minRank = active
-        .map((i) => _workItemStatusRank[i.status] ?? 0)
-        .reduce((a, b) => a < b ? a : b);
-    // Map back to order status via the minimum work item status
-    const workItemToOrder = {
-      'pending': 'new',
-      'working': 'in_progress',
-      'ready': 'ready',
-      'delivered': 'delivered',
-    };
-    final minWiStatus = active.firstWhere(
-      (i) => (_workItemStatusRank[i.status] ?? 0) == minRank,
-    ).status;
-    return workItemToOrder[minWiStatus];
-  }
-
-  Future<void> _applyAutoUpdateOrderStatus(
-    String suggestedStatus,
-    List<WorkItem> items,
-  ) async {
-    final currentStatus =
-        ref.read(orderDetailProvider(widget.orderRef)).value?.status ??
-            widget.order.status;
-    if (currentStatus == suggestedStatus) return;
-
-    final statusLabel = statusMap[suggestedStatus] ?? suggestedStatus;
-    final isMultiCake = items.length > 1;
-
-    if (isMultiCake) {
-      if (!mounted) return;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text(VN.autoUpdateOrderTitle),
-          content: Text(
-            'Tất cả ${items.length} sản phẩm đã đạt ngưỡng.\n'
-            'Cập nhật đơn hàng sang "$statusLabel"?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text(VN.cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text(VN.confirmStatusChange),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true || !mounted) return;
-    }
-
-    try {
-      final syncReason =
-          (_isBackward(currentStatus, suggestedStatus, _orderStatusRank) ||
-                  suggestedStatus == 'cancelled')
-              ? 'Tự động cập nhật theo trạng thái sản phẩm'
-              : '';
-      await ref
-          .read(orderDetailProvider(widget.orderRef).notifier)
-          .transitionTo(
-            suggestedStatus,
-            reason: syncReason,
-          );
-      if (mounted) {
-        showTopSnackBar(context, VN.orderStatusUpdated);
-      }
-    } catch (_) {
-      // Auto-derive failure is silent — order may not be in a valid state
-    }
-  }
 
   Future<void> _onTransitionWorkItem(WorkItem item, String targetStatus) async {
     if (_transitioning) return;
@@ -1555,53 +1437,10 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
       await ref
           .read(orderWorkItemsProvider(widget.orderRef).notifier)
           .transitionStatus(item.id, targetStatus, reason: reason);
+      // Refresh order detail to pick up server-synced order status
+      ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
       if (mounted) {
         showTopSnackBar(context, VN.workItemStatusChanged);
-      }
-      final items =
-          ref.read(orderWorkItemsProvider(widget.orderRef)).value ?? [];
-      if (items.length == 1 && !_syncing) {
-        // Single-item order: direct bidirectional sync
-        _syncing = true;
-        try {
-          const workItemToOrder = {
-            'pending': 'new',
-            'working': 'in_progress',
-            'ready': 'ready',
-            'delivered': 'delivered',
-            'cancelled': 'cancelled',
-          };
-          final mappedStatus = workItemToOrder[targetStatus];
-          if (mappedStatus != null) {
-            final currentOrderStatus =
-                ref.read(orderDetailProvider(widget.orderRef)).value?.status ??
-                    widget.order.status;
-            if (mappedStatus != currentOrderStatus) {
-              final syncReason =
-                  (_isBackward(currentOrderStatus, mappedStatus,
-                              _orderStatusRank) ||
-                          mappedStatus == 'cancelled')
-                      ? 'Tự động đồng bộ theo trạng thái sản phẩm'
-                      : '';
-              await ref
-                  .read(orderDetailProvider(widget.orderRef).notifier)
-                  .transitionTo(mappedStatus, reason: syncReason);
-              if (mounted) {
-                showTopSnackBar(context, VN.autoSyncOrderStatus);
-              }
-            }
-          }
-        } catch (_) {
-          // Auto-sync failure is silent
-        } finally {
-          _syncing = false;
-        }
-      } else if (items.length > 1) {
-        // Multi-item order: heuristic derive
-        final suggestedStatus = _deriveOrderStatus(items);
-        if (suggestedStatus != null && mounted) {
-          await _applyAutoUpdateOrderStatus(suggestedStatus, items);
-        }
       }
     } catch (e) {
       if (mounted) {
