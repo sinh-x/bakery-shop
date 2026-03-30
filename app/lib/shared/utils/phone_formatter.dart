@@ -37,10 +37,25 @@ class PhoneInputFormatter extends TextInputFormatter {
       }
     }
 
-    // Calculate cursor position
-    int offset = newValue.selection.baseOffset;
-    if (offset > formatted.length) {
-      offset = formatted.length;
+    // Map cursor through formatting by counting digit positions
+    int digitsBefore = 0;
+    for (int i = 0;
+        i < newValue.selection.baseOffset && i < newValue.text.length;
+        i++) {
+      if (newValue.text.codeUnitAt(i) >= 48 &&
+          newValue.text.codeUnitAt(i) <= 57) {
+        digitsBefore++;
+      }
+    }
+    int offset = formatted.length;
+    for (int i = 0, count = 0; i < formatted.length; i++) {
+      if (count == digitsBefore) {
+        offset = i;
+        break;
+      }
+      if (formatted.codeUnitAt(i) >= 48 && formatted.codeUnitAt(i) <= 57) {
+        count++;
+      }
     }
 
     return TextEditingValue(
