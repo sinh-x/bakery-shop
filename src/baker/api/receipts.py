@@ -405,6 +405,8 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
         draw.text((MARGIN + icon_w + 4, y), " PHỤ LIỆU", font=tf, fill=(0, 100, 180))
         y += max(_th(icon, ef), _th(" PHỤ LIỆU", tf)) + LINE_GAP
 
+    # Spacer between badge(s) and next section
+    y += 10
     y = _double(draw, y)
 
     # ── Notes section (BIG, prominent) ──
@@ -427,6 +429,36 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
             y = _left(draw, y, "Ghi chú đơn:", _font(_SZ_BODY, True), (100, 100, 100))
             for ln in _wrap(order_notes, note_font, CONTENT_WIDTH):
                 y = _left_mixed(draw, y, ln, note_font, (80, 80, 80))
+
+    # ── Extras and Payment section (between notes and bottom boxes) ──
+    work_items = order.get("workItems", [])
+    extras = [
+        wi for wi in work_items
+        if wi.get("isExtra") or wi.get("is_extra") or wi.get("isGift") or wi.get("is_gift")
+    ]
+    main_count = len(work_items) - len(extras)
+
+    # List extras if any
+    if extras:
+        y = _left(draw, y, "Phụ liệu kèm theo:", fnormal)
+        for ex in extras:
+            ex_name = ex.get("productName", "") or ex.get("product_name", "") or "N/A"
+            ex_qty = ex.get("quantity", 1)
+            y = _left(draw, y, f"  {ex_name} x{ex_qty}", fb)
+
+    # Payment section — only when exactly 1 main item
+    if main_count == 1:
+        total_price = float(order.get("totalPrice", 0) or order.get("total_price", 0))
+        order_id = order.get("id")
+        total_paid = PaymentTransaction.total_for_order(conn, order_id) if order_id else 0.0
+        remaining = total_price - total_paid
+
+        y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
+        y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
+        if remaining > 0:
+            y = _row(draw, y, "Còn lại:", _format_vnd_full(remaining), fbb, color_v=(180, 0, 0))
+        else:
+            y = _row(draw, y, "Còn lại:", "0đ", fb, color_v=(0, 100, 0))
 
     y = _thick(draw, y)
 
