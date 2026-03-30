@@ -357,13 +357,21 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                 // ── Shipping Fee ───────────────────────────────────────────
                 if (_deliveryType == 'bus') ...[
                   _SectionHeader(VN.shippingFee),
-                  Chip(
-                    label: Text(
-                      '${VN.deliveryBus}: ${formatVND(25000)}',
-                      style: const TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                    avatar: const Icon(Icons.directions_bus, size: 18),
-                    backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: Text(VN.shippingFree),
+                        selected: _shippingFee == 0.0,
+                        onSelected: (_) => _setShippingFee(0.0),
+                      ),
+                      ChoiceChip(
+                        label: Text(formatVND(25000)),
+                        selected: _shippingFee == 25000.0,
+                        onSelected: (_) => _setShippingFee(25000.0),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                 ] else if (_deliveryType == 'door') ...[
@@ -372,6 +380,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      ChoiceChip(
+                        label: Text(VN.shippingFree),
+                        selected: _shippingFee == 0.0,
+                        onSelected: (_) => _setShippingFee(0.0),
+                      ),
                       for (final fee in [20000.0, 30000.0, 40000.0, 50000.0])
                         ChoiceChip(
                           label: Text(formatVND(fee)),
