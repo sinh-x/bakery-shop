@@ -600,7 +600,9 @@ ALTER TABLE order_items ADD COLUMN is_gift INTEGER NOT NULL DEFAULT 0;
 """
 
 SEED_SHIPPING_AND_EXTRAS = [
+    ("shipping_fee_bus", "0", 0),
     ("shipping_fee_bus", "25000", 1),
+    ("shipping_fee_door", "0", 0),
     ("shipping_fee_door", "20000", 1),
     ("shipping_fee_door", "30000", 2),
     ("shipping_fee_door", "40000", 3),
