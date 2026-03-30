@@ -43,7 +43,7 @@ DB_DST="$STAGING_DIR/baker.db"
 
 if [[ -f "$DB_SRC" ]]; then
   log "Backing up database: $DB_SRC"
-  sqlite3 "$DB_SRC" ".backup '$DB_DST'"
+  nix-shell -p sqlite --run "sqlite3 '$DB_SRC' \".backup '$DB_DST'\""
   log "Database backup complete"
 else
   log "WARNING: Database not found at $DB_SRC"

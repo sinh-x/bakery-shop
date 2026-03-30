@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.3.1+35] — 2026-03-30
+- fix(backup): replace python3 with sqlite3 CLI in wasabi-backup script
+
 ## [0.3.1+30] — 2026-03-29
 - chore: update CHANGELOG and pubspec.lock
 
