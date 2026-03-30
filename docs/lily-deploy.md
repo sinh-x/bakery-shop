@@ -51,8 +51,8 @@ On lily, clone the bakery-shop repo:
 ssh lily
 
 # Clone (or copy from USB if offline)
-git clone https://github.com/sinh/bakery-shop.git /srv/bakery-shop
-cd /srv/bakery-shop
+git clone https://github.com/sinh/bakery-shop.git /home/sinh/bakery-shop
+cd /home/sinh/bakery-shop
 
 # Checkout the production branch
 git checkout main   # or feature branch for testing
@@ -64,8 +64,8 @@ git checkout main   # or feature branch for testing
 # Mount USB and copy
 sudo mount /dev/sda1 /mnt
 sudo cp -r /mnt/bakery-shop /srv/
-sudo chown -R $USER:$USER /srv/bakery-shop
-cd /srv/bakery-shop
+sudo chown -R $USER:$USER /home/sinh/bakery-shop
+cd /home/sinh/bakery-shop
 ```
 
 ---
@@ -75,7 +75,7 @@ cd /srv/bakery-shop
 ### 3.1 Create `.env` file
 
 ```bash
-cd /srv/bakery-shop
+cd /home/sinh/bakery-shop
 cp config/docker.example .env
 nano .env
 ```
@@ -116,7 +116,7 @@ cp -r /path/to/backup/photos prod/data/  # if exists
 ## 4. Build Docker Image
 
 ```bash
-cd /srv/bakery-shop
+cd /home/sinh/bakery-shop
 
 # Build the baker-server image
 docker compose build baker-prod
@@ -134,7 +134,7 @@ docker images | grep baker-server
 ### Option A: Build on Lily (requires Flutter)
 
 ```bash
-cd /srv/bakery-shop
+cd /home/sinh/bakery-shop
 
 # Build Flutter web using Nix
 nix develop ~/Documents/bakery-shop/.#flutter --command bash -c "cd app && flutter build web --release"
@@ -154,12 +154,12 @@ cd ~/Documents/bakery-shop
 nix develop .#flutter --command bash -c "cd app && flutter build web --release"
 
 # Copy to USB or transfer via network
-scp -r app/build/web lily:/srv/bakery-shop/web-build
+scp -r app/build/web lily:/home/sinh/bakery-shop/web-build
 ```
 
 Verify:
 ```bash
-ls -la /srv/bakery-shop/web-build/index.html
+ls -la /home/sinh/bakery-shop/web-build/index.html
 ```
 
 ---
@@ -167,7 +167,7 @@ ls -la /srv/bakery-shop/web-build/index.html
 ## 6. Start Containers
 
 ```bash
-cd /srv/bakery-shop
+cd /home/sinh/bakery-shop
 
 # Start with prod profile (baker-prod + Caddy)
 docker compose --profile prod up -d
@@ -218,7 +218,7 @@ You should see the bakery app. The API calls will be proxied to baker-prod via C
 
 ```bash
 # Check data directory
-ls -la /srv/bakery-shop/prod/data/
+ls -la /home/sinh/bakery-shop/prod/data/
 
 # Should contain: baker.db, photos/, logs/
 ```
@@ -241,7 +241,7 @@ mkdir -p ~/.config/rustic
 
 # 3. Copy rustic config and add repository section
 #    The backup script uses profile "baker-prod", so the file MUST be named baker-prod.toml
-cp /srv/bakery-shop/config/rustic/baker.toml ~/.config/rustic/baker-prod.toml
+cp /home/sinh/bakery-shop/config/rustic/baker.toml ~/.config/rustic/baker-prod.toml
 
 # 4. Add the [repository] section to the config
 #    IMPORTANT: The password must match the one used on the dev machine.
@@ -262,10 +262,10 @@ chmod 600 ~/.config/rustic/baker-prod.toml
 > **Important:** Always set `DATA_DIR` explicitly. The script's default fallback is the dev machine path (`/home/sinh/Documents/bakery-shop/prod/data`) and will back up nothing useful on lily.
 
 ```bash
-cd /srv/bakery-shop
+cd /home/sinh/bakery-shop
 
 # Run backup script — DATA_DIR is required on lily
-DATA_DIR=/srv/bakery-shop/prod/data ./scripts/wasabi-backup.sh
+DATA_DIR=/home/sinh/bakery-shop/prod/data ./scripts/wasabi-backup.sh
 
 # Check rustic snapshots
 rustic -P baker-prod snapshots
@@ -285,8 +285,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/srv/bakery-shop/scripts/wasabi-backup.sh
-Environment=DATA_DIR=/srv/bakery-shop/prod/data
+ExecStart=/home/sinh/bakery-shop/scripts/wasabi-backup.sh
+Environment=DATA_DIR=/home/sinh/bakery-shop/prod/data
 User=root
 PrivateTmp=true
 NoNewPrivileges=true
@@ -329,21 +329,21 @@ If lily uses NixOS, add the backup module to the flake.
 { inputs, ... }:
 {
   imports = [
-    (import /srv/bakery-shop/nix/backup.nix { self = inputs.self; })
+    (import /home/sinh/bakery-shop/nix/backup.nix { self = inputs.self; })
   ];
 
   services.baker-backup = {
     enable = true;
-    dataDir = "/srv/bakery-shop/prod/data";
+    dataDir = "/home/sinh/bakery-shop/prod/data";
     user = "root";
-    scriptPath = /srv/bakery-shop/scripts/wasabi-backup.sh;
+    scriptPath = /home/sinh/bakery-shop/scripts/wasabi-backup.sh;
   };
 }
 ```
 
 Then rebuild:
 ```bash
-sudo nixos-rebuild switch --flake /srv/bakery-shop#
+sudo nixos-rebuild switch --flake /home/sinh/bakery-shop#
 ```
 
 ---
@@ -359,7 +359,7 @@ docker compose --profile prod restart
 ### Update to New Version
 
 ```bash
-cd /srv/bakery-shop
+cd /home/sinh/bakery-shop
 
 # Pull latest code
 git pull
@@ -459,7 +459,7 @@ rustic -P baker-prod snapshots
 
 ```bash
 # Stop containers first
-cd /srv/bakery-shop
+cd /home/sinh/bakery-shop
 docker compose --profile prod down
 
 # Restore latest snapshot to a temporary directory
@@ -502,7 +502,7 @@ rustic -P baker-prod restore <snapshot-id> /tmp/baker-restore
 Tailscale certs expire after ~90 days. Caddy mounts them read-only, so there is no auto-renewal. You must re-generate manually:
 
 ```bash
-cd /srv/bakery-shop
+cd /home/sinh/bakery-shop
 tailscale cert --cert-file=certs/${DOMAIN}.crt --key-file=certs/${DOMAIN}.key ${DOMAIN}
 
 # Restart Caddy to pick up new certs
@@ -531,6 +531,6 @@ Consider setting a calendar reminder every 2 months.
 | `docker compose --profile prod logs -f` | Follow logs |
 | `docker compose --profile prod down` | Stop all services |
 | `curl https://${DOMAIN}/api/health` | Test health endpoint |
-| `DATA_DIR=/srv/bakery-shop/prod/data ./scripts/wasabi-backup.sh` | Run manual backup |
+| `DATA_DIR=/home/sinh/bakery-shop/prod/data ./scripts/wasabi-backup.sh` | Run manual backup |
 | `rustic -P baker-prod snapshots` | List backup snapshots |
 | `systemctl status baker-backup.timer` | Check backup timer status |
