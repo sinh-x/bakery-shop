@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from baker.db.connection import get_db
+from baker.models.order import is_backward_transition
 from baker.models.work_item import WorkItem, WorkItemStatus
 
 router = APIRouter(prefix="/api/orders", tags=["work-items"])
@@ -18,6 +19,27 @@ _WORK_ITEM_RANK = {
     WorkItemStatus.DELIVERED: 3,
     WorkItemStatus.CANCELLED: 4,
 }
+
+# Mapping from work item status to order status (F2)
+_WORK_ITEM_TO_ORDER_STATUS = {
+    WorkItemStatus.PENDING.value: "new",
+    WorkItemStatus.WORKING.value: "in_progress",
+    WorkItemStatus.READY.value: "ready",
+    WorkItemStatus.DELIVERED.value: "delivered",
+    WorkItemStatus.CANCELLED.value: "cancelled",
+}
+
+# Mapping from order status to work item status for extras sync (F4)
+_ORDER_TO_WORK_ITEM_STATUS = {
+    "new": "pending",
+    "confirmed": "pending",
+    "in_progress": "working",
+    "ready": "ready",
+    "delivered": "delivered",
+    "cancelled": "cancelled",
+}
+
+_AUTO_SYNC_REASON = "Tự động cập nhật theo trạng thái sản phẩm"
 
 
 def _is_backward(current: str, target: str) -> bool:
@@ -84,6 +106,62 @@ def _sync_order_items_json(conn, order_id: int) -> None:
         "UPDATE orders SET items = ?, total_price = ? WHERE id = ?",
         (items_json, subtotal + shipping_fee, order_id),
     )
+
+
+def _derive_order_status(conn, order_id: int) -> Optional[str]:
+    """Derive order status from main items (is_extra=0 AND is_gift=0) using min-rank logic.
+
+    Returns None if no main items exist.
+    Returns 'cancelled' if all main items are cancelled (AC6).
+    """
+    rows = conn.execute(
+        "SELECT status FROM order_items WHERE order_id = ? AND is_extra = 0 AND is_gift = 0",
+        (order_id,),
+    ).fetchall()
+    if not rows:
+        return None
+
+    # If all main items are cancelled, derive 'cancelled'
+    non_cancelled = [s for s in rows if s["status"] != WorkItemStatus.CANCELLED.value]
+    if not non_cancelled:
+        return _WORK_ITEM_TO_ORDER_STATUS[WorkItemStatus.CANCELLED.value]
+
+    # Find min rank among non-cancelled main items
+    min_rank = min(_WORK_ITEM_RANK.get(WorkItemStatus(s["status"]), float("inf")) for s in non_cancelled)
+    # Map rank back to work item status
+    status_map = {v: k for k, v in _WORK_ITEM_RANK.items()}
+    if min_rank not in status_map:
+        return None
+    derived_wi_status = status_map[min_rank].value
+    return _WORK_ITEM_TO_ORDER_STATUS.get(derived_wi_status)
+
+
+def _sync_extras_to_order_status(conn, order_id: int, order_status: str) -> None:
+    """Auto-transition each non-cancelled extra/gift item to match the order status.
+
+    Skips extras that are already at target status, cancelled, or ahead of target (F5).
+    Uses ORDER_TO_WORK_ITEM_STATUS mapping (F4).
+    """
+    target_wi_status = _ORDER_TO_WORK_ITEM_STATUS.get(order_status)
+    if not target_wi_status:
+        return
+
+    target_rank = _WORK_ITEM_RANK.get(WorkItemStatus(target_wi_status), float("inf"))
+
+    extras = conn.execute(
+        "SELECT id, status FROM order_items WHERE order_id = ? AND (is_extra = 1 OR is_gift = 1) AND status != ?",
+        (order_id, WorkItemStatus.CANCELLED.value),
+    ).fetchall()
+
+    for extra in extras:
+        extra_rank = _WORK_ITEM_RANK.get(WorkItemStatus(extra["status"]), float("inf"))
+        if extra_rank >= target_rank:
+            # Skip if already at or ahead of target (avoid backward transitions on extras)
+            continue
+        conn.execute(
+            "UPDATE order_items SET status = ? WHERE id = ?",
+            (target_wi_status, extra["id"]),
+        )
 
 
 def _resolve_order_id(conn, ref: str) -> int:
@@ -232,5 +310,24 @@ def transition_work_item_status(ref: str, item_id: int, body: WorkItemStatusTran
             "UPDATE order_items SET status = ? WHERE id = ?",
             (body.status, item_id),
         )
+
+        # Auto-sync: derive order status from main items and transition if needed (F1, F3)
+        derived_order_status = _derive_order_status(conn, order_id)
+        if derived_order_status is not None:
+            order_row = conn.execute("SELECT id, order_ref, status FROM orders WHERE id = ?", (order_id,)).fetchone()
+            if order_row and order_row["status"] != derived_order_status:
+                from baker.models.order import Order
+                Order.update_status(
+                    conn, order_row["order_ref"], derived_order_status, _AUTO_SYNC_REASON
+                )
+                # Log auto-sync in order_history (F6)
+                conn.execute(
+                    """INSERT INTO order_history (order_id, action_type, field_name, old_value, new_value, changed_by)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (order_row["id"], "auto_sync", "status", order_row["status"], derived_order_status, ""),
+                )
+                # Sync extras/gifts to match the new order status (F4, F5)
+                _sync_extras_to_order_status(conn, order_id, derived_order_status)
+
         updated = conn.execute("SELECT * FROM order_items WHERE id = ?", (item_id,)).fetchone()
         return WorkItem.from_row(updated).to_api_dict()

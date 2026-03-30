@@ -25,16 +25,6 @@ const _workItemStatusRank = {
   'cancelled': 4,
 };
 
-const _orderStatusRank = {
-  'new': 0,
-  'confirmed': 1,
-  'in_progress': 2,
-  'ready': 3,
-  'delivered': 4,
-  'completed': 5,
-  'cancelled': 5,
-};
-
 bool _isBackwardItem(String current, String target) =>
     (_workItemStatusRank[target] ?? 0) < (_workItemStatusRank[current] ?? 0);
 
@@ -105,7 +95,6 @@ class CakeDetailScreen extends ConsumerStatefulWidget {
 class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
   bool _transitioning = false;
   bool _saving = false;
-  bool _syncing = false;
 
   Future<void> _onTransition(WorkItem item, String targetStatus) async {
     if (_transitioning) return;
@@ -120,46 +109,10 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
       await ref
           .read(orderWorkItemsProvider(widget.orderRef).notifier)
           .transitionStatus(item.id, targetStatus, reason: reason);
+      // Refresh order detail to pick up server-synced order status
+      ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
       if (mounted) {
         showTopSnackBar(context, VN.workItemStatusChanged);
-      }
-      // Auto-sync order status for single-item orders
-      final items =
-          ref.read(orderWorkItemsProvider(widget.orderRef)).value ?? [];
-      if (items.length == 1 && !_syncing) {
-        _syncing = true;
-        try {
-          const workItemToOrder = {
-            'pending': 'new',
-            'working': 'in_progress',
-            'ready': 'ready',
-            'delivered': 'delivered',
-            'cancelled': 'cancelled',
-          };
-          final mappedStatus = workItemToOrder[targetStatus];
-          if (mappedStatus != null) {
-            final currentOrderStatus =
-                ref.read(orderDetailProvider(widget.orderRef)).value?.status;
-            if (currentOrderStatus != null && mappedStatus != currentOrderStatus) {
-              final isBackward =
-                  (_orderStatusRank[mappedStatus] ?? 0) <
-                  (_orderStatusRank[currentOrderStatus] ?? 0);
-              final syncReason = (isBackward || mappedStatus == 'cancelled')
-                  ? 'Tự động đồng bộ theo trạng thái sản phẩm'
-                  : '';
-              await ref
-                  .read(orderDetailProvider(widget.orderRef).notifier)
-                  .transitionTo(mappedStatus, reason: syncReason);
-              if (mounted) {
-                showTopSnackBar(context, VN.autoSyncOrderStatus);
-              }
-            }
-          }
-        } catch (_) {
-          // Auto-sync failure is silent
-        } finally {
-          _syncing = false;
-        }
       }
     } catch (e) {
       if (mounted) {

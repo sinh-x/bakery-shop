@@ -620,3 +620,106 @@ def test_sync_order_backward_auto_reason_required(api_client):
         json={"status": "in_progress", "reason": ""},
     )
     assert resp.status_code == 422
+
+
+# --- Auto-sync: order status → extras/gifts (DG-050 Phase 1) ---
+
+
+def test_autosync_order_status_changes_extra_to_ready(api_client):
+    """AC2: Given an order whose status changes to 'ready', when extras exist,
+    then each non-cancelled extra auto-transitions to 'ready'."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "Khách test",
+        "items": [
+            {"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "isExtra": False},
+            {"productName": "Nến", "quantity": 1, "unitPrice": 10000, "isExtra": True},
+        ],
+    })
+    assert resp.status_code == 201
+    order = resp.json()
+    ref = order["orderRef"]
+    candle = next(i for i in order["workItems"] if i["productName"] == "Nến")
+
+    # Transition order: new → confirmed → in_progress → ready
+    for status in ["confirmed", "in_progress", "ready"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+
+    # Extra should now be at ready
+    candle_state = api_client.get(f"/api/orders/{ref}/items").json()
+    candle_item = next(i for i in candle_state if i["productName"] == "Nến")
+    assert candle_item["status"] == "ready"
+
+
+def test_autosync_extras_follow_order_when_order_transitions(api_client):
+    """When order status transitions, extras follow to matching work item status."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "Khách theo dõi",
+        "items": [
+            {"productName": "Bánh chính", "quantity": 1, "unitPrice": 200000},
+            {"productName": "Đĩa", "quantity": 1, "unitPrice": 5000, "isExtra": True},
+        ],
+    })
+    order = resp.json()
+    ref = order["orderRef"]
+
+    # Transition order to in_progress
+    api_client.post(f"/api/orders/{ref}/status", json={"status": "confirmed"})
+    api_client.post(f"/api/orders/{ref}/status", json={"status": "in_progress"})
+
+    plate = api_client.get(f"/api/orders/{ref}/items").json()
+    plate_item = next(i for i in plate if i["productName"] == "Đĩa")
+    assert plate_item["status"] == "working"
+
+
+def test_autosync_extras_not_affected_when_order_goes_to_cancelled(api_client):
+    """Extras already cancelled are not re-transitioned when order goes to cancelled."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "Khách hủy extras",
+        "items": [
+            {"productName": "Bánh", "quantity": 1, "unitPrice": 200000},
+            {"productName": "Nến", "quantity": 1, "unitPrice": 10000, "isExtra": True},
+        ],
+    })
+    order = resp.json()
+    ref = order["orderRef"]
+    candle = next(i for i in order["workItems"] if i["productName"] == "Nến")
+
+    # Cancel the extra first
+    api_client.post(f"/api/orders/{ref}/items/{candle['id']}/status", json={"status": "cancelled", "reason": ""})
+
+    # Transition order to confirmed → in_progress → ready → cancelled
+    for status in ["confirmed", "in_progress", "ready"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+    api_client.post(f"/api/orders/{ref}/status", json={"status": "cancelled", "reason": "Khách hủy"})
+
+    # Candle should still be cancelled (not re-transitioned)
+    candle_state = api_client.get(f"/api/orders/{ref}/items").json()
+    candle_item = next(i for i in candle_state if i["productName"] == "Nến")
+    assert candle_item["status"] == "cancelled"
+
+
+def test_autosync_extras_skip_already_matching(api_client):
+    """Extras that are already at target status are not updated unnecessarily."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "Khách skip",
+        "items": [
+            {"productName": "Bánh", "quantity": 1, "unitPrice": 200000},
+            {"productName": "Nến", "quantity": 1, "unitPrice": 10000, "isExtra": True},
+        ],
+    })
+    order = resp.json()
+    ref = order["orderRef"]
+    candle = next(i for i in order["workItems"] if i["productName"] == "Nến")
+
+    # Set candle to ready manually first (simulate it was already done)
+    api_client.post(f"/api/orders/{ref}/items/{candle['id']}/status", json={"status": "working", "reason": ""})
+    api_client.post(f"/api/orders/{ref}/items/{candle['id']}/status", json={"status": "ready", "reason": ""})
+
+    # Now transition order to ready — candle should stay at ready
+    for status in ["confirmed", "in_progress", "ready"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+
+    candle_state = api_client.get(f"/api/orders/{ref}/items").json()
+    candle_item = next(i for i in candle_state if i["productName"] == "Nến")
+    assert candle_item["status"] == "ready"
+

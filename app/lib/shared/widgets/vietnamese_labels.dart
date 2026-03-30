@@ -352,6 +352,7 @@ class VN {
 
   // Shipping fee & extras
   static const shippingFee = 'Phí giao hàng';
+  static const shippingFree = 'Miễn phí';
   static const extras = 'Phụ kiện';
   static const giftBadge = 'Tặng';
   static const toggleGift = 'Tặng/Trả phí';

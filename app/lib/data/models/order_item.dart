@@ -13,6 +13,8 @@ sealed class OrderItem with _$OrderItem {
     @Default('') String notes,
     @Default(false) bool isBirthday,
     int? age,
+    @Default(false) bool isExtra,
+    @Default(false) bool isGift,
   }) = _OrderItem;
 
   factory OrderItem.fromJson(Map<String, dynamic> json) =>
