@@ -43,19 +43,7 @@ DB_DST="$STAGING_DIR/baker.db"
 
 if [[ -f "$DB_SRC" ]]; then
   log "Backing up database: $DB_SRC"
-  python3 -c "
-import sqlite3
-import sys
-src = '$DB_SRC'
-dst = '$DB_DST'
-try:
-    with sqlite3.connect(src) as conn:
-        conn.backup(sqlite3.connect(dst))
-    print('Database backup successful')
-except Exception as e:
-    print(f'Database backup failed: {e}', file=sys.stderr)
-    sys.exit(1)
-"
+  sqlite3 "$DB_SRC" ".backup '$DB_DST'"
   log "Database backup complete"
 else
   log "WARNING: Database not found at $DB_SRC"
