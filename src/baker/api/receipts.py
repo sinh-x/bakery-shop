@@ -120,15 +120,24 @@ def _row(draw, y, label, value, font_l, font_v=None, color_v=(0, 0, 0)):
 
 def _sep(draw, y):
     """Thin separator line."""
-    draw.line([(MARGIN, y + 2), (RECEIPT_WIDTH - MARGIN, y + 2)], fill=(160, 160, 160), width=1)
-    return y + LINE_GAP + 6
+    y += 12  # padding above line
+    draw.line([(MARGIN, y), (RECEIPT_WIDTH - MARGIN, y)], fill=(160, 160, 160), width=1)
+    return y + 14  # padding below line
 
 
 def _double(draw, y):
     """Double separator line."""
+    y += 14  # padding above
     draw.line([(MARGIN, y), (RECEIPT_WIDTH - MARGIN, y)], fill=(0, 0, 0), width=1)
     draw.line([(MARGIN, y + 4), (RECEIPT_WIDTH - MARGIN, y + 4)], fill=(0, 0, 0), width=1)
-    return y + 12
+    return y + 18  # padding below
+
+
+def _thick(draw, y):
+    """Thick separator for major sections."""
+    y += 14  # padding above
+    draw.line([(MARGIN, y), (RECEIPT_WIDTH - MARGIN, y)], fill=(0, 0, 0), width=3)
+    return y + 16  # padding below
 
 
 def _dots(draw, y, x_start, x_end, font, color=(180, 180, 180)):
@@ -419,10 +428,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
             for ln in _wrap(order_notes, note_font, CONTENT_WIDTH):
                 y = _left_mixed(draw, y, ln, note_font, (80, 80, 80))
 
-    # Thick separator before bottom boxes
-    y += 14  # padding above
-    draw.line([(MARGIN, y), (RECEIPT_WIDTH - MARGIN, y)], fill=(0, 0, 0), width=3)
-    y += 16  # padding below
+    y = _thick(draw, y)
 
     # ── Bottom: Two side-by-side boxes [Customer + Source] | [Due Date/Time] ──
     half_w = (RECEIPT_WIDTH - 2 * MARGIN - BOX_GAP) // 2
