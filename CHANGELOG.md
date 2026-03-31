@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.1+37] — 2026-03-31
+- fix(dg-055): fix phone input cursor jump when dashes are auto-inserted
+
+## [0.3.1+36] — 2026-03-30
+- fix(backup): use nix-shell for sqlite3 availability on NixOS
+
 ## [0.3.1+35] — 2026-03-30
 - fix(backup): replace python3 with sqlite3 CLI in wasabi-backup script
 
