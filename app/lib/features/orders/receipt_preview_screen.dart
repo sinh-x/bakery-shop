@@ -6,6 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/api/receipt_service.dart';
+import '../../data/api/order_service.dart';
+import '../../providers/order_providers.dart';
+import '../../shared/widgets/printer_picker_dialog.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 
 import 'receipt_preview_print_stub.dart'
@@ -103,6 +106,12 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
   }
 
   Future<void> _printReceipt() async {
+    // Check if Flow B applies: workTicket type and order is new
+    final orderAsync = ref.read(orderDetailProvider(widget.orderRef));
+    final isFlowB =
+        widget.receiptType == ReceiptType.workTicket &&
+        orderAsync.value?.status == 'new';
+
     setState(() => _printing = true);
     try {
       final receiptService = ref.read(receiptServiceProvider);
@@ -128,7 +137,32 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
 
         if (!mounted) return;
 
-        await platform.printNative(context, printBytes, ref);
+        // Use tryPrintNative to get result for Flow B
+        final result = await platform.tryPrintNative(context, printBytes, ref);
+
+        if (!mounted) return;
+
+        if (result == PrinterPickerResult.success) {
+          showTopSnackBar(context, VN.printSuccess);
+
+          // Flow B: auto-confirm order after successful work ticket print
+          if (isFlowB) {
+            await ref
+                .read(orderDetailProvider(widget.orderRef).notifier)
+                .transitionTo('confirmed');
+            // Set workTicketPrintedAt
+            final orderService = ref.read(orderServiceProvider);
+            await orderService.updateWorkTicketPrintedAt(
+              widget.orderRef,
+              DateTime.now().toIso8601String(),
+            );
+            if (mounted) {
+              showTopSnackBar(context, VN.orderAutoConfirmed);
+            }
+          }
+        } else if (result == PrinterPickerResult.failed) {
+          showTopSnackBar(context, VN.printFailed);
+        }
       }
     } catch (e) {
       if (mounted) {

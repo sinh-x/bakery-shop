@@ -5,8 +5,19 @@ import 'dart:js_interop';
 import 'package:flutter/material.dart';
 import 'package:web/web.dart' as web;
 
+import '../../shared/widgets/printer_picker_dialog.dart';
+
 /// No-op on web — native only.
 Future<void> printNative(BuildContext context, Uint8List imageBytes, dynamic ref) async {}
+
+/// Returns cancelled on web since there's no Bluetooth printing.
+Future<PrinterPickerResult> tryPrintNative(
+  BuildContext context,
+  Uint8List imageBytes,
+  dynamic ref,
+) async {
+  return PrinterPickerResult.cancelled;
+}
 
 /// Open receipt image in a browser print window.
 void printWeb(Uint8List imageBytes) {
