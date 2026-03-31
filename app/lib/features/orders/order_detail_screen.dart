@@ -27,6 +27,7 @@ const _statusColors = {
 
 const _workItemStatusColors = {
   'pending': Colors.grey,
+  'confirmed': Colors.blue,
   'working': Colors.orange,
   'ready': Colors.green,
   'delivered': Colors.teal,
@@ -45,10 +46,11 @@ const _orderStatusRank = {
 
 const _workItemStatusRank = {
   'pending': 0,
-  'working': 1,
-  'ready': 2,
-  'delivered': 3,
-  'cancelled': 4,
+  'confirmed': 1,
+  'working': 2,
+  'ready': 3,
+  'delivered': 4,
+  'cancelled': 5,
 };
 
 bool _isBackward(String current, String target, Map<String, int> ranks) =>
@@ -1644,7 +1646,7 @@ class _WorkItemCard extends StatelessWidget {
     final theme = Theme.of(context);
     final statusColor = _workItemStatusColors[item.status] ?? Colors.grey;
     final statusLabel = workItemStatusLabel(item.status);
-    const allStatuses = ['pending', 'working', 'ready', 'delivered'];
+    const allStatuses = ['pending', 'confirmed', 'working', 'ready', 'delivered'];
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),

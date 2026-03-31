@@ -285,6 +285,7 @@ class VN {
 
   // Work item statuses
   static const workItemPending = 'Chờ xử lý';
+  static const workItemConfirmed = 'Đã xác nhận';
   static const workItemWorking = 'Đang làm';
   static const workItemReady = 'Sẵn sàng';
   static const workItemDelivered = 'Đã giao';
@@ -463,6 +464,7 @@ String paymentMethodLabel(String method) {
 // Work item status mapping
 const workItemStatusMap = {
   'pending': VN.workItemPending,
+  'confirmed': VN.workItemConfirmed,
   'working': VN.workItemWorking,
   'ready': VN.workItemReady,
   'delivered': VN.workItemDelivered,
@@ -475,6 +477,7 @@ String workItemStatusLabel(String status) =>
 // Work item status colors
 const workItemStatusColors = {
   'pending': Colors.grey,
+  'confirmed': Colors.blue,
   'working': Colors.orange,
   'ready': Colors.green,
   'delivered': Colors.teal,
@@ -483,7 +486,8 @@ const workItemStatusColors = {
 
 // Valid work item transitions
 const workItemValidTransitions = {
-  'pending': ['working', 'cancelled'],
+  'pending': ['confirmed', 'working', 'cancelled'],
+  'confirmed': ['working', 'cancelled'],
   'working': ['ready', 'cancelled'],
   'ready': ['delivered', 'cancelled'],
   'delivered': ['cancelled'],
