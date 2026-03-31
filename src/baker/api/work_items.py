@@ -14,15 +14,17 @@ router = APIRouter(prefix="/api/orders", tags=["work-items"])
 
 _WORK_ITEM_RANK = {
     WorkItemStatus.PENDING: 0,
-    WorkItemStatus.WORKING: 1,
-    WorkItemStatus.READY: 2,
-    WorkItemStatus.DELIVERED: 3,
-    WorkItemStatus.CANCELLED: 4,
+    WorkItemStatus.CONFIRMED: 1,
+    WorkItemStatus.WORKING: 2,
+    WorkItemStatus.READY: 3,
+    WorkItemStatus.DELIVERED: 4,
+    WorkItemStatus.CANCELLED: 5,
 }
 
 # Mapping from work item status to order status (F2)
 _WORK_ITEM_TO_ORDER_STATUS = {
     WorkItemStatus.PENDING.value: "new",
+    WorkItemStatus.CONFIRMED.value: "confirmed",
     WorkItemStatus.WORKING.value: "in_progress",
     WorkItemStatus.READY.value: "ready",
     WorkItemStatus.DELIVERED.value: "delivered",
@@ -32,7 +34,7 @@ _WORK_ITEM_TO_ORDER_STATUS = {
 # Mapping from order status to work item status for extras sync (F4)
 _ORDER_TO_WORK_ITEM_STATUS = {
     "new": "pending",
-    "confirmed": "pending",
+    "confirmed": "confirmed",
     "in_progress": "working",
     "ready": "ready",
     "delivered": "delivered",

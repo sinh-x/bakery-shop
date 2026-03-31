@@ -5,6 +5,7 @@ from typing import Optional
 
 class WorkItemStatus(str, Enum):
     PENDING = "pending"
+    CONFIRMED = "confirmed"
     WORKING = "working"
     READY = "ready"
     DELIVERED = "delivered"

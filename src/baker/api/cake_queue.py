@@ -29,7 +29,7 @@ def list_work_items_queue(
             status_clause = "oi.status != 'delivered'"
             params: list = []
         else:
-            allowed = ["pending", "working"]
+            allowed = ["pending", "confirmed", "working"]
             if include_ready:
                 allowed.append("ready")
             placeholders = ",".join("?" * len(allowed))
