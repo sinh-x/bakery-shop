@@ -60,6 +60,7 @@ class OrderEdit(BaseModel):
     source: Optional[str] = None
     shippingFee: Optional[float] = None
     changedBy: str = ""
+    workTicketPrintedAt: Optional[str] = None
 
 
 class StatusTransition(BaseModel):
@@ -239,6 +240,7 @@ def edit_order(ref: str, body: OrderEdit):
             "notes": "notes",
             "source": "source",
             "shippingFee": "shipping_fee",
+            "workTicketPrintedAt": "work_ticket_printed_at",
         }
 
         for camel, snake in field_map.items():

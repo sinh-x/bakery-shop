@@ -121,6 +121,12 @@ class OrderService {
     return Order.fromJson(response.data as Map<String, dynamic>);
   }
 
+  Future<Order> updateWorkTicketPrintedAt(String ref, String printedAt) async {
+    final body = <String, dynamic>{'workTicketPrintedAt': printedAt};
+    final response = await _dio.patch('/api/orders/$ref', data: body);
+    return Order.fromJson(response.data as Map<String, dynamic>);
+  }
+
   // ── Order Photos ──────────────────────────────────────────────────────────
 
   Future<List<OrderPhoto>> listOrderPhotos(String orderRef) async {

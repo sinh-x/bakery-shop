@@ -342,6 +342,19 @@ class VN {
   static const printerNotConnected = 'Máy in chưa kết nối';
   static const printerConnecting = 'Đang kết nối máy in...';
 
+  // Print checklist dialog (Flow A)
+  static const printChecklistTitle = 'In phiếu';
+  static const printSkip = 'Bỏ qua';
+  static const printStatusUnprinted = 'Chưa in phiếu';
+  static const printStatusPrinted = 'Đã in phiếu';
+  static const fetchingInternalReceipt = 'Đang tải phiếu nội bộ...';
+  static const fetchingCustomerReceipt = 'Đang tải hóa đơn khách hàng...';
+  static const printingInternalReceipt = 'Đang in phiếu nội bộ...';
+  static const printingCustomerReceipt = 'Đang in hóa đơn khách hàng...';
+  static const internalReceiptPrinted = 'Đã in phiếu nội bộ';
+  static const customerReceiptPrinted = 'Đã in hóa đơn khách hàng';
+  static const orderAutoConfirmed = 'Đã tự động xác nhận đơn hàng';
+
   // Printer picker
   static const selectPrinter = 'Chọn máy in';
   static const scanning = 'Đang tìm...';

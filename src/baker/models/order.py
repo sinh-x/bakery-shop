@@ -158,6 +158,7 @@ class Order:
     id: Optional[int] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    work_ticket_printed_at: Optional[str] = None
 
     def calculate_total(self):
         # Sum only non-gift items + shipping_fee
@@ -251,6 +252,7 @@ class Order:
             created_by=row["created_by"] if "created_by" in row.keys() else "",
             shipping_fee=row["shipping_fee"] if "shipping_fee" in row.keys() else 0.0,
             created_at=row["created_at"], updated_at=row["updated_at"],
+            work_ticket_printed_at=row["work_ticket_printed_at"] if "work_ticket_printed_at" in row.keys() else None,
         )
 
     def to_api_dict(self) -> dict:
@@ -276,4 +278,5 @@ class Order:
             "packingChecklist": [],
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
+            "workTicketPrintedAt": self.work_ticket_printed_at,
         }

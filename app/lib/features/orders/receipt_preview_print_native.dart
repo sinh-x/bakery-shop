@@ -42,6 +42,38 @@ Future<void> printNative(BuildContext context, Uint8List imageBytes, dynamic ref
   }
 }
 
+/// Tries to print and returns the result without showing snackbar.
+/// Used by Flow B for auto-confirm logic.
+Future<PrinterPickerResult> tryPrintNative(
+  BuildContext context,
+  Uint8List imageBytes,
+  WidgetRef widgetRef,
+) async {
+  final printerService = widgetRef.read(printerServiceProvider);
+  await printerService.init();
+
+  // Try auto-reconnect to last printer
+  if (printerService.lastPrinterMac != null) {
+    try {
+      await printerService.connect(printerService.lastPrinterMac!);
+      await printerService.printImage(imageBytes);
+      return PrinterPickerResult.success;
+    } catch (_) {
+      // Fall through to picker
+    }
+  }
+
+  if (!context.mounted) return PrinterPickerResult.cancelled;
+
+  final result = await showPrinterPickerDialog(
+    context: context,
+    imageBytes: imageBytes,
+    printerService: printerService,
+  );
+
+  return result;
+}
+
 /// No-op on native — web only.
 void printWeb(Uint8List imageBytes) {}
 
