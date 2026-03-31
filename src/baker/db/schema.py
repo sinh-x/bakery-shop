@@ -623,6 +623,11 @@ def _migrate_v20_seed_shipping_and_extras(conn):
         )
 
 
+WORK_TICKET_PRINTED_AT_SCHEMA = """
+ALTER TABLE orders ADD COLUMN work_ticket_printed_at TEXT DEFAULT NULL;
+"""
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -715,6 +720,10 @@ MIGRATIONS = {
         "description": "Add shipping_fee to orders, is_extra and is_gift to order_items, seed shipping presets and extras",
         "sql": SHIPPING_FEE_AND_EXTRAS_SCHEMA,
         "callable": _migrate_v20_seed_shipping_and_extras,
+    },
+    21: {
+        "description": "Add work_ticket_printed_at column to orders for tracking work ticket print state",
+        "sql": WORK_TICKET_PRINTED_AT_SCHEMA,
     },
 }
 
