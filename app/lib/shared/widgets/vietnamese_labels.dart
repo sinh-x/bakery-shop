@@ -354,6 +354,7 @@ class VN {
   static const internalReceiptPrinted = 'Đã in phiếu nội bộ';
   static const customerReceiptPrinted = 'Đã in hóa đơn khách hàng';
   static const orderAutoConfirmed = 'Đã tự động xác nhận đơn hàng';
+  static const printInternalPrompt = 'Đơn hàng chưa in phiếu nội bộ. In ngay?';
 
   // Printer picker
   static const selectPrinter = 'Chọn máy in';
