@@ -124,7 +124,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
       if (targetStatus == 'confirmed' && mounted) {
         final order = ref.read(orderDetailProvider(widget.orderRef)).value;
         if (order != null && order.workTicketPrintedAt == null) {
-          await _showInternalPrintPrompt();
+          await _showInternalPrintPrompt(int.tryParse(item.id));
         }
       }
     } catch (e) {
@@ -136,11 +136,14 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
     }
   }
 
-  Future<void> _showInternalPrintPrompt() async {
+  Future<void> _showInternalPrintPrompt(int? itemId) async {
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => _InternalPrintDialog(orderRef: widget.orderRef),
+      builder: (ctx) => _InternalPrintDialog(
+        orderRef: widget.orderRef,
+        itemId: itemId,
+      ),
     );
   }
 
@@ -587,9 +590,10 @@ class _SectionLabel extends StatelessWidget {
 // ── Internal Receipt Print Dialog (work item confirm prompt) ────────────────
 
 class _InternalPrintDialog extends ConsumerStatefulWidget {
-  const _InternalPrintDialog({required this.orderRef});
+  const _InternalPrintDialog({required this.orderRef, this.itemId});
 
   final String orderRef;
+  final int? itemId;
 
   @override
   ConsumerState<_InternalPrintDialog> createState() =>
@@ -614,6 +618,7 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
       final internalBytes = await receiptService.fetchReceipt(
         orderRef: widget.orderRef,
         type: ReceiptType.workTicket,
+        itemId: widget.itemId,
       );
 
       setState(() => _statusText = VN.printingInternalReceipt);
