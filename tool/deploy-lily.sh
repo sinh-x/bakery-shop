@@ -48,7 +48,7 @@ GIT_STATUS=$(git -C "$REPO_ROOT" status --porcelain)
 if [ -n "$GIT_STATUS" ]; then
   echo "WARNING: Working tree is dirty. Uncommitted changes:"
   git -C "$REPO_ROOT" status --short
-  if [ "$DRY_RUN" -eq 0 ]; then
+  if [ "$DRY_RUN" -eq 0 ] && [ "$FORCE" -eq 0 ]; then
     echo "Commit or stash changes before deploying, or use --force to override."
     exit 1
   fi
@@ -123,7 +123,14 @@ echo "--- Git pull on lily ---"
 remote_cmd "cd $REMOTE_PATH && git fetch origin main && git reset --hard origin/main"
 echo ""
 
-# 2. Rsync web-build/ (unless --backend-only)
+# 2. Snapshot previous web-build/ BEFORE rsync (for rollback)
+if [ "$BACKEND_ONLY" -eq 0 ]; then
+  echo "--- Snapshot web-build/ ---"
+  remote_cmd "cd $REMOTE_PATH && rm -rf web-build.prev && cp -r web-build web-build.prev 2>/dev/null || true"
+  echo ""
+fi
+
+# 3. Rsync web-build/ (unless --backend-only)
 if [ "$BACKEND_ONLY" -eq 0 ]; then
   echo "--- Rsync web-build/ to lily ---"
   if [ "$DRY_RUN" -eq 0 ]; then
@@ -134,11 +141,6 @@ if [ "$BACKEND_ONLY" -eq 0 ]; then
   fi
   echo ""
 fi
-
-# 3. Snapshot previous web-build/ (for rollback)
-echo "--- Snapshot web-build/ ---"
-remote_cmd "cd $REMOTE_PATH && cp -r web-build web-build.prev 2>/dev/null || true"
-echo ""
 
 # 4. Database backup on lily
 echo "--- Database backup ---"
@@ -169,8 +171,7 @@ echo ""
 # 7. Health check with retry
 echo "--- Health check ---"
 if [ "$DRY_RUN" -eq 0 ]; then
-  check_health "$REMOTE_HOST" 2108 10 3
-  if [ $? -ne 0 ]; then
+  if ! check_health "$REMOTE_HOST" 2108 10 3; then
     echo "ERROR: Health check failed after retries"
     exit 1
   fi
