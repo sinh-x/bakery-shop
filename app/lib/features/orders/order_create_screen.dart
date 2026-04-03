@@ -676,26 +676,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             const SizedBox(height: 20),
 
             // ── Shipping Fee ───────────────────────────────────────────
-            if (_deliveryType == 'bus') ...[
-              _SectionHeader(VN.shippingFee),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  ChoiceChip(
-                    label: Text(VN.shippingFree),
-                    selected: _shippingFee == 0.0,
-                    onSelected: (_) => _setShippingFee(0.0),
-                  ),
-                  ChoiceChip(
-                    label: Text(formatVND(25000)),
-                    selected: _shippingFee == 25000.0,
-                    onSelected: (_) => _setShippingFee(25000.0),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-            ] else if (_deliveryType == 'door') ...[
+            if (_deliveryType == 'bus' || _deliveryType == 'door') ...[
               _SectionHeader(VN.shippingFee),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,

@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.3.1+38] — 2026-04-01
+- fix: pass item_id to receipt API and print all main items
+
 ## [0.3.1+37] — 2026-03-31
 - fix(dg-055): fix phone input cursor jump when dashes are auto-inserted
 
