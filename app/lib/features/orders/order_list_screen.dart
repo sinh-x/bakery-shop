@@ -650,6 +650,50 @@ class _OrderCard extends ConsumerWidget {
                 ],
               ),
 
+              // Print status sub-label for confirmed/in_progress orders
+              if ((order.status == 'confirmed' || order.status == 'in_progress') && order.workTicketPrintedAt != null) ...[
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    const Spacer(),
+                    Icon(
+                      Icons.check_circle_outline,
+                      size: 12,
+                      color: Colors.green.shade600,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      VN.printStatusPrinted,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Colors.green.shade600,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if ((order.status == 'confirmed' || order.status == 'in_progress') && order.workTicketPrintedAt == null) ...[
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    const Spacer(),
+                    Icon(
+                      Icons.print_outlined,
+                      size: 12,
+                      color: Colors.orange.shade600,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      VN.printStatusUnprinted,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Colors.orange.shade600,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+
               const SizedBox(height: 4),
 
               // Customer name + source badge

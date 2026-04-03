@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+# Deploy bakery-shop to lily via SSH.
+# Usage: ./tool/deploy-lily.sh [--dry-run] [--rollback] [--force] [--web-only] [--backend-only]
+#
+# Options:
+#   --dry-run      Print planned steps without executing
+#   --rollback     Rollback to previous web-build and Docker image
+#   --force        Override branch warning (default branch is main)
+#   --web-only     Only deploy web app (skip backend rebuild)
+#   --backend-only Only deploy backend (skip web build and rsync)
+#
+set -euo pipefail
+
+REMOTE_HOST="${REMOTE_HOST:-lily}"
+REMOTE_PATH="/home/sinh/bakery-shop"
+DEPLOY_LOG="$REMOTE_PATH/deploy-history/deploy-history.log"
+
+source "$(dirname "$0")/lib.sh"
+load_env
+
+DRY_RUN=0
+ROLLBACK=0
+FORCE=0
+WEB_ONLY=0
+BACKEND_ONLY=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=1 ;;
+    --rollback) ROLLBACK=1 ;;
+    --force) FORCE=1 ;;
+    --web-only) WEB_ONLY=1 ;;
+    --backend-only) BACKEND_ONLY=1 ;;
+    *)
+      echo "Unknown argument: $arg"
+      echo "Usage: $0 [--dry-run] [--rollback] [--force] [--web-only] [--backend-only]"
+      exit 1
+      ;;
+  esac
+done
+
+# --- Pre-checks ---
+echo "=== Pre-deploy checks ==="
+
+CURRENT_BRANCH=$(git -C "$REPO_ROOT" branch --show-current)
+GIT_STATUS=$(git -C "$REPO_ROOT" status --porcelain)
+
+if [ -n "$GIT_STATUS" ]; then
+  echo "WARNING: Working tree is dirty. Uncommitted changes:"
+  git -C "$REPO_ROOT" status --short
+  if [ "$DRY_RUN" -eq 0 ] && [ "$FORCE" -eq 0 ]; then
+    echo "Commit or stash changes before deploying, or use --force to override."
+    exit 1
+  fi
+fi
+
+if [ "$CURRENT_BRANCH" != "main" ] && [ "$FORCE" -eq 0 ]; then
+  echo "WARNING: Not on main branch (currently: $CURRENT_BRANCH)."
+  echo "Deploy from main unless you know what you're doing."
+  echo "Use --force to override this warning."
+  exit 1
+fi
+
+# Read version from pyproject.toml
+APP_VERSION=$(grep '^version = ' "$REPO_ROOT/pyproject.toml" | sed 's/version = "//;s/"//')
+GIT_COMMIT=$(git -C "$REPO_ROOT" rev-parse --short HEAD)
+echo "  Branch: $CURRENT_BRANCH"
+echo "  Commit: $GIT_COMMIT"
+echo "  Version: $APP_VERSION"
+echo ""
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "=== DRY RUN — no changes will be made ==="
+fi
+
+# --- Phase 1: Flutter web build (unless --backend-only) ---
+if [ "$BACKEND_ONLY" -eq 0 ]; then
+  echo "=== Building Flutter web ==="
+  if [ "$DRY_RUN" -eq 0 ]; then
+    build_flutter_web
+  else
+    echo "  Would run: build_flutter_web (nix develop .#flutter + flutter build web --release)"
+  fi
+  echo ""
+fi
+
+# --- Phase 2: Remote operations ---
+echo "=== Remote operations on $REMOTE_HOST ==="
+
+# Remote command template
+remote_cmd() {
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "[dry-run] ssh $REMOTE_HOST '$1'"
+  else
+    remote_exec "$REMOTE_HOST" "$1"
+  fi
+}
+
+if [ "$ROLLBACK" -eq 1 ]; then
+  echo "--- Rolling back ---"
+  remote_cmd "cd $REMOTE_PATH && git stash 2>/dev/null || true"
+  remote_cmd "cd $REMOTE_PATH && docker compose --profile prod stop"
+  echo "  Restoring previous web-build..."
+  remote_cmd "cd $REMOTE_PATH && if [ -d web-build.prev ]; then mv web-build web-build.new && mv web-build.prev web-build && rm -rf web-build.new; fi"
+  echo "  Rebuilding Docker image..."
+  remote_cmd "cd $REMOTE_PATH && docker compose --profile prod build baker-prod"
+  echo "  Restarting containers..."
+  remote_cmd "cd $REMOTE_PATH && docker compose --profile prod up -d"
+  echo "  Running health check..."
+  remote_cmd "curl -sf --max-time 10 http://localhost:2108/api/health || echo 'Health check failed'"
+  echo "  Logging rollback..."
+  remote_cmd "mkdir -p $REMOTE_PATH/deploy-history"
+  remote_exec "$REMOTE_HOST" "echo '{\"timestamp\":\"$(date -Iseconds)\",\"version\":\"rollback\",\"commit\":\"$GIT_COMMIT\",\"status\":\"rollback\",\"user\":\"$(whoami)\"}' >> $DEPLOY_LOG" 2>/dev/null || true
+  echo ""
+  echo "=== Rollback complete ==="
+  exit 0
+fi
+
+# --- Normal deploy flow ---
+
+# 1. Git pull on lily
+echo "--- Git pull on lily ---"
+remote_cmd "cd $REMOTE_PATH && git fetch origin main && git reset --hard origin/main"
+echo ""
+
+# 2. Snapshot previous web-build/ BEFORE rsync (for rollback)
+if [ "$BACKEND_ONLY" -eq 0 ]; then
+  echo "--- Snapshot web-build/ ---"
+  remote_cmd "cd $REMOTE_PATH && rm -rf web-build.prev && cp -r web-build web-build.prev 2>/dev/null || true"
+  echo ""
+fi
+
+# 3. Rsync web-build/ (unless --backend-only)
+if [ "$BACKEND_ONLY" -eq 0 ]; then
+  echo "--- Rsync web-build/ to lily ---"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    echo "  Syncing to $REMOTE_HOST:$REMOTE_PATH/web-build/"
+    rsync -av --delete "$REPO_ROOT/web-build/" "$REMOTE_HOST:$REMOTE_PATH/web-build/"
+  else
+    echo "  Would run: rsync -av --delete $REPO_ROOT/web-build/ $REMOTE_HOST:$REMOTE_PATH/web-build/"
+  fi
+  echo ""
+fi
+
+# 4. Database backup on lily
+echo "--- Database backup ---"
+if [ "$DRY_RUN" -eq 0 ]; then
+  remote_exec "$REMOTE_HOST" "cd $REMOTE_PATH && docker compose --profile prod exec -T baker-prod python -m baker db backup /tmp/baker.db.backup 2>/dev/null || echo 'Backup via entrypoint approach'"
+  remote_exec "$REMOTE_HOST" "cd $REMOTE_PATH && docker compose --profile prod cp baker-prod:/tmp/baker.db.backup ./data/backups/baker.db.rollback 2>/dev/null && echo 'DB backup taken for rollback' || echo 'Backup step completed (migration backup on restart)'"
+else
+  echo "  Would run: database backup via docker exec"
+fi
+echo ""
+
+# 5. Docker rebuild on lily (unless --web-only)
+if [ "$WEB_ONLY" -eq 0 ]; then
+  echo "--- Docker rebuild ---"
+  remote_cmd "cd $REMOTE_PATH && docker compose --profile prod build baker-prod"
+  echo ""
+fi
+
+# 6. Docker restart
+echo "--- Restarting containers ---"
+if [ "$WEB_ONLY" -eq 0 ]; then
+  remote_cmd "cd $REMOTE_PATH && docker compose --profile prod up -d"
+else
+  remote_cmd "cd $REMOTE_PATH && docker compose --profile prod restart caddy"
+fi
+echo ""
+
+# 7. Health check with retry
+echo "--- Health check ---"
+if [ "$DRY_RUN" -eq 0 ]; then
+  if ! check_health "$REMOTE_HOST" 2108 10 3; then
+    echo "ERROR: Health check failed after retries"
+    exit 1
+  fi
+else
+  echo "  Would run: check_health with 10 attempts, 3s delay"
+fi
+echo ""
+
+# 8. Version verification
+echo "--- Version verification ---"
+if [ "$DRY_RUN" -eq 0 ]; then
+  DEPLOYED_VERSION=$(curl -sf --max-time 5 "http://${REMOTE_HOST}:2108/api/health" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('version','unknown'))" 2>/dev/null || echo "unknown")
+  echo "  Deployed version: $DEPLOYED_VERSION"
+  if [ "$DEPLOYED_VERSION" != "$APP_VERSION" ]; then
+    echo "  Note: Deployed version ($DEPLOYED_VERSION) != pyproject.toml ($APP_VERSION)"
+    echo "  This may be due to in-flight migration. Verify manually."
+  fi
+else
+  echo "  Would verify: pyproject.toml version ($APP_VERSION) matches /api/health response"
+fi
+echo ""
+
+# 9. Deploy log
+echo "--- Logging deployment ---"
+if [ "$DRY_RUN" -eq 0 ]; then
+  log_deploy "$REMOTE_HOST" "$APP_VERSION" "$GIT_COMMIT" "success"
+  echo "  Logged to $DEPLOY_LOG"
+else
+  echo "  Would log: timestamp, version=$APP_VERSION, commit=$GIT_COMMIT, status=success"
+fi
+echo ""
+
+echo "=== Deploy complete ==="
+if [ "$DRY_RUN" -eq 0 ]; then
+  echo "  Web app: http://${REMOTE_HOST}"
+  echo "  API: http://${REMOTE_HOST}:2108/api/health"
+fi

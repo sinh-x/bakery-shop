@@ -47,3 +47,55 @@ restart_caddy() {
   (cd "$REPO_ROOT" && docker compose --profile prod restart caddy)
   echo "Caddy restarted."
 }
+
+# --- Execute command on remote host via SSH ---
+# Usage: remote_exec "hostname" "command string"
+remote_exec() {
+  local host="$1"
+  local cmd="$2"
+  ssh "$host" "$cmd"
+}
+
+# --- Check health endpoint with retry loop ---
+# Usage: check_health [host] [port] [max_attempts] [delay_seconds]
+# Returns 0 on success, 1 on failure
+check_health() {
+  local host="${1:-localhost}"
+  local port="${2:-2108}"
+  local max_attempts="${3:-10}"
+  local delay="${4:-3}"
+
+  local attempt=1
+  while [ "$attempt" -le "$max_attempts" ]; do
+    local response
+    response=$(curl -sf --max-time 5 "http://${host}:${port}/api/health" 2>/dev/null)
+    if [ -n "$response" ]; then
+      local status
+      status=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null)
+      if [ "$status" = "ok" ]; then
+        echo "Health check passed: $response"
+        return 0
+      fi
+    fi
+    echo "Attempt $attempt/$max_attempts: health check not ready yet..."
+    sleep "$delay"
+    attempt=$((attempt + 1))
+  done
+  echo "ERROR: Health check failed after $max_attempts attempts"
+  return 1
+}
+
+# --- Log deployment to history file on remote host ---
+# Usage: log_deploy "hostname" "version" "commit" "status" "user"
+log_deploy() {
+  local host="$1"
+  local version="$2"
+  local commit="$3"
+  local status="$4"
+  local user="${5:-$(whoami)}"
+  local timestamp
+  timestamp=$(date -Iseconds)
+  local log_line="{\"timestamp\":\"$timestamp\",\"version\":\"$version\",\"commit\":\"$commit\",\"status\":\"$status\",\"user\":\"$user\"}"
+
+  remote_exec "$host" "mkdir -p /home/sinh/bakery-shop/deploy-history && echo '$log_line' >> /home/sinh/bakery-shop/deploy-history/deploy-history.log"
+}

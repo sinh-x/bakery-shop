@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,13 +7,16 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api/api_client.dart';
+import '../../data/api/order_service.dart';
 import '../../data/api/receipt_service.dart';
 import '../../data/models/order.dart';
 import '../../data/models/order_photo.dart';
 import '../../data/models/payment_transaction.dart';
 import '../../data/models/work_item.dart';
+import '../../data/services/printer_service.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/utils/phone_formatter.dart';
+import '../../shared/widgets/printer_picker_dialog.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/order_photo_section.dart';
 
@@ -27,6 +32,7 @@ const _statusColors = {
 
 const _workItemStatusColors = {
   'pending': Colors.grey,
+  'confirmed': Colors.blue,
   'working': Colors.orange,
   'ready': Colors.green,
   'delivered': Colors.teal,
@@ -45,10 +51,11 @@ const _orderStatusRank = {
 
 const _workItemStatusRank = {
   'pending': 0,
-  'working': 1,
-  'ready': 2,
-  'delivered': 3,
-  'cancelled': 4,
+  'confirmed': 1,
+  'working': 2,
+  'ready': 3,
+  'delivered': 4,
+  'cancelled': 5,
 };
 
 bool _isBackward(String current, String target, Map<String, int> ranks) =>
@@ -308,6 +315,10 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       if (mounted) {
         showTopSnackBar(context, VN.orderStatusUpdated);
       }
+      // Flow A: after new → confirmed transition, show print checklist dialog
+      if (targetStatus == 'confirmed' && order.status == 'new') {
+        await _showPrintChecklistDialog();
+      }
     } catch (e) {
       if (mounted) {
         showTopSnackBar(context, '${VN.apiError}: $e');
@@ -315,6 +326,14 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     } finally {
       if (mounted) setState(() => _transitioning = false);
     }
+  }
+
+  Future<void> _showPrintChecklistDialog() async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _PrintChecklistDialog(orderRef: order.orderRef),
+    );
   }
 
   double _computePaid(List<PaymentTransaction> txns) {
@@ -1487,6 +1506,13 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
       if (mounted) {
         showTopSnackBar(context, VN.workItemStatusChanged);
       }
+
+      // Prompt to print internal receipt if confirming and not yet printed
+      if (targetStatus == 'confirmed' &&
+          widget.order.workTicketPrintedAt == null &&
+          mounted) {
+        await _showInternalPrintPrompt(int.tryParse(item.id));
+      }
     } catch (e) {
       if (mounted) {
         showTopSnackBar(context, '${VN.apiError}: $e');
@@ -1494,6 +1520,17 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
     } finally {
       if (mounted) setState(() => _transitioning = false);
     }
+  }
+
+  Future<void> _showInternalPrintPrompt(int? itemId) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _InternalPrintDialog(
+        orderRef: widget.orderRef,
+        itemId: itemId,
+      ),
+    );
   }
 
   @override
@@ -1644,7 +1681,7 @@ class _WorkItemCard extends StatelessWidget {
     final theme = Theme.of(context);
     final statusColor = _workItemStatusColors[item.status] ?? Colors.grey;
     final statusLabel = workItemStatusLabel(item.status);
-    const allStatuses = ['pending', 'working', 'ready', 'delivered'];
+    const allStatuses = ['pending', 'confirmed', 'working', 'ready', 'delivered'];
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1876,6 +1913,334 @@ class _SectionHeader extends StatelessWidget {
               color: Theme.of(context).colorScheme.primary,
             ),
       ),
+    );
+  }
+}
+
+// ── Print Checklist Dialog (Flow A) ─────────────────────────────────────────
+
+class _PrintChecklistDialog extends ConsumerStatefulWidget {
+  const _PrintChecklistDialog({required this.orderRef});
+
+  final String orderRef;
+
+  @override
+  ConsumerState<_PrintChecklistDialog> createState() =>
+      _PrintChecklistDialogState();
+}
+
+class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
+  bool _printInternal = true;
+  bool _printCustomer = true;
+  bool _printing = false;
+  String _statusText = '';
+
+  Future<void> _printSelected() async {
+    if (!_printInternal && !_printCustomer) return;
+
+    setState(() => _printing = true);
+
+    try {
+      final printerService = ref.read(printerServiceProvider);
+      await printerService.init();
+
+      // Print internal receipt first — one per main work item
+      if (_printInternal) {
+        final receiptService = ref.read(receiptServiceProvider);
+        final items =
+            ref.read(orderWorkItemsProvider(widget.orderRef)).value ?? [];
+        final mainItemIds = items
+            .where((i) => !i.isExtra && !i.isGift)
+            .map((i) => int.tryParse(i.id))
+            .whereType<int>()
+            .toList();
+
+        bool anyInternalSuccess = false;
+        for (final itemId in mainItemIds) {
+          setState(() => _statusText = VN.fetchingInternalReceipt);
+          final internalBytes = await receiptService.fetchReceipt(
+            orderRef: widget.orderRef,
+            type: ReceiptType.workTicket,
+            itemId: itemId,
+          );
+
+          setState(() => _statusText = VN.printingInternalReceipt);
+          final internalResult = await _tryPrint(
+            printerService,
+            internalBytes,
+          );
+          if (internalResult == PrinterPickerResult.success) {
+            anyInternalSuccess = true;
+          } else if (internalResult == PrinterPickerResult.failed) {
+            setState(() => _printing = false);
+            return;
+          }
+        }
+
+        if (anyInternalSuccess) {
+          final orderService = ref.read(orderServiceProvider);
+          await orderService.updateWorkTicketPrintedAt(
+            widget.orderRef,
+            DateTime.now().toIso8601String(),
+          );
+          if (mounted) {
+            showTopSnackBar(context, VN.internalReceiptPrinted);
+          }
+        }
+      }
+
+      // Print customer receipt
+      if (_printCustomer) {
+        setState(() => _statusText = VN.fetchingCustomerReceipt);
+        final receiptService = ref.read(receiptServiceProvider);
+        final customerBytes = await receiptService.fetchReceipt(
+          orderRef: widget.orderRef,
+          type: ReceiptType.customer,
+        );
+
+        setState(() => _statusText = VN.printingCustomerReceipt);
+        await _tryPrint(printerService, customerBytes);
+      }
+
+      if (mounted) {
+        showTopSnackBar(context, VN.printSuccess);
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.apiError}: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _printing = false);
+      }
+    }
+  }
+
+  Future<PrinterPickerResult> _tryPrint(
+    PrinterService printerService,
+    Uint8List imageBytes,
+  ) async {
+    // Try auto-reconnect to last printer first
+    if (printerService.lastPrinterMac != null) {
+      try {
+        await printerService.connect(printerService.lastPrinterMac!);
+        await printerService.printImage(imageBytes);
+        return PrinterPickerResult.success;
+      } catch (_) {
+        // Fall through to picker
+      }
+    }
+
+    if (!mounted) return PrinterPickerResult.cancelled;
+
+    final result = await showPrinterPickerDialog(
+      context: context,
+      imageBytes: imageBytes,
+      printerService: printerService,
+    );
+
+    if (!mounted) return PrinterPickerResult.cancelled;
+
+    return result;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasSelection = _printInternal || _printCustomer;
+
+    return AlertDialog(
+      title: Text(VN.printChecklistTitle),
+      content: _printing
+          ? SizedBox(
+              height: 80,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 12),
+                  Text(
+                    _statusText,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CheckboxListTile(
+                  value: _printInternal,
+                  onChanged: (v) => setState(() => _printInternal = v ?? false),
+                  title: Text(VN.printWorkTicket),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                CheckboxListTile(
+                  value: _printCustomer,
+                  onChanged: (v) => setState(() => _printCustomer = v ?? false),
+                  title: Text(VN.printCustomerReceipt),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+      actions: [
+        TextButton(
+          onPressed: _printing ? null : () => Navigator.pop(context),
+          child: Text(VN.printSkip),
+        ),
+        if (!_printing)
+          FilledButton(
+            onPressed: hasSelection ? _printSelected : null,
+            child: Text(VN.print),
+          ),
+      ],
+    );
+  }
+}
+
+// ── Internal Receipt Print Dialog (work item confirm prompt) ────────────────
+
+class _InternalPrintDialog extends ConsumerStatefulWidget {
+  const _InternalPrintDialog({required this.orderRef, this.itemId});
+
+  final String orderRef;
+  final int? itemId;
+
+  @override
+  ConsumerState<_InternalPrintDialog> createState() =>
+      _InternalPrintDialogState();
+}
+
+class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
+  bool _printing = false;
+  String _statusText = '';
+
+  Future<void> _printInternal() async {
+    setState(() {
+      _printing = true;
+      _statusText = VN.fetchingInternalReceipt;
+    });
+
+    try {
+      final printerService = ref.read(printerServiceProvider);
+      await printerService.init();
+
+      final receiptService = ref.read(receiptServiceProvider);
+
+      // Determine which items to print
+      List<int> itemIds;
+      if (widget.itemId != null) {
+        itemIds = [widget.itemId!];
+      } else {
+        // Print all main (non-extra, non-gift) items
+        final items =
+            ref.read(orderWorkItemsProvider(widget.orderRef)).value ?? [];
+        itemIds = items
+            .where((i) => !i.isExtra && !i.isGift)
+            .map((i) => int.tryParse(i.id))
+            .whereType<int>()
+            .toList();
+      }
+
+      if (itemIds.isEmpty) {
+        if (mounted) Navigator.pop(context);
+        return;
+      }
+
+      bool anySuccess = false;
+      for (final id in itemIds) {
+        setState(() => _statusText = VN.fetchingInternalReceipt);
+        final internalBytes = await receiptService.fetchReceipt(
+          orderRef: widget.orderRef,
+          type: ReceiptType.workTicket,
+          itemId: id,
+        );
+
+        setState(() => _statusText = VN.printingInternalReceipt);
+
+        // Try auto-reconnect to last printer first
+        PrinterPickerResult result = PrinterPickerResult.cancelled;
+        if (printerService.lastPrinterMac != null) {
+          try {
+            await printerService.connect(printerService.lastPrinterMac!);
+            await printerService.printImage(internalBytes);
+            result = PrinterPickerResult.success;
+          } catch (_) {
+            // Fall through to picker
+          }
+        }
+
+        if (result != PrinterPickerResult.success && mounted) {
+          result = await showPrinterPickerDialog(
+            context: context,
+            imageBytes: internalBytes,
+            printerService: printerService,
+          );
+        }
+
+        if (result == PrinterPickerResult.success) {
+          anySuccess = true;
+        }
+      }
+
+      if (anySuccess) {
+        final orderService = ref.read(orderServiceProvider);
+        await orderService.updateWorkTicketPrintedAt(
+          widget.orderRef,
+          DateTime.now().toIso8601String(),
+        );
+        ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
+        if (mounted) {
+          showTopSnackBar(context, VN.internalReceiptPrinted);
+          Navigator.pop(context);
+        }
+        return;
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.apiError}: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _printing = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(VN.printChecklistTitle),
+      content: _printing
+          ? SizedBox(
+              height: 80,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 12),
+                  Text(
+                    _statusText,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            )
+          : Text(VN.printInternalPrompt),
+      actions: [
+        TextButton(
+          onPressed: _printing ? null : () => Navigator.pop(context),
+          child: Text(VN.printSkip),
+        ),
+        if (!_printing)
+          FilledButton(
+            onPressed: _printInternal,
+            child: Text(VN.print),
+          ),
+      ],
     );
   }
 }

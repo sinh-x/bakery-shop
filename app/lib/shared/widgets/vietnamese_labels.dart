@@ -285,6 +285,7 @@ class VN {
 
   // Work item statuses
   static const workItemPending = 'Chờ xử lý';
+  static const workItemConfirmed = 'Đã xác nhận';
   static const workItemWorking = 'Đang làm';
   static const workItemReady = 'Sẵn sàng';
   static const workItemDelivered = 'Đã giao';
@@ -340,6 +341,20 @@ class VN {
   static const printFailed = 'In thất bại';
   static const printerNotConnected = 'Máy in chưa kết nối';
   static const printerConnecting = 'Đang kết nối máy in...';
+
+  // Print checklist dialog (Flow A)
+  static const printChecklistTitle = 'In phiếu';
+  static const printSkip = 'Bỏ qua';
+  static const printStatusUnprinted = 'Chưa in phiếu';
+  static const printStatusPrinted = 'Đã in phiếu';
+  static const fetchingInternalReceipt = 'Đang tải phiếu nội bộ...';
+  static const fetchingCustomerReceipt = 'Đang tải hóa đơn khách hàng...';
+  static const printingInternalReceipt = 'Đang in phiếu nội bộ...';
+  static const printingCustomerReceipt = 'Đang in hóa đơn khách hàng...';
+  static const internalReceiptPrinted = 'Đã in phiếu nội bộ';
+  static const customerReceiptPrinted = 'Đã in hóa đơn khách hàng';
+  static const orderAutoConfirmed = 'Đã tự động xác nhận đơn hàng';
+  static const printInternalPrompt = 'Đơn hàng chưa in phiếu nội bộ. In ngay?';
 
   // Printer picker
   static const selectPrinter = 'Chọn máy in';
@@ -463,6 +478,7 @@ String paymentMethodLabel(String method) {
 // Work item status mapping
 const workItemStatusMap = {
   'pending': VN.workItemPending,
+  'confirmed': VN.workItemConfirmed,
   'working': VN.workItemWorking,
   'ready': VN.workItemReady,
   'delivered': VN.workItemDelivered,
@@ -475,6 +491,7 @@ String workItemStatusLabel(String status) =>
 // Work item status colors
 const workItemStatusColors = {
   'pending': Colors.grey,
+  'confirmed': Colors.blue,
   'working': Colors.orange,
   'ready': Colors.green,
   'delivered': Colors.teal,
@@ -483,7 +500,8 @@ const workItemStatusColors = {
 
 // Valid work item transitions
 const workItemValidTransitions = {
-  'pending': ['working', 'cancelled'],
+  'pending': ['confirmed', 'working', 'cancelled'],
+  'confirmed': ['working', 'cancelled'],
   'working': ['ready', 'cancelled'],
   'ready': ['delivered', 'cancelled'],
   'delivered': ['cancelled'],

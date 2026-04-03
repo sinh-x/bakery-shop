@@ -3,14 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
+import '../../data/api/order_service.dart';
 import '../../data/api/receipt_service.dart';
 import '../../data/models/work_item.dart';
+import '../../data/services/printer_service.dart';
 import '../../providers/order_providers.dart';
+import '../../shared/widgets/printer_picker_dialog.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/order_photo_section.dart';
 
 const _workItemStatusColors = {
   'pending': Colors.grey,
+  'confirmed': Colors.blue,
   'working': Colors.orange,
   'ready': Colors.green,
   'delivered': Colors.teal,
@@ -19,10 +23,11 @@ const _workItemStatusColors = {
 
 const _workItemStatusRank = {
   'pending': 0,
-  'working': 1,
-  'ready': 2,
-  'delivered': 3,
-  'cancelled': 4,
+  'confirmed': 1,
+  'working': 2,
+  'ready': 3,
+  'delivered': 4,
+  'cancelled': 5,
 };
 
 bool _isBackwardItem(String current, String target) =>
@@ -114,6 +119,14 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
       if (mounted) {
         showTopSnackBar(context, VN.workItemStatusChanged);
       }
+
+      // Prompt to print internal receipt if confirming and not yet printed
+      if (targetStatus == 'confirmed' && mounted) {
+        final order = ref.read(orderDetailProvider(widget.orderRef)).value;
+        if (order != null && order.workTicketPrintedAt == null) {
+          await _showInternalPrintPrompt(int.tryParse(item.id));
+        }
+      }
     } catch (e) {
       if (mounted) {
         showTopSnackBar(context, '${VN.apiError}: $e');
@@ -121,6 +134,17 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
     } finally {
       if (mounted) setState(() => _transitioning = false);
     }
+  }
+
+  Future<void> _showInternalPrintPrompt(int? itemId) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _InternalPrintDialog(
+        orderRef: widget.orderRef,
+        itemId: itemId,
+      ),
+    );
   }
 
   Future<void> _onSave(
@@ -317,7 +341,7 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
     final theme = Theme.of(context);
     final statusColor = _workItemStatusColors[widget.item.status] ?? Colors.grey;
     final statusLabel = workItemStatusLabel(widget.item.status);
-    const allStatuses = ['pending', 'working', 'ready', 'delivered'];
+    const allStatuses = ['pending', 'confirmed', 'working', 'ready', 'delivered'];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -559,6 +583,121 @@ class _SectionLabel extends StatelessWidget {
       style: Theme.of(context).textTheme.titleSmall?.copyWith(
             color: Theme.of(context).colorScheme.primary,
           ),
+    );
+  }
+}
+
+// ── Internal Receipt Print Dialog (work item confirm prompt) ────────────────
+
+class _InternalPrintDialog extends ConsumerStatefulWidget {
+  const _InternalPrintDialog({required this.orderRef, this.itemId});
+
+  final String orderRef;
+  final int? itemId;
+
+  @override
+  ConsumerState<_InternalPrintDialog> createState() =>
+      _InternalPrintDialogState();
+}
+
+class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
+  bool _printing = false;
+  String _statusText = '';
+
+  Future<void> _printInternal() async {
+    setState(() {
+      _printing = true;
+      _statusText = VN.fetchingInternalReceipt;
+    });
+
+    try {
+      final printerService = ref.read(printerServiceProvider);
+      await printerService.init();
+
+      final receiptService = ref.read(receiptServiceProvider);
+      final internalBytes = await receiptService.fetchReceipt(
+        orderRef: widget.orderRef,
+        type: ReceiptType.workTicket,
+        itemId: widget.itemId,
+      );
+
+      setState(() => _statusText = VN.printingInternalReceipt);
+
+      PrinterPickerResult result = PrinterPickerResult.cancelled;
+      if (printerService.lastPrinterMac != null) {
+        try {
+          await printerService.connect(printerService.lastPrinterMac!);
+          await printerService.printImage(internalBytes);
+          result = PrinterPickerResult.success;
+        } catch (_) {
+          // Fall through to picker
+        }
+      }
+
+      if (result != PrinterPickerResult.success && mounted) {
+        result = await showPrinterPickerDialog(
+          context: context,
+          imageBytes: internalBytes,
+          printerService: printerService,
+        );
+      }
+
+      if (result == PrinterPickerResult.success) {
+        final orderService = ref.read(orderServiceProvider);
+        await orderService.updateWorkTicketPrintedAt(
+          widget.orderRef,
+          DateTime.now().toIso8601String(),
+        );
+        ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
+        if (mounted) {
+          showTopSnackBar(context, VN.internalReceiptPrinted);
+          Navigator.pop(context);
+        }
+        return;
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.apiError}: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _printing = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(VN.printChecklistTitle),
+      content: _printing
+          ? SizedBox(
+              height: 80,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 12),
+                  Text(
+                    _statusText,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            )
+          : Text(VN.printInternalPrompt),
+      actions: [
+        TextButton(
+          onPressed: _printing ? null : () => Navigator.pop(context),
+          child: Text(VN.printSkip),
+        ),
+        if (!_printing)
+          FilledButton(
+            onPressed: _printInternal,
+            child: Text(VN.print),
+          ),
+      ],
     );
   }
 }

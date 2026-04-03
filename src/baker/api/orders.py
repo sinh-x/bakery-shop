@@ -60,6 +60,7 @@ class OrderEdit(BaseModel):
     source: Optional[str] = None
     shippingFee: Optional[float] = None
     changedBy: str = ""
+    workTicketPrintedAt: Optional[str] = None
 
 
 class StatusTransition(BaseModel):
@@ -239,6 +240,7 @@ def edit_order(ref: str, body: OrderEdit):
             "notes": "notes",
             "source": "source",
             "shippingFee": "shipping_fee",
+            "workTicketPrintedAt": "work_ticket_printed_at",
         }
 
         for camel, snake in field_map.items():
@@ -323,6 +325,13 @@ def transition_status(ref: str, body: StatusTransition):
             raise HTTPException(status_code=422, detail="Không thể chuyển trạng thái")
 
         _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, body.changedBy)
+
+        # Auto-cascade confirmed order status to main items (non-extra, non-gift) at pending (F5)
+        if body.status == "confirmed":
+            conn.execute(
+                "UPDATE order_items SET status = 'confirmed' WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 AND status = 'pending'",
+                (row["id"],),
+            )
 
         # Auto-sync extras/gifts to match the new order status (F4, F5)
         from baker.api.work_items import _sync_extras_to_order_status
