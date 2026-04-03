@@ -376,21 +376,26 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   const SizedBox(height: 16),
                 ] else if (_deliveryType == 'door') ...[
                   _SectionHeader(VN.shippingFee),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      ChoiceChip(
-                        label: Text(VN.shippingFree),
-                        selected: _shippingFee == 0.0,
-                        onSelected: (_) => _setShippingFee(0.0),
+                      IconButton.filled(
+                        onPressed: _shippingFee >= 5000
+                            ? () => _setShippingFee(_shippingFee - 5000)
+                            : null,
+                        icon: const Icon(Icons.remove),
                       ),
-                      for (final fee in [20000.0, 30000.0, 40000.0, 50000.0])
-                        ChoiceChip(
-                          label: Text(formatVND(fee)),
-                          selected: _shippingFee == fee,
-                          onSelected: (_) => _setShippingFee(fee),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          _shippingFee == 0 ? VN.shippingFree : formatVND(_shippingFee),
+                          style: Theme.of(context).textTheme.titleLarge,
                         ),
+                      ),
+                      IconButton.filled(
+                        onPressed: () => _setShippingFee(_shippingFee + 5000),
+                        icon: const Icon(Icons.add),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 16),
