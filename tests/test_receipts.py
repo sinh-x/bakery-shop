@@ -188,3 +188,160 @@ class TestReceiptAPI:
         # Should not raise any errors with Vietnamese text
         response = api_client.get(f"/api/orders/{order_ref}/receipt?type=customer")
         assert response.status_code == 200
+
+    def test_shop_receipt_endpoint(self, api_client):
+        """Test shop receipt (Phiếu giao hàng) generates PNG."""
+        # Create an order with multiple items
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "Trần Văn Minh",
+            "customerPhone": "0987-654-321",
+            "items": [
+                {"productName": "Bánh kem sinh nhật", "quantity": 1, "unitPrice": 300000},
+                {"productName": "Bánh bông lan", "quantity": 2, "unitPrice": 50000},
+            ],
+            "dueDate": "2026-04-05",
+            "deliveryType": "pickup",
+            "notes": "Khách lấy vào buổi sáng",
+        })
+        assert order_resp.status_code == 201
+        order_ref = order_resp.json()["orderRef"]
+
+        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=shop")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        # Verify PNG header
+        assert response.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+    def test_shop_receipt_width_is_576px(self, api_client):
+        """Test shop receipt image has correct 576px width (80mm at 203 DPI)."""
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "Lê Hoàng",
+            "items": [
+                {"productName": "Bánh mì", "quantity": 1, "unitPrice": 15000},
+            ],
+            "dueDate": "2026-04-06",
+            "deliveryType": "pickup",
+        })
+        assert order_resp.status_code == 201
+        order_ref = order_resp.json()["orderRef"]
+
+        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=shop")
+        assert response.status_code == 200
+
+        img = Image.open(io.BytesIO(response.content))
+        assert img.size[0] == 576, f"Expected width 576px, got {img.size[0]}"
+
+    def test_delivery_receipt_endpoint(self, api_client):
+        """Test delivery receipt (Phiếu giao tận nơi) generates PNG."""
+        # Create a door-to-door delivery order with all fields
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "Phạm Thị Hương",
+            "customerPhone": "0901-234-567",
+            "items": [
+                {"productName": "Bánh kem dâu", "quantity": 1, "unitPrice": 250000},
+                {"productName": "Bánh cookies", "quantity": 3, "unitPrice": 35000},
+            ],
+            "dueDate": "2026-04-07",
+            "dueTime": "14:00",
+            "deliveryType": "door",
+            "deliveryAddress": "456 Đường XYZ, Quận 3, TP.HCM",
+            "deliveryNotes": "Gọi điện trước khi giao",
+            "notes": "Khách yêu cầu giao giờ hành chính",
+        })
+        assert order_resp.status_code == 201
+        order_ref = order_resp.json()["orderRef"]
+
+        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=delivery")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        # Verify PNG header
+        assert response.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+    def test_delivery_receipt_width_is_576px(self, api_client):
+        """Test delivery receipt image has correct 576px width."""
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "Ngô Đình",
+            "items": [
+                {"productName": "Bánh flan", "quantity": 1, "unitPrice": 80000},
+            ],
+            "dueDate": "2026-04-08",
+            "deliveryType": "door",
+            "deliveryAddress": "789 Đường QRS, Quận 5, TP.HCM",
+        })
+        assert order_resp.status_code == 201
+        order_ref = order_resp.json()["orderRef"]
+
+        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=delivery")
+        assert response.status_code == 200
+
+        img = Image.open(io.BytesIO(response.content))
+        assert img.size[0] == 576, f"Expected width 576px, got {img.size[0]}"
+
+    def test_delivery_receipt_with_gift_and_extra_items(self, api_client):
+        """Test delivery receipt renders gift items with (Tặng) suffix and extra items."""
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "Hoàng Thanh",
+            "customerPhone": "0932-111-222",
+            "items": [
+                {"productName": "Bánh sinh nhật", "quantity": 1, "unitPrice": 350000},
+                {"productName": "Khăn trải bàn", "quantity": 1, "unitPrice": 0, "isGift": True},
+                {"productName": "Nến sinh nhật", "quantity": 2, "unitPrice": 15000, "isExtra": True},
+            ],
+            "dueDate": "2026-04-10",
+            "deliveryType": "door",
+            "deliveryAddress": "111 Đường ABC, Quận 7, TP.HCM",
+        })
+        assert order_resp.status_code == 201
+        order_ref = order_resp.json()["orderRef"]
+
+        # Should render without errors for mixed gift/extra items
+        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=delivery")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+
+    def test_bus_label_includes_order_ref_and_customer_name(self, api_client):
+        """Test bus label now includes order ref and customer name (AC7, AC8)."""
+        # Create a bus delivery order
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "Đỗ Minh Quân",
+            "customerPhone": "0977-888-999",
+            "items": [
+                {"productName": "Bánh gấu", "quantity": 1, "unitPrice": 180000},
+            ],
+            "dueDate": "2026-04-12",
+            "deliveryType": "bus",
+            "deliveryAddress": "Bến xe Ninh Hòa - Khánh Hòa",
+        })
+        assert order_resp.status_code == 201
+        order_ref = order_resp.json()["orderRef"]
+
+        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=bus_label")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+
+        # Bus label is rotated 90° CCW so width=576, height=1024
+        img = Image.open(io.BytesIO(response.content))
+        assert img.size[0] == 576, f"Expected width 576px, got {img.size[0]}"
+        # Height should be around 1024 (landscape rotated) — allow some tolerance
+        assert img.size[1] >= 900, f"Expected height >= 900px, got {img.size[1]}"
+        # Verify PNG header
+        assert response.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+    def test_bus_label_renders_for_all_delivery_types(self, api_client):
+        """Test bus label renders for bus delivery type orders."""
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "Võ Thị Lan",
+            "customerPhone": "0955-333-444",
+            "items": [
+                {"productName": "Bánh pía", "quantity": 2, "unitPrice": 45000},
+            ],
+            "dueDate": "2026-04-15",
+            "deliveryType": "bus",
+            "deliveryAddress": "Bến xe Phú Yên",
+        })
+        assert order_resp.status_code == 201
+        order_ref = order_resp.json()["orderRef"]
+
+        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=bus_label")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
