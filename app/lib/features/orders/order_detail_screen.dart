@@ -171,6 +171,26 @@ class OrderDetailScreen extends ConsumerWidget {
                   );
                 },
               ),
+            ListTile(
+              leading: const Icon(Icons.store),
+              title: const Text(VN.printShopReceipt),
+              onTap: () {
+                Navigator.pop(ctx);
+                context.push(
+                  '/orders/$orderRef/receipt?type=${ReceiptType.shop.value}',
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delivery_dining),
+              title: Text(VN.printDeliveryReceipt),
+              onTap: () {
+                Navigator.pop(ctx);
+                context.push(
+                  '/orders/$orderRef/receipt?type=${ReceiptType.delivery.value}',
+                );
+              },
+            ),
             const SizedBox(height: 8),
           ],
         ),

@@ -328,6 +328,8 @@ class VN {
   static const printWorkTicket = 'Phiếu nội bộ';
   static const printCustomerReceipt = 'Hóa đơn khách hàng';
   static const printBusLabel = 'Phiếu xe khách';
+  static const printShopReceipt = 'Phiếu giao hàng';
+  static const printDeliveryReceipt = 'Phiếu giao tận nơi';
   static const selectReceiptType = 'Chọn loại phiếu';
   static const receiptPreview = 'Xem phiếu';
   static const share = 'Chia sẻ';
