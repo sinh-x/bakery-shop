@@ -1,8 +1,11 @@
 """Receipt image generation API for thermal printer.
 
-Generates two receipt types as PNG images sized for 80mm thermal paper:
+Generates five receipt types as PNG images sized for 80mm thermal paper:
 - Work ticket (Phiếu Nội Bộ): internal single-item receipt with photo thumbnails
 - Customer receipt ("BIÊN NHẬN"): clean, customer-facing, matching paper bill style
+- Bus label: compact bus delivery identifier
+- Shop receipt (Phiếu giao hàng): internal order summary for pickup verification
+- Delivery receipt (Phiếu giao tận nơi): internal delivery summary with prominent address
 """
 
 import io
@@ -661,8 +664,12 @@ def _render_bus_label(order, cfg) -> Image.Image:
     return rotated
 
 
-def _render_items_table(draw, y, work_items, fb, fbb, fs, conn) -> int:
-    """Render items table for shop/delivery receipts. Returns y after table."""
+def _render_items_table(draw, y, work_items, fb, fbb, fs, conn=None, img=None, order_id=None, show_photos=False) -> int:
+    """Render items table for shop/delivery receipts. Returns y after table.
+
+    Args:
+        show_photos: If True, render photos for cake-category products (requires conn and img).
+    """
     # Table header
     col_sl = MARGIN + 320
     col_gia = MARGIN + 380
@@ -718,6 +725,35 @@ def _render_items_table(draw, y, work_items, fb, fbb, fs, conn) -> int:
             age = item.get("age")
             age_suffix = f" SINH NHẬT{(' - ' + str(age) + ' tuổi') if age else ''}"
             y = _icon_text(draw, y, "\U0001F382", age_suffix, fbb, (180, 0, 0), x=MARGIN + 10)
+
+        # Photo — only for cake-category products, larger + centered, display only
+        if show_photos and conn is not None and img is not None and order_id is not None:
+            item_id = item.get("id")
+            product_id = item.get("productId", "") or item.get("product_id", "")
+            is_cake = False
+            if product_id:
+                cat_row = conn.execute(
+                    "SELECT category FROM products WHERE id = ? OR product_code = ?",
+                    (product_id, product_id),
+                ).fetchone()
+                if cat_row and cat_row["category"] in ("cake", "banh_kem"):
+                    is_cake = True
+            photo_size = 192  # larger than default 128
+            if is_cake and item_id:
+                photo_bytes = _get_photo(conn, order_id, item_id)
+                if photo_bytes:
+                    try:
+                        photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
+                        photo.thumbnail((photo_size, photo_size), Image.LANCZOS)
+                        x_photo = (RECEIPT_WIDTH - photo.width) // 2
+                        img.paste(photo, (x_photo, y))
+                        draw.rectangle(
+                            [x_photo, y, x_photo + photo.width, y + photo.height],
+                            outline=(200, 200, 200),
+                        )
+                        y += photo.height + LINE_GAP
+                    except Exception:
+                        pass
 
         # Item notes (sub-row, indented)
         notes = item.get("notes", "") or ""
@@ -811,7 +847,7 @@ def _render_shop_receipt(order, cfg, conn) -> Image.Image:
     y = _sep(draw, y)
 
     # Items table
-    y = _render_items_table(draw, y, work_items, fb, fbb, fs, conn)
+    y = _render_items_table(draw, y, work_items, fb, fbb, fs)
     y = _double(draw, y)
 
     # Financial summary
@@ -893,7 +929,7 @@ def _render_delivery_receipt(order, cfg, conn) -> Image.Image:
     y = _sep(draw, y)
 
     # Items table
-    y = _render_items_table(draw, y, work_items, fb, fbb, fs, conn)
+    y = _render_items_table(draw, y, work_items, fb, fbb, fs)
     y = _double(draw, y)
 
     # Financial summary
@@ -965,140 +1001,12 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
     y = _left(draw, y, "NỘI DUNG ĐƠN HÀNG", _font(_SZ_SUBTITLE, True))
     y = _sep(draw, y)
 
-    # Table header
-    col_sl = MARGIN + 320  # SL column
-    col_gia = MARGIN + 380  # Giá column
-    col_tt = RECEIPT_WIDTH - MARGIN  # Thành tiền (right-aligned)
-
-    draw.text((MARGIN, y), "Sản phẩm", font=fbb, fill=(100, 100, 100))
-    draw.text((col_sl, y), "SL", font=fbb, fill=(100, 100, 100))
-    draw.text((col_gia, y), "Giá", font=fbb, fill=(100, 100, 100))
-    tt_label = "T.Tiền"
-    draw.text((col_tt - _tw(tt_label, fbb), y), tt_label, font=fbb, fill=(100, 100, 100))
-    y += _th("SL", fbb) + LINE_GAP + 4
-    y = _sep(draw, y)
-
-    for i, item in enumerate(work_items):
-        is_gift = item.get("isGift") or item.get("is_gift") or False
-        item_name = item.get("productName", "") or item.get("product_name", "")
-        if is_gift:
-            item_name = f"{item_name} (Tặng)"
-        qty = item.get("quantity", 1)
-        unit_price = float(item.get("unitPrice", 0) or item.get("unit_price", 0))
-        total = 0 if is_gift else qty * unit_price
-
-        # Item row: name | SL | Giá | Thành tiền
-        # Wrap product name within column width
-        name_max_w = col_sl - MARGIN - 10
-        name_lines = _wrap(item_name, fb, name_max_w) or [item_name]
-
-        # First line: product name ....... SL ....... Giá ....... T.Tiền
-        draw.text((MARGIN, y), name_lines[0], font=fb, fill=(0, 0, 0))
-        name_end = MARGIN + _tw(name_lines[0], fb)
-        _dots(draw, y, name_end, col_sl - 4, fs)
-        qty_str = str(qty)
-        draw.text((col_sl, y), qty_str, font=fb, fill=(0, 0, 0))
-        sl_end = col_sl + _tw(qty_str, fb)
-        if unit_price > 0:
-            gia_str = _format_vnd(unit_price)
-            tt_str = _format_vnd(total)
-            tt_x = col_tt - _tw(tt_str, fbb)
-            _dots(draw, y, sl_end, col_gia - 4, fs)
-            draw.text((col_gia, y), gia_str, font=fb, fill=(0, 0, 0))
-            gia_end = col_gia + _tw(gia_str, fb)
-            _dots(draw, y, gia_end, tt_x - 4, fs)
-            draw.text((tt_x, y), tt_str, font=fbb, fill=(0, 0, 0))
-        else:
-            _dots(draw, y, sl_end, col_tt - 4, fs)
-        y += _th(name_lines[0], fb) + LINE_GAP
-
-        # Remaining name lines (overflow)
-        for nl in name_lines[1:]:
-            draw.text((MARGIN, y), nl, font=fb, fill=(0, 0, 0))
-            y += _th(nl, fb) + LINE_GAP
-
-        # Birthday (sub-row)
-        if item.get("isBirthday") or item.get("is_birthday"):
-            age = item.get("age")
-            age_suffix = f" SINH NHẬT{(' - ' + str(age) + ' tuổi') if age else ''}"
-            y = _icon_text(draw, y, "\U0001F382", age_suffix, fbb, (180, 0, 0), x=MARGIN + 10)
-
-        # Photo — only for cake-category products, larger + centered, display only
-        item_id = item.get("id")
-        product_id = item.get("productId", "") or item.get("product_id", "")
-        is_cake = False
-        if product_id:
-            cat_row = conn.execute(
-                "SELECT category FROM products WHERE id = ? OR product_code = ?",
-                (product_id, product_id),
-            ).fetchone()
-            if cat_row and cat_row["category"] in ("cake", "banh_kem"):
-                is_cake = True
-        photo_size = 192  # larger than default 128
-        if show_photos and is_cake and order_id and item_id:
-            photo_bytes = _get_photo(conn, order_id, item_id)
-            if photo_bytes:
-                try:
-                    photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
-                    photo.thumbnail((photo_size, photo_size), Image.LANCZOS)
-                    x_photo = (RECEIPT_WIDTH - photo.width) // 2
-                    img.paste(photo, (x_photo, y))
-                    draw.rectangle(
-                        [x_photo, y, x_photo + photo.width, y + photo.height],
-                        outline=(200, 200, 200),
-                    )
-                    y += photo.height + LINE_GAP
-                except Exception:
-                    pass
-
-        # Notes/remarks (sub-row, indented, bold label + body font, mixed emoji)
-        notes = item.get("notes", "") or ""
-        if notes:
-            full = f"  Ghi chú: {notes}"
-            if "\n" not in notes and _mixed_tw(full, fb) <= CONTENT_WIDTH:
-                y = _left(draw, y, "  Ghi chú: ", fbb, (80, 80, 80))
-                y -= _th("Ghi chú:", fbb) + LINE_GAP  # back up
-                _draw_mixed(draw, MARGIN + _tw("  Ghi chú: ", fbb), y, notes, fb, (80, 80, 80))
-                y += _th("A", fb) + _NOTE_LINE_GAP
-            else:
-                y = _left(draw, y, "  Ghi chú:", fbb, (80, 80, 80))
-                for ln in _wrap(notes, fb, CONTENT_WIDTH - 20):
-                    y = _left_mixed(draw, y, f"    {ln}", fb, (80, 80, 80))
-
-        # Separator between items
-        if i < len(work_items) - 1:
-            y = _sep(draw, y)
-
-    y += 4
+    # Items table (uses shared helper with photo support for customer receipt)
+    y = _render_items_table(draw, y, work_items, fb, fbb, fs, conn=conn, img=img, order_id=order_id, show_photos=show_photos)
     y = _double(draw, y)
 
-    # --- Financial Summary ---
-    # Calculate subtotal (non-gift items only)
-    subtotal = sum(
-        item.get("quantity", 1) * float(item.get("unitPrice", 0) or item.get("unit_price", 0))
-        for item in work_items
-        if not (item.get("isGift") or item.get("is_gift"))
-    )
-    shipping_fee = float(order.get("shippingFee", 0) or order.get("shipping_fee", 0))
-    total_price = float(order.get("totalPrice", 0) or order.get("total_price", 0))
-
-    y = _row(draw, y, "Tạm tính:", _format_vnd_full(subtotal), fbb)
-    if shipping_fee > 0:
-        y = _row(draw, y, "Phí giao hàng:", _format_vnd_full(shipping_fee), fbb)
-        y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
-    else:
-        y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
-
-    order_id = order.get("id")
-    total_paid = PaymentTransaction.total_for_order(conn, order_id) if order_id else 0.0
-    remaining = total_price - total_paid
-
-    y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
-    if remaining > 0:
-        y = _row(draw, y, "Còn lại:", _format_vnd_full(remaining), fbb, color_v=(180, 0, 0))
-    else:
-        y = _row(draw, y, "Còn lại:", "0đ", fb, color_v=(0, 100, 0))
-    y += 4
+    # Financial summary (uses shared helper)
+    y = _render_financial_summary(draw, y, order, conn, fbb, fb)
     y = _double(draw, y)
 
     # --- Section 3: Delivery ---

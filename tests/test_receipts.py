@@ -299,6 +299,27 @@ class TestReceiptAPI:
         assert response.status_code == 200
         assert response.headers["content-type"] == "image/png"
 
+    def test_shop_receipt_with_gift_and_extra_items(self, api_client):
+        """Test shop receipt renders gift items with (Tặng) suffix and extra items."""
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "Trần Văn Minh",
+            "customerPhone": "0944-555-666",
+            "items": [
+                {"productName": "Bánh sinh nhật", "quantity": 1, "unitPrice": 350000},
+                {"productName": "Khăn trải bàn", "quantity": 1, "unitPrice": 0, "isGift": True},
+                {"productName": "Nến sinh nhật", "quantity": 2, "unitPrice": 15000, "isExtra": True},
+            ],
+            "dueDate": "2026-04-10",
+            "deliveryType": "pickup",
+        })
+        assert order_resp.status_code == 201
+        order_ref = order_resp.json()["orderRef"]
+
+        # Should render without errors for mixed gift/extra items
+        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=shop")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+
     def test_bus_label_includes_order_ref_and_customer_name(self, api_client):
         """Test bus label now includes order ref and customer name (AC7, AC8)."""
         # Create a bus delivery order
