@@ -181,16 +181,18 @@ class OrderDetailScreen extends ConsumerWidget {
                 );
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.delivery_dining),
-              title: Text(VN.printDeliveryReceipt),
-              onTap: () {
-                Navigator.pop(ctx);
-                context.push(
-                  '/orders/$orderRef/receipt?type=${ReceiptType.delivery.value}',
-                );
-              },
-            ),
+            if (ref.read(orderDetailProvider(orderRef)).value?.deliveryType ==
+                'door')
+              ListTile(
+                leading: const Icon(Icons.delivery_dining),
+                title: const Text(VN.printDeliveryReceipt),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push(
+                    '/orders/$orderRef/receipt?type=${ReceiptType.delivery.value}',
+                  );
+                },
+              ),
             const SizedBox(height: 8),
           ],
         ),
