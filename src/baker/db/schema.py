@@ -627,6 +627,35 @@ WORK_TICKET_PRINTED_AT_SCHEMA = """
 ALTER TABLE orders ADD COLUMN work_ticket_printed_at TEXT DEFAULT NULL;
 """
 
+KNOWLEDGE_BASE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS knowledge_entries (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    content     TEXT DEFAULT '',
+    type        TEXT NOT NULL DEFAULT 'note',
+    tags        TEXT DEFAULT '',
+    logged_by   TEXT DEFAULT '',
+    source      TEXT DEFAULT 'app',
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
+    updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_entries_type ON knowledge_entries(type);
+CREATE INDEX IF NOT EXISTS idx_knowledge_entries_tags ON knowledge_entries(tags);
+CREATE INDEX IF NOT EXISTS idx_knowledge_entries_updated ON knowledge_entries(updated_at);
+
+CREATE TABLE IF NOT EXISTS knowledge_entry_photos (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id    INTEGER NOT NULL REFERENCES knowledge_entries(id) ON DELETE CASCADE,
+    photo_id    INTEGER NOT NULL REFERENCES photos(id),
+    caption     TEXT DEFAULT '',
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_photos_entry ON knowledge_entry_photos(entry_id);
+"""
+
 
 MIGRATIONS = {
     1: {
@@ -724,6 +753,10 @@ MIGRATIONS = {
     21: {
         "description": "Add work_ticket_printed_at column to orders for tracking work ticket print state",
         "sql": WORK_TICKET_PRINTED_AT_SCHEMA,
+    },
+    22: {
+        "description": "Knowledge base: knowledge_entries and knowledge_entry_photos tables",
+        "sql": KNOWLEDGE_BASE_SCHEMA,
     },
 }
 
