@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/event.dart';
 import '../../data/api/receipt_service.dart';
+import '../../data/providers/knowledge_provider.dart';
 import '../../features/categories/category_management_screen.dart';
 import '../../features/checklist/checklist_config_screen.dart';
 import '../../features/checklist/checklist_history_screen.dart';
@@ -18,6 +19,8 @@ import '../../features/orders/order_detail_screen.dart';
 import '../../features/orders/order_edit_screen.dart';
 import '../../features/orders/order_list_screen.dart';
 import '../../features/orders/receipt_preview_screen.dart';
+import '../../features/knowledge/knowledge_detail_screen.dart';
+import '../../features/knowledge/knowledge_form_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
@@ -186,6 +189,28 @@ final appRouter = GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const SettingsScreen(),
     ),
+    // Knowledge — full-screen (outside shell)
+    GoRoute(
+      path: '/knowledge/new',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const KnowledgeFormScreen(),
+    ),
+    GoRoute(
+      path: '/knowledge/:id',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final id = int.parse(state.pathParameters['id']!);
+        return KnowledgeDetailScreen(entryId: id);
+      },
+    ),
+    GoRoute(
+      path: '/knowledge/:id/edit',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final id = int.parse(state.pathParameters['id']!);
+        return _KnowledgeEditLoader(entryId: id);
+      },
+    ),
   ],
 );
 
@@ -216,6 +241,36 @@ class _ProductEditLoader extends ConsumerWidget {
           );
         }
         return ProductFormScreen(product: product);
+      },
+    );
+  }
+}
+
+/// Loads a knowledge entry from the API before showing the edit form.
+class _KnowledgeEditLoader extends ConsumerWidget {
+  const _KnowledgeEditLoader({required this.entryId});
+
+  final int entryId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final entryAsync = ref.watch(knowledgeEntryDetailProvider(entryId));
+    return entryAsync.when(
+      loading: () => const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, _) => Scaffold(
+        appBar: AppBar(title: const Text(VN.editKnowledge)),
+        body: Center(child: Text(VN.apiError)),
+      ),
+      data: (entry) {
+        if (entry == null) {
+          return Scaffold(
+            appBar: AppBar(title: const Text(VN.editKnowledge)),
+            body: const Center(child: Text(VN.apiError)),
+          );
+        }
+        return KnowledgeFormScreen(entry: entry);
       },
     );
   }

@@ -367,6 +367,34 @@ class VN {
   static const tapToRetry = 'Bấm để thử lại';
   static const noDevicesFound = 'Không có thiết bị nào';
 
+  // Knowledge base
+  static const knowledgeTitle = 'Sổ tay';
+  static const knowledgeEntry = 'Mục tri thức';
+  static const createKnowledge = 'Tạo mục mới';
+  static const editKnowledge = 'Sửa mục';
+  static const knowledgeTypes = {
+    'recipe': 'Công thức',
+    'procedure': 'Quy trình',
+    'equipment': 'Thiết bị',
+    'supplier': 'Nhà cung cấp',
+    'reference': 'Tham khảo',
+    'note': 'Ghi chú',
+  };
+  static const addPhoto = 'Thêm ảnh';
+  static const noKnowledgeEntries = 'Chưa có mục nào';
+  static const searchKnowledge = 'Tìm kiếm sổ tay';
+  static const confirmDeleteKnowledge = 'Xóa mục này?';
+  static const deleteKnowledge = 'Xóa mục';
+  static const knowledgeDeleted = 'Đã xóa mục';
+  static const knowledgeSaved = 'Đã lưu mục';
+  static const knowledgeCreated = 'Đã tạo mục mới';
+  static const knowledgeTitleField = 'Tiêu đề';
+  static const knowledgeContentField = 'Nội dung';
+  static const knowledgeTypeField = 'Loại';
+  static const knowledgeTagsField = 'Nhãn';
+  static const knowledgePhotosField = 'Ảnh';
+  static const knowledgeNoPhotos = 'Chưa có ảnh';
+
   // Shipping fee & extras
   static const shippingFee = 'Phí giao hàng';
   static const shippingFree = 'Miễn phí';
