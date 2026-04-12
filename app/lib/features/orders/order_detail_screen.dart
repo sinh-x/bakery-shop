@@ -1701,7 +1701,7 @@ class _WorkItemCard extends StatelessWidget {
     final theme = Theme.of(context);
     final statusColor = _workItemStatusColors[item.status] ?? Colors.grey;
     final statusLabel = workItemStatusLabel(item.status);
-    const allStatuses = ['pending', 'confirmed', 'working', 'ready', 'delivered'];
+    const allStatuses = ['pending', 'confirmed', 'working', 'ready', 'delivered', 'cancelled'];
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),

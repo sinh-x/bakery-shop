@@ -326,7 +326,7 @@ def transition_work_item_status(ref: str, item_id: int, body: WorkItemStatusTran
                 conn.execute(
                     """INSERT INTO order_history (order_id, action_type, field_name, old_value, new_value, changed_by)
                        VALUES (?, ?, ?, ?, ?, ?)""",
-                    (order_row["id"], "auto_sync", "status", order_row["status"], derived_order_status, ""),
+                    (order_row["id"], "auto_sync", "status", order_row["status"], derived_order_status, _AUTO_SYNC_REASON),
                 )
                 # Sync extras/gifts to match the new order status (F4, F5)
                 _sync_extras_to_order_status(conn, order_id, derived_order_status)
