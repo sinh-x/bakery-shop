@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# copy-prod-to-dev.sh — Copy production data to dev for testing
+# copy-prod-to-dev.sh — Copy production data to dev for testing (MANUAL FALLBACK)
+#
+# NOTE: For automated daily sync at 23:30, see scripts/sync-prod-to-dev.sh
+# which uses rustic backups and handles container stop/start automatically.
 #
 # Usage: ./scripts/copy-prod-to-dev.sh
 
