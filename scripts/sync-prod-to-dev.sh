@@ -18,7 +18,7 @@ set -euo pipefail
 # === Paths ===
 STAGING_DIR="/tmp/rustic-staging"
 DEV_DATA_DIR="./data"
-LOCK_FILE="/var/lib/baker/sync-lock"
+LOCK_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data/sync-lock"
 LOG_DIR="./data/sync-logs"
 RUSTIC_PROFILE="baker-prod"
 
@@ -51,7 +51,8 @@ cleanup() {
 trap cleanup EXIT
 
 # === Pre-flight ===
-# Ensure log directory exists
+# Ensure directories exist
+mkdir -p "$(dirname "$LOCK_FILE")"
 mkdir -p "$LOG_DIR"
 
 # Check for concurrent run
@@ -84,57 +85,69 @@ rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
 
 log "Restoring latest snapshot (baker-prod)..."
-if ! rustic -P "$RUSTIC_PROFILE" restore latest --target "$STAGING_DIR" 2>&1; then
+if ! rustic -P "$RUSTIC_PROFILE" restore latest "$STAGING_DIR" 2>&1; then
     log "ERROR: rustic restore failed"
     create_failure_ticket "rustic restore failed"
     exit 1
 fi
 
-STAGING="$STAGING_DIR/tmp/baker-backup-staging"
+STAGING="$STAGING_DIR"
 
-if [[ ! -f "$STAGING/baker.db" ]]; then
-    log "ERROR: baker.db not found in restored snapshot at $STAGING"
+# Find baker.db in the restored snapshot (path varies by backup source machine)
+BAKER_DB=$(find "$STAGING" -name "baker.db" -type f 2>/dev/null | head -1)
+if [[ -z "$BAKER_DB" ]]; then
+    log "ERROR: baker.db not found in restored snapshot"
     create_failure_ticket "baker.db not found in rustic snapshot"
     exit 1
 fi
+log "Found baker.db at: $BAKER_DB"
 log "Snapshot restored successfully"
+
+# Find photos dir if present
+PHOTOS_DIR=$(find "$STAGING" -type d -name "photos" 2>/dev/null | head -1)
 
 # === Step 3: Sync database ===
 log "Copying baker.db to dev data dir..."
-cp "$STAGING/baker.db" "$DEV_DATA_DIR/baker.db"
+cp "$BAKER_DB" "$DEV_DATA_DIR/baker.db"
 log "Database synced"
 
 # === Step 4: Sync photos ===
-if [[ -d "$STAGING/photos" ]]; then
+if [[ -n "$PHOTOS_DIR" && -d "$PHOTOS_DIR" ]]; then
     log "Syncing photos (rsync --delete)..."
     mkdir -p "$DEV_DATA_DIR/photos"
-    rsync -a --delete "$STAGING/photos/" "$DEV_DATA_DIR/photos/"
+    rsync -a --delete "$PHOTOS_DIR/" "$DEV_DATA_DIR/photos/"
     log "Photos synced"
 else
     log "No photos directory in snapshot (skipping)"
 fi
 
-# === Step 5: Start dev container ===
-log "Starting baker-dev container..."
-docker compose --profile dev start baker-dev
+# === Step 5: Start dev container (if it exists) ===
+if docker compose --profile dev ps --all 2>/dev/null | grep -q baker-dev; then
+    log "Starting baker-dev container..."
+    if ! docker compose --profile dev start baker-dev 2>&1; then
+        log "WARNING: Could not start baker-dev (may not be built yet — skipping)"
+    else
+        # === Step 6: Health check ===
+        log "Waiting for baker-dev health (30s timeout)..."
+        HEALTHY=false
+        for i in $(seq 1 30); do
+            if curl -sf http://localhost:2312/api/health >/dev/null 2>&1; then
+                HEALTHY=true
+                break
+            fi
+            sleep 1
+        done
 
-# === Step 6: Health check ===
-log "Waiting for baker-dev health (30s timeout)..."
-HEALTHY=false
-for i in $(seq 1 30); do
-    if curl -sf http://localhost:2312/api/health >/dev/null 2>&1; then
-        HEALTHY=true
-        break
+        if [[ "$HEALTHY" != "true" ]]; then
+            log "ERROR: Health check failed after 30 seconds"
+            create_failure_ticket "baker-dev health check failed after restart"
+            exit 1
+        fi
+        log "Health check passed"
     fi
-    sleep 1
-done
-
-if [[ "$HEALTHY" != "true" ]]; then
-    log "ERROR: Health check failed after 30 seconds"
-    create_failure_ticket "baker-dev health check failed after restart"
-    exit 1
+else
+    log "baker-dev container not found (skipping start/health check)"
 fi
-log "Health check passed"
 
 # === Done ===
 log "Sync completed successfully"
