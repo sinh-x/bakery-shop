@@ -388,7 +388,7 @@ class _ExtrasSettingsTabState extends ConsumerState<_ExtrasSettingsTab> {
                 },
               ),
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, __) => Center(child: Text(VN.errorLoading)),
+        error: (_, _) => Center(child: Text(VN.errorLoading)),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddDialog(context),
@@ -440,9 +440,9 @@ class _ExtrasSettingsTabState extends ConsumerState<_ExtrasSettingsTab> {
                 await ref.read(configServiceProvider).createConfigValue('order_extra', value);
                 ref.invalidate(orderExtrasProvider);
                 if (ctx.mounted) Navigator.pop(ctx);
-                if (mounted) showTopSnackBar(context, VN.extraAdded);
+                if (ctx.mounted) showTopSnackBar(context, VN.extraAdded);
               } catch (e) {
-                if (mounted) showTopSnackBar(context, 'Error: $e', backgroundColor: Colors.red);
+                if (ctx.mounted) showTopSnackBar(context, 'Error: $e', backgroundColor: Colors.red);
               }
             },
             child: Text(VN.save),
@@ -489,9 +489,9 @@ class _ExtrasSettingsTabState extends ConsumerState<_ExtrasSettingsTab> {
                 await ref.read(configServiceProvider).updateConfigValue('order_extra', oldValue, newValue);
                 ref.invalidate(orderExtrasProvider);
                 if (ctx.mounted) Navigator.pop(ctx);
-                if (mounted) showTopSnackBar(context, VN.extraUpdated);
+                if (ctx.mounted) showTopSnackBar(context, VN.extraUpdated);
               } catch (e) {
-                if (mounted) showTopSnackBar(context, 'Error: $e', backgroundColor: Colors.red);
+                if (ctx.mounted) showTopSnackBar(context, 'Error: $e', backgroundColor: Colors.red);
               }
             },
             child: Text(VN.save),
@@ -516,9 +516,9 @@ class _ExtrasSettingsTabState extends ConsumerState<_ExtrasSettingsTab> {
                 await ref.read(configServiceProvider).deleteConfigValue('order_extra', value);
                 ref.invalidate(orderExtrasProvider);
                 if (ctx.mounted) Navigator.pop(ctx);
-                if (mounted) showTopSnackBar(context, VN.extraDeleted);
+                if (ctx.mounted) showTopSnackBar(context, VN.extraDeleted);
               } catch (e) {
-                if (mounted) showTopSnackBar(context, 'Error: $e', backgroundColor: Colors.red);
+                if (ctx.mounted) showTopSnackBar(context, 'Error: $e', backgroundColor: Colors.red);
               }
             },
             child: Text(VN.remove),
@@ -568,7 +568,7 @@ class _StaffDropdown extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
-      value: staffList.contains(selected) ? selected : null,
+      initialValue: staffList.contains(selected) ? selected : null,
       hint: const Text(VN.staffPickerHint),
       items: staffList
           .map((name) => DropdownMenuItem(value: name, child: Text(name)))
