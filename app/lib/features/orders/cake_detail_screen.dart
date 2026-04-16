@@ -341,7 +341,7 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
     final theme = Theme.of(context);
     final statusColor = _workItemStatusColors[widget.item.status] ?? Colors.grey;
     final statusLabel = workItemStatusLabel(widget.item.status);
-    const allStatuses = ['pending', 'confirmed', 'working', 'ready', 'delivered'];
+    const allStatuses = ['pending', 'confirmed', 'working', 'ready', 'delivered', 'cancelled'];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
