@@ -52,10 +52,13 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
 
   bool get _needsNotes => _deliveryType != 'pickup';
 
-  // Total excludes gift items
+  // Total excludes gift items, includes cash fees
   double get _totalPrice => _items
       .where((i) => !i.isGift)
-      .fold(0, (sum, i) => sum + i.unitPrice * i.quantity);
+      .fold(0, (sum, i) {
+        final cashFee = double.tryParse(i.attributes['cash_fee']?.toString() ?? '') ?? 0;
+        return sum + i.unitPrice * i.quantity + cashFee;
+      });
 
   // Display total = items (excl gifts) + shipping fee
   double get _displayTotal => _totalPrice + _shippingFee;
@@ -275,6 +278,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             'isBirthday': i.isBirthday,
             'isExtra': i.isExtra,
             'isGift': i.isGift,
+            'attributes': i.attributes,
           };
           if (i.isBirthday && i.age.isNotEmpty) {
             final age = int.tryParse(i.age.trim());

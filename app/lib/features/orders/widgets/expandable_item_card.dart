@@ -27,10 +27,16 @@ class ExpandableItemCard extends StatefulWidget {
 class _ExpandableItemCardState extends State<ExpandableItemCard> {
   bool _expanded = true;
   bool _isBirthday = false;
+  bool _rutTien = false;
   late TextEditingController _notesCtrl;
   late TextEditingController _ageCtrl;
   late TextEditingController _priceCtrl;
+  late TextEditingController _cashAmountCtrl;
+  late TextEditingController _cashFeeCtrl;
   final _picker = ImagePicker();
+
+  static const int _defaultCashFee = 20000;
+  static const int _cashFeeStep = 10000;
 
   @override
   void initState() {
@@ -41,6 +47,22 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
     _priceCtrl = TextEditingController(
       text: widget.item.unitPrice.toInt().toString(),
     );
+    // Auto-populate rut tien from product defaults (F22)
+    final defaultCashFee = widget.item.product.attributes['cash_fee'];
+    final defaultCashAmount = widget.item.product.attributes['cash_amount'];
+    _cashFeeCtrl = TextEditingController(
+      text: defaultCashFee ?? '$_defaultCashFee',
+    );
+    _cashAmountCtrl = TextEditingController(text: defaultCashAmount ?? '');
+    _rutTien = defaultCashAmount != null && defaultCashAmount.isNotEmpty && defaultCashAmount != '0';
+    // Also populate item.attributes from product defaults (F22/F23)
+    if (defaultCashFee != null && defaultCashFee.isNotEmpty) {
+      widget.item.attributes['cash_fee'] = defaultCashFee;
+    }
+    if (defaultCashAmount != null && defaultCashAmount.isNotEmpty) {
+      widget.item.attributes['cash_amount'] = defaultCashAmount;
+      widget.item.attributes['rut_tien'] = 'true';
+    }
   }
 
   @override
@@ -48,6 +70,8 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
     _notesCtrl.dispose();
     _ageCtrl.dispose();
     _priceCtrl.dispose();
+    _cashAmountCtrl.dispose();
+    _cashFeeCtrl.dispose();
     super.dispose();
   }
 
@@ -194,6 +218,77 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       onChanged: (v) => widget.item.age = v,
                     ),
                     const SizedBox(height: 8),
+                  ],
+                  // Rut tien checkbox (banh_kem only)
+                  if (widget.item.product.category == 'banh_kem') ...[
+                    CheckboxListTile(
+                      value: _rutTien,
+                      onChanged: (v) {
+                        setState(() => _rutTien = v ?? false);
+                        widget.item.attributes['rut_tien'] = _rutTien ? 'true' : 'false';
+                        if (!_rutTien) {
+                          widget.item.attributes['cash_amount'] = '';
+                        }
+                      },
+                      title: const Text('Rut tien'),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                    if (_rutTien) ...[
+                      TextFormField(
+                        controller: _cashAmountCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'So tien rut',
+                          border: OutlineInputBorder(),
+                          suffixText: 'd',
+                          isDense: true,
+                          helperText: 'Tien mat trong phong khach',
+                        ),
+                        keyboardType: TextInputType.number,
+                        onChanged: (v) {
+                          widget.item.attributes['cash_amount'] = v;
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Text('Phi rut tien: '),
+                          IconButton.filled(
+                            onPressed: () {
+                              final current = int.tryParse(_cashFeeCtrl.text) ?? 0;
+                              if (current >= _cashFeeStep) {
+                                final next = current - _cashFeeStep;
+                                _cashFeeCtrl.text = '$next';
+                                widget.item.attributes['cash_fee'] = '$next';
+                              }
+                            },
+                            icon: const Icon(Icons.remove, size: 16),
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            padding: EdgeInsets.zero,
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              formatVND((int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee).toDouble()),
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                          IconButton.filled(
+                            onPressed: () {
+                              final current = int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee;
+                              final next = current + _cashFeeStep;
+                              _cashFeeCtrl.text = '$next';
+                              widget.item.attributes['cash_fee'] = '$next';
+                            },
+                            icon: const Icon(Icons.add, size: 16),
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            padding: EdgeInsets.zero,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                   ],
                   // Per-item photo thumbnails
                   if (widget.item.pendingPhotos.isNotEmpty) ...[

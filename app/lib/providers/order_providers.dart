@@ -197,6 +197,7 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     int position = 0,
     bool isExtra = false,
     bool isGift = false,
+    Map<String, dynamic>? attributes,
   }) async {
     final service = ref.read(workItemServiceProvider);
     final item = await service.createWorkItem(
@@ -209,6 +210,7 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
       position: position,
       isExtra: isExtra,
       isGift: isGift,
+      attributes: attributes,
     );
     final current = state.value ?? [];
     state = AsyncData([...current, item]);
@@ -228,6 +230,7 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     int? age,
     bool? isExtra,
     bool? isGift,
+    Map<String, dynamic>? attributes,
   }) async {
     final service = ref.read(workItemServiceProvider);
     final updated = await service.updateWorkItem(
@@ -242,6 +245,7 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
       age: age,
       isExtra: isExtra,
       isGift: isGift,
+      attributes: attributes,
     );
     final current = state.value ?? [];
     state = AsyncData(
