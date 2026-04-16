@@ -1,5 +1,5 @@
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, field
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -88,6 +88,7 @@ class OrderItem:
     age: Optional[int] = None
     is_extra: bool = False
     is_gift: bool = False
+    attributes: dict = field(default_factory=dict)
 
     def to_dict(self):
         return {
@@ -100,6 +101,7 @@ class OrderItem:
             "age": self.age,
             "is_extra": self.is_extra,
             "is_gift": self.is_gift,
+            "attributes": self.attributes,
         }
 
     def to_api_dict(self) -> dict:
@@ -113,6 +115,7 @@ class OrderItem:
             "age": self.age,
             "isExtra": self.is_extra,
             "isGift": self.is_gift,
+            "attributes": self.attributes,
         }
 
     @staticmethod
@@ -161,9 +164,15 @@ class Order:
     work_ticket_printed_at: Optional[str] = None
 
     def calculate_total(self):
-        # Sum only non-gift items + shipping_fee
+        # Sum only non-gift items + cash_fee from attributes + shipping_fee
         subtotal = sum(item.qty * item.price for item in self.items if not item.is_gift)
-        self.total_price = subtotal + self.shipping_fee
+        # Extract cash_fee from attributes (cash fee is added to total, cash amount is not)
+        cash_fee = sum(
+            float(item.attributes.get("cash_fee", 0))
+            for item in self.items
+            if item.attributes.get("cash_fee")
+        )
+        self.total_price = subtotal + cash_fee + self.shipping_fee
 
     def save(self, conn) -> int:
         if not self.order_ref:

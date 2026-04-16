@@ -26,6 +26,7 @@ class OrderItemIn(BaseModel):
     age: Optional[int] = None
     isExtra: bool = False
     isGift: bool = False
+    attributes: dict = {}
 
 
 class DepositIn(BaseModel):
@@ -94,6 +95,7 @@ def _item_in_to_model(item: OrderItemIn) -> OrderItem:
         age=item.age,
         is_extra=item.isExtra,
         is_gift=item.isGift,
+        attributes=item.attributes,
     )
 
 
@@ -182,6 +184,7 @@ def create_order(body: OrderCreate, request: Request):
                 age=item.age,
                 is_extra=item.isExtra,
                 is_gift=item.isGift,
+                attributes=item.attributes,
             )
             work_item.save(conn)
 

@@ -627,6 +627,48 @@ WORK_TICKET_PRINTED_AT_SCHEMA = """
 ALTER TABLE orders ADD COLUMN work_ticket_printed_at TEXT DEFAULT NULL;
 """
 
+PRODUCT_ATTRIBUTES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS product_attributes (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    attribute_type      TEXT NOT NULL UNIQUE,
+    label_vi            TEXT NOT NULL,
+    value_type          TEXT NOT NULL DEFAULT 'text',
+    applicable_categories TEXT NOT NULL DEFAULT '[]',
+    default_value       TEXT DEFAULT '',
+    sort_order          INTEGER DEFAULT 0,
+    active              INTEGER DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS product_attribute_values (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id          INTEGER NOT NULL REFERENCES products(id),
+    attribute_type      TEXT NOT NULL REFERENCES product_attributes(attribute_type),
+    value               TEXT NOT NULL DEFAULT '',
+    UNIQUE(product_id, attribute_type)
+);
+"""
+
+ORDER_ITEMS_ATTRIBUTES_SCHEMA = """
+ALTER TABLE order_items ADD COLUMN attributes TEXT DEFAULT '{}';
+"""
+
+SEED_PRODUCT_ATTRIBUTES = [
+    # (attribute_type, label_vi, value_type, applicable_categories, default_value, sort_order)
+    ("cash_amount", "So tien rut", "number", '["banh_kem"]', "0", 1),
+    ("cash_fee", "Phi rut tien", "number", '["banh_kem"]', "20000", 2),
+]
+
+
+def _migrate_v23_product_attributes(conn):
+    """Seed cash_amount and cash_fee attribute types for banh_kem category."""
+    for attr_type, label_vi, value_type, applicable_cats, default_val, sort_order in SEED_PRODUCT_ATTRIBUTES:
+        conn.execute(
+            """INSERT OR IGNORE INTO product_attributes
+               (attribute_type, label_vi, value_type, applicable_categories, default_value, sort_order)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (attr_type, label_vi, value_type, applicable_cats, default_val, sort_order),
+        )
+
 KNOWLEDGE_BASE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS knowledge_entries (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -757,6 +799,11 @@ MIGRATIONS = {
     22: {
         "description": "Knowledge base: knowledge_entries and knowledge_entry_photos tables",
         "sql": KNOWLEDGE_BASE_SCHEMA,
+    },
+    23: {
+        "description": "Product attribute system: product_attributes table, product_attribute_values table, order_items.attributes column, seed cash_amount and cash_fee for banh_kem",
+        "sql": PRODUCT_ATTRIBUTES_SCHEMA + ORDER_ITEMS_ATTRIBUTES_SCHEMA,
+        "callable": _migrate_v23_product_attributes,
     },
 }
 
