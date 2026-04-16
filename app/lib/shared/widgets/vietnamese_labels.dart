@@ -224,7 +224,7 @@ class VN {
   // Order create form extras
   static const orderSource = 'Nguồn đặt hàng';
   static const dueTime = 'Giờ giao';
-  static const isBirthday = 'Sinh nhật';
+  static const isBirthday = 'Nến tuổi sinh nhật';
   static const birthdayAge = 'Tuổi khách hàng';
   static const orderCreated = 'Đã tạo đơn hàng';
   static const searchProducts = 'Tìm sản phẩm...';
@@ -372,6 +372,9 @@ class VN {
   static const rutTienToggle = 'Bánh rút tiền';
   static const soTienRut = 'Số tiền rút';
   static const phiRutTien = 'Phí rút tiền';
+  static const rutTienSection = 'Rút tiền trong bánh';
+  static const cashReceived = 'Đã nhận tiền';
+  static const cashNotReceived = 'Chưa nhận tiền';
 
   // Knowledge base
   static const knowledgeTitle = 'Sổ tay';

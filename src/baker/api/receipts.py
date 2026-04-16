@@ -395,10 +395,10 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
         draw.text((MARGIN + icon_w + 4, y), age_text, font=tf, fill=(180, 0, 0))
         y += max(_th(icon, ef), _th(age_text, tf)) + LINE_GAP
 
-    # Cash-in-cake badge (rut tien)
+    # Cash-in-cake badge (rut tien) — amount + status on work ticket (fee is in summary)
     attrs = work_item.get("attributes") or {}
     cash_amount = attrs.get("cash_amount")
-    cash_fee = attrs.get("cash_fee")
+    cash_received = attrs.get("cash_received") == "true"
     if cash_amount and int(float(cash_amount)) > 0:
         ef = _emoji_font(_SZ_MEDIUM)
         tf = _font(_SZ_MEDIUM, True)
@@ -406,12 +406,12 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
         icon_w = _tw(icon, ef)
         amount_str = _format_vnd_full(float(cash_amount))
         draw.text((MARGIN, y), icon, font=ef, fill=(0, 128, 0))
-        draw.text((MARGIN + icon_w + 4, y), f" RUT TIEN: {amount_str}", font=tf, fill=(0, 128, 0))
-        y += max(_th(icon, ef), _th(f" RUT TIEN: {amount_str}", tf)) + LINE_GAP
-        if cash_fee and int(float(cash_fee)) > 0:
-            fee_str = _format_vnd_full(float(cash_fee))
-            draw.text((MARGIN, y), "    Phi rut tien: " + fee_str, font=tf, fill=(0, 128, 0))
-            y += _th("    Phi rut tien: " + fee_str, tf) + LINE_GAP
+        draw.text((MARGIN + icon_w + 4, y), f" Số tiền rút: {amount_str}", font=tf, fill=(0, 128, 0))
+        y += max(_th(icon, ef), _th(f" Số tiền rút: {amount_str}", tf)) + LINE_GAP
+        status_text = "    Trạng thái: Đã nhận tiền" if cash_received else "    Trạng thái: CHƯA NHẬN TIỀN"
+        status_color = (0, 128, 0) if cash_received else (200, 0, 0)
+        draw.text((MARGIN, y), status_text, font=tf, fill=status_color)
+        y += _th(status_text, tf) + LINE_GAP
 
     # Extra item badge
     if work_item.get("isExtra") or work_item.get("is_extra"):
@@ -771,10 +771,15 @@ def _render_financial_summary(draw, y, order, conn, fbb, fb) -> int:
 
     y = _row(draw, y, "Tạm tính:", _format_vnd_full(subtotal), fbb)
     if shipping_fee > 0:
-        y = _row(draw, y, "Phí giao hàng:", _format_vnd_full(shipping_fee), fbb)
-        y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
-    else:
-        y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
+        y = _row(draw, y, "Phí giao hàng:", _format_vnd_full(shipping_fee), fb)
+    # Cash-in-cake fee (non-bold, like shipping fee)
+    for item in work_items:
+        attrs = item.get("attributes") or {}
+        cash_fee = attrs.get("cash_fee")
+        if attrs.get("rut_tien") == "true" and cash_fee and int(float(cash_fee)) > 0:
+            fee_str = _format_vnd_full(float(cash_fee))
+            y = _row(draw, y, "Phí rút tiền:", fee_str, fb)
+    y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
 
     order_id = order.get("id")
     total_paid = PaymentTransaction.total_for_order(conn, order_id) if order_id else 0.0
@@ -1083,6 +1088,18 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
                 for ln in _wrap(notes, fb, CONTENT_WIDTH - 20):
                     y = _left_mixed(draw, y, f"    {ln}", fb, (80, 80, 80))
 
+        # Cash-in-cake amount (sub-row within item)
+        item_attrs = item.get("attributes") or {}
+        item_cash = item_attrs.get("cash_amount")
+        item_received = item_attrs.get("cash_received") == "true"
+        if item_cash and int(float(item_cash)) > 0:
+            cash_str = _format_vnd_full(float(item_cash))
+            y = _icon_text(draw, y, "\U0001F4B0", f" Số tiền rút: {cash_str}", fbb, (0, 128, 0), x=MARGIN + 10)
+            recv_label = "Trạng thái: Đã nhận tiền" if item_received else "Trạng thái: CHƯA NHẬN TIỀN"
+            recv_color = (0, 128, 0) if item_received else (200, 0, 0)
+            draw.text((MARGIN + 10, y), f"  {recv_label}", font=fbb, fill=recv_color)
+            y += _th(recv_label, fbb) + LINE_GAP
+
         # Separator between items
         if i < len(work_items) - 1:
             y = _sep(draw, y)
@@ -1102,20 +1119,14 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
 
     y = _row(draw, y, "Tạm tính:", _format_vnd_full(subtotal), fbb)
     if shipping_fee > 0:
-        y = _row(draw, y, "Phí giao hàng:", _format_vnd_full(shipping_fee), fbb)
-    # Cash-in-cake info (cash amount + fee per item)
+        y = _row(draw, y, "Phí giao hàng:", _format_vnd_full(shipping_fee), fb)
+    # Cash-in-cake fee in summary (like shipping fee, black text, not bold)
     for item in work_items:
         attrs = item.get("attributes") or {}
-        cash_amount = attrs.get("cash_amount")
         cash_fee = attrs.get("cash_fee")
-        if cash_amount and int(float(cash_amount)) > 0:
-            item_name = item.get("productName", "") or item.get("product_name", "") or "Banh"
-            amount_str = _format_vnd_full(float(cash_amount))
-            y = _row(draw, y, f"So tien rut ({item_name[:20]}):", amount_str, fb, color_v=(0, 128, 0))
-            if cash_fee and int(float(cash_fee)) > 0:
-                fee_str = _format_vnd_full(float(cash_fee))
-                y = _row(draw, y, "Phi rut tien:", fee_str, fb, color_v=(0, 128, 0))
-            # Show all cash-in-cake items (multiple cakes per order supported)
+        if attrs.get("rut_tien") == "true" and cash_fee and int(float(cash_fee)) > 0:
+            fee_str = _format_vnd_full(float(cash_fee))
+            y = _row(draw, y, "Phí rút tiền:", fee_str, fb)
     y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
 
     order_id = order.get("id")

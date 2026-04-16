@@ -180,6 +180,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           } else {
             await productSvc.deleteProductAttribute(saved.id, 'rut_tien');
           }
+          await notifier.refresh();
         }
       } else {
         saved = await notifier.createProduct(
@@ -190,6 +191,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           recipeNotes: _notesCtrl.text.trim(),
           productCode: code.isNotEmpty ? code : null,
         );
+        // Sync rut_tien attribute for new products
+        if (_rutTien) {
+          final productSvc = ref.read(productServiceProvider);
+          await productSvc.setProductAttribute(saved.id, 'rut_tien', 'true');
+          await notifier.refresh();
+        }
       }
 
       if (_pickedPhoto != null) {
@@ -408,9 +415,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Rut tien toggle (edit mode only, all categories)
-            if (_isEditing)
-              SwitchListTile(
+            // Rut tien toggle (all categories, create & edit)
+            SwitchListTile(
                 value: _rutTien,
                 onChanged: (v) => setState(() => _rutTien = v),
                 title: Text(VN.rutTienToggle),

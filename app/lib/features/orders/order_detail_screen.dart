@@ -171,26 +171,30 @@ class OrderDetailScreen extends ConsumerWidget {
                   );
                 },
               ),
-            ListTile(
-              leading: const Icon(Icons.store),
-              title: const Text(VN.printShopReceipt),
-              onTap: () {
-                Navigator.pop(ctx);
-                context.push(
-                  '/orders/$orderRef/receipt?type=${ReceiptType.shop.value}',
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delivery_dining),
-              title: Text(VN.printDeliveryReceipt),
-              onTap: () {
-                Navigator.pop(ctx);
-                context.push(
-                  '/orders/$orderRef/receipt?type=${ReceiptType.delivery.value}',
-                );
-              },
-            ),
+            if (ref.read(orderDetailProvider(orderRef)).value?.deliveryType ==
+                'pickup')
+              ListTile(
+                leading: const Icon(Icons.store),
+                title: const Text(VN.printShopReceipt),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push(
+                    '/orders/$orderRef/receipt?type=${ReceiptType.shop.value}',
+                  );
+                },
+              ),
+            if (ref.read(orderDetailProvider(orderRef)).value?.deliveryType ==
+                'door')
+              ListTile(
+                leading: const Icon(Icons.delivery_dining),
+                title: Text(VN.printDeliveryReceipt),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push(
+                    '/orders/$orderRef/receipt?type=${ReceiptType.delivery.value}',
+                  );
+                },
+              ),
             const SizedBox(height: 8),
           ],
         ),
@@ -700,6 +704,10 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
 
         // ── Work items ────────────────────────────────────────────────
         _WorkItemSection(orderRef: order.orderRef, order: order),
+        const SizedBox(height: 16),
+
+        // ── Rut tien tracking ───────────────────────────────────────
+        _RutTienSection(orderRef: order.orderRef),
         const SizedBox(height: 16),
 
         // ── Payment ───────────────────────────────────────────────────
@@ -2279,6 +2287,175 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
             child: Text(VN.print),
           ),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rut tien (cash-in-cake) tracking section
+// ---------------------------------------------------------------------------
+
+class _RutTienSection extends ConsumerWidget {
+  const _RutTienSection({required this.orderRef});
+
+  final String orderRef;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final itemsAsync = ref.watch(orderWorkItemsProvider(orderRef));
+    final items = itemsAsync.value ?? [];
+    final rutTienItems = items.where(
+      (i) => i.attributes['rut_tien'] == 'true' || i.attributes['rut_tien'] == true,
+    ).toList();
+
+    if (rutTienItems.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(VN.rutTienSection),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.green.shade50,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.green.shade200),
+          ),
+          child: Column(
+            children: [
+              for (final item in rutTienItems) ...[
+                _RutTienItemRow(orderRef: orderRef, item: item),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RutTienItemRow extends ConsumerStatefulWidget {
+  const _RutTienItemRow({required this.orderRef, required this.item});
+
+  final String orderRef;
+  final WorkItem item;
+
+  @override
+  ConsumerState<_RutTienItemRow> createState() => _RutTienItemRowState();
+}
+
+class _RutTienItemRowState extends ConsumerState<_RutTienItemRow> {
+  bool _saving = false;
+
+  bool get _cashReceived =>
+      widget.item.attributes['cash_received'] == 'true' ||
+      widget.item.attributes['cash_received'] == true;
+
+  Future<void> _toggleCashReceived(bool value) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      final newAttrs = Map<String, dynamic>.from(widget.item.attributes);
+      newAttrs['cash_received'] = value ? 'true' : 'false';
+      await ref
+          .read(orderWorkItemsProvider(widget.orderRef).notifier)
+          .edit(widget.item.id, attributes: newAttrs);
+    } catch (e) {
+      if (mounted) showTopSnackBar(context, '${VN.apiError}: $e');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cashAmount = int.tryParse(
+            widget.item.attributes['cash_amount']?.toString() ?? '') ??
+        0;
+    final cashFee = int.tryParse(
+            widget.item.attributes['cash_fee']?.toString() ?? '') ??
+        0;
+    final received = _cashReceived;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                received ? Icons.check_circle : Icons.pending,
+                color: received ? Colors.green.shade700 : Colors.orange.shade700,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  widget.item.productName,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (cashAmount > 0)
+                  Text(
+                    '${VN.soTienRut}: ${formatVND(cashAmount.toDouble())}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.green.shade700,
+                    ),
+                  ),
+                if (cashFee > 0)
+                  Text(
+                    '${VN.phiRutTien}: ${formatVND(cashFee.toDouble())}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.green.shade700,
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    SizedBox(
+                      height: 24,
+                      width: 24,
+                      child: _saving
+                          ? const Padding(
+                              padding: EdgeInsets.all(4),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Checkbox(
+                              value: received,
+                              onChanged: (v) => _toggleCashReceived(v ?? false),
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      received ? VN.cashReceived : VN.cashNotReceived,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: received
+                            ? Colors.green.shade700
+                            : Colors.orange.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

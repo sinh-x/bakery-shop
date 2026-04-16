@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../providers/order_providers.dart';
@@ -54,17 +53,8 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
       text: defaultCashFee ?? '$_defaultCashFee',
     );
     _cashAmountCtrl = TextEditingController(text: defaultCashAmount ?? '');
-    _rutTien = widget.item.product.attributes['rut_tien'] == 'true';
-    // Only populate cash attributes when rut tien is active (F22/F23)
-    if (_rutTien) {
-      if (defaultCashFee != null && defaultCashFee.isNotEmpty) {
-        widget.item.attributes['cash_fee'] = defaultCashFee;
-      }
-      if (defaultCashAmount != null && defaultCashAmount.isNotEmpty) {
-        widget.item.attributes['cash_amount'] = defaultCashAmount;
-      }
-      widget.item.attributes['rut_tien'] = 'true';
-    }
+    // Rut tien defaults to OFF — user opts in per order item
+    _rutTien = false;
   }
 
   @override
@@ -217,6 +207,10 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                         isDense: true,
                       ),
                       keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(3),
+                      ],
                       onChanged: (v) => widget.item.age = v,
                     ),
                     const SizedBox(height: 8),
@@ -254,6 +248,10 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                           helperText: 'Tien mat trong phong khach',
                         ),
                         keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(9),
+                        ],
                         onChanged: (v) {
                           widget.item.attributes['cash_amount'] = v;
                         },
@@ -267,8 +265,9 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                               final current = int.tryParse(_cashFeeCtrl.text) ?? 0;
                               if (current >= _cashFeeStep) {
                                 final next = current - _cashFeeStep;
-                                _cashFeeCtrl.text = '$next';
+                                setState(() => _cashFeeCtrl.text = '$next');
                                 widget.item.attributes['cash_fee'] = '$next';
+                                widget.onStateChanged();
                               }
                             },
                             icon: const Icon(Icons.remove, size: 16),
@@ -278,7 +277,9 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             child: Text(
-                              formatVND((int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee).toDouble()),
+                              (int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee) == 0
+                                  ? 'Miễn phí'
+                                  : formatVND((int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee).toDouble()),
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                           ),
@@ -286,8 +287,9 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                             onPressed: () {
                               final current = int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee;
                               final next = current + _cashFeeStep;
-                              _cashFeeCtrl.text = '$next';
+                              setState(() => _cashFeeCtrl.text = '$next');
                               widget.item.attributes['cash_fee'] = '$next';
+                              widget.onStateChanged();
                             },
                             icon: const Icon(Icons.add, size: 16),
                             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
