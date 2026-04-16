@@ -340,7 +340,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                   _category = validSlugs.first;
                 }
                 return DropdownButtonFormField<String>(
-                  value: _category,
+                  initialValue: _category,
                   decoration: const InputDecoration(labelText: VN.productCategory),
                   items: active
                       .map((cat) => DropdownMenuItem(
