@@ -39,7 +39,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late final TextEditingController _codeCtrl;
   late String _category;
   XFile? _pickedPhoto;
-  String _photoCacheBuster = '';
+  final String _photoCacheBuster = '';
   bool _saving = false;
 
   bool get _isEditing => widget.product != null;
@@ -307,7 +307,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             // Category dropdown (from API)
             categoriesAsync.when(
               loading: () => DropdownButtonFormField<String>(
-                value: _category,
+                initialValue: _category,
                 decoration: const InputDecoration(labelText: VN.productCategory),
                 items: categoryMap.entries
                     .map((e) => DropdownMenuItem(
@@ -320,7 +320,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 },
               ),
               error: (err, st) => DropdownButtonFormField<String>(
-                value: categoryMap.containsKey(_category) ? _category : categoryMap.keys.first,
+                initialValue: categoryMap.containsKey(_category) ? _category : categoryMap.keys.first,
                 decoration: const InputDecoration(labelText: VN.productCategory),
                 items: categoryMap.entries
                     .map((e) => DropdownMenuItem(
@@ -340,7 +340,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                   _category = validSlugs.first;
                 }
                 return DropdownButtonFormField<String>(
-                  value: _category,
+                  initialValue: _category,
                   decoration: const InputDecoration(labelText: VN.productCategory),
                   items: active
                       .map((cat) => DropdownMenuItem(

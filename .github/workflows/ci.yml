@@ -47,7 +47,7 @@ jobs:
         working-directory: app
 
       - name: Analyze
-        run: flutter analyze --no-fatal-warnings
+        run: flutter analyze
         working-directory: app
 
       - name: Test
