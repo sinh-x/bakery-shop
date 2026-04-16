@@ -1115,7 +1115,7 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
             if cash_fee and int(float(cash_fee)) > 0:
                 fee_str = _format_vnd_full(float(cash_fee))
                 y = _row(draw, y, "Phi rut tien:", fee_str, fb, color_v=(0, 128, 0))
-            break  # only show first cash-in-cake item (single cake per order typical)
+            # Show all cash-in-cake items (multiple cakes per order supported)
     y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
 
     order_id = order.get("id")

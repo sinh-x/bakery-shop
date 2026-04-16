@@ -55,12 +55,14 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
     );
     _cashAmountCtrl = TextEditingController(text: defaultCashAmount ?? '');
     _rutTien = defaultCashAmount != null && defaultCashAmount.isNotEmpty && defaultCashAmount != '0';
-    // Also populate item.attributes from product defaults (F22/F23)
-    if (defaultCashFee != null && defaultCashFee.isNotEmpty) {
-      widget.item.attributes['cash_fee'] = defaultCashFee;
-    }
-    if (defaultCashAmount != null && defaultCashAmount.isNotEmpty) {
-      widget.item.attributes['cash_amount'] = defaultCashAmount;
+    // Only populate cash attributes when rut tien is active (F22/F23)
+    if (_rutTien) {
+      if (defaultCashFee != null && defaultCashFee.isNotEmpty) {
+        widget.item.attributes['cash_fee'] = defaultCashFee;
+      }
+      if (defaultCashAmount != null && defaultCashAmount.isNotEmpty) {
+        widget.item.attributes['cash_amount'] = defaultCashAmount;
+      }
       widget.item.attributes['rut_tien'] = 'true';
     }
   }
@@ -225,10 +227,16 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       value: _rutTien,
                       onChanged: (v) {
                         setState(() => _rutTien = v ?? false);
-                        widget.item.attributes['rut_tien'] = _rutTien ? 'true' : 'false';
-                        if (!_rutTien) {
-                          widget.item.attributes['cash_amount'] = '';
+                        if (_rutTien) {
+                          widget.item.attributes['rut_tien'] = 'true';
+                          widget.item.attributes['cash_fee'] = _cashFeeCtrl.text;
+                          widget.item.attributes['cash_amount'] = _cashAmountCtrl.text;
+                        } else {
+                          widget.item.attributes.remove('rut_tien');
+                          widget.item.attributes.remove('cash_fee');
+                          widget.item.attributes.remove('cash_amount');
                         }
+                        widget.onStateChanged();
                       },
                       title: Text(VN.rutTien),
                       controlAffinity: ListTileControlAffinity.leading,

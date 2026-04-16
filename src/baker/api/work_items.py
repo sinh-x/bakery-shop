@@ -4,7 +4,7 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
 from baker.models.order import is_backward_transition
@@ -62,7 +62,7 @@ class WorkItemCreate(BaseModel):
     age: Optional[int] = None
     isExtra: bool = False
     isGift: bool = False
-    attributes: dict = {}
+    attributes: dict = Field(default_factory=dict)
 
 
 class WorkItemUpdate(BaseModel):
@@ -104,15 +104,16 @@ def _sync_order_items_json(conn, order_id: int) -> None:
     ])
     # Exclude gift items from total price calculation; include shipping_fee + cash_fee
     subtotal = sum(r["quantity"] * r["unit_price"] for r in rows if not r["is_gift"])
-    # Extract cash_fee from attributes JSON
+    # Extract cash_fee from attributes JSON only when rut_tien is active
     cash_fee = 0
     for r in rows:
         if r["attributes"]:
             try:
                 attrs = json.loads(r["attributes"]) if isinstance(r["attributes"], str) else (r["attributes"] or {})
-                fee = attrs.get("cash_fee")
-                if fee:
-                    cash_fee += float(fee)
+                if attrs.get("rut_tien") == "true":
+                    fee = attrs.get("cash_fee")
+                    if fee:
+                        cash_fee += float(fee)
             except (json.JSONDecodeError, TypeError, ValueError):
                 pass
     shipping_fee = conn.execute(

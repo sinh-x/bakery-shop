@@ -52,11 +52,14 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
 
   bool get _needsNotes => _deliveryType != 'pickup';
 
-  // Total excludes gift items, includes cash fees
+  // Total excludes gift items, includes cash fees only when rut_tien is active
   double get _totalPrice => _items
       .where((i) => !i.isGift)
       .fold(0, (sum, i) {
-        final cashFee = double.tryParse(i.attributes['cash_fee']?.toString() ?? '') ?? 0;
+        final rutTien = i.attributes['rut_tien']?.toString() == 'true';
+        final cashFee = rutTien
+            ? (double.tryParse(i.attributes['cash_fee']?.toString() ?? '') ?? 0)
+            : 0.0;
         return sum + i.unitPrice * i.quantity + cashFee;
       });
 

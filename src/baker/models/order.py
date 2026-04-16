@@ -1,5 +1,5 @@
 import json
-from dataclasses import dataclass, field, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -166,11 +166,11 @@ class Order:
     def calculate_total(self):
         # Sum only non-gift items + cash_fee from attributes + shipping_fee
         subtotal = sum(item.qty * item.price for item in self.items if not item.is_gift)
-        # Extract cash_fee from attributes (cash fee is added to total, cash amount is not)
+        # Extract cash_fee from attributes only when rut_tien is active
         cash_fee = sum(
             float(item.attributes.get("cash_fee", 0))
             for item in self.items
-            if item.attributes.get("cash_fee")
+            if item.attributes.get("rut_tien") == "true" and item.attributes.get("cash_fee")
         )
         self.total_price = subtotal + cash_fee + self.shipping_fee
 

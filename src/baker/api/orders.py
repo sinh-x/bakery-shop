@@ -4,7 +4,7 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
 from baker.logging import log_context
@@ -26,7 +26,7 @@ class OrderItemIn(BaseModel):
     age: Optional[int] = None
     isExtra: bool = False
     isGift: bool = False
-    attributes: dict = {}
+    attributes: dict = Field(default_factory=dict)
 
 
 class DepositIn(BaseModel):
@@ -265,12 +265,25 @@ def edit_order(ref: str, body: OrderEdit):
             current_shipping_fee = data.get("shippingFee", row["shipping_fee"])
             if items_changed:
                 subtotal = sum(i.qty * i.price for i in items if not i.is_gift)
+                cash_fee = sum(
+                    float(i.attributes.get("cash_fee", 0))
+                    for i in items
+                    if i.attributes.get("rut_tien") == "true" and i.attributes.get("cash_fee")
+                )
             else:
                 subtotal = sum(
                     i.get("quantity", i.get("qty", 1)) * i.get("unit_price", i.get("price", 0))
                     for i in raw_items if not i.get("is_gift", False)
                 )
-            total = subtotal + current_shipping_fee
+                cash_fee = 0
+                for i in raw_items:
+                    attrs = i.get("attributes") or {}
+                    if attrs.get("rut_tien") == "true" and attrs.get("cash_fee"):
+                        try:
+                            cash_fee += float(attrs["cash_fee"])
+                        except (TypeError, ValueError):
+                            pass
+            total = subtotal + cash_fee + current_shipping_fee
             updates.append("total_price = ?")
             params.append(total)
 
