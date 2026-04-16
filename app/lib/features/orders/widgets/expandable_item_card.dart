@@ -230,7 +230,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                           widget.item.attributes['cash_amount'] = '';
                         }
                       },
-                      title: const Text('Rut tien'),
+                      title: Text(VN.rutTien),
                       controlAffinity: ListTileControlAffinity.leading,
                       contentPadding: EdgeInsets.zero,
                       dense: true,
@@ -239,7 +239,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       TextFormField(
                         controller: _cashAmountCtrl,
                         decoration: const InputDecoration(
-                          labelText: 'So tien rut',
+                          labelText: VN.soTienRut,
                           border: OutlineInputBorder(),
                           suffixText: 'd',
                           isDense: true,
@@ -253,7 +253,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Text('Phi rut tien: '),
+                          Text('${VN.phiRutTien}: '),
                           IconButton.filled(
                             onPressed: () {
                               final current = int.tryParse(_cashFeeCtrl.text) ?? 0;

@@ -367,6 +367,11 @@ class VN {
   static const tapToRetry = 'Bấm để thử lại';
   static const noDevicesFound = 'Không có thiết bị nào';
 
+  // Cash-in-cake (rut tien)
+  static const rutTien = 'Rút tiền';
+  static const soTienRut = 'Số tiền rút';
+  static const phiRutTien = 'Phí rút tiền';
+
   // Knowledge base
   static const knowledgeTitle = 'Sổ tay';
   static const knowledgeEntry = 'Mục tri thức';

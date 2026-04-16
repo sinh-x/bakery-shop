@@ -455,7 +455,7 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
                 const Text('💵', style: TextStyle(fontSize: 16)),
                 const SizedBox(width: 6),
                 Text(
-                  'Rut tien: ${formatVND((int.tryParse(widget.item.attributes['cash_amount'].toString()) ?? 0).toDouble())}',
+                  '${VN.rutTien}: ${formatVND((int.tryParse(widget.item.attributes['cash_amount'].toString()) ?? 0).toDouble())}',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: Colors.green.shade700,
                     fontWeight: FontWeight.w600,
@@ -469,7 +469,7 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
               Padding(
                 padding: const EdgeInsets.only(left: 28, top: 2),
                 child: Text(
-                  'Phi rut tien: ${formatVND((int.tryParse(widget.item.attributes['cash_fee'].toString()) ?? 0).toDouble())}',
+                  '${VN.phiRutTien}: ${formatVND((int.tryParse(widget.item.attributes['cash_fee'].toString()) ?? 0).toDouble())}',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: Colors.green.shade700,
                   ),
@@ -563,7 +563,7 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
                   }
                 }),
               ),
-              const Text('Rut tien'),
+              Text(VN.rutTien),
             ],
           ),
 
@@ -574,7 +574,7 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
               controller: _cashAmountCtrl,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: 'So tien rut',
+                labelText: VN.soTienRut,
                 hintText: 'VD: 500',
                 border: OutlineInputBorder(),
                 suffixText: 'd',
@@ -584,7 +584,7 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
             const SizedBox(height: 8),
             Row(
               children: [
-                const Text('Phi rut tien: '),
+                Text('${VN.phiRutTien}: '),
                 IconButton.filled(
                   onPressed: () {
                     final current = int.tryParse(_cashFeeCtrl.text) ?? 0;

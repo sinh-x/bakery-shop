@@ -872,7 +872,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                         _editItem(attributes: {'rut_tien': 'true', 'cash_amount': _cashAmountCtrl.text.trim(), 'cash_fee': _cashFeeCtrl.text.trim()});
                       }
                     },
-                    title: const Text('Rut tien'),
+                    title: Text(VN.rutTien),
                     controlAffinity: ListTileControlAffinity.leading,
                     contentPadding: EdgeInsets.zero,
                     dense: true,
@@ -882,7 +882,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                       controller: _cashAmountCtrl,
                       focusNode: _cashAmountFocus,
                       decoration: const InputDecoration(
-                        labelText: 'So tien rut',
+                        labelText: VN.soTienRut,
                         border: OutlineInputBorder(),
                         suffixText: 'd',
                         isDense: true,
@@ -893,7 +893,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        const Text('Phi rut tien: '),
+                        Text('${VN.phiRutTien}: '),
                         IconButton.filled(
                           onPressed: () {
                             final current = int.tryParse(_cashFeeCtrl.text) ?? 0;

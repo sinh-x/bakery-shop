@@ -587,7 +587,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                       if (item.attributes['cash_amount'] != null && item.attributes['cash_amount'].toString().isNotEmpty && item.attributes['cash_amount'].toString() != '0') ...[
                         const SizedBox(height: 2),
                         Text(
-                          'Rut tien: ${formatVND((int.tryParse(item.attributes['cash_amount'].toString()) ?? 0).toDouble())}',
+                          '${VN.rutTien}: ${formatVND((int.tryParse(item.attributes['cash_amount'].toString()) ?? 0).toDouble())}',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: Colors.green.shade700,
                             fontWeight: FontWeight.w500,
@@ -595,7 +595,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                         ),
                         if (item.attributes['cash_fee'] != null && item.attributes['cash_fee'].toString().isNotEmpty && item.attributes['cash_fee'].toString() != '0')
                           Text(
-                            'Phi rut tien: ${formatVND((int.tryParse(item.attributes['cash_fee'].toString()) ?? 0).toDouble())}',
+                            '${VN.phiRutTien}: ${formatVND((int.tryParse(item.attributes['cash_fee'].toString()) ?? 0).toDouble())}',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: Colors.green.shade700,
                             ),
