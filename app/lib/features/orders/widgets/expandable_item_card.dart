@@ -54,7 +54,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
       text: defaultCashFee ?? '$_defaultCashFee',
     );
     _cashAmountCtrl = TextEditingController(text: defaultCashAmount ?? '');
-    _rutTien = defaultCashAmount != null && defaultCashAmount.isNotEmpty && defaultCashAmount != '0';
+    _rutTien = widget.item.product.attributes['rut_tien'] == 'true';
     // Only populate cash attributes when rut tien is active (F22/F23)
     if (_rutTien) {
       if (defaultCashFee != null && defaultCashFee.isNotEmpty) {
@@ -221,8 +221,8 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     ),
                     const SizedBox(height: 8),
                   ],
-                  // Rut tien checkbox (banh_kem only)
-                  if (widget.item.product.category == 'banh_kem') ...[
+                  // Rut tien checkbox (based on rut_tien attribute)
+                  if (widget.item.product.attributes['rut_tien'] == 'true') ...[
                     CheckboxListTile(
                       value: _rutTien,
                       onChanged: (v) {

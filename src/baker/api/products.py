@@ -71,6 +71,10 @@ def _product_attributes(conn, product_id: int) -> dict:
     result = {}
     for attr_type, default in applicable_types.items():
         result[attr_type] = overrides.get(attr_type, default)
+    # Also include per-product overrides not covered by applicable_types
+    for attr_type, value in overrides.items():
+        if attr_type not in result:
+            result[attr_type] = value
     return result
 
 

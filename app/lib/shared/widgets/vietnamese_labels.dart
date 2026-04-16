@@ -369,6 +369,7 @@ class VN {
 
   // Cash-in-cake (rut tien)
   static const rutTien = 'Rút tiền';
+  static const rutTienToggle = 'Bánh rút tiền';
   static const soTienRut = 'Số tiền rút';
   static const phiRutTien = 'Phí rút tiền';
 

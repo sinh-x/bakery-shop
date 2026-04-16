@@ -699,6 +699,20 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_photos_entry ON knowledge_entry_photos(
 """
 
 
+def _migrate_v24_rut_tien_toggle(conn):
+    """Seed rut_tien attribute type and enable it for all existing banh_kem products."""
+    conn.execute(
+        """INSERT OR IGNORE INTO product_attributes
+           (attribute_type, label_vi, value_type, applicable_categories, default_value, sort_order)
+           VALUES ('rut_tien', 'Rút tiền', 'boolean', '[]', 'false', 0)""",
+    )
+    # Enable rut_tien for all existing banh_kem products
+    conn.execute(
+        """INSERT OR IGNORE INTO product_attribute_values (product_id, attribute_type, value)
+           SELECT id, 'rut_tien', 'true' FROM products WHERE category = 'banh_kem'""",
+    )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -804,6 +818,11 @@ MIGRATIONS = {
         "description": "Product attribute system: product_attributes table, product_attribute_values table, order_items.attributes column, seed cash_amount and cash_fee for banh_kem",
         "sql": PRODUCT_ATTRIBUTES_SCHEMA + ORDER_ITEMS_ATTRIBUTES_SCHEMA,
         "callable": _migrate_v23_product_attributes,
+    },
+    24: {
+        "description": "Add rut_tien per-product toggle: rut_tien attribute type, seed all existing banh_kem products with rut_tien=true",
+        "sql": "",
+        "callable": _migrate_v24_rut_tien_toggle,
     },
 }
 
