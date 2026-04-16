@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$Product {
 
- int get id; String get name; String get category;@JsonKey(name: 'base_price') double get basePrice; double get cost;@JsonKey(name: 'recipe_notes') String get recipeNotes; int get active;@JsonKey(name: 'photo_path') String get photoPath;@JsonKey(name: 'product_code') String get productCode;
+ int get id; String get name; String get category;@JsonKey(name: 'base_price') double get basePrice; double get cost;@JsonKey(name: 'recipe_notes') String get recipeNotes; int get active;@JsonKey(name: 'photo_path') String get photoPath;@JsonKey(name: 'product_code') String get productCode; Map<String, String> get attributes;
 /// Create a copy of Product
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $ProductCopyWith<Product> get copyWith => _$ProductCopyWithImpl<Product>(this as
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Product&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.category, category) || other.category == category)&&(identical(other.basePrice, basePrice) || other.basePrice == basePrice)&&(identical(other.cost, cost) || other.cost == cost)&&(identical(other.recipeNotes, recipeNotes) || other.recipeNotes == recipeNotes)&&(identical(other.active, active) || other.active == active)&&(identical(other.photoPath, photoPath) || other.photoPath == photoPath)&&(identical(other.productCode, productCode) || other.productCode == productCode));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Product&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.category, category) || other.category == category)&&(identical(other.basePrice, basePrice) || other.basePrice == basePrice)&&(identical(other.cost, cost) || other.cost == cost)&&(identical(other.recipeNotes, recipeNotes) || other.recipeNotes == recipeNotes)&&(identical(other.active, active) || other.active == active)&&(identical(other.photoPath, photoPath) || other.photoPath == photoPath)&&(identical(other.productCode, productCode) || other.productCode == productCode)&&const DeepCollectionEquality().equals(other.attributes, attributes));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,category,basePrice,cost,recipeNotes,active,photoPath,productCode);
+int get hashCode => Object.hash(runtimeType,id,name,category,basePrice,cost,recipeNotes,active,photoPath,productCode,const DeepCollectionEquality().hash(attributes));
 
 @override
 String toString() {
-  return 'Product(id: $id, name: $name, category: $category, basePrice: $basePrice, cost: $cost, recipeNotes: $recipeNotes, active: $active, photoPath: $photoPath, productCode: $productCode)';
+  return 'Product(id: $id, name: $name, category: $category, basePrice: $basePrice, cost: $cost, recipeNotes: $recipeNotes, active: $active, photoPath: $photoPath, productCode: $productCode, attributes: $attributes)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $ProductCopyWith<$Res>  {
   factory $ProductCopyWith(Product value, $Res Function(Product) _then) = _$ProductCopyWithImpl;
 @useResult
 $Res call({
- int id, String name, String category,@JsonKey(name: 'base_price') double basePrice, double cost,@JsonKey(name: 'recipe_notes') String recipeNotes, int active,@JsonKey(name: 'photo_path') String photoPath,@JsonKey(name: 'product_code') String productCode
+ int id, String name, String category,@JsonKey(name: 'base_price') double basePrice, double cost,@JsonKey(name: 'recipe_notes') String recipeNotes, int active,@JsonKey(name: 'photo_path') String photoPath,@JsonKey(name: 'product_code') String productCode, Map<String, String> attributes
 });
 
 
@@ -65,7 +65,7 @@ class _$ProductCopyWithImpl<$Res>
 
 /// Create a copy of Product
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? category = null,Object? basePrice = null,Object? cost = null,Object? recipeNotes = null,Object? active = null,Object? photoPath = null,Object? productCode = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? category = null,Object? basePrice = null,Object? cost = null,Object? recipeNotes = null,Object? active = null,Object? photoPath = null,Object? productCode = null,Object? attributes = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -76,7 +76,8 @@ as double,recipeNotes: null == recipeNotes ? _self.recipeNotes : recipeNotes // 
 as String,active: null == active ? _self.active : active // ignore: cast_nullable_to_non_nullable
 as int,photoPath: null == photoPath ? _self.photoPath : photoPath // ignore: cast_nullable_to_non_nullable
 as String,productCode: null == productCode ? _self.productCode : productCode // ignore: cast_nullable_to_non_nullable
-as String,
+as String,attributes: null == attributes ? _self.attributes : attributes // ignore: cast_nullable_to_non_nullable
+as Map<String, String>,
   ));
 }
 
@@ -158,10 +159,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id,  String name,  String category, @JsonKey(name: 'base_price')  double basePrice,  double cost, @JsonKey(name: 'recipe_notes')  String recipeNotes,  int active, @JsonKey(name: 'photo_path')  String photoPath, @JsonKey(name: 'product_code')  String productCode)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id,  String name,  String category, @JsonKey(name: 'base_price')  double basePrice,  double cost, @JsonKey(name: 'recipe_notes')  String recipeNotes,  int active, @JsonKey(name: 'photo_path')  String photoPath, @JsonKey(name: 'product_code')  String productCode,  Map<String, String> attributes)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Product() when $default != null:
-return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_that.recipeNotes,_that.active,_that.photoPath,_that.productCode);case _:
+return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_that.recipeNotes,_that.active,_that.photoPath,_that.productCode,_that.attributes);case _:
   return orElse();
 
 }
@@ -179,10 +180,10 @@ return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id,  String name,  String category, @JsonKey(name: 'base_price')  double basePrice,  double cost, @JsonKey(name: 'recipe_notes')  String recipeNotes,  int active, @JsonKey(name: 'photo_path')  String photoPath, @JsonKey(name: 'product_code')  String productCode)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id,  String name,  String category, @JsonKey(name: 'base_price')  double basePrice,  double cost, @JsonKey(name: 'recipe_notes')  String recipeNotes,  int active, @JsonKey(name: 'photo_path')  String photoPath, @JsonKey(name: 'product_code')  String productCode,  Map<String, String> attributes)  $default,) {final _that = this;
 switch (_that) {
 case _Product():
-return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_that.recipeNotes,_that.active,_that.photoPath,_that.productCode);}
+return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_that.recipeNotes,_that.active,_that.photoPath,_that.productCode,_that.attributes);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -196,10 +197,10 @@ return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id,  String name,  String category, @JsonKey(name: 'base_price')  double basePrice,  double cost, @JsonKey(name: 'recipe_notes')  String recipeNotes,  int active, @JsonKey(name: 'photo_path')  String photoPath, @JsonKey(name: 'product_code')  String productCode)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id,  String name,  String category, @JsonKey(name: 'base_price')  double basePrice,  double cost, @JsonKey(name: 'recipe_notes')  String recipeNotes,  int active, @JsonKey(name: 'photo_path')  String photoPath, @JsonKey(name: 'product_code')  String productCode,  Map<String, String> attributes)?  $default,) {final _that = this;
 switch (_that) {
 case _Product() when $default != null:
-return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_that.recipeNotes,_that.active,_that.photoPath,_that.productCode);case _:
+return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_that.recipeNotes,_that.active,_that.photoPath,_that.productCode,_that.attributes);case _:
   return null;
 
 }
@@ -211,7 +212,7 @@ return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_t
 @JsonSerializable()
 
 class _Product implements Product {
-  const _Product({required this.id, required this.name, this.category = 'bread', @JsonKey(name: 'base_price') this.basePrice = 0, this.cost = 0, @JsonKey(name: 'recipe_notes') this.recipeNotes = '', this.active = 1, @JsonKey(name: 'photo_path') this.photoPath = '', @JsonKey(name: 'product_code') this.productCode = ''});
+  const _Product({required this.id, required this.name, this.category = 'bread', @JsonKey(name: 'base_price') this.basePrice = 0, this.cost = 0, @JsonKey(name: 'recipe_notes') this.recipeNotes = '', this.active = 1, @JsonKey(name: 'photo_path') this.photoPath = '', @JsonKey(name: 'product_code') this.productCode = '', final  Map<String, String> attributes = const {}}): _attributes = attributes;
   factory _Product.fromJson(Map<String, dynamic> json) => _$ProductFromJson(json);
 
 @override final  int id;
@@ -223,6 +224,13 @@ class _Product implements Product {
 @override@JsonKey() final  int active;
 @override@JsonKey(name: 'photo_path') final  String photoPath;
 @override@JsonKey(name: 'product_code') final  String productCode;
+ final  Map<String, String> _attributes;
+@override@JsonKey() Map<String, String> get attributes {
+  if (_attributes is EqualUnmodifiableMapView) return _attributes;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableMapView(_attributes);
+}
+
 
 /// Create a copy of Product
 /// with the given fields replaced by the non-null parameter values.
@@ -237,16 +245,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Product&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.category, category) || other.category == category)&&(identical(other.basePrice, basePrice) || other.basePrice == basePrice)&&(identical(other.cost, cost) || other.cost == cost)&&(identical(other.recipeNotes, recipeNotes) || other.recipeNotes == recipeNotes)&&(identical(other.active, active) || other.active == active)&&(identical(other.photoPath, photoPath) || other.photoPath == photoPath)&&(identical(other.productCode, productCode) || other.productCode == productCode));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Product&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.category, category) || other.category == category)&&(identical(other.basePrice, basePrice) || other.basePrice == basePrice)&&(identical(other.cost, cost) || other.cost == cost)&&(identical(other.recipeNotes, recipeNotes) || other.recipeNotes == recipeNotes)&&(identical(other.active, active) || other.active == active)&&(identical(other.photoPath, photoPath) || other.photoPath == photoPath)&&(identical(other.productCode, productCode) || other.productCode == productCode)&&const DeepCollectionEquality().equals(other._attributes, _attributes));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,category,basePrice,cost,recipeNotes,active,photoPath,productCode);
+int get hashCode => Object.hash(runtimeType,id,name,category,basePrice,cost,recipeNotes,active,photoPath,productCode,const DeepCollectionEquality().hash(_attributes));
 
 @override
 String toString() {
-  return 'Product(id: $id, name: $name, category: $category, basePrice: $basePrice, cost: $cost, recipeNotes: $recipeNotes, active: $active, photoPath: $photoPath, productCode: $productCode)';
+  return 'Product(id: $id, name: $name, category: $category, basePrice: $basePrice, cost: $cost, recipeNotes: $recipeNotes, active: $active, photoPath: $photoPath, productCode: $productCode, attributes: $attributes)';
 }
 
 
@@ -257,7 +265,7 @@ abstract mixin class _$ProductCopyWith<$Res> implements $ProductCopyWith<$Res> {
   factory _$ProductCopyWith(_Product value, $Res Function(_Product) _then) = __$ProductCopyWithImpl;
 @override @useResult
 $Res call({
- int id, String name, String category,@JsonKey(name: 'base_price') double basePrice, double cost,@JsonKey(name: 'recipe_notes') String recipeNotes, int active,@JsonKey(name: 'photo_path') String photoPath,@JsonKey(name: 'product_code') String productCode
+ int id, String name, String category,@JsonKey(name: 'base_price') double basePrice, double cost,@JsonKey(name: 'recipe_notes') String recipeNotes, int active,@JsonKey(name: 'photo_path') String photoPath,@JsonKey(name: 'product_code') String productCode, Map<String, String> attributes
 });
 
 
@@ -274,7 +282,7 @@ class __$ProductCopyWithImpl<$Res>
 
 /// Create a copy of Product
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? category = null,Object? basePrice = null,Object? cost = null,Object? recipeNotes = null,Object? active = null,Object? photoPath = null,Object? productCode = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? category = null,Object? basePrice = null,Object? cost = null,Object? recipeNotes = null,Object? active = null,Object? photoPath = null,Object? productCode = null,Object? attributes = null,}) {
   return _then(_Product(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -285,7 +293,8 @@ as double,recipeNotes: null == recipeNotes ? _self.recipeNotes : recipeNotes // 
 as String,active: null == active ? _self.active : active // ignore: cast_nullable_to_non_nullable
 as int,photoPath: null == photoPath ? _self.photoPath : photoPath // ignore: cast_nullable_to_non_nullable
 as String,productCode: null == productCode ? _self.productCode : productCode // ignore: cast_nullable_to_non_nullable
-as String,
+as String,attributes: null == attributes ? _self._attributes : attributes // ignore: cast_nullable_to_non_nullable
+as Map<String, String>,
   ));
 }
 

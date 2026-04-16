@@ -378,6 +378,7 @@ class DraftOrderItem {
   double? customUnitPrice;
   bool isExtra;
   bool isGift;
+  Map<String, dynamic> attributes;
 
   DraftOrderItem({
     required this.product,
@@ -389,7 +390,9 @@ class DraftOrderItem {
     this.customUnitPrice,
     this.isExtra = false,
     this.isGift = false,
-  }) : pendingPhotos = pendingPhotos ?? [];
+    Map<String, dynamic>? attributes,
+  }) : pendingPhotos = pendingPhotos ?? [],
+       attributes = attributes ?? {};
 
   double get unitPrice => customUnitPrice ?? product.basePrice;
 }
