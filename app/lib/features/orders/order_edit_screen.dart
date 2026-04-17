@@ -540,6 +540,10 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
   static const int _cashAmountStep = 100000;
   static const int _minCashAmount = 100000;
   bool _editingCashAmount = false;
+  // Preserved cash values for toggle-off (restored on toggle-on)
+  String _savedCashAmount = '';
+  String _savedCashFee = '';
+  bool _daDuaTienRut = false;
 
   @override
   void initState() {
@@ -874,11 +878,21 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                           _editingCashAmount = false;
                         });
                         if (!newVal) {
-                          // F17: Toggle-off removes keys entirely
+                          // Preserve cash values for restore on toggle-on
+                          _savedCashAmount = _cashAmountCtrl.text.trim();
+                          _savedCashFee = _cashFeeCtrl.text.trim();
                           _cashAmountCtrl.clear();
+                          _cashFeeCtrl.clear();
                           _editItem(attributes: {});
                         } else {
-                          _editItem(attributes: {'rut_tien': 'true', 'cash_amount': _cashAmountCtrl.text.trim(), 'cash_fee': _cashFeeCtrl.text.trim()});
+                          // Restore saved values if any
+                          if (_savedCashAmount.isNotEmpty) {
+                            _cashAmountCtrl.text = _savedCashAmount;
+                          }
+                          if (_savedCashFee.isNotEmpty) {
+                            _cashFeeCtrl.text = _savedCashFee;
+                          }
+                          _editItem(attributes: {'rut_tien': 'true', 'cash_amount': _cashAmountCtrl.text.trim(), 'cash_fee': _cashFeeCtrl.text.trim().isNotEmpty ? _cashFeeCtrl.text.trim() : '$_defaultCashFee'});
                         }
                       },
                       title: Text(VN.rutTien),
@@ -1004,6 +1018,17 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                         ],
                       ),
                       const SizedBox(height: 8),
+                      // "Đã đưa tiền rút" checkbox
+                      CheckboxListTile(
+                        value: _daDuaTienRut,
+                        onChanged: (v) {
+                          setState(() => _daDuaTienRut = v ?? false);
+                        },
+                        title: Text(VN.daDuaTienRut),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
                     ],
                   ],
                   // Per-item photos
