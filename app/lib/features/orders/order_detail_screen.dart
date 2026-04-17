@@ -2403,7 +2403,7 @@ class _RutTienSection extends ConsumerWidget {
                       );
                     },
                     icon: const Icon(Icons.add, size: 18),
-                    label: const Text('+ Thêm tiền rút'),
+                    label: const Text('+ Khách đưa tiền rút'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.amber.shade800,
                     ),
