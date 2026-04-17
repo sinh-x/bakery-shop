@@ -36,6 +36,9 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
 
   static const int _defaultCashFee = 20000;
   static const int _cashFeeStep = 10000;
+  static const int _cashAmountStep = 100000;
+  static const int _minCashAmount = 100000;
+  bool _editingCashAmount = false;
 
   @override
   void initState() {
@@ -229,6 +232,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                           widget.item.attributes.remove('rut_tien');
                           widget.item.attributes.remove('cash_fee');
                           widget.item.attributes.remove('cash_amount');
+                          widget.item.daDuaTienRut = false;
                         }
                         widget.onStateChanged();
                       },
@@ -238,25 +242,94 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       dense: true,
                     ),
                     if (_rutTien) ...[
-                      TextFormField(
-                        controller: _cashAmountCtrl,
-                        decoration: const InputDecoration(
-                          labelText: VN.soTienRut,
-                          border: OutlineInputBorder(),
-                          suffixText: 'd',
-                          isDense: true,
-                          helperText: 'Tien mat trong phong khach',
-                        ),
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(9),
+                      // Cash amount stepper: [-] [amount] [+] with 100k step
+                      Row(
+                        children: [
+                          Text('${VN.soTienRut}: '),
+                          IconButton.filled(
+                            onPressed: () {
+                              final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                              if (current > _minCashAmount) {
+                                final next = current - _cashAmountStep;
+                                final clamped = next < _minCashAmount ? _minCashAmount : next;
+                                setState(() {
+                                  _cashAmountCtrl.text = '$clamped';
+                                  _editingCashAmount = false;
+                                });
+                                widget.item.attributes['cash_amount'] = '$clamped';
+                                widget.onStateChanged();
+                              }
+                            },
+                            icon: const Icon(Icons.remove, size: 16),
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            padding: EdgeInsets.zero,
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() => _editingCashAmount = true),
+                              child: _editingCashAmount
+                                  ? Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                      child: TextFormField(
+                                        controller: _cashAmountCtrl,
+                                        autofocus: true,
+                                        textAlign: TextAlign.center,
+                                        decoration: const InputDecoration(
+                                          isDense: true,
+                                          suffixText: 'đ',
+                                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                        ),
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.digitsOnly,
+                                          LengthLimitingTextInputFormatter(9),
+                                        ],
+                                        onChanged: (v) {
+                                          widget.item.attributes['cash_amount'] = v;
+                                          widget.onStateChanged();
+                                        },
+                                        onEditingComplete: () {
+                                          // Enforce minimum
+                                          final val = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                                          if (val < _minCashAmount && val != 0) {
+                                            _cashAmountCtrl.text = '$_minCashAmount';
+                                            widget.item.attributes['cash_amount'] = '$_minCashAmount';
+                                            widget.onStateChanged();
+                                          }
+                                          setState(() => _editingCashAmount = false);
+                                        },
+                                      ),
+                                    )
+                                  : Center(
+                                      child: Text(
+                                        _cashAmountCtrl.text.isEmpty || _cashAmountCtrl.text == '0'
+                                            ? '0đ'
+                                            : formatVND((int.tryParse(_cashAmountCtrl.text) ?? 0).toDouble()),
+                                        style: Theme.of(context).textTheme.titleMedium,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                          IconButton.filled(
+                            onPressed: () {
+                              final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                              final next = current + _cashAmountStep;
+                              final clamped = next < _minCashAmount ? _minCashAmount : next;
+                              setState(() {
+                                _cashAmountCtrl.text = '$clamped';
+                                _editingCashAmount = false;
+                              });
+                              widget.item.attributes['cash_amount'] = '$clamped';
+                              widget.onStateChanged();
+                            },
+                            icon: const Icon(Icons.add, size: 16),
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            padding: EdgeInsets.zero,
+                          ),
                         ],
-                        onChanged: (v) {
-                          widget.item.attributes['cash_amount'] = v;
-                        },
                       ),
                       const SizedBox(height: 8),
+                      // Cash fee stepper: [-] [fee] [+] with 10k step
                       Row(
                         children: [
                           Text('${VN.phiRutTien}: '),
@@ -297,7 +370,19 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
+                      // "Đã đưa tiền rút" checkbox
+                      CheckboxListTile(
+                        value: widget.item.daDuaTienRut,
+                        onChanged: (v) {
+                          setState(() => widget.item.daDuaTienRut = v ?? false);
+                          widget.onStateChanged();
+                        },
+                        title: const Text(VN.daDuaTienRut),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
                     ],
                   ],
                   // Per-item photo thumbnails

@@ -266,6 +266,7 @@ class VN {
   static const txnTypePayment = 'Thanh toán';
   static const txnTypeFullPayment = 'Thanh toán đủ';
   static const txnTypeRefund = 'Hoàn tiền';
+  static const txnTypeRutTien = 'Tiền rút';
   static const methodCash = 'Tiền mặt';
   static const methodTransfer = 'Chuyển khoản';
   static const addPayment = 'Thêm thanh toán';
@@ -375,6 +376,7 @@ class VN {
   static const rutTienSection = 'Rút tiền trong bánh';
   static const cashReceived = 'Đã nhận tiền';
   static const cashNotReceived = 'Chưa nhận tiền';
+  static const daDuaTienRut = 'Đã đưa tiền rút';
 
   // Knowledge base
   static const knowledgeTitle = 'Sổ tay';
@@ -498,6 +500,8 @@ String txnTypeLabel(String type) {
       return VN.txnTypeFullPayment;
     case 'refund':
       return VN.txnTypeRefund;
+    case 'rut_tien':
+      return VN.txnTypeRutTien;
     default:
       return type;
   }

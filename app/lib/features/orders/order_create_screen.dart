@@ -352,6 +352,25 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         }
       }
 
+      // Auto-create rut_tien transaction for items with "Đã đưa tiền rút" checked
+      for (final item in _items) {
+        if (item.daDuaTienRut &&
+            item.attributes['rut_tien']?.toString() == 'true') {
+          final cashAmount = double.tryParse(
+            item.attributes['cash_amount']?.toString() ?? '',
+          );
+          if (cashAmount != null && cashAmount > 0) {
+            final txnService = ref.read(paymentTransactionServiceProvider);
+            await txnService.createTransaction(
+              newOrder.orderRef,
+              amount: cashAmount,
+              type: 'rut_tien',
+              method: 'cash',
+            );
+          }
+        }
+      }
+
       await ref.read(orderListProvider.notifier).refresh();
 
       if (mounted) {

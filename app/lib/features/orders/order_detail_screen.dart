@@ -983,6 +983,8 @@ Color _txnColor(String type) {
       return Colors.teal;
     case 'refund':
       return Colors.orange;
+    case 'rut_tien':
+      return Colors.amber;
     default:
       return Colors.grey;
   }

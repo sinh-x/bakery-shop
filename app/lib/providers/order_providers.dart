@@ -383,6 +383,7 @@ class DraftOrderItem {
   bool isExtra;
   bool isGift;
   Map<String, dynamic> attributes;
+  bool daDuaTienRut;
 
   DraftOrderItem({
     required this.product,
@@ -395,6 +396,7 @@ class DraftOrderItem {
     this.isExtra = false,
     this.isGift = false,
     Map<String, dynamic>? attributes,
+    this.daDuaTienRut = false,
   }) : pendingPhotos = pendingPhotos ?? [],
        attributes = attributes ?? {};
 
