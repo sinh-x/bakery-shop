@@ -254,7 +254,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
   }
 }
 
-class _CakeDetailBody extends StatefulWidget {
+class _CakeDetailBody extends ConsumerStatefulWidget {
   const _CakeDetailBody({
     required this.item,
     required this.orderRef,
@@ -280,10 +280,10 @@ class _CakeDetailBody extends StatefulWidget {
   }) onSave;
 
   @override
-  State<_CakeDetailBody> createState() => _CakeDetailBodyState();
+  ConsumerState<_CakeDetailBody> createState() => _CakeDetailBodyState();
 }
 
-class _CakeDetailBodyState extends State<_CakeDetailBody> {
+class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
   bool _editing = false;
   late TextEditingController _notesCtrl;
   late TextEditingController _ageCtrl;
@@ -478,6 +478,26 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
                   ),
                 ),
               ),
+            // Rut tien transaction summary (F9)
+            Builder(builder: (_) {
+              final txnsAsync = ref.watch(orderPaymentTransactionsProvider(widget.orderRef));
+              final txns = txnsAsync.value ?? [];
+              final target = int.tryParse(widget.item.attributes['cash_amount'].toString()) ?? 0;
+              final received = txns
+                  .where((t) => t.type == 'rut_tien')
+                  .fold<double>(0, (sum, t) => sum + t.amount);
+              final isFullyReceived = received >= target;
+              return Padding(
+                padding: const EdgeInsets.only(left: 28, top: 4),
+                child: Text(
+                  'Tiền rút đã nhận: ${formatVND(received)} / ${formatVND(target.toDouble())}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: isFullyReceived ? Colors.green.shade700 : Colors.orange.shade700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              );
+            }),
           ],
 
           // ── Notes ─────────────────────────────────────────────────
