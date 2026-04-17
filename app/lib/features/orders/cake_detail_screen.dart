@@ -484,7 +484,7 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
               final txns = txnsAsync.value ?? [];
               final target = int.tryParse(widget.item.attributes['cash_amount'].toString()) ?? 0;
               final received = txns
-                  .where((t) => t.type == 'rut_tien')
+                  .where((t) => t.type == 'tien_rut')
                   .fold<double>(0, (sum, t) => sum + t.amount);
               final isFullyReceived = received >= target;
               return Padding(

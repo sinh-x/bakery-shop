@@ -327,7 +327,7 @@ def transition_status(ref: str, body: StatusTransition):
 
         # Block completion if not fully paid
         if body.status == "completed":
-            total_paid = PaymentTransaction.total_paid_excl_rut_tien(conn, row["id"])
+            total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, row["id"])
             total_price = float(row["total_price"])
             if total_paid < total_price:
                 remaining = total_price - total_paid

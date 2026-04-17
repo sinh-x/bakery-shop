@@ -500,7 +500,7 @@ String txnTypeLabel(String type) {
       return VN.txnTypeFullPayment;
     case 'refund':
       return VN.txnTypeRefund;
-    case 'rut_tien':
+    case 'tien_rut':
       return VN.txnTypeRutTien;
     default:
       return type;

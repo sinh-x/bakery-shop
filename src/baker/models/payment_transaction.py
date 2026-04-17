@@ -8,7 +8,7 @@ class TransactionType(str, Enum):
     PAYMENT = "payment"
     FULL_PAYMENT = "full_payment"
     REFUND = "refund"
-    RUT_TIEN = "rut_tien"
+    TIEN_RUT = "tien_rut"
 
 
 class PaymentMethod(str, Enum):
@@ -73,14 +73,14 @@ class PaymentTransaction:
         return float(row[0]) if row else 0.0
 
     @staticmethod
-    def total_paid_excl_rut_tien(conn, order_id: int) -> float:
-        """Sum of payment transactions EXCLUDING rut_tien cash-back transactions.
+    def total_paid_excl_tien_rut(conn, order_id: int) -> float:
+        """Sum of payment transactions EXCLUDING tien_rut cash-back transactions.
 
-        rut_tien is a cash-back to the customer, not a customer payment toward the order.
+        tien_rut is a cash-back to the customer, not a customer payment toward the order.
         Excluding it ensures receipt balance math and completion guards are correct.
         """
         row = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions WHERE order_id = ? AND type != 'rut_tien'",
+            "SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions WHERE order_id = ? AND type != 'tien_rut'",
             (order_id,),
         ).fetchone()
         return float(row[0]) if row else 0.0

@@ -713,6 +713,13 @@ def _migrate_v24_rut_tien_toggle(conn):
     )
 
 
+def _migrate_v25_tien_rut_rename(conn):
+    """Rename rut_tien transaction type to tien_rut for consistency with Vietnamese 'Tiền rút'."""
+    conn.execute(
+        "UPDATE payment_transactions SET type = 'tien_rut' WHERE type = 'rut_tien'",
+    )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -823,6 +830,11 @@ MIGRATIONS = {
         "description": "Add rut_tien per-product toggle: rut_tien attribute type, seed all existing banh_kem products with rut_tien=true",
         "sql": "",
         "callable": _migrate_v24_rut_tien_toggle,
+    },
+    25: {
+        "description": "Rename rut_tien transaction type to tien_rut in payment_transactions for Vietnamese term consistency",
+        "sql": "",
+        "callable": _migrate_v25_tien_rut_rename,
     },
 }
 

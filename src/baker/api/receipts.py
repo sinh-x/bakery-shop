@@ -63,17 +63,17 @@ def _emoji_font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(d / "NotoEmoji-Variable.ttf"), size)
 
 
-def _rut_tien_received(conn, order_id: int) -> float:
-    """Sum of rut_tien transactions for an order."""
+def _tien_rut_received(conn, order_id: int) -> float:
+    """Sum of tien_rut transactions for an order."""
     row = conn.execute(
-        "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions WHERE order_id = ? AND type = 'rut_tien'",
+        "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions WHERE order_id = ? AND type = 'tien_rut'",
         (order_id,),
     ).fetchone()
     return float(row[0]) if row else 0.0
 
 
-def _rut_tien_target(work_items: list) -> float:
-    """Sum of cash_amount across all rut_tien items in an order."""
+def _tien_rut_target(work_items: list) -> float:
+    """Sum of cash_amount across all tien_rut items in an order."""
     total = 0.0
     for item in work_items:
         attrs = item.get("attributes") or {}
@@ -430,7 +430,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
         y += max(_th(icon, ef), _th(f" Số tiền rút: {amount_str}", tf)) + LINE_GAP
         # Rut tien transaction summary (received vs target)
         order_id = order.get("id")
-        rut_received = _rut_tien_received(conn, order_id) if order_id else 0.0
+        rut_received = _tien_rut_received(conn, order_id) if order_id else 0.0
         if rut_received >= float(cash_amount):
             status_text = f"    Đã nhận: {_format_vnd_full(rut_received)}"
             status_color = (0, 128, 0)
@@ -495,14 +495,14 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
     if main_count == 1:
         total_price = float(order.get("totalPrice", 0) or order.get("total_price", 0))
         order_id = order.get("id")
-        total_paid = PaymentTransaction.total_paid_excl_rut_tien(conn, order_id) if order_id else 0.0
+        total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) if order_id else 0.0
         remaining = total_price - total_paid
 
         y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
         # Rut tien transaction summary
-        rut_target = _rut_tien_target(work_items)
+        rut_target = _tien_rut_target(work_items)
         if rut_target > 0 and order_id:
-            rut_recv = _rut_tien_received(conn, order_id)
+            rut_recv = _tien_rut_received(conn, order_id)
             rut_color = (0, 100, 0) if rut_recv >= rut_target else (200, 0, 0)
             y = _row(draw, y, "Tiền rút đã nhận:", f"{_format_vnd_full(rut_recv)} / {_format_vnd_full(rut_target)}", fb, color_v=rut_color)
         y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
@@ -816,12 +816,12 @@ def _render_financial_summary(draw, y, order, conn, fbb, fb) -> int:
 
     order_id = order.get("id")
     # Rut tien transaction summary
-    rut_target = _rut_tien_target(work_items)
+    rut_target = _tien_rut_target(work_items)
     if rut_target > 0 and order_id:
-        rut_recv = _rut_tien_received(conn, order_id)
+        rut_recv = _tien_rut_received(conn, order_id)
         rut_color = (0, 100, 0) if rut_recv >= rut_target else (200, 0, 0)
         y = _row(draw, y, "Tiền rút đã nhận:", f"{_format_vnd_full(rut_recv)} / {_format_vnd_full(rut_target)}", fb, color_v=rut_color)
-    total_paid = PaymentTransaction.total_paid_excl_rut_tien(conn, order_id) if order_id else 0.0
+    total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) if order_id else 0.0
     remaining = total_price - total_paid
 
     y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
@@ -1165,12 +1165,12 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
 
     order_id = order.get("id")
     # Rut tien transaction summary
-    rut_target = _rut_tien_target(work_items)
+    rut_target = _tien_rut_target(work_items)
     if rut_target > 0 and order_id:
-        rut_recv = _rut_tien_received(conn, order_id)
+        rut_recv = _tien_rut_received(conn, order_id)
         rut_color = (0, 100, 0) if rut_recv >= rut_target else (200, 0, 0)
         y = _row(draw, y, "Tiền rút đã nhận:", f"{_format_vnd_full(rut_recv)} / {_format_vnd_full(rut_target)}", fb, color_v=rut_color)
-    total_paid = PaymentTransaction.total_paid_excl_rut_tien(conn, order_id) if order_id else 0.0
+    total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) if order_id else 0.0
     remaining = total_price - total_paid
 
     y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))

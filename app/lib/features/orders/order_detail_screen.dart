@@ -365,8 +365,8 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     for (final t in txns) {
       if (t.type == 'refund') {
         paid -= t.amount;
-      } else if (t.type != 'rut_tien') {
-        // Exclude rut_tien: it's cash withdrawn from order, not a payment received
+      } else if (t.type != 'tien_rut') {
+        // Exclude tien_rut: it's cash withdrawn from order, not a payment received
         paid += t.amount;
       }
     }
@@ -984,7 +984,7 @@ Color _txnColor(String type) {
       return Colors.teal;
     case 'refund':
       return Colors.orange;
-    case 'rut_tien':
+    case 'tien_rut':
       return Colors.amber;
     default:
       return Colors.grey;
@@ -1155,7 +1155,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       ('deposit', VN.txnTypeDeposit),
       ('payment', VN.txnTypePayment),
       ('full_payment', VN.txnTypeFullPayment),
-      ('rut_tien', VN.txnTypeRutTien),
+      ('tien_rut', VN.txnTypeRutTien),
       ('refund', VN.txnTypeRefund),
     ];
     const methods = [
@@ -2340,7 +2340,7 @@ class _RutTienSection extends ConsumerWidget {
     });
     // Total received from rut_tien transactions
     final totalReceived = txns
-        .where((t) => t.type == 'rut_tien')
+        .where((t) => t.type == 'tien_rut')
         .fold<double>(0, (sum, t) => sum + t.amount);
     final remaining = totalTarget.toDouble() - totalReceived;
     final isFullyReceived = totalReceived >= totalTarget;
@@ -2397,7 +2397,7 @@ class _RutTienSection extends ConsumerWidget {
                         builder: (_) => _RecordPaymentSheet(
                           orderRef: orderRef,
                           remaining: remaining,
-                          initialType: 'rut_tien',
+                          initialType: 'tien_rut',
                           initialAmount: remaining,
                         ),
                       );

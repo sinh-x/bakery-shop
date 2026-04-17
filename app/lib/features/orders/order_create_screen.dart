@@ -352,7 +352,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         }
       }
 
-      // Auto-create rut_tien transaction for items with "Đã đưa tiền rút" checked
+      // Auto-create tien_rut transaction for items with "Đã đưa tiền rút" checked
       for (final item in _items) {
         if (item.daDuaTienRut &&
             item.attributes['rut_tien']?.toString() == 'true') {
@@ -364,7 +364,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             await txnService.createTransaction(
               newOrder.orderRef,
               amount: cashAmount,
-              type: 'rut_tien',
+              type: 'tien_rut',
               method: 'cash',
             );
           }

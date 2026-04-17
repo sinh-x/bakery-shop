@@ -104,7 +104,7 @@ def _sync_order_items_json(conn, order_id: int) -> None:
     ])
     # Exclude gift items from total price calculation; include shipping_fee + cash_fee
     subtotal = sum(r["quantity"] * r["unit_price"] for r in rows if not r["is_gift"])
-    # Extract cash_fee from attributes JSON only when rut_tien is active
+    # Extract cash_fee from attributes JSON only when tien_rut is active
     cash_fee = 0
     for r in rows:
         if r["attributes"]:

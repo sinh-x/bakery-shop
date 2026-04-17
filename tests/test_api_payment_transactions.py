@@ -337,8 +337,8 @@ def test_migration_v12_deposit_transaction_created(api_client):
 # --- rut_tien transaction tests ---
 
 
-def _create_order_with_rut_tien_item(client, cash_amount=200000):
-    """Create order with a rut_tien item."""
+def _create_order_with_tien_rut_item(client, cash_amount=200000):
+    """Create order with a tien_rut item."""
     resp = client.post("/api/orders", json={
         "customerName": "Test Khách Rút Tiền",
         "items": [{
@@ -356,46 +356,46 @@ def _create_order_with_rut_tien_item(client, cash_amount=200000):
     return resp.json()
 
 
-def test_rut_tien_txn_creation(api_client):
-    """Create a rut_tien transaction on an order with rut_tien items."""
-    order = _create_order_with_rut_tien_item(api_client, cash_amount=200000)
+def test_tien_rut_txn_creation(api_client):
+    """Create a tien_rut transaction on an order with tien_rut items."""
+    order = _create_order_with_tien_rut_item(api_client, cash_amount=200000)
     ref = order["orderRef"]
 
-    # Create rut_tien transaction (cash-back to customer)
-    txn = _create_txn(api_client, ref, amount=200000, type="rut_tien")
-    assert txn["type"] == "rut_tien"
+    # Create tien_rut transaction (cash-back to customer)
+    txn = _create_txn(api_client, ref, amount=200000, type="tien_rut")
+    assert txn["type"] == "tien_rut"
     assert txn["amount"] == 200000
 
 
-def test_rut_tien_excluded_from_total_paid(api_client):
-    """rut_tien transactions are excluded from payment total (amountPaid)."""
-    order = _create_order_with_rut_tien_item(api_client, cash_amount=200000)
+def test_tien_rut_excluded_from_total_paid(api_client):
+    """tien_rut transactions are excluded from payment total (amountPaid)."""
+    order = _create_order_with_tien_rut_item(api_client, cash_amount=200000)
     ref = order["orderRef"]
 
     # Customer pays 350000 for the cake
     _create_txn(api_client, ref, amount=350000, type="payment")
     # Customer receives 200000 cash-back
-    _create_txn(api_client, ref, amount=200000, type="rut_tien")
+    _create_txn(api_client, ref, amount=200000, type="tien_rut")
 
     detail = api_client.get(f"/api/orders/{ref}").json()
     # amountPaid should be 350000 (payment only), NOT 550000
     assert detail["amountPaid"] == 350000
 
 
-def test_rut_tien_excluded_from_receipt_total_paid(api_client):
-    """Receipt total_paid should not include rut_tien in the balance calculation.
+def test_tien_rut_excluded_from_receipt_total_paid(api_client):
+    """Receipt total_paid should not include tien_rut in the balance calculation.
 
-    The receipt rendering uses total_paid_excl_rut_tien() for the balance math.
+    The receipt rendering uses total_paid_excl_tien_rut() for the balance math.
     We verify this indirectly: amountPaid on order detail (which receipts use)
-    should exclude rut_tien, and completion guard should work correctly.
+    should exclude tien_rut, and completion guard should work correctly.
     """
-    order = _create_order_with_rut_tien_item(api_client, cash_amount=200000)
+    order = _create_order_with_tien_rut_item(api_client, cash_amount=200000)
     ref = order["orderRef"]
 
     # Customer pays full amount
     _create_txn(api_client, ref, amount=350000, type="payment")
-    # rut_tien cash-back recorded
-    _create_txn(api_client, ref, amount=200000, type="rut_tien")
+    # tien_rut cash-back recorded
+    _create_txn(api_client, ref, amount=200000, type="tien_rut")
 
     detail = api_client.get(f"/api/orders/{ref}").json()
     # amountPaid should be 350000 (payment only), NOT 550000
@@ -403,36 +403,36 @@ def test_rut_tien_excluded_from_receipt_total_paid(api_client):
     assert detail["amountPaid"] == 350000
 
 
-def test_completion_guard_with_rut_tien(api_client):
-    """Completion guard should not pass prematurely when rut_tien cash-back exists."""
-    order = _create_order_with_rut_tien_item(api_client, cash_amount=200000)
+def test_completion_guard_with_tien_rut(api_client):
+    """Completion guard should not pass prematurely when tien_rut cash-back exists."""
+    order = _create_order_with_tien_rut_item(api_client, cash_amount=200000)
     ref = order["orderRef"]
 
     # Order total = 350000 (cake) + 20000 (cash_fee) = 370000
-    # Pay full amount (excluding rut_tien cash-back)
+    # Pay full amount (excluding tien_rut cash-back)
     _create_txn(api_client, ref, amount=370000, type="payment")
-    # rut_tien cash-back given
-    _create_txn(api_client, ref, amount=200000, type="rut_tien")
+    # tien_rut cash-back given
+    _create_txn(api_client, ref, amount=200000, type="tien_rut")
 
     # Completion should succeed: 370000 paid vs 370000 total
     resp = api_client.post(f"/api/orders/{ref}/status", json={
         "status": "completed",
         "reason": "Hoàn tất đơn hàng",
     })
-    # Should succeed (422 if rut_tien were incorrectly counted as payment)
+    # Should succeed (422 if tien_rut were incorrectly counted as payment)
     assert resp.status_code == 200
 
 
 def test_completion_guard_premature_without_payment(api_client):
     """Completion guard blocks completion when payment doesn't cover total."""
-    order = _create_order_with_rut_tien_item(api_client, cash_amount=200000)
+    order = _create_order_with_tien_rut_item(api_client, cash_amount=200000)
     ref = order["orderRef"]
 
     # Order total = 350000 (cake) + 20000 (cash_fee) = 370000
     # Customer only pays partial amount (200000 < 370000)
     _create_txn(api_client, ref, amount=200000, type="payment")
-    # rut_tien cash-back given
-    _create_txn(api_client, ref, amount=200000, type="rut_tien")
+    # tien_rut cash-back given
+    _create_txn(api_client, ref, amount=200000, type="tien_rut")
 
     # Completion should be blocked: 200000 paid vs 370000 total
     resp = api_client.post(f"/api/orders/{ref}/status", json={
