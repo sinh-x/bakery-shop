@@ -365,7 +365,8 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     for (final t in txns) {
       if (t.type == 'refund') {
         paid -= t.amount;
-      } else {
+      } else if (t.type != 'rut_tien') {
+        // Exclude rut_tien: it's cash withdrawn from order, not a payment received
         paid += t.amount;
       }
     }
