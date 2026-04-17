@@ -294,7 +294,7 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
   late bool _rutTien;
 
   static const int _defaultCashFee = 20000;
-  static const int _cashFeeStep = 10000;
+  static const int _cashFeeStep = 5000;
 
   @override
   void initState() {
