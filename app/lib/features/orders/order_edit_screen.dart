@@ -543,7 +543,6 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
   // Preserved cash values for toggle-off (restored on toggle-on)
   String _savedCashAmount = '';
   String _savedCashFee = '';
-  bool _daDuaTienRut = false;
 
   @override
   void initState() {
@@ -1018,17 +1017,6 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      // "Đã đưa tiền rút" checkbox
-                      CheckboxListTile(
-                        value: _daDuaTienRut,
-                        onChanged: (v) {
-                          setState(() => _daDuaTienRut = v ?? false);
-                        },
-                        title: Text(VN.daDuaTienRut),
-                        controlAffinity: ListTileControlAffinity.leading,
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                      ),
                     ],
                   ],
                   // Per-item photos
