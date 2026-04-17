@@ -41,7 +41,7 @@ class WorkItemService {
         'position': position,
         'isExtra': isExtra,
         'isGift': isGift,
-        if (attributes != null) 'attributes': attributes,
+        'attributes': ?attributes,
       },
     );
     return WorkItem.fromJson(response.data as Map<String, dynamic>);
