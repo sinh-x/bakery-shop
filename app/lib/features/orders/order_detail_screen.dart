@@ -2326,7 +2326,7 @@ class _RutTienSection extends ConsumerWidget {
     final items = itemsAsync.value ?? [];
     final txns = txnsAsync.value ?? [];
     final rutTienItems = items.where(
-      (i) => i.attributes['rut_tien'] == 'true' || i.attributes['rut_tien'] == true,
+      (i) => i.attributes['rut_tien']?.toString() == 'true' || i.attributes['rut_tien'] == true,
     ).toList();
 
     if (rutTienItems.isEmpty) return const SizedBox.shrink();

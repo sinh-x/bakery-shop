@@ -331,7 +331,7 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
     final cashFee = widget.item.attributes['cash_fee']?.toString() ?? '';
     _cashAmountCtrl.text = cashAmount;
     _cashFeeCtrl.text = cashFee.isNotEmpty ? cashFee : '$_defaultCashFee';
-    _rutTien = widget.item.attributes['rut_tien'] == 'true';
+    _rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
     setState(() => _editing = true);
   }
 

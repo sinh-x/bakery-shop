@@ -68,7 +68,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     // Store only the suffix portion so the prefix can be shown read-only.
     _codeCtrl = TextEditingController(text: _extractSuffix(p?.productCode));
     _category = widget.initialCategory ?? p?.category ?? 'banh_kem';
-    _rutTien = p?.attributes['rut_tien'] == 'true';
+    _rutTien = p?.attributes['rut_tien']?.toString() == 'true';
   }
 
   @override
@@ -140,7 +140,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         final newName = _nameCtrl.text.trim();
         final newNotes = _notesCtrl.text.trim();
         final newCode = code.isNotEmpty ? code : null;
-        final origRutTien = orig.attributes['rut_tien'] == 'true';
+        final origRutTien = orig.attributes['rut_tien']?.toString() == 'true';
         final hasChanges = newName != orig.name ||
             _category != orig.category ||
             price != orig.basePrice ||

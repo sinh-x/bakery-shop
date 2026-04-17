@@ -219,7 +219,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     const SizedBox(height: 8),
                   ],
                   // Rut tien checkbox (based on rut_tien attribute)
-                  if (widget.item.product.attributes['rut_tien'] == 'true') ...[
+                  if (widget.item.product.attributes['rut_tien']?.toString() == 'true') ...[
                     CheckboxListTile(
                       value: _rutTien,
                       onChanged: (v) {

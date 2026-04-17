@@ -557,7 +557,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
     final cashFee = widget.item.attributes['cash_fee']?.toString() ?? '';
     _cashAmountCtrl = TextEditingController(text: cashAmount);
     _cashFeeCtrl = TextEditingController(text: cashFee.isNotEmpty ? cashFee : '$_defaultCashFee');
-    _rutTien = widget.item.attributes['rut_tien'] == 'true';
+    _rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
     _notesFocus = FocusNode()..addListener(_onNotesFocusChange);
     _ageFocus = FocusNode()..addListener(_onAgeFocusChange);
     _priceFocus = FocusNode()..addListener(_onPriceFocusChange);
