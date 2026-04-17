@@ -96,6 +96,17 @@ class ProductService {
   String getPhotoUrl(int id) {
     return '${_dio.options.baseUrl}/api/products/$id/photo';
   }
+
+  Future<void> setProductAttribute(int productId, String attributeType, String value) async {
+    await _dio.post(
+      '/api/products/$productId/attributes',
+      data: {'attribute_type': attributeType, 'value': value},
+    );
+  }
+
+  Future<void> deleteProductAttribute(int productId, String attributeType) async {
+    await _dio.delete('/api/products/$productId/attributes/$attributeType');
+  }
 }
 
 final productServiceProvider = Provider<ProductService>((ref) {

@@ -224,7 +224,7 @@ class VN {
   // Order create form extras
   static const orderSource = 'Nguồn đặt hàng';
   static const dueTime = 'Giờ giao';
-  static const isBirthday = 'Sinh nhật';
+  static const isBirthday = 'Nến tuổi sinh nhật';
   static const birthdayAge = 'Tuổi khách hàng';
   static const orderCreated = 'Đã tạo đơn hàng';
   static const searchProducts = 'Tìm sản phẩm...';
@@ -266,6 +266,7 @@ class VN {
   static const txnTypePayment = 'Thanh toán';
   static const txnTypeFullPayment = 'Thanh toán đủ';
   static const txnTypeRefund = 'Hoàn tiền';
+  static const txnTypeRutTien = 'Tiền rút';
   static const methodCash = 'Tiền mặt';
   static const methodTransfer = 'Chuyển khoản';
   static const addPayment = 'Thêm thanh toán';
@@ -366,6 +367,16 @@ class VN {
   static const connectingTo = 'Đang kết nối đến...';
   static const tapToRetry = 'Bấm để thử lại';
   static const noDevicesFound = 'Không có thiết bị nào';
+
+  // Cash-in-cake (rut tien)
+  static const rutTien = 'Rút tiền';
+  static const rutTienToggle = 'Bánh rút tiền';
+  static const soTienRut = 'Số tiền rút';
+  static const phiRutTien = 'Phí rút tiền';
+  static const rutTienSection = 'Rút tiền trong bánh';
+  static const cashReceived = 'Đã nhận tiền';
+  static const cashNotReceived = 'Chưa nhận tiền';
+  static const daDuaTienRut = 'Đã đưa tiền rút';
 
   // Knowledge base
   static const knowledgeTitle = 'Sổ tay';
@@ -489,6 +500,8 @@ String txnTypeLabel(String type) {
       return VN.txnTypeFullPayment;
     case 'refund':
       return VN.txnTypeRefund;
+    case 'tien_rut':
+      return VN.txnTypeRutTien;
     default:
       return type;
   }

@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/api_client.dart';
+import '../../data/api/product_service.dart';
 import '../../data/models/catalog_photo.dart';
 import '../../data/models/category.dart';
 import '../../data/models/product.dart';
@@ -38,6 +39,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late final TextEditingController _notesCtrl;
   late final TextEditingController _codeCtrl;
   late String _category;
+  late bool _rutTien;
   XFile? _pickedPhoto;
   final String _photoCacheBuster = '';
   bool _saving = false;
@@ -66,6 +68,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     // Store only the suffix portion so the prefix can be shown read-only.
     _codeCtrl = TextEditingController(text: _extractSuffix(p?.productCode));
     _category = widget.initialCategory ?? p?.category ?? 'banh_kem';
+    _rutTien = p?.attributes['rut_tien']?.toString() == 'true';
   }
 
   @override
@@ -137,13 +140,15 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         final newName = _nameCtrl.text.trim();
         final newNotes = _notesCtrl.text.trim();
         final newCode = code.isNotEmpty ? code : null;
+        final origRutTien = orig.attributes['rut_tien']?.toString() == 'true';
         final hasChanges = newName != orig.name ||
             _category != orig.category ||
             price != orig.basePrice ||
             cost != orig.cost ||
             newNotes != orig.recipeNotes ||
             newCode != orig.productCode ||
-            _pickedPhoto != null;
+            _pickedPhoto != null ||
+            _rutTien != origRutTien;
         if (!hasChanges) {
           if (mounted) context.pop();
           return;
@@ -167,6 +172,16 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         } else {
           saved = orig;
         }
+        // Sync rut_tien attribute if changed
+        if (_rutTien != origRutTien) {
+          final productSvc = ref.read(productServiceProvider);
+          if (_rutTien) {
+            await productSvc.setProductAttribute(saved.id, 'rut_tien', 'true');
+          } else {
+            await productSvc.deleteProductAttribute(saved.id, 'rut_tien');
+          }
+          await notifier.refresh();
+        }
       } else {
         saved = await notifier.createProduct(
           name: _nameCtrl.text.trim(),
@@ -176,6 +191,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           recipeNotes: _notesCtrl.text.trim(),
           productCode: code.isNotEmpty ? code : null,
         );
+        // Sync rut_tien attribute for new products
+        if (_rutTien) {
+          final productSvc = ref.read(productServiceProvider);
+          await productSvc.setProductAttribute(saved.id, 'rut_tien', 'true');
+          await notifier.refresh();
+        }
       }
 
       if (_pickedPhoto != null) {
@@ -392,7 +413,17 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               ),
               maxLines: 3,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+
+            // Rut tien toggle (all categories, create & edit)
+            SwitchListTile(
+                value: _rutTien,
+                onChanged: (v) => setState(() => _rutTien = v),
+                title: Text(VN.rutTienToggle),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            const SizedBox(height: 16),
 
             // Save button
             FilledButton(

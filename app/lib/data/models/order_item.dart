@@ -15,6 +15,7 @@ sealed class OrderItem with _$OrderItem {
     int? age,
     @Default(false) bool isExtra,
     @Default(false) bool isGift,
+    @Default({}) Map<String, dynamic> attributes,
   }) = _OrderItem;
 
   factory OrderItem.fromJson(Map<String, dynamic> json) =>

@@ -26,6 +26,7 @@ _WorkItem _$WorkItemFromJson(Map<String, dynamic> json) => _WorkItem(
   age: (json['age'] as num?)?.toInt(),
   createdAt: json['createdAt'] as String?,
   updatedAt: json['updatedAt'] as String?,
+  attributes: json['attributes'] as Map<String, dynamic>? ?? const {},
 );
 
 Map<String, dynamic> _$WorkItemToJson(_WorkItem instance) => <String, dynamic>{
@@ -48,4 +49,5 @@ Map<String, dynamic> _$WorkItemToJson(_WorkItem instance) => <String, dynamic>{
   'age': instance.age,
   'createdAt': instance.createdAt,
   'updatedAt': instance.updatedAt,
+  'attributes': instance.attributes,
 };

@@ -25,6 +25,7 @@ sealed class WorkItem with _$WorkItem {
     int? age,
     String? createdAt,
     String? updatedAt,
+    @Default({}) Map<String, dynamic> attributes,
   }) = _WorkItem;
 
   factory WorkItem.fromJson(Map<String, dynamic> json) =>

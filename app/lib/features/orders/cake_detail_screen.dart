@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -153,6 +154,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
     required bool isBirthday,
     int? age,
     required double unitPrice,
+    Map<String, dynamic>? attributes,
   }) async {
     setState(() => _saving = true);
     try {
@@ -164,6 +166,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
             isBirthday: isBirthday,
             age: age,
             unitPrice: unitPrice,
+            attributes: attributes,
           );
       if (mounted) {
         showTopSnackBar(context, VN.orderEditSaved);
@@ -237,12 +240,13 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
             transitioning: _transitioning,
             saving: _saving,
             onTransition: (t) => _onTransition(item, t),
-            onSave: (notes, isBirthday, age, unitPrice) => _onSave(
+            onSave: (notes, isBirthday, age, unitPrice, {Map<String, dynamic>? attributes}) => _onSave(
               item,
               notes: notes,
               isBirthday: isBirthday,
               age: age,
               unitPrice: unitPrice,
+              attributes: attributes,
             ),
           );
         },
@@ -251,7 +255,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
   }
 }
 
-class _CakeDetailBody extends StatefulWidget {
+class _CakeDetailBody extends ConsumerStatefulWidget {
   const _CakeDetailBody({
     required this.item,
     required this.orderRef,
@@ -272,19 +276,29 @@ class _CakeDetailBody extends StatefulWidget {
     String notes,
     bool isBirthday,
     int? age,
-    double unitPrice,
-  ) onSave;
+    double unitPrice, {
+    Map<String, dynamic>? attributes,
+  }) onSave;
 
   @override
-  State<_CakeDetailBody> createState() => _CakeDetailBodyState();
+  ConsumerState<_CakeDetailBody> createState() => _CakeDetailBodyState();
 }
 
-class _CakeDetailBodyState extends State<_CakeDetailBody> {
+class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
   bool _editing = false;
   late TextEditingController _notesCtrl;
   late TextEditingController _ageCtrl;
   late TextEditingController _priceCtrl;
+  late TextEditingController _cashAmountCtrl;
+  late TextEditingController _cashFeeCtrl;
   late bool _isBirthday;
+  late bool _rutTien;
+
+  static const int _defaultCashFee = 20000;
+  static const int _cashFeeStep = 5000;
+  static const int _cashAmountStep = 100000;
+  static const int _minCashAmount = 100000;
+  bool _editingCashAmount = false;
 
   @override
   void initState() {
@@ -292,7 +306,10 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
     _notesCtrl = TextEditingController();
     _ageCtrl = TextEditingController();
     _priceCtrl = TextEditingController();
+    _cashAmountCtrl = TextEditingController();
+    _cashFeeCtrl = TextEditingController();
     _isBirthday = false;
+    _rutTien = false;
   }
 
   @override
@@ -300,6 +317,8 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
     _notesCtrl.dispose();
     _ageCtrl.dispose();
     _priceCtrl.dispose();
+    _cashAmountCtrl.dispose();
+    _cashFeeCtrl.dispose();
     super.dispose();
   }
 
@@ -311,6 +330,12 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
         ? (widget.item.unitPrice / 1000).toStringAsFixed(0)
         : '';
     _isBirthday = widget.item.isBirthday;
+    // F15: Initialize rut tien state from attributes['rut_tien'] directly
+    final cashAmount = widget.item.attributes['cash_amount']?.toString() ?? '';
+    final cashFee = widget.item.attributes['cash_fee']?.toString() ?? '';
+    _cashAmountCtrl.text = cashAmount;
+    _cashFeeCtrl.text = cashFee.isNotEmpty ? cashFee : '$_defaultCashFee';
+    _rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
     setState(() => _editing = true);
   }
 
@@ -322,6 +347,17 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
     final rawPrice = double.tryParse(_priceCtrl.text.trim());
     final unitPrice = rawPrice != null ? rawPrice * 1000 : widget.item.unitPrice;
     final age = _isBirthday ? int.tryParse(_ageCtrl.text.trim()) : null;
+    Map<String, dynamic>? attributes;
+    if (_rutTien) {
+      attributes = {
+        'rut_tien': 'true',
+        'cash_amount': _cashAmountCtrl.text.trim(),
+        'cash_fee': _cashFeeCtrl.text.trim().isNotEmpty ? _cashFeeCtrl.text.trim() : '$_defaultCashFee',
+      };
+    } else if (widget.item.attributes.containsKey('rut_tien')) {
+      // F17: Toggle-off removes keys entirely
+      attributes = {};
+    }
 
     try {
       await widget.onSave(
@@ -329,6 +365,7 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
         _isBirthday,
         age,
         unitPrice,
+        attributes: attributes,
       );
       if (mounted) setState(() => _editing = false);
     } catch (_) {
@@ -415,6 +452,58 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
             ),
           ],
 
+          // ── Cash info ──────────────────────────────────────────────
+          if (widget.item.attributes['cash_amount'] != null &&
+              widget.item.attributes['cash_amount'].toString().isNotEmpty &&
+              widget.item.attributes['cash_amount'].toString() != '0') ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Text('💵', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 6),
+                Text(
+                  '${VN.rutTien}: ${formatVND((int.tryParse(widget.item.attributes['cash_amount'].toString()) ?? 0).toDouble())}',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.green.shade700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            if (widget.item.attributes['cash_fee'] != null &&
+                widget.item.attributes['cash_fee'].toString().isNotEmpty &&
+                widget.item.attributes['cash_fee'].toString() != '0')
+              Padding(
+                padding: const EdgeInsets.only(left: 28, top: 2),
+                child: Text(
+                  '${VN.phiRutTien}: ${formatVND((int.tryParse(widget.item.attributes['cash_fee'].toString()) ?? 0).toDouble())}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.green.shade700,
+                  ),
+                ),
+              ),
+            // Rut tien transaction summary (F9)
+            Builder(builder: (_) {
+              final txnsAsync = ref.watch(orderPaymentTransactionsProvider(widget.orderRef));
+              final txns = txnsAsync.value ?? [];
+              final target = int.tryParse(widget.item.attributes['cash_amount'].toString()) ?? 0;
+              final received = txns
+                  .where((t) => t.type == 'tien_rut')
+                  .fold<double>(0, (sum, t) => sum + t.amount);
+              final isFullyReceived = received >= target;
+              return Padding(
+                padding: const EdgeInsets.only(left: 28, top: 4),
+                child: Text(
+                  'Tiền rút đã nhận: ${formatVND(received)} / ${formatVND(target.toDouble())}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: isFullyReceived ? Colors.green.shade700 : Colors.orange.shade700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              );
+            }),
+          ],
+
           // ── Notes ─────────────────────────────────────────────────
           if (widget.item.notes.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -485,6 +574,140 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
+            ),
+          ],
+
+          // Rut tien toggle
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Checkbox(
+                value: _rutTien,
+                onChanged: (v) => setState(() {
+                  _rutTien = v ?? false;
+                  if (!_rutTien) {
+                    _cashAmountCtrl.clear();
+                  }
+                }),
+              ),
+              Text(VN.rutTien),
+            ],
+          ),
+
+          // Cash fields (only when rut tien is enabled)
+          if (_rutTien) ...[
+            const SizedBox(height: 8),
+            // Cash amount stepper: [-] [amount] [+] with 100k step
+            Row(
+              children: [
+                Text('${VN.soTienRut}: '),
+                IconButton.filled(
+                  onPressed: () {
+                    final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                    if (current > _minCashAmount) {
+                      final next = current - _cashAmountStep;
+                      final clamped = next < _minCashAmount ? _minCashAmount : next;
+                      setState(() {
+                        _cashAmountCtrl.text = '$clamped';
+                        _editingCashAmount = false;
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.remove, size: 16),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  padding: EdgeInsets.zero,
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _editingCashAmount = true),
+                    child: _editingCashAmount
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: TextField(
+                              controller: _cashAmountCtrl,
+                              autofocus: true,
+                              textAlign: TextAlign.center,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                suffixText: 'đ',
+                                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              ),
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(9),
+                              ],
+                              onEditingComplete: () {
+                                final val = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                                if (val < _minCashAmount && val != 0) {
+                                  _cashAmountCtrl.text = '$_minCashAmount';
+                                }
+                                setState(() => _editingCashAmount = false);
+                              },
+                            ),
+                          )
+                        : Center(
+                            child: Text(
+                              _cashAmountCtrl.text.isEmpty || _cashAmountCtrl.text == '0'
+                                  ? '0đ'
+                                  : formatVND((int.tryParse(_cashAmountCtrl.text) ?? 0).toDouble()),
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                  ),
+                ),
+                IconButton.filled(
+                  onPressed: () {
+                    final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                    final next = current + _cashAmountStep;
+                    final clamped = next < _minCashAmount ? _minCashAmount : next;
+                    setState(() {
+                      _cashAmountCtrl.text = '$clamped';
+                      _editingCashAmount = false;
+                    });
+                  },
+                  icon: const Icon(Icons.add, size: 16),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text('${VN.phiRutTien}: '),
+                IconButton.filled(
+                  onPressed: () {
+                    final current = int.tryParse(_cashFeeCtrl.text) ?? 0;
+                    if (current >= _cashFeeStep) {
+                      setState(() {
+                        _cashFeeCtrl.text = '${current - _cashFeeStep}';
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.remove, size: 16),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  padding: EdgeInsets.zero,
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    formatVND((int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee).toDouble()),
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                IconButton.filled(
+                  onPressed: () {
+                    final current = int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee;
+                    setState(() {
+                      _cashFeeCtrl.text = '${current + _cashFeeStep}';
+                    });
+                  },
+                  icon: const Icon(Icons.add, size: 16),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  padding: EdgeInsets.zero,
+                ),
+              ],
             ),
           ],
 

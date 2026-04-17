@@ -52,10 +52,16 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
 
   bool get _needsNotes => _deliveryType != 'pickup';
 
-  // Total excludes gift items
+  // Total excludes gift items, includes cash fees only when rut_tien is active
   double get _totalPrice => _items
       .where((i) => !i.isGift)
-      .fold(0, (sum, i) => sum + i.unitPrice * i.quantity);
+      .fold(0, (sum, i) {
+        final rutTien = i.attributes['rut_tien']?.toString() == 'true';
+        final cashFee = rutTien
+            ? (double.tryParse(i.attributes['cash_fee']?.toString() ?? '') ?? 0)
+            : 0.0;
+        return sum + i.unitPrice * i.quantity + cashFee;
+      });
 
   // Display total = items (excl gifts) + shipping fee
   double get _displayTotal => _totalPrice + _shippingFee;
@@ -275,6 +281,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             'isBirthday': i.isBirthday,
             'isExtra': i.isExtra,
             'isGift': i.isGift,
+            'attributes': i.attributes,
           };
           if (i.isBirthday && i.age.isNotEmpty) {
             final age = int.tryParse(i.age.trim());
@@ -342,6 +349,25 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             type: 'deposit',
             method: _depositMethod,
           );
+        }
+      }
+
+      // Auto-create tien_rut transaction for items with "Đã đưa tiền rút" checked
+      for (final item in _items) {
+        if (item.daDuaTienRut &&
+            item.attributes['rut_tien']?.toString() == 'true') {
+          final cashAmount = double.tryParse(
+            item.attributes['cash_amount']?.toString() ?? '',
+          );
+          if (cashAmount != null && cashAmount > 0) {
+            final txnService = ref.read(paymentTransactionServiceProvider);
+            await txnService.createTransaction(
+              newOrder.orderRef,
+              amount: cashAmount,
+              type: 'tien_rut',
+              method: 'cash',
+            );
+          }
         }
       }
 

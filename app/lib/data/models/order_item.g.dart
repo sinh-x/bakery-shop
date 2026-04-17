@@ -16,6 +16,7 @@ _OrderItem _$OrderItemFromJson(Map<String, dynamic> json) => _OrderItem(
   age: (json['age'] as num?)?.toInt(),
   isExtra: json['isExtra'] as bool? ?? false,
   isGift: json['isGift'] as bool? ?? false,
+  attributes: json['attributes'] as Map<String, dynamic>? ?? const {},
 );
 
 Map<String, dynamic> _$OrderItemToJson(_OrderItem instance) =>
@@ -29,4 +30,5 @@ Map<String, dynamic> _$OrderItemToJson(_OrderItem instance) =>
       'age': instance.age,
       'isExtra': instance.isExtra,
       'isGift': instance.isGift,
+      'attributes': instance.attributes,
     };

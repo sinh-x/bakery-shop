@@ -4,7 +4,7 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
 from baker.models.order import is_backward_transition
@@ -62,6 +62,7 @@ class WorkItemCreate(BaseModel):
     age: Optional[int] = None
     isExtra: bool = False
     isGift: bool = False
+    attributes: dict = Field(default_factory=dict)
 
 
 class WorkItemUpdate(BaseModel):
@@ -74,6 +75,7 @@ class WorkItemUpdate(BaseModel):
     age: Optional[int] = None
     isExtra: Optional[bool] = None
     isGift: Optional[bool] = None
+    attributes: Optional[dict] = None
 
 
 class WorkItemStatusTransition(BaseModel):
@@ -84,7 +86,7 @@ class WorkItemStatusTransition(BaseModel):
 def _sync_order_items_json(conn, order_id: int) -> None:
     """Regenerate orders.items JSON from order_items table and recalculate total_price."""
     rows = conn.execute(
-        "SELECT product_name, quantity, unit_price, notes, product_id, is_extra, is_gift FROM order_items WHERE order_id = ?",
+        "SELECT product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes FROM order_items WHERE order_id = ?",
         (order_id,),
     ).fetchall()
     items_json = json.dumps([
@@ -96,17 +98,30 @@ def _sync_order_items_json(conn, order_id: int) -> None:
             "product_id": r["product_id"] or "",
             "is_extra": bool(r["is_extra"]),
             "is_gift": bool(r["is_gift"]),
+            "attributes": json.loads(r["attributes"]) if r["attributes"] and r["attributes"] != '{}' else {},
         }
         for r in rows
     ])
-    # Exclude gift items from total price calculation; include shipping_fee
+    # Exclude gift items from total price calculation; include shipping_fee + cash_fee
     subtotal = sum(r["quantity"] * r["unit_price"] for r in rows if not r["is_gift"])
+    # Extract cash_fee from attributes JSON only when tien_rut is active
+    cash_fee = 0
+    for r in rows:
+        if r["attributes"]:
+            try:
+                attrs = json.loads(r["attributes"]) if isinstance(r["attributes"], str) else (r["attributes"] or {})
+                if attrs.get("rut_tien") == "true":
+                    fee = attrs.get("cash_fee")
+                    if fee:
+                        cash_fee += float(fee)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                pass
     shipping_fee = conn.execute(
         "SELECT shipping_fee FROM orders WHERE id = ?", (order_id,),
     ).fetchone()["shipping_fee"] or 0
     conn.execute(
         "UPDATE orders SET items = ?, total_price = ? WHERE id = ?",
-        (items_json, subtotal + shipping_fee, order_id),
+        (items_json, subtotal + cash_fee + shipping_fee, order_id),
     )
 
 
@@ -205,6 +220,7 @@ def create_work_item(ref: str, body: WorkItemCreate):
             age=body.age,
             is_extra=body.isExtra,
             is_gift=body.isGift,
+            attributes=body.attributes,
         )
         item.save(conn)
         row = conn.execute("SELECT * FROM order_items WHERE id = ?", (item.id,)).fetchone()
@@ -238,13 +254,18 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
             "age": "age",
             "isExtra": "is_extra",
             "isGift": "is_gift",
+            "attributes": "attributes",
         }
         updates = []
         params: list = []
         for camel, snake in field_map.items():
             if camel in data:
                 updates.append(f"{snake} = ?")
-                params.append(data[camel])
+                val = data[camel]
+                # Serialize attributes dict as JSON string for DB
+                if snake == "attributes" and isinstance(val, dict):
+                    val = json.dumps(val)
+                params.append(val)
 
         if not updates:
             raise HTTPException(status_code=400, detail="Không có gì để cập nhật")
