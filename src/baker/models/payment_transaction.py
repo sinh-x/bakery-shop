@@ -8,6 +8,7 @@ class TransactionType(str, Enum):
     PAYMENT = "payment"
     FULL_PAYMENT = "full_payment"
     REFUND = "refund"
+    RUT_TIEN = "rut_tien"
 
 
 class PaymentMethod(str, Enum):
