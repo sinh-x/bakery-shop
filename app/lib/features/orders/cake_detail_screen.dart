@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -295,6 +296,9 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
 
   static const int _defaultCashFee = 20000;
   static const int _cashFeeStep = 5000;
+  static const int _cashAmountStep = 100000;
+  static const int _minCashAmount = 100000;
+  bool _editingCashAmount = false;
 
   @override
   void initState() {
@@ -593,16 +597,80 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
           // Cash fields (only when rut tien is enabled)
           if (_rutTien) ...[
             const SizedBox(height: 8),
-            TextField(
-              controller: _cashAmountCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: VN.soTienRut,
-                hintText: 'VD: 500',
-                border: OutlineInputBorder(),
-                suffixText: 'd',
-                isDense: true,
-              ),
+            // Cash amount stepper: [-] [amount] [+] with 100k step
+            Row(
+              children: [
+                Text('${VN.soTienRut}: '),
+                IconButton.filled(
+                  onPressed: () {
+                    final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                    if (current > _minCashAmount) {
+                      final next = current - _cashAmountStep;
+                      final clamped = next < _minCashAmount ? _minCashAmount : next;
+                      setState(() {
+                        _cashAmountCtrl.text = '$clamped';
+                        _editingCashAmount = false;
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.remove, size: 16),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  padding: EdgeInsets.zero,
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _editingCashAmount = true),
+                    child: _editingCashAmount
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: TextField(
+                              controller: _cashAmountCtrl,
+                              autofocus: true,
+                              textAlign: TextAlign.center,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                suffixText: 'đ',
+                                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              ),
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(9),
+                              ],
+                              onEditingComplete: () {
+                                final val = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                                if (val < _minCashAmount && val != 0) {
+                                  _cashAmountCtrl.text = '$_minCashAmount';
+                                }
+                                setState(() => _editingCashAmount = false);
+                              },
+                            ),
+                          )
+                        : Center(
+                            child: Text(
+                              _cashAmountCtrl.text.isEmpty || _cashAmountCtrl.text == '0'
+                                  ? '0đ'
+                                  : formatVND((int.tryParse(_cashAmountCtrl.text) ?? 0).toDouble()),
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                  ),
+                ),
+                IconButton.filled(
+                  onPressed: () {
+                    final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                    final next = current + _cashAmountStep;
+                    final clamped = next < _minCashAmount ? _minCashAmount : next;
+                    setState(() {
+                      _cashAmountCtrl.text = '$clamped';
+                      _editingCashAmount = false;
+                    });
+                  },
+                  icon: const Icon(Icons.add, size: 16),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  padding: EdgeInsets.zero,
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Row(
