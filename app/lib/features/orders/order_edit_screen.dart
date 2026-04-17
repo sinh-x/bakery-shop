@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -536,6 +537,9 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
 
   static const int _defaultCashFee = 20000;
   static const int _cashFeeStep = 10000;
+  static const int _cashAmountStep = 100000;
+  static const int _minCashAmount = 100000;
+  bool _editingCashAmount = false;
 
   @override
   void initState() {
@@ -548,12 +552,12 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
     _priceCtrl = TextEditingController(
       text: widget.item.unitPrice.toInt().toString(),
     );
-    // Initialize rut tien state from item attributes
+    // F15: Initialize rut tien state from attributes['rut_tien'] directly
     final cashAmount = widget.item.attributes['cash_amount']?.toString() ?? '';
     final cashFee = widget.item.attributes['cash_fee']?.toString() ?? '';
     _cashAmountCtrl = TextEditingController(text: cashAmount);
     _cashFeeCtrl = TextEditingController(text: cashFee.isNotEmpty ? cashFee : '$_defaultCashFee');
-    _rutTien = cashAmount.isNotEmpty && cashAmount != '0';
+    _rutTien = widget.item.attributes['rut_tien'] == 'true';
     _notesFocus = FocusNode()..addListener(_onNotesFocusChange);
     _ageFocus = FocusNode()..addListener(_onAgeFocusChange);
     _priceFocus = FocusNode()..addListener(_onPriceFocusChange);
@@ -859,75 +863,148 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                     ),
                     const SizedBox(height: 8),
                   ],
-                  // Rut tien toggle
-                  CheckboxListTile(
-                    value: _rutTien,
-                    onChanged: (v) {
-                      final newVal = v ?? false;
-                      setState(() => _rutTien = newVal);
-                      if (!newVal) {
-                        _cashAmountCtrl.clear();
-                        _editItem(attributes: {'rut_tien': 'false', 'cash_amount': '', 'cash_fee': '$_defaultCashFee'});
-                      } else {
-                        _editItem(attributes: {'rut_tien': 'true', 'cash_amount': _cashAmountCtrl.text.trim(), 'cash_fee': _cashFeeCtrl.text.trim()});
-                      }
-                    },
-                    title: Text(VN.rutTien),
-                    controlAffinity: ListTileControlAffinity.leading,
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                  ),
-                  if (_rutTien) ...[
-                    TextFormField(
-                      controller: _cashAmountCtrl,
-                      focusNode: _cashAmountFocus,
-                      decoration: const InputDecoration(
-                        labelText: VN.soTienRut,
-                        border: OutlineInputBorder(),
-                        suffixText: 'd',
-                        isDense: true,
-                        helperText: 'Tien mat trong phong khach',
-                      ),
-                      keyboardType: TextInputType.number,
+                  // F14: Rut tien toggle — only for items with rut_tien attribute
+                  if (widget.item.attributes.containsKey('rut_tien')) ...[
+                    CheckboxListTile(
+                      value: _rutTien,
+                      onChanged: (v) {
+                        final newVal = v ?? false;
+                        setState(() {
+                          _rutTien = newVal;
+                          _editingCashAmount = false;
+                        });
+                        if (!newVal) {
+                          // F17: Toggle-off removes keys entirely
+                          _cashAmountCtrl.clear();
+                          _editItem(attributes: {});
+                        } else {
+                          _editItem(attributes: {'rut_tien': 'true', 'cash_amount': _cashAmountCtrl.text.trim(), 'cash_fee': _cashFeeCtrl.text.trim()});
+                        }
+                      },
+                      title: Text(VN.rutTien),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Text('${VN.phiRutTien}: '),
-                        IconButton.filled(
-                          onPressed: () {
-                            final current = int.tryParse(_cashFeeCtrl.text) ?? 0;
-                            if (current >= _cashFeeStep) {
-                              final next = current - _cashFeeStep;
+                    if (_rutTien) ...[
+                      // F12: Cash amount stepper — same as create flow
+                      Row(
+                        children: [
+                          Text('${VN.soTienRut}: '),
+                          IconButton.filled(
+                            onPressed: () {
+                              final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                              if (current > _minCashAmount) {
+                                final next = current - _cashAmountStep;
+                                final clamped = next < _minCashAmount ? _minCashAmount : next;
+                                setState(() {
+                                  _cashAmountCtrl.text = '$clamped';
+                                  _editingCashAmount = false;
+                                });
+                                _saveCashAttributes();
+                              }
+                            },
+                            icon: const Icon(Icons.remove, size: 16),
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            padding: EdgeInsets.zero,
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() => _editingCashAmount = true),
+                              child: _editingCashAmount
+                                  ? Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                      child: TextFormField(
+                                        controller: _cashAmountCtrl,
+                                        autofocus: true,
+                                        textAlign: TextAlign.center,
+                                        decoration: const InputDecoration(
+                                          isDense: true,
+                                          suffixText: 'đ',
+                                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                        ),
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.digitsOnly,
+                                          LengthLimitingTextInputFormatter(9),
+                                        ],
+                                        onChanged: (_) => _saveCashAttributes(),
+                                        onEditingComplete: () {
+                                          final val = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                                          if (val < _minCashAmount && val != 0) {
+                                            _cashAmountCtrl.text = '$_minCashAmount';
+                                          }
+                                          _saveCashAttributes();
+                                          setState(() => _editingCashAmount = false);
+                                        },
+                                      ),
+                                    )
+                                  : Center(
+                                      child: Text(
+                                        _cashAmountCtrl.text.isEmpty || _cashAmountCtrl.text == '0'
+                                            ? '0đ'
+                                            : formatVND((int.tryParse(_cashAmountCtrl.text) ?? 0).toDouble()),
+                                        style: Theme.of(context).textTheme.titleMedium,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                          IconButton.filled(
+                            onPressed: () {
+                              final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                              final next = current + _cashAmountStep;
+                              final clamped = next < _minCashAmount ? _minCashAmount : next;
+                              setState(() {
+                                _cashAmountCtrl.text = '$clamped';
+                                _editingCashAmount = false;
+                              });
+                              _saveCashAttributes();
+                            },
+                            icon: const Icon(Icons.add, size: 16),
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            padding: EdgeInsets.zero,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Text('${VN.phiRutTien}: '),
+                          IconButton.filled(
+                            onPressed: () {
+                              final current = int.tryParse(_cashFeeCtrl.text) ?? 0;
+                              if (current >= _cashFeeStep) {
+                                final next = current - _cashFeeStep;
+                                _cashFeeCtrl.text = '$next';
+                                _saveCashAttributes();
+                              }
+                            },
+                            icon: const Icon(Icons.remove, size: 16),
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            padding: EdgeInsets.zero,
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              formatVND((int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee).toDouble()),
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                          IconButton.filled(
+                            onPressed: () {
+                              final current = int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee;
+                              final next = current + _cashFeeStep;
                               _cashFeeCtrl.text = '$next';
                               _saveCashAttributes();
-                            }
-                          },
-                          icon: const Icon(Icons.remove, size: 16),
-                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                          padding: EdgeInsets.zero,
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            formatVND((int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee).toDouble()),
-                            style: Theme.of(context).textTheme.titleMedium,
+                            },
+                            icon: const Icon(Icons.add, size: 16),
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            padding: EdgeInsets.zero,
                           ),
-                        ),
-                        IconButton.filled(
-                          onPressed: () {
-                            final current = int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee;
-                            final next = current + _cashFeeStep;
-                            _cashFeeCtrl.text = '$next';
-                            _saveCashAttributes();
-                          },
-                          icon: const Icon(Icons.add, size: 16),
-                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                          padding: EdgeInsets.zero,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                   ],
                   // Per-item photos
                   if (workItemId != null) ...[

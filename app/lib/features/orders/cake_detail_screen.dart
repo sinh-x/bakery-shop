@@ -326,12 +326,12 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
         ? (widget.item.unitPrice / 1000).toStringAsFixed(0)
         : '';
     _isBirthday = widget.item.isBirthday;
-    // Initialize rut tien state from item attributes
+    // F15: Initialize rut tien state from attributes['rut_tien'] directly
     final cashAmount = widget.item.attributes['cash_amount']?.toString() ?? '';
     final cashFee = widget.item.attributes['cash_fee']?.toString() ?? '';
     _cashAmountCtrl.text = cashAmount;
     _cashFeeCtrl.text = cashFee.isNotEmpty ? cashFee : '$_defaultCashFee';
-    _rutTien = cashAmount.isNotEmpty && cashAmount != '0';
+    _rutTien = widget.item.attributes['rut_tien'] == 'true';
     setState(() => _editing = true);
   }
 
@@ -350,6 +350,9 @@ class _CakeDetailBodyState extends State<_CakeDetailBody> {
         'cash_amount': _cashAmountCtrl.text.trim(),
         'cash_fee': _cashFeeCtrl.text.trim().isNotEmpty ? _cashFeeCtrl.text.trim() : '$_defaultCashFee',
       };
+    } else if (widget.item.attributes.containsKey('rut_tien')) {
+      // F17: Toggle-off removes keys entirely
+      attributes = {};
     }
 
     try {
