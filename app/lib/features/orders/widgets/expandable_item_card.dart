@@ -35,7 +35,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   final _picker = ImagePicker();
 
   static const int _defaultCashFee = 20000;
-  static const int _cashFeeStep = 10000;
+  static const int _cashFeeStep = 5000;
   static const int _cashAmountStep = 100000;
   static const int _minCashAmount = 100000;
   bool _editingCashAmount = false;
