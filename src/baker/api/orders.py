@@ -72,6 +72,10 @@ class StatusTransition(BaseModel):
     changedBy: str = ""
 
 
+class PaymentMethodUpdate(BaseModel):
+    method: str  # 'cash' | 'transfer'
+
+
 class PaymentUpdate(BaseModel):
     amountPaid: float
     changedBy: str = ""
@@ -453,6 +457,38 @@ def transition_status(ref: str, body: StatusTransition):
         # Auto-sync extras/gifts to match the new order status (F4, F5)
         from baker.api.work_items import _sync_extras_to_order_status
         _sync_extras_to_order_status(conn, row["id"], body.status)
+
+        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
+        return _order_detail(conn, updated)
+
+
+@router.patch("/{ref}/payment-method")
+def update_payment_method(ref: str, body: PaymentMethodUpdate):
+    """Cập nhật hình thức thanh toán trên giao dịch mới nhất."""
+    if body.method not in ("cash", "transfer"):
+        raise HTTPException(status_code=422, detail="Hình thức thanh toán không hợp lệ")
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        # Update the latest payment transaction's method
+        txn_row = conn.execute(
+            "SELECT id FROM payment_transactions WHERE order_id = ? ORDER BY id DESC LIMIT 1",
+            (row["id"],),
+        ).fetchone()
+        if not txn_row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch thanh toán")
+
+        conn.execute(
+            "UPDATE payment_transactions SET method = ? WHERE id = ?",
+            (body.method, txn_row["id"]),
+        )
+        _log_order_history(conn, row["id"], "field_edit", "payment_method", "", body.method, "")
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         return _order_detail(conn, updated)

@@ -1,18 +1,82 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../data/api/order_service.dart';
 import '../../../providers/pos_provider.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
-import 'pos_payment_sheet.dart';
 
 /// Expandable cart detail bottom sheet for POS.
-class PosCartSheet extends ConsumerWidget {
-  const PosCartSheet({super.key, this.jumpToPayment = false});
-
-  final bool jumpToPayment;
+class PosCartSheet extends ConsumerStatefulWidget {
+  const PosCartSheet({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PosCartSheet> createState() => _PosCartSheetState();
+}
+
+class _PosCartSheetState extends ConsumerState<PosCartSheet> {
+  bool _isProcessing = false;
+
+  Future<void> _checkout() async {
+    if (_isProcessing) return;
+
+    setState(() => _isProcessing = true);
+
+    try {
+      final cart = ref.read(posCartProvider);
+      final orderItems = cart.items
+          .where((i) => !i.isGift)
+          .map((i) => {
+            'productId': i.product.id.toString(),
+            'productName': i.product.name,
+            'quantity': i.quantity,
+            'unitPrice': i.product.basePrice,
+          })
+          .toList();
+
+      // Add gift items with actual price and isGift flag
+      final giftItems = cart.items
+          .where((i) => i.isGift)
+          .map((i) => {
+            'productName': i.product.name,
+            'quantity': i.quantity,
+            'unitPrice': i.product.basePrice,
+            'isGift': true,
+          })
+          .toList();
+
+      orderItems.addAll(giftItems);
+
+      final orderService = ref.read(orderServiceProvider);
+      final order = await orderService.createOrder(
+        customerName: VN.khachLe,
+        source: VN.taiTiem,
+        deliveryType: 'pickup',
+        items: orderItems,
+        status: 'completed',
+        paymentMethod: 'cash',
+      );
+
+      // Clear cart
+      ref.read(posCartProvider.notifier).clearCart();
+
+      if (!mounted) return;
+
+      // Close cart sheet
+      Navigator.pop(context);
+
+      // Navigate to POS receipt screen
+      context.push('/pos/receipt/${order.orderRef}');
+    } catch (e) {
+      if (!mounted) return;
+      showTopSnackBar(context, 'Lỗi: $e');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final cart = ref.watch(posCartProvider);
 
     if (cart.items.isEmpty) {
@@ -32,13 +96,6 @@ class PosCartSheet extends ConsumerWidget {
           ],
         ),
       );
-    }
-
-    // If jumpToPayment, go directly to payment sheet after build
-    if (jumpToPayment) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showPaymentSheet(context);
-      });
     }
 
     return DraggableScrollableSheet(
@@ -93,7 +150,7 @@ class PosCartSheet extends ConsumerWidget {
               ),
             ),
 
-            // Footer with total + payment button
+            // Footer with total + checkout button
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -130,9 +187,17 @@ class PosCartSheet extends ConsumerWidget {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: () => _showPaymentSheet(context),
-                        icon: const Icon(Icons.payment),
-                        label: Text(VN.thanhToan),
+                        onPressed: _isProcessing ? null : _checkout,
+                        icon: _isProcessing
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.payment),
+                        label: Text(
+                          _isProcessing ? 'Đang xử lý...' : VN.thanhToan,
+                        ),
                       ),
                     ),
                   ],
@@ -142,15 +207,6 @@ class PosCartSheet extends ConsumerWidget {
           ],
         );
       },
-    );
-  }
-
-  void _showPaymentSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (context) => const PosPaymentSheet(),
     );
   }
 

@@ -78,15 +78,9 @@ class PosCartBar extends ConsumerWidget {
                   ),
                 ),
 
-                // Action buttons
-                OutlinedButton.icon(
-                  onPressed: () => _showCartSheet(context),
-                  icon: const Icon(Icons.receipt_long, size: 18),
-                  label: const Text('Xem giỏ'),
-                ),
-                const SizedBox(width: 8),
+                // Payment button
                 FilledButton.icon(
-                  onPressed: () => _showCartSheet(context, jumpToPayment: true),
+                  onPressed: () => _showCartSheet(context),
                   icon: const Icon(Icons.payment, size: 18),
                   label: Text(VN.thanhToan),
                 ),
@@ -98,12 +92,12 @@ class PosCartBar extends ConsumerWidget {
     );
   }
 
-  void _showCartSheet(BuildContext context, {bool jumpToPayment = false}) {
+  void _showCartSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (context) => PosCartSheet(jumpToPayment: jumpToPayment),
+      builder: (context) => const PosCartSheet(),
     );
   }
 }

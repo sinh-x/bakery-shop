@@ -125,6 +125,14 @@ class OrderService {
     return Order.fromJson(response.data as Map<String, dynamic>);
   }
 
+  Future<Order> updatePaymentMethod(String ref, String method) async {
+    final response = await _dio.patch(
+      '/api/orders/$ref/payment-method',
+      data: {'method': method},
+    );
+    return Order.fromJson(response.data as Map<String, dynamic>);
+  }
+
   Future<Order> updateWorkTicketPrintedAt(String ref, String printedAt) async {
     final body = <String, dynamic>{'workTicketPrintedAt': printedAt};
     final response = await _dio.patch('/api/orders/$ref', data: body);
