@@ -83,23 +83,34 @@ def list_products(
     category: str | None = Query(None, description="Lọc theo danh mục"),
     active: int = Query(1, description="1 = đang bán, 0 = ngừng bán"),
     code: str | None = Query(None, description="Lọc theo mã sản phẩm (partial match)"),
+    trung_bay: int = Query(0, description="1 = chỉ sản phẩm trưng bày"),
 ):
     """Danh sách sản phẩm."""
     with get_db() as conn:
-        conditions = ["active = ?"]
+        conditions = ["p.active = ?"]
         params: list = [active]
+        joins = []
 
         if category:
-            conditions.append("category = ?")
+            conditions.append("p.category = ?")
             params.append(category)
 
         if code:
-            conditions.append("product_code LIKE ?")
+            conditions.append("p.product_code LIKE ?")
             params.append(f"%{code}%")
 
+        if trung_bay:
+            joins.append(
+                """LEFT JOIN product_attribute_values pav
+                   ON pav.product_id = p.id AND pav.attribute_type = 'trung_bay'"""
+            )
+            conditions.append("pav.value = 'true'")
+
         where = " AND ".join(conditions)
+        join_sql = "\n".join(joins)
+
         rows = conn.execute(
-            f"SELECT * FROM products WHERE {where} ORDER BY category, name",
+            f"SELECT p.* FROM products p {join_sql} WHERE {where} ORDER BY p.category, p.name",
             params,
         ).fetchall()
 

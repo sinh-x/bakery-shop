@@ -336,6 +336,81 @@ def transition_status(ref: str, body: StatusTransition):
                     detail=f"Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu {remaining:,.0f}đ",
                 )
 
+        # Auto-decrement stock for trưng bày products when order completes
+        if body.status == "completed":
+            from baker.models.event import Event
+
+            order_ref = row["order_ref"]
+            order_items = conn.execute(
+                """SELECT oi.product_id, oi.product_name, oi.quantity
+                   FROM order_items oi
+                   WHERE oi.order_id = ?
+                     AND oi.product_id != ''
+                     AND oi.is_gift = 0""",
+                (row["id"],),
+            ).fetchall()
+
+            for item in order_items:
+                code_or_id = item["product_id"]
+                product_row = conn.execute(
+                    "SELECT id FROM products WHERE product_code = ?",
+                    (code_or_id,),
+                ).fetchone()
+                if not product_row:
+                    try:
+                        product_row = conn.execute(
+                            "SELECT id FROM products WHERE id = ?",
+                            (int(code_or_id),),
+                        ).fetchone()
+                    except (ValueError, TypeError):
+                        continue
+                if not product_row:
+                    continue
+
+                product_id = product_row["id"]
+                qty = item["quantity"]
+
+                attr_row = conn.execute(
+                    """SELECT value FROM product_attribute_values
+                       WHERE product_id = ? AND attribute_type = 'trung_bay'""",
+                    (product_id,),
+                ).fetchone()
+                if not attr_row or attr_row["value"] != "true":
+                    continue
+
+                stock_row = conn.execute(
+                    "SELECT quantity FROM product_stock WHERE product_id = ?",
+                    (product_id,),
+                ).fetchone()
+                if stock_row:
+                    conn.execute(
+                        "UPDATE product_stock SET quantity = ? WHERE product_id = ?",
+                        (max(0, stock_row["quantity"] - qty), product_id),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO product_stock (product_id, quantity) VALUES (?, 0)",
+                        (product_id,),
+                    )
+
+                conn.execute(
+                    """INSERT INTO stock_movements
+                       (product_id, movement_type, quantity, reason, reference_id)
+                       VALUES (?, 'sale', ?, ?, ?)""",
+                    (product_id, -qty, f"Order {order_ref}", order_ref),
+                )
+                Event(
+                    summary=f"Bán hàng -{qty} {item['product_name']}",
+                    type="inventory",
+                    data={
+                        "product_id": product_id,
+                        "product_name": item["product_name"],
+                        "movement_type": "sale",
+                        "quantity": -qty,
+                        "reference_id": order_ref,
+                    },
+                ).save(conn)
+
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:
             raise HTTPException(status_code=422, detail="Không thể chuyển trạng thái")

@@ -720,6 +720,47 @@ def _migrate_v25_tien_rut_rename(conn):
     )
 
 
+PRODUCT_STOCK_SCHEMA = """
+CREATE TABLE IF NOT EXISTS product_stock (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id      INTEGER NOT NULL UNIQUE REFERENCES products(id),
+    quantity        INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_product_stock_product ON product_stock(product_id);
+
+CREATE TABLE IF NOT EXISTS stock_movements (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id      INTEGER NOT NULL REFERENCES products(id),
+    movement_type   TEXT NOT NULL,
+    quantity        INTEGER NOT NULL,
+    reason          TEXT DEFAULT '',
+    reference_id    TEXT DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_created ON stock_movements(created_at);
+"""
+
+
+def _migrate_v26_trung_bay_and_stock(conn):
+    """Seed trung_bay and tang_kem attribute types; enable tang_kem for existing banh_kem products."""
+    conn.execute(
+        """INSERT OR IGNORE INTO product_attributes
+           (attribute_type, label_vi, value_type, applicable_categories, default_value, sort_order)
+           VALUES ('trung_bay', 'Trưng bày', 'boolean', '[]', 'false', 0)""",
+    )
+    conn.execute(
+        """INSERT OR IGNORE INTO product_attributes
+           (attribute_type, label_vi, value_type, applicable_categories, default_value, sort_order)
+           VALUES ('tang_kem', 'Tặng kèm', 'boolean', '[]', 'false', 0)""",
+    )
+    # Auto-enable tang_kem for all existing banh_kem products (backwards compatibility)
+    conn.execute(
+        """INSERT OR IGNORE INTO product_attribute_values (product_id, attribute_type, value)
+           SELECT id, 'tang_kem', 'true' FROM products WHERE category = 'banh_kem'""",
+    )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -835,6 +876,11 @@ MIGRATIONS = {
         "description": "Rename rut_tien transaction type to tien_rut in payment_transactions for Vietnamese term consistency",
         "sql": "",
         "callable": _migrate_v25_tien_rut_rename,
+    },
+    26: {
+        "description": "Add trung_bay and tang_kem product attributes; create product_stock and stock_movements tables for inventory management",
+        "sql": PRODUCT_STOCK_SCHEMA,
+        "callable": _migrate_v26_trung_bay_and_stock,
     },
 }
 
