@@ -54,38 +54,31 @@ class PosProductGrid extends ConsumerWidget {
       _showForceSellDialog(context, ref, product);
     } else {
       ref.read(posCartProvider.notifier).addItem(product);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${product.name} đã thêm vào giỏ'),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 1),
-        ),
-      );
+      showTopSnackBar(context, '${product.name} đã thêm vào giỏ');
     }
   }
 
   void _showForceSellDialog(BuildContext context, WidgetRef ref, Product product) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: Text(VN.sanPhamHetHang),
         content: Text(VN.banAnyway),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogCtx),
             child: const Text(VN.cancel),
           ),
           FilledButton(
             onPressed: () {
-              Navigator.pop(context);
-              ref.read(posCartProvider.notifier).addItem(product);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('${product.name} đã thêm vào giỏ (force-sell)'),
-                  behavior: SnackBarBehavior.floating,
-                  duration: const Duration(seconds: 1),
-                ),
-              );
+              Navigator.pop(dialogCtx);
+              Future.microtask(() {
+                ref.read(posCartProvider.notifier).addItem(product);
+                showTopSnackBar(
+                  context,
+                  '${product.name} đã thêm vào giỏ (force-sell)',
+                );
+              });
             },
             child: Text(VN.xacNhan),
           ),
