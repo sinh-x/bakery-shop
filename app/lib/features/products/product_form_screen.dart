@@ -40,6 +40,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late final TextEditingController _codeCtrl;
   late String _category;
   late bool _rutTien;
+  late bool _trungBay;
+  late bool _tangKem;
   XFile? _pickedPhoto;
   final String _photoCacheBuster = '';
   bool _saving = false;
@@ -69,6 +71,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _codeCtrl = TextEditingController(text: _extractSuffix(p?.productCode));
     _category = widget.initialCategory ?? p?.category ?? 'banh_kem';
     _rutTien = p?.attributes['rut_tien']?.toString() == 'true';
+    _trungBay = p?.attributes['trung_bay']?.toString() == 'true';
+    _tangKem = p?.attributes['tang_kem']?.toString() == 'true';
   }
 
   @override
@@ -141,6 +145,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         final newNotes = _notesCtrl.text.trim();
         final newCode = code.isNotEmpty ? code : null;
         final origRutTien = orig.attributes['rut_tien']?.toString() == 'true';
+        final origTrungBay = orig.attributes['trung_bay']?.toString() == 'true';
+        final origTangKem = orig.attributes['tang_kem']?.toString() == 'true';
         final hasChanges = newName != orig.name ||
             _category != orig.category ||
             price != orig.basePrice ||
@@ -148,7 +154,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             newNotes != orig.recipeNotes ||
             newCode != orig.productCode ||
             _pickedPhoto != null ||
-            _rutTien != origRutTien;
+            _rutTien != origRutTien ||
+            _trungBay != origTrungBay ||
+            _tangKem != origTangKem;
         if (!hasChanges) {
           if (mounted) context.pop();
           return;
@@ -182,6 +190,26 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           }
           await notifier.refresh();
         }
+        // Sync trung_bay attribute if changed
+        if (_trungBay != origTrungBay) {
+          final productSvc = ref.read(productServiceProvider);
+          if (_trungBay) {
+            await productSvc.setProductAttribute(saved.id, 'trung_bay', 'true');
+          } else {
+            await productSvc.deleteProductAttribute(saved.id, 'trung_bay');
+          }
+          await notifier.refresh();
+        }
+        // Sync tang_kem attribute if changed
+        if (_tangKem != origTangKem) {
+          final productSvc = ref.read(productServiceProvider);
+          if (_tangKem) {
+            await productSvc.setProductAttribute(saved.id, 'tang_kem', 'true');
+          } else {
+            await productSvc.deleteProductAttribute(saved.id, 'tang_kem');
+          }
+          await notifier.refresh();
+        }
       } else {
         saved = await notifier.createProduct(
           name: _nameCtrl.text.trim(),
@@ -195,6 +223,18 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         if (_rutTien) {
           final productSvc = ref.read(productServiceProvider);
           await productSvc.setProductAttribute(saved.id, 'rut_tien', 'true');
+          await notifier.refresh();
+        }
+        // Sync trung_bay attribute for new products
+        if (_trungBay) {
+          final productSvc = ref.read(productServiceProvider);
+          await productSvc.setProductAttribute(saved.id, 'trung_bay', 'true');
+          await notifier.refresh();
+        }
+        // Sync tang_kem attribute for new products
+        if (_tangKem) {
+          final productSvc = ref.read(productServiceProvider);
+          await productSvc.setProductAttribute(saved.id, 'tang_kem', 'true');
           await notifier.refresh();
         }
       }
@@ -420,6 +460,26 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 value: _rutTien,
                 onChanged: (v) => setState(() => _rutTien = v),
                 title: Text(VN.rutTienToggle),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            const SizedBox(height: 8),
+
+            // Trung bay toggle (edit mode only)
+            SwitchListTile(
+                value: _trungBay,
+                onChanged: _isEditing ? (v) => setState(() => _trungBay = v) : null,
+                title: Text(VN.trungBay),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            const SizedBox(height: 8),
+
+            // Tang kem toggle (edit mode only)
+            SwitchListTile(
+                value: _tangKem,
+                onChanged: _isEditing ? (v) => setState(() => _tangKem = v) : null,
+                title: Text(VN.tangKem),
                 contentPadding: EdgeInsets.zero,
                 dense: true,
               ),

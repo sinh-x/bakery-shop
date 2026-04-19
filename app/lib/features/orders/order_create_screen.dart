@@ -160,19 +160,19 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     setState(() => _shippingFee = fee);
   }
 
-  // Check if any cake (banh_kem) item totals >= 100k and auto-add gift extras
+  // Check if any item has tang_kem attribute and total >= 100k and auto-add gift extras
   void _checkAutoGift() {
-    // Calculate total for cake items
-    double cakeTotal = 0;
+    // Calculate total for items with tang_kem attribute
+    double qualifiedTotal = 0;
     for (final item in _items) {
-      // Check if it's a cake item (banh_kem category)
-      if (item.product.category == 'banh_kem' && !item.isExtra) {
-        cakeTotal += item.unitPrice * item.quantity;
+      // Check if item has tang_kem attribute (not an extra)
+      if (item.product.attributes['tang_kem']?.toString() == 'true' && !item.isExtra) {
+        qualifiedTotal += item.unitPrice * item.quantity;
       }
     }
 
-    // If cake total >= 100k, auto-add gift extras
-    if (cakeTotal >= 100000) {
+    // If qualified total >= 100k, auto-add gift extras
+    if (qualifiedTotal >= 100000) {
       // Auto-add Nến, Đĩa muỗng, Nón as gift items if not already added
       final giftExtras = [
         ('Nến', 5000),

@@ -378,6 +378,10 @@ class VN {
   static const cashNotReceived = 'Chưa nhận tiền';
   static const daDuaTienRut = 'Đã đưa tiền rút';
 
+  // Product display flags
+  static const trungBay = 'Trưng bày';
+  static const tangKem = 'Tặng kèm';
+
   // Knowledge base
   static const knowledgeTitle = 'Sổ tay';
   static const knowledgeEntry = 'Mục tri thức';
