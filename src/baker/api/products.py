@@ -104,13 +104,20 @@ def list_products(
                 """LEFT JOIN product_attribute_values pav
                    ON pav.product_id = p.id AND pav.attribute_type = 'trung_bay'"""
             )
+            joins.append(
+                """LEFT JOIN product_stock ps ON ps.product_id = p.id"""
+            )
             conditions.append("pav.value = 'true'")
 
         where = " AND ".join(conditions)
         join_sql = "\n".join(joins)
 
+        select_cols = "p.*"
+        if trung_bay:
+            select_cols = "p.*, COALESCE(ps.quantity, 0) AS stock_qty"
+
         rows = conn.execute(
-            f"SELECT p.* FROM products p {join_sql} WHERE {where} ORDER BY p.category, p.name",
+            f"SELECT {select_cols} FROM products p {join_sql} WHERE {where} ORDER BY p.category, p.name",
             params,
         ).fetchall()
 

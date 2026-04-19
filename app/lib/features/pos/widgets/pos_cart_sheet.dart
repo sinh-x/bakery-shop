@@ -34,10 +34,9 @@ class PosCartSheet extends ConsumerWidget {
       );
     }
 
-    // If jumpToPayment, auto-open payment sheet after build
+    // If jumpToPayment, go directly to payment sheet after build
     if (jumpToPayment) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pop(context); // close cart sheet first
         _showPaymentSheet(context);
       });
     }

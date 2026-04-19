@@ -39,6 +39,15 @@ class StockOverviewItem(BaseModel):
     quantity: int
 
 
+def _upsert_stock(conn, product_id: int, new_qty: int):
+    """Insert or update stock quantity for a product."""
+    conn.execute(
+        """INSERT INTO product_stock (product_id, quantity) VALUES (?, ?)
+           ON CONFLICT(product_id) DO UPDATE SET quantity = excluded.quantity""",
+        (product_id, new_qty),
+    )
+
+
 def _log_stock_movement(
     conn,
     product_id: int,
@@ -113,21 +122,12 @@ def restock_product(product_id: int, body: RestockRequest):
         if not product:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-        # Atomic upsert
         existing = conn.execute(
-            "SELECT id, quantity FROM product_stock WHERE product_id = ?",
+            "SELECT quantity FROM product_stock WHERE product_id = ?",
             (product_id,),
         ).fetchone()
-        if existing:
-            conn.execute(
-                "UPDATE product_stock SET quantity = quantity + ? WHERE product_id = ?",
-                (body.quantity, product_id),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO product_stock (product_id, quantity) VALUES (?, ?)",
-                (product_id, body.quantity),
-            )
+        new_qty = (existing["quantity"] if existing else 0) + body.quantity
+        _upsert_stock(conn, product_id, new_qty)
 
         _log_stock_movement(
             conn,
@@ -136,11 +136,6 @@ def restock_product(product_id: int, body: RestockRequest):
             body.quantity,
             reason=body.note,
         )
-
-        new_qty = conn.execute(
-            "SELECT quantity FROM product_stock WHERE product_id = ?",
-            (product_id,),
-        ).fetchone()["quantity"]
 
         return {"product_id": product_id, "quantity": new_qty}
 
@@ -160,23 +155,12 @@ def waste_stock(product_id: int, body: WasteRequest):
         if not product:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-        # Atomic decrement, clamp to 0
         existing = conn.execute(
-            "SELECT id, quantity FROM product_stock WHERE product_id = ?",
+            "SELECT quantity FROM product_stock WHERE product_id = ?",
             (product_id,),
         ).fetchone()
-        if existing:
-            new_qty = max(0, existing["quantity"] - body.quantity)
-            conn.execute(
-                "UPDATE product_stock SET quantity = ? WHERE product_id = ?",
-                (new_qty, product_id),
-            )
-        else:
-            new_qty = 0
-            conn.execute(
-                "INSERT INTO product_stock (product_id, quantity) VALUES (?, 0)",
-                (product_id,),
-            )
+        new_qty = max(0, (existing["quantity"] if existing else 0) - body.quantity)
+        _upsert_stock(conn, product_id, new_qty)
 
         _log_stock_movement(
             conn,
@@ -210,17 +194,7 @@ def adjust_stock(product_id: int, body: AdjustRequest):
         ).fetchone()
         old_qty = old_row["quantity"] if old_row else 0
 
-        # Atomic upsert
-        if old_row:
-            conn.execute(
-                "UPDATE product_stock SET quantity = ? WHERE product_id = ?",
-                (body.quantity, product_id),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO product_stock (product_id, quantity) VALUES (?, ?)",
-                (product_id, body.quantity),
-            )
+        _upsert_stock(conn, product_id, body.quantity)
 
         delta = body.quantity - old_qty
         _log_stock_movement(

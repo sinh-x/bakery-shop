@@ -183,13 +183,6 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   }
 
   String _categoryEmoji(String slug) {
-    const emojiMap = {
-      'banh_mi': '🍞',
-      'banh_kem': '🎂',
-      'banh_ngot': '🧁',
-      'cookie': '🍪',
-      'khac': '🍰',
-    };
-    return emojiMap[slug] ?? '📦';
+    return categoryEmojiMap[slug] ?? '📦';
   }
 }

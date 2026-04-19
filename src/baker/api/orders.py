@@ -47,6 +47,8 @@ class OrderCreate(BaseModel):
     deposit: Optional[DepositIn] = None
     createdBy: str = ""
     shippingFee: float = 0.0
+    status: Optional[str] = None
+    paymentMethod: Optional[str] = None
 
 
 class OrderEdit(BaseModel):
@@ -82,6 +84,81 @@ def _log_order_history(conn, order_id, action_type, field_name="", old_value="",
            VALUES (?, ?, ?, ?, ?, ?)""",
         (order_id, action_type, field_name, old_value, new_value, changed_by),
     )
+
+
+def _auto_decrement_stock(conn, order_id: int, order_ref: str):
+    """Auto-decrement stock for trưng bày products when order completes."""
+    from baker.models.event import Event
+
+    order_items = conn.execute(
+        """SELECT oi.product_id, oi.product_name, oi.quantity
+           FROM order_items oi
+           WHERE oi.order_id = ?
+             AND oi.product_id != ''
+             AND oi.is_gift = 0""",
+        (order_id,),
+    ).fetchall()
+
+    for item in order_items:
+        code_or_id = item["product_id"]
+        product_row = conn.execute(
+            "SELECT id FROM products WHERE product_code = ?",
+            (code_or_id,),
+        ).fetchone()
+        if not product_row:
+            try:
+                product_row = conn.execute(
+                    "SELECT id FROM products WHERE id = ?",
+                    (int(code_or_id),),
+                ).fetchone()
+            except (ValueError, TypeError):
+                continue
+        if not product_row:
+            continue
+
+        product_id = product_row["id"]
+        qty = item["quantity"]
+
+        attr_row = conn.execute(
+            """SELECT value FROM product_attribute_values
+               WHERE product_id = ? AND attribute_type = 'trung_bay'""",
+            (product_id,),
+        ).fetchone()
+        if not attr_row or attr_row["value"] != "true":
+            continue
+
+        stock_row = conn.execute(
+            "SELECT quantity FROM product_stock WHERE product_id = ?",
+            (product_id,),
+        ).fetchone()
+        if stock_row:
+            conn.execute(
+                "UPDATE product_stock SET quantity = ? WHERE product_id = ?",
+                (max(0, stock_row["quantity"] - qty), product_id),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO product_stock (product_id, quantity) VALUES (?, 0)",
+                (product_id,),
+            )
+
+        conn.execute(
+            """INSERT INTO stock_movements
+               (product_id, movement_type, quantity, reason, reference_id)
+               VALUES (?, 'sale', ?, ?, ?)""",
+            (product_id, -qty, f"Order {order_ref}", order_ref),
+        )
+        Event(
+            summary=f"Bán hàng -{qty} {item['product_name']}",
+            type="inventory",
+            data={
+                "product_id": product_id,
+                "product_name": item["product_name"],
+                "movement_type": "sale",
+                "quantity": -qty,
+                "reference_id": order_ref,
+            },
+        ).save(conn)
 
 
 def _item_in_to_model(item: OrderItemIn) -> OrderItem:
@@ -196,6 +273,26 @@ def create_order(body: OrderCreate, request: Request):
                 method=body.deposit.method,
             )
             txn.save(conn)
+
+        # POS quick-sale: if status='completed', record payment + complete the order
+        if body.status == "completed":
+            total_price = float(order.total_price)
+            if total_price > 0:
+                txn = PaymentTransaction(
+                    order_id=order.id,
+                    amount=total_price,
+                    type="payment",
+                    method=body.paymentMethod or "cash",
+                )
+                txn.save(conn)
+                _log_order_history(conn, order.id, "payment", "amount",
+                                   old_value="", new_value=str(total_price),
+                                   changed_by=body.createdBy)
+
+            Order.update_status(conn, order.order_ref, "completed")
+            _log_order_history(conn, order.id, "status_change", "status",
+                               "new", "completed", body.createdBy)
+            _auto_decrement_stock(conn, order.id, order.order_ref)
 
         log_context(request, ref_type="order", ref_id=order.id)
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
@@ -338,78 +435,7 @@ def transition_status(ref: str, body: StatusTransition):
 
         # Auto-decrement stock for trưng bày products when order completes
         if body.status == "completed":
-            from baker.models.event import Event
-
-            order_ref = row["order_ref"]
-            order_items = conn.execute(
-                """SELECT oi.product_id, oi.product_name, oi.quantity
-                   FROM order_items oi
-                   WHERE oi.order_id = ?
-                     AND oi.product_id != ''
-                     AND oi.is_gift = 0""",
-                (row["id"],),
-            ).fetchall()
-
-            for item in order_items:
-                code_or_id = item["product_id"]
-                product_row = conn.execute(
-                    "SELECT id FROM products WHERE product_code = ?",
-                    (code_or_id,),
-                ).fetchone()
-                if not product_row:
-                    try:
-                        product_row = conn.execute(
-                            "SELECT id FROM products WHERE id = ?",
-                            (int(code_or_id),),
-                        ).fetchone()
-                    except (ValueError, TypeError):
-                        continue
-                if not product_row:
-                    continue
-
-                product_id = product_row["id"]
-                qty = item["quantity"]
-
-                attr_row = conn.execute(
-                    """SELECT value FROM product_attribute_values
-                       WHERE product_id = ? AND attribute_type = 'trung_bay'""",
-                    (product_id,),
-                ).fetchone()
-                if not attr_row or attr_row["value"] != "true":
-                    continue
-
-                stock_row = conn.execute(
-                    "SELECT quantity FROM product_stock WHERE product_id = ?",
-                    (product_id,),
-                ).fetchone()
-                if stock_row:
-                    conn.execute(
-                        "UPDATE product_stock SET quantity = ? WHERE product_id = ?",
-                        (max(0, stock_row["quantity"] - qty), product_id),
-                    )
-                else:
-                    conn.execute(
-                        "INSERT INTO product_stock (product_id, quantity) VALUES (?, 0)",
-                        (product_id,),
-                    )
-
-                conn.execute(
-                    """INSERT INTO stock_movements
-                       (product_id, movement_type, quantity, reason, reference_id)
-                       VALUES (?, 'sale', ?, ?, ?)""",
-                    (product_id, -qty, f"Order {order_ref}", order_ref),
-                )
-                Event(
-                    summary=f"Bán hàng -{qty} {item['product_name']}",
-                    type="inventory",
-                    data={
-                        "product_id": product_id,
-                        "product_name": item["product_name"],
-                        "movement_type": "sale",
-                        "quantity": -qty,
-                        "reference_id": order_ref,
-                    },
-                ).save(conn)
+            _auto_decrement_stock(conn, row["id"], row["order_ref"])
 
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:

@@ -114,12 +114,12 @@ class _ProductPosCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Opacity(
-        opacity: isOutOfStock ? 0.5 : 1.0,
-        child: Card(
-          clipBehavior: Clip.antiAlias,
+    return Opacity(
+      opacity: isOutOfStock ? 0.5 : 1.0,
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
           child: Stack(
             children: [
               Column(

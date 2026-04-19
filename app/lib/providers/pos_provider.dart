@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/models/product.dart';
+import '../shared/gift_config.dart';
 
 /// A single item in the POS cart.
 class PosCartItem {
@@ -32,13 +33,6 @@ class PosCartNotifier extends Notifier<PosCartState> {
   @override
   PosCartState build() => PosCartState();
 
-  /// Gift extras auto-added when a tang_kem product >= 100k is added.
-  static const _giftExtras = [
-    ('Nến', 5000.0),
-    ('Đĩa muỗng', 10000.0),
-    ('Nón', 5000.0),
-  ];
-
   void addItem(Product product) {
     final items = List<PosCartItem>.from(state.items);
 
@@ -53,7 +47,7 @@ class PosCartNotifier extends Notifier<PosCartState> {
       items.add(PosCartItem(product: product, quantity: 1));
     }
 
-    // Auto-gift: if tang_kem + total >= 100k, add gift extras
+    // Auto-gift: if tang_kem + total >= threshold, add gift extras
     if (product.attributes['tang_kem']?.toString() == 'true') {
       final qualified = items
           .where((i) =>
@@ -61,8 +55,8 @@ class PosCartNotifier extends Notifier<PosCartState> {
               !i.isGift)
           .fold<double>(0, (sum, i) => sum + i.total);
 
-      if (qualified >= 100000) {
-        for (final (name, price) in _giftExtras) {
+      if (qualified >= GiftConfig.giftThreshold) {
+        for (final (name, price) in GiftConfig.giftExtras) {
           final existingGift = items.where(
             (i) => i.product.name == name && i.isGift,
           ).firstOrNull;

@@ -9,6 +9,7 @@ import '../../data/api/work_item_service.dart';
 import '../../providers/config_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../shared/gift_config.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/expandable_item_card.dart';
@@ -171,16 +172,9 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       }
     }
 
-    // If qualified total >= 100k, auto-add gift extras
-    if (qualifiedTotal >= 100000) {
-      // Auto-add Nến, Đĩa muỗng, Nón as gift items if not already added
-      final giftExtras = [
-        ('Nến', 5000),
-        ('Đĩa muỗng', 10000),
-        ('Nón', 5000),
-      ];
-
-      for (final (name, price) in giftExtras) {
+    // If qualified total >= threshold, auto-add gift extras
+    if (qualifiedTotal >= GiftConfig.giftThreshold) {
+      for (final (name, price) in GiftConfig.giftExtras) {
         if (!_autoGiftExtras.contains(name)) {
           _autoGiftExtras.add(name);
           _items.add(createExtraItem(name, price.toDouble(), isGift: true));

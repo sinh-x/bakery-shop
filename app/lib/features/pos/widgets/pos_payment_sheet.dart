@@ -35,13 +35,14 @@ class _PosPaymentSheetState extends ConsumerState<PosPaymentSheet> {
           })
           .toList();
 
-      // Add gift items as well
+      // Add gift items with actual price and isGift flag
       final giftItems = cart.items
           .where((i) => i.isGift)
           .map((i) => {
             'productName': i.product.name,
             'quantity': i.quantity,
-            'unitPrice': 0.0,
+            'unitPrice': i.product.basePrice,
+            'isGift': true,
           })
           .toList();
 
@@ -69,13 +70,8 @@ class _PosPaymentSheetState extends ConsumerState<PosPaymentSheet> {
 
       Navigator.pop(context); // close payment sheet
 
-      // If cash, ask about printing receipt
-      if (_paymentMethod == 'cash') {
-        _askPrintReceipt(order.orderRef);
-      } else {
-        // Bank transfer: just close
-        Navigator.pop(context); // close cart sheet
-      }
+      // Ask about printing receipt for all payment methods
+      _askPrintReceipt(order.orderRef);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
