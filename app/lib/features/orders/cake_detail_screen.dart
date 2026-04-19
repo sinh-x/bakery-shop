@@ -40,6 +40,7 @@ Future<String?> _showItemReasonDialog(
 ) async {
   final ctrl = TextEditingController();
   final isCancel = targetStatus == 'cancelled';
+  final theme = Theme.of(context);
   try {
     return await showDialog<String>(
       context: context,
@@ -65,7 +66,7 @@ Future<String?> _showItemReasonDialog(
             FilledButton(
               style: isCancel
                   ? FilledButton.styleFrom(
-                      backgroundColor: Theme.of(ctx).colorScheme.error,
+                      backgroundColor: theme.colorScheme.error,
                     )
                   : null,
               onPressed: ctrl.text.trim().isEmpty
