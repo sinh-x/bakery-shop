@@ -399,6 +399,7 @@ class VN {
   static const themThongTin = 'Thêm thông tin';
   static const khachLe = 'Khách lẻ';
   static const taiTiem = 'Tại tiệm';
+  static const taiTiemPOS = 'Tại tiệm - POS';
   static const quaTang = '(Quà tặng)';
   static const soLuong = 'Số lượng';
   static const donGia = 'Đơn giá';

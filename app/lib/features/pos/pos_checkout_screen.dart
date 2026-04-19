@@ -67,7 +67,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       final orderService = ref.read(orderServiceProvider);
       final order = await orderService.createOrder(
         customerName: VN.khachLe,
-        source: VN.taiTiem,
+        source: VN.taiTiemPOS,
         deliveryType: 'pickup',
         items: orderItems,
         status: 'delivered',
@@ -140,7 +140,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       final orderService = ref.read(orderServiceProvider);
       final order = await orderService.createOrder(
         customerName: VN.khachLe,
-        source: VN.taiTiem,
+        source: VN.taiTiemPOS,
         deliveryType: 'pickup',
         items: orderItems,
         status: 'delivered',
