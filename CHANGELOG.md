@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.4.0+42] — 2026-04-19
+- feat(deploy): add recover-lily.sh for backup restore and redeploy
+
 ## [0.4.0+41] — 2026-04-16
 - fix(DG-073): flutter analyze --no-fatal-warnings
 
