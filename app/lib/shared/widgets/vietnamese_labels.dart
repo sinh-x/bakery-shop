@@ -456,6 +456,28 @@ class VN {
   static const extraDeleted = 'Đã xóa phụ kiện';
   static const noExtras = 'Chưa có phụ kiện';
   static const deleteExtraConfirm = 'Xóa phụ kiện này?';
+
+  // Stock management
+  static const quanLyTonKho = 'Quản lý tồn kho';
+  static const nhapHang = 'Nhập hàng';
+  static const haoHut = 'Hao hụt';
+  static const dieuChinh = 'Điều chỉnh';
+  static const tonKho = 'Tồn kho';
+  static const nhapHangSheet = 'Nhập hàng';
+  static const haoHutSheet = 'Hao hụt';
+  static const dieuChinhSheet = 'Điều chỉnh';
+  static const ghiChuLabel = 'Ghi chú';
+  static const ghiChuHint = 'Ghi chú (tùy chọn)';
+  static const lyDoLabel = 'Lý do';
+  static const lyDoHint = 'Nhập lý do...';
+  static const lyDoRequired = 'Lý do không được để trống';
+  static const soLuongInvalid = 'Số lượng phải lớn hơn 0';
+  static const xacNhanHaoHut = 'Xác nhận hao hụt';
+  static const xacNhanDieuChinh = 'Điều chỉnh';
+  static const xacNhanNhapHang = 'Nhập hàng';
+  static const khongCoSanPhamTonKho = 'Không có sản phẩm tồn kho';
+  static const capNhatThanhCong = 'Cập nhật thành công';
+  static const loiHeThong = 'Lỗi hệ thống';
 }
 
 // Category mapping (new slugs)

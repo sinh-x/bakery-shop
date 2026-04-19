@@ -23,6 +23,7 @@ import '../../features/knowledge/knowledge_detail_screen.dart';
 import '../../features/knowledge/knowledge_form_screen.dart';
 import '../../features/pos/pos_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
+import '../../features/stock/stock_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../providers/products_provider.dart';
@@ -195,6 +196,12 @@ final appRouter = GoRouter(
       path: '/settings',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const SettingsScreen(),
+    ),
+    // Stock management — full-screen (outside shell)
+    GoRoute(
+      path: '/stock',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const StockScreen(),
     ),
     // Knowledge — full-screen (outside shell)
     GoRoute(
