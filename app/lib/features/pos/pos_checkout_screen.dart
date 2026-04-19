@@ -17,6 +17,7 @@ class PosCheckoutScreen extends ConsumerStatefulWidget {
 
 class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   bool _isProcessing = false;
+  bool _navigatingAfterCheckout = false;
 
   Future<void> _createOrder(String paymentMethod) async {
     if (_isProcessing) return;
@@ -61,6 +62,9 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
       if (!mounted) return;
 
+      // Mark so build() doesn't redirect while we're navigating
+      _navigatingAfterCheckout = true;
+
       if (paymentMethod == 'cash') {
         // Cash → show receipt/print screen
         context.pushReplacement('/pos/receipt/${order.orderRef}');
@@ -82,7 +86,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     final cart = ref.watch(posCartProvider);
     final theme = Theme.of(context);
 
-    if (cart.items.isEmpty) {
+    if (cart.items.isEmpty && !_navigatingAfterCheckout) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) context.go('/pos');
       });
