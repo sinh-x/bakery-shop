@@ -278,24 +278,26 @@ def create_order(body: OrderCreate, request: Request):
             )
             txn.save(conn)
 
-        # POS quick-sale: if status='completed', record payment + complete the order
-        if body.status == "completed":
+        # POS quick-sale: always record payment if paymentMethod is provided
+        if body.paymentMethod and body.paymentMethod != "none":
             total_price = float(order.total_price)
             if total_price > 0:
                 txn = PaymentTransaction(
                     order_id=order.id,
                     amount=total_price,
                     type="payment",
-                    method=body.paymentMethod or "cash",
+                    method=body.paymentMethod,
                 )
                 txn.save(conn)
                 _log_order_history(conn, order.id, "payment", "amount",
                                    old_value="", new_value=str(total_price),
                                    changed_by=body.createdBy)
 
-            Order.update_status(conn, order.order_ref, "completed", "")
+        # If status='delivered', also update order status and decrement stock
+        if body.status == "delivered":
+            Order.update_status(conn, order.order_ref, "delivered", "")
             _log_order_history(conn, order.id, "status_change", "status",
-                               "new", "completed", body.createdBy)
+                               "new", "delivered", body.createdBy)
             _auto_decrement_stock(conn, order.id, order.order_ref)
 
         log_context(request, ref_type="order", ref_id=order.id)

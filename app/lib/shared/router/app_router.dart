@@ -21,6 +21,7 @@ import '../../features/orders/order_list_screen.dart';
 import '../../features/orders/receipt_preview_screen.dart';
 import '../../features/knowledge/knowledge_detail_screen.dart';
 import '../../features/knowledge/knowledge_form_screen.dart';
+import '../../features/pos/pos_checkout_screen.dart';
 import '../../features/pos/pos_receipt_screen.dart';
 import '../../features/pos/pos_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
@@ -197,6 +198,12 @@ final appRouter = GoRouter(
       path: '/settings',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const SettingsScreen(),
+    ),
+    // POS checkout — full-screen (outside shell)
+    GoRoute(
+      path: '/pos/checkout',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const PosCheckoutScreen(),
     ),
     // POS receipt — full-screen (outside shell)
     GoRoute(

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../providers/pos_provider.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
-import 'pos_cart_sheet.dart';
 
 /// Sticky bottom cart summary bar for POS screen.
 class PosCartBar extends ConsumerWidget {
@@ -20,7 +20,7 @@ class PosCartBar extends ConsumerWidget {
     }
 
     return GestureDetector(
-      onTap: () => _showCartSheet(context),
+      onTap: () => context.push('/pos/checkout'),
       child: Container(
         height: 56,
         decoration: BoxDecoration(
@@ -80,7 +80,7 @@ class PosCartBar extends ConsumerWidget {
 
                 // Payment button
                 FilledButton.icon(
-                  onPressed: () => _showCartSheet(context),
+                  onPressed: () => context.push('/pos/checkout'),
                   icon: const Icon(Icons.payment, size: 18),
                   label: Text(VN.thanhToan),
                 ),
@@ -89,15 +89,6 @@ class PosCartBar extends ConsumerWidget {
           ),
         ),
       ),
-    );
-  }
-
-  void _showCartSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (context) => const PosCartSheet(),
     );
   }
 }

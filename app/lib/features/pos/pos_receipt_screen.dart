@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../data/api/order_service.dart';
 import '../../data/api/receipt_service.dart';
 import '../../shared/widgets/printer_picker_dialog.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
@@ -16,7 +15,7 @@ import '../orders/receipt_preview_print_stub.dart'
     as platform;
 
 /// POS receipt screen shown after order creation.
-/// Displays receipt image, Cash/Transfer toggle, and print/skip actions.
+/// Displays receipt image with print and skip actions only.
 class PosReceiptScreen extends ConsumerStatefulWidget {
   const PosReceiptScreen({super.key, required this.orderRef});
 
@@ -31,7 +30,6 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
   String? _error;
   bool _loading = true;
   bool _printing = false;
-  String _paymentMethod = 'cash';
 
   @override
   void initState() {
@@ -58,22 +56,6 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
           _error = e.toString();
           _loading = false;
         });
-      }
-    }
-  }
-
-  Future<void> _onPaymentMethodChanged(String method) async {
-    if (method == _paymentMethod) return;
-    setState(() => _paymentMethod = method);
-
-    try {
-      final orderService = ref.read(orderServiceProvider);
-      await orderService.updatePaymentMethod(widget.orderRef, method);
-    } catch (e) {
-      if (mounted) {
-        showTopSnackBar(context, 'Lỗi cập nhật: $e');
-        // Revert on failure
-        setState(() => _paymentMethod = method == 'cash' ? 'transfer' : 'cash');
       }
     }
   }
@@ -137,55 +119,32 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
             children: [
-              // Payment method toggle
-              SegmentedButton<String>(
-                segments: [
-                  ButtonSegment(
-                    value: 'cash',
-                    label: Text(VN.tienMat),
-                    icon: const Icon(Icons.money),
-                  ),
-                  ButtonSegment(
-                    value: 'transfer',
-                    label: Text(VN.chuyenKhoan),
-                    icon: const Icon(Icons.qr_code),
-                  ),
-                ],
-                selected: {_paymentMethod},
-                onSelectionChanged: (set) => _onPaymentMethodChanged(set.first),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _skip,
+                  icon: const Icon(Icons.check),
+                  label: const Text('Xong'),
+                ),
               ),
-              const SizedBox(height: 12),
-              // Action buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _skip,
-                      icon: const Icon(Icons.skip_next),
-                      label: const Text('Bỏ qua'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: _printing || _imageBytes == null ? null : _printReceipt,
-                      icon: _printing
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.print),
-                      label: Text(_printing ? 'Đang in...' : 'In'),
-                    ),
-                  ),
-                ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed:
+                      _printing || _imageBytes == null ? null : _printReceipt,
+                  icon: _printing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.print),
+                  label: Text(_printing ? 'Đang in...' : 'In'),
+                ),
               ),
             ],
           ),

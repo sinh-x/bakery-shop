@@ -72,13 +72,13 @@ class PosProductGrid extends ConsumerWidget {
           FilledButton(
             onPressed: () {
               Navigator.pop(dialogCtx);
-              Future.microtask(() {
-                ref.read(posCartProvider.notifier).addItem(product);
+              ref.read(posCartProvider.notifier).addItem(product);
+              if (context.mounted) {
                 showTopSnackBar(
                   context,
                   '${product.name} đã thêm vào giỏ (force-sell)',
                 );
-              });
+              }
             },
             child: Text(VN.xacNhan),
           ),
@@ -127,7 +127,7 @@ class _ProductPosCard extends StatelessWidget {
                         ? Image.network(
                             '$baseUrl/api/products/${product.id}/photo',
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
+                            errorBuilder: (_, _, _) =>
                                 _buildPlaceholder(theme),
                           )
                         : _buildPlaceholder(theme),

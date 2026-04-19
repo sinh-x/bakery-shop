@@ -234,6 +234,11 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         title: const Text(VN.tabOrders),
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: VN.lamMoi,
+            onPressed: () => ref.read(orderListProvider.notifier).refresh(),
+          ),
+          IconButton(
             icon: Icon(
               _viewMode == 'list' ? Icons.view_kanban : Icons.view_list,
             ),

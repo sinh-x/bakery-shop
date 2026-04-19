@@ -46,6 +46,11 @@ const kOrderPhotoTags = [
     label: 'Bánh hoàn thành',
     color: Color(0xFF2E7D32),
   ),
+  OrderPhotoTagDef(
+    key: 'chuyen-khoan',
+    label: 'Chuyển khoản',
+    color: Color(0xFF00897B),
+  ),
 ];
 
 Set<String> _parseTags(String tags) {

@@ -61,6 +61,9 @@ class VN {
   static const orderStatusUpdated = 'Đã cập nhật trạng thái';
   static const orderEditSaved = 'Đã lưu thay đổi';
 
+  // Refresh
+  static const lamMoi = 'Làm mới';
+
   // Product categories
   static const catBanhMi = 'Bánh mì';
   static const catBanhKem = 'Bánh kem';

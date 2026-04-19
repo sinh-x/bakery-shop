@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/order_service.dart';
 import '../../providers/pos_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 
-/// POS checkout confirmation screen.
-/// Shows cart summary with 3 actions: Trở lại, Tiền mặt, Chuyển khoản.
+/// POS checkout screen — editable cart on checkout, single Thanh toán button.
 class PosCheckoutScreen extends ConsumerStatefulWidget {
   const PosCheckoutScreen({super.key});
 
@@ -18,6 +18,43 @@ class PosCheckoutScreen extends ConsumerStatefulWidget {
 class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   bool _isProcessing = false;
   bool _navigatingAfterCheckout = false;
+  String _selectedPaymentMethod = 'cash'; // 'cash' or 'transfer'
+
+  List<Map<String, dynamic>> _buildOrderItems() {
+    final cart = ref.read(posCartProvider);
+    final orderItems = cart.items
+        .where((i) => !i.isGift)
+        .map((i) => <String, dynamic>{
+              'productId': i.product.id.toString(),
+              'productName': i.product.name,
+              'quantity': i.quantity,
+              'unitPrice': i.product.basePrice,
+            })
+        .toList();
+
+    final giftItems = cart.items
+        .where((i) => i.isGift)
+        .map((i) => <String, dynamic>{
+              'productName': i.product.name,
+              'quantity': i.quantity,
+              'unitPrice': i.product.basePrice,
+              'isGift': true,
+            })
+        .toList();
+
+    orderItems.addAll(giftItems);
+    return orderItems;
+  }
+
+  Future<void> _handleThanhToan() async {
+    if (_isProcessing) return;
+
+    if (_selectedPaymentMethod == 'transfer') {
+      await _handleTransfer();
+    } else {
+      await _createOrder('cash');
+    }
+  }
 
   Future<void> _createOrder(String paymentMethod) async {
     if (_isProcessing) return;
@@ -25,28 +62,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     setState(() => _isProcessing = true);
 
     try {
-      final cart = ref.read(posCartProvider);
-      final orderItems = cart.items
-          .where((i) => !i.isGift)
-          .map((i) => {
-            'productId': i.product.id.toString(),
-            'productName': i.product.name,
-            'quantity': i.quantity,
-            'unitPrice': i.product.basePrice,
-          })
-          .toList();
-
-      final giftItems = cart.items
-          .where((i) => i.isGift)
-          .map((i) => {
-            'productName': i.product.name,
-            'quantity': i.quantity,
-            'unitPrice': i.product.basePrice,
-            'isGift': true,
-          })
-          .toList();
-
-      orderItems.addAll(giftItems);
+      final orderItems = _buildOrderItems();
 
       final orderService = ref.read(orderServiceProvider);
       final order = await orderService.createOrder(
@@ -54,7 +70,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         source: VN.taiTiem,
         deliveryType: 'pickup',
         items: orderItems,
-        status: 'completed',
+        status: 'delivered',
         paymentMethod: paymentMethod,
       );
 
@@ -62,23 +78,116 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
       if (!mounted) return;
 
-      // Mark so build() doesn't redirect while we're navigating
       _navigatingAfterCheckout = true;
-
-      if (paymentMethod == 'cash') {
-        // Cash → show receipt/print screen
-        context.pushReplacement('/pos/receipt/${order.orderRef}');
-      } else {
-        // Transfer → done (Phase 2 handles transfer proof upload)
-        showTopSnackBar(context, VN.thanhToanThanhCong);
-        context.go('/pos');
-      }
+      context.pushReplacement('/pos/receipt/${order.orderRef}');
     } catch (e) {
       if (!mounted) return;
       showTopSnackBar(context, 'Lỗi: $e');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
+  }
+
+  Future<void> _handleTransfer() async {
+    if (_isProcessing) return;
+
+    // Ask: camera, gallery, or skip?
+    final source = await showDialog<Object>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Bằng chứng chuyển khoản'),
+        content: const Text('Chọn nguồn ảnh để xác nhận thanh toán.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, 'skip'),
+            child: const Text('Bỏ qua'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, ImageSource.camera),
+            child: const Text('📷 Camera'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogCtx, ImageSource.gallery),
+            child: const Text('🖼️ Thư viện'),
+          ),
+        ],
+      ),
+    );
+
+    if (source == null) return; // cancelled
+
+    // "Bỏ qua" — create order without photo
+    if (source == 'skip') {
+      await _createOrder('transfer');
+      return;
+    }
+
+    setState(() => _isProcessing = true);
+
+    try {
+      final picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: source as ImageSource,
+        imageQuality: 85,
+      );
+      if (image == null) {
+        setState(() => _isProcessing = false);
+        return;
+      }
+
+      final orderItems = _buildOrderItems();
+
+      final orderService = ref.read(orderServiceProvider);
+      final order = await orderService.createOrder(
+        customerName: VN.khachLe,
+        source: VN.taiTiem,
+        deliveryType: 'pickup',
+        items: orderItems,
+        status: 'delivered',
+        paymentMethod: 'transfer',
+      );
+
+      await orderService.uploadOrderPhoto(
+        order.orderRef,
+        image,
+        tags: 'chuyen-khoan',
+      );
+
+      ref.read(posCartProvider.notifier).clearCart();
+
+      if (!mounted) return;
+      _navigatingAfterCheckout = true;
+      showTopSnackBar(context, VN.thanhToanThanhCong);
+      context.pushReplacement('/pos/receipt/${order.orderRef}');
+    } catch (e) {
+      if (!mounted) return;
+      showTopSnackBar(context, 'Lỗi: $e');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  void _confirmClearCart() {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Xóa giỏ hàng?'),
+        content: const Text('Bạn có chắc muốn xóa tất cả sản phẩm trong giỏ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text(VN.cancel),
+          ),
+          FilledButton(
+            onPressed: () {
+              ref.read(posCartProvider.notifier).clearCart();
+              Navigator.pop(dialogCtx);
+            },
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -100,132 +209,193 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.pop(),
         ),
+        actions: [
+          TextButton.icon(
+            onPressed: _confirmClearCart,
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: const Text('Xóa giỏ'),
+          ),
+        ],
       ),
       body: Column(
         children: [
-          // Order summary
+          // Editable item list
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               itemCount: cart.items.length,
               itemBuilder: (context, i) {
                 final item = cart.items[i];
-                return ListTile(
-                  leading: item.isGift
-                      ? const Text('🎁', style: TextStyle(fontSize: 24))
-                      : Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Center(
-                            child: Text(
-                              '${item.quantity}',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                  title: Text(
-                    item.isGift
-                        ? '${item.product.name} (Quà tặng)'
-                        : item.product.name,
-                    style: item.isGift
-                        ? theme.textTheme.bodyMedium
-                            ?.copyWith(fontStyle: FontStyle.italic)
-                        : null,
-                  ),
-                  trailing: item.isGift
-                      ? null
-                      : Text(
-                          formatVND(item.total),
-                          style: theme.textTheme.titleSmall,
-                        ),
-                );
+                return _CheckoutCartItemTile(item: item);
               },
             ),
           ),
 
-          // Total
+          // Footer: total + payment toggle + single Thanh toán button
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: theme.colorScheme.primaryContainer,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
             ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      VN.total,
-                      style: theme.textTheme.titleLarge,
-                    ),
-                    Text(
-                      formatVND(cart.total),
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary,
+            child: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  // Total row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        VN.total,
+                        style: theme.textTheme.titleLarge,
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // 3 action buttons
-                Row(
-                  children: [
-                    // Trở lại
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _isProcessing ? null : () => context.pop(),
-                        icon: const Icon(Icons.arrow_back),
-                        label: const Text('Trở lại'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Tiền mặt
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed:
-                            _isProcessing ? null : () => _createOrder('cash'),
-                        icon: _isProcessing
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.money),
-                        label: Text(VN.tienMat),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Chuyển khoản
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed:
-                            _isProcessing ? null : () => _createOrder('transfer'),
-                        icon: const Icon(Icons.qr_code),
-                        label: Text(VN.chuyenKhoan),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: theme.colorScheme.secondary,
+                      Text(
+                        formatVND(cart.total),
+                        style: theme.textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
                         ),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Cash / Transfer segmented toggle
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(
+                        value: 'cash',
+                        label: Text(VN.tienMat),
+                        icon: Icon(Icons.money),
+                      ),
+                      ButtonSegment(
+                        value: 'transfer',
+                        label: Text(VN.chuyenKhoan),
+                        icon: Icon(Icons.qr_code),
+                      ),
+                    ],
+                    selected: {_selectedPaymentMethod},
+                    onSelectionChanged: (selection) {
+                      setState(() => _selectedPaymentMethod = selection.first);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Single Thanh toán button
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _isProcessing ? null : _handleThanhToan,
+                      icon: _isProcessing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.payment),
+                      label: Text(VN.thanhToan),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Editable cart item tile for checkout screen — swipe to delete, qty +/-, gift can swipe.
+class _CheckoutCartItemTile extends ConsumerWidget {
+  const _CheckoutCartItemTile({required this.item});
+
+  final PosCartItem item;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+
+    return Dismissible(
+      key: ValueKey('${item.product.id}-${item.isGift}'),
+      direction: DismissDirection.endToStart,
+      onDismissed: (_) {
+        ref.read(posCartProvider.notifier).removeItem(item.product.id);
+      },
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 16),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.error,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: ListTile(
+          leading: item.isGift
+              ? const Chip(label: Text('🎁'))
+              : Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.cake,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+          title: Text(
+            item.isGift ? '${item.product.name} (Quà tặng)' : item.product.name,
+            style: item.isGift
+                ? theme.textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic)
+                : null,
+          ),
+          subtitle: item.isGift
+              ? null
+              : Text(formatVND(item.product.basePrice)),
+          trailing: item.isGift
+              ? Icon(
+                  Icons.chevron_left,
+                  color: theme.colorScheme.outline,
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline, size: 20),
+                      onPressed: () {
+                        ref.read(posCartProvider.notifier).updateQuantity(
+                              item.product.id,
+                              item.quantity - 1,
+                            );
+                      },
+                    ),
+                    Text(
+                      '${item.quantity}',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline, size: 20),
+                      onPressed: () {
+                        ref.read(posCartProvider.notifier).updateQuantity(
+                              item.product.id,
+                              item.quantity + 1,
+                            );
+                      },
+                    ),
+                  ],
+                ),
+        ),
       ),
     );
   }

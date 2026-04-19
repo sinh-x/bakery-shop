@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/api/stock_service.dart';
@@ -44,17 +47,75 @@ String stockStatusLabel(int quantity) {
 }
 
 /// Main stock management screen.
-class StockScreen extends ConsumerWidget {
+class StockScreen extends ConsumerStatefulWidget {
   const StockScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<StockScreen> createState() => _StockScreenState();
+}
+
+class _StockScreenState extends ConsumerState<StockScreen>
+    with WidgetsBindingObserver {
+  bool _wasNavigatedAway = false;
+  GoRouter? _goRouter;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.of(context);
+    if (_goRouter != router) {
+      _goRouter?.routerDelegate.removeListener(_onRouteChange);
+      _goRouter = router;
+      _goRouter?.routerDelegate.addListener(_onRouteChange);
+    }
+  }
+
+  @override
+  void dispose() {
+    _goRouter?.routerDelegate.removeListener(_onRouteChange);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.invalidate(stockOverviewProvider);
+    }
+  }
+
+  void _onRouteChange() {
+    if (!mounted) return;
+    final path = GoRouterState.of(context).uri.path;
+    if (path == '/stock' && _wasNavigatedAway) {
+      _wasNavigatedAway = false;
+      ref.invalidate(stockOverviewProvider);
+    } else if (path != '/stock') {
+      _wasNavigatedAway = true;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final stockAsync = ref.watch(stockOverviewProvider);
     final baseUrl = ref.watch(apiBaseUrlProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text(VN.quanLyTonKho),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: VN.lamMoi,
+            onPressed: () => ref.invalidate(stockOverviewProvider),
+          ),
+        ],
       ),
       body: stockAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -70,7 +131,8 @@ class StockScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               FilledButton.icon(
-                onPressed: () => ref.read(stockOverviewProvider.notifier).refresh(),
+                onPressed: () =>
+                    ref.read(stockOverviewProvider.notifier).refresh(),
                 icon: const Icon(Icons.refresh),
                 label: const Text(VN.retry),
               ),

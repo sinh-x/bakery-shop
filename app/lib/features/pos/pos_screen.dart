@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -19,9 +21,13 @@ class PosScreen extends ConsumerStatefulWidget {
   ConsumerState<PosScreen> createState() => _PosScreenState();
 }
 
-class _PosScreenState extends ConsumerState<PosScreen> {
+class _PosScreenState extends ConsumerState<PosScreen>
+    with WidgetsBindingObserver {
   int? _selectedCategoryIndex;
   String _searchQuery = '';
+  Timer? _stockPollingTimer;
+  bool _wasNavigatedAway = false;
+  GoRouter? _goRouter;
 
   /// Filtered products based on selected category and search query.
   List<Product> _filteredProducts(List<Product> products) {
@@ -54,6 +60,57 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _stockPollingTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => _refreshStock(),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.of(context);
+    if (_goRouter != router) {
+      _goRouter?.routerDelegate.removeListener(_onRouteChange);
+      _goRouter = router;
+      _goRouter?.routerDelegate.addListener(_onRouteChange);
+    }
+  }
+
+  @override
+  void dispose() {
+    _goRouter?.routerDelegate.removeListener(_onRouteChange);
+    _stockPollingTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshStock();
+    }
+  }
+
+  void _refreshStock() {
+    ref.invalidate(productsProvider);
+  }
+
+  void _onRouteChange() {
+    if (!mounted) return;
+    final path = GoRouterState.of(context).uri.path;
+    if (path == '/pos' && _wasNavigatedAway) {
+      _wasNavigatedAway = false;
+      _refreshStock();
+    } else if (path != '/pos') {
+      _wasNavigatedAway = true;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(categoriesProvider);
     final productsAsync = ref.watch(productsProvider);
@@ -62,6 +119,11 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       appBar: AppBar(
         title: const Text(VN.banHang),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: VN.lamMoi,
+            onPressed: _refreshStock,
+          ),
           IconButton(
             icon: const Icon(Icons.inventory_2_outlined),
             tooltip: 'Kho hàng',
@@ -90,7 +152,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
           // Category tabs
           categoriesAsync.when(
             loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
             data: (categories) {
               if (categories.isEmpty) return const SizedBox.shrink();
               final activeCats =
@@ -148,7 +210,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                         Text(VN.apiError),
                         const SizedBox(height: 8),
                         ElevatedButton(
-                          onPressed: () => ref.refresh(productsProvider),
+                          onPressed: _refreshStock,
                           child: const Text(VN.taiLai),
                         ),
                       ],
