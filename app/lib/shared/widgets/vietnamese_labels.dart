@@ -612,12 +612,7 @@ void showTopSnackBar(
       content: Text(message),
       behavior: SnackBarBehavior.floating,
       backgroundColor: backgroundColor,
-      margin: EdgeInsets.only(
-        top: 16,
-        left: 16,
-        right: 16,
-        bottom: MediaQuery.of(context).size.height - 100,
-      ),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     ),
   );
 }
