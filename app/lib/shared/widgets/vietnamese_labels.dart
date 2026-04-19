@@ -382,6 +382,30 @@ class VN {
   static const trungBay = 'Trưng bày';
   static const tangKem = 'Tặng kèm';
 
+  // POS / Counter Sales
+  static const banHang = 'Bán hàng';
+  static const thanhToan = 'Thanh toán';
+  static const inHoaDon = 'In hóa đơn';
+  static const inBienNhan = 'In biên nhận';
+  static const xacNhanThanhToan = 'Xác nhận thanh tiền';
+  static const sanPhamHetHang = 'Sản phẩm hết hàng';
+  static const banAnyway = 'Sản phẩm hết hàng. Bán anyway?';
+  static const xacNhan = 'Xác nhận';
+  static const tienMat = 'Tiền mặt';
+  static const chuyenKhoan = 'Chuyển khoản';
+  static const themThongTin = 'Thêm thông tin';
+  static const khachLe = 'Khách lẻ';
+  static const taiTiem = 'Tại tiệm';
+  static const quaTang = '(Quà tặng)';
+  static const soLuong = 'Số lượng';
+  static const donGia = 'Đơn giá';
+  static const xoa = 'Xóa';
+  static const thanhToanThanhCong = 'Thanh toán thành công';
+  static const taiLai = 'Tải lại';
+  static const khongCoSanPham = 'Chưa có sản phẩm';
+  static const trongLuong = 'Trọng lượng';
+  static const inPhieu = 'In phiếu';
+
   // Knowledge base
   static const knowledgeTitle = 'Sổ tay';
   static const knowledgeEntry = 'Mục tri thức';

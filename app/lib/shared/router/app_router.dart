@@ -21,6 +21,7 @@ import '../../features/orders/order_list_screen.dart';
 import '../../features/orders/receipt_preview_screen.dart';
 import '../../features/knowledge/knowledge_detail_screen.dart';
 import '../../features/knowledge/knowledge_form_screen.dart';
+import '../../features/pos/pos_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
@@ -66,6 +67,12 @@ final appRouter = GoRouter(
           path: '/checklist',
           pageBuilder: (context, state) => const NoTransitionPage(
             child: ChecklistScreen(),
+          ),
+        ),
+        GoRoute(
+          path: '/pos',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: PosScreen(),
           ),
         ),
       ],
@@ -288,6 +295,7 @@ class _ShellScaffold extends StatelessWidget {
     if (location.startsWith('/products')) return 2;
     if (location.startsWith('/events')) return 3;
     if (location.startsWith('/checklist')) return 4;
+    if (location.startsWith('/pos')) return 5;
     return 0;
   }
 
@@ -303,6 +311,8 @@ class _ShellScaffold extends StatelessWidget {
         context.go('/events');
       case 4:
         context.go('/checklist');
+      case 5:
+        context.go('/pos');
     }
   }
 
@@ -339,6 +349,11 @@ class _ShellScaffold extends StatelessWidget {
             icon: Icon(Icons.checklist_outlined),
             selectedIcon: Icon(Icons.checklist),
             label: VN.tabChecklist,
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.storefront_outlined),
+            selectedIcon: Icon(Icons.storefront),
+            label: VN.banHang,
           ),
         ],
       ),

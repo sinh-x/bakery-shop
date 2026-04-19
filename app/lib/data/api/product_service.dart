@@ -14,10 +14,12 @@ class ProductService {
     String? category,
     String? code,
     int active = 1,
+    bool trungBay = false,
   }) async {
     final params = <String, dynamic>{'active': active};
     if (category != null) params['category'] = category;
     if (code != null) params['code'] = code;
+    if (trungBay) params['trung_bay'] = 1;
 
     final response = await _dio.get('/api/products', queryParameters: params);
     final list = response.data as List;
