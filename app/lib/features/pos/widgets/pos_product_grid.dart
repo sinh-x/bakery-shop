@@ -57,6 +57,7 @@ class PosProductGrid extends ConsumerWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${product.name} đã thêm vào giỏ'),
+          behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 1),
         ),
       );
@@ -81,6 +82,7 @@ class PosProductGrid extends ConsumerWidget {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text('${product.name} đã thêm vào giỏ (force-sell)'),
+                  behavior: SnackBarBehavior.floating,
                   duration: const Duration(seconds: 1),
                 ),
               );

@@ -289,7 +289,7 @@ def create_order(body: OrderCreate, request: Request):
                                    old_value="", new_value=str(total_price),
                                    changed_by=body.createdBy)
 
-            Order.update_status(conn, order.order_ref, "completed")
+            Order.update_status(conn, order.order_ref, "completed", "")
             _log_order_history(conn, order.id, "status_change", "status",
                                "new", "completed", body.createdBy)
             _auto_decrement_stock(conn, order.id, order.order_ref)

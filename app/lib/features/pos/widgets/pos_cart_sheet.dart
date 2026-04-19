@@ -157,19 +157,19 @@ class PosCartSheet extends ConsumerWidget {
   void _confirmClearCart(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('Xóa giỏ hàng?'),
         content: const Text('Bạn có chắc muốn xóa tất cả sản phẩm trong giỏ?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogCtx),
             child: const Text(VN.cancel),
           ),
           FilledButton(
             onPressed: () {
               ref.read(posCartProvider.notifier).clearCart();
-              Navigator.pop(context); // close dialog
-              Navigator.pop(context); // close cart sheet
+              Navigator.pop(dialogCtx);
+              Navigator.pop(context);
             },
             child: const Text('Xóa'),
           ),

@@ -28,7 +28,7 @@ class _PosPaymentSheetState extends ConsumerState<PosPaymentSheet> {
       final orderItems = cart.items
           .where((i) => !i.isGift)
           .map((i) => {
-            'productId': i.product.id,
+            'productId': i.product.id.toString(),
             'productName': i.product.name,
             'quantity': i.quantity,
             'unitPrice': i.product.basePrice,
@@ -85,22 +85,21 @@ class _PosPaymentSheetState extends ConsumerState<PosPaymentSheet> {
   void _askPrintReceipt(String orderRef) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('In hóa đơn?'),
         content: const Text('Bạn có muốn in biên nhận không?'),
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(context); // close dialog
-              Navigator.pop(context); // close cart sheet
+              Navigator.pop(dialogCtx);
+              Navigator.pop(context);
             },
             child: const Text('Không'),
           ),
           FilledButton(
             onPressed: () {
-              Navigator.pop(context); // close dialog
-              Navigator.pop(context); // close cart sheet
-              // Navigate to receipt preview
+              Navigator.pop(dialogCtx);
+              Navigator.pop(context);
               context.push('/orders/$orderRef/receipt?type=customer');
             },
             child: Text(VN.inBienNhan),
