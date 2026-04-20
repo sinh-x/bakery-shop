@@ -187,7 +187,7 @@ class _DashboardContent extends StatelessWidget {
               color: Colors.red,
             ),
             const SizedBox(height: 8),
-            ...overdueOrders.map((o) => OrderCard(order: o, compact: true, onTap: () => context.push('/orders/${o.orderRef}'))),
+            ...overdueOrders.map((o) => OrderCard(order: o, onTap: () => context.push('/orders/${o.orderRef}'))),
             const SizedBox(height: 16),
           ],
 
@@ -199,7 +199,7 @@ class _DashboardContent extends StatelessWidget {
               if (todayByStatus.containsKey(s)) ...[
                 _StatusGroupHeader(
                     status: s, count: todayByStatus[s]!.length),
-                ...todayByStatus[s]!.map((o) => OrderCard(order: o, compact: true, onTap: () => context.push('/orders/${o.orderRef}'))),
+                ...todayByStatus[s]!.map((o) => OrderCard(order: o, onTap: () => context.push('/orders/${o.orderRef}'))),
               ],
             const SizedBox(height: 16),
           ],
@@ -208,7 +208,7 @@ class _DashboardContent extends StatelessWidget {
           if (upcomingOrders.isNotEmpty) ...[
             _SectionHeader(title: VN.upcomingDue),
             const SizedBox(height: 8),
-            ...upcomingOrders.map((o) => OrderCard(order: o, compact: true, onTap: () => context.push('/orders/${o.orderRef}'))),
+            ...upcomingOrders.map((o) => OrderCard(order: o, onTap: () => context.push('/orders/${o.orderRef}'))),
           ],
 
           if (!hasOrders)
