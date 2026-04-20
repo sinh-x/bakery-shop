@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0+42] — 2026-04-19
+- feat(deploy): add recover-lily.sh for backup restore and redeploy
+
+## [0.4.0+41] — 2026-04-16
+- fix(DG-073): flutter analyze --no-fatal-warnings
+
+## [0.4.0+40] — 2026-04-16
+- fix(DG-073): flutter analyze --allow-warnings in CI
+
 ## [0.3.1+38] — 2026-04-01
 - fix: pass item_id to receipt API and print all main items
 

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
@@ -26,14 +26,17 @@ class WorkItem:
     age: Optional[int] = None
     is_extra: bool = False
     is_gift: bool = False
+    attributes: dict = field(default_factory=dict)
     id: Optional[int] = None
     created_at: Optional[str] = None
 
     def save(self, conn) -> int:
+        import json
+        attrs_json = json.dumps(self.attributes)
         cursor = conn.execute(
             """INSERT INTO order_items
-               (order_id, product_id, product_name, quantity, unit_price, notes, position, status, is_birthday, age, is_extra, is_gift)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (order_id, product_id, product_name, quantity, unit_price, notes, position, status, is_birthday, age, is_extra, is_gift, attributes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 self.order_id,
                 self.product_id,
@@ -47,6 +50,7 @@ class WorkItem:
                 self.age,
                 1 if self.is_extra else 0,
                 1 if self.is_gift else 0,
+                attrs_json,
             ),
         )
         self.id = cursor.lastrowid
@@ -64,7 +68,14 @@ class WorkItem:
 
     @staticmethod
     def from_row(row) -> "WorkItem":
+        import json
         keys = row.keys() if hasattr(row, "keys") else []
+        attrs = {}
+        if "attributes" in keys and row["attributes"]:
+            try:
+                attrs = json.loads(row["attributes"]) if isinstance(row["attributes"], str) else row["attributes"]
+            except (json.JSONDecodeError, TypeError):
+                attrs = {}
         return WorkItem(
             id=row["id"],
             order_id=row["order_id"],
@@ -79,6 +90,7 @@ class WorkItem:
             age=row["age"] if "age" in keys else None,
             is_extra=bool(row["is_extra"]) if "is_extra" in keys else False,
             is_gift=bool(row["is_gift"]) if "is_gift" in keys else False,
+            attributes=attrs,
             created_at=row["created_at"],
         )
 
@@ -97,5 +109,6 @@ class WorkItem:
             "age": self.age,
             "isExtra": self.is_extra,
             "isGift": self.is_gift,
+            "attributes": self.attributes,
             "createdAt": self.created_at,
         }

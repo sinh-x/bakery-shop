@@ -61,6 +61,9 @@ class VN {
   static const orderStatusUpdated = 'Đã cập nhật trạng thái';
   static const orderEditSaved = 'Đã lưu thay đổi';
 
+  // Refresh
+  static const lamMoi = 'Làm mới';
+
   // Product categories
   static const catBanhMi = 'Bánh mì';
   static const catBanhKem = 'Bánh kem';
@@ -224,7 +227,7 @@ class VN {
   // Order create form extras
   static const orderSource = 'Nguồn đặt hàng';
   static const dueTime = 'Giờ giao';
-  static const isBirthday = 'Sinh nhật';
+  static const isBirthday = 'Nến tuổi sinh nhật';
   static const birthdayAge = 'Tuổi khách hàng';
   static const orderCreated = 'Đã tạo đơn hàng';
   static const searchProducts = 'Tìm sản phẩm...';
@@ -266,6 +269,7 @@ class VN {
   static const txnTypePayment = 'Thanh toán';
   static const txnTypeFullPayment = 'Thanh toán đủ';
   static const txnTypeRefund = 'Hoàn tiền';
+  static const txnTypeRutTien = 'Tiền rút';
   static const methodCash = 'Tiền mặt';
   static const methodTransfer = 'Chuyển khoản';
   static const addPayment = 'Thêm thanh toán';
@@ -328,6 +332,8 @@ class VN {
   static const printWorkTicket = 'Phiếu nội bộ';
   static const printCustomerReceipt = 'Hóa đơn khách hàng';
   static const printBusLabel = 'Phiếu xe khách';
+  static const printShopReceipt = 'Phiếu giao hàng';
+  static const printDeliveryReceipt = 'Phiếu giao tận nơi';
   static const selectReceiptType = 'Chọn loại phiếu';
   static const receiptPreview = 'Xem phiếu';
   static const share = 'Chia sẻ';
@@ -365,6 +371,73 @@ class VN {
   static const tapToRetry = 'Bấm để thử lại';
   static const noDevicesFound = 'Không có thiết bị nào';
 
+  // Cash-in-cake (rut tien)
+  static const rutTien = 'Rút tiền';
+  static const rutTienToggle = 'Bánh rút tiền';
+  static const soTienRut = 'Số tiền rút';
+  static const phiRutTien = 'Phí rút tiền';
+  static const rutTienSection = 'Rút tiền trong bánh';
+  static const cashReceived = 'Đã nhận tiền';
+  static const cashNotReceived = 'Chưa nhận tiền';
+  static const daDuaTienRut = 'Đã đưa tiền rút';
+
+  // Product display flags
+  static const trungBay = 'Trưng bày';
+  static const tangKem = 'Tặng kèm';
+
+  // POS / Counter Sales
+  static const banHang = 'Bán hàng';
+  static const thanhToan = 'Thanh toán';
+  static const inHoaDon = 'In hóa đơn';
+  static const inBienNhan = 'In biên nhận';
+  static const xacNhanThanhToan = 'Xác nhận thanh tiền';
+  static const sanPhamHetHang = 'Sản phẩm hết hàng';
+  static const banAnyway = 'Sản phẩm hết hàng. Bán anyway?';
+  static const xacNhan = 'Xác nhận';
+  static const tienMat = 'Tiền mặt';
+  static const chuyenKhoan = 'Chuyển khoản';
+  static const themThongTin = 'Thêm thông tin';
+  static const khachLe = 'Khách lẻ';
+  static const taiTiem = 'Tại tiệm';
+  static const taiTiemPOS = 'Tại tiệm - POS';
+  static const quaTang = '(Quà tặng)';
+  static const soLuong = 'Số lượng';
+  static const donGia = 'Đơn giá';
+  static const xoa = 'Xóa';
+  static const thanhToanThanhCong = 'Thanh toán thành công';
+  static const taiLai = 'Tải lại';
+  static const khongCoSanPham = 'Chưa có sản phẩm';
+  static const trongLuong = 'Trọng lượng';
+  static const inPhieu = 'In phiếu';
+
+  // Knowledge base
+  static const knowledgeTitle = 'Sổ tay';
+  static const knowledgeEntry = 'Mục tri thức';
+  static const createKnowledge = 'Tạo mục mới';
+  static const editKnowledge = 'Sửa mục';
+  static const knowledgeTypes = {
+    'recipe': 'Công thức',
+    'procedure': 'Quy trình',
+    'equipment': 'Thiết bị',
+    'supplier': 'Nhà cung cấp',
+    'reference': 'Tham khảo',
+    'note': 'Ghi chú',
+  };
+  static const addPhoto = 'Thêm ảnh';
+  static const noKnowledgeEntries = 'Chưa có mục nào';
+  static const searchKnowledge = 'Tìm kiếm sổ tay';
+  static const confirmDeleteKnowledge = 'Xóa mục này?';
+  static const deleteKnowledge = 'Xóa mục';
+  static const knowledgeDeleted = 'Đã xóa mục';
+  static const knowledgeSaved = 'Đã lưu mục';
+  static const knowledgeCreated = 'Đã tạo mục mới';
+  static const knowledgeTitleField = 'Tiêu đề';
+  static const knowledgeContentField = 'Nội dung';
+  static const knowledgeTypeField = 'Loại';
+  static const knowledgeTagsField = 'Nhãn';
+  static const knowledgePhotosField = 'Ảnh';
+  static const knowledgeNoPhotos = 'Chưa có ảnh';
+
   // Shipping fee & extras
   static const shippingFee = 'Phí giao hàng';
   static const shippingFree = 'Miễn phí';
@@ -387,6 +460,28 @@ class VN {
   static const extraDeleted = 'Đã xóa phụ kiện';
   static const noExtras = 'Chưa có phụ kiện';
   static const deleteExtraConfirm = 'Xóa phụ kiện này?';
+
+  // Stock management
+  static const quanLyTonKho = 'Quản lý tồn kho';
+  static const nhapHang = 'Nhập hàng';
+  static const haoHut = 'Hao hụt';
+  static const dieuChinh = 'Điều chỉnh';
+  static const tonKho = 'Tồn kho';
+  static const nhapHangSheet = 'Nhập hàng';
+  static const haoHutSheet = 'Hao hụt';
+  static const dieuChinhSheet = 'Điều chỉnh';
+  static const ghiChuLabel = 'Ghi chú';
+  static const ghiChuHint = 'Ghi chú (tùy chọn)';
+  static const lyDoLabel = 'Lý do';
+  static const lyDoHint = 'Nhập lý do...';
+  static const lyDoRequired = 'Lý do không được để trống';
+  static const soLuongInvalid = 'Số lượng phải lớn hơn 0';
+  static const xacNhanHaoHut = 'Xác nhận hao hụt';
+  static const xacNhanDieuChinh = 'Điều chỉnh';
+  static const xacNhanNhapHang = 'Nhập hàng';
+  static const khongCoSanPhamTonKho = 'Không có sản phẩm tồn kho';
+  static const capNhatThanhCong = 'Cập nhật thành công';
+  static const loiHeThong = 'Lỗi hệ thống';
 }
 
 // Category mapping (new slugs)
@@ -459,6 +554,8 @@ String txnTypeLabel(String type) {
       return VN.txnTypeFullPayment;
     case 'refund':
       return VN.txnTypeRefund;
+    case 'tien_rut':
+      return VN.txnTypeRutTien;
     default:
       return type;
   }
@@ -519,12 +616,7 @@ void showTopSnackBar(
       content: Text(message),
       behavior: SnackBarBehavior.floating,
       backgroundColor: backgroundColor,
-      margin: EdgeInsets.only(
-        top: 16,
-        left: 16,
-        right: 16,
-        bottom: MediaQuery.of(context).size.height - 100,
-      ),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     ),
   );
 }

@@ -17,6 +17,8 @@ from baker.api.receipts import (
     _order_detail,
     _render_bus_label,
     _render_customer_receipt,
+    _render_delivery_receipt,
+    _render_shop_receipt,
     _render_work_ticket,
     _shop_config,
 )
@@ -47,11 +49,14 @@ def print_receipt(
 
     - type=work_ticket: internal work ticket (Phiếu Nội Bộ), single item, requires item_id
     - type=customer: customer receipt (BIÊN NHẬN)
+    - type=bus_label: bus shipping label
+    - type=shop: shop receipt (Phiếu giao hàng)
+    - type=delivery: delivery receipt (Phiếu giao tận nơi)
     """
-    if type not in ("work_ticket", "customer", "bus_label"):
+    if type not in ("work_ticket", "customer", "bus_label", "shop", "delivery"):
         raise HTTPException(
             status_code=400,
-            detail="Invalid type: must be 'work_ticket', 'customer', or 'bus_label'",
+            detail="Invalid type: must be 'work_ticket', 'customer', 'bus_label', 'shop', or 'delivery'",
         )
 
     if type == "work_ticket" and item_id is None:
@@ -87,10 +92,14 @@ def print_receipt(
             img = _render_customer_receipt(detail, cfg, conn, show_photos=False)
         elif type == "bus_label":
             img = _render_bus_label(detail, cfg)
+        elif type == "shop":
+            img = _render_shop_receipt(detail, cfg, conn)
+        elif type == "delivery":
+            img = _render_delivery_receipt(detail, cfg, conn)
         else:
             raise HTTPException(
                 status_code=400,
-                detail="Invalid type: must be 'work_ticket', 'customer', or 'bus_label'",
+                detail="Invalid type: must be 'work_ticket', 'customer', 'bus_label', 'shop', or 'delivery'",
             )
 
         png_bytes = _render_to_png(img)

@@ -1,5 +1,6 @@
 """Product CRUD API routes."""
 
+import json
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -37,32 +38,91 @@ def _row_to_dict(row) -> dict:
     return dict(row)
 
 
+def _product_attributes(conn, product_id: int) -> dict:
+    """Get attribute values for a product, falling back to attribute type defaults."""
+    # Get product's category for applicable_types check
+    product = conn.execute(
+        "SELECT category FROM products WHERE id = ?", (product_id,)
+    ).fetchone()
+    if not product:
+        return {}
+
+    product_category = product["category"]
+
+    # Get applicable attribute types for this category
+    applicable_types = {
+        row["attribute_type"]: row["default_value"]
+        for row in conn.execute(
+            """SELECT attribute_type, default_value, applicable_categories
+               FROM product_attributes WHERE active = 1"""
+        ).fetchall()
+        if product_category in (json.loads(row["applicable_categories"]) if row["applicable_categories"] else [])
+    }
+
+    # Get per-product overrides
+    overrides = {
+        row["attribute_type"]: row["value"]
+        for row in conn.execute(
+            "SELECT attribute_type, value FROM product_attribute_values WHERE product_id = ?",
+            (product_id,),
+        ).fetchall()
+    }
+
+    result = {}
+    for attr_type, default in applicable_types.items():
+        result[attr_type] = overrides.get(attr_type, default)
+    # Also include per-product overrides not covered by applicable_types
+    for attr_type, value in overrides.items():
+        if attr_type not in result:
+            result[attr_type] = value
+    return result
+
+
 @router.get("")
 def list_products(
     category: str | None = Query(None, description="Lọc theo danh mục"),
     active: int = Query(1, description="1 = đang bán, 0 = ngừng bán"),
     code: str | None = Query(None, description="Lọc theo mã sản phẩm (partial match)"),
+    trung_bay: int = Query(0, description="1 = chỉ sản phẩm trưng bày"),
 ):
     """Danh sách sản phẩm."""
     with get_db() as conn:
-        conditions = ["active = ?"]
+        conditions = ["p.active = ?"]
         params: list = [active]
+        joins = []
 
         if category:
-            conditions.append("category = ?")
+            conditions.append("p.category = ?")
             params.append(category)
 
         if code:
-            conditions.append("product_code LIKE ?")
+            conditions.append("p.product_code LIKE ?")
             params.append(f"%{code}%")
 
+        joins.append(
+            """LEFT JOIN product_stock ps ON ps.product_id = p.id"""
+        )
+        select_cols = "p.*, COALESCE(ps.quantity, 0) AS stock_qty"
+        if trung_bay:
+            joins.append(
+                """LEFT JOIN product_attribute_values pav
+                   ON pav.product_id = p.id AND pav.attribute_type = 'trung_bay'"""
+            )
+            conditions.append("pav.value = 'true'")
+
         where = " AND ".join(conditions)
+        join_sql = "\n".join(joins)
         rows = conn.execute(
-            f"SELECT * FROM products WHERE {where} ORDER BY category, name",
+            f"SELECT {select_cols} FROM products p {join_sql} WHERE {where} ORDER BY p.category, p.name",
             params,
         ).fetchall()
 
-        return [_row_to_dict(r) for r in rows]
+        result = []
+        for r in rows:
+            prod = _row_to_dict(r)
+            prod["attributes"] = _product_attributes(conn, prod["id"])
+            result.append(prod)
+        return result
 
 
 @router.get("/code/{code}")
@@ -74,7 +134,9 @@ def get_product_by_code(code: str):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
-        return _row_to_dict(row)
+        prod = _row_to_dict(row)
+        prod["attributes"] = _product_attributes(conn, prod["id"])
+        return prod
 
 
 @router.get("/{product_id}")
@@ -86,7 +148,9 @@ def get_product(product_id: int):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
-        return _row_to_dict(row)
+        prod = _row_to_dict(row)
+        prod["attributes"] = _product_attributes(conn, prod["id"])
+        return prod
 
 
 @router.post("", status_code=201)

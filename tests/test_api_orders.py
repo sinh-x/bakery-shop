@@ -723,3 +723,44 @@ def test_autosync_extras_skip_already_matching(api_client):
     candle_item = next(i for i in candle_state if i["productName"] == "Nến")
     assert candle_item["status"] == "ready"
 
+
+# --- PATCH payment-method ---
+
+
+def test_update_payment_method_cash_to_transfer(api_client):
+    """Valid update: cash → transfer."""
+    order = _create_order(api_client, paymentMethod="cash", status="delivered")
+    ref = order["orderRef"]
+    resp = api_client.patch(f"/api/orders/{ref}/payment-method", json={"method": "transfer"})
+    assert resp.status_code == 200
+
+
+def test_update_payment_method_transfer_to_cash(api_client):
+    """Valid update: transfer → cash."""
+    order = _create_order(api_client, paymentMethod="transfer", status="delivered")
+    ref = order["orderRef"]
+    resp = api_client.patch(f"/api/orders/{ref}/payment-method", json={"method": "cash"})
+    assert resp.status_code == 200
+
+
+def test_update_payment_method_invalid_method(api_client):
+    """Invalid method value returns 422."""
+    order = _create_order(api_client, paymentMethod="cash", status="delivered")
+    ref = order["orderRef"]
+    resp = api_client.patch(f"/api/orders/{ref}/payment-method", json={"method": "bitcoin"})
+    assert resp.status_code == 422
+
+
+def test_update_payment_method_nonexistent_order(api_client):
+    """Non-existent order returns 404."""
+    resp = api_client.patch("/api/orders/FAKE-999/payment-method", json={"method": "cash"})
+    assert resp.status_code == 404
+
+
+def test_update_payment_method_no_transaction(api_client):
+    """Order without payment transaction returns 404."""
+    order = _create_order(api_client)  # no paymentMethod → no txn
+    ref = order["orderRef"]
+    resp = api_client.patch(f"/api/orders/{ref}/payment-method", json={"method": "cash"})
+    assert resp.status_code == 404
+

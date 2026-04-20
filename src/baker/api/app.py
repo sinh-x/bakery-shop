@@ -10,15 +10,18 @@ from baker.api.categories import router as categories_router
 from baker.api.config import router as config_router
 from baker.api.events import router as events_router
 from baker.api.exception_handlers import global_exception_handler
+from baker.api.knowledge import router as knowledge_router
 from baker.api.middleware import LoggingMiddleware
 from baker.api.order_photos import router as order_photos_router
 from baker.api.orders import router as orders_router
 from baker.api.payment_transactions import router as payment_transactions_router
 from baker.api.printing import router as printing_router
+from baker.api.product_attributes import router as product_attributes_router
 from baker.api.receipts import router as receipts_router
 from baker.api.photos import router as photos_router
 from baker.api.products import router as products_router
 from baker.api.staff import router as staff_router
+from baker.api.stock import router as stock_router
 from baker.api.work_items import router as work_items_router
 from baker.config import VERSION
 from baker.logging import setup_logging
@@ -59,14 +62,17 @@ def create_app() -> FastAPI:
     app.include_router(categories_router)
     app.include_router(config_router)
     app.include_router(events_router)
+    app.include_router(knowledge_router)
     app.include_router(orders_router)
     app.include_router(order_photos_router)
     app.include_router(work_items_router)
     app.include_router(payment_transactions_router)
     app.include_router(cake_queue_router)
+    app.include_router(product_attributes_router)
     app.include_router(staff_router)
     app.include_router(checklist_router)
     app.include_router(receipts_router)
     app.include_router(printing_router)
+    app.include_router(stock_router)
 
     return app

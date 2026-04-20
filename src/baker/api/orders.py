@@ -4,7 +4,7 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
 from baker.logging import log_context
@@ -26,6 +26,7 @@ class OrderItemIn(BaseModel):
     age: Optional[int] = None
     isExtra: bool = False
     isGift: bool = False
+    attributes: dict = Field(default_factory=dict)
 
 
 class DepositIn(BaseModel):
@@ -46,6 +47,8 @@ class OrderCreate(BaseModel):
     deposit: Optional[DepositIn] = None
     createdBy: str = ""
     shippingFee: float = 0.0
+    status: Optional[str] = None
+    paymentMethod: Optional[str] = None
 
 
 class OrderEdit(BaseModel):
@@ -69,6 +72,10 @@ class StatusTransition(BaseModel):
     changedBy: str = ""
 
 
+class PaymentMethodUpdate(BaseModel):
+    method: str  # 'cash' | 'transfer'
+
+
 class PaymentUpdate(BaseModel):
     amountPaid: float
     changedBy: str = ""
@@ -83,6 +90,81 @@ def _log_order_history(conn, order_id, action_type, field_name="", old_value="",
     )
 
 
+def _auto_decrement_stock(conn, order_id: int, order_ref: str):
+    """Auto-decrement stock for trưng bày products when order completes."""
+    from baker.models.event import Event
+
+    order_items = conn.execute(
+        """SELECT oi.product_id, oi.product_name, oi.quantity
+           FROM order_items oi
+           WHERE oi.order_id = ?
+             AND oi.product_id != ''
+             AND oi.is_gift = 0""",
+        (order_id,),
+    ).fetchall()
+
+    for item in order_items:
+        code_or_id = item["product_id"]
+        product_row = conn.execute(
+            "SELECT id FROM products WHERE product_code = ?",
+            (code_or_id,),
+        ).fetchone()
+        if not product_row:
+            try:
+                product_row = conn.execute(
+                    "SELECT id FROM products WHERE id = ?",
+                    (int(code_or_id),),
+                ).fetchone()
+            except (ValueError, TypeError):
+                continue
+        if not product_row:
+            continue
+
+        product_id = product_row["id"]
+        qty = item["quantity"]
+
+        attr_row = conn.execute(
+            """SELECT value FROM product_attribute_values
+               WHERE product_id = ? AND attribute_type = 'trung_bay'""",
+            (product_id,),
+        ).fetchone()
+        if not attr_row or attr_row["value"] != "true":
+            continue
+
+        stock_row = conn.execute(
+            "SELECT quantity FROM product_stock WHERE product_id = ?",
+            (product_id,),
+        ).fetchone()
+        if stock_row:
+            conn.execute(
+                "UPDATE product_stock SET quantity = ? WHERE product_id = ?",
+                (max(0, stock_row["quantity"] - qty), product_id),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO product_stock (product_id, quantity) VALUES (?, 0)",
+                (product_id,),
+            )
+
+        conn.execute(
+            """INSERT INTO stock_movements
+               (product_id, movement_type, quantity, reason, reference_id)
+               VALUES (?, 'sale', ?, ?, ?)""",
+            (product_id, -qty, f"Order {order_ref}", order_ref),
+        )
+        Event(
+            summary=f"Bán hàng -{qty} {item['product_name']}",
+            type="inventory",
+            data={
+                "product_id": product_id,
+                "product_name": item["product_name"],
+                "movement_type": "sale",
+                "quantity": -qty,
+                "reference_id": order_ref,
+            },
+        ).save(conn)
+
+
 def _item_in_to_model(item: OrderItemIn) -> OrderItem:
     return OrderItem(
         product=item.productName,
@@ -94,6 +176,7 @@ def _item_in_to_model(item: OrderItemIn) -> OrderItem:
         age=item.age,
         is_extra=item.isExtra,
         is_gift=item.isGift,
+        attributes=item.attributes,
     )
 
 
@@ -182,6 +265,7 @@ def create_order(body: OrderCreate, request: Request):
                 age=item.age,
                 is_extra=item.isExtra,
                 is_gift=item.isGift,
+                attributes=item.attributes,
             )
             work_item.save(conn)
 
@@ -193,6 +277,28 @@ def create_order(body: OrderCreate, request: Request):
                 method=body.deposit.method,
             )
             txn.save(conn)
+
+        # POS quick-sale: always record payment if paymentMethod is provided
+        if body.paymentMethod and body.paymentMethod != "none":
+            total_price = float(order.total_price)
+            if total_price > 0:
+                txn = PaymentTransaction(
+                    order_id=order.id,
+                    amount=total_price,
+                    type="payment",
+                    method=body.paymentMethod,
+                )
+                txn.save(conn)
+                _log_order_history(conn, order.id, "payment", "amount",
+                                   old_value="", new_value=str(total_price),
+                                   changed_by=body.createdBy)
+
+        # If status='delivered', also update order status and decrement stock
+        if body.status == "delivered":
+            Order.update_status(conn, order.order_ref, "delivered", "")
+            _log_order_history(conn, order.id, "status_change", "status",
+                               "new", "delivered", body.createdBy)
+            _auto_decrement_stock(conn, order.id, order.order_ref)
 
         log_context(request, ref_type="order", ref_id=order.id)
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
@@ -262,12 +368,25 @@ def edit_order(ref: str, body: OrderEdit):
             current_shipping_fee = data.get("shippingFee", row["shipping_fee"])
             if items_changed:
                 subtotal = sum(i.qty * i.price for i in items if not i.is_gift)
+                cash_fee = sum(
+                    float(i.attributes.get("cash_fee", 0))
+                    for i in items
+                    if i.attributes.get("rut_tien") == "true" and i.attributes.get("cash_fee")
+                )
             else:
                 subtotal = sum(
                     i.get("quantity", i.get("qty", 1)) * i.get("unit_price", i.get("price", 0))
                     for i in raw_items if not i.get("is_gift", False)
                 )
-            total = subtotal + current_shipping_fee
+                cash_fee = 0
+                for i in raw_items:
+                    attrs = i.get("attributes") or {}
+                    if attrs.get("rut_tien") == "true" and attrs.get("cash_fee"):
+                        try:
+                            cash_fee += float(attrs["cash_fee"])
+                        except (TypeError, ValueError):
+                            pass
+            total = subtotal + cash_fee + current_shipping_fee
             updates.append("total_price = ?")
             params.append(total)
 
@@ -311,7 +430,7 @@ def transition_status(ref: str, body: StatusTransition):
 
         # Block completion if not fully paid
         if body.status == "completed":
-            total_paid = PaymentTransaction.total_for_order(conn, row["id"])
+            total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, row["id"])
             total_price = float(row["total_price"])
             if total_paid < total_price:
                 remaining = total_price - total_paid
@@ -319,6 +438,10 @@ def transition_status(ref: str, body: StatusTransition):
                     status_code=422,
                     detail=f"Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu {remaining:,.0f}đ",
                 )
+
+        # Auto-decrement stock for trưng bày products when order completes
+        if body.status == "completed":
+            _auto_decrement_stock(conn, row["id"], row["order_ref"])
 
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:
@@ -336,6 +459,38 @@ def transition_status(ref: str, body: StatusTransition):
         # Auto-sync extras/gifts to match the new order status (F4, F5)
         from baker.api.work_items import _sync_extras_to_order_status
         _sync_extras_to_order_status(conn, row["id"], body.status)
+
+        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
+        return _order_detail(conn, updated)
+
+
+@router.patch("/{ref}/payment-method")
+def update_payment_method(ref: str, body: PaymentMethodUpdate):
+    """Cập nhật hình thức thanh toán trên giao dịch mới nhất."""
+    if body.method not in ("cash", "transfer"):
+        raise HTTPException(status_code=422, detail="Hình thức thanh toán không hợp lệ")
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        # Update the latest payment transaction's method
+        txn_row = conn.execute(
+            "SELECT id FROM payment_transactions WHERE order_id = ? ORDER BY id DESC LIMIT 1",
+            (row["id"],),
+        ).fetchone()
+        if not txn_row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch thanh toán")
+
+        conn.execute(
+            "UPDATE payment_transactions SET method = ? WHERE id = ?",
+            (body.method, txn_row["id"]),
+        )
+        _log_order_history(conn, row["id"], "field_edit", "payment_method", "", body.method, "")
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         return _order_detail(conn, updated)

@@ -45,6 +45,8 @@ class OrderService {
     String? source,
     String createdBy = '',
     double shippingFee = 0.0,
+    String? status,
+    String? paymentMethod,
   }) async {
     final body = <String, dynamic>{
       'customerName': customerName,
@@ -59,6 +61,8 @@ class OrderService {
     if (dueTime != null) body['dueTime'] = dueTime;
     if (source != null && source.isNotEmpty) body['source'] = source;
     if (createdBy.isNotEmpty) body['createdBy'] = createdBy;
+    if (status != null) body['status'] = status;
+    if (paymentMethod != null) body['paymentMethod'] = paymentMethod;
 
     final response = await _dio.post('/api/orders', data: body);
     return Order.fromJson(response.data as Map<String, dynamic>);
@@ -117,6 +121,14 @@ class OrderService {
     final response = await _dio.patch(
       '/api/orders/$ref/payment',
       data: body,
+    );
+    return Order.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<Order> updatePaymentMethod(String ref, String method) async {
+    final response = await _dio.patch(
+      '/api/orders/$ref/payment-method',
+      data: {'method': method},
     );
     return Order.fromJson(response.data as Map<String, dynamic>);
   }

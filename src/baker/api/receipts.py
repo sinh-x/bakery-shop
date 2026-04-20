@@ -63,6 +63,27 @@ def _emoji_font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(d / "NotoEmoji-Variable.ttf"), size)
 
 
+def _tien_rut_received(conn, order_id: int) -> float:
+    """Sum of tien_rut transactions for an order."""
+    row = conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions WHERE order_id = ? AND type = 'tien_rut'",
+        (order_id,),
+    ).fetchone()
+    return float(row[0]) if row else 0.0
+
+
+def _tien_rut_target(work_items: list) -> float:
+    """Sum of cash_amount across all tien_rut items in an order."""
+    total = 0.0
+    for item in work_items:
+        attrs = item.get("attributes") or {}
+        if attrs.get("rut_tien") == "true":
+            cash_amount = attrs.get("cash_amount")
+            if cash_amount:
+                total += float(cash_amount)
+    return total
+
+
 def _format_vnd(amount) -> str:
     """Format Vietnamese currency: 275000 → '275' (shortened, divide by 1000, no suffix)."""
     n = int(float(amount) / 1000)
@@ -395,6 +416,30 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
         draw.text((MARGIN + icon_w + 4, y), age_text, font=tf, fill=(180, 0, 0))
         y += max(_th(icon, ef), _th(age_text, tf)) + LINE_GAP
 
+    # Cash-in-cake badge (rut tien) — amount on work ticket (fee is in summary)
+    attrs = work_item.get("attributes") or {}
+    cash_amount = attrs.get("cash_amount")
+    if attrs.get("rut_tien") == "true" and cash_amount and int(float(cash_amount)) > 0:
+        ef = _emoji_font(_SZ_MEDIUM)
+        tf = _font(_SZ_MEDIUM, True)
+        icon = "\U0001F4B0"
+        icon_w = _tw(icon, ef)
+        amount_str = _format_vnd_full(float(cash_amount))
+        draw.text((MARGIN, y), icon, font=ef, fill=(0, 128, 0))
+        draw.text((MARGIN + icon_w + 4, y), f" Số tiền rút: {amount_str}", font=tf, fill=(0, 128, 0))
+        y += max(_th(icon, ef), _th(f" Số tiền rút: {amount_str}", tf)) + LINE_GAP
+        # Rut tien transaction summary (received vs target)
+        order_id = order.get("id")
+        rut_received = _tien_rut_received(conn, order_id) if order_id else 0.0
+        if rut_received >= float(cash_amount):
+            status_text = f"    Đã nhận: {_format_vnd_full(rut_received)}"
+            status_color = (0, 128, 0)
+        else:
+            status_text = f"    Đã nhận: {_format_vnd_full(rut_received)} / {amount_str}"
+            status_color = (200, 0, 0)
+        draw.text((MARGIN, y), status_text, font=tf, fill=status_color)
+        y += _th(status_text, tf) + LINE_GAP
+
     # Extra item badge
     if work_item.get("isExtra") or work_item.get("is_extra"):
         ef = _emoji_font(_SZ_MEDIUM)
@@ -450,10 +495,16 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
     if main_count == 1:
         total_price = float(order.get("totalPrice", 0) or order.get("total_price", 0))
         order_id = order.get("id")
-        total_paid = PaymentTransaction.total_for_order(conn, order_id) if order_id else 0.0
+        total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) if order_id else 0.0
         remaining = total_price - total_paid
 
         y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
+        # Rut tien transaction summary
+        rut_target = _tien_rut_target(work_items)
+        if rut_target > 0 and order_id:
+            rut_recv = _tien_rut_received(conn, order_id)
+            rut_color = (0, 100, 0) if rut_recv >= rut_target else (200, 0, 0)
+            y = _row(draw, y, "Tiền rút đã nhận:", f"{_format_vnd_full(rut_recv)} / {_format_vnd_full(rut_target)}", fb, color_v=rut_color)
         y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
         if remaining > 0:
             y = _row(draw, y, "Còn lại:", _format_vnd_full(remaining), fbb, color_v=(180, 0, 0))
@@ -592,9 +643,38 @@ def _render_bus_label(order, cfg) -> Image.Image:
     shop_h = sum(_th(t, f) + LINE_GAP for t, f in shop_lines)
     sep_h = 16  # double line separator height
 
-    # Draw shop info anchored to bottom
+    # Order ref and customer name (small, centered) — sit between notes and separator
+    order_ref = order.get("orderRef", "") or order.get("order_ref", "") or ""
+    customer_name = order.get("customerName", "") or order.get("customer_name", "") or ""
+    order_line = f"Mã đơn: {order_ref}" if order_ref else ""
+    customer_line = customer_name
+    order_customer_h = (
+        (_th(order_line, f_shop) + LINE_GAP) if order_line else 0
+    ) + (
+        (_th(customer_line, f_shop) + LINE_GAP) if customer_line else 0
+    )
+    new_sep_h = 8  # single thin separator between notes and order info
+
+    # sy is the TOP of shop info block; anchor to bottom
     sy = paper_w - margin - shop_h
-    # Thick-thin double line separator
+    # Reserve space above shop block for order/customer lines + thin separator
+    sy_top = sy - new_sep_h - order_customer_h
+
+    # Single thin separator line between notes and order/customer info
+    draw.line([(margin, sy_top), (label_len - margin, sy_top)],
+              fill=(0, 0, 0), width=1)
+
+    # Order ref line
+    if order_line:
+        draw.text(((label_len - _tw(order_line, f_shop)) // 2, sy_top + new_sep_h),
+                  order_line, font=f_shop, fill=(0, 0, 0))
+    # Customer name line
+    if customer_line:
+        y_after_order = sy_top + new_sep_h + _th(order_line, f_shop) + LINE_GAP if order_line else sy_top + new_sep_h
+        draw.text(((label_len - _tw(customer_line, f_shop)) // 2, y_after_order),
+                  customer_line, font=f_shop, fill=(0, 0, 0))
+
+    # Thick-thin double line separator above shop info
     draw.line([(margin, sy - sep_h), (label_len - margin, sy - sep_h)],
               fill=(0, 0, 0), width=3)
     draw.line([(margin, sy - sep_h + 6), (label_len - margin, sy - sep_h + 6)],
@@ -630,6 +710,277 @@ def _render_bus_label(order, cfg) -> Image.Image:
     rotated = img.transpose(Image.Transpose.ROTATE_90)
 
     return rotated
+
+
+def _render_items_table(draw, y, work_items, fb, fbb, fs, conn) -> int:
+    """Render items table for shop/delivery receipts. Returns y after table."""
+    # Table header
+    col_sl = MARGIN + 320
+    col_gia = MARGIN + 380
+    col_tt = RECEIPT_WIDTH - MARGIN
+
+    draw.text((MARGIN, y), "Sản phẩm", font=fbb, fill=(100, 100, 100))
+    draw.text((col_sl, y), "SL", font=fbb, fill=(100, 100, 100))
+    draw.text((col_gia, y), "Giá", font=fbb, fill=(100, 100, 100))
+    tt_label = "T.Tiền"
+    draw.text((col_tt - _tw(tt_label, fbb), y), tt_label, font=fbb, fill=(100, 100, 100))
+    y += _th("SL", fbb) + LINE_GAP + 4
+    y = _sep(draw, y)
+
+    for i, item in enumerate(work_items):
+        is_gift = item.get("isGift") or item.get("is_gift") or False
+        item_name = item.get("productName", "") or item.get("product_name", "")
+        if is_gift:
+            item_name = f"{item_name} (Tặng)"
+        qty = item.get("quantity", 1)
+        unit_price = float(item.get("unitPrice", 0) or item.get("unit_price", 0))
+        total = 0 if is_gift else qty * unit_price
+
+        # Item row with dotted leaders
+        name_max_w = col_sl - MARGIN - 10
+        name_lines = _wrap(item_name, fb, name_max_w) or [item_name]
+
+        draw.text((MARGIN, y), name_lines[0], font=fb, fill=(0, 0, 0))
+        name_end = MARGIN + _tw(name_lines[0], fb)
+        _dots(draw, y, name_end, col_sl - 4, fs)
+        qty_str = str(qty)
+        draw.text((col_sl, y), qty_str, font=fb, fill=(0, 0, 0))
+        sl_end = col_sl + _tw(qty_str, fb)
+        if unit_price > 0:
+            gia_str = _format_vnd(unit_price)
+            tt_str = _format_vnd(total)
+            tt_x = col_tt - _tw(tt_str, fbb)
+            _dots(draw, y, sl_end, col_gia - 4, fs)
+            draw.text((col_gia, y), gia_str, font=fb, fill=(0, 0, 0))
+            gia_end = col_gia + _tw(gia_str, fb)
+            _dots(draw, y, gia_end, tt_x - 4, fs)
+            draw.text((tt_x, y), tt_str, font=fbb, fill=(0, 0, 0))
+        else:
+            _dots(draw, y, sl_end, col_tt - 4, fs)
+        y += _th(name_lines[0], fb) + LINE_GAP
+
+        # Remaining name lines (overflow)
+        for nl in name_lines[1:]:
+            draw.text((MARGIN, y), nl, font=fb, fill=(0, 0, 0))
+            y += _th(nl, fb) + LINE_GAP
+
+        # Birthday badge
+        if item.get("isBirthday") or item.get("is_birthday"):
+            age = item.get("age")
+            age_suffix = f" SINH NHẬT{(' - ' + str(age) + ' tuổi') if age else ''}"
+            y = _icon_text(draw, y, "\U0001F382", age_suffix, fbb, (180, 0, 0), x=MARGIN + 10)
+
+        # Item notes (sub-row, indented)
+        notes = item.get("notes", "") or ""
+        if notes:
+            full = f"  Ghi chú: {notes}"
+            if "\n" not in notes and _mixed_tw(full, fb) <= CONTENT_WIDTH:
+                y = _left(draw, y, "  Ghi chú: ", fbb, (80, 80, 80))
+                y -= _th("Ghi chú:", fbb) + LINE_GAP
+                _draw_mixed(draw, MARGIN + _tw("  Ghi chú: ", fbb), y, notes, fb, (80, 80, 80))
+                y += _th("A", fb) + _NOTE_LINE_GAP
+            else:
+                y = _left(draw, y, "  Ghi chú:", fbb, (80, 80, 80))
+                for ln in _wrap(notes, fb, CONTENT_WIDTH - 20):
+                    y = _left_mixed(draw, y, f"    {ln}", fb, (80, 80, 80))
+
+        if i < len(work_items) - 1:
+            y = _sep(draw, y)
+
+    y += 4
+    return y
+
+
+def _render_financial_summary(draw, y, order, conn, fbb, fb) -> int:
+    """Render financial summary for shop/delivery receipts. Returns y after."""
+    work_items = order.get("workItems", [])
+    subtotal = sum(
+        item.get("quantity", 1) * float(item.get("unitPrice", 0) or item.get("unit_price", 0))
+        for item in work_items
+        if not (item.get("isGift") or item.get("is_gift"))
+    )
+    shipping_fee = float(order.get("shippingFee", 0) or order.get("shipping_fee", 0))
+    total_price = float(order.get("totalPrice", 0) or order.get("total_price", 0))
+
+    y = _row(draw, y, "Tạm tính:", _format_vnd_full(subtotal), fbb)
+    if shipping_fee > 0:
+        y = _row(draw, y, "Phí giao hàng:", _format_vnd_full(shipping_fee), fb)
+    # Cash-in-cake fee (non-bold, like shipping fee)
+    for item in work_items:
+        attrs = item.get("attributes") or {}
+        cash_fee = attrs.get("cash_fee")
+        if attrs.get("rut_tien") == "true" and cash_fee and int(float(cash_fee)) > 0:
+            fee_str = _format_vnd_full(float(cash_fee))
+            y = _row(draw, y, "Phí rút tiền:", fee_str, fb)
+    y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
+
+    order_id = order.get("id")
+    # Rut tien transaction summary
+    rut_target = _tien_rut_target(work_items)
+    if rut_target > 0 and order_id:
+        rut_recv = _tien_rut_received(conn, order_id)
+        rut_color = (0, 100, 0) if rut_recv >= rut_target else (200, 0, 0)
+        y = _row(draw, y, "Tiền rút đã nhận:", f"{_format_vnd_full(rut_recv)} / {_format_vnd_full(rut_target)}", fb, color_v=rut_color)
+    total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) if order_id else 0.0
+    remaining = total_price - total_paid
+
+    y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
+    if remaining > 0:
+        y = _row(draw, y, "Còn lại:", _format_vnd_full(remaining), fbb, color_v=(180, 0, 0))
+    else:
+        y = _row(draw, y, "Còn lại:", "0đ", fb, color_v=(0, 100, 0))
+    y += 4
+    return y
+
+
+def _render_shop_receipt(order, cfg, conn) -> Image.Image:
+    """Shop receipt (Phiếu giao hàng) — internal order summary for pickup verification."""
+    work_items = order.get("workItems", [])
+
+    img = Image.new("RGB", (RECEIPT_WIDTH, 4000), "white")
+    draw = ImageDraw.Draw(img)
+
+    fb = _font(_SZ_BODY)
+    fbb = _font(_SZ_BODY, True)
+    fs = _font(_SZ_SMALL)
+    fnormal = _font(_SZ_NORMAL, True)
+
+    y = MARGIN
+
+    # Title
+    y = _center(draw, y, "PHIẾU GIAO HÀNG", fnormal)
+
+    # Order ref + date
+    ref = order.get("orderRef", "") or order.get("order_ref", "")
+    created = order.get("createdAt", "") or order.get("created_at", "")
+    date_line = ref
+    if created:
+        date_line += f"  •  {created[:10]}"
+    y = _center(draw, y, date_line, fb)
+    y += 10
+
+    y = _double(draw, y)
+
+    # Customer section
+    name = order.get("customerName", "") or order.get("customer_name", "")
+    phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
+
+    if name:
+        y = _left(draw, y, name, fbb)
+    if phone:
+        y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
+
+    y = _sep(draw, y)
+
+    # Items table
+    y = _render_items_table(draw, y, work_items, fb, fbb, fs, conn)
+    y = _double(draw, y)
+
+    # Financial summary
+    y = _render_financial_summary(draw, y, order, conn, fbb, fb)
+    y = _double(draw, y)
+
+    # Due date/time
+    due = order.get("dueDate", "") or order.get("due_date", "")
+    due_time = order.get("dueTime", "") or order.get("due_time", "") or ""
+    if due:
+        due_str = f"Ngày nhận: {due}"
+        if due_time:
+            due_str += f" {due_time}"
+        y = _left(draw, y, due_str, fbb)
+
+    # Order notes
+    order_notes = order.get("notes", "") or ""
+    if order_notes:
+        if due or due_time:
+            y += 4
+        y = _left(draw, y, "Ghi chú:", fbb)
+        for ln in _wrap(order_notes, fb, CONTENT_WIDTH):
+            y = _left_mixed(draw, y, ln, fb, (80, 80, 80))
+
+    return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
+
+
+def _render_delivery_receipt(order, cfg, conn) -> Image.Image:
+    """Delivery receipt (Phiếu giao tận nơi) — internal delivery summary with prominent address."""
+    work_items = order.get("workItems", [])
+
+    img = Image.new("RGB", (RECEIPT_WIDTH, 4000), "white")
+    draw = ImageDraw.Draw(img)
+
+    fb = _font(_SZ_BODY)
+    fbb = _font(_SZ_BODY, True)
+    fs = _font(_SZ_SMALL)
+    fnormal = _font(_SZ_NORMAL, True)
+
+    y = MARGIN
+
+    # Title
+    y = _center(draw, y, "PHIẾU GIAO TẬN NƠI", fnormal)
+
+    # Order ref + date
+    ref = order.get("orderRef", "") or order.get("order_ref", "")
+    created = order.get("createdAt", "") or order.get("created_at", "")
+    date_line = ref
+    if created:
+        date_line += f"  •  {created[:10]}"
+    y = _center(draw, y, date_line, fb)
+    y += 10
+
+    y = _double(draw, y)
+
+    # Customer section
+    name = order.get("customerName", "") or order.get("customer_name", "")
+    phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
+
+    if name:
+        y = _left(draw, y, name, fbb)
+    if phone:
+        y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
+
+    y = _sep(draw, y)
+
+    # Delivery section
+    y = _left(draw, y, "Giao tận nơi", fbb)
+    daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
+    if daddr:
+        for ln in _wrap(daddr, fb, CONTENT_WIDTH):
+            y = _left(draw, y, f"  {ln}", fb)
+    # Delivery notes
+    delivery_notes = order.get("deliveryNotes", "") or order.get("delivery_notes", "") or ""
+    if delivery_notes:
+        for ln in _wrap(delivery_notes, fs, CONTENT_WIDTH - 20):
+            y = _left(draw, y, f"  {ln}", fs, (80, 80, 80))
+
+    y = _sep(draw, y)
+
+    # Items table
+    y = _render_items_table(draw, y, work_items, fb, fbb, fs, conn)
+    y = _double(draw, y)
+
+    # Financial summary
+    y = _render_financial_summary(draw, y, order, conn, fbb, fb)
+    y = _double(draw, y)
+
+    # Due date/time
+    due = order.get("dueDate", "") or order.get("due_date", "")
+    due_time = order.get("dueTime", "") or order.get("due_time", "") or ""
+    if due:
+        due_str = f"Ngày nhận: {due}"
+        if due_time:
+            due_str += f" {due_time}"
+        y = _left(draw, y, due_str, fbb)
+
+    # Order notes
+    order_notes = order.get("notes", "") or ""
+    if order_notes:
+        if due or due_time:
+            y += 4
+        y = _left(draw, y, "Ghi chú:", fbb)
+        for ln in _wrap(order_notes, fb, CONTENT_WIDTH):
+            y = _left_mixed(draw, y, ln, fb, (80, 80, 80))
+
+    return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
 
 
 def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
@@ -776,6 +1127,13 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
                 for ln in _wrap(notes, fb, CONTENT_WIDTH - 20):
                     y = _left_mixed(draw, y, f"    {ln}", fb, (80, 80, 80))
 
+        # Cash-in-cake amount (sub-row within item)
+        item_attrs = item.get("attributes") or {}
+        item_cash = item_attrs.get("cash_amount")
+        if item_attrs.get("rut_tien") == "true" and item_cash and int(float(item_cash)) > 0:
+            cash_str = _format_vnd_full(float(item_cash))
+            y = _icon_text(draw, y, "\U0001F4B0", f" Số tiền rút: {cash_str}", fbb, (0, 128, 0), x=MARGIN + 10)
+
         # Separator between items
         if i < len(work_items) - 1:
             y = _sep(draw, y)
@@ -795,13 +1153,24 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
 
     y = _row(draw, y, "Tạm tính:", _format_vnd_full(subtotal), fbb)
     if shipping_fee > 0:
-        y = _row(draw, y, "Phí giao hàng:", _format_vnd_full(shipping_fee), fbb)
-        y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
-    else:
-        y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
+        y = _row(draw, y, "Phí giao hàng:", _format_vnd_full(shipping_fee), fb)
+    # Cash-in-cake fee in summary (like shipping fee, black text, not bold)
+    for item in work_items:
+        attrs = item.get("attributes") or {}
+        cash_fee = attrs.get("cash_fee")
+        if attrs.get("rut_tien") == "true" and cash_fee and int(float(cash_fee)) > 0:
+            fee_str = _format_vnd_full(float(cash_fee))
+            y = _row(draw, y, "Phí rút tiền:", fee_str, fb)
+    y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
 
     order_id = order.get("id")
-    total_paid = PaymentTransaction.total_for_order(conn, order_id) if order_id else 0.0
+    # Rut tien transaction summary
+    rut_target = _tien_rut_target(work_items)
+    if rut_target > 0 and order_id:
+        rut_recv = _tien_rut_received(conn, order_id)
+        rut_color = (0, 100, 0) if rut_recv >= rut_target else (200, 0, 0)
+        y = _row(draw, y, "Tiền rút đã nhận:", f"{_format_vnd_full(rut_recv)} / {_format_vnd_full(rut_target)}", fb, color_v=rut_color)
+    total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) if order_id else 0.0
     remaining = total_price - total_paid
 
     y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
@@ -902,6 +1271,8 @@ def get_receipt(
     - type=work_ticket: internal receipt (Phiếu Nội Bộ), single item, requires item_id
     - type=customer: clean customer-facing receipt (BIÊN NHẬN)
     - type=bus_label: bus shipping label — phone, address, notes, rotated landscape
+    - type=shop: shop receipt (Phiếu giao hàng) for pickup orders
+    - type=delivery: delivery receipt (Phiếu giao tận nơi) for door-to-door orders
     """
     if type == "order":
         raise HTTPException(status_code=400, detail="type=order is no longer supported")
@@ -944,8 +1315,12 @@ def get_receipt(
             img = _render_customer_receipt(detail, cfg, conn, show_photos=photos)
         elif type == "bus_label":
             img = _render_bus_label(detail, cfg)
+        elif type == "shop":
+            img = _render_shop_receipt(detail, cfg, conn)
+        elif type == "delivery":
+            img = _render_delivery_receipt(detail, cfg, conn)
         else:
-            raise HTTPException(status_code=400, detail="Invalid type: work_ticket, customer, or bus_label")
+            raise HTTPException(status_code=400, detail="Invalid type: work_ticket, customer, bus_label, shop, or delivery")
 
         buf = io.BytesIO()
         img.save(buf, format="PNG", quality=95)

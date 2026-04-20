@@ -48,6 +48,10 @@ services:
         max-size: "10m"
         max-file: "3"
   baker-dev:
+    build:
+      context: .
+      args:
+        UID: ${BAKER_UID:-1000}
     image: baker-server
     profiles: [dev]
     ports:

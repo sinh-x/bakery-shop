@@ -10,11 +10,66 @@ import '../../providers/products_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/product_card.dart';
 
-class ProductCatalogScreen extends ConsumerWidget {
+class ProductCatalogScreen extends ConsumerStatefulWidget {
   const ProductCatalogScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProductCatalogScreen> createState() =>
+      _ProductCatalogScreenState();
+}
+
+class _ProductCatalogScreenState
+    extends ConsumerState<ProductCatalogScreen>
+    with WidgetsBindingObserver {
+  bool _wasNavigatedAway = false;
+  GoRouter? _goRouter;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.of(context);
+    if (_goRouter != router) {
+      _goRouter?.routerDelegate.removeListener(_onRouteChange);
+      _goRouter = router;
+      _goRouter?.routerDelegate.addListener(_onRouteChange);
+    }
+  }
+
+  @override
+  void dispose() {
+    _goRouter?.routerDelegate.removeListener(_onRouteChange);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.invalidate(productsProvider);
+      ref.invalidate(categoriesProvider);
+    }
+  }
+
+  void _onRouteChange() {
+    if (!mounted) return;
+    final path = GoRouterState.of(context).uri.path;
+    if (path == '/products' && _wasNavigatedAway) {
+      _wasNavigatedAway = false;
+      ref.invalidate(productsProvider);
+      ref.invalidate(categoriesProvider);
+    } else if (path != '/products') {
+      _wasNavigatedAway = true;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(categoriesProvider);
 
     return categoriesAsync.when(
@@ -59,6 +114,14 @@ class ProductCatalogScreen extends ConsumerWidget {
             title: const Text(VN.tabProducts),
             actions: [
               IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: VN.lamMoi,
+                onPressed: () {
+                  ref.invalidate(productsProvider);
+                  ref.invalidate(categoriesProvider);
+                },
+              ),
+              IconButton(
                 icon: const Icon(Icons.tune),
                 tooltip: VN.manageCategories,
                 onPressed: () => context.push('/categories/manage'),
@@ -94,8 +157,10 @@ class ProductCatalogScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 8),
                   FilledButton.icon(
-                    onPressed: () =>
-                        ref.read(productsProvider.notifier).refresh(),
+                    onPressed: () {
+                      ref.invalidate(productsProvider);
+                      ref.invalidate(categoriesProvider);
+                    },
                     icon: const Icon(Icons.refresh),
                     label: const Text(VN.retry),
                   ),
@@ -157,7 +222,10 @@ class _ProductTabs extends StatelessWidget {
         }
         return Consumer(
           builder: (context, ref, _) => RefreshIndicator(
-            onRefresh: () => ref.read(productsProvider.notifier).refresh(),
+            onRefresh: () async {
+              ref.invalidate(productsProvider);
+              ref.invalidate(categoriesProvider);
+            },
             child: GridView.builder(
               padding: const EdgeInsets.all(12),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
