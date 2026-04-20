@@ -6,6 +6,7 @@ import '../../../data/api/api_client.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
 import '../../../shared/theme/bakery_theme.dart';
+import '../../../shared/utils/order_helpers.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 
 /// Unified OrderCard widget for use across order list, kanban, and dashboard.
@@ -50,68 +51,7 @@ class OrderCard extends ConsumerWidget {
     }
   }
 
-  // ── Urgency helpers ───────────────────────────────────────────────────
-
-  /// Returns the urgency border color: red for overdue, amber for same-day, null otherwise.
-  Color? _urgencyBorderColor() {
-    if (order.dueDate == null || order.dueDate!.isEmpty) return null;
-    try {
-      final due = DateTime.parse(order.dueDate!);
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final dueDateOnly = DateTime(due.year, due.month, due.day);
-      if (dueDateOnly.isBefore(today)) {
-        return Colors.red;
-      } else if (dueDateOnly.isAtSameMomentAs(today)) {
-        return Colors.amber;
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  /// Returns true if the order is due within the next 2 hours.
-  bool _isDueWithin2Hours() {
-    if (order.dueDate == null || order.dueDate!.isEmpty) return false;
-    try {
-      final now = DateTime.now();
-      DateTime due;
-      if (order.dueTime != null && order.dueTime!.isNotEmpty) {
-        due = DateTime.parse('${order.dueDate!} ${order.dueTime!}');
-      } else {
-        due = DateTime.parse(order.dueDate!);
-      }
-      return due.isAfter(now) && due.difference(now).inMinutes <= 120;
-    } catch (_) {}
-    return false;
-  }
-
-  // ── Delivery icon helpers ─────────────────────────────────────────────
-
-  IconData _deliveryIcon() {
-    switch (order.deliveryType) {
-      case 'bus':
-        return Icons.directions_bus;
-      case 'door':
-        return Icons.local_shipping;
-      case 'pickup':
-      default:
-        return Icons.storefront;
-    }
-  }
-
-  Color _deliveryIconColor(Color defaultColor) {
-    switch (order.deliveryType) {
-      case 'bus':
-        return Colors.orange;
-      case 'door':
-        return Colors.deepOrange;
-      default:
-        return defaultColor;
-    }
-  }
-
-  bool get _isDelivery =>
-      order.deliveryType == 'bus' || order.deliveryType == 'door';
+  // ── Urgency/delivery helpers delegated to shared order_helpers.dart ──
 
   // ── Product names ───────────────────────────────────────────────────────
 
@@ -171,8 +111,8 @@ class OrderCard extends ConsumerWidget {
         ? '$baseUrl/api/photos/${cakePhoto.photoHash}.jpg'
         : null;
 
-    final urgencyColor = _urgencyBorderColor();
-    final dueSoon = _isDueWithin2Hours();
+    final urgencyColor = urgencyBorderColor(order.dueDate);
+    final dueSoon = isDueWithin2Hours(order.dueDate, order.dueTime);
 
     // Build left border decoration
     final borderSides = <BorderSide>[];
@@ -203,9 +143,9 @@ class OrderCard extends ConsumerWidget {
               Row(
                 children: [
                   Icon(
-                    _deliveryIcon(),
-                    size: _isDelivery ? 20 : 18,
-                    color: _deliveryIconColor(theme.colorScheme.primary),
+                    deliveryIcon(order.deliveryType),
+                    size: isDeliveryType(order.deliveryType) ? 20 : 18,
+                    color: deliveryIconColor(order.deliveryType, theme.colorScheme.primary),
                   ),
                   const SizedBox(width: 6),
                   Expanded(
@@ -409,7 +349,7 @@ class OrderCard extends ConsumerWidget {
                       dueSoon ? Icons.warning_amber_rounded : Icons.schedule,
                       size: 14,
                       color: dueSoon
-                          ? Colors.red
+                          ? Colors.orange
                           : (urgencyColor ?? theme.colorScheme.outline),
                     ),
                     const SizedBox(width: 4),
@@ -418,15 +358,15 @@ class OrderCard extends ConsumerWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: Colors.red.withAlpha(25),
+                          color: Colors.orange.withAlpha(25),
                           borderRadius: BorderRadius.circular(4),
                           border:
-                              Border.all(color: Colors.red.withAlpha(80)),
+                              Border.all(color: Colors.orange.withAlpha(80)),
                         ),
                         child: Text(
                           _formatDue(order.dueDate, order.dueTime),
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: Colors.red,
+                            color: Colors.orange,
                             fontWeight: FontWeight.bold,
                           ),
                         ),

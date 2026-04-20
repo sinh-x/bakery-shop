@@ -68,6 +68,14 @@ class BakeryTheme {
     'awaiting_payment': Color(0xFFE91E63), // Pink
   };
 
+  // Work item status colors (cake queue items: pending/working/ready/delivered)
+  static const workItemStatusColors = {
+    'pending': Colors.grey,
+    'working': Colors.orange,
+    'ready': Colors.green,
+    'delivered': Colors.teal,
+  };
+
   // Status icons
   static const statusIcons = {
     'new': Icons.fiber_new,

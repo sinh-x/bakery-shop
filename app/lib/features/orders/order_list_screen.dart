@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../data/api/api_client.dart';
 import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
@@ -643,10 +641,11 @@ class _KanbanColumn extends ConsumerWidget {
                               ),
                               childWhenDragging: Opacity(
                                 opacity: 0.4,
-                                child: _KanbanCard(order: order, onTap: null),
+                                child: OrderCard(order: order, compact: true),
                               ),
-                              child: _KanbanCard(
+                              child: OrderCard(
                                 order: order,
+                                compact: true,
                                 onTap: () =>
                                     context.push('/orders/${order.orderRef}'),
                               ),
@@ -658,214 +657,6 @@ class _KanbanColumn extends ConsumerWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _KanbanCard extends ConsumerWidget {
-  const _KanbanCard({required this.order, this.onTap});
-
-  final Order order;
-  final VoidCallback? onTap;
-
-  Color? _urgencyBorderColor() {
-    if (order.dueDate == null || order.dueDate!.isEmpty) return null;
-    try {
-      final due = DateTime.parse(order.dueDate!);
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final dueDateOnly = DateTime(due.year, due.month, due.day);
-      if (dueDateOnly.isBefore(today)) {
-        return Colors.red;
-      } else if (dueDateOnly.isAtSameMomentAs(today)) {
-        return Colors.amber;
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  IconData _deliveryIcon() {
-    switch (order.deliveryType) {
-      case 'bus':
-        return Icons.directions_bus;
-      case 'door':
-        return Icons.local_shipping;
-      case 'pickup':
-      default:
-        return Icons.storefront;
-    }
-  }
-
-  Color _deliveryIconColor(Color defaultColor) {
-    switch (order.deliveryType) {
-      case 'bus':
-        return Colors.orange;
-      case 'door':
-        return Colors.deepOrange;
-      default:
-        return defaultColor;
-    }
-  }
-
-  String _productSummary() {
-    if (order.items.isEmpty) return '';
-    final first = order.items.first;
-    final name = first.productName;
-    if (order.items.length == 1) return name;
-    return '$name +${order.items.length - 1}';
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final photosAsync = ref.watch(orderPhotosProvider(order.orderRef));
-    final baseUrl = ref.watch(apiBaseUrlProvider);
-    final urgencyColor = _urgencyBorderColor();
-
-    // Find first cake photo
-    final cakePhoto = photosAsync.maybeWhen(
-      data: (photos) {
-        try {
-          return photos.firstWhere((p) => p.workItemId != null);
-        } catch (_) {
-          return null;
-        }
-      },
-      orElse: () => null,
-    );
-    final cakePhotoUrl = cakePhoto != null
-        ? '$baseUrl/api/photos/${cakePhoto.photoHash}.jpg'
-        : null;
-
-    // Build left border
-    final borderColor = urgencyColor ?? Colors.transparent;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 6),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border(
-              left: BorderSide(color: borderColor, width: 4),
-            ),
-          ),
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Top row: customer name + delivery icon + photo thumbnail
-              Row(
-                children: [
-                  Icon(
-                    _deliveryIcon(),
-                    size: 16,
-                    color: _deliveryIconColor(theme.colorScheme.primary),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      order.customerName,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (cakePhotoUrl != null)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: CachedNetworkImage(
-                        imageUrl: cakePhotoUrl,
-                        width: 36,
-                        height: 36,
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) => Container(
-                          width: 36,
-                          height: 36,
-                          color: theme.colorScheme.surfaceContainerHighest,
-                          child: const Center(
-                            child:
-                                SizedBox(width: 12, height: 12, child:
-                                CircularProgressIndicator(strokeWidth: 1.5)),
-                          ),
-                        ),
-                        errorWidget: (context, url, error) => Container(
-                          width: 36,
-                          height: 36,
-                          color: theme.colorScheme.surfaceContainerHighest,
-                          child: Icon(
-                            Icons.broken_image_outlined,
-                            size: 16,
-                            color: theme.colorScheme.outline,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-
-              const SizedBox(height: 6),
-
-              // Product summary
-              if (order.items.isNotEmpty)
-                Text(
-                  _productSummary(),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-
-              const SizedBox(height: 4),
-
-              // Due date/time + price
-              if (order.dueDate != null)
-                Row(
-                  children: [
-                    Icon(
-                      Icons.schedule,
-                      size: 12,
-                      color: urgencyColor ?? theme.colorScheme.outline,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        order.dueTime != null
-                            ? '${order.dueDate} ${order.dueTime}'
-                            : order.dueDate!,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color:
-                              urgencyColor ?? theme.colorScheme.outline,
-                          fontWeight:
-                              urgencyColor != null ? FontWeight.w600 : null,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Text(
-                      formatVND(order.totalPrice),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                )
-              else
-                Text(
-                  formatVND(order.totalPrice),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-            ],
-          ),
-        ),
       ),
     );
   }

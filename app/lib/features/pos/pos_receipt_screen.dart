@@ -1,18 +1,12 @@
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/receipt_service.dart';
-import '../../shared/widgets/printer_picker_dialog.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 
-import '../orders/receipt_preview_print_stub.dart'
-    if (dart.library.io) '../orders/receipt_preview_print_native.dart'
-    if (dart.library.js_interop) '../orders/receipt_preview_print_web.dart'
-    as platform;
 
 /// POS receipt screen shown after order creation.
 /// Displays receipt image with print and skip actions only.
