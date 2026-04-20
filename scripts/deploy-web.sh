@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build Flutter web app and copy to web-build/ for Caddy to serve.
-# Usage: ./tool/deploy-web.sh [--restart-caddy]
+# Usage: ./scripts/deploy-web.sh [--restart-caddy]
 #   --restart-caddy  Restart the Caddy Docker container after copying build output
 set -euo pipefail
 

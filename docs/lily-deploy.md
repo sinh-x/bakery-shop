@@ -363,7 +363,7 @@ docker compose --profile prod restart
 ```bash
 # From drgnfly — deploys web + backend to lily in one command
 cd /home/sinh/Documents/bakery-shop
-./tool/deploy-lily.sh
+./scripts/deploy-lily.sh
 
 # Options:
 #   --dry-run       Preview steps without executing
@@ -373,8 +373,8 @@ cd /home/sinh/Documents/bakery-shop
 #   --rollback      Revert to previous version
 ```
 
-The script handles: Flutter web build, rsync to lily, git pull, database backup,
-Docker rebuild, health check, and version verification.
+The script handles: Flutter web build, rsync to lily (source + Docker files),
+database backup, Docker rebuild, health check, and version verification.
 
 **Manual: Update directly on lily**
 
@@ -546,9 +546,9 @@ Consider setting a calendar reminder every 2 months.
 
 | Command | Purpose |
 |---------|---------|
-| `./tool/deploy-lily.sh` | Deploy web + backend from drgnfly to lily |
-| `./tool/deploy-lily.sh --dry-run` | Preview deploy steps |
-| `./tool/deploy-lily.sh --rollback` | Revert to previous version |
+| `./scripts/deploy-lily.sh` | Deploy web + backend from drgnfly to lily |
+| `./scripts/deploy-lily.sh --dry-run` | Preview deploy steps |
+| `./scripts/deploy-lily.sh --rollback` | Revert to previous version |
 | `docker compose --profile prod up -d` | Start all prod services |
 | `docker compose --profile prod restart` | Restart all prod services |
 | `docker compose --profile prod logs -f` | Follow logs |

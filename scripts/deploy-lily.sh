@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Deploy bakery-shop to lily via SSH.
-# Usage: ./tool/deploy-lily.sh [--dry-run] [--rollback] [--force] [--web-only] [--backend-only]
+# Deploy bakery-shop to lily via SSH (rsync-only, no git on lily).
+# Usage: ./scripts/deploy-lily.sh [--dry-run] [--rollback] [--force] [--web-only] [--backend-only]
 #
 # Options:
 #   --dry-run      Print planned steps without executing
@@ -73,6 +73,15 @@ if [ "$DRY_RUN" -eq 1 ]; then
   echo "=== DRY RUN — no changes will be made ==="
 fi
 
+# Remote command template
+remote_cmd() {
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "[dry-run] ssh $REMOTE_HOST '$1'"
+  else
+    remote_exec "$REMOTE_HOST" "$1"
+  fi
+}
+
 # --- Phase 1: Flutter web build (unless --backend-only) ---
 if [ "$BACKEND_ONLY" -eq 0 ]; then
   echo "=== Building Flutter web ==="
@@ -84,21 +93,10 @@ if [ "$BACKEND_ONLY" -eq 0 ]; then
   echo ""
 fi
 
-# --- Phase 2: Remote operations ---
-echo "=== Remote operations on $REMOTE_HOST ==="
-
-# Remote command template
-remote_cmd() {
-  if [ "$DRY_RUN" -eq 1 ]; then
-    echo "[dry-run] ssh $REMOTE_HOST '$1'"
-  else
-    remote_exec "$REMOTE_HOST" "$1"
-  fi
-}
-
+# --- Rollback flow ---
 if [ "$ROLLBACK" -eq 1 ]; then
+  echo "=== Remote operations on $REMOTE_HOST ==="
   echo "--- Rolling back ---"
-  remote_cmd "cd $REMOTE_PATH && git stash 2>/dev/null || true"
   remote_cmd "cd $REMOTE_PATH && docker compose --profile prod stop"
   echo "  Restoring previous web-build..."
   remote_cmd "cd $REMOTE_PATH && if [ -d web-build.prev ]; then mv web-build web-build.new && mv web-build.prev web-build && rm -rf web-build.new; fi"
@@ -116,17 +114,47 @@ if [ "$ROLLBACK" -eq 1 ]; then
   exit 0
 fi
 
-# --- Normal deploy flow ---
+# --- Normal deploy flow (rsync-only, no git on lily) ---
+echo "=== Remote operations on $REMOTE_HOST ==="
 
-# 1. Git pull on lily
-echo "--- Git pull on lily ---"
-remote_cmd "cd $REMOTE_PATH && git fetch origin main && git reset --hard origin/main"
-echo ""
-
-# 2. Snapshot previous web-build/ BEFORE rsync (for rollback)
+# 1. Snapshot previous web-build/ BEFORE rsync (for rollback)
 if [ "$BACKEND_ONLY" -eq 0 ]; then
   echo "--- Snapshot web-build/ ---"
   remote_cmd "cd $REMOTE_PATH && rm -rf web-build.prev && cp -r web-build web-build.prev 2>/dev/null || true"
+  echo ""
+fi
+
+# 2. Rsync Docker build files + source to lily
+if [ "$WEB_ONLY" -eq 0 ]; then
+  echo "--- Rsync Docker build files to lily ---"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    ssh "$REMOTE_HOST" "mkdir -p $REMOTE_PATH"
+
+    # Rsync top-level Docker build files
+    echo "  Syncing Docker build files..."
+    rsync -av \
+      "$REPO_ROOT/docker-compose.yml" \
+      "$REPO_ROOT/Dockerfile" \
+      "$REPO_ROOT/docker-entrypoint.sh" \
+      "$REPO_ROOT/Caddyfile" \
+      "$REPO_ROOT/pyproject.toml" \
+      "$REMOTE_HOST:$REMOTE_PATH/"
+
+    # Rsync source code (needed for Docker image build)
+    echo "  Syncing src/..."
+    rsync -av --delete "$REPO_ROOT/src/" "$REMOTE_HOST:$REMOTE_PATH/src/"
+
+    # Rsync config templates
+    echo "  Syncing config/..."
+    rsync -av "$REPO_ROOT/config/" "$REMOTE_HOST:$REMOTE_PATH/config/"
+
+    # Rsync scripts (backup, etc.)
+    echo "  Syncing scripts/..."
+    rsync -av "$REPO_ROOT/scripts/" "$REMOTE_HOST:$REMOTE_PATH/scripts/"
+  else
+    echo "  Would rsync: docker-compose.yml, Dockerfile, docker-entrypoint.sh,"
+    echo "    Caddyfile, pyproject.toml, src/, config/, scripts/"
+  fi
   echo ""
 fi
 
@@ -152,17 +180,20 @@ else
 fi
 echo ""
 
-# 5. Docker rebuild on lily (unless --web-only)
+# 5. Detect remote UID + Docker rebuild on lily (unless --web-only)
 if [ "$WEB_ONLY" -eq 0 ]; then
   echo "--- Docker rebuild ---"
-  remote_cmd "cd $REMOTE_PATH && docker compose --profile prod build baker-prod"
+  REMOTE_UID=$(ssh "$REMOTE_HOST" "id -u" 2>/dev/null)
+  echo "  Remote sinh UID: $REMOTE_UID"
+  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID docker compose --profile prod build baker-prod"
   echo ""
 fi
 
 # 6. Docker restart
 echo "--- Restarting containers ---"
 if [ "$WEB_ONLY" -eq 0 ]; then
-  remote_cmd "cd $REMOTE_PATH && docker compose --profile prod up -d"
+  REMOTE_UID="${REMOTE_UID:-$(ssh "$REMOTE_HOST" "id -u" 2>/dev/null)}"
+  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID docker compose --profile prod up -d"
 else
   remote_cmd "cd $REMOTE_PATH && docker compose --profile prod restart caddy"
 fi
@@ -206,6 +237,6 @@ echo ""
 
 echo "=== Deploy complete ==="
 if [ "$DRY_RUN" -eq 0 ]; then
-  echo "  Web app: http://${REMOTE_HOST}"
+  echo "  Web app: https://${REMOTE_HOST}"
   echo "  API: http://${REMOTE_HOST}:2108/api/health"
 fi

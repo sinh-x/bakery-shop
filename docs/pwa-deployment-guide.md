@@ -14,7 +14,7 @@
 
 ```bash
 cd ~/Documents/bakery-shop
-./tool/deploy-web.sh
+./scripts/deploy-web.sh
 ```
 
 Builds the Flutter web app in the nix flutter devshell and copies output to `web-build/`.
@@ -38,7 +38,7 @@ On the bakery server:
 tailscale status | head -5
 
 # Generate certs
-./tool/renew-certs.sh your-hostname.tail12345.ts.net
+./scripts/renew-certs.sh your-hostname.tail12345.ts.net
 ```
 
 This writes cert files to `certs/` and restarts Caddy.
@@ -86,7 +86,7 @@ docker compose --profile prod logs baker-prod
 docker run --rm -v $(pwd)/Caddyfile:/etc/caddy/Caddyfile:ro caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
 
 # Rebuild web app after code changes
-./tool/deploy-web.sh --restart-caddy
+./scripts/deploy-web.sh --restart-caddy
 ```
 
 ## Certificate Renewal
@@ -94,7 +94,7 @@ docker run --rm -v $(pwd)/Caddyfile:/etc/caddy/Caddyfile:ro caddy:2-alpine caddy
 Tailscale certs auto-renew but Caddy needs to pick up new files:
 
 ```bash
-./tool/renew-certs.sh your-hostname.tail12345.ts.net
+./scripts/renew-certs.sh your-hostname.tail12345.ts.net
 ```
 
 Run periodically (e.g., monthly) or set up a cron/systemd timer.
