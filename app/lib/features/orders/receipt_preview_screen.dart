@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
@@ -8,7 +7,6 @@ import 'package:share_plus/share_plus.dart';
 import '../../data/api/receipt_service.dart';
 import '../../data/api/order_service.dart';
 import '../../providers/order_providers.dart';
-import '../../shared/widgets/printer_picker_dialog.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 
 import 'receipt_preview_print_stub.dart'

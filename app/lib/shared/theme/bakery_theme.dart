@@ -55,15 +55,25 @@ class BakeryTheme {
     );
   }
 
-  // Status badge colors
+  // Status badge colors (single source of truth — all screens reference this)
   static const statusColors = {
-    'new': Color(0xFF2196F3),
-    'confirmed': Color(0xFF3F51B5),
-    'in_progress': Color(0xFFFF9800),
-    'ready': Color(0xFF4CAF50),
-    'delivered': Color(0xFF009688),
-    'completed': Color(0xFF9E9E9E),
-    'cancelled': Color(0xFFF44336),
+    'new': Color(0xFF2196F3),          // Blue
+    'confirmed': Color(0xFFFF9800),    // Orange (aligns with order list view)
+    'in_progress': Color(0xFF9C27B0),  // Purple
+    'ready': Color(0xFF4CAF50),        // Green
+    'delivered': Color(0xFF009688),    // Teal
+    'completed': Color(0xFF9E9E9E),    // Grey
+    'cancelled': Color(0xFFF44336),    // Red
+    'to_deliver': Color(0xFFFF5722),   // Deep Orange
+    'awaiting_payment': Color(0xFFE91E63), // Pink
+  };
+
+  // Work item status colors (cake queue items: pending/working/ready/delivered)
+  static const workItemStatusColors = {
+    'pending': Colors.grey,
+    'working': Colors.orange,
+    'ready': Colors.green,
+    'delivered': Colors.teal,
   };
 
   // Status icons
