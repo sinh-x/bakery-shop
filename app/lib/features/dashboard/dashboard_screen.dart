@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/orders/widgets/order_card.dart';
 import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/theme/bakery_theme.dart';
@@ -186,7 +187,7 @@ class _DashboardContent extends StatelessWidget {
               color: Colors.red,
             ),
             const SizedBox(height: 8),
-            ...overdueOrders.map((o) => _OrderCard(order: o, isOverdue: true)),
+            ...overdueOrders.map((o) => OrderCard(order: o, compact: true, onTap: () => context.push('/orders/${o.orderRef}'))),
             const SizedBox(height: 16),
           ],
 
@@ -198,7 +199,7 @@ class _DashboardContent extends StatelessWidget {
               if (todayByStatus.containsKey(s)) ...[
                 _StatusGroupHeader(
                     status: s, count: todayByStatus[s]!.length),
-                ...todayByStatus[s]!.map((o) => _OrderCard(order: o)),
+                ...todayByStatus[s]!.map((o) => OrderCard(order: o, compact: true, onTap: () => context.push('/orders/${o.orderRef}'))),
               ],
             const SizedBox(height: 16),
           ],
@@ -207,7 +208,7 @@ class _DashboardContent extends StatelessWidget {
           if (upcomingOrders.isNotEmpty) ...[
             _SectionHeader(title: VN.upcomingDue),
             const SizedBox(height: 8),
-            ...upcomingOrders.map((o) => _OrderCard(order: o)),
+            ...upcomingOrders.map((o) => OrderCard(order: o, compact: true, onTap: () => context.push('/orders/${o.orderRef}'))),
           ],
 
           if (!hasOrders)
@@ -394,138 +395,6 @@ class _StatusGroupHeader extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _OrderCard extends StatelessWidget {
-  const _OrderCard({required this.order, this.isOverdue = false});
-
-  final Order order;
-  final bool isOverdue;
-
-  String _formatDue(String? dueDate, String? dueTime) {
-    if (dueDate == null) return '';
-    // YYYY-MM-DD → DD/MM
-    final parts = dueDate.split('-');
-    final formatted =
-        parts.length == 3 ? '${parts[2]}/${parts[1]}' : dueDate;
-    return dueTime != null ? '$formatted $dueTime' : formatted;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final statusColor =
-        isOverdue ? Colors.red : (BakeryTheme.statusColors[order.status] ?? Colors.grey);
-    final statusLabel = statusMap[order.status] ?? order.status;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      color: isOverdue ? Colors.red.withAlpha(15) : null,
-      shape: isOverdue
-          ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: const BorderSide(color: Colors.red, width: 1),
-            )
-          : null,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => context.push('/orders/${order.orderRef}'),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Status color bar
-              Container(
-                width: 4,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: statusColor,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(width: 10),
-              // Order info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          order.orderRef,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: statusColor.withAlpha(30),
-                            borderRadius: BorderRadius.circular(10),
-                            border:
-                                Border.all(color: statusColor.withAlpha(120)),
-                          ),
-                          child: Text(
-                            statusLabel,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: statusColor,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    Text(
-                      order.customerName,
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        if (order.dueDate != null) ...[
-                          Icon(
-                            isOverdue
-                                ? Icons.warning_amber_rounded
-                                : Icons.schedule,
-                            size: 13,
-                            color: isOverdue
-                                ? Colors.red
-                                : theme.colorScheme.outline,
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            _formatDue(order.dueDate, order.dueTime),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: isOverdue
-                                  ? Colors.red
-                                  : theme.colorScheme.outline,
-                              fontWeight:
-                                  isOverdue ? FontWeight.w600 : null,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        Text(
-                          formatVND(order.totalPrice),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
