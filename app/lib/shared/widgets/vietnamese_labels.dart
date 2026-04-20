@@ -353,6 +353,11 @@ class VN {
   static const printSkip = 'Bỏ qua';
   static const printStatusUnprinted = 'Chưa in phiếu';
   static const printStatusPrinted = 'Đã in phiếu';
+  // Short labels for card/status indicators
+  static const printStatusPrintedShort = 'Đã in';
+  static const printStatusUnprintedShort = 'Chưa in';
+  static const markAsPrinted = 'Đánh dấu đã in';
+  static const unmarkPrinted = 'Hủy in';
   static const fetchingInternalReceipt = 'Đang tải phiếu nội bộ...';
   static const fetchingCustomerReceipt = 'Đang tải hóa đơn khách hàng...';
   static const printingInternalReceipt = 'Đang in phiếu nội bộ...';

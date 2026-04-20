@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.5.2+49] — 2026-04-20
+- chore(release): bump version to 0.5.2+48
+
 ## [0.4.0+42] — 2026-04-19
 - feat(deploy): add recover-lily.sh for backup restore and redeploy
 
