@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.3+51] — 2026-04-21
+- fix(DG-089): order list shows wrong payment status for fully-paid orders
+
+## [0.5.2+50] — 2026-04-20
+- feat(DG-088): add mark-as-printed and unmark-printed to order detail screen
+
 ## [0.5.2+49] — 2026-04-20
 - chore(release): bump version to 0.5.2+48
 
