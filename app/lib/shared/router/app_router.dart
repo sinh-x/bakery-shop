@@ -342,43 +342,47 @@ class _ShellScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final location = GoRouterState.of(context).uri.path;
+    final isPos = location.startsWith('/pos');
+
     return Scaffold(
       body: child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex(context),
         onDestinationSelected: (index) =>
             _onDestinationSelected(context, index),
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
             selectedIcon: Icon(Icons.dashboard),
             label: VN.tabDashboard,
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long),
             label: VN.tabOrders,
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.cake_outlined),
             selectedIcon: Icon(Icons.cake),
             label: VN.tabProducts,
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.event_note_outlined),
             selectedIcon: Icon(Icons.event_note),
             label: VN.tabEvents,
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.checklist_outlined),
             selectedIcon: Icon(Icons.checklist),
             label: VN.tabChecklist,
           ),
-          NavigationDestination(
-            icon: Icon(Icons.storefront_outlined),
-            selectedIcon: Icon(Icons.storefront),
-            label: VN.banHang,
-          ),
+          if (isPos)
+            const NavigationDestination(
+              icon: Icon(Icons.storefront_outlined),
+              selectedIcon: Icon(Icons.storefront),
+              label: VN.banHang,
+            ),
         ],
       ),
     );
