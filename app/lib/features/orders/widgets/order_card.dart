@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/api_client.dart';
+import '../../../data/api/order_service.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
 import '../../../shared/theme/bakery_theme.dart';
@@ -14,7 +15,6 @@ import '../../../shared/widgets/vietnamese_labels.dart';
 /// Displays all FR-5 card content items:
 /// - Main product names with prices (non-extra items only)
 /// - Delivery type icon
-/// - orderRef prominently
 /// - customer name + source badge
 /// - due date/time with urgency coloring
 /// - total price
@@ -26,6 +26,7 @@ import '../../../shared/widgets/vietnamese_labels.dart';
 /// Also includes:
 /// - Payment badge (FR-2): Đã TT / Cọc / Chưa TT
 /// - Urgency indicators (FR-3): overdue red, due-soon amber, today subtle
+/// - Mark-as-printed action via long-press (unprinted orders only)
 class OrderCard extends ConsumerWidget {
   const OrderCard({
     super.key,
@@ -57,13 +58,26 @@ class OrderCard extends ConsumerWidget {
 
   /// Returns formatted product names string: "Name 150.000đ, Name2 80.000đ"
   /// Only includes items where isExtra == false.
+  /// Truncated to max 40 chars per name segment with ellipsis.
   String _productNamesLine() {
     final nonExtra = order.items.where((i) => !i.isExtra).toList();
     if (nonExtra.isEmpty) return '';
 
     final parts = <String>[];
     for (final item in nonExtra) {
-      parts.add('${item.productName} ${formatVND(item.unitPrice)}');
+      final name = item.productName;
+      final price = formatVND(item.unitPrice);
+      // Truncate single product name segment to 40 chars
+      final maxLen = 40;
+      final full = '$name $price';
+      if (full.length <= maxLen) {
+        parts.add(full);
+      } else {
+        final truncated = name.length > maxLen - price.length - 4
+            ? '${name.substring(0, maxLen - price.length - 4)}... $price'
+            : '${name.substring(0, maxLen - price.length - 7)}... $price';
+        parts.add(truncated);
+      }
     }
     return parts.join(', ');
   }
@@ -79,6 +93,42 @@ class OrderCard extends ConsumerWidget {
     return dueTime != null && dueTime.isNotEmpty
         ? '$formatted $dueTime'
         : formatted;
+  }
+
+  // ── Mark as printed ────────────────────────────────────────────────────────
+
+  Future<void> _showMarkAsPrintedBottomSheet(
+      BuildContext context, WidgetRef ref) async {
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.check_circle_outline),
+              title: const Text('Mark as printed'),
+              onTap: () => Navigator.of(context).pop(true),
+            ),
+            ListTile(
+              leading: const Icon(Icons.cancel_outlined),
+              title: const Text('Cancel'),
+              onTap: () => Navigator.of(context).pop(false),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true) {
+      final service = ref.read(orderServiceProvider);
+      await service.updateWorkTicketPrintedAt(
+        order.orderRef,
+        DateTime.now().toIso8601String(),
+      );
+      ref.invalidate(orderDetailProvider(order.orderRef));
+      ref.invalidate(orderListProvider);
+    }
   }
 
   // ── Build ───────────────────────────────────────────────────────────────
@@ -131,6 +181,9 @@ class OrderCard extends ConsumerWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
+        onLongPress: order.workTicketPrintedAt == null
+            ? () => _showMarkAsPrintedBottomSheet(context, ref)
+            : null,
         child: Container(
           decoration: BoxDecoration(
             border: Border(left: borderSides.first),
@@ -150,10 +203,12 @@ class OrderCard extends ConsumerWidget {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      order.orderRef,
+                      order.customerName,
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   if (photoCount > 0) ...[
@@ -244,9 +299,8 @@ class OrderCard extends ConsumerWidget {
               ),
 
               // ── Print status sub-label ──
-              if (!compact &&
-                  (order.status == 'confirmed' ||
-                      order.status == 'in_progress')) ...[
+              if (order.status == 'confirmed' ||
+                  order.status == 'in_progress') ...[
                 const SizedBox(height: 2),
                 Row(
                   children: [
@@ -284,30 +338,23 @@ class OrderCard extends ConsumerWidget {
                 ),
               ],
 
-              if (!compact) const SizedBox(height: 4),
+              const SizedBox(height: 4),
 
-              // ── Product names (non-compact only) ──
-              if (!compact) ...[
-                Text(
-                  _productNamesLine(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurface,
-                  ),
+              // ── Product names ──
+              Text(
+                _productNamesLine(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface,
                 ),
-                const SizedBox(height: 4),
-              ],
+              ),
+              const SizedBox(height: 4),
 
               // ── Customer name + source badge ──
               Row(
                 children: [
-                  Text(
-                    order.customerName,
-                    style: theme.textTheme.bodyMedium,
-                  ),
                   if (order.source.isNotEmpty) ...[
-                    const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 6, vertical: 2),
@@ -326,8 +373,8 @@ class OrderCard extends ConsumerWidget {
                 ],
               ),
 
-              // ── Notes preview (non-compact only) ──
-              if (!compact && order.notes.isNotEmpty) ...[
+              // ── Notes preview ──
+              if (order.notes.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
                   order.notes,
