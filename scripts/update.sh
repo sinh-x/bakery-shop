@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Full update: rebuild Flutter web + rebuild & restart Docker services.
-# Usage: ./tool/update.sh [--web-only] [--backend-only]
+# Usage: ./scripts/update.sh [--web-only] [--backend-only]
 #   --web-only      Only rebuild Flutter web app + restart Caddy
 #   --backend-only  Only rebuild & restart baker Docker service
 #   (no flags)      Rebuild everything
