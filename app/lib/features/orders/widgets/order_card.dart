@@ -1,9 +1,10 @@
+import 'dart:math';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/api_client.dart';
-import '../../../data/api/order_service.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
 import '../../../shared/theme/bakery_theme.dart';
@@ -26,17 +27,14 @@ import '../../../shared/widgets/vietnamese_labels.dart';
 /// Also includes:
 /// - Payment badge (FR-2): Đã TT / Cọc / Chưa TT
 /// - Urgency indicators (FR-3): overdue red, due-soon amber, today subtle
-/// - Mark-as-printed action via long-press (unprinted orders only)
 class OrderCard extends ConsumerWidget {
   const OrderCard({
     super.key,
     required this.order,
-    this.compact = false,
     this.onTap,
   });
 
   final Order order;
-  final bool compact;
   final VoidCallback? onTap;
 
   // ── Payment badge helpers ───────────────────────────────────────────────
@@ -73,9 +71,10 @@ class OrderCard extends ConsumerWidget {
       if (full.length <= maxLen) {
         parts.add(full);
       } else {
-        final truncated = name.length > maxLen - price.length - 4
-            ? '${name.substring(0, maxLen - price.length - 4)}... $price'
-            : '${name.substring(0, maxLen - price.length - 7)}... $price';
+        final allowedLen = max(0, maxLen - price.length - 4);
+        final truncated = name.length > allowedLen
+            ? '${name.substring(0, allowedLen)}... $price'
+            : full;
         parts.add(truncated);
       }
     }
@@ -93,42 +92,6 @@ class OrderCard extends ConsumerWidget {
     return dueTime != null && dueTime.isNotEmpty
         ? '$formatted $dueTime'
         : formatted;
-  }
-
-  // ── Mark as printed ────────────────────────────────────────────────────────
-
-  Future<void> _showMarkAsPrintedBottomSheet(
-      BuildContext context, WidgetRef ref) async {
-    final confirmed = await showModalBottomSheet<bool>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.check_circle_outline),
-              title: const Text('Mark as printed'),
-              onTap: () => Navigator.of(context).pop(true),
-            ),
-            ListTile(
-              leading: const Icon(Icons.cancel_outlined),
-              title: const Text('Cancel'),
-              onTap: () => Navigator.of(context).pop(false),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (confirmed == true) {
-      final service = ref.read(orderServiceProvider);
-      await service.updateWorkTicketPrintedAt(
-        order.orderRef,
-        DateTime.now().toIso8601String(),
-      );
-      ref.invalidate(orderDetailProvider(order.orderRef));
-      ref.invalidate(orderListProvider);
-    }
   }
 
   // ── Build ───────────────────────────────────────────────────────────────
@@ -175,15 +138,14 @@ class OrderCard extends ConsumerWidget {
 
     final paymentColor = _paymentBadge().$1;
     final paymentLabel = _paymentBadge().$2;
+    final isTerminal =
+        ['completed', 'cancelled', 'delivered'].contains(order.status);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        onLongPress: order.workTicketPrintedAt == null
-            ? () => _showMarkAsPrintedBottomSheet(context, ref)
-            : null,
         child: Container(
           decoration: BoxDecoration(
             border: Border(left: borderSides.first),
@@ -299,8 +261,8 @@ class OrderCard extends ConsumerWidget {
               ),
 
               // ── Print status sub-label ──
-              if (order.status == 'confirmed' ||
-                  order.status == 'in_progress') ...[
+              // Terminal statuses: print indicator is irrelevant
+              if (!isTerminal) ...[
                 const SizedBox(height: 2),
                 Row(
                   children: [
@@ -313,13 +275,14 @@ class OrderCard extends ConsumerWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        VN.printStatusPrinted,
+                        VN.printStatusPrintedShort,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: Colors.green.shade600,
                           fontSize: 10,
                         ),
                       ),
-                    ] else ...[
+                    ] else if (order.status == 'confirmed' ||
+                        order.status == 'in_progress') ...[
                       Icon(
                         Icons.print_outlined,
                         size: 12,
@@ -327,7 +290,7 @@ class OrderCard extends ConsumerWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        VN.printStatusUnprinted,
+                        VN.printStatusUnprintedShort,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: Colors.orange.shade600,
                           fontSize: 10,
