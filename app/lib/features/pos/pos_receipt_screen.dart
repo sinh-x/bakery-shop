@@ -65,33 +65,13 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
     try {
       final receiptService = ref.read(receiptServiceProvider);
 
-      if (kIsWeb) {
-        await receiptService.printReceipt(
-          orderRef: widget.orderRef,
-          type: ReceiptType.customer,
-        );
-        if (!mounted) return;
-        showTopSnackBar(context, VN.printSuccess);
-      } else {
-        if (_imageBytes == null) return;
-        final printBytes = await receiptService.fetchReceipt(
-          orderRef: widget.orderRef,
-          type: ReceiptType.customer,
-          photos: false,
-        );
-
-        if (!mounted) return;
-
-        final result = await platform.tryPrintNative(context, printBytes, ref);
-
-        if (!mounted) return;
-
-        if (result == PrinterPickerResult.success) {
-          showTopSnackBar(context, VN.printSuccess);
-        } else if (result == PrinterPickerResult.failed) {
-          showTopSnackBar(context, VN.printFailed);
-        }
-      }
+      // Always use server-side print API (USB thermal printer)
+      await receiptService.printReceipt(
+        orderRef: widget.orderRef,
+        type: ReceiptType.customer,
+      );
+      if (!mounted) return;
+      showTopSnackBar(context, VN.printSuccess);
     } catch (e) {
       if (mounted) {
         showTopSnackBar(context, '${VN.apiError}: $e');

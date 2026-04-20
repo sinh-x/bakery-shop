@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -120,6 +121,10 @@ class OrderDetailScreen extends ConsumerWidget {
   final String orderRef;
 
   void _showReceiptTypeSelector(BuildContext context, WidgetRef ref) {
+    final allItems =
+        ref.read(orderWorkItemsProvider(orderRef)).value ?? [];
+    final mainItems = allItems.where((i) => !i.isExtra).toList();
+
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
@@ -133,23 +138,21 @@ class OrderDetailScreen extends ConsumerWidget {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
-            ListTile(
-              leading: const Icon(Icons.receipt),
-              title: const Text(VN.printWorkTicket),
-              onTap: () {
-                Navigator.pop(ctx);
-                final allItems =
-                    ref.read(orderWorkItemsProvider(orderRef)).value ?? [];
-                final workItems = allItems.where((i) => !i.isExtra).toList();
-                if (workItems.length == 1) {
-                  context.push(
-                    '/orders/$orderRef/receipt?type=${ReceiptType.workTicket.value}&item_id=${workItems.first.id}',
-                  );
-                } else if (workItems.isNotEmpty) {
-                  _showItemPicker(context, workItems);
-                }
-              },
-            ),
+            if (mainItems.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.receipt),
+                title: const Text(VN.printWorkTicket),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  if (mainItems.length == 1) {
+                    context.push(
+                      '/orders/$orderRef/receipt?type=${ReceiptType.workTicket.value}&item_id=${mainItems.first.id}',
+                    );
+                  } else {
+                    _showItemPicker(context, mainItems);
+                  }
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.person),
               title: const Text(VN.printCustomerReceipt),
@@ -2008,12 +2011,10 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
     setState(() => _printing = true);
 
     try {
-      final printerService = ref.read(printerServiceProvider);
-      await printerService.init();
+      final receiptService = ref.read(receiptServiceProvider);
 
-      // Print internal receipt first — one per main work item
+      // Print internal receipt — one per main work item (via server USB printer)
       if (_printInternal) {
-        final receiptService = ref.read(receiptServiceProvider);
         final items =
             ref.read(orderWorkItemsProvider(widget.orderRef)).value ?? [];
         final mainItemIds = items
@@ -2022,29 +2023,16 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
             .whereType<int>()
             .toList();
 
-        bool anyInternalSuccess = false;
         for (final itemId in mainItemIds) {
-          setState(() => _statusText = VN.fetchingInternalReceipt);
-          final internalBytes = await receiptService.fetchReceipt(
+          setState(() => _statusText = VN.printingInternalReceipt);
+          await receiptService.printReceipt(
             orderRef: widget.orderRef,
             type: ReceiptType.workTicket,
             itemId: itemId,
           );
-
-          setState(() => _statusText = VN.printingInternalReceipt);
-          final internalResult = await _tryPrint(
-            printerService,
-            internalBytes,
-          );
-          if (internalResult == PrinterPickerResult.success) {
-            anyInternalSuccess = true;
-          } else if (internalResult == PrinterPickerResult.failed) {
-            setState(() => _printing = false);
-            return;
-          }
         }
 
-        if (anyInternalSuccess) {
+        if (mainItemIds.isNotEmpty) {
           final orderService = ref.read(orderServiceProvider);
           await orderService.updateWorkTicketPrintedAt(
             widget.orderRef,
@@ -2056,21 +2044,18 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
         }
       }
 
-      // Print customer receipt
+      // Print customer receipt (via server USB printer)
       if (_printCustomer) {
-        setState(() => _statusText = VN.fetchingCustomerReceipt);
-        final receiptService = ref.read(receiptServiceProvider);
-        final customerBytes = await receiptService.fetchReceipt(
+        setState(() => _statusText = VN.printingCustomerReceipt);
+        await receiptService.printReceipt(
           orderRef: widget.orderRef,
           type: ReceiptType.customer,
         );
-
-        setState(() => _statusText = VN.printingCustomerReceipt);
-        await _tryPrint(printerService, customerBytes);
       }
 
       if (mounted) {
         showTopSnackBar(context, VN.printSuccess);
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
@@ -2083,36 +2068,18 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
     }
   }
 
-  Future<PrinterPickerResult> _tryPrint(
-    PrinterService printerService,
-    Uint8List imageBytes,
-  ) async {
-    // Try auto-reconnect to last printer first
-    if (printerService.lastPrinterMac != null) {
-      try {
-        await printerService.connect(printerService.lastPrinterMac!);
-        await printerService.printImage(imageBytes);
-        return PrinterPickerResult.success;
-      } catch (_) {
-        // Fall through to picker
-      }
-    }
-
-    if (!mounted) return PrinterPickerResult.cancelled;
-
-    final result = await showPrinterPickerDialog(
-      context: context,
-      imageBytes: imageBytes,
-      printerService: printerService,
-    );
-
-    if (!mounted) return PrinterPickerResult.cancelled;
-
-    return result;
-  }
-
   @override
   Widget build(BuildContext context) {
+    final items =
+        ref.watch(orderWorkItemsProvider(widget.orderRef)).value ?? [];
+    final hasMainItems =
+        items.any((i) => !i.isExtra && !i.isGift);
+
+    // If no main items, auto-disable internal receipt
+    if (!hasMainItems && _printInternal) {
+      _printInternal = false;
+    }
+
     final hasSelection = _printInternal || _printCustomer;
 
     return AlertDialog(
@@ -2136,13 +2103,15 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
           : Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                CheckboxListTile(
-                  value: _printInternal,
-                  onChanged: (v) => setState(() => _printInternal = v ?? false),
-                  title: Text(VN.printWorkTicket),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  contentPadding: EdgeInsets.zero,
-                ),
+                if (hasMainItems)
+                  CheckboxListTile(
+                    value: _printInternal,
+                    onChanged: (v) =>
+                        setState(() => _printInternal = v ?? false),
+                    title: Text(VN.printWorkTicket),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 CheckboxListTile(
                   value: _printCustomer,
                   onChanged: (v) => setState(() => _printCustomer = v ?? false),
@@ -2187,13 +2156,10 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
   Future<void> _printInternal() async {
     setState(() {
       _printing = true;
-      _statusText = VN.fetchingInternalReceipt;
+      _statusText = VN.printingInternalReceipt;
     });
 
     try {
-      final printerService = ref.read(printerServiceProvider);
-      await printerService.init();
-
       final receiptService = ref.read(receiptServiceProvider);
 
       // Determine which items to print
@@ -2216,54 +2182,24 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
         return;
       }
 
-      bool anySuccess = false;
       for (final id in itemIds) {
-        setState(() => _statusText = VN.fetchingInternalReceipt);
-        final internalBytes = await receiptService.fetchReceipt(
+        setState(() => _statusText = VN.printingInternalReceipt);
+        await receiptService.printReceipt(
           orderRef: widget.orderRef,
           type: ReceiptType.workTicket,
           itemId: id,
         );
-
-        setState(() => _statusText = VN.printingInternalReceipt);
-
-        // Try auto-reconnect to last printer first
-        PrinterPickerResult result = PrinterPickerResult.cancelled;
-        if (printerService.lastPrinterMac != null) {
-          try {
-            await printerService.connect(printerService.lastPrinterMac!);
-            await printerService.printImage(internalBytes);
-            result = PrinterPickerResult.success;
-          } catch (_) {
-            // Fall through to picker
-          }
-        }
-
-        if (result != PrinterPickerResult.success && mounted) {
-          result = await showPrinterPickerDialog(
-            context: context,
-            imageBytes: internalBytes,
-            printerService: printerService,
-          );
-        }
-
-        if (result == PrinterPickerResult.success) {
-          anySuccess = true;
-        }
       }
 
-      if (anySuccess) {
-        final orderService = ref.read(orderServiceProvider);
-        await orderService.updateWorkTicketPrintedAt(
-          widget.orderRef,
-          DateTime.now().toIso8601String(),
-        );
-        ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
-        if (mounted) {
-          showTopSnackBar(context, VN.internalReceiptPrinted);
-          Navigator.pop(context);
-        }
-        return;
+      final orderService = ref.read(orderServiceProvider);
+      await orderService.updateWorkTicketPrintedAt(
+        widget.orderRef,
+        DateTime.now().toIso8601String(),
+      );
+      ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
+      if (mounted) {
+        showTopSnackBar(context, VN.internalReceiptPrinted);
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {

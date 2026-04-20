@@ -116,52 +116,27 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
     try {
       final receiptService = ref.read(receiptServiceProvider);
 
-      if (kIsWeb) {
-        // Web: call server-side print API (no image fetch needed)
-        await receiptService.printReceipt(
-          orderRef: widget.orderRef,
-          type: widget.receiptType,
-          itemId: widget.itemId,
+      // Always use server-side print API (USB thermal printer)
+      await receiptService.printReceipt(
+        orderRef: widget.orderRef,
+        type: widget.receiptType,
+        itemId: widget.itemId,
+      );
+      if (!mounted) return;
+      showTopSnackBar(context, VN.printSuccess);
+
+      // Flow B: auto-confirm order after successful work ticket print
+      if (isFlowB) {
+        await ref
+            .read(orderDetailProvider(widget.orderRef).notifier)
+            .transitionTo('confirmed');
+        final orderService = ref.read(orderServiceProvider);
+        await orderService.updateWorkTicketPrintedAt(
+          widget.orderRef,
+          DateTime.now().toIso8601String(),
         );
-        if (!mounted) return;
-        showTopSnackBar(context, VN.printSuccess);
-      } else {
-        // Android/iOS: fetch image and print via Bluetooth
-        if (_imageBytes == null) return;
-        final printBytes = await receiptService.fetchReceipt(
-          orderRef: widget.orderRef,
-          type: widget.receiptType,
-          itemId: widget.itemId,
-          photos: false,
-        );
-
-        if (!mounted) return;
-
-        // Use tryPrintNative to get result for Flow B
-        final result = await platform.tryPrintNative(context, printBytes, ref);
-
-        if (!mounted) return;
-
-        if (result == PrinterPickerResult.success) {
-          showTopSnackBar(context, VN.printSuccess);
-
-          // Flow B: auto-confirm order after successful work ticket print
-          if (isFlowB) {
-            await ref
-                .read(orderDetailProvider(widget.orderRef).notifier)
-                .transitionTo('confirmed');
-            // Set workTicketPrintedAt
-            final orderService = ref.read(orderServiceProvider);
-            await orderService.updateWorkTicketPrintedAt(
-              widget.orderRef,
-              DateTime.now().toIso8601String(),
-            );
-            if (mounted) {
-              showTopSnackBar(context, VN.orderAutoConfirmed);
-            }
-          }
-        } else if (result == PrinterPickerResult.failed) {
-          showTopSnackBar(context, VN.printFailed);
+        if (mounted) {
+          showTopSnackBar(context, VN.orderAutoConfirmed);
         }
       }
     } catch (e) {
