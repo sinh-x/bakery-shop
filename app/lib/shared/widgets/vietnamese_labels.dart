@@ -61,6 +61,9 @@ class VN {
   static const orderStatusUpdated = 'Đã cập nhật trạng thái';
   static const orderEditSaved = 'Đã lưu thay đổi';
 
+  // Refresh
+  static const lamMoi = 'Làm mới';
+
   // Product categories
   static const catBanhMi = 'Bánh mì';
   static const catBanhKem = 'Bánh kem';
@@ -378,6 +381,35 @@ class VN {
   static const cashNotReceived = 'Chưa nhận tiền';
   static const daDuaTienRut = 'Đã đưa tiền rút';
 
+  // Product display flags
+  static const trungBay = 'Trưng bày';
+  static const tangKem = 'Tặng kèm';
+
+  // POS / Counter Sales
+  static const banHang = 'Bán hàng';
+  static const thanhToan = 'Thanh toán';
+  static const inHoaDon = 'In hóa đơn';
+  static const inBienNhan = 'In biên nhận';
+  static const xacNhanThanhToan = 'Xác nhận thanh tiền';
+  static const sanPhamHetHang = 'Sản phẩm hết hàng';
+  static const banAnyway = 'Sản phẩm hết hàng. Bán anyway?';
+  static const xacNhan = 'Xác nhận';
+  static const tienMat = 'Tiền mặt';
+  static const chuyenKhoan = 'Chuyển khoản';
+  static const themThongTin = 'Thêm thông tin';
+  static const khachLe = 'Khách lẻ';
+  static const taiTiem = 'Tại tiệm';
+  static const taiTiemPOS = 'Tại tiệm - POS';
+  static const quaTang = '(Quà tặng)';
+  static const soLuong = 'Số lượng';
+  static const donGia = 'Đơn giá';
+  static const xoa = 'Xóa';
+  static const thanhToanThanhCong = 'Thanh toán thành công';
+  static const taiLai = 'Tải lại';
+  static const khongCoSanPham = 'Chưa có sản phẩm';
+  static const trongLuong = 'Trọng lượng';
+  static const inPhieu = 'In phiếu';
+
   // Knowledge base
   static const knowledgeTitle = 'Sổ tay';
   static const knowledgeEntry = 'Mục tri thức';
@@ -428,6 +460,28 @@ class VN {
   static const extraDeleted = 'Đã xóa phụ kiện';
   static const noExtras = 'Chưa có phụ kiện';
   static const deleteExtraConfirm = 'Xóa phụ kiện này?';
+
+  // Stock management
+  static const quanLyTonKho = 'Quản lý tồn kho';
+  static const nhapHang = 'Nhập hàng';
+  static const haoHut = 'Hao hụt';
+  static const dieuChinh = 'Điều chỉnh';
+  static const tonKho = 'Tồn kho';
+  static const nhapHangSheet = 'Nhập hàng';
+  static const haoHutSheet = 'Hao hụt';
+  static const dieuChinhSheet = 'Điều chỉnh';
+  static const ghiChuLabel = 'Ghi chú';
+  static const ghiChuHint = 'Ghi chú (tùy chọn)';
+  static const lyDoLabel = 'Lý do';
+  static const lyDoHint = 'Nhập lý do...';
+  static const lyDoRequired = 'Lý do không được để trống';
+  static const soLuongInvalid = 'Số lượng phải lớn hơn 0';
+  static const xacNhanHaoHut = 'Xác nhận hao hụt';
+  static const xacNhanDieuChinh = 'Điều chỉnh';
+  static const xacNhanNhapHang = 'Nhập hàng';
+  static const khongCoSanPhamTonKho = 'Không có sản phẩm tồn kho';
+  static const capNhatThanhCong = 'Cập nhật thành công';
+  static const loiHeThong = 'Lỗi hệ thống';
 }
 
 // Category mapping (new slugs)
@@ -562,12 +616,7 @@ void showTopSnackBar(
       content: Text(message),
       behavior: SnackBarBehavior.floating,
       backgroundColor: backgroundColor,
-      margin: EdgeInsets.only(
-        top: 16,
-        left: 16,
-        right: 16,
-        bottom: MediaQuery.of(context).size.height - 100,
-      ),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     ),
   );
 }

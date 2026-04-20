@@ -21,7 +21,11 @@ import '../../features/orders/order_list_screen.dart';
 import '../../features/orders/receipt_preview_screen.dart';
 import '../../features/knowledge/knowledge_detail_screen.dart';
 import '../../features/knowledge/knowledge_form_screen.dart';
+import '../../features/pos/pos_checkout_screen.dart';
+import '../../features/pos/pos_receipt_screen.dart';
+import '../../features/pos/pos_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
+import '../../features/stock/stock_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../providers/products_provider.dart';
@@ -66,6 +70,12 @@ final appRouter = GoRouter(
           path: '/checklist',
           pageBuilder: (context, state) => const NoTransitionPage(
             child: ChecklistScreen(),
+          ),
+        ),
+        GoRoute(
+          path: '/pos',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: PosScreen(),
           ),
         ),
       ],
@@ -189,6 +199,27 @@ final appRouter = GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const SettingsScreen(),
     ),
+    // POS checkout — full-screen (outside shell)
+    GoRoute(
+      path: '/pos/checkout',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const PosCheckoutScreen(),
+    ),
+    // POS receipt — full-screen (outside shell)
+    GoRoute(
+      path: '/pos/receipt/:ref',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final orderRef = state.pathParameters['ref']!;
+        return PosReceiptScreen(orderRef: orderRef);
+      },
+    ),
+    // Stock management — full-screen (outside shell)
+    GoRoute(
+      path: '/stock',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const StockScreen(),
+    ),
     // Knowledge — full-screen (outside shell)
     GoRoute(
       path: '/knowledge/new',
@@ -288,6 +319,7 @@ class _ShellScaffold extends StatelessWidget {
     if (location.startsWith('/products')) return 2;
     if (location.startsWith('/events')) return 3;
     if (location.startsWith('/checklist')) return 4;
+    if (location.startsWith('/pos')) return 5;
     return 0;
   }
 
@@ -303,6 +335,8 @@ class _ShellScaffold extends StatelessWidget {
         context.go('/events');
       case 4:
         context.go('/checklist');
+      case 5:
+        context.go('/pos');
     }
   }
 
@@ -339,6 +373,11 @@ class _ShellScaffold extends StatelessWidget {
             icon: Icon(Icons.checklist_outlined),
             selectedIcon: Icon(Icons.checklist),
             label: VN.tabChecklist,
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.storefront_outlined),
+            selectedIcon: Icon(Icons.storefront),
+            label: VN.banHang,
           ),
         ],
       ),

@@ -9,6 +9,7 @@ import '../../data/api/work_item_service.dart';
 import '../../providers/config_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../shared/gift_config.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/expandable_item_card.dart';
@@ -160,27 +161,20 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     setState(() => _shippingFee = fee);
   }
 
-  // Check if any cake (banh_kem) item totals >= 100k and auto-add gift extras
+  // Check if any item has tang_kem attribute and total >= 100k and auto-add gift extras
   void _checkAutoGift() {
-    // Calculate total for cake items
-    double cakeTotal = 0;
+    // Calculate total for items with tang_kem attribute
+    double qualifiedTotal = 0;
     for (final item in _items) {
-      // Check if it's a cake item (banh_kem category)
-      if (item.product.category == 'banh_kem' && !item.isExtra) {
-        cakeTotal += item.unitPrice * item.quantity;
+      // Check if item has tang_kem attribute (not an extra)
+      if (item.product.attributes['tang_kem']?.toString() == 'true' && !item.isExtra) {
+        qualifiedTotal += item.unitPrice * item.quantity;
       }
     }
 
-    // If cake total >= 100k, auto-add gift extras
-    if (cakeTotal >= 100000) {
-      // Auto-add Nến, Đĩa muỗng, Nón as gift items if not already added
-      final giftExtras = [
-        ('Nến', 5000),
-        ('Đĩa muỗng', 10000),
-        ('Nón', 5000),
-      ];
-
-      for (final (name, price) in giftExtras) {
+    // If qualified total >= threshold, auto-add gift extras
+    if (qualifiedTotal >= GiftConfig.giftThreshold) {
+      for (final (name, price) in GiftConfig.giftExtras) {
         if (!_autoGiftExtras.contains(name)) {
           _autoGiftExtras.add(name);
           _items.add(createExtraItem(name, price.toDouble(), isGift: true));
