@@ -720,6 +720,54 @@ def _migrate_v25_tien_rut_rename(conn):
     )
 
 
+CATALOG_PHOTO_TAGS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS catalog_photo_tags (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    photo_id    INTEGER NOT NULL REFERENCES product_catalog_photos(id),
+    tag_key     TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_catalog_photo_tags_photo ON catalog_photo_tags(photo_id);
+CREATE INDEX IF NOT EXISTS idx_catalog_photo_tags_tag ON catalog_photo_tags(tag_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_photo_tags_unique ON catalog_photo_tags(photo_id, tag_key);
+"""
+
+SEED_CATALOG_TAGS = [
+    # Audience tags (6)
+    ("catalog_tag", "audience:sinh-nhat:Sinh nhật", 1),
+    ("catalog_tag", "audience:cuoi:Tiệc cưới", 2),
+    ("catalog_tag", "audience:nam:Nam giới", 3),
+    ("catalog_tag", "audience:nu:Nữ giới", 4),
+    ("catalog_tag", "audience:tre-em:Trẻ em", 5),
+    ("catalog_tag", "audience:gia-dinh:Gia đình", 6),
+    # Occasion tags (8)
+    ("catalog_tag", "occasion:sinh-nhat:Sinh nhật", 1),
+    ("catalog_tag", "occasion:nam-nuoi:Nam nữoi", 2),
+    ("catalog_tag", "occasion:cuoi-hon:Cưới hỏi", 3),
+    ("catalog_tag", "occasion:thanh-lap:Thành lập", 4),
+    ("catalog_tag", "occasion:le-tan:Khánh thành", 5),
+    ("catalog_tag", "occasion:dai-tiec:Đại tiệc", 6),
+    ("catalog_tag", "occasion:gap-mat:Gặp mặt", 7),
+    ("catalog_tag", "occasion:le-tot-nghiep:Lễ tốt nghiệp", 8),
+    # Style tags (6)
+    ("catalog_tag", "style:hieu-que:Hữu quê", 1),
+    ("catalog_tag", "style:don-gian:Đơn giản", 2),
+    ("catalog_tag", "style:phan-chon:Phồn chấn", 3),
+    ("catalog_tag", "style:eu:Elegant", 4),
+    ("catalog_tag", "style:tre-trung:Trẻ trung", 5),
+    ("catalog_tag", "style:kim-tu-thach:Kim tự tháp", 6),
+]
+
+
+def _migrate_v27_seed_catalog_tags(conn):
+    """Seed 20 catalog tag entries into app_config."""
+    for config_key, config_value, sort_order in SEED_CATALOG_TAGS:
+        conn.execute(
+            "INSERT OR IGNORE INTO app_config (config_key, config_value, sort_order) VALUES (?, ?, ?)",
+            (config_key, config_value, sort_order),
+        )
+
+
 PRODUCT_STOCK_SCHEMA = """
 CREATE TABLE IF NOT EXISTS product_stock (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -881,6 +929,11 @@ MIGRATIONS = {
         "description": "Add trung_bay and tang_kem product attributes; create product_stock and stock_movements tables for inventory management",
         "sql": PRODUCT_STOCK_SCHEMA,
         "callable": _migrate_v26_trung_bay_and_stock,
+    },
+    27: {
+        "description": "Create catalog_photo_tags junction table and seed 20 catalog tag entries into app_config",
+        "sql": CATALOG_PHOTO_TAGS_SCHEMA,
+        "callable": _migrate_v27_seed_catalog_tags,
     },
 }
 
