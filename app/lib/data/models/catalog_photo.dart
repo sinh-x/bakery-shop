@@ -13,6 +13,7 @@ sealed class CatalogPhoto with _$CatalogPhoto {
     @Default('') String tags,
     @Default(0) int position,
     @JsonKey(name: 'created_at') String? createdAt,
+    @JsonKey(name: 'photo_hash') String? photoHash,
   }) = _CatalogPhoto;
 
   factory CatalogPhoto.fromJson(Map<String, dynamic> json) =>

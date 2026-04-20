@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../models/catalog_photo.dart';
+import '../models/catalog_browse_photo.dart';
+import '../models/catalog_tag.dart';
 import 'api_client.dart';
 
 class CatalogService {
@@ -60,6 +62,37 @@ class CatalogService {
 
   String getCatalogPhotoUrl(int productId, int photoId) {
     return '${_dio.options.baseUrl}/api/products/$productId/catalog/$photoId/photo';
+  }
+
+  Future<List<CatalogBrowsePhoto>> browseCatalogPhotos({
+    List<String>? tags,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    final queryParams = <String, dynamic>{
+      'page': page,
+      'page_size': pageSize,
+    };
+    if (tags != null && tags.isNotEmpty) {
+      queryParams['tags'] = tags.join(',');
+    }
+    final response = await _dio.get(
+      '/api/catalog/photos',
+      queryParameters: queryParams,
+    );
+    final list = response.data as List;
+    return list
+        .map((json) =>
+            CatalogBrowsePhoto.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<CatalogTagDef>> getCatalogTagDefs() async {
+    final response = await _dio.get('/api/config/catalog_tag');
+    final data = response.data as Map<String, dynamic>;
+    final configValue = data['config_value'] as String;
+    final lines = configValue.split('\n').where((l) => l.trim().isNotEmpty);
+    return lines.map((line) => CatalogTagDef.parse(line.trim())).toList();
   }
 }
 

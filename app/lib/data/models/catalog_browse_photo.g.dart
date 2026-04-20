@@ -1,13 +1,13 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'catalog_photo.dart';
+part of 'catalog_browse_photo.dart';
 
 // **************************************************************************
 // JsonSerializableGenerator
 // **************************************************************************
 
-_CatalogPhoto _$CatalogPhotoFromJson(Map<String, dynamic> json) =>
-    _CatalogPhoto(
+_CatalogBrowsePhoto _$CatalogBrowsePhotoFromJson(Map<String, dynamic> json) =>
+    _CatalogBrowsePhoto(
       id: (json['id'] as num).toInt(),
       productId: (json['product_id'] as num).toInt(),
       filePath: json['file_path'] as String,
@@ -16,9 +16,10 @@ _CatalogPhoto _$CatalogPhotoFromJson(Map<String, dynamic> json) =>
       position: (json['position'] as num?)?.toInt() ?? 0,
       createdAt: json['created_at'] as String?,
       photoHash: json['photo_hash'] as String?,
+      productName: json['productName'] as String,
     );
 
-Map<String, dynamic> _$CatalogPhotoToJson(_CatalogPhoto instance) =>
+Map<String, dynamic> _$CatalogBrowsePhotoToJson(_CatalogBrowsePhoto instance) =>
     <String, dynamic>{
       'id': instance.id,
       'product_id': instance.productId,
@@ -28,4 +29,5 @@ Map<String, dynamic> _$CatalogPhotoToJson(_CatalogPhoto instance) =>
       'position': instance.position,
       'created_at': instance.createdAt,
       'photo_hash': instance.photoHash,
+      'productName': instance.productName,
     };
