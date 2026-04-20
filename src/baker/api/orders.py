@@ -226,7 +226,7 @@ def list_orders(
             params + [limit, offset],
         ).fetchall()
 
-        return [Order.from_row(r).to_api_dict() for r in rows]
+        return [Order.from_row(r, conn).to_api_dict() for r in rows]
 
 
 @router.post("", status_code=201)

@@ -764,3 +764,45 @@ def test_update_payment_method_no_transaction(api_client):
     resp = api_client.patch(f"/api/orders/{ref}/payment-method", json={"method": "cash"})
     assert resp.status_code == 404
 
+
+# --- Fresh payment status in list orders (DG-089) ---
+
+
+def test_list_orders_returns_fresh_is_paid_after_full_payment(api_client):
+    """list_orders returns isPaid=True and correct amountPaid after full payment."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    total = created["totalPrice"]
+
+    # Patch full payment
+    api_client.patch(f"/api/orders/{ref}/payment", json={"amountPaid": total})
+
+    # GET /api/orders must reflect fresh payment data
+    resp = api_client.get("/api/orders")
+    assert resp.status_code == 200
+    orders = resp.json()
+    found = next((o for o in orders if o["orderRef"] == ref), None)
+    assert found is not None, f"Order {ref} not found in list"
+    assert found["isPaid"] is True
+    assert found["amountPaid"] == total
+
+
+def test_list_orders_returns_partial_is_paid_false(api_client):
+    """list_orders returns isPaid=False for partially-paid orders."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    total = created["totalPrice"]
+    partial = total / 2
+
+    # Patch partial payment
+    api_client.patch(f"/api/orders/{ref}/payment", json={"amountPaid": partial})
+
+    # GET /api/orders must show isPaid=False and correct amountPaid
+    resp = api_client.get("/api/orders")
+    assert resp.status_code == 200
+    orders = resp.json()
+    found = next((o for o in orders if o["orderRef"] == ref), None)
+    assert found is not None, f"Order {ref} not found in list"
+    assert found["isPaid"] is False
+    assert found["amountPaid"] == partial
+
