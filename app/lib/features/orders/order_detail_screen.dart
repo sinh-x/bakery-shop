@@ -17,19 +17,10 @@ import '../../data/models/work_item.dart';
 import '../../data/services/printer_service.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/utils/phone_formatter.dart';
+import '../../shared/theme/bakery_theme.dart';
 import '../../shared/widgets/printer_picker_dialog.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/order_photo_section.dart';
-
-const _statusColors = {
-  'new': Colors.blue,
-  'confirmed': Colors.orange,
-  'in_progress': Colors.purple,
-  'ready': Colors.green,
-  'delivered': Colors.teal,
-  'completed': Colors.grey,
-  'cancelled': Colors.red,
-};
 
 const _workItemStatusColors = {
   'pending': Colors.grey,
@@ -413,7 +404,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = _statusColors[order.status] ?? Colors.grey;
+    final statusColor = BakeryTheme.statusColors[order.status] ?? Colors.grey;
     final statusLabel = statusMap[order.status] ?? order.status;
     final forwardTransitions = validTransitions[order.status] ?? [];
     // Backward transitions: all statuses with lower rank than current

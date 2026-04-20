@@ -10,6 +10,7 @@ import '../../data/api/api_client.dart';
 import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../shared/theme/bakery_theme.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'cake_queue_screen.dart';
 
@@ -29,17 +30,6 @@ const _statusFilterLabels = {
   'awaiting_payment': 'Xác nhận thanh toán',
 };
 
-const _statusColors = {
-  'new': Colors.blue,
-  'confirmed': Colors.orange,
-  'in_progress': Colors.purple,
-  'ready': Colors.green,
-  'delivered': Colors.teal,
-  'completed': Colors.grey,
-  'cancelled': Colors.red,
-  'to_deliver': Colors.deepOrange,
-  'awaiting_payment': Colors.pink,
-};
 
 class OrderListScreen extends ConsumerStatefulWidget {
   const OrderListScreen({super.key});
@@ -311,7 +301,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                     children: _statusFilters
                         .map(
                           (s) {
-                            final color = _statusColors[s] ?? Colors.grey;
+                            final color = BakeryTheme.statusColors[s] ?? Colors.grey;
                             final label = _statusFilterLabels[s] ?? statusMap[s] ?? s;
                             final selected = _statusFilter == s;
                             return Padding(
@@ -501,7 +491,7 @@ class _OrderCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final statusColor = _statusColors[order.status] ?? Colors.grey;
+    final statusColor = BakeryTheme.statusColors[order.status] ?? Colors.grey;
     final statusLabel = statusMap[order.status] ?? order.status;
     final photosAsync = ref.watch(orderPhotosProvider(order.orderRef));
     final baseUrl = ref.watch(apiBaseUrlProvider);
@@ -876,7 +866,7 @@ class _KanbanColumn extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final statusColor = _statusColors[status] ?? Colors.grey;
+    final statusColor = BakeryTheme.statusColors[status] ?? Colors.grey;
     final statusLabel = status == 'awaiting_payment'
         ? 'Xác nhận thanh toán'
         : status == 'to_deliver'
@@ -1268,7 +1258,7 @@ class _DragFeedbackCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = _statusColors[order.status] ?? Colors.grey;
+    final statusColor = BakeryTheme.statusColors[order.status] ?? Colors.grey;
 
     return Card(
       color: theme.colorScheme.surface,
