@@ -151,7 +151,7 @@ class OrderCard extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Top row: delivery icon, order ref, photo badge, status chip ──
+              // ── Customer name + delivery icon (own line, above everything) ──
               Row(
                 children: [
                   Icon(
@@ -170,6 +170,12 @@ class OrderCard extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                ],
+              ),
+              // ── Photo badge + thumbnail (below name row) ──
+              Row(
+                children: [
+                  const Spacer(),
                   if (photoCount > 0) ...[
                     Container(
                       padding: const EdgeInsets.symmetric(
