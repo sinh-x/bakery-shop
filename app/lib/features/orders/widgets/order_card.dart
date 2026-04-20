@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/api_client.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
-import '../../../shared/theme/bakery_theme.dart';
 import '../../../shared/utils/order_helpers.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 
@@ -99,8 +98,6 @@ class OrderCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final statusColor = BakeryTheme.statusColors[order.status] ?? Colors.grey;
-    final statusLabel = statusMap[order.status] ?? order.status;
     final photosAsync = ref.watch(orderPhotosProvider(order.orderRef));
     final baseUrl = ref.watch(apiBaseUrlProvider);
 
@@ -238,25 +235,6 @@ class OrderCard extends ConsumerWidget {
                       ),
                     ),
                   if (cakePhotoUrl != null) const SizedBox(width: 6),
-                  // Status chip
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: statusColor.withAlpha(30),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: statusColor.withAlpha(120)),
-                    ),
-                    child: Text(
-                      statusLabel,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: statusColor,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
                 ],
               ),
 
