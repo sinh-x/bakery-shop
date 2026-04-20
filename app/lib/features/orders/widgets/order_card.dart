@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/api_client.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
-import '../../../shared/theme/bakery_theme.dart';
 import '../../../shared/utils/order_helpers.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 
@@ -14,7 +15,6 @@ import '../../../shared/widgets/vietnamese_labels.dart';
 /// Displays all FR-5 card content items:
 /// - Main product names with prices (non-extra items only)
 /// - Delivery type icon
-/// - orderRef prominently
 /// - customer name + source badge
 /// - due date/time with urgency coloring
 /// - total price
@@ -30,12 +30,10 @@ class OrderCard extends ConsumerWidget {
   const OrderCard({
     super.key,
     required this.order,
-    this.compact = false,
     this.onTap,
   });
 
   final Order order;
-  final bool compact;
   final VoidCallback? onTap;
 
   // ── Payment badge helpers ───────────────────────────────────────────────
@@ -57,13 +55,27 @@ class OrderCard extends ConsumerWidget {
 
   /// Returns formatted product names string: "Name 150.000đ, Name2 80.000đ"
   /// Only includes items where isExtra == false.
+  /// Truncated to max 40 chars per name segment with ellipsis.
   String _productNamesLine() {
     final nonExtra = order.items.where((i) => !i.isExtra).toList();
     if (nonExtra.isEmpty) return '';
 
     final parts = <String>[];
     for (final item in nonExtra) {
-      parts.add('${item.productName} ${formatVND(item.unitPrice)}');
+      final name = item.productName;
+      final price = formatVND(item.unitPrice);
+      // Truncate single product name segment to 40 chars
+      final maxLen = 40;
+      final full = '$name $price';
+      if (full.length <= maxLen) {
+        parts.add(full);
+      } else {
+        final allowedLen = max(0, maxLen - price.length - 4);
+        final truncated = name.length > allowedLen
+            ? '${name.substring(0, allowedLen)}... $price'
+            : full;
+        parts.add(truncated);
+      }
     }
     return parts.join(', ');
   }
@@ -86,8 +98,6 @@ class OrderCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final statusColor = BakeryTheme.statusColors[order.status] ?? Colors.grey;
-    final statusLabel = statusMap[order.status] ?? order.status;
     final photosAsync = ref.watch(orderPhotosProvider(order.orderRef));
     final baseUrl = ref.watch(apiBaseUrlProvider);
 
@@ -125,6 +135,8 @@ class OrderCard extends ConsumerWidget {
 
     final paymentColor = _paymentBadge().$1;
     final paymentLabel = _paymentBadge().$2;
+    final isTerminal =
+        ['completed', 'cancelled', 'delivered'].contains(order.status);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -139,7 +151,7 @@ class OrderCard extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Top row: delivery icon, order ref, photo badge, status chip ──
+              // ── Customer name + delivery icon (own line, above everything) ──
               Row(
                 children: [
                   Icon(
@@ -150,12 +162,20 @@ class OrderCard extends ConsumerWidget {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      order.orderRef,
+                      order.customerName,
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                ],
+              ),
+              // ── Photo badge + thumbnail (below name row) ──
+              Row(
+                children: [
+                  const Spacer(),
                   if (photoCount > 0) ...[
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -221,32 +241,12 @@ class OrderCard extends ConsumerWidget {
                       ),
                     ),
                   if (cakePhotoUrl != null) const SizedBox(width: 6),
-                  // Status chip
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: statusColor.withAlpha(30),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: statusColor.withAlpha(120)),
-                    ),
-                    child: Text(
-                      statusLabel,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: statusColor,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
                 ],
               ),
 
               // ── Print status sub-label ──
-              if (!compact &&
-                  (order.status == 'confirmed' ||
-                      order.status == 'in_progress')) ...[
+              // Terminal statuses: print indicator is irrelevant
+              if (!isTerminal) ...[
                 const SizedBox(height: 2),
                 Row(
                   children: [
@@ -259,13 +259,14 @@ class OrderCard extends ConsumerWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        VN.printStatusPrinted,
+                        VN.printStatusPrintedShort,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: Colors.green.shade600,
                           fontSize: 10,
                         ),
                       ),
-                    ] else ...[
+                    ] else if (order.status == 'confirmed' ||
+                        order.status == 'in_progress') ...[
                       Icon(
                         Icons.print_outlined,
                         size: 12,
@@ -273,7 +274,7 @@ class OrderCard extends ConsumerWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        VN.printStatusUnprinted,
+                        VN.printStatusUnprintedShort,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: Colors.orange.shade600,
                           fontSize: 10,
@@ -284,30 +285,23 @@ class OrderCard extends ConsumerWidget {
                 ),
               ],
 
-              if (!compact) const SizedBox(height: 4),
+              const SizedBox(height: 4),
 
-              // ── Product names (non-compact only) ──
-              if (!compact) ...[
-                Text(
-                  _productNamesLine(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurface,
-                  ),
+              // ── Product names ──
+              Text(
+                _productNamesLine(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface,
                 ),
-                const SizedBox(height: 4),
-              ],
+              ),
+              const SizedBox(height: 4),
 
               // ── Customer name + source badge ──
               Row(
                 children: [
-                  Text(
-                    order.customerName,
-                    style: theme.textTheme.bodyMedium,
-                  ),
                   if (order.source.isNotEmpty) ...[
-                    const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 6, vertical: 2),
@@ -326,8 +320,8 @@ class OrderCard extends ConsumerWidget {
                 ],
               ),
 
-              // ── Notes preview (non-compact only) ──
-              if (!compact && order.notes.isNotEmpty) ...[
+              // ── Notes preview ──
+              if (order.notes.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
                   order.notes,

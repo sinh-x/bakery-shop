@@ -160,17 +160,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   }
 
   List<Order> _applyFilters(List<Order> orders) {
-    final grouped = _applyStatusFilter(orders);
-    if (_searchQuery.isEmpty) return grouped;
-    final q = _searchQuery.toLowerCase();
-    return grouped
-        .where(
-          (o) =>
-              o.orderRef.toLowerCase().contains(q) ||
-              o.customerName.toLowerCase().contains(q) ||
-              o.customerPhone.contains(q),
-        )
-        .toList();
+    return _applySearchFilter(_applyStatusFilter(orders));
   }
 
   /// Groups orders by due date, returning a mixed list of String headers and Order items.
@@ -641,11 +631,10 @@ class _KanbanColumn extends ConsumerWidget {
                               ),
                               childWhenDragging: Opacity(
                                 opacity: 0.4,
-                                child: OrderCard(order: order, compact: true),
+                                child: OrderCard(order: order),
                               ),
                               child: OrderCard(
                                 order: order,
-                                compact: true,
                                 onTap: () =>
                                     context.push('/orders/${order.orderRef}'),
                               ),
