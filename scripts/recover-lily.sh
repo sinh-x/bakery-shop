@@ -11,7 +11,7 @@
 #   4. Set up .env, certs, deploy Docker containers
 #   5. Health check
 #
-# Usage: ./tool/recover-lily.sh [--dry-run] [--skip-restore] [--skip-web-build]
+# Usage: ./scripts/recover-lily.sh [--dry-run] [--skip-restore] [--skip-web-build]
 #
 # Options:
 #   --dry-run        Print planned steps without executing

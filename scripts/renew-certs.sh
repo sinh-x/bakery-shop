@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Renew TLS certificates via tailscale cert and restart Caddy.
-# Usage: ./tool/renew-certs.sh [<domain>]
+# Usage: ./scripts/renew-certs.sh [<domain>]
 #   domain  Tailscale domain name (e.g. mymachine.tail1234.ts.net)
 #           Falls back to $DOMAIN from .env if not provided.
 set -euo pipefail

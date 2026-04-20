@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared functions for tool/ scripts.
+# Shared functions for scripts/.
 # Usage: source "$(dirname "$0")/lib.sh"
 
 # Resolve repo root (idempotent if already set)

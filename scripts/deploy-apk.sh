@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build APK and install on a connected Android device.
-# Usage: ./tool/deploy.sh [--debug] [device-name]
+# Usage: ./scripts/deploy-apk.sh [--debug] [device-name]
 #   --debug      Build debug APK instead of release
 #   device-name  Optional substring to match against adb device serial/model.
 #                If omitted, installs on all connected devices.
