@@ -63,6 +63,17 @@ class KnowledgeEntriesNotifier extends AsyncNotifier<List<KnowledgeEntry>> {
       (entries) => entries.where((e) => e.id != id).toList(),
     );
   }
+
+  Future<KnowledgeEntry> pinEntry(int id, bool pin) async {
+    final service = ref.read(knowledgeServiceProvider);
+    final updated = pin
+        ? await service.pinEntry(id)
+        : await service.unpinEntry(id);
+    state = state.whenData(
+      (entries) => entries.map((e) => e.id == id ? updated : e).toList(),
+    );
+    return updated;
+  }
 }
 
 final knowledgeEntriesProvider =

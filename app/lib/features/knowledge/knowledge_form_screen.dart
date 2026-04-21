@@ -46,6 +46,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
   final _photos = <_PhotoEntry>[];
   bool _saving = false;
   bool _showTagField = false;
+  bool _pinAfterSave = false;
 
   bool get _isEditing => widget.entry != null;
 
@@ -128,6 +129,17 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
             );
         if (mounted) {
           showTopSnackBar(context, VN.knowledgeCreated);
+          // Pin after save if checked
+          if (_pinAfterSave) {
+            // The new entry is at the top of the list (created first), find it by title
+            final entries = ref.read(knowledgeEntriesProvider).asData?.value ?? [];
+            final newEntry = entries.where((e) => e.title == title).firstOrNull;
+            if (newEntry != null) {
+              try {
+                await ref.read(knowledgeEntriesProvider.notifier).pinEntry(newEntry.id, true);
+              } catch (_) {}
+            }
+          }
           context.pop();
         }
       }
@@ -328,6 +340,14 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
                 }),
               ],
             ),
+          ),
+          const SizedBox(height: 8),
+          CheckboxListTile(
+            value: _pinAfterSave,
+            onChanged: (v) => setState(() => _pinAfterSave = v ?? false),
+            title: const Text('Ghim sau khi lưu'),
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: EdgeInsets.zero,
           ),
         ],
       ),

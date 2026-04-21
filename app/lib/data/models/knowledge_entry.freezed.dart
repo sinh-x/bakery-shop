@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$KnowledgeEntry {
 
- int get id; String get title; String get content; String get type; List<String> get tags;@JsonKey(name: 'logged_by') String get loggedBy; String get source; DateTime get createdAt; DateTime get updatedAt; List<KnowledgePhoto> get photos;
+ int get id; String get title; String get content; String get type; List<String> get tags;@JsonKey(name: 'logged_by') String get loggedBy; String get source; DateTime get createdAt; DateTime get updatedAt; bool get pinned;@JsonKey(name: 'pinned_at') DateTime? get pinnedAt; List<KnowledgePhoto> get photos;
 /// Create a copy of KnowledgeEntry
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $KnowledgeEntryCopyWith<KnowledgeEntry> get copyWith => _$KnowledgeEntryCopyWith
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is KnowledgeEntry&&(identical(other.id, id) || other.id == id)&&(identical(other.title, title) || other.title == title)&&(identical(other.content, content) || other.content == content)&&(identical(other.type, type) || other.type == type)&&const DeepCollectionEquality().equals(other.tags, tags)&&(identical(other.loggedBy, loggedBy) || other.loggedBy == loggedBy)&&(identical(other.source, source) || other.source == source)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&const DeepCollectionEquality().equals(other.photos, photos));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is KnowledgeEntry&&(identical(other.id, id) || other.id == id)&&(identical(other.title, title) || other.title == title)&&(identical(other.content, content) || other.content == content)&&(identical(other.type, type) || other.type == type)&&const DeepCollectionEquality().equals(other.tags, tags)&&(identical(other.loggedBy, loggedBy) || other.loggedBy == loggedBy)&&(identical(other.source, source) || other.source == source)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.pinned, pinned) || other.pinned == pinned)&&(identical(other.pinnedAt, pinnedAt) || other.pinnedAt == pinnedAt)&&const DeepCollectionEquality().equals(other.photos, photos));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,title,content,type,const DeepCollectionEquality().hash(tags),loggedBy,source,createdAt,updatedAt,const DeepCollectionEquality().hash(photos));
+int get hashCode => Object.hash(runtimeType,id,title,content,type,const DeepCollectionEquality().hash(tags),loggedBy,source,createdAt,updatedAt,pinned,pinnedAt,const DeepCollectionEquality().hash(photos));
 
 @override
 String toString() {
-  return 'KnowledgeEntry(id: $id, title: $title, content: $content, type: $type, tags: $tags, loggedBy: $loggedBy, source: $source, createdAt: $createdAt, updatedAt: $updatedAt, photos: $photos)';
+  return 'KnowledgeEntry(id: $id, title: $title, content: $content, type: $type, tags: $tags, loggedBy: $loggedBy, source: $source, createdAt: $createdAt, updatedAt: $updatedAt, pinned: $pinned, pinnedAt: $pinnedAt, photos: $photos)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $KnowledgeEntryCopyWith<$Res>  {
   factory $KnowledgeEntryCopyWith(KnowledgeEntry value, $Res Function(KnowledgeEntry) _then) = _$KnowledgeEntryCopyWithImpl;
 @useResult
 $Res call({
- int id, String title, String content, String type, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source, DateTime createdAt, DateTime updatedAt, List<KnowledgePhoto> photos
+ int id, String title, String content, String type, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source, DateTime createdAt, DateTime updatedAt, bool pinned,@JsonKey(name: 'pinned_at') DateTime? pinnedAt, List<KnowledgePhoto> photos
 });
 
 
@@ -65,7 +65,7 @@ class _$KnowledgeEntryCopyWithImpl<$Res>
 
 /// Create a copy of KnowledgeEntry
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? title = null,Object? content = null,Object? type = null,Object? tags = null,Object? loggedBy = null,Object? source = null,Object? createdAt = null,Object? updatedAt = null,Object? photos = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? title = null,Object? content = null,Object? type = null,Object? tags = null,Object? loggedBy = null,Object? source = null,Object? createdAt = null,Object? updatedAt = null,Object? pinned = null,Object? pinnedAt = freezed,Object? photos = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
@@ -76,7 +76,9 @@ as List<String>,loggedBy: null == loggedBy ? _self.loggedBy : loggedBy // ignore
 as String,source: null == source ? _self.source : source // ignore: cast_nullable_to_non_nullable
 as String,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
-as DateTime,photos: null == photos ? _self.photos : photos // ignore: cast_nullable_to_non_nullable
+as DateTime,pinned: null == pinned ? _self.pinned : pinned // ignore: cast_nullable_to_non_nullable
+as bool,pinnedAt: freezed == pinnedAt ? _self.pinnedAt : pinnedAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,photos: null == photos ? _self.photos : photos // ignore: cast_nullable_to_non_nullable
 as List<KnowledgePhoto>,
   ));
 }
@@ -159,10 +161,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id,  String title,  String content,  String type,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  DateTime createdAt,  DateTime updatedAt,  List<KnowledgePhoto> photos)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id,  String title,  String content,  String type,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  DateTime createdAt,  DateTime updatedAt,  bool pinned, @JsonKey(name: 'pinned_at')  DateTime? pinnedAt,  List<KnowledgePhoto> photos)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _KnowledgeEntry() when $default != null:
-return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.loggedBy,_that.source,_that.createdAt,_that.updatedAt,_that.photos);case _:
+return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.loggedBy,_that.source,_that.createdAt,_that.updatedAt,_that.pinned,_that.pinnedAt,_that.photos);case _:
   return orElse();
 
 }
@@ -180,10 +182,10 @@ return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.l
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id,  String title,  String content,  String type,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  DateTime createdAt,  DateTime updatedAt,  List<KnowledgePhoto> photos)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id,  String title,  String content,  String type,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  DateTime createdAt,  DateTime updatedAt,  bool pinned, @JsonKey(name: 'pinned_at')  DateTime? pinnedAt,  List<KnowledgePhoto> photos)  $default,) {final _that = this;
 switch (_that) {
 case _KnowledgeEntry():
-return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.loggedBy,_that.source,_that.createdAt,_that.updatedAt,_that.photos);}
+return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.loggedBy,_that.source,_that.createdAt,_that.updatedAt,_that.pinned,_that.pinnedAt,_that.photos);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -197,10 +199,10 @@ return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.l
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id,  String title,  String content,  String type,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  DateTime createdAt,  DateTime updatedAt,  List<KnowledgePhoto> photos)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id,  String title,  String content,  String type,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  DateTime createdAt,  DateTime updatedAt,  bool pinned, @JsonKey(name: 'pinned_at')  DateTime? pinnedAt,  List<KnowledgePhoto> photos)?  $default,) {final _that = this;
 switch (_that) {
 case _KnowledgeEntry() when $default != null:
-return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.loggedBy,_that.source,_that.createdAt,_that.updatedAt,_that.photos);case _:
+return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.loggedBy,_that.source,_that.createdAt,_that.updatedAt,_that.pinned,_that.pinnedAt,_that.photos);case _:
   return null;
 
 }
@@ -212,7 +214,7 @@ return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.l
 @JsonSerializable()
 
 class _KnowledgeEntry implements KnowledgeEntry {
-  const _KnowledgeEntry({required this.id, required this.title, this.content = '', this.type = 'note', final  List<String> tags = const <String>[], @JsonKey(name: 'logged_by') this.loggedBy = '', this.source = 'app', required this.createdAt, required this.updatedAt, final  List<KnowledgePhoto> photos = const <KnowledgePhoto>[]}): _tags = tags,_photos = photos;
+  const _KnowledgeEntry({required this.id, required this.title, this.content = '', this.type = 'note', final  List<String> tags = const <String>[], @JsonKey(name: 'logged_by') this.loggedBy = '', this.source = 'app', required this.createdAt, required this.updatedAt, this.pinned = false, @JsonKey(name: 'pinned_at') this.pinnedAt, final  List<KnowledgePhoto> photos = const <KnowledgePhoto>[]}): _tags = tags,_photos = photos;
   factory _KnowledgeEntry.fromJson(Map<String, dynamic> json) => _$KnowledgeEntryFromJson(json);
 
 @override final  int id;
@@ -230,6 +232,8 @@ class _KnowledgeEntry implements KnowledgeEntry {
 @override@JsonKey() final  String source;
 @override final  DateTime createdAt;
 @override final  DateTime updatedAt;
+@override@JsonKey() final  bool pinned;
+@override@JsonKey(name: 'pinned_at') final  DateTime? pinnedAt;
  final  List<KnowledgePhoto> _photos;
 @override@JsonKey() List<KnowledgePhoto> get photos {
   if (_photos is EqualUnmodifiableListView) return _photos;
@@ -251,16 +255,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _KnowledgeEntry&&(identical(other.id, id) || other.id == id)&&(identical(other.title, title) || other.title == title)&&(identical(other.content, content) || other.content == content)&&(identical(other.type, type) || other.type == type)&&const DeepCollectionEquality().equals(other._tags, _tags)&&(identical(other.loggedBy, loggedBy) || other.loggedBy == loggedBy)&&(identical(other.source, source) || other.source == source)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&const DeepCollectionEquality().equals(other._photos, _photos));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _KnowledgeEntry&&(identical(other.id, id) || other.id == id)&&(identical(other.title, title) || other.title == title)&&(identical(other.content, content) || other.content == content)&&(identical(other.type, type) || other.type == type)&&const DeepCollectionEquality().equals(other._tags, _tags)&&(identical(other.loggedBy, loggedBy) || other.loggedBy == loggedBy)&&(identical(other.source, source) || other.source == source)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.pinned, pinned) || other.pinned == pinned)&&(identical(other.pinnedAt, pinnedAt) || other.pinnedAt == pinnedAt)&&const DeepCollectionEquality().equals(other._photos, _photos));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,title,content,type,const DeepCollectionEquality().hash(_tags),loggedBy,source,createdAt,updatedAt,const DeepCollectionEquality().hash(_photos));
+int get hashCode => Object.hash(runtimeType,id,title,content,type,const DeepCollectionEquality().hash(_tags),loggedBy,source,createdAt,updatedAt,pinned,pinnedAt,const DeepCollectionEquality().hash(_photos));
 
 @override
 String toString() {
-  return 'KnowledgeEntry(id: $id, title: $title, content: $content, type: $type, tags: $tags, loggedBy: $loggedBy, source: $source, createdAt: $createdAt, updatedAt: $updatedAt, photos: $photos)';
+  return 'KnowledgeEntry(id: $id, title: $title, content: $content, type: $type, tags: $tags, loggedBy: $loggedBy, source: $source, createdAt: $createdAt, updatedAt: $updatedAt, pinned: $pinned, pinnedAt: $pinnedAt, photos: $photos)';
 }
 
 
@@ -271,7 +275,7 @@ abstract mixin class _$KnowledgeEntryCopyWith<$Res> implements $KnowledgeEntryCo
   factory _$KnowledgeEntryCopyWith(_KnowledgeEntry value, $Res Function(_KnowledgeEntry) _then) = __$KnowledgeEntryCopyWithImpl;
 @override @useResult
 $Res call({
- int id, String title, String content, String type, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source, DateTime createdAt, DateTime updatedAt, List<KnowledgePhoto> photos
+ int id, String title, String content, String type, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source, DateTime createdAt, DateTime updatedAt, bool pinned,@JsonKey(name: 'pinned_at') DateTime? pinnedAt, List<KnowledgePhoto> photos
 });
 
 
@@ -288,7 +292,7 @@ class __$KnowledgeEntryCopyWithImpl<$Res>
 
 /// Create a copy of KnowledgeEntry
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? title = null,Object? content = null,Object? type = null,Object? tags = null,Object? loggedBy = null,Object? source = null,Object? createdAt = null,Object? updatedAt = null,Object? photos = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? title = null,Object? content = null,Object? type = null,Object? tags = null,Object? loggedBy = null,Object? source = null,Object? createdAt = null,Object? updatedAt = null,Object? pinned = null,Object? pinnedAt = freezed,Object? photos = null,}) {
   return _then(_KnowledgeEntry(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
@@ -299,7 +303,9 @@ as List<String>,loggedBy: null == loggedBy ? _self.loggedBy : loggedBy // ignore
 as String,source: null == source ? _self.source : source // ignore: cast_nullable_to_non_nullable
 as String,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
-as DateTime,photos: null == photos ? _self._photos : photos // ignore: cast_nullable_to_non_nullable
+as DateTime,pinned: null == pinned ? _self.pinned : pinned // ignore: cast_nullable_to_non_nullable
+as bool,pinnedAt: freezed == pinnedAt ? _self.pinnedAt : pinnedAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,photos: null == photos ? _self._photos : photos // ignore: cast_nullable_to_non_nullable
 as List<KnowledgePhoto>,
   ));
 }
