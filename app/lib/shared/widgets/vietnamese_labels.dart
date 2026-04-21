@@ -504,6 +504,11 @@ class VN {
   static const chiaSe = 'Chia sẻ';
   static const khongTheTaiAnh = 'Không thể tải ảnh';
   static const khongTheChiaSe = 'Không thể chia sẻ';
+
+  // Remarks & Incidents
+  static const remarksSection = 'Ghi chú & Sự cố';
+  static const addRemark = 'Thêm ghi chú';
+  static const noRemarks = 'Chưa có ghi chú';
 }
 
 // Category mapping (new slugs)
