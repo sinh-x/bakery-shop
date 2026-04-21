@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +6,9 @@ import '../../data/api/api_client.dart';
 import '../../data/models/catalog_tag.dart';
 import '../../providers/catalog_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+import 'services/bulk_share_service.dart';
+import 'services/bulk_download_android.dart'
+    if (kIsWeb) 'services/bulk_download_web.dart' as download_impl;
 import 'widgets/catalog_photo_browse_card.dart';
 
 class CatalogBrowseScreen extends ConsumerStatefulWidget {
@@ -20,6 +24,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
   String _filterKey = '';
   bool _selectMode = false;
   Set<int> _selectedPhotoIds = {};
+  bool _bulkInProgress = false;
 
   @override
   void dispose() {
@@ -37,6 +42,57 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
       _selectMode = false;
       _selectedPhotoIds.clear();
     });
+  }
+
+  Future<void> _onBulkShare() async {
+    final photos = ref.read(catalogBrowseProvider(_filterKey)).value;
+    if (photos == null) return;
+    final selectedPhotos =
+        photos.where((p) => _selectedPhotoIds.contains(p.id)).toList();
+    if (selectedPhotos.isEmpty) return;
+
+    setState(() => _bulkInProgress = true);
+    try {
+      final dio = ref.read(dioProvider);
+      final service = BulkShareService(dio);
+      final result = await service.share(selectedPhotos);
+      final resultStr = result.failCount == 0
+          ? 'Đã chia sẻ ${result.successCount} ảnh'
+          : 'Đã chia sẻ ${result.successCount}/${selectedPhotos.length} ảnh';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(resultStr)),
+        );
+      }
+    } finally {
+      setState(() => _bulkInProgress = false);
+    }
+  }
+
+  Future<void> _onBulkDownload() async {
+    final photos = ref.read(catalogBrowseProvider(_filterKey)).value;
+    if (photos == null) return;
+    final selectedPhotos =
+        photos.where((p) => _selectedPhotoIds.contains(p.id)).toList();
+    if (selectedPhotos.isEmpty) return;
+
+    setState(() => _bulkInProgress = true);
+    try {
+      final dio = ref.read(dioProvider);
+      final service = download_impl.BulkDownloadService(dio);
+      final result = await service.download(selectedPhotos);
+      final total = selectedPhotos.length;
+      final resultStr = result.failCount == 0
+          ? 'Đã lưu ${result.successCount}/$total ảnh'
+          : 'Đã lưu ${result.successCount}/$total ảnh';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(resultStr)),
+        );
+      }
+    } finally {
+      setState(() => _bulkInProgress = false);
+    }
   }
 
   void _toggleSelectMode() {
@@ -121,22 +177,25 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                 },
                 tooltip: VN.chon20,
               ),
-              IconButton(
-                icon: const Icon(Icons.share),
-                onPressed: _selectedPhotoIds.isEmpty
-                    ? null
-                    : () {
-                        // TODO: implement share
-                      },
-              ),
-              IconButton(
-                icon: const Icon(Icons.download),
-                onPressed: _selectedPhotoIds.isEmpty
-                    ? null
-                    : () {
-                        // TODO: implement download
-                      },
-              ),
+              if (_bulkInProgress)
+                const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else ...[
+                IconButton(
+                  icon: const Icon(Icons.share),
+                  onPressed: _selectedPhotoIds.isEmpty ? null : _onBulkShare,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.download),
+                  onPressed: _selectedPhotoIds.isEmpty ? null : _onBulkDownload,
+                ),
+              ],
               IconButton(
                 icon: const Icon(Icons.close),
                 onPressed: _clearSelection,
