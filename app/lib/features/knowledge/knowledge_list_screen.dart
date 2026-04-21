@@ -21,6 +21,7 @@ class KnowledgeListScreen extends ConsumerStatefulWidget {
   const KnowledgeListScreen({super.key, this.initialType});
 
   final String? initialType;
+  @override
   ConsumerState<KnowledgeListScreen> createState() => _KnowledgeListScreenState();
 }
 

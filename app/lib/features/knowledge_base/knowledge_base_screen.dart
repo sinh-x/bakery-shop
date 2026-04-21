@@ -26,10 +26,10 @@ class KnowledgeBaseScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pinnedNoteCount = ref.watch(knowledgeEntriesProvider).asData?.value
-            ?.where((e) => e.pinned && e.type == 'note')
-            .length ??
-        0;
+    final asyncData = ref.watch(knowledgeEntriesProvider);
+    final pinnedNoteCount = asyncData.hasValue && asyncData.value != null
+        ? asyncData.value!.where((e) => e.pinned && e.type == 'note').length
+        : 0;
 
     final tiles = [
       _HubTile(
