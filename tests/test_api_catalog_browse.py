@@ -132,6 +132,30 @@ def test_tag_sync_on_delete_clears_junction(api_client):
     assert rows == []
 
 
+# --- Category filter tests ---
+
+
+def test_browse_filter_by_categories(api_client):
+    """Filter by a single category slug returns only photos from that category."""
+    photo1 = _upload(api_client, 1)  # product 1 is in category 'banh_mi' by default
+    resp = api_client.get("/api/catalog/photos?categories=banh_mi")
+    assert resp.status_code == 200
+    photos = resp.json()
+    assert any(p["id"] == photo1["id"] for p in photos)
+
+
+def test_browse_filter_by_categories_and_tags(api_client):
+    """AND-combination: category filter + tag filter returns intersection."""
+    # Upload a photo with tags
+    photo_tagged = _upload(api_client, 1, tags="sinh_nhat")
+    # Filter by category banh_mi AND tag sinh_nhat
+    resp = api_client.get("/api/catalog/photos?categories=banh_mi&tags=sinh_nhat")
+    assert resp.status_code == 200
+    photos = resp.json()
+    # The photo should appear if it's in banh_mi category and has sinh_nhat tag
+    assert any(p["id"] == photo_tagged["id"] for p in photos)
+
+
 # --- Migration v28 / schema ---
 
 
