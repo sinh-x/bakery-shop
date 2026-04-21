@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$CatalogBrowsePhoto {
 
- int get id;@JsonKey(name: 'product_id') int get productId;@JsonKey(name: 'file_path') String get filePath; String get caption; String get tags; int get position;@JsonKey(name: 'created_at') String? get createdAt;@JsonKey(name: 'photo_hash') String? get photoHash; String get productName;
+ int get id;@JsonKey(name: 'product_id') int get productId;@JsonKey(name: 'file_path') String get filePath; String get caption; String get tags; int get position;@JsonKey(name: 'created_at') String? get createdAt;@JsonKey(name: 'photo_hash') String? get photoHash;@JsonKey(name: 'product_name') String get productName;
 /// Create a copy of CatalogBrowsePhoto
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -48,7 +48,7 @@ abstract mixin class $CatalogBrowsePhotoCopyWith<$Res>  {
   factory $CatalogBrowsePhotoCopyWith(CatalogBrowsePhoto value, $Res Function(CatalogBrowsePhoto) _then) = _$CatalogBrowsePhotoCopyWithImpl;
 @useResult
 $Res call({
- int id,@JsonKey(name: 'product_id') int productId,@JsonKey(name: 'file_path') String filePath, String caption, String tags, int position,@JsonKey(name: 'created_at') String? createdAt,@JsonKey(name: 'photo_hash') String? photoHash, String productName
+ int id,@JsonKey(name: 'product_id') int productId,@JsonKey(name: 'file_path') String filePath, String caption, String tags, int position,@JsonKey(name: 'created_at') String? createdAt,@JsonKey(name: 'photo_hash') String? photoHash,@JsonKey(name: 'product_name') String productName
 });
 
 
@@ -158,7 +158,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'product_id')  int productId, @JsonKey(name: 'file_path')  String filePath,  String caption,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt, @JsonKey(name: 'photo_hash')  String? photoHash,  String productName)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'product_id')  int productId, @JsonKey(name: 'file_path')  String filePath,  String caption,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt, @JsonKey(name: 'photo_hash')  String? photoHash, @JsonKey(name: 'product_name')  String productName)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _CatalogBrowsePhoto() when $default != null:
 return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags,_that.position,_that.createdAt,_that.photoHash,_that.productName);case _:
@@ -179,7 +179,7 @@ return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'product_id')  int productId, @JsonKey(name: 'file_path')  String filePath,  String caption,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt, @JsonKey(name: 'photo_hash')  String? photoHash,  String productName)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'product_id')  int productId, @JsonKey(name: 'file_path')  String filePath,  String caption,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt, @JsonKey(name: 'photo_hash')  String? photoHash, @JsonKey(name: 'product_name')  String productName)  $default,) {final _that = this;
 switch (_that) {
 case _CatalogBrowsePhoto():
 return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags,_that.position,_that.createdAt,_that.photoHash,_that.productName);}
@@ -196,7 +196,7 @@ return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id, @JsonKey(name: 'product_id')  int productId, @JsonKey(name: 'file_path')  String filePath,  String caption,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt, @JsonKey(name: 'photo_hash')  String? photoHash,  String productName)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id, @JsonKey(name: 'product_id')  int productId, @JsonKey(name: 'file_path')  String filePath,  String caption,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt, @JsonKey(name: 'photo_hash')  String? photoHash, @JsonKey(name: 'product_name')  String productName)?  $default,) {final _that = this;
 switch (_that) {
 case _CatalogBrowsePhoto() when $default != null:
 return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags,_that.position,_that.createdAt,_that.photoHash,_that.productName);case _:
@@ -211,7 +211,7 @@ return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags
 @JsonSerializable()
 
 class _CatalogBrowsePhoto implements CatalogBrowsePhoto {
-  const _CatalogBrowsePhoto({required this.id, @JsonKey(name: 'product_id') required this.productId, @JsonKey(name: 'file_path') required this.filePath, this.caption = '', this.tags = '', this.position = 0, @JsonKey(name: 'created_at') this.createdAt, @JsonKey(name: 'photo_hash') this.photoHash, required this.productName});
+  const _CatalogBrowsePhoto({required this.id, @JsonKey(name: 'product_id') required this.productId, @JsonKey(name: 'file_path') required this.filePath, this.caption = '', this.tags = '', this.position = 0, @JsonKey(name: 'created_at') this.createdAt, @JsonKey(name: 'photo_hash') this.photoHash, @JsonKey(name: 'product_name') required this.productName});
   factory _CatalogBrowsePhoto.fromJson(Map<String, dynamic> json) => _$CatalogBrowsePhotoFromJson(json);
 
 @override final  int id;
@@ -222,7 +222,7 @@ class _CatalogBrowsePhoto implements CatalogBrowsePhoto {
 @override@JsonKey() final  int position;
 @override@JsonKey(name: 'created_at') final  String? createdAt;
 @override@JsonKey(name: 'photo_hash') final  String? photoHash;
-@override final  String productName;
+@override@JsonKey(name: 'product_name') final  String productName;
 
 /// Create a copy of CatalogBrowsePhoto
 /// with the given fields replaced by the non-null parameter values.
@@ -257,7 +257,7 @@ abstract mixin class _$CatalogBrowsePhotoCopyWith<$Res> implements $CatalogBrows
   factory _$CatalogBrowsePhotoCopyWith(_CatalogBrowsePhoto value, $Res Function(_CatalogBrowsePhoto) _then) = __$CatalogBrowsePhotoCopyWithImpl;
 @override @useResult
 $Res call({
- int id,@JsonKey(name: 'product_id') int productId,@JsonKey(name: 'file_path') String filePath, String caption, String tags, int position,@JsonKey(name: 'created_at') String? createdAt,@JsonKey(name: 'photo_hash') String? photoHash, String productName
+ int id,@JsonKey(name: 'product_id') int productId,@JsonKey(name: 'file_path') String filePath, String caption, String tags, int position,@JsonKey(name: 'created_at') String? createdAt,@JsonKey(name: 'photo_hash') String? photoHash,@JsonKey(name: 'product_name') String productName
 });
 
 
