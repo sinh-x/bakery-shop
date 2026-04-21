@@ -1,5 +1,6 @@
 """Catalog photo API routes — product gallery."""
 
+import logging
 from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -8,6 +9,8 @@ import baker.config
 from baker.api.photos import save_photo
 from baker.db.connection import get_db
 
+
+logger = logging.getLogger("baker.server")
 
 # Cross-product browse — registered at /api/catalog/photos
 catalog_router = APIRouter(prefix="/api/catalog", tags=["catalog"])
@@ -139,6 +142,7 @@ async def upload_catalog_photo(
     try:
         hash_hex = save_photo(data, file.filename or "")
     except Exception:
+        logger.exception("Catalog photo upload failed for file: %s", file.filename)
         raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
 
     with get_db() as conn:
