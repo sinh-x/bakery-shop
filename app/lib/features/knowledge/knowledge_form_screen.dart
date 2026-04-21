@@ -380,7 +380,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
       }
       return FileImage(File(photo.file!.path));
     }
-    // Existing photo — use API base URL
-    return NetworkImage('$_photoBaseUrl/api/knowledge/photos/${photo.photo!.hash}');
+    // Existing photo — use API base URL + server-provided url path
+    return NetworkImage('$_photoBaseUrl${photo.photo!.url}');
   }
 }

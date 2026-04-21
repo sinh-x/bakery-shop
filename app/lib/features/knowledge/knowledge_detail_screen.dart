@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../data/api/api_client.dart';
 import '../../data/providers/knowledge_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/knowledge_photo_gallery.dart';
@@ -178,7 +179,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
               if (entry.photos.isNotEmpty) ...[
                 KnowledgePhotoGallery(
                   photos: entry.photos,
-                  baseUrl: '',
+                  baseUrl: ref.read(dioProvider).options.baseUrl,
                 ),
                 const SizedBox(height: 16),
               ],

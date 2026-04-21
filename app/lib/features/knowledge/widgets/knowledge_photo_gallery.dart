@@ -62,7 +62,7 @@ class _KnowledgePhotoGalleryState extends State<KnowledgePhotoGallery> {
             },
             itemBuilder: (ctx, index) {
               final photo = widget.photos[index];
-              final url = '$baseUrl/api/knowledge/photos/${photo.hash}';
+              final url = '$baseUrl${photo.url}';
               return GestureDetector(
                 onTap: () => _openFullScreen(index),
                 child: Image.network(
@@ -169,7 +169,7 @@ class _FullScreenViewerState extends State<_FullScreenViewer> {
         },
         itemBuilder: (ctx, index) {
           final photo = widget.photos[index];
-          final url = '${widget.baseUrl}/api/knowledge/photos/${photo.hash}';
+          final url = '${widget.baseUrl}${photo.url}';
           return Stack(
             fit: StackFit.expand,
             children: [
