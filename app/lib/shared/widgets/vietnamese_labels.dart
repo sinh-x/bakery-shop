@@ -495,6 +495,13 @@ class VN {
   static const khongCoSanPhamTonKho = 'Không có sản phẩm tồn kho';
   static const capNhatThanhCong = 'Cập nhật thành công';
   static const loiHeThong = 'Lỗi hệ thống';
+
+  // Catalog photo viewer
+  static const daLuuAnh = 'Đã lưu ảnh';
+  static const taiAnh = 'Tải ảnh';
+  static const chiaSe = 'Chia sẻ';
+  static const khongTheTaiAnh = 'Không thể tải ảnh';
+  static const khongTheChiaSe = 'Không thể chia sẻ';
 }
 
 // Category mapping (new slugs)

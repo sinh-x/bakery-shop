@@ -1,6 +1,11 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:gal/gal.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../data/models/catalog_photo.dart';
 import '../../../providers/catalog_provider.dart';
@@ -32,6 +37,7 @@ class CatalogPhotoViewer extends ConsumerStatefulWidget {
 class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
   late PageController _pageController;
   late int _currentIndex;
+  final Dio _dio = Dio();
 
   @override
   void initState() {
@@ -44,6 +50,47 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
   void dispose() {
     _pageController.dispose();
     super.dispose();
+  }
+
+  Future<void> _downloadPhoto(List<CatalogPhoto> photos) async {
+    if (_currentIndex >= photos.length) return;
+    final photo = photos[_currentIndex];
+    final url =
+        '${widget.baseUrl}/api/products/${widget.productId}/catalog/${photo.id}/photo';
+    try {
+      final resp = await _dio.get<List<int>>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (resp.data == null) throw Exception('No data');
+      await Gal.putImageBytes(Uint8List.fromList(resp.data!));
+      if (mounted) showTopSnackBar(context, VN.daLuuAnh);
+    } catch (e) {
+      if (mounted) showTopSnackBar(context, VN.khongTheTaiAnh);
+    }
+  }
+
+  Future<void> _sharePhoto(List<CatalogPhoto> photos) async {
+    if (_currentIndex >= photos.length) return;
+    final photo = photos[_currentIndex];
+    final url =
+        '${widget.baseUrl}/api/products/${widget.productId}/catalog/${photo.id}/photo';
+    try {
+      final resp = await _dio.get<List<int>>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (resp.data == null) throw Exception('No data');
+      final tmpDir = await getTemporaryDirectory();
+      final tmpFile = File('${tmpDir.path}/catalog_photo_${photo.id}.jpg');
+      await tmpFile.writeAsBytes(Uint8List.fromList(resp.data!));
+      await Share.shareXFiles(
+        [XFile(tmpFile.path)],
+        text: 'Tiệm Bánh Ninh Diêm',
+      );
+    } catch (e) {
+      if (mounted) showTopSnackBar(context, VN.khongTheChiaSe);
+    }
   }
 
   void _openEditSheet(CatalogPhoto photo) {
@@ -74,7 +121,17 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
                 style: const TextStyle(color: Colors.white),
               ),
         actions: [
-          if (photos.isNotEmpty)
+          if (photos.isNotEmpty) ...[
+            IconButton(
+              icon: const Icon(Icons.download, color: Colors.white),
+              tooltip: VN.taiAnh,
+              onPressed: () => _downloadPhoto(photos),
+            ),
+            IconButton(
+              icon: const Icon(Icons.share, color: Colors.white),
+              tooltip: VN.chiaSe,
+              onPressed: () => _sharePhoto(photos),
+            ),
             IconButton(
               icon: const Icon(Icons.edit_outlined, color: Colors.white),
               tooltip: VN.editCatalogPhoto,
@@ -84,6 +141,7 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
                 }
               },
             ),
+          ],
         ],
       ),
       body: photos.isEmpty
