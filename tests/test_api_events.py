@@ -254,3 +254,161 @@ def test_patch_event_multiple_fields(api_client):
     assert ev["summary"] == "Cập nhật"
     assert ev["type"] == "equipment"
     assert ev["tags"] == ["staff"]
+
+
+# --- Phase 5: Order Events Integration Tests ---
+
+
+def _create_order_via_api(client, customer="Khách test"):
+    resp = client.post("/api/orders", json={
+        "customerName": customer,
+        "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000}],
+    })
+    assert resp.status_code == 201
+    return resp.json()
+
+
+def test_create_event_with_order_id(api_client):
+    """POST /api/events with orderId creates event linked to the order."""
+    order = _create_order_via_api(api_client)
+    order_int_id = int(order["id"])
+    resp = api_client.post("/api/events", json={
+        "summary": "Ghi chú đơn hàng",
+        "type": "note",
+        "orderId": order_int_id,
+    })
+    assert resp.status_code == 201
+    ev = resp.json()
+    assert ev["order_id"] == order_int_id
+
+
+def test_create_event_with_invalid_order_id_returns_404(api_client):
+    """POST /api/events with non-existent orderId returns 404."""
+    resp = api_client.post("/api/events", json={
+        "summary": "Sự kiện lạ",
+        "orderId": 99999,
+    })
+    assert resp.status_code == 404
+    assert "Không tìm thấy đơn hàng" in resp.json()["detail"]
+
+
+def test_list_events_filter_by_order_id(api_client):
+    """GET /api/events?order_id=N returns only events for that order."""
+    order = _create_order_via_api(api_client)
+    order_int_id = int(order["id"])
+    # Event linked to this order
+    resp1 = api_client.post("/api/events", json={
+        "summary": "Sự kiện đơn hàng A", "type": "note", "orderId": order_int_id,
+    })
+    assert resp1.status_code == 201
+    # Another event NOT linked to any order
+    resp2 = api_client.post("/api/events", json={"summary": "Sự kiện chung"})
+    assert resp2.status_code == 201
+
+    # Filter by order_id should return all events linked to that order
+    # (including auto-created order creation event + manual event)
+    resp = api_client.get("/api/events", params={"order_id": order_int_id})
+    assert resp.status_code == 200
+    events = resp.json()
+    assert len(events) == 2
+    summaries = [e["summary"] for e in events]
+    assert "Sự kiện đơn hàng A" in summaries
+    # Order creation auto-event should also be included
+    assert any("created" in e["summary"] for e in events)
+    for ev in events:
+        assert ev["order_id"] == order_int_id
+
+
+def test_list_events_no_order_id_filter(api_client):
+    """GET /api/events with no order_id returns all events including unlinked."""
+    order = _create_order_via_api(api_client)
+    order_int_id = int(order["id"])
+    api_client.post("/api/events", json={
+        "summary": "Sự kiện đơn", "orderId": order_int_id,
+    })
+    api_client.post("/api/events", json={"summary": "Sự kiện chung"})
+
+    resp = api_client.get("/api/events")
+    assert resp.status_code == 200
+    events = resp.json()
+    # At minimum these 2 + order creation auto-event
+    assert len(events) >= 2
+
+
+def test_get_order_events_returns_linked_events(api_client):
+    """GET /api/orders/{ref}/events returns events linked to the order."""
+    order = _create_order_via_api(api_client)
+    ref = order["orderRef"]
+    order_int_id = int(order["id"])
+
+    # Create a manual event linked to this order
+    ev_resp = api_client.post("/api/events", json={
+        "summary": "Sự kiện thủ công", "type": "note", "orderId": order_int_id,
+    })
+    assert ev_resp.status_code == 201
+
+    resp = api_client.get(f"/api/orders/{ref}/events")
+    assert resp.status_code == 200
+    events = resp.json()
+    # Manual event must appear
+    manual_events = [e for e in events if e["summary"] == "Sự kiện thủ công"]
+    assert len(manual_events) == 1
+    assert manual_events[0]["order_id"] == order_int_id
+
+
+def test_get_order_events_not_found_for_invalid_ref(api_client):
+    """GET /api/orders/INVALID/events returns 404."""
+    resp = api_client.get("/api/orders/ORD-NOTEXIST/events")
+    assert resp.status_code == 404
+
+
+def test_auto_generated_status_change_event_has_order_id(api_client):
+    """Order status change auto-generates an event with order_id set."""
+    order = _create_order_via_api(api_client)
+    ref = order["orderRef"]
+    order_int_id = int(order["id"])
+
+    # Transition order status to trigger auto-event
+    api_client.post(f"/api/orders/{ref}/status", json={"status": "confirmed"})
+
+    resp = api_client.get(f"/api/orders/{ref}/events")
+    assert resp.status_code == 200
+    events = resp.json()
+    status_events = [e for e in events if "status:" in e["summary"]]
+    assert len(status_events) >= 1
+    # Status auto-event should have order_id set
+    assert status_events[0]["order_id"] == order_int_id
+
+
+def test_existing_events_without_order_id_still_work(api_client):
+    """Events created without orderId are returned normally in list."""
+    resp = api_client.post("/api/events", json={
+        "summary": "Sự kiện không có đơn",
+        "type": "note",
+    })
+    assert resp.status_code == 201
+    ev = resp.json()
+    assert ev["order_id"] is None
+
+    list_resp = api_client.get("/api/events")
+    assert list_resp.status_code == 200
+    events = list_resp.json()
+    unlinked = [e for e in events if e["order_id"] is None]
+    assert len(unlinked) >= 1
+
+
+def test_get_order_events_by_id_instead_of_ref(api_client):
+    """GET /api/orders/{id}/events works with numeric ID (not just orderRef)."""
+    order = _create_order_via_api(api_client)
+    order_id_str = order["id"]
+
+    # Create manual event
+    api_client.post("/api/events", json={
+        "summary": "Sự kiện theo ID", "orderId": int(order_id_str),
+    })
+
+    # Use numeric ID instead of orderRef
+    resp = api_client.get(f"/api/orders/{order_id_str}/events")
+    assert resp.status_code == 200
+    events = resp.json()
+    assert len(events) >= 1

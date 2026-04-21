@@ -8,10 +8,12 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/api/api_client.dart';
 import '../../data/api/order_service.dart';
 import '../../data/api/receipt_service.dart';
+import '../../data/models/event.dart';
 import '../../data/models/order.dart';
 import '../../data/models/order_photo.dart';
 import '../../data/models/payment_transaction.dart';
 import '../../data/models/work_item.dart';
+import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/theme/bakery_theme.dart';
@@ -847,6 +849,10 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           orderRef: order.orderRef,
           baseUrl: ref.watch(apiBaseUrlProvider),
         ),
+
+        // ── Remarks & Incidents ──────────────────────────────────────
+        const SizedBox(height: 16),
+        _RemarksSection(orderRef: order.orderRef),
 
         // ── Status actions ────────────────────────────────────────────
         if (transitions.isNotEmpty) ...[
@@ -2524,6 +2530,650 @@ class _RutTienItemRow extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Remarks & Incidents section
+// ---------------------------------------------------------------------------
+
+class _RemarksSection extends ConsumerWidget {
+  const _RemarksSection({required this.orderRef});
+
+  final String orderRef;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final eventsAsync = ref.watch(orderEventsProvider(orderRef));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _SectionHeader(VN.remarksSection)),
+            eventsAsync.whenOrNull(
+              data: (events) {
+                if (events.isEmpty) return null;
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${events.length}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                );
+              },
+            ) ?? const SizedBox.shrink(),
+          ],
+        ),
+        eventsAsync.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          error: (e, _) => Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              VN.apiError,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+          data: (events) {
+            if (events.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  VN.noRemarks,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.outline,
+                  ),
+                ),
+              );
+            }
+            return Column(
+              children: [
+                for (final event in events) _RemarkCard(event: event),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => _showAddRemarkSheet(context, ref),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text(VN.addRemark),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showAddRemarkSheet(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _AddRemarkSheet(orderRef: orderRef),
+    );
+  }
+}
+
+class _RemarkCard extends StatelessWidget {
+  const _RemarkCard({required this.event});
+
+  final BakeryEvent event;
+
+  bool get _isAutoEvent {
+    return event.source == 'system' || event.loggedBy.isEmpty;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isAuto = _isAutoEvent;
+
+    String dateStr = '';
+    try {
+      final dt = event.timestamp;
+      dateStr = DateFormat('dd/MM HH:mm').format(dt);
+    } catch (_) {
+      dateStr = event.timestamp.toString();
+    }
+
+    final typeColor = _typeColor(event.type);
+    final typeLabel = _typeLabel(event.type);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isAuto
+            ? Colors.grey.shade100
+            : typeColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isAuto
+              ? Colors.grey.shade300
+              : typeColor.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: (isAuto ? Colors.grey : typeColor).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  typeLabel,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: isAuto ? Colors.grey.shade700 : typeColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                dateStr,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            event.summary,
+            style: theme.textTheme.bodyMedium,
+          ),
+          if (event.tags.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 4,
+              runSpacing: 2,
+              children: [
+                for (final tag in event.tags)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      tag,
+                      style: theme.textTheme.labelSmall,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+          if (event.loggedBy.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              '— ${event.loggedBy}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Color _typeColor(String type) {
+    switch (type) {
+      case 'equipment':
+        return Colors.orange;
+      case 'production':
+        return Colors.blue;
+      case 'inventory':
+        return Colors.green;
+      case 'expense':
+        return Colors.red;
+      case 'delivery':
+        return Colors.teal;
+      case 'order':
+        return Colors.purple;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _typeLabel(String type) {
+    switch (type) {
+      case 'equipment':
+        return VN.typeEquipment;
+      case 'production':
+        return VN.eventProduction;
+      case 'inventory':
+        return VN.eventInventory;
+      case 'expense':
+        return VN.eventExpense;
+      case 'delivery':
+        return VN.eventDelivery;
+      case 'order':
+        return VN.eventOrder;
+      default:
+        return VN.eventNote;
+    }
+  }
+}
+
+class _AddRemarkSheet extends ConsumerStatefulWidget {
+  const _AddRemarkSheet({required this.orderRef});
+
+  final String orderRef;
+
+  @override
+  ConsumerState<_AddRemarkSheet> createState() => _AddRemarkSheetState();
+}
+
+class _AddRemarkSheetState extends ConsumerState<_AddRemarkSheet> {
+  final _summaryCtrl = TextEditingController();
+  final _customTagCtrl = TextEditingController();
+
+  String _selectedType = 'note';
+  final _selectedTags = <String>{};
+  final _customTags = <String>[];
+  bool _showCustomTagField = false;
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _summaryCtrl.dispose();
+    _customTagCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final summary = _summaryCtrl.text.trim();
+    if (summary.isEmpty) return;
+
+    setState(() => _saving = true);
+    try {
+      final loggedBy = ref.read(loggedByProvider);
+      await ref.read(orderEventsProvider(widget.orderRef).notifier).addRemark(
+        summary: summary,
+        type: _selectedType,
+        tags: _selectedTags.toList(),
+        loggedBy: loggedBy,
+      );
+      if (mounted) {
+        Navigator.pop(context);
+        showTopSnackBar(context, VN.eventLogged);
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.apiError}: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _confirmCustomTag() {
+    final tag = _customTagCtrl.text.trim();
+    if (tag.isNotEmpty) {
+      setState(() {
+        if (!_customTags.contains(tag)) _customTags.add(tag);
+        _selectedTags.add(tag);
+        _customTagCtrl.clear();
+        _showCustomTagField = false;
+      });
+    } else {
+      setState(() => _showCustomTagField = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final loggedBy = ref.watch(loggedByProvider);
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  VN.addRemark,
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text(VN.cancel),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _summaryCtrl,
+            autofocus: true,
+            minLines: 2,
+            maxLines: 4,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              hintText: VN.eventPrompt,
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Type chips
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              _TypeChip(
+                value: 'note',
+                label: VN.eventNote,
+                icon: Icons.edit_note,
+                selected: _selectedType == 'note',
+                onSelected: (_) => setState(() => _selectedType = 'note'),
+              ),
+              _TypeChip(
+                value: 'equipment',
+                label: VN.typeEquipment,
+                icon: Icons.warning_amber,
+                selected: _selectedType == 'equipment',
+                onSelected: (_) => setState(() => _selectedType = 'equipment'),
+              ),
+              _TypeChip(
+                value: 'production',
+                label: VN.eventProduction,
+                icon: Icons.bakery_dining,
+                selected: _selectedType == 'production',
+                onSelected: (_) => setState(() => _selectedType = 'production'),
+              ),
+              _TypeChip(
+                value: 'inventory',
+                label: VN.eventInventory,
+                icon: Icons.inventory_2,
+                selected: _selectedType == 'inventory',
+                onSelected: (_) => setState(() => _selectedType = 'inventory'),
+              ),
+              _TypeChip(
+                value: 'expense',
+                label: VN.eventExpense,
+                icon: Icons.payments,
+                selected: _selectedType == 'expense',
+                onSelected: (_) => setState(() => _selectedType = 'expense'),
+              ),
+              _TypeChip(
+                value: 'delivery',
+                label: VN.eventDelivery,
+                icon: Icons.local_shipping,
+                selected: _selectedType == 'delivery',
+                onSelected: (_) => setState(() => _selectedType = 'delivery'),
+              ),
+              _TypeChip(
+                value: 'order',
+                label: VN.eventOrder,
+                icon: Icons.receipt_long,
+                selected: _selectedType == 'order',
+                onSelected: (_) => setState(() => _selectedType = 'order'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Tag chips
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              _TagChip(
+                label: VN.tagIncident,
+                selected: _selectedTags.contains('incident'),
+                onSelected: (v) {
+                  setState(() {
+                    if (v) {
+                      _selectedTags.add('incident');
+                    } else {
+                      _selectedTags.remove('incident');
+                    }
+                  });
+                },
+              ),
+              _TagChip(
+                label: VN.tagKnowledgeGap,
+                selected: _selectedTags.contains('knowledge-gap'),
+                onSelected: (v) {
+                  setState(() {
+                    if (v) {
+                      _selectedTags.add('knowledge-gap');
+                    } else {
+                      _selectedTags.remove('knowledge-gap');
+                    }
+                  });
+                },
+              ),
+              _TagChip(
+                label: VN.tagMaintenance,
+                selected: _selectedTags.contains('maintenance'),
+                onSelected: (v) {
+                  setState(() {
+                    if (v) {
+                      _selectedTags.add('maintenance');
+                    } else {
+                      _selectedTags.remove('maintenance');
+                    }
+                  });
+                },
+              ),
+              _TagChip(
+                label: VN.tagEquipment,
+                selected: _selectedTags.contains('equipment'),
+                onSelected: (v) {
+                  setState(() {
+                    if (v) {
+                      _selectedTags.add('equipment');
+                    } else {
+                      _selectedTags.remove('equipment');
+                    }
+                  });
+                },
+              ),
+              _TagChip(
+                label: VN.tagPricing,
+                selected: _selectedTags.contains('pricing'),
+                onSelected: (v) {
+                  setState(() {
+                    if (v) {
+                      _selectedTags.add('pricing');
+                    } else {
+                      _selectedTags.remove('pricing');
+                    }
+                  });
+                },
+              ),
+              _TagChip(
+                label: VN.tagOrdering,
+                selected: _selectedTags.contains('ordering'),
+                onSelected: (v) {
+                  setState(() {
+                    if (v) {
+                      _selectedTags.add('ordering');
+                    } else {
+                      _selectedTags.remove('ordering');
+                    }
+                  });
+                },
+              ),
+              _TagChip(
+                label: VN.tagDecoration,
+                selected: _selectedTags.contains('decoration'),
+                onSelected: (v) {
+                  setState(() {
+                    if (v) {
+                      _selectedTags.add('decoration');
+                    } else {
+                      _selectedTags.remove('decoration');
+                    }
+                  });
+                },
+              ),
+              _TagChip(
+                label: VN.tagStaff,
+                selected: _selectedTags.contains('staff'),
+                onSelected: (v) {
+                  setState(() {
+                    if (v) {
+                      _selectedTags.add('staff');
+                    } else {
+                      _selectedTags.remove('staff');
+                    }
+                  });
+                },
+              ),
+              ..._customTags.map(
+                (tag) => _TagChip(
+                  label: tag,
+                  selected: _selectedTags.contains(tag),
+                  onSelected: (v) {
+                    setState(() {
+                      if (v) {
+                        _selectedTags.add(tag);
+                      } else {
+                        _selectedTags.remove(tag);
+                      }
+                    });
+                  },
+                ),
+              ),
+              if (_showCustomTagField)
+                SizedBox(
+                  width: 120,
+                  child: TextField(
+                    controller: _customTagCtrl,
+                    autofocus: true,
+                    textInputAction: TextInputAction.done,
+                    decoration: const InputDecoration(
+                      hintText: VN.addTag,
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    ),
+                    onSubmitted: (_) => _confirmCustomTag(),
+                  ),
+                )
+              else
+                ActionChip(
+                  avatar: const Icon(Icons.add, size: 16),
+                  label: const Text(VN.addTag),
+                  onPressed: () => setState(() => _showCustomTagField = true),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Logged-by row
+          Row(
+            children: [
+              const Icon(Icons.person_outline, size: 18),
+              const SizedBox(width: 6),
+              Text('${VN.loggedBy}: ', style: theme.textTheme.bodyMedium),
+              Text(
+                loggedBy.isNotEmpty ? loggedBy : VN.setYourName,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: loggedBy.isEmpty ? colorScheme.error : null,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: _saving ? null : _submit,
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            child: _saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text(VN.logEvent, style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TypeChip extends StatelessWidget {
+  const _TypeChip({
+    required this.value,
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String value;
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final ValueChanged<bool> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ChoiceChip(
+      label: Text(label),
+      avatar: Icon(icon, size: 16),
+      selected: selected,
+      selectedColor: value == 'equipment'
+          ? Colors.orange.shade100
+          : colorScheme.primaryContainer,
+      onSelected: onSelected,
+    );
+  }
+}
+
+class _TagChip extends StatelessWidget {
+  const _TagChip({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool selected;
+  final ValueChanged<bool> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: onSelected,
     );
   }
 }

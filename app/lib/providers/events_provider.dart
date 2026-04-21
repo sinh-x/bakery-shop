@@ -114,3 +114,46 @@ final eventsProvider =
     AsyncNotifierProvider<EventsNotifier, List<BakeryEvent>>(
   EventsNotifier.new,
 );
+
+// ── Order-scoped events ────────────────────────────────────────────────────────
+
+class OrderEventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
+  OrderEventsNotifier(this.orderRef);
+
+  final String orderRef;
+
+  @override
+  Future<List<BakeryEvent>> build() async {
+    final service = ref.read(eventServiceProvider);
+    return service.getOrderEvents(orderRef);
+  }
+
+  Future<void> addRemark({
+    required String summary,
+    String type = 'note',
+    List<String> tags = const [],
+    String loggedBy = '',
+  }) async {
+    final service = ref.read(eventServiceProvider);
+    final orderId = int.tryParse(orderRef);
+    if (orderId == null) return;
+    final event = await service.createEvent(
+      summary: summary,
+      type: type,
+      tags: tags,
+      loggedBy: loggedBy,
+      orderId: orderId,
+    );
+    state = state.whenData((events) => [event, ...events]);
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() => build());
+  }
+}
+
+final orderEventsProvider =
+    AsyncNotifierProvider.family<OrderEventsNotifier, List<BakeryEvent>, String>(
+  (orderRef) => OrderEventsNotifier(orderRef),
+);

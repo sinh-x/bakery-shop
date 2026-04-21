@@ -198,7 +198,7 @@ class Order:
             type="order",
             data={"order_ref": self.order_ref, "action": "created",
                   "customer": self.customer_name, "total": self.total_price},
-        ).save(conn)
+        ).save(conn, order_id=self.id)
 
         return self.id
 
@@ -235,7 +235,7 @@ class Order:
             summary=f"Order {row['order_ref']} status: {current} -> {new_status}",
             type="order",
             data=data,
-        ).save(conn)
+        ).save(conn, order_id=row["id"])
 
         return True
 

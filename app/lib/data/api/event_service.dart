@@ -16,6 +16,7 @@ class EventService {
     String loggedBy = '',
     Map<String, dynamic> data = const {},
     String source = 'app',
+    int? orderId,
   }) async {
     final body = <String, dynamic>{
       'summary': summary,
@@ -25,6 +26,7 @@ class EventService {
       'data': data,
       'source': source,
     };
+    if (orderId != null) body['orderId'] = orderId;
     final response = await _dio.post('/api/events', data: body);
     return BakeryEvent.fromJson(response.data as Map<String, dynamic>);
   }
@@ -56,6 +58,14 @@ class EventService {
   Future<BakeryEvent> getEvent(int id) async {
     final response = await _dio.get('/api/events/$id');
     return BakeryEvent.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<List<BakeryEvent>> getOrderEvents(String orderRef) async {
+    final response = await _dio.get('/api/orders/$orderRef/events');
+    final list = response.data as List;
+    return list
+        .map((json) => BakeryEvent.fromJson(json as Map<String, dynamic>))
+        .toList();
   }
 
   Future<BakeryEvent> updateEvent(
