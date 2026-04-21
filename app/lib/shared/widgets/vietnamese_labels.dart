@@ -473,6 +473,7 @@ class VN {
   static const phongCach = 'Phong cách';
   static const filterHint = 'Chọn thẻ để lọc';
   static const noBrowsePhotos = 'Chưa có ảnh mẫu';
+  static const noBrowsePhotosForFilter = 'Không có ảnh phù hợp bộ lọc';
 
   // Stock management
   static const quanLyTonKho = 'Quản lý tồn kho';

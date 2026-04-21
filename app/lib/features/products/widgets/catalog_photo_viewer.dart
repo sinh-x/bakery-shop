@@ -7,7 +7,9 @@ import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../data/api/api_client.dart';
 import '../../../data/models/catalog_photo.dart';
+import '../../../data/models/catalog_tag.dart';
 import '../../../providers/catalog_provider.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 
@@ -37,7 +39,8 @@ class CatalogPhotoViewer extends ConsumerStatefulWidget {
 class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
   late PageController _pageController;
   late int _currentIndex;
-  final Dio _dio = Dio();
+  bool _downloading = false;
+  bool _sharing = false;
 
   @override
   void initState() {
@@ -53,12 +56,14 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
   }
 
   Future<void> _downloadPhoto(List<CatalogPhoto> photos) async {
-    if (_currentIndex >= photos.length) return;
+    if (_downloading || _currentIndex >= photos.length) return;
+    setState(() => _downloading = true);
     final photo = photos[_currentIndex];
     final url =
         '${widget.baseUrl}/api/products/${widget.productId}/catalog/${photo.id}/photo';
     try {
-      final resp = await _dio.get<List<int>>(
+      final dio = ref.read(dioProvider);
+      final resp = await dio.get<List<int>>(
         url,
         options: Options(responseType: ResponseType.bytes),
       );
@@ -67,16 +72,20 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
       if (mounted) showTopSnackBar(context, VN.daLuuAnh);
     } catch (e) {
       if (mounted) showTopSnackBar(context, VN.khongTheTaiAnh);
+    } finally {
+      if (mounted) setState(() => _downloading = false);
     }
   }
 
   Future<void> _sharePhoto(List<CatalogPhoto> photos) async {
-    if (_currentIndex >= photos.length) return;
+    if (_sharing || _currentIndex >= photos.length) return;
+    setState(() => _sharing = true);
     final photo = photos[_currentIndex];
     final url =
         '${widget.baseUrl}/api/products/${widget.productId}/catalog/${photo.id}/photo';
     try {
-      final resp = await _dio.get<List<int>>(
+      final dio = ref.read(dioProvider);
+      final resp = await dio.get<List<int>>(
         url,
         options: Options(responseType: ResponseType.bytes),
       );
@@ -90,6 +99,8 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
       );
     } catch (e) {
       if (mounted) showTopSnackBar(context, VN.khongTheChiaSe);
+    } finally {
+      if (mounted) setState(() => _sharing = false);
     }
   }
 
@@ -123,14 +134,32 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
         actions: [
           if (photos.isNotEmpty) ...[
             IconButton(
-              icon: const Icon(Icons.download, color: Colors.white),
+              icon: _downloading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.download, color: Colors.white),
               tooltip: VN.taiAnh,
-              onPressed: () => _downloadPhoto(photos),
+              onPressed: _downloading ? null : () => _downloadPhoto(photos),
             ),
             IconButton(
-              icon: const Icon(Icons.share, color: Colors.white),
+              icon: _sharing
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.share, color: Colors.white),
               tooltip: VN.chiaSe,
-              onPressed: () => _sharePhoto(photos),
+              onPressed: _sharing ? null : () => _sharePhoto(photos),
             ),
             IconButton(
               icon: const Icon(Icons.edit_outlined, color: Colors.white),
@@ -324,12 +353,16 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
           const SizedBox(height: 8),
           tagDefsAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (_, __) => TextField(
-              controller: TextEditingController(text: widget.photo.tags),
-              decoration: const InputDecoration(
-                labelText: VN.tagsLabel,
-                hintText: VN.tagsHint,
-              ),
+            error: (err, stack) => Row(
+              children: [
+                const Expanded(child: Text(VN.apiError)),
+                TextButton.icon(
+                  onPressed: () =>
+                      ref.read(catalogTagDefsProvider.notifier).refresh(),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text(VN.retry),
+                ),
+              ],
             ),
             data: (tagDefs) => _TagChipSelector(
               tagDefs: tagDefs,
@@ -370,7 +403,7 @@ class _TagChipSelector extends StatelessWidget {
     required this.onToggle,
   });
 
-  final List tagDefs;
+  final List<CatalogTagDef> tagDefs;
   final Set<String> selectedTags;
   final void Function(String tag) onToggle;
 

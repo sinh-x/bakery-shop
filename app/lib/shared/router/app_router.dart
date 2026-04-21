@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/api/api_client.dart';
+import '../../data/models/catalog_browse_photo.dart';
+import '../../data/models/catalog_photo.dart';
 import '../../data/models/event.dart';
 import '../../data/api/receipt_service.dart';
 import '../../data/providers/knowledge_provider.dart';
@@ -26,6 +29,8 @@ import '../../features/pos/pos_receipt_screen.dart';
 import '../../features/pos/pos_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
 import '../../features/products/catalog_browse_screen.dart';
+import '../../features/products/widgets/catalog_photo_viewer.dart';
+import '../../providers/catalog_provider.dart';
 import '../../features/stock/stock_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
@@ -161,6 +166,19 @@ final appRouter = GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const CatalogBrowseScreen(),
     ),
+    // Catalog photo viewer (from browse screen) — full-screen (outside shell)
+    GoRoute(
+      path: '/products/:id/catalog',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final id = int.parse(state.pathParameters['id']!);
+        final initialPhoto = state.extra as CatalogBrowsePhoto?;
+        return _CatalogViewerLoader(
+          productId: id,
+          initialPhotoId: initialPhoto?.id,
+        );
+      },
+    ),
     // Product edit — full-screen (outside shell)
     GoRoute(
       path: '/products/:id/edit',
@@ -281,6 +299,56 @@ class _ProductEditLoader extends ConsumerWidget {
         return ProductFormScreen(product: product);
       },
     );
+  }
+}
+
+/// Loads a product's catalog photos and opens the viewer at the requested photo.
+class _CatalogViewerLoader extends ConsumerWidget {
+  const _CatalogViewerLoader({
+    required this.productId,
+    required this.initialPhotoId,
+  });
+
+  final int productId;
+  final int? initialPhotoId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final catalogAsync = ref.watch(catalogProvider(productId));
+    final baseUrl = ref.watch(apiBaseUrlProvider);
+
+    return catalogAsync.when(
+      loading: () => const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (_, __) => Scaffold(
+        appBar: AppBar(title: const Text(VN.catalogTitle)),
+        body: Center(child: Text(VN.apiError)),
+      ),
+      data: (photos) {
+        if (photos.isEmpty) {
+          return Scaffold(
+            appBar: AppBar(title: const Text(VN.catalogTitle)),
+            body: const Center(child: Text(VN.noCatalogPhotos)),
+          );
+        }
+        final initialIndex = initialPhotoId == null
+            ? 0
+            : _findIndex(photos, initialPhotoId!);
+        return CatalogPhotoViewer(
+          photos: photos,
+          initialIndex: initialIndex,
+          productId: productId,
+          baseUrl: baseUrl,
+        );
+      },
+    );
+  }
+
+  int _findIndex(List<CatalogPhoto> photos, int photoId) {
+    final idx = photos.indexWhere((p) => p.id == photoId);
+    return idx < 0 ? 0 : idx;
   }
 }
 

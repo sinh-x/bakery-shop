@@ -16,7 +16,7 @@ _CatalogBrowsePhoto _$CatalogBrowsePhotoFromJson(Map<String, dynamic> json) =>
       position: (json['position'] as num?)?.toInt() ?? 0,
       createdAt: json['created_at'] as String?,
       photoHash: json['photo_hash'] as String?,
-      productName: json['productName'] as String,
+      productName: json['product_name'] as String,
     );
 
 Map<String, dynamic> _$CatalogBrowsePhotoToJson(_CatalogBrowsePhoto instance) =>
@@ -29,5 +29,5 @@ Map<String, dynamic> _$CatalogBrowsePhotoToJson(_CatalogBrowsePhoto instance) =>
       'position': instance.position,
       'created_at': instance.createdAt,
       'photo_hash': instance.photoHash,
-      'productName': instance.productName,
+      'product_name': instance.productName,
     };

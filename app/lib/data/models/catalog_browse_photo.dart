@@ -1,5 +1,4 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'catalog_photo.dart';
 
 part 'catalog_browse_photo.freezed.dart';
 part 'catalog_browse_photo.g.dart';
@@ -15,26 +14,9 @@ sealed class CatalogBrowsePhoto with _$CatalogBrowsePhoto {
     @Default(0) int position,
     @JsonKey(name: 'created_at') String? createdAt,
     @JsonKey(name: 'photo_hash') String? photoHash,
-    required String productName,
+    @JsonKey(name: 'product_name') required String productName,
   }) = _CatalogBrowsePhoto;
 
   factory CatalogBrowsePhoto.fromJson(Map<String, dynamic> json) =>
       _$CatalogBrowsePhotoFromJson(json);
-
-  /// Create from CatalogPhoto + productName.
-  factory CatalogBrowsePhoto.fromCatalogPhoto(
-    CatalogPhoto photo,
-    String productName,
-  ) =>
-      CatalogBrowsePhoto(
-        id: photo.id,
-        productId: photo.productId,
-        filePath: photo.filePath,
-        caption: photo.caption,
-        tags: photo.tags,
-        position: photo.position,
-        createdAt: photo.createdAt,
-        photoHash: photo.photoHash,
-        productName: productName,
-      );
 }

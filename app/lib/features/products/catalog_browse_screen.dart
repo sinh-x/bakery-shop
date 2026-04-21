@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/api_client.dart';
+import '../../data/models/catalog_tag.dart';
 import '../../providers/catalog_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/catalog_photo_browse_card.dart';
@@ -36,7 +37,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
               height: 56,
               child: Center(child: CircularProgressIndicator()),
             ),
-            error: (_, __) => const SizedBox(height: 56),
+            error: (err, stack) => const SizedBox(height: 56),
             data: (tagDefs) => _TagFilterBar(
               tagDefs: tagDefs,
               selectedTags: _selectedTags,
@@ -74,9 +75,12 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
               ),
               data: (photos) {
                 if (photos.isEmpty) {
+                  final msg = _selectedTags.isEmpty
+                      ? VN.noBrowsePhotos
+                      : VN.noBrowsePhotosForFilter;
                   return Center(
                     child: Text(
-                      VN.noBrowsePhotos,
+                      msg,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                             color: Colors.grey,
                           ),
@@ -120,7 +124,7 @@ class _TagFilterBar extends StatelessWidget {
     required this.onTagToggle,
   });
 
-  final List tagDefs;
+  final List<CatalogTagDef> tagDefs;
   final Set<String> selectedTags;
   final void Function(String tag) onTagToggle;
 
@@ -146,7 +150,7 @@ class _TagFilterBar extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildGroup(String label, List tagDefs) {
+  List<Widget> _buildGroup(String label, List<CatalogTagDef> tagDefs) {
     return [
       Padding(
         padding: const EdgeInsets.only(right: 8, top: 4),

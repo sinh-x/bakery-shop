@@ -15,7 +15,7 @@ catalog_router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
 @catalog_router.get("/photos")
 def list_catalog_photos_cross_product(
-    tags: str = Query("", description="Comma-separated tag keys (OR logic)"),
+    tags: str = Query("", max_length=2000, description="Comma-separated tag keys (OR logic)"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
 ):
@@ -28,7 +28,7 @@ def list_catalog_photos_cross_product(
         offset = (page - 1) * page_size
 
         if tags:
-            tag_keys = [t.strip() for t in tags.split(",") if t.strip()]
+            tag_keys = [t.strip() for t in tags.split(",") if t.strip()][:50]
             placeholders = ",".join("?" * len(tag_keys))
             base_query = f"""
                 SELECT cp.id, cp.product_id, cp.file_path, cp.caption, cp.tags,
@@ -42,7 +42,7 @@ def list_catalog_photos_cross_product(
                     FROM catalog_photo_tags cpt
                     WHERE cpt.tag_key IN ({placeholders})
                 )
-                ORDER BY cp.id DESC
+                ORDER BY cp.product_id, cp.position, cp.id
                 LIMIT ? OFFSET ?
             """
             rows = conn.execute(
@@ -56,7 +56,7 @@ def list_catalog_photos_cross_product(
                 FROM product_catalog_photos cp
                 JOIN photos ph ON cp.photo_id = ph.id
                 JOIN products p ON cp.product_id = p.id
-                ORDER BY cp.id DESC
+                ORDER BY cp.product_id, cp.position, cp.id
                 LIMIT ? OFFSET ?
             """
             rows = conn.execute(query, [page_size, offset]).fetchall()
@@ -173,9 +173,8 @@ async def upload_catalog_photo(
         )
         new_id = cursor.lastrowid
 
-        # Sync tags to junction table
-        if photo_id:
-            _sync_catalog_photo_tags(conn, new_id, tags)
+        # Sync tags to junction table (runs regardless of whether photos row was pre-existing)
+        _sync_catalog_photo_tags(conn, new_id, tags)
 
         row = conn.execute(
             "SELECT cp.*, ph.hash as photo_hash "
@@ -264,6 +263,10 @@ def delete_catalog_photo(product_id: int, photo_id: int):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy ảnh")
 
+        # Belt-and-braces: clear junction rows first (FK ON DELETE CASCADE added in v28, but explicit for clarity)
+        conn.execute(
+            "DELETE FROM catalog_photo_tags WHERE photo_id = ?", (photo_id,)
+        )
         conn.execute(
             "DELETE FROM product_catalog_photos WHERE id = ?", (photo_id,)
         )
