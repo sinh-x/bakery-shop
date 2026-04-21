@@ -196,6 +196,7 @@ class Order:
         Event(
             summary=f"Order {self.order_ref} created for {self.customer_name}",
             type="order",
+            order_id=self.id,
             data={"order_ref": self.order_ref, "action": "created",
                   "customer": self.customer_name, "total": self.total_price},
         ).save(conn)
@@ -234,6 +235,7 @@ class Order:
         Event(
             summary=f"Order {row['order_ref']} status: {current} -> {new_status}",
             type="order",
+            order_id=row["id"],
             data=data,
         ).save(conn)
 
