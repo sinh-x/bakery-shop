@@ -16,6 +16,8 @@ import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/catalog_photo_viewer.dart';
+import 'widgets/catalog_tag_chips.dart';
+import 'widgets/catalog_tag_edit_sheet.dart';
 
 /// Shared form for creating and editing products.
 class ProductFormScreen extends ConsumerStatefulWidget {
@@ -835,6 +837,8 @@ class _CatalogGallerySectionState
                   final url =
                       '$baseUrl/api/products/${widget.productId}/catalog/${photo.id}/photo';
                   return _CatalogPhotoCard(
+                    photo: photo,
+                    productId: widget.productId,
                     url: url,
                     onTap: () => _openFullScreen(photos, index, baseUrl),
                     onDelete: () => _confirmDelete(photo),
@@ -888,54 +892,102 @@ class _AddPhotoCard extends StatelessWidget {
 
 class _CatalogPhotoCard extends StatelessWidget {
   const _CatalogPhotoCard({
+    required this.photo,
+    required this.productId,
     required this.url,
     required this.onTap,
     required this.onDelete,
   });
 
+  final CatalogPhoto photo;
+  final int productId;
   final String url;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+
+  void _openEditSheet(BuildContext context) {
+    showEditCatalogTagsSheet(
+      context: context,
+      photo: photo,
+      productId: productId,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       onLongPress: onDelete,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Image.network(
-              url,
-              fit: BoxFit.cover,
-              errorBuilder: (_, e, s) => Container(
-                color: Colors.grey[200],
-                child: const Icon(Icons.broken_image, color: Colors.grey),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, e, s) => Container(
+                      color: Colors.grey[200],
+                      child: const Icon(Icons.broken_image, color: Colors.grey),
+                    ),
+                  ),
+                  // Label edit button
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: GestureDetector(
+                      onTap: () => _openEditSheet(context),
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Icon(
+                          Icons.label_outline,
+                          color: Colors.white,
+                          size: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Delete button
+                  Positioned(
+                    top: 4,
+                    left: 4,
+                    child: GestureDetector(
+                      onTap: onDelete,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.delete_outline,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            Positioned(
-              top: 4,
-              right: 4,
-              child: GestureDetector(
-                onTap: onDelete,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(
-                    color: Colors.black54,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.delete_outline,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                ),
-              ),
+          ),
+          // Tag chips row (max 3)
+          if (photo.tags.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            CatalogTagChips(
+              tags: photo.tags,
+              maxChips: 3,
             ),
           ],
-        ),
+        ],
       ),
     );
   }
