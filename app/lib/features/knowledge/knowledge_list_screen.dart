@@ -18,16 +18,22 @@ const _kTypeChips = [
 ];
 
 class KnowledgeListScreen extends ConsumerStatefulWidget {
-  const KnowledgeListScreen({super.key});
+  const KnowledgeListScreen({super.key, this.initialType});
 
-  @override
+  final String? initialType;
   ConsumerState<KnowledgeListScreen> createState() => _KnowledgeListScreenState();
 }
 
 class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen> {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
-  String? _selectedType;
+  late String? _selectedType;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedType = widget.initialType;
+  }
 
   @override
   void dispose() {

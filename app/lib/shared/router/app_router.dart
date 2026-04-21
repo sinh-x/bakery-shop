@@ -23,6 +23,8 @@ import '../../features/orders/order_list_screen.dart';
 import '../../features/orders/receipt_preview_screen.dart';
 import '../../features/knowledge/knowledge_detail_screen.dart';
 import '../../features/knowledge/knowledge_form_screen.dart';
+import '../../features/knowledge/knowledge_list_screen.dart';
+import '../../features/knowledge_base/knowledge_base_screen.dart';
 import '../../features/pos/pos_checkout_screen.dart';
 import '../../features/pos/pos_receipt_screen.dart';
 import '../../features/pos/pos_screen.dart';
@@ -66,6 +68,12 @@ final appRouter = GoRouter(
           ),
         ),
         GoRoute(
+          path: '/knowledge-base',
+          pageBuilder: (context, state) => const NoTransitionPage(
+            child: KnowledgeBaseScreen(),
+          ),
+        ),
+        GoRoute(
           path: '/events',
           pageBuilder: (context, state) => const NoTransitionPage(
             child: EventListScreen(),
@@ -75,6 +83,12 @@ final appRouter = GoRouter(
           path: '/checklist',
           pageBuilder: (context, state) => const NoTransitionPage(
             child: ChecklistScreen(),
+          ),
+        ),
+        GoRoute(
+          path: '/knowledge',
+          pageBuilder: (context, state) => NoTransitionPage(
+            child: KnowledgeListScreen(initialType: state.uri.queryParameters['type']),
           ),
         ),
         GoRoute(
@@ -391,9 +405,11 @@ class _ShellScaffold extends StatelessWidget {
     if (location.startsWith('/dashboard')) return 0;
     if (location.startsWith('/orders')) return 1;
     if (location.startsWith('/products')) return 2;
-    if (location.startsWith('/events')) return 3;
-    if (location.startsWith('/checklist')) return 4;
-    if (location.startsWith('/pos')) return 5;
+    if (location.startsWith('/knowledge-base') ||
+        location.startsWith('/events') ||
+        location.startsWith('/checklist') ||
+        location.startsWith('/knowledge')) return 3;
+    if (location.startsWith('/pos')) return 4;
     return 0;
   }
 
@@ -406,19 +422,14 @@ class _ShellScaffold extends StatelessWidget {
       case 2:
         context.go('/products');
       case 3:
-        context.go('/events');
+        context.go('/knowledge-base');
       case 4:
-        context.go('/checklist');
-      case 5:
         context.go('/pos');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final location = GoRouterState.of(context).uri.path;
-    final isPos = location.startsWith('/pos');
-
     return Scaffold(
       body: child,
       bottomNavigationBar: NavigationBar(
@@ -442,21 +453,15 @@ class _ShellScaffold extends StatelessWidget {
             label: VN.tabProducts,
           ),
           const NavigationDestination(
-            icon: Icon(Icons.event_note_outlined),
-            selectedIcon: Icon(Icons.event_note),
-            label: VN.tabEvents,
+            icon: Icon(Icons.menu_book_outlined),
+            selectedIcon: Icon(Icons.menu_book),
+            label: VN.tabKnowledgeBase,
           ),
           const NavigationDestination(
-            icon: Icon(Icons.checklist_outlined),
-            selectedIcon: Icon(Icons.checklist),
-            label: VN.tabChecklist,
+            icon: Icon(Icons.storefront_outlined),
+            selectedIcon: Icon(Icons.storefront),
+            label: VN.banHang,
           ),
-          if (isPos)
-            const NavigationDestination(
-              icon: Icon(Icons.storefront_outlined),
-              selectedIcon: Icon(Icons.storefront),
-              label: VN.banHang,
-            ),
         ],
       ),
     );

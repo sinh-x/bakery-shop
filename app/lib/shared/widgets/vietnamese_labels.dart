@@ -6,6 +6,7 @@ class VN {
   static const tabDashboard = 'Tổng quan';
   static const tabOrders = 'Đơn hàng';
   static const tabProducts = 'Sản phẩm';
+  static const tabKnowledgeBase = 'Sổ tay';
   static const tabEvents = 'Sự kiện';
   static const tabChecklist = 'Checklist';
 
@@ -417,6 +418,15 @@ class VN {
 
   // Knowledge base
   static const knowledgeTitle = 'Sổ tay';
+  static const knowledgeBaseEventsSubtitle = 'Ghi nhật ký hoạt động & sự cố';
+  static const knowledgeBaseChecklistSubtitle = 'Công việc mở / đóng tiệm';
+  static const knowledgeBaseDocsSubtitle = 'Công thức, quy trình, nhà cung cấp';
+  static const knowledgeBaseNotesSubtitle = 'Ghi chú nội bộ & thông báo';
+  static const pinnedSection = '📌 Đã ghim';
+  static const pinSuccess = 'Đã ghim';
+  static const unpinSuccess = 'Đã bỏ ghim';
+  static const pinError = 'Lỗi khi ghim';
+  static const pinAfterSave = 'Ghim sau khi lưu';
   static const knowledgeEntry = 'Mục tri thức';
   static const createKnowledge = 'Tạo mục mới';
   static const editKnowledge = 'Sửa mục';
