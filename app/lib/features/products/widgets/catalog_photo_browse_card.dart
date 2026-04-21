@@ -57,7 +57,7 @@ class CatalogPhotoBrowseCard extends ConsumerWidget {
                   if (onSelectToggle != null)
                     Positioned(
                       top: 4,
-                      right: 4,
+                      left: 4,
                       child: GestureDetector(
                         onTap: () => onSelectToggle!(!selected),
                         child: Container(
@@ -66,8 +66,9 @@ class CatalogPhotoBrowseCard extends ConsumerWidget {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: selected
-                                ? Colors.blue
-                                : Colors.black.withValues(alpha: 0.5),
+                                ? Colors.green.shade600
+                                : Colors.white.withValues(alpha: 0.6),
+                            border: selected ? null : Border.all(color: Colors.white, width: 1.5),
                           ),
                           child: selected
                               ? const Icon(Icons.check, color: Colors.white, size: 18)
@@ -75,26 +76,27 @@ class CatalogPhotoBrowseCard extends ConsumerWidget {
                         ),
                       ),
                     ),
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: Material(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(4),
-                      child: InkWell(
+                  if (onSelectToggle == null)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Material(
+                        color: Colors.black54,
                         borderRadius: BorderRadius.circular(4),
-                        onTap: () => _openEditSheet(context),
-                        child: const Padding(
-                          padding: EdgeInsets.all(4),
-                          child: Icon(
-                            Icons.label_outline,
-                            color: Colors.white,
-                            size: 18,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(4),
+                          onTap: () => _openEditSheet(context),
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.label_outline,
+                              color: Colors.white,
+                              size: 18,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
