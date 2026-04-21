@@ -12,10 +12,16 @@ class CatalogPhotoBrowseCard extends ConsumerWidget {
     super.key,
     required this.photo,
     required this.baseUrl,
+    this.selected = false,
+    this.onSelectToggle,
+    this.onLongPress,
   });
 
   final CatalogBrowsePhoto photo;
   final String baseUrl;
+  final bool selected;
+  final ValueChanged<bool>? onSelectToggle;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -25,8 +31,15 @@ class CatalogPhotoBrowseCard extends ConsumerWidget {
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => context.push('/products/${photo.productId}/catalog',
-            extra: photo.id),
+        onTap: () {
+          if (onSelectToggle != null) {
+            onSelectToggle!(!selected);
+          } else {
+            context.push('/products/${photo.productId}/catalog',
+                extra: photo.id);
+          }
+        },
+        onLongPress: onLongPress,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -41,6 +54,27 @@ class CatalogPhotoBrowseCard extends ConsumerWidget {
                       child: Icon(Icons.broken_image, color: Colors.grey),
                     ),
                   ),
+                  if (onSelectToggle != null)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: GestureDetector(
+                        onTap: () => onSelectToggle!(!selected),
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: selected
+                                ? Colors.blue
+                                : Colors.black.withValues(alpha: 0.5),
+                          ),
+                          child: selected
+                              ? const Icon(Icons.check, color: Colors.white, size: 18)
+                              : null,
+                        ),
+                      ),
+                    ),
                   Positioned(
                     top: 4,
                     right: 4,

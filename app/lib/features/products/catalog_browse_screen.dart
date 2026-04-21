@@ -18,10 +18,63 @@ class CatalogBrowseScreen extends ConsumerStatefulWidget {
 class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
   final Set<String> _selectedTags = {};
   String _filterKey = '';
+  bool _selectMode = false;
+  Set<int> _selectedPhotoIds = {};
+
+  @override
+  void dispose() {
+    _selectedPhotoIds.clear();
+    super.dispose();
+  }
 
   String _computeFilterKey() {
     final sorted = _selectedTags.toList()..sort();
     return sorted.join('|');
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectMode = false;
+      _selectedPhotoIds.clear();
+    });
+  }
+
+  void _toggleSelectMode() {
+    setState(() {
+      _selectMode = !_selectMode;
+      if (!_selectMode) {
+        _selectedPhotoIds.clear();
+      }
+    });
+  }
+
+  void _selectAll20(List photos) {
+    final count = photos.length >= 20 ? 20 : photos.length;
+    setState(() {
+      _selectedPhotoIds = photos
+          .take(count)
+          .map((p) => p.id as int)
+          .toSet();
+    });
+  }
+
+  void _onPhotoToggle(int photoId, bool selected) {
+    setState(() {
+      if (selected) {
+        if (_selectedPhotoIds.length >= 20) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(VN.toiDa20Anh),
+              duration: Duration(seconds: 2),
+            ),
+          );
+          return;
+        }
+        _selectedPhotoIds.add(photoId);
+      } else {
+        _selectedPhotoIds.remove(photoId);
+      }
+    });
   }
 
   @override
@@ -30,100 +83,170 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
     final tagDefsAsync = ref.watch(catalogTagDefsProvider);
     final photosAsync = ref.watch(catalogBrowseProvider(_filterKey));
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(VN.browseScreenTitle),
-      ),
-      body: Column(
-        children: [
-          // Tag filter bar
-          tagDefsAsync.when(
-            loading: () => const SizedBox(
-              height: 120,
-              child: Center(child: CircularProgressIndicator()),
-            ),
-            error: (err, stack) => const SizedBox(height: 120),
-            data: (tagDefs) => _TagFilterBar(
-              tagDefs: tagDefs,
-              selectedTags: _selectedTags,
-              onTagToggle: (tag) {
-                setState(() {
-                  if (_selectedTags.contains(tag)) {
-                    _selectedTags.remove(tag);
-                  } else {
-                    _selectedTags.add(tag);
-                  }
-                  _filterKey = _computeFilterKey();
-                });
-              },
-              onClearAll: () {
-                setState(() {
-                  _selectedTags.clear();
-                  _filterKey = _computeFilterKey();
-                });
-              },
-            ),
+    return PopScope(
+      canPop: !_selectMode,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _selectMode) {
+          _clearSelection();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            _selectMode
+                ? '${_selectedPhotoIds.length} ${VN.daChon}'
+                : VN.browseScreenTitle,
           ),
-          // Photo grid
-          Expanded(
-            child: photosAsync.when(
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
-                    const SizedBox(height: 16),
-                    Text(VN.apiError),
-                    const SizedBox(height: 8),
-                    FilledButton(
-                      onPressed: () =>
-                          ref.invalidate(catalogBrowseProvider(_filterKey)),
-                      child: const Text(VN.retry),
-                    ),
-                  ],
-                ),
+          leading: _selectMode
+              ? IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: _clearSelection,
+                )
+              : null,
+          actions: [
+            if (!_selectMode)
+              IconButton(
+                icon: const Icon(Icons.check_circle),
+                onPressed: _toggleSelectMode,
+                tooltip: VN.chonAnh,
               ),
-              data: (photos) {
-                if (photos.isEmpty) {
-                  final msg = _selectedTags.isEmpty
-                      ? VN.noBrowsePhotos
-                      : VN.noBrowsePhotosForFilter;
-                  return Center(
-                    child: Text(
-                      msg,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Colors.grey,
-                          ),
+            if (_selectMode) ...[
+              IconButton(
+                icon: const Icon(Icons.select_all),
+                onPressed: () {
+                  final photos = photosAsync.value;
+                  if (photos != null) {
+                    _selectAll20(photos);
+                  }
+                },
+                tooltip: VN.chon20,
+              ),
+              IconButton(
+                icon: const Icon(Icons.share),
+                onPressed: _selectedPhotoIds.isEmpty
+                    ? null
+                    : () {
+                        // TODO: implement share
+                      },
+              ),
+              IconButton(
+                icon: const Icon(Icons.download),
+                onPressed: _selectedPhotoIds.isEmpty
+                    ? null
+                    : () {
+                        // TODO: implement download
+                      },
+              ),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: _clearSelection,
+                tooltip: VN.huy,
+              ),
+            ],
+          ],
+        ),
+        body: Column(
+          children: [
+            // Tag filter bar
+            tagDefsAsync.when(
+              loading: () => const SizedBox(
+                height: 120,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (err, stack) => const SizedBox(height: 120),
+              data: (tagDefs) => _TagFilterBar(
+                tagDefs: tagDefs,
+                selectedTags: _selectedTags,
+                onTagToggle: (tag) {
+                  setState(() {
+                    if (_selectedTags.contains(tag)) {
+                      _selectedTags.remove(tag);
+                    } else {
+                      _selectedTags.add(tag);
+                    }
+                    _filterKey = _computeFilterKey();
+                    // Clear selection when tag filter changes
+                    _selectedPhotoIds.clear();
+                  });
+                },
+                onClearAll: () {
+                  setState(() {
+                    _selectedTags.clear();
+                    _filterKey = _computeFilterKey();
+                    // Clear selection when tag filter changes
+                    _selectedPhotoIds.clear();
+                  });
+                },
+              ),
+            ),
+            // Photo grid
+            Expanded(
+              child: photosAsync.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
+                      const SizedBox(height: 16),
+                      Text(VN.apiError),
+                      const SizedBox(height: 8),
+                      FilledButton(
+                        onPressed: () =>
+                            ref.invalidate(catalogBrowseProvider(_filterKey)),
+                        child: const Text(VN.retry),
+                      ),
+                    ],
+                  ),
+                ),
+                data: (photos) {
+                  if (photos.isEmpty) {
+                    final msg = _selectedTags.isEmpty
+                        ? VN.noBrowsePhotos
+                        : VN.noBrowsePhotosForFilter;
+                    return Center(
+                      child: Text(
+                        msg,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              color: Colors.grey,
+                            ),
+                      ),
+                    );
+                  }
+                  return RefreshIndicator(
+                    onRefresh: () => ref
+                        .read(catalogBrowseProvider(_filterKey).notifier)
+                        .refresh(),
+                    child: GridView.builder(
+                      padding: const EdgeInsets.all(12),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
+                        childAspectRatio: 0.75,
+                      ),
+                      itemCount: photos.length,
+                      itemBuilder: (context, index) {
+                        final photo = photos[index];
+                        final isSelected = _selectedPhotoIds.contains(photo.id);
+                        return CatalogPhotoBrowseCard(
+                          photo: photo,
+                          baseUrl: baseUrl,
+                          selected: isSelected,
+                          onSelectToggle: _selectMode
+                              ? (sel) => _onPhotoToggle(photo.id, sel)
+                              : null,
+                        );
+                      },
                     ),
                   );
-                }
-                return RefreshIndicator(
-                  onRefresh: () => ref
-                      .read(catalogBrowseProvider(_filterKey).notifier)
-                      .refresh(),
-                  child: GridView.builder(
-                    padding: const EdgeInsets.all(12),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 8,
-                      mainAxisSpacing: 8,
-                      childAspectRatio: 0.75,
-                    ),
-                    itemCount: photos.length,
-                    itemBuilder: (context, index) =>
-                        CatalogPhotoBrowseCard(
-                      photo: photos[index],
-                      baseUrl: baseUrl,
-                    ),
-                  ),
-                );
-              },
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
