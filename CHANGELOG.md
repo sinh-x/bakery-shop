@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.4+54] — 2026-04-21
+- feat(DG-094): phase F9 — category-grouped layout in TagChipSelector (headers on own row)
+- feat(DG-094): label_outline button on browse grid thumbnails (direct tag edit from Duyệt ảnh mẫu)
+- feat(DG-094): fix refetch storm, multi-row filter bar, Xoá lọc, CatalogTagChips, quick-tag overlay
+- feat(DG-094): add traceback logging to catalog photo upload
+
 ## [0.5.3+52] — 2026-04-21
 - feat(DG-094): add cross-product catalog photo browse with tag filtering (CatalogBrowseScreen, catalog_photo_tags table, v28 migration)
 
