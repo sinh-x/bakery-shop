@@ -8,6 +8,21 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../data/models/catalog_browse_photo.dart';
 
+/// Sanitize [input] for use in a file name.
+/// Replaces invalid characters with underscores, strips path traversal,
+/// and limits total length to 100 chars.
+String _safeFileName(String input) {
+  final sanitized = input
+      .replaceAll(RegExp(r'[^\w\s\-]'), '_')
+      .replaceAll(RegExp(r'[\/\\]'), '_')
+      .replaceAll(RegExp(r'\.\.'), '_')
+      .trim();
+  if (sanitized.length > 100) {
+    return sanitized.substring(0, 100);
+  }
+  return sanitized.isEmpty ? 'photo' : sanitized;
+}
+
 /// Result of a bulk download operation.
 class BulkDownloadResult {
   final int successCount;
@@ -56,13 +71,15 @@ class BulkDownloadService {
       try {
         final bytes = await _fetchPhotoBytes(photo);
         final tempDir = await getTemporaryDirectory();
-        final fileName = '${photo.productName}_${photo.id}.jpg';
+        final safeName = _safeFileName(photo.productName);
+        final fileName = '${safeName}_${photo.id}.jpg';
         final file = File('${tempDir.path}/$fileName');
         await file.writeAsBytes(bytes);
         await Gal.putImage(file.path, album: 'Bakery');
         await file.delete();
         return true;
       } catch (e) {
+        errors.add('${photo.productName} #${photo.id}: save failed — $e');
         return false;
       }
     });

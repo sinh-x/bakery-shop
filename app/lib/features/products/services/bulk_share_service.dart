@@ -8,6 +8,21 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../data/models/catalog_browse_photo.dart';
 
+/// Sanitize [input] for use in a file name.
+/// Replaces invalid characters with underscores, strips path traversal,
+/// and limits total length to 100 chars.
+String _safeFileName(String input) {
+  final sanitized = input
+      .replaceAll(RegExp(r'[^\w\s\-]'), '_')
+      .replaceAll(RegExp(r'[\/\\]'), '_')
+      .replaceAll(RegExp(r'\.\.'), '_')
+      .trim();
+  if (sanitized.length > 100) {
+    return sanitized.substring(0, 100);
+  }
+  return sanitized.isEmpty ? 'photo' : sanitized;
+}
+
 /// Result of a bulk share operation.
 class BulkShareResult {
   final int successCount;
@@ -55,9 +70,10 @@ class BulkShareService {
     final futures = photos.map((photo) async {
       try {
         final bytes = await _fetchPhotoBytes(photo);
-        return bytes;
+        return (bytes, null);
       } catch (e) {
-        return Uint8List(0);
+        errors.add('${photo.productName} #${photo.id}: fetch failed — $e');
+        return (Uint8List(0), e);
       }
     });
 
@@ -65,36 +81,53 @@ class BulkShareService {
     for (final chunk in chunks) {
       final results = await Future.wait(chunk);
       final shareFiles = <XFile>[];
+      final writtenFiles = <File>[];
 
       for (int i = 0; i < results.length; i++) {
-        final bytes = results[i];
-        if (bytes.isEmpty) {
+        final (bytes, err) = results[i];
+        if (err != null) {
           failCount++;
-          errors.add('${photos[i].productName} #${photos[i].id}: download failed');
+        } else if (bytes.isEmpty) {
+          failCount++;
         } else {
           try {
             final tempDir = await getTemporaryDirectory();
-            final fileName = '${photos[i].productName}_${photos[i].id}.jpg';
+            final safeName = _safeFileName(photos[i].productName);
+            final fileName = '${safeName}_${photos[i].id}.jpg';
             final file = File('${tempDir.path}/$fileName');
             await file.writeAsBytes(bytes);
+            writtenFiles.add(file);
             shareFiles.add(XFile(file.path));
           } catch (e) {
             failCount++;
-            errors.add('${photos[i].productName} #${photos[i].id}: save failed');
+            errors.add('${photos[i].productName} #${photos[i].id}: save failed — $e');
+            // Clean up any temp files written before the error
+            for (final f in writtenFiles) {
+              try {
+                await f.delete();
+              } catch (_) {}
+            }
           }
         }
       }
 
       if (shareFiles.isNotEmpty) {
+        final sharedCount = shareFiles.length;
         try {
           await Share.shareXFiles(
             shareFiles,
             text: 'Tiệm Bánh Ninh Diêm',
           );
-          successCount += shareFiles.length;
+          successCount += sharedCount;
         } catch (e) {
-          failCount += shareFiles.length;
+          failCount += sharedCount;
           errors.add('Share sheet error: $e');
+          // Clean up temp files on share failure
+          for (final xf in shareFiles) {
+            try {
+              await File(xf.path).delete();
+            } catch (_) {}
+          }
         }
       }
     }
@@ -106,14 +139,14 @@ class BulkShareService {
     );
   }
 
-  List<List<Future<Uint8List>>> _chunkedFutures(
-    Iterable<Future<Uint8List>> futures,
+  List<List<Future<(Uint8List, Object?)>>> _chunkedFutures(
+    Iterable<Future<(Uint8List, Object?)>> futures,
     int size,
   ) {
-    final chunks = <List<Future<Uint8List>>>[];
+    final chunks = <List<Future<(Uint8List, Object?)>>>[];
     final iterator = futures.iterator;
     while (iterator.moveNext()) {
-      final chunk = <Future<Uint8List>>[];
+      final chunk = <Future<(Uint8List, Object?)>>[];
       for (int i = 0; i < size && iterator.moveNext(); i++) {
         chunk.add(iterator.current);
       }

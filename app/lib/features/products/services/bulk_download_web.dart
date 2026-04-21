@@ -6,6 +6,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/catalog_browse_photo.dart';
 
+/// Sanitize [input] for use in a file name.
+/// Replaces invalid characters with underscores, strips path traversal,
+/// and limits total length to 100 chars.
+String _safeFileName(String input) {
+  final sanitized = input
+      .replaceAll(RegExp(r'[^\w\s\-]'), '_')
+      .replaceAll(RegExp(r'[\/\\]'), '_')
+      .replaceAll(RegExp(r'\.\.'), '_')
+      .trim();
+  if (sanitized.length > 100) {
+    return sanitized.substring(0, 100);
+  }
+  return sanitized.isEmpty ? 'photo' : sanitized;
+}
+
 /// Result of a bulk download operation.
 class BulkDownloadResult {
   final int successCount;
@@ -53,13 +68,15 @@ class BulkDownloadService {
     final futures = photos.map((photo) async {
       try {
         final bytes = await _fetchPhotoBytes(photo);
+        final safeName = _safeFileName(photo.productName);
         _triggerDownload(
           bytes,
-          '${photo.productName}_${photo.id}.jpg',
+          '${safeName}_${photo.id}.jpg',
           'image/jpeg',
         );
         return true;
       } catch (e) {
+        errors.add('${photo.productName} #${photo.id}: download failed — $e');
         return false;
       }
     });

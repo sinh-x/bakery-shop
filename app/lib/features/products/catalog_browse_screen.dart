@@ -61,8 +61,20 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
           : 'Đã chia sẻ ${result.successCount}/${selectedPhotos.length} ảnh';
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(resultStr)),
+          SnackBar(
+            content: Text(resultStr),
+            duration: Duration(seconds: result.errors.isEmpty ? 2 : 5),
+          ),
         );
+        if (result.errors.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Lỗi: ${result.errors.first}'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
       }
     } finally {
       setState(() => _bulkInProgress = false);
@@ -87,8 +99,20 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
           : 'Đã lưu ${result.successCount}/$total ảnh';
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(resultStr)),
+          SnackBar(
+            content: Text(resultStr),
+            duration: Duration(seconds: result.errors.isEmpty ? 2 : 5),
+          ),
         );
+        if (result.errors.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Lỗi: ${result.errors.first}'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
       }
     } finally {
       setState(() => _bulkInProgress = false);
