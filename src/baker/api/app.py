@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from baker.api.cake_queue import router as cake_queue_router
 from baker.api.catalog import router as catalog_router
+from baker.api.catalog import catalog_router as cross_catalog_router
 from baker.api.checklist import router as checklist_router
 from baker.api.categories import router as categories_router
 from baker.api.config import router as config_router
@@ -44,12 +45,13 @@ def create_app() -> FastAPI:
     # Logging middleware (added before CORS so it wraps all requests)
     app.add_middleware(LoggingMiddleware)
 
+    # Tailscale network is air-gapped; only lily.tail10c2c6.ts.net is trusted
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=['https://lily.tail10c2c6.ts.net'],
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=['*'],
+        allow_headers=['*'],
     )
 
     @app.get("/api/health")
@@ -59,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(photos_router)
     app.include_router(products_router)
     app.include_router(catalog_router)
+    app.include_router(cross_catalog_router)
     app.include_router(categories_router)
     app.include_router(config_router)
     app.include_router(events_router)

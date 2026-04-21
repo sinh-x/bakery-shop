@@ -1,6 +1,7 @@
 """Catalog photo API routes — product gallery."""
 
-from fastapi import APIRouter, Form, HTTPException, UploadFile
+import logging
+from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -9,7 +10,68 @@ from baker.api.photos import save_photo
 from baker.db.connection import get_db
 
 
+logger = logging.getLogger("baker.server")
+
+# Cross-product browse — registered at /api/catalog/photos
+catalog_router = APIRouter(prefix="/api/catalog", tags=["catalog"])
+
+
+@catalog_router.get("/photos")
+def list_catalog_photos_cross_product(
+    tags: str = Query("", max_length=2000, description="Comma-separated tag keys (OR logic)"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+):
+    """Danh sách ảnh bộ sưu tập across all products — paginated, filterable by tags.
+
+    Trả về product_name và photo_hash cho mỗi ảnh.
+    Khi không có tag lọc, trả tất cả ảnh trên tất cả sản phẩm (paginated).
+    """
+    with get_db() as conn:
+        offset = (page - 1) * page_size
+
+        if tags:
+            tag_keys = [t.strip() for t in tags.split(",") if t.strip()][:50]
+            placeholders = ",".join("?" * len(tag_keys))
+            base_query = f"""
+                SELECT cp.id, cp.product_id, cp.file_path, cp.caption, cp.tags,
+                       cp.position, cp.created_at, ph.hash as photo_hash,
+                       p.name as product_name
+                FROM product_catalog_photos cp
+                JOIN photos ph ON cp.photo_id = ph.id
+                JOIN products p ON cp.product_id = p.id
+                WHERE cp.id IN (
+                    SELECT DISTINCT cpt.photo_id
+                    FROM catalog_photo_tags cpt
+                    WHERE cpt.tag_key IN ({placeholders})
+                )
+                ORDER BY cp.product_id, cp.position, cp.id
+                LIMIT ? OFFSET ?
+            """
+            rows = conn.execute(
+                base_query, tag_keys + [page_size, offset]
+            ).fetchall()
+        else:
+            query = """
+                SELECT cp.id, cp.product_id, cp.file_path, cp.caption, cp.tags,
+                       cp.position, cp.created_at, ph.hash as photo_hash,
+                       p.name as product_name
+                FROM product_catalog_photos cp
+                JOIN photos ph ON cp.photo_id = ph.id
+                JOIN products p ON cp.product_id = p.id
+                ORDER BY cp.product_id, cp.position, cp.id
+                LIMIT ? OFFSET ?
+            """
+            rows = conn.execute(query, [page_size, offset]).fetchall()
+
+        return [_row_to_dict(r) for r in rows]
+
+
+# Per-product catalog — registered at /api/products/{product_id}/catalog
 router = APIRouter(prefix="/api/products", tags=["catalog"])
+
+
+# ─── Per-product catalog endpoints ─────────────────────────────────────────────
 
 
 class CatalogPhotoUpdate(BaseModel):
@@ -20,6 +82,19 @@ class CatalogPhotoUpdate(BaseModel):
 
 def _row_to_dict(row) -> dict:
     return dict(row)
+
+
+def _sync_catalog_photo_tags(conn, photo_id: int, tags: str):
+    """Replace all catalog_photo_tags entries for a photo with new tags."""
+    conn.execute(
+        "DELETE FROM catalog_photo_tags WHERE photo_id = ?", (photo_id,)
+    )
+    if tags:
+        for tag_key in [t.strip() for t in tags.split(",") if t.strip()]:
+            conn.execute(
+                "INSERT OR IGNORE INTO catalog_photo_tags (photo_id, tag_key) VALUES (?, ?)",
+                (photo_id, tag_key),
+            )
 
 
 def _get_product_or_404(conn, product_id: int):
@@ -67,6 +142,7 @@ async def upload_catalog_photo(
     try:
         hash_hex = save_photo(data, file.filename or "")
     except Exception:
+        logger.exception("Catalog photo upload failed for file: %s", file.filename)
         raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
 
     with get_db() as conn:
@@ -100,6 +176,9 @@ async def upload_catalog_photo(
             (product_id, f"photos/{hash_hex}.jpg", caption, tags, next_position, photo_id),
         )
         new_id = cursor.lastrowid
+
+        # Sync tags to junction table (runs regardless of whether photos row was pre-existing)
+        _sync_catalog_photo_tags(conn, new_id, tags)
 
         row = conn.execute(
             "SELECT cp.*, ph.hash as photo_hash "
@@ -160,6 +239,11 @@ def update_catalog_photo(
             params,
         )
 
+        # Sync tags to junction table if tags field was updated
+        new_tags = update.tags
+        if new_tags is not None:
+            _sync_catalog_photo_tags(conn, photo_id, new_tags)
+
         row = conn.execute(
             "SELECT cp.*, ph.hash as photo_hash "
             "FROM product_catalog_photos cp "
@@ -183,6 +267,10 @@ def delete_catalog_photo(product_id: int, photo_id: int):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy ảnh")
 
+        # Belt-and-braces: clear junction rows first (FK ON DELETE CASCADE added in v28, but explicit for clarity)
+        conn.execute(
+            "DELETE FROM catalog_photo_tags WHERE photo_id = ?", (photo_id,)
+        )
         conn.execute(
             "DELETE FROM product_catalog_photos WHERE id = ?", (photo_id,)
         )

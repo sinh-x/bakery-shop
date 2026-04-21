@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/api/api_client.dart';
+import '../../data/models/catalog_photo.dart';
 import '../../data/models/event.dart';
 import '../../data/api/receipt_service.dart';
 import '../../data/providers/knowledge_provider.dart';
@@ -25,6 +27,9 @@ import '../../features/pos/pos_checkout_screen.dart';
 import '../../features/pos/pos_receipt_screen.dart';
 import '../../features/pos/pos_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
+import '../../features/products/catalog_browse_screen.dart';
+import '../../features/products/widgets/catalog_photo_viewer.dart';
+import '../../providers/catalog_provider.dart';
 import '../../features/stock/stock_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
@@ -154,6 +159,25 @@ final appRouter = GoRouter(
         initialCategory: state.uri.queryParameters['category'],
       ),
     ),
+    // Catalog browse — full-screen (outside shell)
+    GoRoute(
+      path: '/products/browse',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const CatalogBrowseScreen(),
+    ),
+    // Catalog photo viewer (from browse screen) — full-screen (outside shell)
+    GoRoute(
+      path: '/products/:id/catalog',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final id = int.parse(state.pathParameters['id']!);
+        final initialPhotoId = state.extra as int?;
+        return _CatalogViewerLoader(
+          productId: id,
+          initialPhotoId: initialPhotoId,
+        );
+      },
+    ),
     // Product edit — full-screen (outside shell)
     GoRoute(
       path: '/products/:id/edit',
@@ -277,6 +301,56 @@ class _ProductEditLoader extends ConsumerWidget {
   }
 }
 
+/// Loads a product's catalog photos and opens the viewer at the requested photo.
+class _CatalogViewerLoader extends ConsumerWidget {
+  const _CatalogViewerLoader({
+    required this.productId,
+    required this.initialPhotoId,
+  });
+
+  final int productId;
+  final int? initialPhotoId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final catalogAsync = ref.watch(catalogProvider(productId));
+    final baseUrl = ref.watch(apiBaseUrlProvider);
+
+    return catalogAsync.when(
+      loading: () => const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (_, __) => Scaffold(
+        appBar: AppBar(title: const Text(VN.catalogTitle)),
+        body: Center(child: Text(VN.apiError)),
+      ),
+      data: (photos) {
+        if (photos.isEmpty) {
+          return Scaffold(
+            appBar: AppBar(title: const Text(VN.catalogTitle)),
+            body: const Center(child: Text(VN.noCatalogPhotos)),
+          );
+        }
+        final initialIndex = initialPhotoId == null
+            ? 0
+            : _findIndex(photos, initialPhotoId!);
+        return CatalogPhotoViewer(
+          photos: photos,
+          initialIndex: initialIndex,
+          productId: productId,
+          baseUrl: baseUrl,
+        );
+      },
+    );
+  }
+
+  int _findIndex(List<CatalogPhoto> photos, int photoId) {
+    final idx = photos.indexWhere((p) => p.id == photoId);
+    return idx < 0 ? 0 : idx;
+  }
+}
+
 /// Loads a knowledge entry from the API before showing the edit form.
 class _KnowledgeEditLoader extends ConsumerWidget {
   const _KnowledgeEditLoader({required this.entryId});
@@ -342,43 +416,47 @@ class _ShellScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final location = GoRouterState.of(context).uri.path;
+    final isPos = location.startsWith('/pos');
+
     return Scaffold(
       body: child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex(context),
         onDestinationSelected: (index) =>
             _onDestinationSelected(context, index),
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
             selectedIcon: Icon(Icons.dashboard),
             label: VN.tabDashboard,
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long),
             label: VN.tabOrders,
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.cake_outlined),
             selectedIcon: Icon(Icons.cake),
             label: VN.tabProducts,
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.event_note_outlined),
             selectedIcon: Icon(Icons.event_note),
             label: VN.tabEvents,
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.checklist_outlined),
             selectedIcon: Icon(Icons.checklist),
             label: VN.tabChecklist,
           ),
-          NavigationDestination(
-            icon: Icon(Icons.storefront_outlined),
-            selectedIcon: Icon(Icons.storefront),
-            label: VN.banHang,
-          ),
+          if (isPos)
+            const NavigationDestination(
+              icon: Icon(Icons.storefront_outlined),
+              selectedIcon: Icon(Icons.storefront),
+              label: VN.banHang,
+            ),
         ],
       ),
     );

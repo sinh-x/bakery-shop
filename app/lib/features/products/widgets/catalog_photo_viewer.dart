@@ -1,10 +1,19 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:gal/gal.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../../../data/api/api_client.dart';
 import '../../../data/models/catalog_photo.dart';
+import '../../../data/models/catalog_tag.dart';
 import '../../../providers/catalog_provider.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
+import 'catalog_tag_chips.dart';
+import 'catalog_tag_edit_sheet.dart';
 
 /// Full-screen swipeable photo viewer for catalog photos.
 ///
@@ -32,6 +41,8 @@ class CatalogPhotoViewer extends ConsumerStatefulWidget {
 class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
   late PageController _pageController;
   late int _currentIndex;
+  bool _downloading = false;
+  bool _sharing = false;
 
   @override
   void initState() {
@@ -46,14 +57,60 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
     super.dispose();
   }
 
+  Future<void> _downloadPhoto(List<CatalogPhoto> photos) async {
+    if (_downloading || _currentIndex >= photos.length) return;
+    setState(() => _downloading = true);
+    final photo = photos[_currentIndex];
+    final url =
+        '${widget.baseUrl}/api/products/${widget.productId}/catalog/${photo.id}/photo';
+    try {
+      final dio = ref.read(dioProvider);
+      final resp = await dio.get<List<int>>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (resp.data == null) throw Exception('No data');
+      await Gal.putImageBytes(Uint8List.fromList(resp.data!));
+      if (mounted) showTopSnackBar(context, VN.daLuuAnh);
+    } catch (e) {
+      if (mounted) showTopSnackBar(context, VN.khongTheTaiAnh);
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  Future<void> _sharePhoto(List<CatalogPhoto> photos) async {
+    if (_sharing || _currentIndex >= photos.length) return;
+    setState(() => _sharing = true);
+    final photo = photos[_currentIndex];
+    final url =
+        '${widget.baseUrl}/api/products/${widget.productId}/catalog/${photo.id}/photo';
+    try {
+      final dio = ref.read(dioProvider);
+      final resp = await dio.get<List<int>>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (resp.data == null) throw Exception('No data');
+      final tmpDir = await getTemporaryDirectory();
+      final tmpFile = File('${tmpDir.path}/catalog_photo_${photo.id}.jpg');
+      await tmpFile.writeAsBytes(Uint8List.fromList(resp.data!));
+      await Share.shareXFiles(
+        [XFile(tmpFile.path)],
+        text: 'Tiệm Bánh Ninh Diêm',
+      );
+    } catch (e) {
+      if (mounted) showTopSnackBar(context, VN.khongTheChiaSe);
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
   void _openEditSheet(CatalogPhoto photo) {
-    showModalBottomSheet<void>(
+    showEditCatalogTagsSheet(
       context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _EditCaptionSheet(
-        photo: photo,
-        productId: widget.productId,
-      ),
+      photo: photo,
+      productId: widget.productId,
     );
   }
 
@@ -74,7 +131,35 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
                 style: const TextStyle(color: Colors.white),
               ),
         actions: [
-          if (photos.isNotEmpty)
+          if (photos.isNotEmpty) ...[
+            IconButton(
+              icon: _downloading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.download, color: Colors.white),
+              tooltip: VN.taiAnh,
+              onPressed: _downloading ? null : () => _downloadPhoto(photos),
+            ),
+            IconButton(
+              icon: _sharing
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.share, color: Colors.white),
+              tooltip: VN.chiaSe,
+              onPressed: _sharing ? null : () => _sharePhoto(photos),
+            ),
             IconButton(
               icon: const Icon(Icons.edit_outlined, color: Colors.white),
               tooltip: VN.editCatalogPhoto,
@@ -84,6 +169,7 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
                 }
               },
             ),
+          ],
         ],
       ),
       body: photos.isEmpty
@@ -151,13 +237,7 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
                                 ),
                               if (photo.tags.isNotEmpty) ...[
                                 const SizedBox(height: 4),
-                                Text(
-                                  photo.tags,
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 12,
-                                  ),
-                                ),
+                                CatalogTagChips(tags: photo.tags),
                               ],
                             ],
                           ),
@@ -187,20 +267,23 @@ class _EditCaptionSheet extends ConsumerStatefulWidget {
 
 class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
   late final TextEditingController _captionCtrl;
-  late final TextEditingController _tagsCtrl;
+  final Set<String> _selectedTags = {};
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _captionCtrl = TextEditingController(text: widget.photo.caption);
-    _tagsCtrl = TextEditingController(text: widget.photo.tags);
+    if (widget.photo.tags.isNotEmpty) {
+      _selectedTags.addAll(
+        widget.photo.tags.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty),
+      );
+    }
   }
 
   @override
   void dispose() {
     _captionCtrl.dispose();
-    _tagsCtrl.dispose();
     super.dispose();
   }
 
@@ -212,7 +295,7 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
           .updatePhoto(
             widget.photo.id,
             caption: _captionCtrl.text.trim(),
-            tags: _tagsCtrl.text.trim(),
+            tags: _selectedTags.join(','),
           );
       if (mounted) {
         Navigator.pop(context);
@@ -229,6 +312,8 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final tagDefsAsync = ref.watch(catalogTagDefsProvider);
+
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -251,11 +336,39 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
             maxLines: 2,
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _tagsCtrl,
-            decoration: const InputDecoration(
-              labelText: VN.tagsLabel,
-              hintText: VN.tagsHint,
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              VN.tagsLabel,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          const SizedBox(height: 8),
+          tagDefsAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (err, stack) => Row(
+              children: [
+                const Expanded(child: Text(VN.apiError)),
+                TextButton.icon(
+                  onPressed: () =>
+                      ref.read(catalogTagDefsProvider.notifier).refresh(),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text(VN.retry),
+                ),
+              ],
+            ),
+            data: (tagDefs) => _TagChipSelector(
+              tagDefs: tagDefs,
+              selectedTags: _selectedTags,
+              onToggle: (tag) {
+                setState(() {
+                  if (_selectedTags.contains(tag)) {
+                    _selectedTags.remove(tag);
+                  } else {
+                    _selectedTags.add(tag);
+                  }
+                });
+              },
             ),
           ),
           const SizedBox(height: 16),
@@ -272,6 +385,59 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
           const SizedBox(height: 8),
         ],
       ),
+    );
+  }
+}
+
+class _TagChipSelector extends StatelessWidget {
+  const _TagChipSelector({
+    required this.tagDefs,
+    required this.selectedTags,
+    required this.onToggle,
+  });
+
+  final List<CatalogTagDef> tagDefs;
+  final Set<String> selectedTags;
+  final void Function(String tag) onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final audience = tagDefs.where((t) => t.category == 'audience').toList();
+    final occasion = tagDefs.where((t) => t.category == 'occasion').toList();
+    final style = tagDefs.where((t) => t.category == 'style').toList();
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        if (audience.isNotEmpty) ...[
+          Text(VN.doiTuong, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          ...audience.map((t) => FilterChip(
+                label: Text(t.label, style: const TextStyle(fontSize: 12)),
+                selected: selectedTags.contains(t.key),
+                onSelected: (_) => onToggle(t.key),
+                visualDensity: VisualDensity.compact,
+              )),
+        ],
+        if (occasion.isNotEmpty) ...[
+          Text(VN.dip, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          ...occasion.map((t) => FilterChip(
+                label: Text(t.label, style: const TextStyle(fontSize: 12)),
+                selected: selectedTags.contains(t.key),
+                onSelected: (_) => onToggle(t.key),
+                visualDensity: VisualDensity.compact,
+              )),
+        ],
+        if (style.isNotEmpty) ...[
+          Text(VN.phongCach, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          ...style.map((t) => FilterChip(
+                label: Text(t.label, style: const TextStyle(fontSize: 12)),
+                selected: selectedTags.contains(t.key),
+                onSelected: (_) => onToggle(t.key),
+                visualDensity: VisualDensity.compact,
+              )),
+        ],
+      ],
     );
   }
 }

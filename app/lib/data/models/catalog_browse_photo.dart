@@ -1,11 +1,11 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-part 'catalog_photo.freezed.dart';
-part 'catalog_photo.g.dart';
+part 'catalog_browse_photo.freezed.dart';
+part 'catalog_browse_photo.g.dart';
 
 @freezed
-sealed class CatalogPhoto with _$CatalogPhoto {
-  const factory CatalogPhoto({
+sealed class CatalogBrowsePhoto with _$CatalogBrowsePhoto {
+  const factory CatalogBrowsePhoto({
     required int id,
     @JsonKey(name: 'product_id') required int productId,
     @JsonKey(name: 'file_path') required String filePath,
@@ -14,8 +14,9 @@ sealed class CatalogPhoto with _$CatalogPhoto {
     @Default(0) int position,
     @JsonKey(name: 'created_at') String? createdAt,
     @JsonKey(name: 'photo_hash') String? photoHash,
-  }) = _CatalogPhoto;
+    @JsonKey(name: 'product_name') required String productName,
+  }) = _CatalogBrowsePhoto;
 
-  factory CatalogPhoto.fromJson(Map<String, dynamic> json) =>
-      _$CatalogPhotoFromJson(json);
+  factory CatalogBrowsePhoto.fromJson(Map<String, dynamic> json) =>
+      _$CatalogBrowsePhotoFromJson(json);
 }

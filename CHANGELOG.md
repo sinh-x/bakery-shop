@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.5.3+52] — 2026-04-21
+- feat(DG-094): add cross-product catalog photo browse with tag filtering (CatalogBrowseScreen, catalog_photo_tags table, v28 migration)
+
 ## [0.5.3+51] — 2026-04-21
 - fix(DG-089): order list shows wrong payment status for fully-paid orders
 

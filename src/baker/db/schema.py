@@ -720,6 +720,90 @@ def _migrate_v25_tien_rut_rename(conn):
     )
 
 
+CATALOG_PHOTO_TAGS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS catalog_photo_tags (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    photo_id    INTEGER NOT NULL REFERENCES product_catalog_photos(id),
+    tag_key     TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_catalog_photo_tags_photo ON catalog_photo_tags(photo_id);
+CREATE INDEX IF NOT EXISTS idx_catalog_photo_tags_tag ON catalog_photo_tags(tag_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_photo_tags_unique ON catalog_photo_tags(photo_id, tag_key);
+"""
+
+SEED_CATALOG_TAGS = [
+    # Audience tags (6) — sort 1-6
+    ("catalog_tag", "audience:nam:Nam", 1),
+    ("catalog_tag", "audience:nu:Nữ", 2),
+    ("catalog_tag", "audience:be-trai:Bé trai", 3),
+    ("catalog_tag", "audience:be-gai:Bé gái", 4),
+    ("catalog_tag", "audience:cha-me:Cha mẹ", 5),
+    ("catalog_tag", "audience:ong-ba:Ông bà", 6),
+    # Occasion tags (8) — sort 10-17
+    ("catalog_tag", "occasion:sinh-nhat:Sinh nhật", 10),
+    ("catalog_tag", "occasion:8-3:8/3", 11),
+    ("catalog_tag", "occasion:ky-niem:Kỷ niệm", 12),
+    ("catalog_tag", "occasion:dam-cuoi:Đám cưới", 13),
+    ("catalog_tag", "occasion:tot-nghiep:Tốt nghiệp", 14),
+    ("catalog_tag", "occasion:khai-truong:Khai trương", 15),
+    ("catalog_tag", "occasion:noel:Noel", 16),
+    ("catalog_tag", "occasion:tet:Tết", 17),
+    # Style tags (6) — sort 20-25
+    ("catalog_tag", "style:hoa:Hoa", 20),
+    ("catalog_tag", "style:trai-cay:Trái cây", 21),
+    ("catalog_tag", "style:socola:Socola", 22),
+    ("catalog_tag", "style:fondant:Fondant", 23),
+    ("catalog_tag", "style:kem-bo:Kem bơ", 24),
+    ("catalog_tag", "style:minimalist:Minimalist", 25),
+]
+
+
+def _migrate_v27_seed_catalog_tags(conn):
+    """Seed 20 catalog tag entries into app_config."""
+    for config_key, config_value, sort_order in SEED_CATALOG_TAGS:
+        conn.execute(
+            "INSERT OR IGNORE INTO app_config (config_key, config_value, sort_order) VALUES (?, ?, ?)",
+            (config_key, config_value, sort_order),
+        )
+
+
+def _migrate_v28_cascade_and_reseed(conn):
+    """Rebuild catalog_photo_tags with ON DELETE CASCADE and re-seed catalog_tag vocabulary."""
+    # Rebuild junction table with ON DELETE CASCADE (SQLite recreate-and-copy)
+    conn.executescript(
+        """
+        CREATE TABLE catalog_photo_tags_new (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            photo_id    INTEGER NOT NULL REFERENCES product_catalog_photos(id) ON DELETE CASCADE,
+            tag_key     TEXT NOT NULL,
+            created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+        );
+        INSERT INTO catalog_photo_tags_new (id, photo_id, tag_key, created_at)
+            SELECT id, photo_id, tag_key, created_at FROM catalog_photo_tags;
+        DROP TABLE catalog_photo_tags;
+        ALTER TABLE catalog_photo_tags_new RENAME TO catalog_photo_tags;
+        CREATE INDEX idx_catalog_photo_tags_photo ON catalog_photo_tags(photo_id);
+        CREATE INDEX idx_catalog_photo_tags_tag ON catalog_photo_tags(tag_key);
+        CREATE UNIQUE INDEX idx_catalog_photo_tags_unique ON catalog_photo_tags(photo_id, tag_key);
+        """
+    )
+    # Clear v27 seed (typos + wrong vocabulary) and re-seed approved F1 vocabulary
+    conn.execute("DELETE FROM app_config WHERE config_key = 'catalog_tag'")
+    for config_key, config_value, sort_order in SEED_CATALOG_TAGS:
+        conn.execute(
+            "INSERT INTO app_config (config_key, config_value, sort_order) VALUES (?, ?, ?)",
+            (config_key, config_value, sort_order),
+        )
+    # Drop any photo-tag rows referencing keys that no longer exist in vocabulary
+    valid_keys = [v.split(":")[1] for _, v, _ in SEED_CATALOG_TAGS]
+    placeholders = ",".join("?" * len(valid_keys))
+    conn.execute(
+        f"DELETE FROM catalog_photo_tags WHERE tag_key NOT IN ({placeholders})",
+        valid_keys,
+    )
+
+
 PRODUCT_STOCK_SCHEMA = """
 CREATE TABLE IF NOT EXISTS product_stock (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -881,6 +965,16 @@ MIGRATIONS = {
         "description": "Add trung_bay and tang_kem product attributes; create product_stock and stock_movements tables for inventory management",
         "sql": PRODUCT_STOCK_SCHEMA,
         "callable": _migrate_v26_trung_bay_and_stock,
+    },
+    27: {
+        "description": "Create catalog_photo_tags junction table and seed 20 catalog tag entries into app_config",
+        "sql": CATALOG_PHOTO_TAGS_SCHEMA,
+        "callable": _migrate_v27_seed_catalog_tags,
+    },
+    28: {
+        "description": "Rebuild catalog_photo_tags with ON DELETE CASCADE; re-seed catalog_tag vocabulary with approved F1 keys (fixes v27 typos and wrong keys)",
+        "sql": "",
+        "callable": _migrate_v28_cascade_and_reseed,
     },
 }
 

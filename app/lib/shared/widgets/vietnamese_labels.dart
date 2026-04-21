@@ -466,6 +466,16 @@ class VN {
   static const noExtras = 'Chưa có phụ kiện';
   static const deleteExtraConfirm = 'Xóa phụ kiện này?';
 
+  // Catalog browse
+  static const browseScreenTitle = 'Duyệt ảnh mẫu';
+  static const doiTuong = 'Đối tượng';
+  static const dip = 'Dịp';
+  static const phongCach = 'Phong cách';
+  static const filterHint = 'Chọn thẻ để lọc';
+  static const noBrowsePhotos = 'Chưa có ảnh mẫu';
+  static const noBrowsePhotosForFilter = 'Không có ảnh phù hợp bộ lọc';
+  static const xoaLoc = 'Xoá lọc';
+
   // Stock management
   static const quanLyTonKho = 'Quản lý tồn kho';
   static const nhapHang = 'Nhập hàng';
@@ -487,6 +497,13 @@ class VN {
   static const khongCoSanPhamTonKho = 'Không có sản phẩm tồn kho';
   static const capNhatThanhCong = 'Cập nhật thành công';
   static const loiHeThong = 'Lỗi hệ thống';
+
+  // Catalog photo viewer
+  static const daLuuAnh = 'Đã lưu ảnh';
+  static const taiAnh = 'Tải ảnh';
+  static const chiaSe = 'Chia sẻ';
+  static const khongTheTaiAnh = 'Không thể tải ảnh';
+  static const khongTheChiaSe = 'Không thể chia sẻ';
 }
 
 // Category mapping (new slugs)
