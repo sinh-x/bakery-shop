@@ -66,6 +66,8 @@ class BulkShareService {
     int successCount = 0;
     int failCount = 0;
     final errors = <String>[];
+    final allShareFiles = <XFile>[];
+    final allWrittenFiles = <File>[];
 
     final futures = photos.map((photo) async {
       try {
@@ -101,34 +103,33 @@ class BulkShareService {
           } catch (e) {
             failCount++;
             errors.add('${photos[i].productName} #${photos[i].id}: save failed — $e');
-            // Clean up any temp files written before the error
-            for (final f in writtenFiles) {
-              try {
-                await f.delete();
-              } catch (_) {}
-            }
           }
         }
       }
 
-      if (shareFiles.isNotEmpty) {
-        final sharedCount = shareFiles.length;
+      // Accumulate files for the single share invocation at the end
+      allShareFiles.addAll(shareFiles);
+      allWrittenFiles.addAll(writtenFiles);
+    }
+
+    if (allShareFiles.isEmpty) {
+      return BulkShareResult(
+        successCount: 0,
+        failCount: failCount,
+        errors: errors,
+      );
+    }
+
+    try {
+      await Share.shareXFiles(allShareFiles, text: 'Tiệm Bánh Ninh Diêm');
+      successCount = allShareFiles.length;
+    } catch (e) {
+      failCount += allShareFiles.length;
+      errors.add('Share sheet error: $e');
+      for (final f in allWrittenFiles) {
         try {
-          await Share.shareXFiles(
-            shareFiles,
-            text: 'Tiệm Bánh Ninh Diêm',
-          );
-          successCount += sharedCount;
-        } catch (e) {
-          failCount += sharedCount;
-          errors.add('Share sheet error: $e');
-          // Clean up temp files on share failure
-          for (final xf in shareFiles) {
-            try {
-              await File(xf.path).delete();
-            } catch (_) {}
-          }
-        }
+          await f.delete();
+        } catch (_) {}
       }
     }
 
