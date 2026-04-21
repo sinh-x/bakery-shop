@@ -58,6 +58,14 @@ class EventService {
     return BakeryEvent.fromJson(response.data as Map<String, dynamic>);
   }
 
+  Future<List<BakeryEvent>> getOrderEvents(String orderRef) async {
+    final response = await _dio.get('/api/orders/$orderRef/events');
+    final list = response.data as List;
+    return list
+        .map((json) => BakeryEvent.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<BakeryEvent> updateEvent(
     int id, {
     String? summary,

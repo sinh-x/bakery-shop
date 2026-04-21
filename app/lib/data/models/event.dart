@@ -14,6 +14,7 @@ sealed class BakeryEvent with _$BakeryEvent {
     @JsonKey(name: 'logged_by') @Default('') String loggedBy,
     @Default('app') String source,
     @Default(<String, dynamic>{}) Map<String, dynamic> data,
+    int? orderId,
   }) = _BakeryEvent;
 
   factory BakeryEvent.fromJson(Map<String, dynamic> json) =>
