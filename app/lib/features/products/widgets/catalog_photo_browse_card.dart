@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../data/models/catalog_browse_photo.dart';
-import '../../../providers/catalog_provider.dart';
+import 'catalog_tag_chips.dart';
 
 class CatalogPhotoBrowseCard extends ConsumerWidget {
   const CatalogPhotoBrowseCard({
@@ -19,23 +19,6 @@ class CatalogPhotoBrowseCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final url =
         '$baseUrl/api/products/${photo.productId}/catalog/${photo.id}/photo';
-    final tagKeys = photo.tags.isNotEmpty
-        ? photo.tags
-            .split(',')
-            .map((t) => t.trim())
-            .where((t) => t.isNotEmpty)
-            .toList()
-        : <String>[];
-
-    final tagDefsAsync = ref.watch(catalogTagDefsProvider);
-    final defs = tagDefsAsync.value;
-    final labels = tagKeys.map((k) {
-      if (defs == null) return k;
-      for (final d in defs) {
-        if (d.key == k) return d.label;
-      }
-      return k;
-    }).toList();
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -54,26 +37,12 @@ class CatalogPhotoBrowseCard extends ConsumerWidget {
                 ),
               ),
             ),
-            if (labels.isNotEmpty)
+            if (photo.tags.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.all(8),
-                child: Wrap(
-                  spacing: 4,
-                  runSpacing: 4,
-                  children: labels.take(3).map((label) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        label,
-                        style: const TextStyle(fontSize: 10),
-                      ),
-                    );
-                  }).toList(),
+                child: CatalogTagChips(
+                  tags: photo.tags,
+                  maxChips: 3,
                 ),
               ),
             Padding(

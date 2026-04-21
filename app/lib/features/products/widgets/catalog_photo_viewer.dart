@@ -12,6 +12,7 @@ import '../../../data/models/catalog_photo.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../providers/catalog_provider.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
+import 'catalog_tag_chips.dart';
 
 /// Full-screen swipeable photo viewer for catalog photos.
 ///
@@ -238,13 +239,7 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
                                 ),
                               if (photo.tags.isNotEmpty) ...[
                                 const SizedBox(height: 4),
-                                Text(
-                                  photo.tags,
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 12,
-                                  ),
-                                ),
+                                CatalogTagChips(tags: photo.tags),
                               ],
                             ],
                           ),
