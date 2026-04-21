@@ -466,6 +466,14 @@ class VN {
   static const noExtras = 'Chưa có phụ kiện';
   static const deleteExtraConfirm = 'Xóa phụ kiện này?';
 
+  // Catalog browse
+  static const browseScreenTitle = 'Duyệt ảnh mẫu';
+  static const doiTuong = 'Đối tượng';
+  static const dip = 'Dịp';
+  static const phongCach = 'Phong cách';
+  static const filterHint = 'Chọn thẻ để lọc';
+  static const noBrowsePhotos = 'Chưa có ảnh mẫu';
+
   // Stock management
   static const quanLyTonKho = 'Quản lý tồn kho';
   static const nhapHang = 'Nhập hàng';

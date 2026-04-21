@@ -25,6 +25,7 @@ import '../../features/pos/pos_checkout_screen.dart';
 import '../../features/pos/pos_receipt_screen.dart';
 import '../../features/pos/pos_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
+import '../../features/products/catalog_browse_screen.dart';
 import '../../features/stock/stock_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
@@ -153,6 +154,12 @@ final appRouter = GoRouter(
       builder: (context, state) => ProductFormScreen(
         initialCategory: state.uri.queryParameters['category'],
       ),
+    ),
+    // Catalog browse — full-screen (outside shell)
+    GoRoute(
+      path: '/products/browse',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const CatalogBrowseScreen(),
     ),
     // Product edit — full-screen (outside shell)
     GoRoute(

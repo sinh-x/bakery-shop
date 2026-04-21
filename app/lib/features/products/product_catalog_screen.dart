@@ -131,6 +131,11 @@ class _ProductCatalogScreenState
                 tooltip: VN.settings,
                 onPressed: () => context.push('/settings'),
               ),
+              IconButton(
+                icon: const Icon(Icons.photo_library_outlined),
+                tooltip: VN.browseScreenTitle,
+                onPressed: () => context.push('/products/browse'),
+              ),
             ],
             bottom: TabBar(
               isScrollable: true,

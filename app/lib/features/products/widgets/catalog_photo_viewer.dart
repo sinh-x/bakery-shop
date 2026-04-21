@@ -187,20 +187,23 @@ class _EditCaptionSheet extends ConsumerStatefulWidget {
 
 class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
   late final TextEditingController _captionCtrl;
-  late final TextEditingController _tagsCtrl;
+  final Set<String> _selectedTags = {};
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _captionCtrl = TextEditingController(text: widget.photo.caption);
-    _tagsCtrl = TextEditingController(text: widget.photo.tags);
+    if (widget.photo.tags.isNotEmpty) {
+      _selectedTags.addAll(
+        widget.photo.tags.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty),
+      );
+    }
   }
 
   @override
   void dispose() {
     _captionCtrl.dispose();
-    _tagsCtrl.dispose();
     super.dispose();
   }
 
@@ -212,7 +215,7 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
           .updatePhoto(
             widget.photo.id,
             caption: _captionCtrl.text.trim(),
-            tags: _tagsCtrl.text.trim(),
+            tags: _selectedTags.join(','),
           );
       if (mounted) {
         Navigator.pop(context);
@@ -229,6 +232,8 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final tagDefsAsync = ref.watch(catalogTagDefsProvider);
+
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -251,11 +256,35 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
             maxLines: 2,
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _tagsCtrl,
-            decoration: const InputDecoration(
-              labelText: VN.tagsLabel,
-              hintText: VN.tagsHint,
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              VN.tagsLabel,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          const SizedBox(height: 8),
+          tagDefsAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (_, __) => TextField(
+              controller: TextEditingController(text: widget.photo.tags),
+              decoration: const InputDecoration(
+                labelText: VN.tagsLabel,
+                hintText: VN.tagsHint,
+              ),
+            ),
+            data: (tagDefs) => _TagChipSelector(
+              tagDefs: tagDefs,
+              selectedTags: _selectedTags,
+              onToggle: (tag) {
+                setState(() {
+                  if (_selectedTags.contains(tag)) {
+                    _selectedTags.remove(tag);
+                  } else {
+                    _selectedTags.add(tag);
+                  }
+                });
+              },
             ),
           ),
           const SizedBox(height: 16),
@@ -272,6 +301,59 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
           const SizedBox(height: 8),
         ],
       ),
+    );
+  }
+}
+
+class _TagChipSelector extends StatelessWidget {
+  const _TagChipSelector({
+    required this.tagDefs,
+    required this.selectedTags,
+    required this.onToggle,
+  });
+
+  final List tagDefs;
+  final Set<String> selectedTags;
+  final void Function(String tag) onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final audience = tagDefs.where((t) => t.category == 'audience').toList();
+    final occasion = tagDefs.where((t) => t.category == 'occasion').toList();
+    final style = tagDefs.where((t) => t.category == 'style').toList();
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        if (audience.isNotEmpty) ...[
+          Text(VN.doiTuong, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          ...audience.map((t) => FilterChip(
+                label: Text(t.label, style: const TextStyle(fontSize: 12)),
+                selected: selectedTags.contains(t.key),
+                onSelected: (_) => onToggle(t.key),
+                visualDensity: VisualDensity.compact,
+              )),
+        ],
+        if (occasion.isNotEmpty) ...[
+          Text(VN.dip, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          ...occasion.map((t) => FilterChip(
+                label: Text(t.label, style: const TextStyle(fontSize: 12)),
+                selected: selectedTags.contains(t.key),
+                onSelected: (_) => onToggle(t.key),
+                visualDensity: VisualDensity.compact,
+              )),
+        ],
+        if (style.isNotEmpty) ...[
+          Text(VN.phongCach, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          ...style.map((t) => FilterChip(
+                label: Text(t.label, style: const TextStyle(fontSize: 12)),
+                selected: selectedTags.contains(t.key),
+                onSelected: (_) => onToggle(t.key),
+                visualDensity: VisualDensity.compact,
+              )),
+        ],
+      ],
     );
   }
 }
