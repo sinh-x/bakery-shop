@@ -976,6 +976,11 @@ MIGRATIONS = {
         "sql": "",
         "callable": _migrate_v28_cascade_and_reseed,
     },
+    29: {
+        "description": "Add order_id FK to events table for linking incidents to orders",
+        "sql": ("ALTER TABLE events ADD COLUMN order_id INTEGER DEFAULT NULL;\n"
+                "CREATE INDEX idx_events_order_id ON events(order_id);"),
+    },
 }
 
 
