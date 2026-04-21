@@ -17,13 +17,18 @@ class CatalogBrowseScreen extends ConsumerStatefulWidget {
 
 class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
   final Set<String> _selectedTags = {};
+  String _filterKey = '';
+
+  String _computeFilterKey() {
+    final sorted = _selectedTags.toList()..sort();
+    return sorted.join('|');
+  }
 
   @override
   Widget build(BuildContext context) {
     final baseUrl = ref.watch(apiBaseUrlProvider);
     final tagDefsAsync = ref.watch(catalogTagDefsProvider);
-    final browseParams = (tags: _selectedTags.toList(), page: 1);
-    final photosAsync = ref.watch(catalogBrowseProvider(browseParams));
+    final photosAsync = ref.watch(catalogBrowseProvider(_filterKey));
 
     return Scaffold(
       appBar: AppBar(
@@ -48,6 +53,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                   } else {
                     _selectedTags.add(tag);
                   }
+                  _filterKey = _computeFilterKey();
                 });
               },
             ),
@@ -67,7 +73,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                     const SizedBox(height: 8),
                     FilledButton(
                       onPressed: () =>
-                          ref.invalidate(catalogBrowseProvider(browseParams)),
+                          ref.invalidate(catalogBrowseProvider(_filterKey)),
                       child: const Text(VN.retry),
                     ),
                   ],
@@ -89,7 +95,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                 }
                 return RefreshIndicator(
                   onRefresh: () => ref
-                      .read(catalogBrowseProvider(browseParams).notifier)
+                      .read(catalogBrowseProvider(_filterKey).notifier)
                       .refresh(),
                   child: GridView.builder(
                     padding: const EdgeInsets.all(12),

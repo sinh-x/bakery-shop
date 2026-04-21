@@ -85,19 +85,21 @@ final catalogProvider = AsyncNotifierProvider.family<CatalogNotifier,
 // Cross-product browse providers
 // ---------------------------------------------------------------------------
 
-typedef CatalogBrowseParams = ({List<String>? tags, int page});
-
 class CatalogBrowseNotifier extends AsyncNotifier<List<CatalogBrowsePhoto>> {
-  final CatalogBrowseParams params;
+  final String filterKey;
 
-  CatalogBrowseNotifier(this.params);
+  CatalogBrowseNotifier(this.filterKey);
 
   @override
   Future<List<CatalogBrowsePhoto>> build() async {
     final service = ref.read(catalogServiceProvider);
+    // filterKey is sorted pipe-joined tags, empty string means no filter
+    final tags = filterKey.isEmpty
+        ? null
+        : filterKey.split('|');
     return service.browseCatalogPhotos(
-      tags: params.tags,
-      page: params.page,
+      tags: tags,
+      page: 1,
     );
   }
 
@@ -108,8 +110,8 @@ class CatalogBrowseNotifier extends AsyncNotifier<List<CatalogBrowsePhoto>> {
 }
 
 final catalogBrowseProvider = AsyncNotifierProvider.family<CatalogBrowseNotifier,
-    List<CatalogBrowsePhoto>, CatalogBrowseParams>(
-  (params) => CatalogBrowseNotifier(params),
+    List<CatalogBrowsePhoto>, String>(
+  (filterKey) => CatalogBrowseNotifier(filterKey),
 );
 
 class CatalogTagDefsNotifier extends AsyncNotifier<List<CatalogTagDef>> {
