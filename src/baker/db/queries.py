@@ -86,7 +86,7 @@ def count_events_by_logger(conn, since=None, until=None):
 
 def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
                  search=None, untagged=False, logged_by=None, involving=None,
-                 limit=50):
+                 order_id=None, limit=50):
     """Fetch events with optional filters."""
     joins = []
     conditions = []
@@ -119,6 +119,9 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
     if logged_by:
         conditions.append("LOWER(e.logged_by) = LOWER(?)")
         params.append(logged_by)
+    if order_id is not None:
+        conditions.append("e.order_id = ?")
+        params.append(order_id)
 
     where = " AND ".join(conditions) if conditions else "1=1"
     join_clause = " ".join(joins)

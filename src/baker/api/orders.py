@@ -16,6 +16,18 @@ from baker.models.work_item import WorkItem
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
 
+def _event_row_to_dict(row) -> dict:
+    """Convert event sqlite Row to a clean API dict."""
+    d = dict(row)
+    tags_str = d.get("tags") or ""
+    d["tags"] = [t for t in tags_str.split(",") if t]
+    try:
+        d["data"] = json.loads(d["data"]) if d.get("data") else {}
+    except (json.JSONDecodeError, TypeError):
+        d["data"] = {}
+    return d
+
+
 class OrderItemIn(BaseModel):
     productId: str = ""
     productName: str
@@ -316,6 +328,24 @@ def get_order(ref: str):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
         return _order_detail(conn, row)
+
+
+@router.get("/{ref}/events")
+def get_order_events(ref: str):
+    """Lấy danh sách sự kiện liên kết với đơn hàng."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        event_rows = conn.execute(
+            "SELECT * FROM events WHERE order_id = ? ORDER BY timestamp DESC",
+            (row["id"],),
+        ).fetchall()
+        return [_event_row_to_dict(r) for r in event_rows]
 
 
 @router.patch("/{ref}")

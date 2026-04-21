@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -23,6 +23,7 @@ class EventCreate(BaseModel):
     logged_by: str = ""
     data: dict[str, Any] = {}
     source: str = "app"
+    orderId: Optional[int] = None
 
 
 def _row_to_dict(row) -> dict:
@@ -43,17 +44,25 @@ def create_event(body: EventCreate):
     if not body.summary.strip():
         raise HTTPException(status_code=422, detail="summary không được để trống")
 
-    event = Event(
-        summary=body.summary.strip(),
-        type=body.type,
-        tags=body.tags,
-        logged_by=body.logged_by,
-        data=body.data,
-        source=body.source,
-    )
-
+    order_id = body.orderId
     with get_db() as conn:
-        event_id = event.save(conn)
+        if order_id is not None:
+            order_row = conn.execute(
+                "SELECT id FROM orders WHERE id = ?", (order_id,)
+            ).fetchone()
+            if not order_row:
+                raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        event = Event(
+            summary=body.summary.strip(),
+            type=body.type,
+            tags=body.tags,
+            logged_by=body.logged_by,
+            data=body.data,
+            source=body.source,
+        )
+
+        event_id = event.save(conn, order_id=order_id)
 
         # Link logger to event_people if they exist in staff table
         if body.logged_by:
@@ -73,6 +82,7 @@ def list_events(
     since: str | None = Query(None, description="Từ ngày (ISO format)"),
     until: str | None = Query(None, description="Đến ngày (ISO format)"),
     logged_by: str | None = Query(None, description="Lọc theo người ghi"),
+    order_id: int | None = Query(None, description="Lọc theo đơn hàng"),
     limit: int = Query(50, ge=1, le=500, description="Số kết quả tối đa"),
 ):
     """Danh sách sự kiện với bộ lọc."""
@@ -87,6 +97,7 @@ def list_events(
             until=until,
             search=search,
             logged_by=logged_by,
+            order_id=order_id,
             limit=limit,
         )
         return [_row_to_dict(r) for r in rows]
