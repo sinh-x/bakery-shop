@@ -768,6 +768,30 @@ def _migrate_v27_seed_catalog_tags(conn):
         )
 
 
+KNOWLEDGE_PIN_SCHEMA = """
+ALTER TABLE knowledge_entries ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE knowledge_entries ADD COLUMN pinned_at TEXT;
+CREATE INDEX idx_knowledge_pinned ON knowledge_entries(pinned);
+"""
+
+
+def _guard_add_column(conn, table: str, column: str, col_def: str):
+    """Add a column only if it doesn't already exist (idempotent forward-only migration)."""
+    existing = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
+
+
+def _migrate_v29_add_pin_support(conn):
+    """Add pin columns to knowledge_entries (idempotent via PRAGMA guard)."""
+    existing = [r[1] for r in conn.execute("PRAGMA table_info(knowledge_entries)").fetchall()]
+    if "pinned" not in existing:
+        conn.execute("ALTER TABLE knowledge_entries ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+    if "pinned_at" not in existing:
+        conn.execute("ALTER TABLE knowledge_entries ADD COLUMN pinned_at TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_pinned ON knowledge_entries(pinned)")
+
+
 def _migrate_v28_cascade_and_reseed(conn):
     """Rebuild catalog_photo_tags with ON DELETE CASCADE and re-seed catalog_tag vocabulary."""
     # Rebuild junction table with ON DELETE CASCADE (SQLite recreate-and-copy)
@@ -975,6 +999,11 @@ MIGRATIONS = {
         "description": "Rebuild catalog_photo_tags with ON DELETE CASCADE; re-seed catalog_tag vocabulary with approved F1 keys (fixes v27 typos and wrong keys)",
         "sql": "",
         "callable": _migrate_v28_cascade_and_reseed,
+    },
+    29: {
+        "description": "Add pin support to knowledge entries",
+        "sql": "",
+        "callable": _migrate_v29_add_pin_support,
     },
 }
 
