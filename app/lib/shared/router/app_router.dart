@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
-import '../../data/models/catalog_browse_photo.dart';
 import '../../data/models/catalog_photo.dart';
 import '../../data/models/event.dart';
 import '../../data/api/receipt_service.dart';
@@ -172,10 +171,10 @@ final appRouter = GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) {
         final id = int.parse(state.pathParameters['id']!);
-        final initialPhoto = state.extra as CatalogBrowsePhoto?;
+        final initialPhotoId = state.extra as int?;
         return _CatalogViewerLoader(
           productId: id,
-          initialPhotoId: initialPhoto?.id,
+          initialPhotoId: initialPhotoId,
         );
       },
     ),

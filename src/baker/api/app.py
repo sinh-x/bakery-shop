@@ -45,12 +45,13 @@ def create_app() -> FastAPI:
     # Logging middleware (added before CORS so it wraps all requests)
     app.add_middleware(LoggingMiddleware)
 
+    # Tailscale network is air-gapped; only lily.tail10c2c6.ts.net is trusted
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=['https://lily.tail10c2c6.ts.net'],
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=['*'],
+        allow_headers=['*'],
     )
 
     @app.get("/api/health")

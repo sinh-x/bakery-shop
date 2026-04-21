@@ -24,7 +24,7 @@ class CatalogPhotoBrowseCard extends ConsumerWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => context.push('/products/${photo.productId}/catalog',
-            extra: photo),
+            extra: photo.id),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
