@@ -171,36 +171,62 @@ class TagChipSelector extends StatelessWidget {
     final occasion = tagDefs.where((t) => t.category == 'occasion').toList();
     final style = tagDefs.where((t) => t.category == 'style').toList();
 
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (audience.isNotEmpty) ...[
-          Text(VN.doiTuong, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-          ...audience.map((t) => FilterChip(
-                label: Text(t.label, style: const TextStyle(fontSize: 12)),
-                selected: selectedTags.contains(t.key),
-                onSelected: (_) => onToggle(t.key),
-                visualDensity: VisualDensity.compact,
-              )),
+          Text(VN.doiTuong,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: audience
+                .map((t) => FilterChip(
+                      label: Text(t.label, style: const TextStyle(fontSize: 12)),
+                      selected: selectedTags.contains(t.key),
+                      onSelected: (_) => onToggle(t.key),
+                      visualDensity: VisualDensity.compact,
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: 12),
         ],
         if (occasion.isNotEmpty) ...[
-          Text(VN.dip, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-          ...occasion.map((t) => FilterChip(
-                label: Text(t.label, style: const TextStyle(fontSize: 12)),
-                selected: selectedTags.contains(t.key),
-                onSelected: (_) => onToggle(t.key),
-                visualDensity: VisualDensity.compact,
-              )),
+          Text(VN.dip,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: occasion
+                .map((t) => FilterChip(
+                      label: Text(t.label, style: const TextStyle(fontSize: 12)),
+                      selected: selectedTags.contains(t.key),
+                      onSelected: (_) => onToggle(t.key),
+                      visualDensity: VisualDensity.compact,
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: 12),
         ],
         if (style.isNotEmpty) ...[
-          Text(VN.phongCach, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-          ...style.map((t) => FilterChip(
-                label: Text(t.label, style: const TextStyle(fontSize: 12)),
-                selected: selectedTags.contains(t.key),
-                onSelected: (_) => onToggle(t.key),
-                visualDensity: VisualDensity.compact,
-              )),
+          Text(VN.phongCach,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: style
+                .map((t) => FilterChip(
+                      label: Text(t.label, style: const TextStyle(fontSize: 12)),
+                      selected: selectedTags.contains(t.key),
+                      onSelected: (_) => onToggle(t.key),
+                      visualDensity: VisualDensity.compact,
+                    ))
+                .toList(),
+          ),
         ],
       ],
     );
