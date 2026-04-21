@@ -16,7 +16,7 @@ class KnowledgeEntriesNotifier extends AsyncNotifier<List<KnowledgeEntry>> {
     });
   }
 
-  Future<void> createEntry({
+  Future<KnowledgeEntry> createEntry({
     required String title,
     String content = '',
     String type = 'note',
@@ -33,6 +33,7 @@ class KnowledgeEntriesNotifier extends AsyncNotifier<List<KnowledgeEntry>> {
     );
     final existing = state.asData?.value ?? [];
     state = AsyncData([created, ...existing]);
+    return created;
   }
 
   Future<void> updateEntry(

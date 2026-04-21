@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../data/api/api_client.dart';
+import '../../data/api/knowledge_service.dart';
 import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
@@ -49,6 +51,11 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
   bool _pinAfterSave = false;
 
   bool get _isEditing => widget.entry != null;
+
+  String get _photoBaseUrl {
+    final dio = ref.read(dioProvider);
+    return dio.options.baseUrl;
+  }
 
   @override
   void initState() {
@@ -116,12 +123,14 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
               type: _selectedType,
               tags: _selectedTags.toList(),
             );
+        // Upload new photos after update
+        await _uploadNewPhotos(widget.entry!.id);
         if (mounted) {
           showTopSnackBar(context, VN.knowledgeSaved);
           context.pop();
         }
       } else {
-        await ref.read(knowledgeEntriesProvider.notifier).createEntry(
+        final created = await ref.read(knowledgeEntriesProvider.notifier).createEntry(
               title: title,
               content: content,
               type: _selectedType,
@@ -129,16 +138,13 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
             );
         if (mounted) {
           showTopSnackBar(context, VN.knowledgeCreated);
+          // Upload new photos after create
+          await _uploadNewPhotos(created.id);
           // Pin after save if checked
           if (_pinAfterSave) {
-            // The new entry is at the top of the list (created first), find it by title
-            final entries = ref.read(knowledgeEntriesProvider).asData?.value ?? [];
-            final newEntry = entries.where((e) => e.title == title).firstOrNull;
-            if (newEntry != null) {
-              try {
-                await ref.read(knowledgeEntriesProvider.notifier).pinEntry(newEntry.id, true);
-              } catch (_) {}
-            }
+            try {
+              await ref.read(knowledgeEntriesProvider.notifier).pinEntry(created.id, true);
+            } catch (_) {}
           }
           context.pop();
         }
@@ -354,6 +360,19 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
     );
   }
 
+  Future<void> _uploadNewPhotos(int entryId) async {
+    final newPhotos = _photos.where((p) => p.file != null).toList();
+    if (newPhotos.isEmpty) return;
+    final service = ref.read(knowledgeServiceProvider);
+    for (final photo in newPhotos) {
+      try {
+        await service.attachPhoto(entryId, filePath: photo.file!.path);
+      } catch (_) {
+        // Non-fatal: show warning but don't block save
+      }
+    }
+  }
+
   ImageProvider _buildImage(_PhotoEntry photo) {
     if (photo.file != null) {
       if (kIsWeb) {
@@ -361,8 +380,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
       }
       return FileImage(File(photo.file!.path));
     }
-    // Existing photo — use network URL
-    final baseUrl = ''; // Will use apiBaseUrlProvider in real implementation
-    return NetworkImage('$baseUrl/api/knowledge/photos/${photo.photo!.hash}');
+    // Existing photo — use API base URL
+    return NetworkImage('$_photoBaseUrl/api/knowledge/photos/${photo.photo!.hash}');
   }
 }
