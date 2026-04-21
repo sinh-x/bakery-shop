@@ -114,8 +114,38 @@ class KnowledgeDetailScreen extends ConsumerWidget {
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // Title
-              Text(entry.title, style: theme.textTheme.headlineSmall),
+              // Title with inline pin button
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(entry.title, style: theme.textTheme.headlineSmall),
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      entry.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                    ),
+                    tooltip: entry.pinned ? 'Bỏ ghim' : 'Ghim',
+                    onPressed: () async {
+                      try {
+                        final updated = await ref
+                            .read(knowledgeEntriesProvider.notifier)
+                            .pinEntry(entry.id, !entry.pinned);
+                        ref.invalidate(knowledgeEntryDetailProvider(entryId));
+                        if (context.mounted) {
+                          showTopSnackBar(
+                            context,
+                            updated.pinned ? 'Đã ghim' : 'Đã bỏ ghim',
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          showTopSnackBar(context, 'Lỗi: $e');
+                        }
+                      }
+                    },
+                  ),
+                ],
+              ),
               const SizedBox(height: 12),
 
               // Type chip

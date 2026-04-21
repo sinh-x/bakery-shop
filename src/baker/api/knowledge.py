@@ -1,6 +1,8 @@
 """Knowledge base API routes — CRUD + photo management."""
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile
+from typing import Optional
+
 from pydantic import BaseModel
 
 from baker.db.connection import get_db
@@ -17,6 +19,8 @@ def _row_to_dict(row) -> dict:
     d = dict(row)
     tags_str = d.get("tags") or ""
     d["tags"] = [t for t in tags_str.split(",") if t]
+    if "pinned" in d:
+        d["pinned"] = bool(d["pinned"])
     return d
 
 
@@ -59,6 +63,8 @@ class KnowledgeUpdate(BaseModel):
     type: str | None = None
     tags: list[str] | None = None
     logged_by: str | None = None
+    pinned: bool | None = None
+    pinned_at: Optional[str] = None
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────────
@@ -117,7 +123,7 @@ def list_knowledge(
         query = f"""
             SELECT * FROM knowledge_entries
             WHERE {' AND '.join(conditions)}
-            ORDER BY updated_at DESC
+            ORDER BY pinned DESC, CASE WHEN pinned = 1 THEN pinned_at ELSE updated_at END DESC
             LIMIT ?
         """
         params.append(limit)
@@ -210,6 +216,55 @@ def delete_knowledge(entry_id: int):
 
         conn.execute("DELETE FROM knowledge_entries WHERE id = ?", (entry_id,))
         return {"ok": True, "deleted": entry_id}
+
+
+@router.post("/{entry_id}/pin")
+def pin_knowledge(entry_id: int):
+    """Ghim mục tri thức lên đầu danh sách."""
+    import datetime
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM knowledge_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy mục tri thức")
+
+        pinned_at = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        conn.execute(
+            "UPDATE knowledge_entries SET pinned = 1, pinned_at = ? WHERE id = ?",
+            (pinned_at, entry_id),
+        )
+
+        row = conn.execute(
+            "SELECT * FROM knowledge_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+        result = _row_to_dict(row)
+        result["photos"] = _fetch_photos(conn, entry_id)
+        return result
+
+
+@router.delete("/{entry_id}/pin")
+def unpin_knowledge(entry_id: int):
+    """Bỏ ghim mục tri thức."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM knowledge_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy mục tri thức")
+
+        conn.execute(
+            "UPDATE knowledge_entries SET pinned = 0, pinned_at = NULL WHERE id = ?",
+            (entry_id,),
+        )
+
+        row = conn.execute(
+            "SELECT * FROM knowledge_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+        result = _row_to_dict(row)
+        result["photos"] = _fetch_photos(conn, entry_id)
+        return result
 
 
 # ─── Photo management ──────────────────────────────────────────────────────────

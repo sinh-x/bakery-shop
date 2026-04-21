@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../data/api/api_client.dart';
+import '../../data/api/knowledge_service.dart';
 import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
@@ -46,8 +48,14 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
   final _photos = <_PhotoEntry>[];
   bool _saving = false;
   bool _showTagField = false;
+  bool _pinAfterSave = false;
 
   bool get _isEditing => widget.entry != null;
+
+  String get _photoBaseUrl {
+    final dio = ref.read(dioProvider);
+    return dio.options.baseUrl;
+  }
 
   @override
   void initState() {
@@ -115,12 +123,14 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
               type: _selectedType,
               tags: _selectedTags.toList(),
             );
+        // Upload new photos after update
+        await _uploadNewPhotos(widget.entry!.id);
         if (mounted) {
           showTopSnackBar(context, VN.knowledgeSaved);
           context.pop();
         }
       } else {
-        await ref.read(knowledgeEntriesProvider.notifier).createEntry(
+        final created = await ref.read(knowledgeEntriesProvider.notifier).createEntry(
               title: title,
               content: content,
               type: _selectedType,
@@ -128,6 +138,14 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
             );
         if (mounted) {
           showTopSnackBar(context, VN.knowledgeCreated);
+          // Upload new photos after create
+          await _uploadNewPhotos(created.id);
+          // Pin after save if checked
+          if (_pinAfterSave) {
+            try {
+              await ref.read(knowledgeEntriesProvider.notifier).pinEntry(created.id, true);
+            } catch (_) {}
+          }
           context.pop();
         }
       }
@@ -329,9 +347,30 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 8),
+          CheckboxListTile(
+            value: _pinAfterSave,
+            onChanged: (v) => setState(() => _pinAfterSave = v ?? false),
+            title: const Text('Ghim sau khi lưu'),
+            controlAffinity: ListTileControlAffinity.leading,
+            contentPadding: EdgeInsets.zero,
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _uploadNewPhotos(int entryId) async {
+    final newPhotos = _photos.where((p) => p.file != null).toList();
+    if (newPhotos.isEmpty) return;
+    final service = ref.read(knowledgeServiceProvider);
+    for (final photo in newPhotos) {
+      try {
+        await service.attachPhoto(entryId, filePath: photo.file!.path);
+      } catch (_) {
+        // Non-fatal: show warning but don't block save
+      }
+    }
   }
 
   ImageProvider _buildImage(_PhotoEntry photo) {
@@ -341,8 +380,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
       }
       return FileImage(File(photo.file!.path));
     }
-    // Existing photo — use network URL
-    final baseUrl = ''; // Will use apiBaseUrlProvider in real implementation
-    return NetworkImage('$baseUrl/api/knowledge/photos/${photo.photo!.hash}');
+    // Existing photo — use API base URL
+    return NetworkImage('$_photoBaseUrl/api/knowledge/photos/${photo.photo!.hash}');
   }
 }

@@ -18,6 +18,8 @@ class Knowledge:
     id: Optional[int] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    pinned: bool = False
+    pinned_at: Optional[str] = None
 
     def save(self, conn) -> int:
         """Insert new knowledge entry, set id and timestamps."""
@@ -85,4 +87,6 @@ class Knowledge:
             logged_by=row["logged_by"] or "",
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            pinned=bool(row["pinned"]) if "pinned" in row.keys() else False,
+            pinned_at=row["pinned_at"] if "pinned_at" in row.keys() else None,
         )

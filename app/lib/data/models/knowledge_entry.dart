@@ -15,6 +15,8 @@ sealed class KnowledgeEntry with _$KnowledgeEntry {
     @Default('app') String source,
     required DateTime createdAt,
     required DateTime updatedAt,
+    @Default(false) bool pinned,
+    @JsonKey(name: 'pinned_at') DateTime? pinnedAt,
     @Default(<KnowledgePhoto>[]) List<KnowledgePhoto> photos,
   }) = _KnowledgeEntry;
 

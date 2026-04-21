@@ -111,6 +111,18 @@ class KnowledgeService {
   Future<void> detachPhoto(int id, String photoHash) async {
     await _dio.delete('/api/knowledge/$id/photos/$photoHash');
   }
+
+  // POST /api/knowledge/{id}/pin
+  Future<KnowledgeEntry> pinEntry(int id) async {
+    final response = await _dio.post('/api/knowledge/$id/pin');
+    return KnowledgeEntry.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  // DELETE /api/knowledge/{id}/pin
+  Future<KnowledgeEntry> unpinEntry(int id) async {
+    final response = await _dio.delete('/api/knowledge/$id/pin');
+    return KnowledgeEntry.fromJson(response.data as Map<String, dynamic>);
+  }
 }
 
 final knowledgeServiceProvider = Provider<KnowledgeService>((ref) {
