@@ -13,6 +13,7 @@ import '../../../data/models/catalog_tag.dart';
 import '../../../providers/catalog_provider.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 import 'catalog_tag_chips.dart';
+import 'catalog_tag_edit_sheet.dart';
 
 /// Full-screen swipeable photo viewer for catalog photos.
 ///
@@ -106,13 +107,10 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
   }
 
   void _openEditSheet(CatalogPhoto photo) {
-    showModalBottomSheet<void>(
+    showEditCatalogTagsSheet(
       context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _EditCaptionSheet(
-        photo: photo,
-        productId: widget.productId,
-      ),
+      photo: photo,
+      productId: widget.productId,
     );
   }
 
