@@ -508,6 +508,9 @@ class VN {
   static const capNhatThanhCong = 'Cập nhật thành công';
   static const loiHeThong = 'Lỗi hệ thống';
 
+  // Catalog browse
+  static const danhMuc = 'Danh mục';
+
   // Catalog photo viewer
   static const daLuuAnh = 'Đã lưu ảnh';
   static const taiAnh = 'Tải ảnh';

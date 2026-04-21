@@ -93,12 +93,29 @@ class CatalogBrowseNotifier extends AsyncNotifier<List<CatalogBrowsePhoto>> {
   @override
   Future<List<CatalogBrowsePhoto>> build() async {
     final service = ref.read(catalogServiceProvider);
-    // filterKey is sorted pipe-joined tags, empty string means no filter
-    final tags = filterKey.isEmpty
-        ? null
-        : filterKey.split('|');
+    // filterKey format: "tags:t1|t2;cats:c1|c2" or legacy "t1|t2" (tags only)
+    List<String>? tags;
+    List<String>? categories;
+    if (filterKey.isNotEmpty) {
+      if (filterKey.contains(';')) {
+        final parts = filterKey.split(';');
+        for (final part in parts) {
+          if (part.startsWith('tags:')) {
+            final v = part.substring(5);
+            tags = v.isEmpty ? null : v.split('|');
+          } else if (part.startsWith('cats:')) {
+            final v = part.substring(5);
+            categories = v.isEmpty ? null : v.split('|');
+          }
+        }
+      } else {
+        // Legacy format: just pipe-joined tags
+        tags = filterKey.split('|');
+      }
+    }
     return service.browseCatalogPhotos(
       tags: tags,
+      categories: categories,
       page: 1,
     );
   }

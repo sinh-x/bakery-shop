@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/api/api_client.dart';
 import '../../data/models/catalog_tag.dart';
 import '../../providers/catalog_provider.dart';
+import '../../providers/categories_provider.dart';
+import '../../data/models/category.dart' as models;
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'services/bulk_share_service.dart';
 import 'services/bulk_download_android.dart'
@@ -21,6 +23,7 @@ class CatalogBrowseScreen extends ConsumerStatefulWidget {
 
 class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
   final Set<String> _selectedTags = {};
+  final Set<String> _selectedCategorySlugs = {};
   String _filterKey = '';
   bool _selectMode = false;
   Set<int> _selectedPhotoIds = {};
@@ -33,8 +36,11 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
   }
 
   String _computeFilterKey() {
-    final sorted = _selectedTags.toList()..sort();
-    return sorted.join('|');
+    final sortedTags = _selectedTags.toList()..sort();
+    final sortedCats = _selectedCategorySlugs.toList()..sort();
+    final tagPart = 'tags:${sortedTags.join('|')}';
+    final catPart = 'cats:${sortedCats.join('|')}';
+    return '$tagPart;$catPart';
   }
 
   void _clearSelection() {
@@ -240,6 +246,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
               data: (tagDefs) => _TagFilterBar(
                 tagDefs: tagDefs,
                 selectedTags: _selectedTags,
+                selectedCategories: _selectedCategorySlugs,
                 onTagToggle: (tag) {
                   setState(() {
                     if (_selectedTags.contains(tag)) {
@@ -252,9 +259,22 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                     _selectedPhotoIds.clear();
                   });
                 },
+                onCategoryToggle: (slug) {
+                  setState(() {
+                    if (_selectedCategorySlugs.contains(slug)) {
+                      _selectedCategorySlugs.remove(slug);
+                    } else {
+                      _selectedCategorySlugs.add(slug);
+                    }
+                    _filterKey = _computeFilterKey();
+                    // Clear selection when category filter changes
+                    _selectedPhotoIds.clear();
+                  });
+                },
                 onClearAll: () {
                   setState(() {
                     _selectedTags.clear();
+                    _selectedCategorySlugs.clear();
                     _filterKey = _computeFilterKey();
                     // Clear selection when tag filter changes
                     _selectedPhotoIds.clear();
@@ -335,31 +355,51 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
   }
 }
 
-class _TagFilterBar extends StatelessWidget {
+class _TagFilterBar extends ConsumerWidget {
   const _TagFilterBar({
     required this.tagDefs,
     required this.selectedTags,
+    required this.selectedCategories,
     required this.onTagToggle,
+    required this.onCategoryToggle,
     required this.onClearAll,
   });
 
   final List<CatalogTagDef> tagDefs;
   final Set<String> selectedTags;
+  final Set<String> selectedCategories;
   final void Function(String tag) onTagToggle;
+  final void Function(String slug) onCategoryToggle;
   final VoidCallback onClearAll;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final audience = tagDefs.where((t) => t.category == 'audience').toList();
     final occasion = tagDefs.where((t) => t.category == 'occasion').toList();
     final style = tagDefs.where((t) => t.category == 'style').toList();
-    final hasSelection = selectedTags.isNotEmpty;
+    final categoriesAsync = ref.watch(categoriesProvider);
+    final hasSelection = selectedTags.isNotEmpty || selectedCategories.isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          categoriesAsync.when(
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+            data: (categories) {
+              final active = categories.where((c) => c.active != 0).toList()
+                ..sort((a, b) => a.position.compareTo(b.position));
+              if (active.isEmpty) return const SizedBox.shrink();
+              return _FilterRow(
+                label: VN.danhMuc,
+                categories: active,
+                selectedCategories: selectedCategories,
+                onCategoryToggle: onCategoryToggle,
+              );
+            },
+          ),
           _FilterRow(
             label: VN.doiTuong,
             tagDefs: audience,
@@ -389,25 +429,67 @@ class _TagFilterBar extends StatelessWidget {
 class _FilterRow extends StatelessWidget {
   const _FilterRow({
     required this.label,
-    required this.tagDefs,
-    required this.selectedTags,
-    required this.onTagToggle,
+    this.tagDefs,
+    this.selectedTags,
+    this.onTagToggle,
     this.showClear = false,
     this.onClearAll,
+    this.categories,
+    this.selectedCategories,
+    this.onCategoryToggle,
   });
 
   final String label;
-  final List<CatalogTagDef> tagDefs;
-  final Set<String> selectedTags;
-  final void Function(String tag) onTagToggle;
+  final List<CatalogTagDef>? tagDefs;
+  final Set<String>? selectedTags;
+  final void Function(String tag)? onTagToggle;
   final bool showClear;
   final VoidCallback? onClearAll;
+  final List<models.Category>? categories;
+  final Set<String>? selectedCategories;
+  final void Function(String slug)? onCategoryToggle;
 
   static const _labelWidth = 80.0;
 
   @override
   Widget build(BuildContext context) {
-    if (tagDefs.isEmpty) return const SizedBox.shrink();
+    // Category row
+    if (categories != null && categories!.isNotEmpty) {
+      return SizedBox(
+        height: 40,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          children: [
+            SizedBox(
+              width: _labelWidth,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 6, top: 6),
+                child: Text(
+                  label,
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+            ...categories!.map((c) => Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: FilterChip(
+                    label: Text(
+                      '${c.icon.isNotEmpty ? c.icon : '📦'} ${c.name}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    selected: selectedCategories!.contains(c.slug),
+                    onSelected: (_) => onCategoryToggle!(c.slug),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                )),
+          ],
+        ),
+      );
+    }
+
+    // Tag row
+    if (tagDefs == null || tagDefs!.isEmpty) return const SizedBox.shrink();
 
     return SizedBox(
       height: 40,
@@ -425,12 +507,12 @@ class _FilterRow extends StatelessWidget {
               ),
             ),
           ),
-          ...tagDefs.map((t) => Padding(
+          ...tagDefs!.map((t) => Padding(
                 padding: const EdgeInsets.only(right: 6),
                 child: FilterChip(
                   label: Text(t.label, style: const TextStyle(fontSize: 12)),
-                  selected: selectedTags.contains(t.key),
-                  onSelected: (_) => onTagToggle(t.key),
+                  selected: selectedTags!.contains(t.key),
+                  onSelected: (_) => onTagToggle!(t.key),
                   visualDensity: VisualDensity.compact,
                 ),
               )),
