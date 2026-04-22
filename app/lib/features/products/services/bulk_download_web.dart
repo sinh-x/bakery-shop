@@ -16,7 +16,7 @@ String _safeFileName(String input) {
       .replaceAll(RegExp(r'\.\.'), '_')
       .trim();
   if (sanitized.length > 100) {
-    return sanitized.substring(0, 100);
+    return sanitized.substring(0, sanitized.length.clamp(0, 100));
   }
   return sanitized.isEmpty ? 'photo' : sanitized;
 }
@@ -56,6 +56,18 @@ class BulkDownloadService {
     return Uint8List.fromList(response.data ?? []);
   }
 
+  Future<bool> _downloadPhoto(CatalogBrowsePhoto photo) async {
+    final bytes = await _fetchPhotoBytes(photo);
+    final safeName = _safeFileName(photo.productName);
+    final fileName = '${safeName}_${photo.id}.jpg';
+    try {
+      _triggerDownload(bytes, fileName, 'image/jpeg');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   /// Downloads [photos] to the browser downloads folder.
   /// Bounded parallelism of 4 concurrent HTTP requests.
   /// Per-photo errors are caught individually and do not crash the batch.
@@ -67,14 +79,11 @@ class BulkDownloadService {
 
     final futures = photos.map((photo) async {
       try {
-        final bytes = await _fetchPhotoBytes(photo);
-        final safeName = _safeFileName(photo.productName);
-        _triggerDownload(
-          bytes,
-          '${safeName}_${photo.id}.jpg',
-          'image/jpeg',
-        );
-        return true;
+        final success = await _downloadPhoto(photo);
+        if (!success) {
+          errors.add('${photo.productName} #${photo.id}: browser download blocked');
+        }
+        return success;
       } catch (e) {
         errors.add('${photo.productName} #${photo.id}: download failed — $e');
         return false;

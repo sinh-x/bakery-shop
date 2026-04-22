@@ -18,7 +18,7 @@ String _safeFileName(String input) {
       .replaceAll(RegExp(r'\.\.'), '_')
       .trim();
   if (sanitized.length > 100) {
-    return sanitized.substring(0, 100);
+    return sanitized.substring(0, sanitized.length.clamp(0, 100));
   }
   return sanitized.isEmpty ? 'photo' : sanitized;
 }
