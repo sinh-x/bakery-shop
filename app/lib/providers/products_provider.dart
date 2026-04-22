@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../data/api/product_service.dart';
 import '../data/models/product.dart';
+import 'catalog_provider.dart';
 
 class ProductsNotifier extends AsyncNotifier<List<Product>> {
   @override
@@ -63,6 +64,9 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
       productCode: productCode,
     );
     await refresh();
+    if (category != null) {
+      ref.invalidate(catalogBrowseProvider);
+    }
     return product;
   }
 
@@ -70,6 +74,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
     final service = ref.read(productServiceProvider);
     await service.deleteProduct(id);
     await refresh();
+    ref.invalidate(catalogBrowseProvider);
   }
 
   Future<String> uploadPhoto(int id, XFile file) async {

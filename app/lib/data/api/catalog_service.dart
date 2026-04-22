@@ -66,6 +66,7 @@ class CatalogService {
 
   Future<List<CatalogBrowsePhoto>> browseCatalogPhotos({
     List<String>? tags,
+    List<String>? categories,
     int page = 1,
     int pageSize = 50,
   }) async {
@@ -75,6 +76,9 @@ class CatalogService {
     };
     if (tags != null && tags.isNotEmpty) {
       queryParams['tags'] = tags.join(',');
+    }
+    if (categories != null && categories.isNotEmpty) {
+      queryParams['categories'] = categories.join(',');
     }
     final response = await _dio.get(
       '/api/catalog/photos',
