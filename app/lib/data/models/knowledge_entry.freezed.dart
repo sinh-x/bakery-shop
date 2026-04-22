@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$KnowledgeEntry {
 
- int get id; String get title; String get content; String get type; List<String> get tags;@JsonKey(name: 'logged_by') String get loggedBy; String get source; DateTime get createdAt; DateTime get updatedAt; bool get pinned;@JsonKey(name: 'pinned_at') DateTime? get pinnedAt; List<KnowledgePhoto> get photos;
+ int get id; String get title; String get content; String get type; List<String> get tags;@JsonKey(name: 'logged_by') String get loggedBy; String get source;@JsonKey(name: 'created_at') DateTime get createdAt;@JsonKey(name: 'updated_at') DateTime get updatedAt; bool get pinned;@JsonKey(name: 'pinned_at') DateTime? get pinnedAt; List<KnowledgePhoto> get photos;
 /// Create a copy of KnowledgeEntry
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -48,7 +48,7 @@ abstract mixin class $KnowledgeEntryCopyWith<$Res>  {
   factory $KnowledgeEntryCopyWith(KnowledgeEntry value, $Res Function(KnowledgeEntry) _then) = _$KnowledgeEntryCopyWithImpl;
 @useResult
 $Res call({
- int id, String title, String content, String type, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source, DateTime createdAt, DateTime updatedAt, bool pinned,@JsonKey(name: 'pinned_at') DateTime? pinnedAt, List<KnowledgePhoto> photos
+ int id, String title, String content, String type, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source,@JsonKey(name: 'created_at') DateTime createdAt,@JsonKey(name: 'updated_at') DateTime updatedAt, bool pinned,@JsonKey(name: 'pinned_at') DateTime? pinnedAt, List<KnowledgePhoto> photos
 });
 
 
@@ -161,7 +161,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id,  String title,  String content,  String type,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  DateTime createdAt,  DateTime updatedAt,  bool pinned, @JsonKey(name: 'pinned_at')  DateTime? pinnedAt,  List<KnowledgePhoto> photos)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id,  String title,  String content,  String type,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source, @JsonKey(name: 'created_at')  DateTime createdAt, @JsonKey(name: 'updated_at')  DateTime updatedAt,  bool pinned, @JsonKey(name: 'pinned_at')  DateTime? pinnedAt,  List<KnowledgePhoto> photos)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _KnowledgeEntry() when $default != null:
 return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.loggedBy,_that.source,_that.createdAt,_that.updatedAt,_that.pinned,_that.pinnedAt,_that.photos);case _:
@@ -182,7 +182,7 @@ return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.l
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id,  String title,  String content,  String type,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  DateTime createdAt,  DateTime updatedAt,  bool pinned, @JsonKey(name: 'pinned_at')  DateTime? pinnedAt,  List<KnowledgePhoto> photos)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id,  String title,  String content,  String type,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source, @JsonKey(name: 'created_at')  DateTime createdAt, @JsonKey(name: 'updated_at')  DateTime updatedAt,  bool pinned, @JsonKey(name: 'pinned_at')  DateTime? pinnedAt,  List<KnowledgePhoto> photos)  $default,) {final _that = this;
 switch (_that) {
 case _KnowledgeEntry():
 return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.loggedBy,_that.source,_that.createdAt,_that.updatedAt,_that.pinned,_that.pinnedAt,_that.photos);}
@@ -199,7 +199,7 @@ return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.l
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id,  String title,  String content,  String type,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  DateTime createdAt,  DateTime updatedAt,  bool pinned, @JsonKey(name: 'pinned_at')  DateTime? pinnedAt,  List<KnowledgePhoto> photos)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id,  String title,  String content,  String type,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source, @JsonKey(name: 'created_at')  DateTime createdAt, @JsonKey(name: 'updated_at')  DateTime updatedAt,  bool pinned, @JsonKey(name: 'pinned_at')  DateTime? pinnedAt,  List<KnowledgePhoto> photos)?  $default,) {final _that = this;
 switch (_that) {
 case _KnowledgeEntry() when $default != null:
 return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.loggedBy,_that.source,_that.createdAt,_that.updatedAt,_that.pinned,_that.pinnedAt,_that.photos);case _:
@@ -214,7 +214,7 @@ return $default(_that.id,_that.title,_that.content,_that.type,_that.tags,_that.l
 @JsonSerializable()
 
 class _KnowledgeEntry implements KnowledgeEntry {
-  const _KnowledgeEntry({required this.id, required this.title, this.content = '', this.type = 'note', final  List<String> tags = const <String>[], @JsonKey(name: 'logged_by') this.loggedBy = '', this.source = 'app', required this.createdAt, required this.updatedAt, this.pinned = false, @JsonKey(name: 'pinned_at') this.pinnedAt, final  List<KnowledgePhoto> photos = const <KnowledgePhoto>[]}): _tags = tags,_photos = photos;
+  const _KnowledgeEntry({required this.id, required this.title, this.content = '', this.type = 'note', final  List<String> tags = const <String>[], @JsonKey(name: 'logged_by') this.loggedBy = '', this.source = 'app', @JsonKey(name: 'created_at') required this.createdAt, @JsonKey(name: 'updated_at') required this.updatedAt, this.pinned = false, @JsonKey(name: 'pinned_at') this.pinnedAt, final  List<KnowledgePhoto> photos = const <KnowledgePhoto>[]}): _tags = tags,_photos = photos;
   factory _KnowledgeEntry.fromJson(Map<String, dynamic> json) => _$KnowledgeEntryFromJson(json);
 
 @override final  int id;
@@ -230,8 +230,8 @@ class _KnowledgeEntry implements KnowledgeEntry {
 
 @override@JsonKey(name: 'logged_by') final  String loggedBy;
 @override@JsonKey() final  String source;
-@override final  DateTime createdAt;
-@override final  DateTime updatedAt;
+@override@JsonKey(name: 'created_at') final  DateTime createdAt;
+@override@JsonKey(name: 'updated_at') final  DateTime updatedAt;
 @override@JsonKey() final  bool pinned;
 @override@JsonKey(name: 'pinned_at') final  DateTime? pinnedAt;
  final  List<KnowledgePhoto> _photos;
@@ -275,7 +275,7 @@ abstract mixin class _$KnowledgeEntryCopyWith<$Res> implements $KnowledgeEntryCo
   factory _$KnowledgeEntryCopyWith(_KnowledgeEntry value, $Res Function(_KnowledgeEntry) _then) = __$KnowledgeEntryCopyWithImpl;
 @override @useResult
 $Res call({
- int id, String title, String content, String type, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source, DateTime createdAt, DateTime updatedAt, bool pinned,@JsonKey(name: 'pinned_at') DateTime? pinnedAt, List<KnowledgePhoto> photos
+ int id, String title, String content, String type, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source,@JsonKey(name: 'created_at') DateTime createdAt,@JsonKey(name: 'updated_at') DateTime updatedAt, bool pinned,@JsonKey(name: 'pinned_at') DateTime? pinnedAt, List<KnowledgePhoto> photos
 });
 
 
