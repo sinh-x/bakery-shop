@@ -126,6 +126,7 @@ class BulkShareService {
     } catch (e) {
       failCount += allShareFiles.length;
       errors.add('Share sheet error: $e');
+    } finally {
       for (final f in allWrittenFiles) {
         try {
           await f.delete();
