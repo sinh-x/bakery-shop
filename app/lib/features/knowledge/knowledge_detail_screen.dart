@@ -1,8 +1,15 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../data/api/api_client.dart';
+import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/knowledge_photo_gallery.dart';
@@ -52,13 +59,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
           appBar: AppBar(
             title: Text(entry.title),
             actions: [
-              IconButton(
-                icon: const Icon(Icons.share),
-                tooltip: VN.share,
-                onPressed: () {
-                  Share.share('${entry.title}\n\n${entry.content}');
-                },
-              ),
+              _ShareEntryButton(entry: entry),
               IconButton(
                 icon: const Icon(Icons.edit_outlined),
                 tooltip: VN.editKnowledge,
@@ -178,7 +179,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
               if (entry.photos.isNotEmpty) ...[
                 KnowledgePhotoGallery(
                   photos: entry.photos,
-                  baseUrl: '',
+                  baseUrl: ref.read(dioProvider).options.baseUrl,
                 ),
                 const SizedBox(height: 16),
               ],
@@ -213,5 +214,71 @@ class KnowledgeDetailScreen extends ConsumerWidget {
     final hour = dt.hour.toString().padLeft(2, '0');
     final minute = dt.minute.toString().padLeft(2, '0');
     return '$day/$month/$year $hour:$minute';
+  }
+}
+
+class _ShareEntryButton extends ConsumerStatefulWidget {
+  const _ShareEntryButton({required this.entry});
+
+  final KnowledgeEntry entry;
+
+  @override
+  ConsumerState<_ShareEntryButton> createState() => _ShareEntryButtonState();
+}
+
+class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
+  bool _sharing = false;
+
+  Future<void> _share() async {
+    if (_sharing) return;
+    setState(() => _sharing = true);
+    final entry = widget.entry;
+    final text = entry.content.isNotEmpty
+        ? '${entry.title}\n\n${entry.content}'
+        : entry.title;
+    try {
+      if (entry.photos.isEmpty) {
+        await Share.share(text);
+        return;
+      }
+      final dio = ref.read(dioProvider);
+      final baseUrl = dio.options.baseUrl;
+      final tmpDir = await getTemporaryDirectory();
+      final files = <XFile>[];
+      for (final photo in entry.photos) {
+        final resp = await dio.get<List<int>>(
+          '$baseUrl${photo.url}',
+          options: Options(responseType: ResponseType.bytes),
+        );
+        if (resp.data == null) continue;
+        final tmpFile = File('${tmpDir.path}/knowledge_photo_${photo.hash}.jpg');
+        await tmpFile.writeAsBytes(Uint8List.fromList(resp.data!));
+        files.add(XFile(tmpFile.path));
+      }
+      if (files.isEmpty) {
+        await Share.share(text);
+        return;
+      }
+      await Share.shareXFiles(files, text: text);
+    } catch (_) {
+      if (mounted) showTopSnackBar(context, VN.khongTheChiaSe);
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: _sharing
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.share),
+      tooltip: VN.share,
+      onPressed: _sharing ? null : _share,
+    );
   }
 }

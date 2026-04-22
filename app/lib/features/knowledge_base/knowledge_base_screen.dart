@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../data/providers/knowledge_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 
 class _HubTile {
@@ -10,14 +9,12 @@ class _HubTile {
   final String title;
   final String subtitle;
   final String route;
-  final int? badge;
 
   const _HubTile({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.route,
-    this.badge,
   });
 }
 
@@ -26,11 +23,6 @@ class KnowledgeBaseScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final asyncData = ref.watch(knowledgeEntriesProvider);
-    final pinnedNoteCount = asyncData.hasValue && asyncData.value != null
-        ? asyncData.value!.where((e) => e.pinned && e.type == 'note').length
-        : 0;
-
     final tiles = [
       _HubTile(
         icon: Icons.event_note_outlined,
@@ -50,13 +42,6 @@ class KnowledgeBaseScreen extends ConsumerWidget {
         subtitle: VN.knowledgeBaseDocsSubtitle,
         route: '/knowledge',
       ),
-      _HubTile(
-        icon: Icons.sticky_note_2_outlined,
-        title: 'Ghi chú chung',
-        subtitle: VN.knowledgeBaseNotesSubtitle,
-        route: '/knowledge?type=note',
-        badge: pinnedNoteCount > 0 ? pinnedNoteCount : null,
-      ),
     ];
 
     return Scaffold(
@@ -71,7 +56,7 @@ class KnowledgeBaseScreen extends ConsumerWidget {
           return Card(
             margin: const EdgeInsets.only(bottom: 12),
             child: InkWell(
-              onTap: () => context.go(tile.route),
+              onTap: () => context.push(tile.route),
               borderRadius: BorderRadius.circular(12),
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -110,22 +95,6 @@ class KnowledgeBaseScreen extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    if (tile.badge != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade100,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '📌 ${tile.badge}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.orange.shade800,
-                          ),
-                        ),
-                      ),
                     Icon(
                       Icons.chevron_right,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,

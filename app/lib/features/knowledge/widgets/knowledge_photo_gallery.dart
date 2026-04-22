@@ -1,6 +1,15 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+
+import '../../../data/api/api_client.dart';
 import '../../../data/models/knowledge_entry.dart';
+import '../../../shared/widgets/vietnamese_labels.dart';
 
 /// Horizontal PageView photo gallery with dots indicator and tap-to-fullscreen.
 class KnowledgePhotoGallery extends StatefulWidget {
@@ -62,7 +71,7 @@ class _KnowledgePhotoGalleryState extends State<KnowledgePhotoGallery> {
             },
             itemBuilder: (ctx, index) {
               final photo = widget.photos[index];
-              final url = '$baseUrl/api/knowledge/photos/${photo.hash}';
+              final url = '$baseUrl${photo.url}';
               return GestureDetector(
                 onTap: () => _openFullScreen(index),
                 child: Image.network(
@@ -117,7 +126,7 @@ class _KnowledgePhotoGalleryState extends State<KnowledgePhotoGallery> {
 }
 
 /// Full-screen swipeable viewer with zoom/pan.
-class _FullScreenViewer extends StatefulWidget {
+class _FullScreenViewer extends ConsumerStatefulWidget {
   const _FullScreenViewer({
     required this.photos,
     required this.initialIndex,
@@ -129,12 +138,13 @@ class _FullScreenViewer extends StatefulWidget {
   final String baseUrl;
 
   @override
-  State<_FullScreenViewer> createState() => _FullScreenViewerState();
+  ConsumerState<_FullScreenViewer> createState() => _FullScreenViewerState();
 }
 
-class _FullScreenViewerState extends State<_FullScreenViewer> {
+class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
   late final PageController _pageController;
   late int _currentIndex;
+  bool _sharing = false;
 
   @override
   void initState() {
@@ -149,6 +159,31 @@ class _FullScreenViewerState extends State<_FullScreenViewer> {
     super.dispose();
   }
 
+  Future<void> _shareCurrentPhoto() async {
+    if (_sharing || _currentIndex >= widget.photos.length) return;
+    setState(() => _sharing = true);
+    final photo = widget.photos[_currentIndex];
+    try {
+      final dio = ref.read(dioProvider);
+      final resp = await dio.get<List<int>>(
+        '${widget.baseUrl}${photo.url}',
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (resp.data == null) throw Exception('No data');
+      final tmpDir = await getTemporaryDirectory();
+      final tmpFile = File('${tmpDir.path}/knowledge_photo_${photo.hash}.jpg');
+      await tmpFile.writeAsBytes(Uint8List.fromList(resp.data!));
+      await Share.shareXFiles(
+        [XFile(tmpFile.path)],
+        text: photo.caption.isNotEmpty ? photo.caption : null,
+      );
+    } catch (_) {
+      if (mounted) showTopSnackBar(context, VN.khongTheChiaSe);
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -160,6 +195,22 @@ class _FullScreenViewerState extends State<_FullScreenViewer> {
           '${_currentIndex + 1} / ${widget.photos.length}',
           style: const TextStyle(color: Colors.white),
         ),
+        actions: [
+          IconButton(
+            icon: _sharing
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.share, color: Colors.white),
+            tooltip: VN.chiaSe,
+            onPressed: _sharing ? null : _shareCurrentPhoto,
+          ),
+        ],
       ),
       body: PageView.builder(
         controller: _pageController,
@@ -169,7 +220,7 @@ class _FullScreenViewerState extends State<_FullScreenViewer> {
         },
         itemBuilder: (ctx, index) {
           final photo = widget.photos[index];
-          final url = '${widget.baseUrl}/api/knowledge/photos/${photo.hash}';
+          final url = '${widget.baseUrl}${photo.url}';
           return Stack(
             fit: StackFit.expand,
             children: [

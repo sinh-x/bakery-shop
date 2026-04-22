@@ -17,8 +17,8 @@ _KnowledgeEntry _$KnowledgeEntryFromJson(Map<String, dynamic> json) =>
           const <String>[],
       loggedBy: json['logged_by'] as String? ?? '',
       source: json['source'] as String? ?? 'app',
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: DateTime.parse(json['updated_at'] as String),
       pinned: json['pinned'] as bool? ?? false,
       pinnedAt: json['pinned_at'] == null
           ? null
@@ -39,8 +39,8 @@ Map<String, dynamic> _$KnowledgeEntryToJson(_KnowledgeEntry instance) =>
       'tags': instance.tags,
       'logged_by': instance.loggedBy,
       'source': instance.source,
-      'createdAt': instance.createdAt.toIso8601String(),
-      'updatedAt': instance.updatedAt.toIso8601String(),
+      'created_at': instance.createdAt.toIso8601String(),
+      'updated_at': instance.updatedAt.toIso8601String(),
       'pinned': instance.pinned,
       'pinned_at': instance.pinnedAt?.toIso8601String(),
       'photos': instance.photos,
