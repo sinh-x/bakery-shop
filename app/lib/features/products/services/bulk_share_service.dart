@@ -7,22 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../data/models/catalog_browse_photo.dart';
-
-/// Sanitize [input] for use in a file name.
-/// Replaces invalid characters with underscores, strips path traversal,
-/// and limits total length to 100 chars.
-String _safeFileName(String input) {
-  final sanitized = input
-      .replaceAll(RegExp(r'[^\w\s\-]'), '_')
-      .replaceAll(RegExp(r'[\/\\]'), '_')
-      .replaceAll(RegExp(r'\.\.'), '_')
-      .trim();
-  // Clamp at 100 chars, avoiding surrogate pair boundary splits
-  if (sanitized.length > 100) {
-    return sanitized.substring(0, sanitized.length.clamp(0, 100));
-  }
-  return sanitized.isEmpty ? 'photo' : sanitized;
-}
+import 'bulk_common.dart';
 
 /// Result of a bulk share operation.
 class BulkShareResult {
@@ -92,8 +77,11 @@ class BulkShareService {
         }
         try {
           final tempDir = await getTemporaryDirectory();
-          final safeName = _safeFileName(photo.productName);
-          final fileName = '${safeName}_${photo.id}.jpg';
+          final fileName = catalogPhotoFileName(
+            productName: photo.productName,
+            productId: photo.productId,
+            photoId: photo.id,
+          );
           final file = File('${tempDir.path}/$fileName');
           await file.writeAsBytes(bytes);
           allWrittenFiles.add(file);

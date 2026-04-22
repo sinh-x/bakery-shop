@@ -7,21 +7,7 @@ import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../data/models/catalog_browse_photo.dart';
-
-/// Sanitize [input] for use in a file name.
-/// Replaces invalid characters with underscores, strips path traversal,
-/// and limits total length to 100 chars.
-String _safeFileName(String input) {
-  final sanitized = input
-      .replaceAll(RegExp(r'[^\w\s\-]'), '_')
-      .replaceAll(RegExp(r'[\/\\]'), '_')
-      .replaceAll(RegExp(r'\.\.'), '_')
-      .trim();
-  if (sanitized.length > 100) {
-    return sanitized.substring(0, sanitized.length.clamp(0, 100));
-  }
-  return sanitized.isEmpty ? 'photo' : sanitized;
-}
+import 'bulk_common.dart';
 
 /// Result of a bulk download operation.
 class BulkDownloadResult {
@@ -67,32 +53,39 @@ class BulkDownloadService {
     int failCount = 0;
     final errors = <String>[];
 
-    final futures = photos.map((photo) async {
-      try {
-        final bytes = await _fetchPhotoBytes(photo);
-        final tempDir = await getTemporaryDirectory();
-        final safeName = _safeFileName(photo.productName);
-        final fileName = '${safeName}_${photo.id}.jpg';
-        final file = File('${tempDir.path}/$fileName');
-        await file.writeAsBytes(bytes);
-        await Gal.putImage(file.path, album: 'Bakery');
-        await file.delete();
-        return true;
-      } catch (e) {
-        errors.add('${photo.productName} #${photo.id}: save failed — $e');
-        return false;
-      }
-    });
+    for (int chunkStart = 0; chunkStart < photos.length; chunkStart += parallelism) {
+      final chunkEnd = (chunkStart + parallelism).clamp(0, photos.length);
+      final chunkPhotos = photos.sublist(chunkStart, chunkEnd);
+      final results = await Future.wait(chunkPhotos.map((photo) async {
+        try {
+          final bytes = await _fetchPhotoBytes(photo);
+          final tempDir = await getTemporaryDirectory();
+          final fileName = catalogPhotoFileName(
+            productName: photo.productName,
+            productId: photo.productId,
+            photoId: photo.id,
+          );
+          final file = File('${tempDir.path}/$fileName');
+          await file.writeAsBytes(bytes);
+          try {
+            await Gal.putImage(file.path, album: 'Bakery');
+            return true;
+          } finally {
+            try {
+              await file.delete();
+            } catch (_) {}
+          }
+        } catch (e) {
+          errors.add('${photo.productName} #${photo.id}: save failed — $e');
+          return false;
+        }
+      }));
 
-    final chunks = _chunkedFutures(futures, parallelism);
-    for (final chunk in chunks) {
-      final results = await Future.wait(chunk);
-      for (int i = 0; i < results.length; i++) {
-        if (results[i]) {
+      for (final ok in results) {
+        if (ok) {
           successCount++;
         } else {
           failCount++;
-          errors.add('${photos[i].productName} #${photos[i].id}: save failed');
         }
       }
     }
@@ -102,22 +95,6 @@ class BulkDownloadService {
       failCount: failCount,
       errors: errors,
     );
-  }
-
-  List<List<Future<bool>>> _chunkedFutures(
-    Iterable<Future<bool>> futures,
-    int size,
-  ) {
-    final chunks = <List<Future<bool>>>[];
-    final iterator = futures.iterator;
-    while (iterator.moveNext()) {
-      final chunk = <Future<bool>>[];
-      for (int i = 0; i < size && iterator.moveNext(); i++) {
-        chunk.add(iterator.current);
-      }
-      chunks.add(chunk);
-    }
-    return chunks;
   }
 }
 

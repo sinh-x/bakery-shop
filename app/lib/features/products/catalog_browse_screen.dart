@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/api_client.dart';
+import '../../data/models/catalog_browse_photo.dart';
 import '../../data/models/catalog_tag.dart';
 import '../../providers/catalog_provider.dart';
 import '../../providers/categories_provider.dart';
@@ -134,13 +135,10 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
     });
   }
 
-  void _selectAll20(List photos) {
+  void _selectAll20(List<CatalogBrowsePhoto> photos) {
     final count = photos.length >= 20 ? 20 : photos.length;
     setState(() {
-      _selectedPhotoIds = photos
-          .take(count)
-          .map((p) => p.id as int)
-          .toSet();
+      _selectedPhotoIds = photos.take(count).map((p) => p.id).toSet();
     });
   }
 
