@@ -12,10 +12,16 @@ class CatalogPhotoBrowseCard extends ConsumerWidget {
     super.key,
     required this.photo,
     required this.baseUrl,
+    this.selected = false,
+    this.onSelectToggle,
+    this.onLongPress,
   });
 
   final CatalogBrowsePhoto photo;
   final String baseUrl;
+  final bool selected;
+  final ValueChanged<bool>? onSelectToggle;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -25,8 +31,15 @@ class CatalogPhotoBrowseCard extends ConsumerWidget {
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => context.push('/products/${photo.productId}/catalog',
-            extra: photo.id),
+        onTap: () {
+          if (onSelectToggle != null) {
+            onSelectToggle!(!selected);
+          } else {
+            context.push('/products/${photo.productId}/catalog',
+                extra: photo.id);
+          }
+        },
+        onLongPress: onLongPress,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -41,26 +54,49 @@ class CatalogPhotoBrowseCard extends ConsumerWidget {
                       child: Icon(Icons.broken_image, color: Colors.grey),
                     ),
                   ),
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: Material(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(4),
-                      child: InkWell(
+                  if (onSelectToggle != null)
+                    Positioned(
+                      top: 4,
+                      left: 4,
+                      child: GestureDetector(
+                        onTap: () => onSelectToggle!(!selected),
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: selected
+                                ? Colors.green.shade600
+                                : Colors.white.withValues(alpha: 0.6),
+                            border: selected ? null : Border.all(color: Colors.white, width: 1.5),
+                          ),
+                          child: selected
+                              ? const Icon(Icons.check, color: Colors.white, size: 18)
+                              : null,
+                        ),
+                      ),
+                    ),
+                  if (onSelectToggle == null)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Material(
+                        color: Colors.black54,
                         borderRadius: BorderRadius.circular(4),
-                        onTap: () => _openEditSheet(context),
-                        child: const Padding(
-                          padding: EdgeInsets.all(4),
-                          child: Icon(
-                            Icons.label_outline,
-                            color: Colors.white,
-                            size: 18,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(4),
+                          onTap: () => _openEditSheet(context),
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.label_outline,
+                              color: Colors.white,
+                              size: 18,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),

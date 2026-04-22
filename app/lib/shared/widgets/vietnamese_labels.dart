@@ -508,12 +508,26 @@ class VN {
   static const capNhatThanhCong = 'Cập nhật thành công';
   static const loiHeThong = 'Lỗi hệ thống';
 
+  // Catalog browse
+  static const danhMuc = 'Danh mục';
+
   // Catalog photo viewer
   static const daLuuAnh = 'Đã lưu ảnh';
   static const taiAnh = 'Tải ảnh';
   static const chiaSe = 'Chia sẻ';
   static const khongTheTaiAnh = 'Không thể tải ảnh';
   static const khongTheChiaSe = 'Không thể chia sẻ';
+
+  // Bulk selection
+  static const chonAnh = 'Chọn';
+  static const huy = 'Hủy';
+  static const chon20 = 'Chọn 20';
+  static const daChon = 'đã chọn';
+  static const toiDa20Anh = 'Chỉ chọn tối đa 20 ảnh';
+  static const dangTaiAnh = 'Đang tải ảnh...';
+  static const daLuuNTrenM = 'Đã lưu n/m ảnh';
+  static const khongTheTaiNTrenM = 'Không thể tải n/m ảnh';
+  static const daChiaSeNAnh = 'Đã chia sẻ n ảnh';
 }
 
 // Category mapping (new slugs)

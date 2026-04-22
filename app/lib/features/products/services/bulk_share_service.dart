@@ -1,0 +1,129 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+
+import '../../../data/models/catalog_browse_photo.dart';
+import 'bulk_common.dart';
+
+/// Result of a bulk share operation.
+class BulkShareResult {
+  final int successCount;
+  final int failCount;
+  final List<String> errors;
+
+  const BulkShareResult({
+    required this.successCount,
+    required this.failCount,
+    this.errors = const [],
+  });
+
+  @override
+  String toString() =>
+      'BulkShareResult(success: $successCount, fail: $failCount)';
+}
+
+/// Service for bulk sharing catalog photos via the system share sheet.
+class BulkShareService {
+  BulkShareService(this._dio);
+
+  final Dio _dio;
+
+  Future<Uint8List> _fetchPhotoBytes(CatalogBrowsePhoto photo) async {
+    final productId = photo.productId;
+    final id = photo.id;
+    final url =
+        '${_dio.options.baseUrl}/api/products/$productId/catalog/$id/photo';
+    final response = await _dio.get<List<int>>(
+      url,
+      options: Options(responseType: ResponseType.bytes),
+    );
+    return Uint8List.fromList(response.data ?? []);
+  }
+
+  /// Shares [photos] via a single system share sheet invocation.
+  /// Photos are fetched in parallel batches of [parallelism] (default 4).
+  /// Per-photo errors are caught individually and do not abort the batch.
+  Future<BulkShareResult> share(List<CatalogBrowsePhoto> photos) async {
+    const parallelism = 4;
+    int successCount = 0;
+    int failCount = 0;
+    final errors = <String>[];
+    final allShareFiles = <XFile>[];
+    final allWrittenFiles = <File>[];
+
+    for (int chunkStart = 0; chunkStart < photos.length; chunkStart += parallelism) {
+      final chunkEnd = (chunkStart + parallelism).clamp(0, photos.length);
+      final chunkPhotos = photos.sublist(chunkStart, chunkEnd);
+      final results = await Future.wait(chunkPhotos.map((photo) async {
+        try {
+          final bytes = await _fetchPhotoBytes(photo);
+          return (bytes, null);
+        } catch (e) {
+          errors.add('${photo.productName} #${photo.id}: fetch failed — $e');
+          return (Uint8List(0), e);
+        }
+      }));
+
+      for (int i = 0; i < results.length; i++) {
+        final (bytes, err) = results[i];
+        final photo = chunkPhotos[i];
+        if (err != null || bytes.isEmpty) {
+          failCount++;
+          continue;
+        }
+        try {
+          final tempDir = await getTemporaryDirectory();
+          final fileName = catalogPhotoFileName(
+            productName: photo.productName,
+            productId: photo.productId,
+            photoId: photo.id,
+          );
+          final file = File('${tempDir.path}/$fileName');
+          await file.writeAsBytes(bytes);
+          allWrittenFiles.add(file);
+          allShareFiles.add(XFile(file.path));
+        } catch (e) {
+          failCount++;
+          errors.add('${photo.productName} #${photo.id}: save failed — $e');
+        }
+      }
+    }
+
+    if (allShareFiles.isEmpty) {
+      return BulkShareResult(
+        successCount: 0,
+        failCount: failCount,
+        errors: errors,
+      );
+    }
+
+    try {
+      await Share.shareXFiles(allShareFiles, text: 'Tiệm Bánh Ninh Diêm');
+      successCount = allShareFiles.length;
+    } catch (e) {
+      failCount += allShareFiles.length;
+      errors.add('Share sheet error: $e');
+    } finally {
+      for (final f in allWrittenFiles) {
+        try {
+          await f.delete();
+        } catch (_) {}
+      }
+    }
+
+    return BulkShareResult(
+      successCount: successCount,
+      failCount: failCount,
+      errors: errors,
+    );
+  }
+
+}
+
+/// Provider family for BulkShareService.
+final bulkShareServiceProvider =
+    Provider.family<BulkShareService, Dio>((ref, dio) => BulkShareService(dio));
