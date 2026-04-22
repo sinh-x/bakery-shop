@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.5.5+58] — 2026-04-22
+- chore(release): bump version to 0.5.5+57
+
 ## [0.5.4+54] — 2026-04-21
 - feat(DG-094): phase F9 — category-grouped layout in TagChipSelector (headers on own row)
 - feat(DG-094): label_outline button on browse grid thumbnails (direct tag edit from Duyệt ảnh mẫu)
