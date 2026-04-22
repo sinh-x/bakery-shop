@@ -70,47 +70,39 @@ class BulkShareService {
     final allShareFiles = <XFile>[];
     final allWrittenFiles = <File>[];
 
-    final futures = photos.map((photo) async {
-      try {
-        final bytes = await _fetchPhotoBytes(photo);
-        return (bytes, null);
-      } catch (e) {
-        errors.add('${photo.productName} #${photo.id}: fetch failed — $e');
-        return (Uint8List(0), e);
-      }
-    });
-
-    final chunks = _chunkedFutures(futures, parallelism);
-    for (final chunk in chunks) {
-      final results = await Future.wait(chunk);
-      final shareFiles = <XFile>[];
-      final writtenFiles = <File>[];
+    for (int chunkStart = 0; chunkStart < photos.length; chunkStart += parallelism) {
+      final chunkEnd = (chunkStart + parallelism).clamp(0, photos.length);
+      final chunkPhotos = photos.sublist(chunkStart, chunkEnd);
+      final results = await Future.wait(chunkPhotos.map((photo) async {
+        try {
+          final bytes = await _fetchPhotoBytes(photo);
+          return (bytes, null);
+        } catch (e) {
+          errors.add('${photo.productName} #${photo.id}: fetch failed — $e');
+          return (Uint8List(0), e);
+        }
+      }));
 
       for (int i = 0; i < results.length; i++) {
         final (bytes, err) = results[i];
-        if (err != null) {
+        final photo = chunkPhotos[i];
+        if (err != null || bytes.isEmpty) {
           failCount++;
-        } else if (bytes.isEmpty) {
+          continue;
+        }
+        try {
+          final tempDir = await getTemporaryDirectory();
+          final safeName = _safeFileName(photo.productName);
+          final fileName = '${safeName}_${photo.id}.jpg';
+          final file = File('${tempDir.path}/$fileName');
+          await file.writeAsBytes(bytes);
+          allWrittenFiles.add(file);
+          allShareFiles.add(XFile(file.path));
+        } catch (e) {
           failCount++;
-        } else {
-          try {
-            final tempDir = await getTemporaryDirectory();
-            final safeName = _safeFileName(photos[i].productName);
-            final fileName = '${safeName}_${photos[i].id}.jpg';
-            final file = File('${tempDir.path}/$fileName');
-            await file.writeAsBytes(bytes);
-            writtenFiles.add(file);
-            shareFiles.add(XFile(file.path));
-          } catch (e) {
-            failCount++;
-            errors.add('${photos[i].productName} #${photos[i].id}: save failed — $e');
-          }
+          errors.add('${photo.productName} #${photo.id}: save failed — $e');
         }
       }
-
-      // Accumulate files for the single share invocation at the end
-      allShareFiles.addAll(shareFiles);
-      allWrittenFiles.addAll(writtenFiles);
     }
 
     if (allShareFiles.isEmpty) {
@@ -142,21 +134,6 @@ class BulkShareService {
     );
   }
 
-  List<List<Future<(Uint8List, Object?)>>> _chunkedFutures(
-    Iterable<Future<(Uint8List, Object?)>> futures,
-    int size,
-  ) {
-    final chunks = <List<Future<(Uint8List, Object?)>>>[];
-    final iterator = futures.iterator;
-    while (iterator.moveNext()) {
-      final chunk = <Future<(Uint8List, Object?)>>[];
-      for (int i = 0; i < size && iterator.moveNext(); i++) {
-        chunk.add(iterator.current);
-      }
-      chunks.add(chunk);
-    }
-    return chunks;
-  }
 }
 
 /// Provider family for BulkShareService.

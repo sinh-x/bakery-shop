@@ -42,6 +42,7 @@ class CatalogNotifier extends AsyncNotifier<List<CatalogPhoto>> {
     state.whenData((photos) {
       state = AsyncData([...photos, photo]);
     });
+    ref.invalidate(catalogBrowseProvider);
     return photo;
   }
 
@@ -64,6 +65,7 @@ class CatalogNotifier extends AsyncNotifier<List<CatalogPhoto>> {
         photos.map((p) => p.id == photoId ? updated : p).toList(),
       );
     });
+    ref.invalidate(catalogBrowseProvider);
     return updated;
   }
 
@@ -73,6 +75,7 @@ class CatalogNotifier extends AsyncNotifier<List<CatalogPhoto>> {
     state.whenData((photos) {
       state = AsyncData(photos.where((p) => p.id != photoId).toList());
     });
+    ref.invalidate(catalogBrowseProvider);
   }
 }
 
