@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -81,12 +79,10 @@ class KnowledgeService {
   // POST /api/knowledge/{id}/photos (multipart with file)
   Future<KnowledgePhoto> attachPhoto(
     int id, {
-    required String filePath,
+    required List<int> bytes,
+    required String filename,
     String caption = '',
   }) async {
-    final file = File(filePath);
-    final bytes = await file.readAsBytes();
-    final filename = filePath.split('/').last;
     final formData = FormData.fromMap({
       'file': MultipartFile.fromBytes(bytes, filename: filename),
       'caption': caption,

@@ -36,7 +36,8 @@ class KnowledgeFormScreen extends ConsumerStatefulWidget {
   final KnowledgeEntry? entry;
 
   @override
-  ConsumerState<KnowledgeFormScreen> createState() => _KnowledgeFormScreenState();
+  ConsumerState<KnowledgeFormScreen> createState() =>
+      _KnowledgeFormScreenState();
 }
 
 class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
@@ -89,9 +90,18 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
       return;
     }
     final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
-      setState(() => _photos.add(_PhotoEntry(file: image)));
+    final images = await picker.pickMultiImage();
+    if (images.isNotEmpty) {
+      if (!mounted) return;
+      final remaining = 5 - _photos.length;
+      setState(() {
+        _photos.addAll(
+          images.take(remaining).map((image) => _PhotoEntry(file: image)),
+        );
+      });
+      if (images.length > remaining && mounted) {
+        showTopSnackBar(context, 'Chỉ thêm được $remaining ảnh nữa');
+      }
     }
   }
 
@@ -116,7 +126,9 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
     setState(() => _saving = true);
     try {
       if (_isEditing) {
-        await ref.read(knowledgeEntriesProvider.notifier).updateEntry(
+        await ref
+            .read(knowledgeEntriesProvider.notifier)
+            .updateEntry(
               widget.entry!.id,
               title: title,
               content: content,
@@ -125,27 +137,35 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
             );
         // Upload new photos after update
         await _uploadNewPhotos(widget.entry!.id);
+        ref.invalidate(knowledgeEntriesProvider);
+        ref.invalidate(knowledgeEntryDetailProvider(widget.entry!.id));
         if (mounted) {
           showTopSnackBar(context, VN.knowledgeSaved);
           context.pop();
         }
       } else {
-        final created = await ref.read(knowledgeEntriesProvider.notifier).createEntry(
+        final created = await ref
+            .read(knowledgeEntriesProvider.notifier)
+            .createEntry(
               title: title,
               content: content,
               type: _selectedType,
               tags: _selectedTags.toList(),
             );
+        // Upload new photos after create
+        await _uploadNewPhotos(created.id);
+        ref.invalidate(knowledgeEntriesProvider);
+        ref.invalidate(knowledgeEntryDetailProvider(created.id));
+        // Pin after save if checked
+        if (_pinAfterSave) {
+          try {
+            await ref
+                .read(knowledgeEntriesProvider.notifier)
+                .pinEntry(created.id, true);
+          } catch (_) {}
+        }
         if (mounted) {
           showTopSnackBar(context, VN.knowledgeCreated);
-          // Upload new photos after create
-          await _uploadNewPhotos(created.id);
-          // Pin after save if checked
-          if (_pinAfterSave) {
-            try {
-              await ref.read(knowledgeEntriesProvider.notifier).pinEntry(created.id, true);
-            } catch (_) {}
-          }
           context.pop();
         }
       }
@@ -213,7 +233,10 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(VN.knowledgeTypeField, style: theme.textTheme.titleSmall),
+            child: Text(
+              VN.knowledgeTypeField,
+              style: theme.textTheme.titleSmall,
+            ),
           ),
           Wrap(
             spacing: 6,
@@ -258,7 +281,10 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
                       hintText: VN.addTag,
                       isDense: true,
                       border: const OutlineInputBorder(),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
                     ),
                     onSubmitted: (_) => _confirmTag(),
                   ),
@@ -277,7 +303,10 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(VN.knowledgePhotosField, style: theme.textTheme.titleSmall),
+            child: Text(
+              VN.knowledgePhotosField,
+              style: theme.textTheme.titleSmall,
+            ),
           ),
           SizedBox(
             height: 100,
@@ -299,8 +328,13 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
                       children: [
                         Icon(Icons.add_a_photo, color: colorScheme.primary),
                         const SizedBox(height: 4),
-                        Text(VN.addPhoto,
-                            style: TextStyle(fontSize: 11, color: colorScheme.primary)),
+                        Text(
+                          VN.addPhoto,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colorScheme.primary,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -329,14 +363,19 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
                           top: 2,
                           right: 2,
                           child: GestureDetector(
-                            onTap: () => setState(() => _photos.removeAt(index)),
+                            onTap: () =>
+                                setState(() => _photos.removeAt(index)),
                             child: Container(
                               padding: const EdgeInsets.all(2),
                               decoration: BoxDecoration(
                                 color: Colors.black54,
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              child: const Icon(Icons.close, size: 14, color: Colors.white),
+                              child: const Icon(
+                                Icons.close,
+                                size: 14,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ),
@@ -364,12 +403,21 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
     final newPhotos = _photos.where((p) => p.file != null).toList();
     if (newPhotos.isEmpty) return;
     final service = ref.read(knowledgeServiceProvider);
+    var failed = 0;
     for (final photo in newPhotos) {
       try {
-        await service.attachPhoto(entryId, filePath: photo.file!.path);
+        final file = photo.file!;
+        await service.attachPhoto(
+          entryId,
+          bytes: await file.readAsBytes(),
+          filename: file.name,
+        );
       } catch (_) {
-        // Non-fatal: show warning but don't block save
+        failed += 1;
       }
+    }
+    if (failed > 0) {
+      throw Exception('Không thể tải lên $failed ảnh');
     }
   }
 
