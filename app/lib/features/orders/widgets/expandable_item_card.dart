@@ -81,6 +81,29 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
     widget.onStateChanged();
   }
 
+  void _updateManualPrice(String text) {
+    final selectedLabel = widget.item.attributes['price_chip_label']?.toString();
+    widget.item.customUnitPrice = double.tryParse(text.trim()) ??
+        widget.item.product.basePrice;
+
+    final manuallyClearPreset = selectedLabel != null &&
+        !widget.item.product.priceChips.any(
+          (chip) =>
+              chip.label == selectedLabel &&
+              chip.price == widget.item.customUnitPrice,
+        );
+
+    if (manuallyClearPreset) {
+      widget.item.attributes.remove('price_chip_label');
+      if (mounted) {
+        showTopSnackBar(context, 'Đã bỏ chọn mức giá nhanh khi chỉnh tay');
+      }
+    }
+
+    setState(() {});
+    widget.onStateChanged();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -197,27 +220,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       isDense: true,
                     ),
                     keyboardType: TextInputType.number,
-                    onChanged: (v) {
-                      final price = double.tryParse(v.trim());
-                      widget.item.customUnitPrice =
-                          price ?? widget.item.product.basePrice;
-                      final selectedLabel = widget
-                          .item
-                          .attributes['price_chip_label']
-                          ?.toString();
-                      final matchesSelectedPreset =
-                          selectedLabel != null &&
-                          widget.item.product.priceChips.any(
-                            (chip) =>
-                                chip.label == selectedLabel &&
-                                chip.price == widget.item.customUnitPrice,
-                          );
-                      if (!matchesSelectedPreset) {
-                        widget.item.attributes.remove('price_chip_label');
-                      }
-                      setState(() {});
-                      widget.onStateChanged();
-                    },
+                    onChanged: _updateManualPrice,
                   ),
                   const SizedBox(height: 8),
                   // Notes

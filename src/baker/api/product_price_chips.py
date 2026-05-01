@@ -1,6 +1,6 @@
 """Product price chip management API routes."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Path
 from pydantic import BaseModel
 
 from baker.db.connection import get_db
@@ -54,7 +54,9 @@ def _chip_rows(conn, product_id: int) -> list[dict]:
 
 
 @router.get("/products/{product_id}/price-chips")
-def list_product_price_chips(product_id: int):
+def list_product_price_chips(
+    product_id: int = Path(ge=0, description="Product ID"),
+):
     """Get all preset price chips for a product."""
     with get_db() as conn:
         _ensure_product_exists(conn, product_id)
@@ -62,7 +64,10 @@ def list_product_price_chips(product_id: int):
 
 
 @router.post("/products/{product_id}/price-chips", status_code=201)
-def create_product_price_chip(product_id: int, chip: PriceChipCreate):
+def create_product_price_chip(
+    chip: PriceChipCreate,
+    product_id: int = Path(ge=0, description="Product ID"),
+):
     """Create a preset price chip for a product."""
     label = chip.label.strip()
     if not label:
@@ -90,7 +95,11 @@ def create_product_price_chip(product_id: int, chip: PriceChipCreate):
 
 
 @router.patch("/products/{product_id}/price-chips/{chip_id}")
-def update_product_price_chip(product_id: int, chip_id: int, chip: PriceChipUpdate):
+def update_product_price_chip(
+    chip: PriceChipUpdate,
+    product_id: int = Path(ge=0, description="Product ID"),
+    chip_id: int = Path(ge=0, description="Price chip ID"),
+):
     """Update a product preset price chip."""
     data = chip.model_dump(exclude_unset=True)
     if not data:
@@ -137,7 +146,10 @@ def update_product_price_chip(product_id: int, chip_id: int, chip: PriceChipUpda
 
 
 @router.delete("/products/{product_id}/price-chips/{chip_id}", status_code=204)
-def delete_product_price_chip(product_id: int, chip_id: int):
+def delete_product_price_chip(
+    product_id: int = Path(ge=0, description="Product ID"),
+    chip_id: int = Path(ge=0, description="Price chip ID"),
+):
     """Delete a preset price chip from a product."""
     with get_db() as conn:
         _ensure_product_exists(conn, product_id)

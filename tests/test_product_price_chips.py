@@ -34,6 +34,28 @@ def test_create_and_reorder_price_chips(api_client):
     api_client.delete(f"/api/products/1/price-chips/{second['id']}")
 
 
+def test_price_chip_path_params_validation(api_client):
+    assert api_client.get("/api/products/-1/price-chips").status_code == 422
+
+    create_negative_product = api_client.post(
+        "/api/products/-1/price-chips",
+        json={"label": "Negative", "price": 1000, "position": 0},
+    )
+    assert create_negative_product.status_code == 422
+
+    chip = _create_chip(api_client, 1, "Check", 150000, position=0)
+
+    assert api_client.patch(
+        "/api/products/1/price-chips/-1",
+        json={"label": "x"},
+    ).status_code == 422
+
+    assert api_client.delete("/api/products/1/price-chips/-1").status_code == 422
+
+    cleanup = api_client.delete(f"/api/products/1/price-chips/{chip['id']}")
+    assert cleanup.status_code == 204
+
+
 def test_update_price_chip(api_client):
     chip = _create_chip(api_client, 1, "Thường", 350000, position=0)
     chip_id = chip["id"]

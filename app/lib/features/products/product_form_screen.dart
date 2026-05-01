@@ -116,9 +116,31 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     });
   }
 
-  void _removePriceChip(int index) {
+  Future<void> _removePriceChip(int index) async {
+    final row = _priceChipRows[index];
+    if (row.id != null) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Xác nhận xóa mức giá nhanh'),
+          content: const Text('Bạn có chắc muốn xóa mức giá nhanh đã lưu này không?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text(VN.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text(VN.remove),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+    }
+
     setState(() {
-      _priceChipRows[index].dispose();
+      row.dispose();
       _priceChipRows.removeAt(index);
     });
   }
@@ -150,11 +172,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           ? VN.priceChipPriceInvalid
           : null;
 
-      if (row.labelError != labelError || row.priceError != priceError) {
-        row.labelError = labelError;
-        row.priceError = priceError;
-        changed = true;
-      }
+      changed = row.clearErrors() || changed;
+      changed = row.updateErrors(labelError: labelError, priceError: priceError) ||
+          changed;
       if (labelError != null || priceError != null) isValid = false;
     }
 
@@ -294,33 +314,43 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                   Expanded(
                     child: TextFormField(
                       controller: row.labelController,
-                      decoration: InputDecoration(
-                        labelText: VN.priceChipLabel,
-                        errorText: row.labelError,
+                        decoration: InputDecoration(
+                          labelText: VN.priceChipLabel,
+                          errorText: row.labelError,
+                        ),
+                        onChanged: (_) {
+                          if (row.labelError != null) {
+                            setState(() {
+                              row.updateErrors(
+                                labelError: null,
+                                priceError: row.priceError,
+                              );
+                            });
+                          }
+                        },
                       ),
-                      onChanged: (_) {
-                        if (row.labelError != null) {
-                          setState(() => row.labelError = null);
-                        }
-                      },
-                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: TextFormField(
                       controller: row.priceController,
-                      decoration: InputDecoration(
-                        labelText: VN.priceChipPrice,
-                        suffixText: VN.currency,
-                        errorText: row.priceError,
+                        decoration: InputDecoration(
+                          labelText: VN.priceChipPrice,
+                          suffixText: VN.currency,
+                          errorText: row.priceError,
+                        ),
+                        keyboardType: TextInputType.number,
+                        onChanged: (_) {
+                          if (row.priceError != null) {
+                            setState(() {
+                              row.updateErrors(
+                                labelError: row.labelError,
+                                priceError: null,
+                              );
+                            });
+                          }
+                        },
                       ),
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) {
-                        if (row.priceError != null) {
-                          setState(() => row.priceError = null);
-                        }
-                      },
-                    ),
                   ),
                   IconButton(
                     tooltip: VN.remove,
@@ -462,10 +492,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           saved = orig;
         }
 
-        if (hasPriceChipChanges) {
-          await _syncPriceChipEdits(saved.id);
-        }
-
         // Sync rut_tien attribute if changed
         if (_rutTien != origRutTien) {
           final productSvc = ref.read(productServiceProvider);
@@ -524,9 +550,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           await notifier.refresh();
         }
 
-        if (hasPriceChipChanges) {
-          await _syncPriceChipEdits(saved.id);
-        }
+      }
+
+      if (hasPriceChipChanges) {
+        await _syncPriceChipEdits(saved.id);
       }
 
       if (_pickedPhoto != null) {
@@ -842,8 +869,29 @@ class _PriceChipFormRow {
   int? id;
   final TextEditingController labelController;
   final TextEditingController priceController;
-  String? labelError;
-  String? priceError;
+  String? _labelError;
+  String? _priceError;
+
+  String? get labelError => _labelError;
+  String? get priceError => _priceError;
+
+  bool clearErrors() {
+    if (_labelError == null && _priceError == null) {
+      return false;
+    }
+    _labelError = null;
+    _priceError = null;
+    return true;
+  }
+
+  bool updateErrors({String? labelError, String? priceError}) {
+    if (_labelError == labelError && _priceError == priceError) {
+      return false;
+    }
+    _labelError = labelError;
+    _priceError = priceError;
+    return true;
+  }
 
   void dispose() {
     labelController.dispose();
