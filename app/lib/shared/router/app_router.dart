@@ -51,51 +51,46 @@ final appRouter = GoRouter(
       routes: [
         GoRoute(
           path: '/dashboard',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: DashboardScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: DashboardScreen()),
         ),
         GoRoute(
           path: '/orders',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: OrderListScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: OrderListScreen()),
         ),
         GoRoute(
           path: '/products',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: ProductCatalogScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: ProductCatalogScreen()),
         ),
         GoRoute(
           path: '/knowledge-base',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: KnowledgeBaseScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: KnowledgeBaseScreen()),
         ),
         GoRoute(
           path: '/events',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: EventListScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: EventListScreen()),
         ),
         GoRoute(
           path: '/checklist',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: ChecklistScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: ChecklistScreen()),
         ),
         GoRoute(
           path: '/knowledge',
           pageBuilder: (context, state) => NoTransitionPage(
-            child: KnowledgeListScreen(initialType: state.uri.queryParameters['type']),
+            child: KnowledgeListScreen(
+              initialType: state.uri.queryParameters['type'],
+            ),
           ),
         ),
         GoRoute(
           path: '/pos',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: PosScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: PosScreen()),
         ),
       ],
     ),
@@ -294,9 +289,8 @@ class _ProductEditLoader extends ConsumerWidget {
     final productsAsync = ref.watch(productsProvider);
     // Try to find the product in the already-loaded list.
     return productsAsync.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text(VN.editProduct)),
         body: Center(child: Text(VN.apiError)),
@@ -335,10 +329,12 @@ class _CatalogViewerLoader extends ConsumerWidget {
         backgroundColor: Colors.black,
         body: Center(child: CircularProgressIndicator()),
       ),
-      error: (_, __) => Scaffold(
-        appBar: AppBar(title: const Text(VN.catalogTitle)),
-        body: Center(child: Text(VN.apiError)),
-      ),
+      error: (_, stackTrace) {
+        return Scaffold(
+          appBar: AppBar(title: const Text(VN.catalogTitle)),
+          body: Center(child: Text(VN.apiError)),
+        );
+      },
       data: (photos) {
         if (photos.isEmpty) {
           return Scaffold(
@@ -375,13 +371,14 @@ class _KnowledgeEditLoader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final entryAsync = ref.watch(knowledgeEntryDetailProvider(entryId));
     return entryAsync.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
-      error: (e, _) => Scaffold(
-        appBar: AppBar(title: const Text(VN.editKnowledge)),
-        body: Center(child: Text(VN.apiError)),
-      ),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (_, stackTrace) {
+        return Scaffold(
+          appBar: AppBar(title: const Text(VN.editKnowledge)),
+          body: Center(child: Text(VN.apiError)),
+        );
+      },
       data: (entry) {
         if (entry == null) {
           return Scaffold(
@@ -402,14 +399,24 @@ class _ShellScaffold extends StatelessWidget {
 
   int _selectedIndex(BuildContext context) {
     final location = GoRouterState.of(context).uri.path;
-    if (location.startsWith('/dashboard')) return 0;
-    if (location.startsWith('/orders')) return 1;
-    if (location.startsWith('/products')) return 2;
+    if (location.startsWith('/dashboard')) {
+      return 0;
+    }
+    if (location.startsWith('/orders')) {
+      return 1;
+    }
+    if (location.startsWith('/products')) {
+      return 2;
+    }
     if (location.startsWith('/knowledge-base') ||
         location.startsWith('/events') ||
         location.startsWith('/checklist') ||
-        location.startsWith('/knowledge')) return 3;
-    if (location.startsWith('/pos')) return 4;
+        location.startsWith('/knowledge')) {
+      return 3;
+    }
+    if (location.startsWith('/pos')) {
+      return 4;
+    }
     return 0;
   }
 

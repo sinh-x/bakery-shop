@@ -515,6 +515,11 @@ class VN {
   static const daLuuAnh = 'Đã lưu ảnh';
   static const taiAnh = 'Tải ảnh';
   static const chiaSe = 'Chia sẻ';
+  static const daSaoChepNoiDung = 'Đã sao chép nội dung vào clipboard';
+  static const saoChepNoiDungThatBai =
+      'Không thể sao chép nội dung vào clipboard';
+  static const taiMotPhanAnh = 'Đã tải một phần ảnh';
+  static const taiNAnh = 'Đã tải {count} ảnh';
   static const khongTheTaiAnh = 'Không thể tải ảnh';
   static const khongTheChiaSe = 'Không thể chia sẻ';
 
