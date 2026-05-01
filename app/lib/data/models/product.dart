@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'price_chip.dart';
+
 part 'product.freezed.dart';
 part 'product.g.dart';
 
@@ -15,6 +17,7 @@ sealed class Product with _$Product {
     @Default(1) int active,
     @Default('') @JsonKey(name: 'photo_path') String photoPath,
     @Default('') @JsonKey(name: 'product_code') String productCode,
+    @Default([]) @JsonKey(name: 'price_chips') List<PriceChip> priceChips,
     @Default({}) Map<String, String> attributes,
     @JsonKey(name: 'stock_qty') int? stockQty,
   }) = _Product;

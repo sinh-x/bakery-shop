@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
 
+import '../models/price_chip.dart';
 import '../models/product.dart';
 import 'api_client.dart';
 
@@ -36,6 +37,54 @@ class ProductService {
   Future<Product> getProductByCode(String code) async {
     final response = await _dio.get('/api/products/code/$code');
     return Product.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<List<PriceChip>> getPriceChips(int productId) async {
+    final response = await _dio.get('/api/products/$productId/price-chips');
+    final list = response.data as List;
+    return list
+        .map((json) => PriceChip.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<PriceChip> createPriceChip({
+    required int productId,
+    required String label,
+    required double price,
+    required int position,
+  }) async {
+    final response = await _dio.post(
+      '/api/products/$productId/price-chips',
+      data: {
+        'label': label,
+        'price': price,
+        'position': position,
+      },
+    );
+    return PriceChip.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<PriceChip> updatePriceChip(
+    int productId,
+    int chipId, {
+    String? label,
+    double? price,
+    int? position,
+  }) async {
+    final data = <String, dynamic>{};
+    if (label != null) data['label'] = label;
+    if (price != null) data['price'] = price;
+    if (position != null) data['position'] = position;
+
+    final response = await _dio.patch(
+      '/api/products/$productId/price-chips/$chipId',
+      data: data,
+    );
+    return PriceChip.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<void> deletePriceChip(int productId, int chipId) async {
+    await _dio.delete('/api/products/$productId/price-chips/$chipId');
   }
 
   Future<Product> createProduct({

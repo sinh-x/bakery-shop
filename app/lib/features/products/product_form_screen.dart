@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../data/api/api_client.dart';
 import '../../data/api/product_service.dart';
 import '../../data/models/catalog_photo.dart';
+import '../../data/models/price_chip.dart';
 import '../../data/models/category.dart';
 import '../../data/models/product.dart';
 import '../../providers/catalog_provider.dart';
@@ -34,12 +35,16 @@ class ProductFormScreen extends ConsumerStatefulWidget {
 }
 
 class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
+  static const int _maxPriceChips = 6;
+
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
   late final TextEditingController _priceCtrl;
   late final TextEditingController _costCtrl;
   late final TextEditingController _notesCtrl;
   late final TextEditingController _codeCtrl;
+  late final List<PriceChip> _originalPriceChips;
+  late final List<_PriceChipFormRow> _priceChipRows;
   late String _category;
   late bool _rutTien;
   late bool _trungBay;
@@ -65,10 +70,24 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final p = widget.product;
     _nameCtrl = TextEditingController(text: p?.name ?? '');
     _priceCtrl = TextEditingController(
-        text: p != null ? p.basePrice.toInt().toString() : '');
+      text: p != null ? p.basePrice.toInt().toString() : '',
+    );
     _costCtrl = TextEditingController(
-        text: p != null && p.cost > 0 ? p.cost.toInt().toString() : '');
+      text: p != null && p.cost > 0 ? p.cost.toInt().toString() : '',
+    );
     _notesCtrl = TextEditingController(text: p?.recipeNotes ?? '');
+    _originalPriceChips = List<PriceChip>.of(
+      p?.priceChips ?? const <PriceChip>[],
+    );
+    _priceChipRows = _originalPriceChips
+        .map(
+          (chip) => _PriceChipFormRow(
+            id: chip.id,
+            label: chip.label,
+            price: chip.price.toInt().toString(),
+          ),
+        )
+        .toList();
     // Store only the suffix portion so the prefix can be shown read-only.
     _codeCtrl = TextEditingController(text: _extractSuffix(p?.productCode));
     _category = widget.initialCategory ?? p?.category ?? 'banh_kem';
@@ -84,7 +103,256 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _costCtrl.dispose();
     _notesCtrl.dispose();
     _codeCtrl.dispose();
+    for (final row in _priceChipRows) {
+      row.dispose();
+    }
     super.dispose();
+  }
+
+  void _addPriceChip() {
+    if (_priceChipRows.length >= _maxPriceChips) return;
+    setState(() {
+      _priceChipRows.add(_PriceChipFormRow());
+    });
+  }
+
+  void _removePriceChip(int index) {
+    setState(() {
+      _priceChipRows[index].dispose();
+      _priceChipRows.removeAt(index);
+    });
+  }
+
+  void _reorderPriceChips(int oldIndex, int newIndex) {
+    if (newIndex > oldIndex) newIndex -= 1;
+    setState(() {
+      final row = _priceChipRows.removeAt(oldIndex);
+      _priceChipRows.insert(newIndex, row);
+    });
+  }
+
+  double? _parseChipPrice(String text) {
+    final value = text.trim();
+    if (value.isEmpty) return null;
+    return double.tryParse(value);
+  }
+
+  bool _validatePriceChipRows() {
+    var isValid = true;
+    var changed = false;
+    for (final row in _priceChipRows) {
+      final label = row.labelController.text.trim();
+      final priceText = row.priceController.text.trim();
+      final parsedPrice = _parseChipPrice(priceText);
+
+      final labelError = label.isEmpty ? VN.priceChipLabelRequired : null;
+      final priceError = parsedPrice == null || parsedPrice < 0
+          ? VN.priceChipPriceInvalid
+          : null;
+
+      if (row.labelError != labelError || row.priceError != priceError) {
+        row.labelError = labelError;
+        row.priceError = priceError;
+        changed = true;
+      }
+      if (labelError != null || priceError != null) isValid = false;
+    }
+
+    if (changed) setState(() {});
+    return isValid;
+  }
+
+  bool _hasPriceChipChanges() {
+    if (_priceChipRows.length > _maxPriceChips) return true;
+    if (_priceChipRows.length != _originalPriceChips.length) return true;
+
+    final originalMap = <int, PriceChip>{
+      for (final chip in _originalPriceChips) chip.id: chip,
+    };
+    final seenIds = <int>{};
+
+    for (var i = 0; i < _priceChipRows.length; i++) {
+      final row = _priceChipRows[i];
+      if (row.id == null) return true;
+      final original = originalMap[row.id];
+      if (original == null) return true;
+      seenIds.add(row.id!);
+
+      final label = row.labelController.text.trim();
+      final parsedPrice = _parseChipPrice(row.priceController.text.trim());
+      if (parsedPrice == null) return true;
+
+      if (original.label != label ||
+          original.price != parsedPrice ||
+          original.position != i) {
+        return true;
+      }
+    }
+
+    return seenIds.length != _originalPriceChips.length;
+  }
+
+  Future<void> _syncPriceChipEdits(int productId) async {
+    final productSvc = ref.read(productServiceProvider);
+    final originalMap = <int, PriceChip>{
+      for (final chip in _originalPriceChips) chip.id: chip,
+    };
+    final editedIds = <int>{};
+
+    for (var i = 0; i < _priceChipRows.length; i++) {
+      final row = _priceChipRows[i];
+      final label = row.labelController.text.trim();
+      final price = _parseChipPrice(row.priceController.text.trim()) ?? 0;
+
+      if (row.id == null) {
+        final created = await productSvc.createPriceChip(
+          productId: productId,
+          label: label,
+          price: price,
+          position: i,
+        );
+        row.id = created.id;
+        continue;
+      }
+
+      editedIds.add(row.id!);
+      final original = originalMap[row.id];
+      if (original == null ||
+          original.label != label ||
+          original.price != price ||
+          original.position != i) {
+        await productSvc.updatePriceChip(
+          productId,
+          row.id!,
+          label: original?.label != label ? label : null,
+          price: original?.price != price ? price : null,
+          position: original?.position != i ? i : null,
+        );
+      }
+    }
+
+    for (final original in _originalPriceChips) {
+      if (original.id >= 0 && !editedIds.contains(original.id)) {
+        await productSvc.deletePriceChip(productId, original.id);
+      }
+    }
+
+    await ref.read(productsProvider.notifier).refresh();
+    _applyPriceChipChangesToUi();
+  }
+
+  void _applyPriceChipChangesToUi() {
+    _originalPriceChips
+      ..clear()
+      ..addAll(
+        _priceChipRows.where((row) => row.id != null).map((row) {
+          return PriceChip(
+            id: row.id!,
+            label: row.labelController.text.trim(),
+            price: _parseChipPrice(row.priceController.text.trim()) ?? 0,
+            position: _priceChipRows.indexOf(row),
+          );
+        }),
+      );
+  }
+
+  Widget _buildPriceChipSection() {
+    if (_priceChipRows.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(VN.priceChips, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _addPriceChip,
+            icon: const Icon(Icons.add),
+            label: Text(VN.addPriceChip),
+          ),
+          const SizedBox(height: 16),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(VN.priceChips, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        ReorderableListView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          itemCount: _priceChipRows.length,
+          onReorder: _reorderPriceChips,
+          buildDefaultDragHandles: false,
+          itemBuilder: (context, index) {
+            final row = _priceChipRows[index];
+            return Padding(
+              key: ValueKey(row),
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: row.labelController,
+                      decoration: InputDecoration(
+                        labelText: VN.priceChipLabel,
+                        errorText: row.labelError,
+                      ),
+                      onChanged: (_) {
+                        if (row.labelError != null) {
+                          setState(() => row.labelError = null);
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextFormField(
+                      controller: row.priceController,
+                      decoration: InputDecoration(
+                        labelText: VN.priceChipPrice,
+                        suffixText: VN.currency,
+                        errorText: row.priceError,
+                      ),
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) {
+                        if (row.priceError != null) {
+                          setState(() => row.priceError = null);
+                        }
+                      },
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: VN.remove,
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => _removePriceChip(index),
+                  ),
+                  ReorderableDragStartListener(
+                    index: index,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 12,
+                      ),
+                      child: Icon(Icons.drag_handle),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _priceChipRows.length >= _maxPriceChips
+              ? null
+              : _addPriceChip,
+          icon: const Icon(Icons.add),
+          label: Text(VN.addPriceChip),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
   }
 
   Future<void> _pickPhoto() async {
@@ -119,22 +387,30 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    if (!_validatePriceChipRows()) return;
     setState(() => _saving = true);
 
     try {
       final notifier = ref.read(productsProvider.notifier);
       final price = double.tryParse(_priceCtrl.text) ?? 0;
       final cost = double.tryParse(_costCtrl.text) ?? 0;
+      final hasPriceChipChanges = _hasPriceChipChanges();
 
       Product saved;
       // Build full product code: prefix (from category) + '-' + suffix (user input).
       final suffix = _codeCtrl.text.trim();
       final cats = ref.read(categoriesProvider).asData?.value;
-      final prefix = cats
+      final prefix =
+          cats
               ?.firstWhere(
                 (c) => c.slug == _category,
-                orElse: () =>
-                    const Category(id: 0, slug: '', name: '', codePrefix: '', active: 1),
+                orElse: () => const Category(
+                  id: 0,
+                  slug: '',
+                  name: '',
+                  codePrefix: '',
+                  active: 1,
+                ),
               )
               .codePrefix ??
           '';
@@ -149,13 +425,15 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         final origRutTien = orig.attributes['rut_tien']?.toString() == 'true';
         final origTrungBay = orig.attributes['trung_bay']?.toString() == 'true';
         final origTangKem = orig.attributes['tang_kem']?.toString() == 'true';
-        final hasChanges = newName != orig.name ||
+        final hasChanges =
+            newName != orig.name ||
             _category != orig.category ||
             price != orig.basePrice ||
             cost != orig.cost ||
             newNotes != orig.recipeNotes ||
             newCode != orig.productCode ||
             _pickedPhoto != null ||
+            hasPriceChipChanges ||
             _rutTien != origRutTien ||
             _trungBay != origTrungBay ||
             _tangKem != origTangKem;
@@ -163,7 +441,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           if (mounted) context.pop();
           return;
         }
-        final hasFieldChanges = newName != orig.name ||
+        final hasFieldChanges =
+            newName != orig.name ||
             _category != orig.category ||
             price != orig.basePrice ||
             cost != orig.cost ||
@@ -182,6 +461,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         } else {
           saved = orig;
         }
+
+        if (hasPriceChipChanges) {
+          await _syncPriceChipEdits(saved.id);
+        }
+
         // Sync rut_tien attribute if changed
         if (_rutTien != origRutTien) {
           final productSvc = ref.read(productServiceProvider);
@@ -239,6 +523,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           await productSvc.setProductAttribute(saved.id, 'tang_kem', 'true');
           await notifier.refresh();
         }
+
+        if (hasPriceChipChanges) {
+          await _syncPriceChipEdits(saved.id);
+        }
       }
 
       if (_pickedPhoto != null) {
@@ -249,7 +537,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       }
 
       if (mounted) {
-        showTopSnackBar(context, _isEditing ? VN.productUpdated : VN.productCreated);
+        showTopSnackBar(
+          context,
+          _isEditing ? VN.productUpdated : VN.productCreated,
+        );
         context.pop();
       }
     } on DioException catch (e) {
@@ -286,7 +577,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
     setState(() => _saving = true);
     try {
-      await ref.read(productsProvider.notifier).deleteProduct(widget.product!.id);
+      await ref
+          .read(productsProvider.notifier)
+          .deleteProduct(widget.product!.id);
       if (mounted) {
         showTopSnackBar(context, VN.productDeleted);
         context.pop();
@@ -310,8 +603,13 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       data: (cats) => cats
           .firstWhere(
             (c) => c.slug == _category,
-            orElse: () =>
-                const Category(id: 0, slug: '', name: '', codePrefix: '', active: 1),
+            orElse: () => const Category(
+              id: 0,
+              slug: '',
+              name: '',
+              codePrefix: '',
+              active: 1,
+            ),
           )
           .codePrefix,
       orElse: () => '',
@@ -339,16 +637,16 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               pickedPhoto: _pickedPhoto,
               baseUrl: baseUrl,
               onPickPhoto: _pickPhoto,
-              cacheBuster: _photoCacheBuster.isNotEmpty ? _photoCacheBuster : null,
+              cacheBuster: _photoCacheBuster.isNotEmpty
+                  ? _photoCacheBuster
+                  : null,
             ),
             const SizedBox(height: 24),
 
             // Name
             TextFormField(
               controller: _nameCtrl,
-              decoration: const InputDecoration(
-                labelText: VN.productName,
-              ),
+              decoration: const InputDecoration(labelText: VN.productName),
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
             ),
@@ -371,25 +669,39 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             categoriesAsync.when(
               loading: () => DropdownButtonFormField<String>(
                 initialValue: _category,
-                decoration: const InputDecoration(labelText: VN.productCategory),
+                decoration: const InputDecoration(
+                  labelText: VN.productCategory,
+                ),
                 items: categoryMap.entries
-                    .map((e) => DropdownMenuItem(
-                          value: e.key,
-                          child: Text('${categoryEmojiMap[e.key] ?? ''} ${e.value}'),
-                        ))
+                    .map(
+                      (e) => DropdownMenuItem(
+                        value: e.key,
+                        child: Text(
+                          '${categoryEmojiMap[e.key] ?? ''} ${e.value}',
+                        ),
+                      ),
+                    )
                     .toList(),
                 onChanged: (v) {
                   if (v != null) setState(() => _category = v);
                 },
               ),
               error: (err, st) => DropdownButtonFormField<String>(
-                initialValue: categoryMap.containsKey(_category) ? _category : categoryMap.keys.first,
-                decoration: const InputDecoration(labelText: VN.productCategory),
+                initialValue: categoryMap.containsKey(_category)
+                    ? _category
+                    : categoryMap.keys.first,
+                decoration: const InputDecoration(
+                  labelText: VN.productCategory,
+                ),
                 items: categoryMap.entries
-                    .map((e) => DropdownMenuItem(
-                          value: e.key,
-                          child: Text('${categoryEmojiMap[e.key] ?? ''} ${e.value}'),
-                        ))
+                    .map(
+                      (e) => DropdownMenuItem(
+                        value: e.key,
+                        child: Text(
+                          '${categoryEmojiMap[e.key] ?? ''} ${e.value}',
+                        ),
+                      ),
+                    )
                     .toList(),
                 onChanged: (v) {
                   if (v != null) setState(() => _category = v);
@@ -404,13 +716,18 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 }
                 return DropdownButtonFormField<String>(
                   initialValue: _category,
-                  decoration: const InputDecoration(labelText: VN.productCategory),
+                  decoration: const InputDecoration(
+                    labelText: VN.productCategory,
+                  ),
                   items: active
-                      .map((cat) => DropdownMenuItem(
-                            value: cat.slug,
-                            child: Text(
-                                '${categoryEmojiMap[cat.slug] ?? ''} ${cat.name}'),
-                          ))
+                      .map(
+                        (cat) => DropdownMenuItem(
+                          value: cat.slug,
+                          child: Text(
+                            '${categoryEmojiMap[cat.slug] ?? ''} ${cat.name}',
+                          ),
+                        ),
+                      )
                       .toList(),
                   onChanged: (v) {
                     if (v != null) setState(() => _category = v);
@@ -447,44 +764,50 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             ),
             const SizedBox(height: 16),
 
+            // Price chips
+            _buildPriceChipSection(),
+            const SizedBox(height: 16),
+
             // Notes
             TextFormField(
               controller: _notesCtrl,
-              decoration: const InputDecoration(
-                labelText: VN.productNotes,
-              ),
+              decoration: const InputDecoration(labelText: VN.productNotes),
               maxLines: 3,
             ),
             const SizedBox(height: 16),
 
             // Rut tien toggle (all categories, create & edit)
             SwitchListTile(
-                value: _rutTien,
-                onChanged: (v) => setState(() => _rutTien = v),
-                title: Text(VN.rutTienToggle),
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-              ),
+              value: _rutTien,
+              onChanged: (v) => setState(() => _rutTien = v),
+              title: Text(VN.rutTienToggle),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
             const SizedBox(height: 8),
 
             // Trung bay toggle (edit mode only)
             SwitchListTile(
-                value: _trungBay,
-                onChanged: _isEditing ? (v) => setState(() => _trungBay = v) : null,
-                title: Text(VN.trungBay),
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-              ),
+              value: _trungBay,
+              onChanged: _isEditing
+                  ? (v) => setState(() => _trungBay = v)
+                  : null,
+              title: Text(VN.trungBay),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
             const SizedBox(height: 8),
 
             // Tang kem toggle (edit mode only)
             SwitchListTile(
-                value: _tangKem,
-                onChanged: _isEditing ? (v) => setState(() => _tangKem = v) : null,
-                title: Text(VN.tangKem),
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-              ),
+              value: _tangKem,
+              onChanged: _isEditing
+                  ? (v) => setState(() => _tangKem = v)
+                  : null,
+              title: Text(VN.tangKem),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
             const SizedBox(height: 16),
 
             // Save button
@@ -508,6 +831,23 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         ),
       ),
     );
+  }
+}
+
+class _PriceChipFormRow {
+  _PriceChipFormRow({this.id, String label = '', String price = ''})
+    : labelController = TextEditingController(text: label),
+      priceController = TextEditingController(text: price);
+
+  int? id;
+  final TextEditingController labelController;
+  final TextEditingController priceController;
+  String? labelError;
+  String? priceError;
+
+  void dispose() {
+    labelController.dispose();
+    priceController.dispose();
   }
 }
 
@@ -684,8 +1024,8 @@ class _CatalogGallerySectionState
         showTopSnackBar(
           context,
           failed == 0
-                  ? (added == 1 ? VN.catalogPhotoAdded : 'Đã thêm $added ảnh mẫu')
-                  : 'Đã thêm $added ảnh, $failed ảnh lỗi',
+              ? (added == 1 ? VN.catalogPhotoAdded : 'Đã thêm $added ảnh mẫu')
+              : 'Đã thêm $added ảnh, $failed ảnh lỗi',
         );
       }
     } else {
@@ -812,15 +1152,15 @@ class _CatalogGallerySectionState
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
                     VN.noCatalogPhotos,
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: Colors.grey),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey,
+                    ),
                   ),
                 ),
               GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
                   crossAxisSpacing: 8,
                   mainAxisSpacing: 8,
@@ -982,10 +1322,7 @@ class _CatalogPhotoCard extends StatelessWidget {
           // Tag chips row (max 3)
           if (photo.tags.isNotEmpty) ...[
             const SizedBox(height: 4),
-            CatalogTagChips(
-              tags: photo.tags,
-              maxChips: 3,
-            ),
+            CatalogTagChips(tags: photo.tags, maxChips: 3),
           ],
         ],
       ),

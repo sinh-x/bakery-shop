@@ -16,6 +16,11 @@ _Product _$ProductFromJson(Map<String, dynamic> json) => _Product(
   active: (json['active'] as num?)?.toInt() ?? 1,
   photoPath: json['photo_path'] as String? ?? '',
   productCode: json['product_code'] as String? ?? '',
+  priceChips:
+      (json['price_chips'] as List<dynamic>?)
+          ?.map((e) => PriceChip.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const [],
   attributes:
       (json['attributes'] as Map<String, dynamic>?)?.map(
         (k, e) => MapEntry(k, e as String),
@@ -34,6 +39,7 @@ Map<String, dynamic> _$ProductToJson(_Product instance) => <String, dynamic>{
   'active': instance.active,
   'photo_path': instance.photoPath,
   'product_code': instance.productCode,
+  'price_chips': instance.priceChips,
   'attributes': instance.attributes,
   'stock_qty': instance.stockQty,
 };

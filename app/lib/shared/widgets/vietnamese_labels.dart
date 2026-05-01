@@ -155,6 +155,13 @@ class VN {
   static const productPrice = 'Giá bán';
   static const productCost = 'Giá vốn';
   static const productNotes = 'Ghi chú công thức';
+  static const priceChips = 'Các mức giá nhanh';
+  static const addPriceChip = 'Thêm mức giá';
+  static const priceChipLabel = 'Nhãn';
+  static const priceChipPrice = 'Giá';
+  static const priceChipLabelRequired = 'Nhãn bắt buộc';
+  static const priceChipPriceInvalid = 'Giá không hợp lệ';
+  static const priceFrom = 'từ';
   static const productPhoto = 'Ảnh sản phẩm';
   static const choosePhoto = 'Chọn ảnh';
   static const takePhoto = 'Chụp ảnh';
