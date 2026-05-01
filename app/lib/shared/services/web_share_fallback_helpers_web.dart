@@ -3,14 +3,22 @@ import 'dart:html' as html;
 import 'dart:typed_data';
 
 Future<bool> copyTextToClipboard(String text) async {
-  try {
-    final clipboard = html.window.navigator.clipboard;
-    if (clipboard == null) return false;
-    await clipboard.writeText(text);
-    return true;
-  } catch (_) {
-    return false;
+  final clipboard = html.window.navigator.clipboard;
+  if (clipboard == null) return false;
+
+  for (var attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await clipboard.writeText(text);
+      return true;
+    } catch (_) {
+      if (attempt >= 2) {
+        return false;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
   }
+
+  return false;
 }
 
 Future<bool> downloadBytesToBrowser(

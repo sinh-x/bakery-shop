@@ -345,20 +345,29 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
     if (mounted) {
       showTopSnackBar(
         context,
-        'Đã tải ${fallbackResult.$1}/${photos.length} ảnh',
+        VN.taiNAnh.replaceFirst(
+          '{count}',
+          '${fallbackResult.successCount}/${photos.length}',
+        ),
       );
     }
-    if (fallbackResult.$3.isNotEmpty) {
+    if (fallbackResult.errors.isNotEmpty) {
+      if (!mounted) return;
+
+      final errorMessage = fallbackResult.errors.length <= 2
+          ? fallbackResult.errors.join('\n')
+          : '${fallbackResult.failCount} ảnh không tải được: ${fallbackResult.errors.first}';
+
       if (!mounted) return;
       showTopSnackBar(
         context,
-        'Lỗi: ${fallbackResult.$3.first}',
+        'Lỗi: $errorMessage',
         backgroundColor: Colors.orange,
       );
     }
   }
 
-  Future<(int, int, List<String>)> _downloadPhotosForWeb({
+  Future<PhotoDownloadResult> _downloadPhotosForWeb({
     required Dio dio,
     required List<KnowledgePhoto> photos,
     required String baseUrl,
@@ -406,10 +415,11 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
       }
     }
 
-    if (failCount > 0 && errors.isNotEmpty) {
-      return (successCount, failCount, errors);
-    }
-    return (successCount, failCount, errors);
+    return PhotoDownloadResult(
+      successCount: successCount,
+      failCount: failCount,
+      errors: errors,
+    );
   }
 
   @override
@@ -426,4 +436,16 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
       onPressed: _sharing ? null : _share,
     );
   }
+}
+
+class PhotoDownloadResult {
+  const PhotoDownloadResult({
+    required this.successCount,
+    required this.failCount,
+    required this.errors,
+  });
+
+  final int successCount;
+  final int failCount;
+  final List<String> errors;
 }

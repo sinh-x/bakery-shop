@@ -519,7 +519,7 @@ class VN {
   static const saoChepNoiDungThatBai =
       'Không thể sao chép nội dung vào clipboard';
   static const taiMotPhanAnh = 'Đã tải một phần ảnh';
-  static const taiNAnh = 'Đã tải n ảnh';
+  static const taiNAnh = 'Đã tải {count} ảnh';
   static const khongTheTaiAnh = 'Không thể tải ảnh';
   static const khongTheChiaSe = 'Không thể chia sẻ';
 
