@@ -25,7 +25,9 @@ String catalogPhotoFileName({
   required String productName,
   required int productId,
   required int photoId,
+  String extension = 'jpg',
 }) {
   final safe = safeFileName(productName);
-  return '${safe}_p${productId}_$photoId.jpg';
+  final safeExtension = safeFileName(extension).toLowerCase();
+  return '${safe}_p${productId}_$photoId.$safeExtension';
 }

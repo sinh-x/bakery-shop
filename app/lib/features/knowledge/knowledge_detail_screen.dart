@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../data/api/api_client.dart';
 import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
+import '../../shared/services/image_download_metadata.dart';
 import '../../shared/services/web_share_fallback_helpers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/knowledge_photo_gallery.dart';
@@ -266,11 +267,12 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
       for (final photo in entry.photos) {
         final bytes = await _fetchPhotoBytes(dio, baseUrl, photo);
         if (bytes == null) continue;
+        final metadata = imageDownloadMetadata(bytes, sourceName: photo.url);
         final tmpFile = File(
-          '${tmpDir.path}/${_knowledgePhotoFileName(photo)}',
+          '${tmpDir.path}/${_knowledgePhotoFileName(photo, metadata)}',
         );
         await tmpFile.writeAsBytes(bytes);
-        files.add(XFile(tmpFile.path));
+        files.add(XFile(tmpFile.path, mimeType: metadata.mimeType));
       }
 
       if (files.isEmpty) {
@@ -308,13 +310,16 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
     return Uint8List.fromList(resp.data!);
   }
 
-  String _knowledgePhotoFileName(KnowledgePhoto photo) {
+  String _knowledgePhotoFileName(
+    KnowledgePhoto photo,
+    ImageDownloadMetadata metadata,
+  ) {
     final safeHash = photo.hash
         .replaceAll(RegExp(r'[\\/]'), '_')
         .replaceAll(RegExp(r'\s+'), '_')
         .trim();
     final baseName = safeHash.isEmpty ? 'knowledge_photo' : safeHash;
-    return '$baseName.jpg';
+    return imageDownloadFileName(baseName, metadata);
   }
 
   Future<void> _copyTextFallback(String text) async {
@@ -390,10 +395,14 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
             if (bytes == null || bytes.isEmpty) {
               return 'Ảnh ${photo.hash} không có dữ liệu';
             }
+            final metadata = imageDownloadMetadata(
+              bytes,
+              sourceName: photo.url,
+            );
             final downloaded = await WebShareFallbackHelpers.downloadBytes(
               bytes,
-              _knowledgePhotoFileName(photo),
-              mimeType: 'image/jpeg',
+              _knowledgePhotoFileName(photo, metadata),
+              mimeType: metadata.mimeType,
             );
             if (!downloaded) {
               return 'Không thể tải ảnh ${photo.hash}';

@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../data/api/api_client.dart';
 import '../../../data/models/knowledge_entry.dart';
+import '../../../shared/services/image_download_metadata.dart';
 import '../../../shared/services/web_share_fallback_helpers.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 
@@ -178,10 +179,14 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
       );
       if (resp.data == null) throw Exception('No data');
       final tmpDir = await getTemporaryDirectory();
-      final tmpFile = File('${tmpDir.path}/${_knowledgePhotoFileName(photo)}');
-      await tmpFile.writeAsBytes(Uint8List.fromList(resp.data!));
+      final bytes = Uint8List.fromList(resp.data!);
+      final metadata = imageDownloadMetadata(bytes, sourceName: photo.url);
+      final tmpFile = File(
+        '${tmpDir.path}/${_knowledgePhotoFileName(photo, metadata)}',
+      );
+      await tmpFile.writeAsBytes(bytes);
       await Share.shareXFiles([
-        XFile(tmpFile.path),
+        XFile(tmpFile.path, mimeType: metadata.mimeType),
       ], text: photo.caption.isNotEmpty ? photo.caption : null);
     } catch (_) {
       if (!mounted) return;
@@ -195,13 +200,16 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
     }
   }
 
-  String _knowledgePhotoFileName(KnowledgePhoto photo) {
+  String _knowledgePhotoFileName(
+    KnowledgePhoto photo,
+    ImageDownloadMetadata metadata,
+  ) {
     final safeHash = photo.hash
         .replaceAll(RegExp(r'[\\/]'), '_')
         .replaceAll(RegExp(r'\s+'), '_')
         .trim();
     final baseName = safeHash.isEmpty ? 'knowledge_photo' : safeHash;
-    return '$baseName.jpg';
+    return imageDownloadFileName(baseName, metadata);
   }
 
   Future<void> _downloadPhotoFallback(
@@ -218,10 +226,12 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
         if (mounted) showTopSnackBar(context, VN.khongTheTaiAnh);
         return;
       }
+      final bytes = Uint8List.fromList(resp.data!);
+      final metadata = imageDownloadMetadata(bytes, sourceName: photo.url);
       final downloaded = await WebShareFallbackHelpers.downloadBytes(
-        Uint8List.fromList(resp.data!),
-        _knowledgePhotoFileName(photo),
-        mimeType: 'image/jpeg',
+        bytes,
+        _knowledgePhotoFileName(photo, metadata),
+        mimeType: metadata.mimeType,
       );
       if (mounted) {
         if (downloaded) {

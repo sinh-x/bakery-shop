@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../data/models/catalog_browse_photo.dart';
+import '../../../shared/services/image_download_metadata.dart';
 import 'bulk_download_web.dart';
 import 'bulk_common.dart';
 
@@ -91,15 +92,20 @@ class BulkShareService {
         try {
           downloadedPhotoBytesByPhotoId[photo.id] = bytes;
           final tempDir = await getTemporaryDirectory();
+          final metadata = imageDownloadMetadata(
+            bytes,
+            sourceName: photo.filePath,
+          );
           final fileName = catalogPhotoFileName(
             productName: photo.productName,
             productId: photo.productId,
             photoId: photo.id,
+            extension: metadata.extension,
           );
           final file = File('${tempDir.path}/$fileName');
           await file.writeAsBytes(bytes);
           allWrittenFiles.add(file);
-          allShareFiles.add(XFile(file.path));
+          allShareFiles.add(XFile(file.path, mimeType: metadata.mimeType));
         } catch (e) {
           failCount++;
           errors.add('${photo.productName} #${photo.id}: save failed — $e');

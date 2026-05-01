@@ -3,8 +3,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/catalog_browse_photo.dart';
-import 'bulk_common.dart';
+import '../../../shared/services/image_download_metadata.dart';
 import '../../../shared/services/web_share_fallback_helpers.dart';
+import 'bulk_common.dart';
 
 /// Result of a bulk download operation.
 class BulkDownloadResult {
@@ -100,15 +101,20 @@ class BulkDownloadService {
               return false;
             }
 
+            final metadata = imageDownloadMetadata(
+              bytes,
+              sourceName: photo.filePath,
+            );
             final fileName = catalogPhotoFileName(
               productName: photo.productName,
               productId: photo.productId,
               photoId: photo.id,
+              extension: metadata.extension,
             );
             final downloaded = await WebShareFallbackHelpers.downloadBytes(
               bytes,
               fileName,
-              mimeType: 'image/jpeg',
+              mimeType: metadata.mimeType,
             );
             if (!downloaded) {
               errors.add('$fileName: trình duyệt không thể bắt đầu tải ảnh');
