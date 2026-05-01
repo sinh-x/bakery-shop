@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../data/api/api_client.dart';
 import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
+import '../../shared/services/web_share_fallback_helpers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/knowledge_photo_gallery.dart';
 
@@ -37,7 +38,8 @@ class KnowledgeDetailScreen extends ConsumerWidget {
               Text(VN.apiError),
               const SizedBox(height: 8),
               TextButton(
-                onPressed: () => ref.invalidate(knowledgeEntryDetailProvider(entryId)),
+                onPressed: () =>
+                    ref.invalidate(knowledgeEntryDetailProvider(entryId)),
                 child: const Text(VN.retry),
               ),
             ],
@@ -88,7 +90,9 @@ class KnowledgeDetailScreen extends ConsumerWidget {
                       ),
                     );
                     if (confirm == true) {
-                      await ref.read(knowledgeEntriesProvider.notifier).deleteEntry(entry.id);
+                      await ref
+                          .read(knowledgeEntriesProvider.notifier)
+                          .deleteEntry(entry.id);
                       if (context.mounted) {
                         showTopSnackBar(context, VN.knowledgeDeleted);
                         context.pop();
@@ -101,10 +105,15 @@ class KnowledgeDetailScreen extends ConsumerWidget {
                     value: 'delete',
                     child: Row(
                       children: [
-                        Icon(Icons.delete_outline, color: theme.colorScheme.error),
+                        Icon(
+                          Icons.delete_outline,
+                          color: theme.colorScheme.error,
+                        ),
                         const SizedBox(width: 8),
-                        Text(VN.deleteKnowledge,
-                            style: TextStyle(color: theme.colorScheme.error)),
+                        Text(
+                          VN.deleteKnowledge,
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
                       ],
                     ),
                   ),
@@ -119,7 +128,10 @@ class KnowledgeDetailScreen extends ConsumerWidget {
               Row(
                 children: [
                   Expanded(
-                    child: Text(entry.title, style: theme.textTheme.headlineSmall),
+                    child: Text(
+                      entry.title,
+                      style: theme.textTheme.headlineSmall,
+                    ),
                   ),
                   IconButton(
                     icon: Icon(
@@ -151,7 +163,10 @@ class KnowledgeDetailScreen extends ConsumerWidget {
 
               // Type chip
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.grey.shade200,
                   borderRadius: BorderRadius.circular(12),
@@ -166,10 +181,13 @@ class KnowledgeDetailScreen extends ConsumerWidget {
                   spacing: 6,
                   runSpacing: 4,
                   children: entry.tags
-                      .map((tag) => Chip(
-                            label: Text(tag),
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ))
+                      .map(
+                        (tag) => Chip(
+                          label: Text(tag),
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      )
                       .toList(),
                 ),
 
@@ -186,10 +204,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
 
               // Content
               if (entry.content.isNotEmpty)
-                Text(
-                  entry.content,
-                  style: theme.textTheme.bodyLarge,
-                ),
+                Text(entry.content, style: theme.textTheme.bodyLarge),
 
               const SizedBox(height: 16),
 
@@ -229,6 +244,8 @@ class _ShareEntryButton extends ConsumerStatefulWidget {
 class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
   bool _sharing = false;
 
+  static const _parallelism = 4;
+
   Future<void> _share() async {
     if (_sharing) return;
     setState(() => _sharing = true);
@@ -236,35 +253,163 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
     final text = entry.content.isNotEmpty
         ? '${entry.title}\n\n${entry.content}'
         : entry.title;
+    final dio = ref.read(dioProvider);
+    final baseUrl = dio.options.baseUrl;
     try {
       if (entry.photos.isEmpty) {
         await Share.share(text);
         return;
       }
-      final dio = ref.read(dioProvider);
-      final baseUrl = dio.options.baseUrl;
+
       final tmpDir = await getTemporaryDirectory();
       final files = <XFile>[];
       for (final photo in entry.photos) {
-        final resp = await dio.get<List<int>>(
-          '$baseUrl${photo.url}',
-          options: Options(responseType: ResponseType.bytes),
+        final bytes = await _fetchPhotoBytes(dio, baseUrl, photo);
+        if (bytes == null) continue;
+        final tmpFile = File(
+          '${tmpDir.path}/${_knowledgePhotoFileName(photo)}',
         );
-        if (resp.data == null) continue;
-        final tmpFile = File('${tmpDir.path}/knowledge_photo_${photo.hash}.jpg');
-        await tmpFile.writeAsBytes(Uint8List.fromList(resp.data!));
+        await tmpFile.writeAsBytes(bytes);
         files.add(XFile(tmpFile.path));
       }
+
       if (files.isEmpty) {
         await Share.share(text);
         return;
       }
+
       await Share.shareXFiles(files, text: text);
     } catch (_) {
-      if (mounted) showTopSnackBar(context, VN.khongTheChiaSe);
+      if (!mounted) return;
+      if (kIsWeb) {
+        if (entry.photos.isEmpty) {
+          await _copyTextFallback(text);
+        } else {
+          await _downloadPhotosFallback(text, entry.photos, baseUrl);
+        }
+      } else {
+        showTopSnackBar(context, VN.khongTheChiaSe);
+      }
     } finally {
       if (mounted) setState(() => _sharing = false);
     }
+  }
+
+  Future<Uint8List?> _fetchPhotoBytes(
+    Dio dio,
+    String baseUrl,
+    KnowledgePhoto photo,
+  ) async {
+    final resp = await dio.get<List<int>>(
+      '$baseUrl${photo.url}',
+      options: Options(responseType: ResponseType.bytes),
+    );
+    if (resp.data == null) return null;
+    return Uint8List.fromList(resp.data!);
+  }
+
+  String _knowledgePhotoFileName(KnowledgePhoto photo) {
+    final safeHash = photo.hash
+        .replaceAll(RegExp(r'[\\/]'), '_')
+        .replaceAll(RegExp(r'\s+'), '_')
+        .trim();
+    final baseName = safeHash.isEmpty ? 'knowledge_photo' : safeHash;
+    return '$baseName.jpg';
+  }
+
+  Future<void> _copyTextFallback(String text) async {
+    final copied = await WebShareFallbackHelpers.copyText(text);
+    if (!mounted) return;
+    if (copied) {
+      showTopSnackBar(context, VN.daSaoChepNoiDung);
+    } else {
+      showTopSnackBar(context, VN.saoChepNoiDungThatBai);
+    }
+  }
+
+  Future<void> _downloadPhotosFallback(
+    String text,
+    List<KnowledgePhoto> photos,
+    String baseUrl,
+  ) async {
+    final fallbackResult = await _downloadPhotosForWeb(
+      dio: ref.read(dioProvider),
+      photos: photos,
+      baseUrl: baseUrl,
+    );
+    if (!mounted) return;
+
+    await _copyTextFallback(text);
+    if (!mounted) return;
+
+    if (mounted) {
+      showTopSnackBar(
+        context,
+        'Đã tải ${fallbackResult.$1}/${photos.length} ảnh',
+      );
+    }
+    if (fallbackResult.$3.isNotEmpty) {
+      if (!mounted) return;
+      showTopSnackBar(
+        context,
+        'Lỗi: ${fallbackResult.$3.first}',
+        backgroundColor: Colors.orange,
+      );
+    }
+  }
+
+  Future<(int, int, List<String>)> _downloadPhotosForWeb({
+    required Dio dio,
+    required List<KnowledgePhoto> photos,
+    required String baseUrl,
+  }) async {
+    int successCount = 0;
+    int failCount = 0;
+    final errors = <String>[];
+
+    for (
+      int chunkStart = 0;
+      chunkStart < photos.length;
+      chunkStart += _parallelism
+    ) {
+      final chunkEnd = (chunkStart + _parallelism).clamp(0, photos.length);
+      final chunkPhotos = photos.sublist(chunkStart, chunkEnd);
+      final results = await Future.wait(
+        chunkPhotos.map((photo) async {
+          try {
+            final bytes = await _fetchPhotoBytes(dio, baseUrl, photo);
+            if (bytes == null || bytes.isEmpty) {
+              return 'Ảnh ${photo.hash} không có dữ liệu';
+            }
+            final downloaded = await WebShareFallbackHelpers.downloadBytes(
+              bytes,
+              _knowledgePhotoFileName(photo),
+              mimeType: 'image/jpeg',
+            );
+            if (!downloaded) {
+              return 'Không thể tải ảnh ${photo.hash}';
+            }
+            return null;
+          } catch (e) {
+            return 'Không thể tải ảnh ${photo.hash}: $e';
+          }
+        }),
+      );
+
+      for (final error in results) {
+        if (error == null) {
+          successCount++;
+        } else {
+          failCount++;
+          errors.add(error);
+        }
+      }
+    }
+
+    if (failCount > 0 && errors.isNotEmpty) {
+      return (successCount, failCount, errors);
+    }
+    return (successCount, failCount, errors);
   }
 
   @override

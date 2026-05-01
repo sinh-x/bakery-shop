@@ -11,7 +11,8 @@ import '../../data/models/category.dart' as models;
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'services/bulk_share_service.dart';
 import 'services/bulk_download_android.dart'
-    if (kIsWeb) 'services/bulk_download_web.dart' as download_impl;
+    if (kIsWeb) 'services/bulk_download_web.dart'
+    as download_impl;
 import 'widgets/catalog_photo_browse_card.dart';
 
 class CatalogBrowseScreen extends ConsumerStatefulWidget {
@@ -54,8 +55,9 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
   Future<void> _onBulkShare() async {
     final photos = ref.read(catalogBrowseProvider(_filterKey)).value;
     if (photos == null) return;
-    final selectedPhotos =
-        photos.where((p) => _selectedPhotoIds.contains(p.id)).toList();
+    final selectedPhotos = photos
+        .where((p) => _selectedPhotoIds.contains(p.id))
+        .toList();
     if (selectedPhotos.isEmpty) return;
 
     setState(() => _bulkInProgress = true);
@@ -63,17 +65,20 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
       final dio = ref.read(dioProvider);
       final service = BulkShareService(dio);
       final result = await service.share(selectedPhotos);
+      final action = result.usedBrowserDownloadFallback
+          ? 'Đã tải'
+          : 'Đã chia sẻ';
       final resultStr = result.failCount == 0
-          ? 'Đã chia sẻ ${result.successCount} ảnh'
-          : 'Đã chia sẻ ${result.successCount}/${selectedPhotos.length} ảnh';
+          ? '$action ${result.successCount} ảnh'
+          : '$action ${result.successCount}/${selectedPhotos.length} ảnh';
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(resultStr),
-            duration: Duration(seconds: result.errors.isEmpty ? 2 : 5),
+            duration: Duration(seconds: result.failCount == 0 ? 2 : 5),
           ),
         );
-        if (result.errors.isNotEmpty) {
+        if (result.failCount > 0) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Lỗi: ${result.errors.first}'),
@@ -91,8 +96,9 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
   Future<void> _onBulkDownload() async {
     final photos = ref.read(catalogBrowseProvider(_filterKey)).value;
     if (photos == null) return;
-    final selectedPhotos =
-        photos.where((p) => _selectedPhotoIds.contains(p.id)).toList();
+    final selectedPhotos = photos
+        .where((p) => _selectedPhotoIds.contains(p.id))
+        .toList();
     if (selectedPhotos.isEmpty) return;
 
     setState(() => _bulkInProgress = true);
@@ -283,8 +289,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
             // Photo grid
             Expanded(
               child: photosAsync.when(
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
+                loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -309,9 +314,9 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                     return Center(
                       child: Text(
                         msg,
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              color: Colors.grey,
-                            ),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodyLarge?.copyWith(color: Colors.grey),
                       ),
                     );
                   }
@@ -323,11 +328,11 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                       padding: const EdgeInsets.all(12),
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 8,
-                        mainAxisSpacing: 8,
-                        childAspectRatio: 0.75,
-                      ),
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                            childAspectRatio: 0.75,
+                          ),
                       itemCount: photos.length,
                       itemBuilder: (context, index) {
                         final photo = photos[index];
@@ -376,7 +381,8 @@ class _TagFilterBar extends ConsumerWidget {
     final occasion = tagDefs.where((t) => t.category == 'occasion').toList();
     final style = tagDefs.where((t) => t.category == 'style').toList();
     final categoriesAsync = ref.watch(categoriesProvider);
-    final hasSelection = selectedTags.isNotEmpty || selectedCategories.isNotEmpty;
+    final hasSelection =
+        selectedTags.isNotEmpty || selectedCategories.isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -385,7 +391,9 @@ class _TagFilterBar extends ConsumerWidget {
         children: [
           categoriesAsync.when(
             loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
+            error: (_, stackTrace) {
+              return const SizedBox.shrink();
+            },
             data: (categories) {
               final active = categories.where((c) => c.active != 0).toList()
                 ..sort((a, b) => a.position.compareTo(b.position));
@@ -465,22 +473,27 @@ class _FilterRow extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 6, top: 6),
                 child: Text(
                   label,
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
-            ...categories!.map((c) => Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: FilterChip(
-                    label: Text(
-                      '${c.icon.isNotEmpty ? c.icon : '📦'} ${c.name}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    selected: selectedCategories!.contains(c.slug),
-                    onSelected: (_) => onCategoryToggle!(c.slug),
-                    visualDensity: VisualDensity.compact,
+            ...categories!.map(
+              (c) => Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: FilterChip(
+                  label: Text(
+                    '${c.icon.isNotEmpty ? c.icon : '📦'} ${c.name}',
+                    style: const TextStyle(fontSize: 12),
                   ),
-                )),
+                  selected: selectedCategories!.contains(c.slug),
+                  onSelected: (_) => onCategoryToggle!(c.slug),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
           ],
         ),
       );
@@ -501,19 +514,24 @@ class _FilterRow extends StatelessWidget {
               padding: const EdgeInsets.only(right: 6, top: 6),
               child: Text(
                 label,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),
-          ...tagDefs!.map((t) => Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: FilterChip(
-                  label: Text(t.label, style: const TextStyle(fontSize: 12)),
-                  selected: selectedTags!.contains(t.key),
-                  onSelected: (_) => onTagToggle!(t.key),
-                  visualDensity: VisualDensity.compact,
-                ),
-              )),
+          ...tagDefs!.map(
+            (t) => Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: FilterChip(
+                label: Text(t.label, style: const TextStyle(fontSize: 12)),
+                selected: selectedTags!.contains(t.key),
+                onSelected: (_) => onTagToggle!(t.key),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
           if (showClear && onClearAll != null)
             Padding(
               padding: const EdgeInsets.only(right: 6),

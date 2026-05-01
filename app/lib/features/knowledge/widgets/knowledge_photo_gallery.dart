@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../data/api/api_client.dart';
 import '../../../data/models/knowledge_entry.dart';
+import '../../../shared/services/web_share_fallback_helpers.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 
 /// Horizontal PageView photo gallery with dots indicator and tap-to-fullscreen.
@@ -80,7 +81,11 @@ class _KnowledgePhotoGalleryState extends State<KnowledgePhotoGallery> {
                   errorBuilder: (_, e, s) => Container(
                     color: Colors.grey.shade200,
                     child: const Center(
-                      child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
+                      child: Icon(
+                        Icons.broken_image,
+                        size: 48,
+                        color: Colors.grey,
+                      ),
                     ),
                   ),
                 ),
@@ -109,13 +114,14 @@ class _KnowledgePhotoGalleryState extends State<KnowledgePhotoGallery> {
             ),
           ),
         // Caption
-        if (widget.photos.isNotEmpty && widget.photos[_currentIndex].caption.isNotEmpty) ...[
+        if (widget.photos.isNotEmpty &&
+            widget.photos[_currentIndex].caption.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
             widget.photos[_currentIndex].caption,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ],
@@ -163,24 +169,69 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
     if (_sharing || _currentIndex >= widget.photos.length) return;
     setState(() => _sharing = true);
     final photo = widget.photos[_currentIndex];
+    final dio = ref.read(dioProvider);
+    final url = '${widget.baseUrl}${photo.url}';
     try {
-      final dio = ref.read(dioProvider);
       final resp = await dio.get<List<int>>(
-        '${widget.baseUrl}${photo.url}',
+        url,
         options: Options(responseType: ResponseType.bytes),
       );
       if (resp.data == null) throw Exception('No data');
       final tmpDir = await getTemporaryDirectory();
-      final tmpFile = File('${tmpDir.path}/knowledge_photo_${photo.hash}.jpg');
+      final tmpFile = File('${tmpDir.path}/${_knowledgePhotoFileName(photo)}');
       await tmpFile.writeAsBytes(Uint8List.fromList(resp.data!));
-      await Share.shareXFiles(
-        [XFile(tmpFile.path)],
-        text: photo.caption.isNotEmpty ? photo.caption : null,
-      );
+      await Share.shareXFiles([
+        XFile(tmpFile.path),
+      ], text: photo.caption.isNotEmpty ? photo.caption : null);
     } catch (_) {
-      if (mounted) showTopSnackBar(context, VN.khongTheChiaSe);
+      if (!mounted) return;
+      if (kIsWeb) {
+        await _downloadPhotoFallback(dio, photo, url);
+      } else {
+        showTopSnackBar(context, VN.khongTheChiaSe);
+      }
     } finally {
       if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  String _knowledgePhotoFileName(KnowledgePhoto photo) {
+    final safeHash = photo.hash
+        .replaceAll(RegExp(r'[\\/]'), '_')
+        .replaceAll(RegExp(r'\s+'), '_')
+        .trim();
+    final baseName = safeHash.isEmpty ? 'knowledge_photo' : safeHash;
+    return '$baseName.jpg';
+  }
+
+  Future<void> _downloadPhotoFallback(
+    Dio dio,
+    KnowledgePhoto photo,
+    String url,
+  ) async {
+    try {
+      final resp = await dio.get<List<int>>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (resp.data == null) {
+        if (mounted) showTopSnackBar(context, VN.khongTheTaiAnh);
+        return;
+      }
+      final downloaded = await WebShareFallbackHelpers.downloadBytes(
+        Uint8List.fromList(resp.data!),
+        _knowledgePhotoFileName(photo),
+        mimeType: 'image/jpeg',
+      );
+      if (mounted) {
+        if (downloaded) {
+          showTopSnackBar(context, VN.taiMotPhanAnh);
+        } else {
+          showTopSnackBar(context, VN.khongTheTaiAnh);
+        }
+      }
+    } catch (e) {
+      if (mounted) showTopSnackBar(context, 'Lỗi: $e');
     }
   }
 
@@ -229,7 +280,11 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
                   url,
                   fit: BoxFit.contain,
                   errorBuilder: (_, e, s) => const Center(
-                    child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
+                    child: Icon(
+                      Icons.broken_image,
+                      color: Colors.white54,
+                      size: 64,
+                    ),
                   ),
                 ),
               ),
@@ -239,7 +294,10 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
                   right: 0,
                   bottom: 0,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.bottomCenter,

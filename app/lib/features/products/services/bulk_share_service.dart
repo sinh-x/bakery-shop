@@ -1,23 +1,26 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../data/models/catalog_browse_photo.dart';
+import 'bulk_download_web.dart';
 import 'bulk_common.dart';
 
 /// Result of a bulk share operation.
 class BulkShareResult {
   final int successCount;
   final int failCount;
+  final bool usedBrowserDownloadFallback;
   final List<String> errors;
 
   const BulkShareResult({
     required this.successCount,
     required this.failCount,
+    required this.usedBrowserDownloadFallback,
     this.errors = const [],
   });
 
@@ -51,22 +54,32 @@ class BulkShareService {
     const parallelism = 4;
     int successCount = 0;
     int failCount = 0;
+    var usedBrowserDownloadFallback = false;
     final errors = <String>[];
     final allShareFiles = <XFile>[];
     final allWrittenFiles = <File>[];
+    final downloadedPhotoBytesByPhotoId = <int, Uint8List>{};
 
-    for (int chunkStart = 0; chunkStart < photos.length; chunkStart += parallelism) {
+    for (
+      int chunkStart = 0;
+      chunkStart < photos.length;
+      chunkStart += parallelism
+    ) {
       final chunkEnd = (chunkStart + parallelism).clamp(0, photos.length);
       final chunkPhotos = photos.sublist(chunkStart, chunkEnd);
-      final results = await Future.wait(chunkPhotos.map((photo) async {
-        try {
-          final bytes = await _fetchPhotoBytes(photo);
-          return (bytes, null);
-        } catch (e) {
-          errors.add('${photo.productName} #${photo.id}: fetch failed — $e');
-          return (Uint8List(0), e);
-        }
-      }));
+      final results = await Future.wait(
+        chunkPhotos.map((photo) async {
+          try {
+            final bytes = await _fetchPhotoBytes(photo);
+            return (bytes, null);
+          } catch (e) {
+            errors.add(
+              '${photo.productName} #${photo.id}: không thể lấy ảnh — $e',
+            );
+            return (Uint8List(0), e);
+          }
+        }),
+      );
 
       for (int i = 0; i < results.length; i++) {
         final (bytes, err) = results[i];
@@ -76,6 +89,7 @@ class BulkShareService {
           continue;
         }
         try {
+          downloadedPhotoBytesByPhotoId[photo.id] = bytes;
           final tempDir = await getTemporaryDirectory();
           final fileName = catalogPhotoFileName(
             productName: photo.productName,
@@ -97,6 +111,7 @@ class BulkShareService {
       return BulkShareResult(
         successCount: 0,
         failCount: failCount,
+        usedBrowserDownloadFallback: false,
         errors: errors,
       );
     }
@@ -105,8 +120,30 @@ class BulkShareService {
       await Share.shareXFiles(allShareFiles, text: 'Tiệm Bánh Ninh Diêm');
       successCount = allShareFiles.length;
     } catch (e) {
-      failCount += allShareFiles.length;
-      errors.add('Share sheet error: $e');
+      if (kIsWeb) {
+        usedBrowserDownloadFallback = true;
+        final fallbackService = BulkDownloadService(_dio);
+        final photosWithBytes = photos
+            .where(
+              (photo) => downloadedPhotoBytesByPhotoId.containsKey(photo.id),
+            )
+            .toList();
+        final fallback = await fallbackService.downloadFromBytes(
+          photosWithBytes,
+          downloadedPhotoBytesByPhotoId,
+        );
+        successCount = fallback.successCount;
+        failCount += fallback.failCount;
+        errors.addAll(fallback.errors);
+        if (fallback.errors.isEmpty) {
+          errors.add(
+            'Không thể chia sẻ qua trình duyệt; đã chuyển sang tải xuống.',
+          );
+        }
+      } else {
+        failCount += allShareFiles.length;
+        errors.add('Không thể chia sẻ qua trình duyệt: $e');
+      }
     } finally {
       for (final f in allWrittenFiles) {
         try {
@@ -118,12 +155,13 @@ class BulkShareService {
     return BulkShareResult(
       successCount: successCount,
       failCount: failCount,
+      usedBrowserDownloadFallback: usedBrowserDownloadFallback,
       errors: errors,
     );
   }
-
 }
 
 /// Provider family for BulkShareService.
-final bulkShareServiceProvider =
-    Provider.family<BulkShareService, Dio>((ref, dio) => BulkShareService(dio));
+final bulkShareServiceProvider = Provider.family<BulkShareService, Dio>(
+  (ref, dio) => BulkShareService(dio),
+);
