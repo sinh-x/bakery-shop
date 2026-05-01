@@ -159,27 +159,49 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return double.tryParse(value);
   }
 
-  bool _validatePriceChipRows() {
-    var isValid = true;
-    var changed = false;
-    for (final row in _priceChipRows) {
+  Map<int, _PriceChipValidationErrors> _validatePriceChipRows() {
+    final errors = <int, _PriceChipValidationErrors>{};
+
+    for (var index = 0; index < _priceChipRows.length; index++) {
+      final row = _priceChipRows[index];
       final label = row.labelController.text.trim();
       final priceText = row.priceController.text.trim();
       final parsedPrice = _parseChipPrice(priceText);
 
-      final labelError = label.isEmpty ? VN.priceChipLabelRequired : null;
-      final priceError = parsedPrice == null || parsedPrice < 0
-          ? VN.priceChipPriceInvalid
-          : null;
+      final rowErrors = _PriceChipValidationErrors(
+        labelError: label.isEmpty ? VN.priceChipLabelRequired : null,
+        priceError:
+            parsedPrice == null || parsedPrice < 0
+                ? VN.priceChipPriceInvalid
+                : null,
+      );
 
-      changed = row.clearErrors() || changed;
-      changed = row.updateErrors(labelError: labelError, priceError: priceError) ||
-          changed;
-      if (labelError != null || priceError != null) isValid = false;
+      if (rowErrors.hasError) {
+        errors[index] = rowErrors;
+      }
     }
 
+    final changed = _applyPriceChipRowErrors(errors);
     if (changed) setState(() {});
-    return isValid;
+    return errors;
+  }
+
+  bool _applyPriceChipRowErrors(
+    Map<int, _PriceChipValidationErrors> errors,
+  ) {
+    var changed = false;
+    for (var index = 0; index < _priceChipRows.length; index++) {
+      final row = _priceChipRows[index];
+      final rowErrors = errors[index] ?? const _PriceChipValidationErrors();
+      changed = row.clearErrors() || changed;
+      changed =
+          row.updateErrors(
+            labelError: rowErrors.labelError,
+            priceError: rowErrors.priceError,
+          ) ||
+          changed;
+    }
+    return changed;
   }
 
   bool _hasPriceChipChanges() {
@@ -417,7 +439,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (!_validatePriceChipRows()) return;
+    if (_validatePriceChipRows().isNotEmpty) return;
     setState(() => _saving = true);
 
     try {
@@ -897,6 +919,15 @@ class _PriceChipFormRow {
     labelController.dispose();
     priceController.dispose();
   }
+}
+
+class _PriceChipValidationErrors {
+  const _PriceChipValidationErrors({this.labelError, this.priceError});
+
+  final String? labelError;
+  final String? priceError;
+
+  bool get hasError => labelError != null || priceError != null;
 }
 
 class _PhotoSection extends StatelessWidget {

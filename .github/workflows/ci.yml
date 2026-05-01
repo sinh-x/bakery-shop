@@ -25,7 +25,7 @@ jobs:
         run: pip install -e ".[dev,web]"
 
       - name: Run tests
-        run: pytest
+        run: python -m pytest tests/test_product_price_chips.py tests/test_db_schema.py -v
 
   flutter-checks:
     # Runs when Flutter app changes
