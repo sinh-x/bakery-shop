@@ -19,6 +19,21 @@ class ProductCard extends StatelessWidget {
   final VoidCallback? onLongPress;
   final bool showPriceBadge;
 
+  String _displayPrice(Product product) {
+    if (product.priceChips.isEmpty) {
+      return formatVND(product.basePrice);
+    }
+
+    final chipMin = product.priceChips
+        .map((chip) => chip.price)
+        .reduce((a, b) => a < b ? a : b);
+    final hasPositiveBasePrice = product.basePrice > 0;
+    final minPrice =
+        hasPositiveBasePrice && product.basePrice < chipMin ? product.basePrice : chipMin;
+
+    return '${VN.priceFrom} ${formatVND(minPrice)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -86,7 +101,7 @@ class ProductCard extends StatelessWidget {
                     ),
                     if (!showPriceBadge)
                       Text(
-                        formatVND(product.basePrice),
+                        _displayPrice(product),
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: Colors.white70,
                         ),
@@ -107,7 +122,7 @@ class ProductCard extends StatelessWidget {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   color: theme.colorScheme.primaryContainer,
                   child: Text(
-                    formatVND(product.basePrice),
+                    _displayPrice(product),
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: theme.colorScheme.onPrimaryContainer,
