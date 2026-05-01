@@ -159,6 +159,34 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (widget.item.product.priceChips.isNotEmpty) ...[
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: widget.item.product.priceChips.map((chip) {
+                        final isSelected =
+                            widget.item.attributes['price_chip_label'] ==
+                                chip.label &&
+                            widget.item.customUnitPrice == chip.price;
+                        return ChoiceChip(
+                          label: Text(
+                            '${chip.label} · ${formatVND(chip.price)}',
+                          ),
+                          selected: isSelected,
+                          onSelected: (_) {
+                            setState(() {
+                              _priceCtrl.text = chip.price.toInt().toString();
+                              widget.item.customUnitPrice = chip.price;
+                              widget.item.attributes['price_chip_label'] =
+                                  chip.label;
+                            });
+                            widget.onStateChanged();
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   // Price
                   TextFormField(
                     controller: _priceCtrl,
@@ -173,6 +201,21 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       final price = double.tryParse(v.trim());
                       widget.item.customUnitPrice =
                           price ?? widget.item.product.basePrice;
+                      final selectedLabel = widget
+                          .item
+                          .attributes['price_chip_label']
+                          ?.toString();
+                      final matchesSelectedPreset =
+                          selectedLabel != null &&
+                          widget.item.product.priceChips.any(
+                            (chip) =>
+                                chip.label == selectedLabel &&
+                                chip.price == widget.item.customUnitPrice,
+                          );
+                      if (!matchesSelectedPreset) {
+                        widget.item.attributes.remove('price_chip_label');
+                      }
+                      setState(() {});
                       widget.onStateChanged();
                     },
                   ),
@@ -219,15 +262,18 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     const SizedBox(height: 8),
                   ],
                   // Rut tien checkbox (based on rut_tien attribute)
-                  if (widget.item.product.attributes['rut_tien']?.toString() == 'true') ...[
+                  if (widget.item.product.attributes['rut_tien']?.toString() ==
+                      'true') ...[
                     CheckboxListTile(
                       value: _rutTien,
                       onChanged: (v) {
                         setState(() => _rutTien = v ?? false);
                         if (_rutTien) {
                           widget.item.attributes['rut_tien'] = 'true';
-                          widget.item.attributes['cash_fee'] = _cashFeeCtrl.text;
-                          widget.item.attributes['cash_amount'] = _cashAmountCtrl.text;
+                          widget.item.attributes['cash_fee'] =
+                              _cashFeeCtrl.text;
+                          widget.item.attributes['cash_amount'] =
+                              _cashAmountCtrl.text;
                         } else {
                           widget.item.attributes.remove('rut_tien');
                           widget.item.attributes.remove('cash_fee');
@@ -248,28 +294,38 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                           Text('${VN.soTienRut}: '),
                           IconButton.filled(
                             onPressed: () {
-                              final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                              final current =
+                                  int.tryParse(_cashAmountCtrl.text) ?? 0;
                               if (current > _minCashAmount) {
                                 final next = current - _cashAmountStep;
-                                final clamped = next < _minCashAmount ? _minCashAmount : next;
+                                final clamped = next < _minCashAmount
+                                    ? _minCashAmount
+                                    : next;
                                 setState(() {
                                   _cashAmountCtrl.text = '$clamped';
                                   _editingCashAmount = false;
                                 });
-                                widget.item.attributes['cash_amount'] = '$clamped';
+                                widget.item.attributes['cash_amount'] =
+                                    '$clamped';
                                 widget.onStateChanged();
                               }
                             },
                             icon: const Icon(Icons.remove, size: 16),
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                             padding: EdgeInsets.zero,
                           ),
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setState(() => _editingCashAmount = true),
+                              onTap: () =>
+                                  setState(() => _editingCashAmount = true),
                               child: _editingCashAmount
                                   ? Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
                                       child: TextFormField(
                                         controller: _cashAmountCtrl,
                                         autofocus: true,
@@ -277,53 +333,87 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                                         decoration: const InputDecoration(
                                           isDense: true,
                                           suffixText: 'đ',
-                                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                          contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 8,
+                                          ),
                                         ),
                                         keyboardType: TextInputType.number,
                                         inputFormatters: [
-                                          FilteringTextInputFormatter.digitsOnly,
+                                          FilteringTextInputFormatter
+                                              .digitsOnly,
                                           LengthLimitingTextInputFormatter(9),
                                         ],
                                         onChanged: (v) {
-                                          widget.item.attributes['cash_amount'] = v;
+                                          widget
+                                                  .item
+                                                  .attributes['cash_amount'] =
+                                              v;
                                           widget.onStateChanged();
                                         },
                                         onEditingComplete: () {
                                           // Enforce minimum
-                                          final val = int.tryParse(_cashAmountCtrl.text) ?? 0;
-                                          if (val < _minCashAmount && val != 0) {
-                                            _cashAmountCtrl.text = '$_minCashAmount';
-                                            widget.item.attributes['cash_amount'] = '$_minCashAmount';
+                                          final val =
+                                              int.tryParse(
+                                                _cashAmountCtrl.text,
+                                              ) ??
+                                              0;
+                                          if (val < _minCashAmount &&
+                                              val != 0) {
+                                            _cashAmountCtrl.text =
+                                                '$_minCashAmount';
+                                            widget
+                                                    .item
+                                                    .attributes['cash_amount'] =
+                                                '$_minCashAmount';
                                             widget.onStateChanged();
                                           }
-                                          setState(() => _editingCashAmount = false);
+                                          setState(
+                                            () => _editingCashAmount = false,
+                                          );
                                         },
                                       ),
                                     )
                                   : Center(
                                       child: Text(
-                                        _cashAmountCtrl.text.isEmpty || _cashAmountCtrl.text == '0'
+                                        _cashAmountCtrl.text.isEmpty ||
+                                                _cashAmountCtrl.text == '0'
                                             ? '0đ'
-                                            : formatVND((int.tryParse(_cashAmountCtrl.text) ?? 0).toDouble()),
-                                        style: Theme.of(context).textTheme.titleMedium,
+                                            : formatVND(
+                                                (int.tryParse(
+                                                          _cashAmountCtrl.text,
+                                                        ) ??
+                                                        0)
+                                                    .toDouble(),
+                                              ),
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleMedium,
                                       ),
                                     ),
                             ),
                           ),
                           IconButton.filled(
                             onPressed: () {
-                              final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                              final current =
+                                  int.tryParse(_cashAmountCtrl.text) ?? 0;
                               final next = current + _cashAmountStep;
-                              final clamped = next < _minCashAmount ? _minCashAmount : next;
+                              final clamped = next < _minCashAmount
+                                  ? _minCashAmount
+                                  : next;
                               setState(() {
                                 _cashAmountCtrl.text = '$clamped';
                                 _editingCashAmount = false;
                               });
-                              widget.item.attributes['cash_amount'] = '$clamped';
+                              widget.item.attributes['cash_amount'] =
+                                  '$clamped';
                               widget.onStateChanged();
                             },
                             icon: const Icon(Icons.add, size: 16),
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                             padding: EdgeInsets.zero,
                           ),
                         ],
@@ -335,7 +425,8 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                           Text('${VN.phiRutTien}: '),
                           IconButton.filled(
                             onPressed: () {
-                              final current = int.tryParse(_cashFeeCtrl.text) ?? 0;
+                              final current =
+                                  int.tryParse(_cashFeeCtrl.text) ?? 0;
                               if (current >= _cashFeeStep) {
                                 final next = current - _cashFeeStep;
                                 setState(() => _cashFeeCtrl.text = '$next');
@@ -344,28 +435,42 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                               }
                             },
                             icon: const Icon(Icons.remove, size: 16),
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                             padding: EdgeInsets.zero,
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             child: Text(
-                              (int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee) == 0
+                              (int.tryParse(_cashFeeCtrl.text) ??
+                                          _defaultCashFee) ==
+                                      0
                                   ? 'Miễn phí'
-                                  : formatVND((int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee).toDouble()),
+                                  : formatVND(
+                                      (int.tryParse(_cashFeeCtrl.text) ??
+                                              _defaultCashFee)
+                                          .toDouble(),
+                                    ),
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                           ),
                           IconButton.filled(
                             onPressed: () {
-                              final current = int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee;
+                              final current =
+                                  int.tryParse(_cashFeeCtrl.text) ??
+                                  _defaultCashFee;
                               final next = current + _cashFeeStep;
                               setState(() => _cashFeeCtrl.text = '$next');
                               widget.item.attributes['cash_fee'] = '$next';
                               widget.onStateChanged();
                             },
                             icon: const Icon(Icons.add, size: 16),
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                             padding: EdgeInsets.zero,
                           ),
                         ],
