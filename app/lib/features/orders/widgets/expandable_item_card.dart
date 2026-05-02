@@ -223,6 +223,43 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     onChanged: _updateManualPrice,
                   ),
                   const SizedBox(height: 8),
+                  // Enum attribute chip rows (DG-092 §8.4)
+                  for (final ea in widget.item.product.enumAttributes)
+                    if (ea.options.any((o) => o.active == 1)) ...[
+                      Text(
+                        ea.labelVi,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.outline,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: ea.options
+                            .where((o) => o.active == 1)
+                            .map((opt) {
+                              final isSelected =
+                                  widget.item.attributes[ea.attributeType] ==
+                                  opt.valueVi;
+                              return ChoiceChip(
+                                label: Text(opt.valueVi),
+                                selected: isSelected,
+                                onSelected: (selected) {
+                                  if (selected) {
+                                    setState(() {
+                                      widget.item.attributes[ea.attributeType] =
+                                          opt.valueVi;
+                                    });
+                                    widget.onStateChanged();
+                                  }
+                                },
+                              );
+                            })
+                            .toList(),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                   // Notes
                   TextFormField(
                     controller: _notesCtrl,
