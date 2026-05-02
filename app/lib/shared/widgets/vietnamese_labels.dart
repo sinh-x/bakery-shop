@@ -161,6 +161,18 @@ class VN {
   static const priceChipPrice = 'Giá';
   static const priceChipLabelRequired = 'Nhãn bắt buộc';
   static const priceChipPriceInvalid = 'Giá không hợp lệ';
+
+  // Enum attribute options editor (DG-092 Phase 4.5)
+  static const enumOptionsSection = 'Tùy chọn thuộc tính';
+  static const enumOptionsHintAttributeWide =
+      'Áp dụng cho tất cả sản phẩm dùng thuộc tính này';
+  static const addEnumOption = 'Thêm tùy chọn';
+  static const enumOptionValueLabel = 'Giá trị';
+  static const enumOptionValueRequired = 'Giá trị không được để trống';
+  static const enumOptionDefaultLabel = 'Mặc định';
+  static const enumOptionDefaultRequired = 'Phải chọn một giá trị mặc định';
+  static const enumOptionRestore = 'Khôi phục';
+  static const enumOptionRemoved = 'Đã đánh dấu xoá';
   static const priceFrom = 'từ';
   static const productPhoto = 'Ảnh sản phẩm';
   static const choosePhoto = 'Chọn ảnh';

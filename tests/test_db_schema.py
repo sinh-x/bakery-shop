@@ -82,7 +82,7 @@ def _migrated_version(conn) -> int:
 
 def test_schema_migration_v30_fresh_db():
     with get_db() as conn:
-        ensure_schema(conn)
+        _migrate_to_version(conn, 30)
         assert _migrated_version(conn) == 30
         _assert_product_price_chips_schema(conn)
 
@@ -92,7 +92,7 @@ def test_schema_migration_v29_to_v30():
         _migrate_to_version(conn, 29)
         assert _migrated_version(conn) == 29
 
-        ensure_schema(conn)
+        _migrate_to_version(conn, 30)
         assert _migrated_version(conn) == 30
         _assert_product_price_chips_schema(conn)
 
@@ -100,9 +100,113 @@ def test_schema_migration_v29_to_v30():
 def test_schema_migration_v30_idempotent():
     with get_db() as conn:
         _migrate_to_version(conn, 29)
+        _migrate_to_version(conn, 30)
+        assert _migrated_version(conn) == 30
+
+        _migrate_to_version(conn, 30)
+        assert _migrated_version(conn) == 30
+        _assert_product_price_chips_schema(conn)
+
+
+def _assert_product_attribute_options_schema(conn) -> None:
+    columns = _schema_columns(conn, "product_attribute_options")
+    assert set(columns) >= {
+        "id",
+        "attribute_id",
+        "value_vi",
+        "sort_order",
+        "active",
+    }
+    for name in ["attribute_id", "value_vi", "sort_order", "active"]:
+        assert columns[name]["notnull"] == 1
+
+    fk_rows = conn.execute(
+        "PRAGMA foreign_key_list(product_attribute_options)"
+    ).fetchall()
+    assert len(fk_rows) == 1
+    fk = fk_rows[0]
+    assert fk["table"] == "product_attributes"
+    assert fk["from"] == "attribute_id"
+    assert fk["to"] == "id"
+    assert fk["on_delete"] == "CASCADE"
+
+    index_rows = conn.execute(
+        "PRAGMA index_list(product_attribute_options)"
+    ).fetchall()
+    index_names = [row["name"] for row in index_rows]
+    assert "idx_attr_options_attr" in index_names
+
+
+def _assert_nhan_banh_seed(conn) -> None:
+    attr_row = conn.execute(
+        "SELECT id, label_vi, value_type, applicable_categories, default_value, active "
+        "FROM product_attributes WHERE attribute_type = 'nhan_banh'"
+    ).fetchone()
+    assert attr_row is not None
+    assert attr_row["label_vi"] == "Nhân bánh"
+    assert attr_row["value_type"] == "enum"
+    assert attr_row["applicable_categories"] == '["banh_kem"]'
+    assert attr_row["active"] == 1
+    assert attr_row["default_value"] != ""
+
+    options = conn.execute(
+        "SELECT id, value_vi, sort_order, active "
+        "FROM product_attribute_options WHERE attribute_id = ? "
+        "ORDER BY sort_order",
+        (attr_row["id"],),
+    ).fetchall()
+    assert len(options) == 5
+    assert all(opt["active"] == 1 for opt in options)
+    assert [opt["value_vi"] for opt in options] == [
+        "Sầu riêng",
+        "Sô-cô-la",
+        "Việt quất",
+        "Chanh dây",
+        "Dâu",
+    ]
+
+    default_id = int(attr_row["default_value"])
+    default_match = next(opt for opt in options if opt["id"] == default_id)
+    assert default_match["value_vi"] == "Sầu riêng"
+
+
+def test_schema_migration_v31_fresh_db():
+    with get_db() as conn:
         ensure_schema(conn)
+        assert _migrated_version(conn) == 31
+        _assert_product_attribute_options_schema(conn)
+        _assert_nhan_banh_seed(conn)
+
+
+def test_schema_migration_v30_to_v31():
+    with get_db() as conn:
+        _migrate_to_version(conn, 30)
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 30
-        _assert_product_price_chips_schema(conn)
+        assert _migrated_version(conn) == 31
+        _assert_product_attribute_options_schema(conn)
+        _assert_nhan_banh_seed(conn)
+
+
+def test_schema_migration_v31_idempotent():
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 31
+
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 31
+
+        attr_count = conn.execute(
+            "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
+        ).fetchone()[0]
+        assert attr_count == 1
+
+        attr_id = conn.execute(
+            "SELECT id FROM product_attributes WHERE attribute_type = 'nhan_banh'"
+        ).fetchone()[0]
+        opt_count = conn.execute(
+            "SELECT COUNT(*) FROM product_attribute_options WHERE attribute_id = ?",
+            (attr_id,),
+        ).fetchone()[0]
+        assert opt_count == 5

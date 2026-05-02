@@ -6,9 +6,11 @@ import 'package:intl/intl.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/order.dart';
+import '../../data/models/product.dart';
 import '../../data/models/work_item.dart';
 import '../../providers/config_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../providers/products_provider.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/hour_picker.dart';
@@ -692,6 +694,66 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
     }
   }
 
+  Product? _findProduct() {
+    final products = ref.watch(productsProvider).asData?.value ?? const <Product>[];
+    final pid = widget.item.productId;
+    if (pid.isEmpty) return null;
+    for (final p in products) {
+      if (p.id.toString() == pid || p.productCode == pid) return p;
+    }
+    return null;
+  }
+
+  /// DG-092 §6 F7 / Q1: render one ChoiceChip row per enum attribute
+  /// applicable to this product. Tap-to-change persists by sending the
+  /// merged `attributes` map through the existing PATCH endpoint —
+  /// `attributes` is replaced wholesale server-side, so we always send
+  /// a copy of the current map with the updated key.
+  List<Widget> _buildEnumChipSections(ThemeData theme) {
+    final product = _findProduct();
+    if (product == null) return const [];
+    final result = <Widget>[];
+    for (final ea in product.enumAttributes) {
+      final activeOptions =
+          ea.options.where((o) => o.active == 1).toList(growable: false);
+      if (activeOptions.isEmpty) continue;
+      final selected = widget.item.attributes[ea.attributeType]?.toString();
+      result.add(
+        Text(
+          ea.labelVi,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.outline,
+          ),
+        ),
+      );
+      result.add(const SizedBox(height: 4));
+      result.add(
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: activeOptions
+              .map(
+                (opt) => ChoiceChip(
+                  label: Text(opt.valueVi),
+                  selected: selected == opt.valueVi,
+                  onSelected: (isSelected) {
+                    if (!isSelected) return;
+                    final next = Map<String, dynamic>.from(
+                      widget.item.attributes,
+                    );
+                    next[ea.attributeType] = opt.valueVi;
+                    _editItem(attributes: next);
+                  },
+                ),
+              )
+              .toList(),
+        ),
+      );
+      result.add(const SizedBox(height: 8));
+    }
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -828,6 +890,8 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                     keyboardType: TextInputType.number,
                   ),
                   const SizedBox(height: 8),
+                  // Enum attribute ChoiceChip rows (DG-092 F7 / Q1 — editable on edit)
+                  ..._buildEnumChipSections(theme),
                   // Notes
                   TextFormField(
                     controller: _notesCtrl,

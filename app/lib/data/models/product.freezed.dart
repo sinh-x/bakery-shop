@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$Product {
 
- int get id; String get name; String get category;@JsonKey(name: 'base_price') double get basePrice; double get cost;@JsonKey(name: 'recipe_notes') String get recipeNotes; int get active;@JsonKey(name: 'photo_path') String get photoPath;@JsonKey(name: 'product_code') String get productCode;@JsonKey(name: 'price_chips') List<PriceChip> get priceChips; Map<String, String> get attributes;@JsonKey(name: 'stock_qty') int? get stockQty;
+ int get id; String get name; String get category;@JsonKey(name: 'base_price') double get basePrice; double get cost;@JsonKey(name: 'recipe_notes') String get recipeNotes; int get active;@JsonKey(name: 'photo_path') String get photoPath;@JsonKey(name: 'product_code') String get productCode;@JsonKey(name: 'price_chips') List<PriceChip> get priceChips; Map<String, String> get attributes;@JsonKey(name: 'enum_attributes') List<EnumAttribute> get enumAttributes;@JsonKey(name: 'stock_qty') int? get stockQty;
 /// Create a copy of Product
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $ProductCopyWith<Product> get copyWith => _$ProductCopyWithImpl<Product>(this as
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Product&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.category, category) || other.category == category)&&(identical(other.basePrice, basePrice) || other.basePrice == basePrice)&&(identical(other.cost, cost) || other.cost == cost)&&(identical(other.recipeNotes, recipeNotes) || other.recipeNotes == recipeNotes)&&(identical(other.active, active) || other.active == active)&&(identical(other.photoPath, photoPath) || other.photoPath == photoPath)&&(identical(other.productCode, productCode) || other.productCode == productCode)&&const DeepCollectionEquality().equals(other.priceChips, priceChips)&&const DeepCollectionEquality().equals(other.attributes, attributes)&&(identical(other.stockQty, stockQty) || other.stockQty == stockQty));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Product&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.category, category) || other.category == category)&&(identical(other.basePrice, basePrice) || other.basePrice == basePrice)&&(identical(other.cost, cost) || other.cost == cost)&&(identical(other.recipeNotes, recipeNotes) || other.recipeNotes == recipeNotes)&&(identical(other.active, active) || other.active == active)&&(identical(other.photoPath, photoPath) || other.photoPath == photoPath)&&(identical(other.productCode, productCode) || other.productCode == productCode)&&const DeepCollectionEquality().equals(other.priceChips, priceChips)&&const DeepCollectionEquality().equals(other.attributes, attributes)&&const DeepCollectionEquality().equals(other.enumAttributes, enumAttributes)&&(identical(other.stockQty, stockQty) || other.stockQty == stockQty));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,category,basePrice,cost,recipeNotes,active,photoPath,productCode,const DeepCollectionEquality().hash(priceChips),const DeepCollectionEquality().hash(attributes),stockQty);
+int get hashCode => Object.hash(runtimeType,id,name,category,basePrice,cost,recipeNotes,active,photoPath,productCode,const DeepCollectionEquality().hash(priceChips),const DeepCollectionEquality().hash(attributes),const DeepCollectionEquality().hash(enumAttributes),stockQty);
 
 @override
 String toString() {
-  return 'Product(id: $id, name: $name, category: $category, basePrice: $basePrice, cost: $cost, recipeNotes: $recipeNotes, active: $active, photoPath: $photoPath, productCode: $productCode, priceChips: $priceChips, attributes: $attributes, stockQty: $stockQty)';
+  return 'Product(id: $id, name: $name, category: $category, basePrice: $basePrice, cost: $cost, recipeNotes: $recipeNotes, active: $active, photoPath: $photoPath, productCode: $productCode, priceChips: $priceChips, attributes: $attributes, enumAttributes: $enumAttributes, stockQty: $stockQty)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $ProductCopyWith<$Res>  {
   factory $ProductCopyWith(Product value, $Res Function(Product) _then) = _$ProductCopyWithImpl;
 @useResult
 $Res call({
- int id, String name, String category,@JsonKey(name: 'base_price') double basePrice, double cost,@JsonKey(name: 'recipe_notes') String recipeNotes, int active,@JsonKey(name: 'photo_path') String photoPath,@JsonKey(name: 'product_code') String productCode,@JsonKey(name: 'price_chips') List<PriceChip> priceChips, Map<String, String> attributes,@JsonKey(name: 'stock_qty') int? stockQty
+ int id, String name, String category,@JsonKey(name: 'base_price') double basePrice, double cost,@JsonKey(name: 'recipe_notes') String recipeNotes, int active,@JsonKey(name: 'photo_path') String photoPath,@JsonKey(name: 'product_code') String productCode,@JsonKey(name: 'price_chips') List<PriceChip> priceChips, Map<String, String> attributes,@JsonKey(name: 'enum_attributes') List<EnumAttribute> enumAttributes,@JsonKey(name: 'stock_qty') int? stockQty
 });
 
 
@@ -65,7 +65,7 @@ class _$ProductCopyWithImpl<$Res>
 
 /// Create a copy of Product
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? category = null,Object? basePrice = null,Object? cost = null,Object? recipeNotes = null,Object? active = null,Object? photoPath = null,Object? productCode = null,Object? priceChips = null,Object? attributes = null,Object? stockQty = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? category = null,Object? basePrice = null,Object? cost = null,Object? recipeNotes = null,Object? active = null,Object? photoPath = null,Object? productCode = null,Object? priceChips = null,Object? attributes = null,Object? enumAttributes = null,Object? stockQty = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -78,7 +78,8 @@ as int,photoPath: null == photoPath ? _self.photoPath : photoPath // ignore: cas
 as String,productCode: null == productCode ? _self.productCode : productCode // ignore: cast_nullable_to_non_nullable
 as String,priceChips: null == priceChips ? _self.priceChips : priceChips // ignore: cast_nullable_to_non_nullable
 as List<PriceChip>,attributes: null == attributes ? _self.attributes : attributes // ignore: cast_nullable_to_non_nullable
-as Map<String, String>,stockQty: freezed == stockQty ? _self.stockQty : stockQty // ignore: cast_nullable_to_non_nullable
+as Map<String, String>,enumAttributes: null == enumAttributes ? _self.enumAttributes : enumAttributes // ignore: cast_nullable_to_non_nullable
+as List<EnumAttribute>,stockQty: freezed == stockQty ? _self.stockQty : stockQty // ignore: cast_nullable_to_non_nullable
 as int?,
   ));
 }
@@ -161,10 +162,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id,  String name,  String category, @JsonKey(name: 'base_price')  double basePrice,  double cost, @JsonKey(name: 'recipe_notes')  String recipeNotes,  int active, @JsonKey(name: 'photo_path')  String photoPath, @JsonKey(name: 'product_code')  String productCode, @JsonKey(name: 'price_chips')  List<PriceChip> priceChips,  Map<String, String> attributes, @JsonKey(name: 'stock_qty')  int? stockQty)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id,  String name,  String category, @JsonKey(name: 'base_price')  double basePrice,  double cost, @JsonKey(name: 'recipe_notes')  String recipeNotes,  int active, @JsonKey(name: 'photo_path')  String photoPath, @JsonKey(name: 'product_code')  String productCode, @JsonKey(name: 'price_chips')  List<PriceChip> priceChips,  Map<String, String> attributes, @JsonKey(name: 'enum_attributes')  List<EnumAttribute> enumAttributes, @JsonKey(name: 'stock_qty')  int? stockQty)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Product() when $default != null:
-return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_that.recipeNotes,_that.active,_that.photoPath,_that.productCode,_that.priceChips,_that.attributes,_that.stockQty);case _:
+return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_that.recipeNotes,_that.active,_that.photoPath,_that.productCode,_that.priceChips,_that.attributes,_that.enumAttributes,_that.stockQty);case _:
   return orElse();
 
 }
@@ -182,10 +183,10 @@ return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id,  String name,  String category, @JsonKey(name: 'base_price')  double basePrice,  double cost, @JsonKey(name: 'recipe_notes')  String recipeNotes,  int active, @JsonKey(name: 'photo_path')  String photoPath, @JsonKey(name: 'product_code')  String productCode, @JsonKey(name: 'price_chips')  List<PriceChip> priceChips,  Map<String, String> attributes, @JsonKey(name: 'stock_qty')  int? stockQty)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id,  String name,  String category, @JsonKey(name: 'base_price')  double basePrice,  double cost, @JsonKey(name: 'recipe_notes')  String recipeNotes,  int active, @JsonKey(name: 'photo_path')  String photoPath, @JsonKey(name: 'product_code')  String productCode, @JsonKey(name: 'price_chips')  List<PriceChip> priceChips,  Map<String, String> attributes, @JsonKey(name: 'enum_attributes')  List<EnumAttribute> enumAttributes, @JsonKey(name: 'stock_qty')  int? stockQty)  $default,) {final _that = this;
 switch (_that) {
 case _Product():
-return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_that.recipeNotes,_that.active,_that.photoPath,_that.productCode,_that.priceChips,_that.attributes,_that.stockQty);}
+return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_that.recipeNotes,_that.active,_that.photoPath,_that.productCode,_that.priceChips,_that.attributes,_that.enumAttributes,_that.stockQty);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -199,10 +200,10 @@ return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id,  String name,  String category, @JsonKey(name: 'base_price')  double basePrice,  double cost, @JsonKey(name: 'recipe_notes')  String recipeNotes,  int active, @JsonKey(name: 'photo_path')  String photoPath, @JsonKey(name: 'product_code')  String productCode, @JsonKey(name: 'price_chips')  List<PriceChip> priceChips,  Map<String, String> attributes, @JsonKey(name: 'stock_qty')  int? stockQty)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id,  String name,  String category, @JsonKey(name: 'base_price')  double basePrice,  double cost, @JsonKey(name: 'recipe_notes')  String recipeNotes,  int active, @JsonKey(name: 'photo_path')  String photoPath, @JsonKey(name: 'product_code')  String productCode, @JsonKey(name: 'price_chips')  List<PriceChip> priceChips,  Map<String, String> attributes, @JsonKey(name: 'enum_attributes')  List<EnumAttribute> enumAttributes, @JsonKey(name: 'stock_qty')  int? stockQty)?  $default,) {final _that = this;
 switch (_that) {
 case _Product() when $default != null:
-return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_that.recipeNotes,_that.active,_that.photoPath,_that.productCode,_that.priceChips,_that.attributes,_that.stockQty);case _:
+return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_that.recipeNotes,_that.active,_that.photoPath,_that.productCode,_that.priceChips,_that.attributes,_that.enumAttributes,_that.stockQty);case _:
   return null;
 
 }
@@ -214,7 +215,7 @@ return $default(_that.id,_that.name,_that.category,_that.basePrice,_that.cost,_t
 @JsonSerializable()
 
 class _Product implements Product {
-  const _Product({required this.id, required this.name, this.category = 'bread', @JsonKey(name: 'base_price') this.basePrice = 0, this.cost = 0, @JsonKey(name: 'recipe_notes') this.recipeNotes = '', this.active = 1, @JsonKey(name: 'photo_path') this.photoPath = '', @JsonKey(name: 'product_code') this.productCode = '', @JsonKey(name: 'price_chips') final  List<PriceChip> priceChips = const [], final  Map<String, String> attributes = const {}, @JsonKey(name: 'stock_qty') this.stockQty}): _priceChips = priceChips,_attributes = attributes;
+  const _Product({required this.id, required this.name, this.category = 'bread', @JsonKey(name: 'base_price') this.basePrice = 0, this.cost = 0, @JsonKey(name: 'recipe_notes') this.recipeNotes = '', this.active = 1, @JsonKey(name: 'photo_path') this.photoPath = '', @JsonKey(name: 'product_code') this.productCode = '', @JsonKey(name: 'price_chips') final  List<PriceChip> priceChips = const [], final  Map<String, String> attributes = const {}, @JsonKey(name: 'enum_attributes') final  List<EnumAttribute> enumAttributes = const [], @JsonKey(name: 'stock_qty') this.stockQty}): _priceChips = priceChips,_attributes = attributes,_enumAttributes = enumAttributes;
   factory _Product.fromJson(Map<String, dynamic> json) => _$ProductFromJson(json);
 
 @override final  int id;
@@ -240,6 +241,13 @@ class _Product implements Product {
   return EqualUnmodifiableMapView(_attributes);
 }
 
+ final  List<EnumAttribute> _enumAttributes;
+@override@JsonKey(name: 'enum_attributes') List<EnumAttribute> get enumAttributes {
+  if (_enumAttributes is EqualUnmodifiableListView) return _enumAttributes;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_enumAttributes);
+}
+
 @override@JsonKey(name: 'stock_qty') final  int? stockQty;
 
 /// Create a copy of Product
@@ -255,16 +263,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Product&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.category, category) || other.category == category)&&(identical(other.basePrice, basePrice) || other.basePrice == basePrice)&&(identical(other.cost, cost) || other.cost == cost)&&(identical(other.recipeNotes, recipeNotes) || other.recipeNotes == recipeNotes)&&(identical(other.active, active) || other.active == active)&&(identical(other.photoPath, photoPath) || other.photoPath == photoPath)&&(identical(other.productCode, productCode) || other.productCode == productCode)&&const DeepCollectionEquality().equals(other._priceChips, _priceChips)&&const DeepCollectionEquality().equals(other._attributes, _attributes)&&(identical(other.stockQty, stockQty) || other.stockQty == stockQty));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Product&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.category, category) || other.category == category)&&(identical(other.basePrice, basePrice) || other.basePrice == basePrice)&&(identical(other.cost, cost) || other.cost == cost)&&(identical(other.recipeNotes, recipeNotes) || other.recipeNotes == recipeNotes)&&(identical(other.active, active) || other.active == active)&&(identical(other.photoPath, photoPath) || other.photoPath == photoPath)&&(identical(other.productCode, productCode) || other.productCode == productCode)&&const DeepCollectionEquality().equals(other._priceChips, _priceChips)&&const DeepCollectionEquality().equals(other._attributes, _attributes)&&const DeepCollectionEquality().equals(other._enumAttributes, _enumAttributes)&&(identical(other.stockQty, stockQty) || other.stockQty == stockQty));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,category,basePrice,cost,recipeNotes,active,photoPath,productCode,const DeepCollectionEquality().hash(_priceChips),const DeepCollectionEquality().hash(_attributes),stockQty);
+int get hashCode => Object.hash(runtimeType,id,name,category,basePrice,cost,recipeNotes,active,photoPath,productCode,const DeepCollectionEquality().hash(_priceChips),const DeepCollectionEquality().hash(_attributes),const DeepCollectionEquality().hash(_enumAttributes),stockQty);
 
 @override
 String toString() {
-  return 'Product(id: $id, name: $name, category: $category, basePrice: $basePrice, cost: $cost, recipeNotes: $recipeNotes, active: $active, photoPath: $photoPath, productCode: $productCode, priceChips: $priceChips, attributes: $attributes, stockQty: $stockQty)';
+  return 'Product(id: $id, name: $name, category: $category, basePrice: $basePrice, cost: $cost, recipeNotes: $recipeNotes, active: $active, photoPath: $photoPath, productCode: $productCode, priceChips: $priceChips, attributes: $attributes, enumAttributes: $enumAttributes, stockQty: $stockQty)';
 }
 
 
@@ -275,7 +283,7 @@ abstract mixin class _$ProductCopyWith<$Res> implements $ProductCopyWith<$Res> {
   factory _$ProductCopyWith(_Product value, $Res Function(_Product) _then) = __$ProductCopyWithImpl;
 @override @useResult
 $Res call({
- int id, String name, String category,@JsonKey(name: 'base_price') double basePrice, double cost,@JsonKey(name: 'recipe_notes') String recipeNotes, int active,@JsonKey(name: 'photo_path') String photoPath,@JsonKey(name: 'product_code') String productCode,@JsonKey(name: 'price_chips') List<PriceChip> priceChips, Map<String, String> attributes,@JsonKey(name: 'stock_qty') int? stockQty
+ int id, String name, String category,@JsonKey(name: 'base_price') double basePrice, double cost,@JsonKey(name: 'recipe_notes') String recipeNotes, int active,@JsonKey(name: 'photo_path') String photoPath,@JsonKey(name: 'product_code') String productCode,@JsonKey(name: 'price_chips') List<PriceChip> priceChips, Map<String, String> attributes,@JsonKey(name: 'enum_attributes') List<EnumAttribute> enumAttributes,@JsonKey(name: 'stock_qty') int? stockQty
 });
 
 
@@ -292,7 +300,7 @@ class __$ProductCopyWithImpl<$Res>
 
 /// Create a copy of Product
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? category = null,Object? basePrice = null,Object? cost = null,Object? recipeNotes = null,Object? active = null,Object? photoPath = null,Object? productCode = null,Object? priceChips = null,Object? attributes = null,Object? stockQty = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? category = null,Object? basePrice = null,Object? cost = null,Object? recipeNotes = null,Object? active = null,Object? photoPath = null,Object? productCode = null,Object? priceChips = null,Object? attributes = null,Object? enumAttributes = null,Object? stockQty = freezed,}) {
   return _then(_Product(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -305,7 +313,8 @@ as int,photoPath: null == photoPath ? _self.photoPath : photoPath // ignore: cas
 as String,productCode: null == productCode ? _self.productCode : productCode // ignore: cast_nullable_to_non_nullable
 as String,priceChips: null == priceChips ? _self._priceChips : priceChips // ignore: cast_nullable_to_non_nullable
 as List<PriceChip>,attributes: null == attributes ? _self._attributes : attributes // ignore: cast_nullable_to_non_nullable
-as Map<String, String>,stockQty: freezed == stockQty ? _self.stockQty : stockQty // ignore: cast_nullable_to_non_nullable
+as Map<String, String>,enumAttributes: null == enumAttributes ? _self._enumAttributes : enumAttributes // ignore: cast_nullable_to_non_nullable
+as List<EnumAttribute>,stockQty: freezed == stockQty ? _self.stockQty : stockQty // ignore: cast_nullable_to_non_nullable
 as int?,
   ));
 }

@@ -864,6 +864,71 @@ CREATE INDEX IF NOT EXISTS idx_product_price_chips_product ON product_price_chip
 """
 
 
+PRODUCT_ATTRIBUTE_OPTIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS product_attribute_options (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    attribute_id   INTEGER NOT NULL
+                   REFERENCES product_attributes(id) ON DELETE CASCADE,
+    value_vi       TEXT NOT NULL,
+    sort_order     INTEGER NOT NULL DEFAULT 0,
+    active         INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_attr_options_attr ON product_attribute_options(attribute_id);
+"""
+
+
+SEED_NHAN_BANH_OPTIONS = [
+    # (value_vi, sort_order)
+    ("Sầu riêng", 1),
+    ("Sô-cô-la", 2),
+    ("Việt quất", 3),
+    ("Chanh dây", 4),
+    ("Dâu", 5),
+]
+
+
+def _migrate_v31_enum_attributes(conn):
+    """Seed nhan_banh enum attribute and its 5 options for banh_kem category."""
+    conn.execute(
+        """INSERT OR IGNORE INTO product_attributes
+           (attribute_type, label_vi, value_type, applicable_categories,
+            default_value, sort_order, active)
+           VALUES ('nhan_banh', 'Nhân bánh', 'enum', '["banh_kem"]', '', 10, 1)""",
+    )
+    row = conn.execute(
+        "SELECT id FROM product_attributes WHERE attribute_type = 'nhan_banh'"
+    ).fetchone()
+    if row is None:
+        return
+    attribute_id = row[0]
+
+    for value_vi, sort_order in SEED_NHAN_BANH_OPTIONS:
+        existing = conn.execute(
+            "SELECT id FROM product_attribute_options "
+            "WHERE attribute_id = ? AND value_vi = ?",
+            (attribute_id, value_vi),
+        ).fetchone()
+        if existing is None:
+            conn.execute(
+                """INSERT INTO product_attribute_options
+                   (attribute_id, value_vi, sort_order, active)
+                   VALUES (?, ?, ?, 1)""",
+                (attribute_id, value_vi, sort_order),
+            )
+
+    default_row = conn.execute(
+        "SELECT id FROM product_attribute_options "
+        "WHERE attribute_id = ? AND value_vi = 'Sầu riêng'",
+        (attribute_id,),
+    ).fetchone()
+    if default_row is not None:
+        conn.execute(
+            "UPDATE product_attributes SET default_value = ? WHERE id = ?",
+            (str(default_row[0]), attribute_id),
+        )
+
+
 def _migrate_v26_trung_bay_and_stock(conn):
     """Seed trung_bay and tang_kem attribute types; enable tang_kem for existing banh_kem products."""
     conn.execute(
@@ -1022,6 +1087,11 @@ MIGRATIONS = {
     30: {
         "description": "Add product price chips table for preset pricing",
         "sql": PRODUCT_PRICE_CHIPS_SCHEMA,
+    },
+    31: {
+        "description": "Enum product attributes: product_attribute_options table; seed nhan_banh attribute with 5 fillings for banh_kem (Sầu riêng default)",
+        "sql": PRODUCT_ATTRIBUTE_OPTIONS_SCHEMA,
+        "callable": _migrate_v31_enum_attributes,
     },
 }
 

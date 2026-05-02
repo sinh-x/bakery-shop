@@ -8,14 +8,18 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/api/api_client.dart';
 import '../../data/api/order_service.dart';
 import '../../data/api/receipt_service.dart';
+import '../../data/models/enum_attribute.dart';
 import '../../data/models/order.dart';
 import '../../data/models/order_photo.dart';
 import '../../data/models/payment_transaction.dart';
+import '../../data/models/product.dart';
 import '../../data/models/work_item.dart';
 import '../../providers/order_providers.dart';
+import '../../providers/products_provider.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+import 'widgets/enum_attribute_display.dart';
 import 'widgets/order_photo_section.dart';
 
 const _workItemStatusColors = {
@@ -48,6 +52,7 @@ const _workItemStatusRank = {
 
 bool _isBackward(String current, String target, Map<String, int> ranks) =>
     (ranks[target] ?? 0) < (ranks[current] ?? 0);
+
 
 /// Shows a reason dialog for a status transition.
 /// Returns the trimmed reason string, or null if cancelled.
@@ -432,6 +437,19 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     );
   }
 
+  // Cached product list for enum-attribute label lookups during this build.
+  List<Product> _products = const [];
+
+  List<EnumAttribute> _enumAttributesFor(String productId) {
+    if (productId.isEmpty || _products.isEmpty) return const [];
+    for (final p in _products) {
+      if (p.id.toString() == productId || p.productCode == productId) {
+        return p.enumAttributes;
+      }
+    }
+    return const [];
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -445,6 +463,8 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         .map((e) => e.key)
         .toList();
     final transitions = [...forwardTransitions, ...backwardTransitions];
+
+    _products = ref.watch(productsProvider).asData?.value ?? const [];
 
     final txnsAsync =
         ref.watch(orderPaymentTransactionsProvider(order.orderRef));
@@ -622,6 +642,12 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                           color: theme.colorScheme.outline,
                         ),
                       ),
+                      // Enum attribute display (DG-092 F7 / AC-6)
+                      ...buildEnumAttributeLines(
+                        context,
+                        item.attributes,
+                        _enumAttributesFor(item.productId),
+                      ),
                       // Cash info (F27)
                       if (item.attributes['cash_amount'] != null && item.attributes['cash_amount'].toString().isNotEmpty && item.attributes['cash_amount'].toString() != '0') ...[
                         const SizedBox(height: 2),
@@ -674,6 +700,11 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.outline,
                           ),
+                        ),
+                        ...buildEnumAttributeLines(
+                          context,
+                          item.attributes,
+                          _enumAttributesFor(item.productId),
                         ),
                       ],
                     ),

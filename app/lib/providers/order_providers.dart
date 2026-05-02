@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart' show XFile;
 import '../data/api/order_service.dart';
 import '../data/api/payment_transaction_service.dart';
 import '../data/api/work_item_service.dart';
+import '../data/models/enum_attribute.dart';
 import '../data/models/order.dart';
 import '../data/models/order_photo.dart';
 import '../data/models/payment_transaction.dart';
@@ -398,7 +399,45 @@ class DraftOrderItem {
     Map<String, dynamic>? attributes,
     this.daDuaTienRut = false,
   }) : pendingPhotos = pendingPhotos ?? [],
-       attributes = attributes ?? {};
+       attributes = _populateEnumDefaults(product, attributes);
+
+  static Map<String, dynamic> _populateEnumDefaults(
+    Product product,
+    Map<String, dynamic>? provided,
+  ) {
+    final attrs = <String, dynamic>{...?provided};
+    for (final ea in product.enumAttributes) {
+      if (ea.options.isEmpty) continue;
+      // caller wins
+      if (attrs.containsKey(ea.attributeType)) continue;
+      EnumOption? defaultOpt;
+      for (final o in ea.options) {
+        if (o.isDefault) {
+          defaultOpt = o;
+          break;
+        }
+      }
+      if (defaultOpt == null && ea.defaultOptionId != null) {
+        for (final o in ea.options) {
+          if (o.id == ea.defaultOptionId) {
+            defaultOpt = o;
+            break;
+          }
+        }
+      }
+      if (defaultOpt == null) {
+        for (final o in ea.options) {
+          if (o.active == 1) {
+            defaultOpt = o;
+            break;
+          }
+        }
+      }
+      defaultOpt ??= ea.options.first;
+      attrs[ea.attributeType] = defaultOpt.valueVi;
+    }
+    return attrs;
+  }
 
   double get unitPrice => customUnitPrice ?? product.basePrice;
 }
