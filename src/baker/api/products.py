@@ -98,11 +98,70 @@ def _product_attributes(conn, product_id: int) -> dict:
     return result
 
 
+def _product_enum_attributes(conn, product_id: int, product_category: str) -> list[dict]:
+    """Build the enum_attributes list for a product.
+
+    Returns one entry per enum attribute applicable to the product's category.
+    Each entry embeds the active options ordered by sort_order then id, plus
+    `default_option_id` (parsed from `product_attributes.default_value`) and a
+    per-option `is_default` flag.
+    """
+    enum_attrs = conn.execute(
+        """SELECT id, attribute_type, label_vi, applicable_categories, default_value
+           FROM product_attributes
+           WHERE active = 1 AND value_type = 'enum'
+           ORDER BY sort_order, attribute_type"""
+    ).fetchall()
+
+    result: list[dict] = []
+    for attr in enum_attrs:
+        try:
+            cats = json.loads(attr["applicable_categories"]) if attr["applicable_categories"] else []
+        except (json.JSONDecodeError, TypeError):
+            cats = []
+        if cats and product_category not in cats:
+            continue
+
+        try:
+            default_option_id = int(attr["default_value"]) if attr["default_value"] else None
+        except (ValueError, TypeError):
+            default_option_id = None
+
+        option_rows = conn.execute(
+            "SELECT id, value_vi, sort_order, active FROM product_attribute_options "
+            "WHERE attribute_id = ? AND active = 1 ORDER BY sort_order, id",
+            (attr["id"],),
+        ).fetchall()
+
+        options = [
+            {
+                "id": opt["id"],
+                "value_vi": opt["value_vi"],
+                "sort_order": opt["sort_order"],
+                "active": opt["active"],
+                "is_default": default_option_id is not None and opt["id"] == default_option_id,
+            }
+            for opt in option_rows
+        ]
+
+        result.append({
+            "attribute_type": attr["attribute_type"],
+            "label_vi": attr["label_vi"],
+            "default_option_id": default_option_id,
+            "options": options,
+        })
+
+    return result
+
+
 def _enrich_product(conn, row) -> dict:
     """Attach computed product fields for API responses."""
     product = _row_to_dict(row)
     product["attributes"] = _product_attributes(conn, product["id"])
     product["price_chips"] = _product_price_chips(conn, product["id"])
+    product["enum_attributes"] = _product_enum_attributes(
+        conn, product["id"], product.get("category") or ""
+    )
     return product
 
 
