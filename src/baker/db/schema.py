@@ -850,6 +850,20 @@ CREATE INDEX IF NOT EXISTS idx_stock_movements_created ON stock_movements(create
 """
 
 
+PRODUCT_PRICE_CHIPS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS product_price_chips (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    label       TEXT NOT NULL,
+    price       REAL NOT NULL,
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_price_chips_product ON product_price_chips(product_id);
+"""
+
+
 def _migrate_v26_trung_bay_and_stock(conn):
     """Seed trung_bay and tang_kem attribute types; enable tang_kem for existing banh_kem products."""
     conn.execute(
@@ -1004,6 +1018,10 @@ MIGRATIONS = {
         "description": "Add pin support to knowledge entries",
         "sql": "",
         "callable": _migrate_v29_add_pin_support,
+    },
+    30: {
+        "description": "Add product price chips table for preset pricing",
+        "sql": PRODUCT_PRICE_CHIPS_SCHEMA,
     },
 }
 

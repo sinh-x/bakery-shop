@@ -38,6 +38,26 @@ def _row_to_dict(row) -> dict:
     return dict(row)
 
 
+def _product_price_chips(conn, product_id: int) -> list[dict]:
+    """Get ordered price chips for a product."""
+    rows = conn.execute(
+        "SELECT id, label, price, position "
+        "FROM product_price_chips "
+        "WHERE product_id = ? "
+        "ORDER BY position, id",
+        (product_id,),
+    ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "label": row["label"],
+            "price": row["price"],
+            "position": row["position"],
+        }
+        for row in rows
+    ]
+
+
 def _product_attributes(conn, product_id: int) -> dict:
     """Get attribute values for a product, falling back to attribute type defaults."""
     # Get product's category for applicable_types check
@@ -76,6 +96,14 @@ def _product_attributes(conn, product_id: int) -> dict:
         if attr_type not in result:
             result[attr_type] = value
     return result
+
+
+def _enrich_product(conn, row) -> dict:
+    """Attach computed product fields for API responses."""
+    product = _row_to_dict(row)
+    product["attributes"] = _product_attributes(conn, product["id"])
+    product["price_chips"] = _product_price_chips(conn, product["id"])
+    return product
 
 
 @router.get("")
@@ -119,8 +147,7 @@ def list_products(
 
         result = []
         for r in rows:
-            prod = _row_to_dict(r)
-            prod["attributes"] = _product_attributes(conn, prod["id"])
+            prod = _enrich_product(conn, r)
             result.append(prod)
         return result
 
@@ -134,8 +161,7 @@ def get_product_by_code(code: str):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
-        prod = _row_to_dict(row)
-        prod["attributes"] = _product_attributes(conn, prod["id"])
+        prod = _enrich_product(conn, row)
         return prod
 
 
@@ -148,8 +174,7 @@ def get_product(product_id: int):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
-        prod = _row_to_dict(row)
-        prod["attributes"] = _product_attributes(conn, prod["id"])
+        prod = _enrich_product(conn, row)
         return prod
 
 
@@ -208,7 +233,7 @@ def create_product(product: ProductCreate):
         row = conn.execute(
             "SELECT * FROM products WHERE id = ?", (new_id,)
         ).fetchone()
-        return _row_to_dict(row)
+        return _enrich_product(conn, row)
 
 
 @router.patch("/{product_id}")
@@ -286,7 +311,7 @@ def update_product(product_id: int, product: ProductUpdate):
         row = conn.execute(
             "SELECT * FROM products WHERE id = ?", (product_id,)
         ).fetchone()
-        return _row_to_dict(row)
+        return _enrich_product(conn, row)
 
 
 @router.delete("/{product_id}")
