@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'enum_attribute.dart';
 import 'price_chip.dart';
 
 part 'product.freezed.dart';
@@ -19,6 +20,7 @@ sealed class Product with _$Product {
     @Default('') @JsonKey(name: 'product_code') String productCode,
     @Default([]) @JsonKey(name: 'price_chips') List<PriceChip> priceChips,
     @Default({}) Map<String, String> attributes,
+    @Default([]) @JsonKey(name: 'enum_attributes') List<EnumAttribute> enumAttributes,
     @JsonKey(name: 'stock_qty') int? stockQty,
   }) = _Product;
 
