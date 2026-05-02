@@ -11,6 +11,7 @@ sys.path.insert(0, "src")
 from baker.api.receipts import (
     _enum_attribute_lines,
     _format_vnd,
+    _wrapped_enum_attribute_lines,
     _wrap,
 )
 
@@ -66,6 +67,17 @@ class TestEnumAttributeLines:
 
     def test_missing_attributes_key(self):
         assert _enum_attribute_lines({}, {"nhan_banh": "Nhân bánh"}) == []
+
+    def test_wraps_long_enum_attribute_line(self):
+        from PIL import ImageFont
+        font = ImageFont.load_default()
+        item = {"attributes": {"nhan_banh": "Sô-cô-la đắng phủ hạnh nhân"}}
+        labels = {"nhan_banh": "Nhân bánh"}
+
+        lines = _wrapped_enum_attribute_lines(item, labels, font, 100)
+
+        assert len(lines) > 1
+        assert " ".join(lines) == "Nhân bánh: Sô-cô-la đắng phủ hạnh nhân"
 
 
 class TestTextWrapping:

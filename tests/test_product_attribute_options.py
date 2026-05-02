@@ -205,6 +205,14 @@ def test_patch_attribute_default_value_non_numeric_422(api_client):
     assert resp.status_code == 422
 
 
+def test_patch_attribute_default_value_empty_with_active_options_422(api_client):
+    resp = api_client.patch(
+        "/api/product-attributes/nhan_banh",
+        json={"default_value": ""},
+    )
+    assert resp.status_code == 422
+
+
 def test_patch_attribute_default_value_other_attribute_option_422(api_client):
     # Create a second enum attribute with its own options
     api_client.post(

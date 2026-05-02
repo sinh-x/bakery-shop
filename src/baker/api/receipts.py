@@ -321,6 +321,15 @@ def _enum_attribute_lines(item: dict, labels: dict) -> list:
     return out
 
 
+def _wrapped_enum_attribute_lines(item: dict, labels: dict, font, max_w: int) -> list:
+    """Build receipt-safe wrapped enum attribute lines for an item."""
+    lines = []
+    for label_vi, value_vi in _enum_attribute_lines(item, labels):
+        text = f"{label_vi}: {value_vi}"
+        lines.extend(_wrap(text, font, max_w) or [text])
+    return lines
+
+
 # --- Header (matching physical biên nhận) ---
 
 def _header(draw, y, cfg):
@@ -479,8 +488,9 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
 
     # Enum attribute lines — each on its own row (Q3 / R3)
     enum_labels = _enum_attribute_labels(conn)
-    for label_vi, value_vi in _enum_attribute_lines(work_item, enum_labels):
-        y = _left(draw, y, f"{label_vi}: {value_vi}", _font(_SZ_MEDIUM, True))
+    enum_font = _font(_SZ_MEDIUM, True)
+    for line in _wrapped_enum_attribute_lines(work_item, enum_labels, enum_font, CONTENT_WIDTH):
+        y = _left(draw, y, line, enum_font)
 
     # Spacer between badge(s) and next section
     y += 10
@@ -804,8 +814,8 @@ def _render_items_table(draw, y, work_items, fb, fbb, fs, conn) -> int:
             y = _icon_text(draw, y, "\U0001F382", age_suffix, fbb, (180, 0, 0), x=MARGIN + 10)
 
         # Enum attribute lines — each on its own row (Q3 / R3), indented
-        for label_vi, value_vi in _enum_attribute_lines(item, enum_labels):
-            y = _left(draw, y, f"{label_vi}: {value_vi}", fb, x=MARGIN + 10)
+        for line in _wrapped_enum_attribute_lines(item, enum_labels, fb, CONTENT_WIDTH - 10):
+            y = _left(draw, y, line, fb, x=MARGIN + 10)
 
         # Item notes (sub-row, indented)
         notes = item.get("notes", "") or ""
@@ -1125,8 +1135,8 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
             y = _icon_text(draw, y, "\U0001F382", age_suffix, fbb, (180, 0, 0), x=MARGIN + 10)
 
         # Enum attribute lines — each on its own row (Q3 / R3), indented
-        for label_vi, value_vi in _enum_attribute_lines(item, enum_labels):
-            y = _left(draw, y, f"{label_vi}: {value_vi}", fb, x=MARGIN + 10)
+        for line in _wrapped_enum_attribute_lines(item, enum_labels, fb, CONTENT_WIDTH - 10):
+            y = _left(draw, y, line, fb, x=MARGIN + 10)
 
         # Photo — only for cake-category products, larger + centered, display only
         item_id = item.get("id")
