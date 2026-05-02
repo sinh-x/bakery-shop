@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
 
+import '../models/enum_attribute.dart';
 import '../models/price_chip.dart';
 import '../models/product.dart';
 import 'api_client.dart';
@@ -157,6 +158,63 @@ class ProductService {
 
   Future<void> deleteProductAttribute(int productId, String attributeType) async {
     await _dio.delete('/api/products/$productId/attributes/$attributeType');
+  }
+
+  // --- Enum attribute options (product-attribute-wide) ---
+
+  Future<EnumOption> createEnumOption({
+    required String attributeType,
+    required String valueVi,
+    int? sortOrder,
+  }) async {
+    final data = <String, dynamic>{'value_vi': valueVi};
+    if (sortOrder != null) data['sort_order'] = sortOrder;
+    final response = await _dio.post(
+      '/api/product-attributes/$attributeType/options',
+      data: data,
+    );
+    return EnumOption.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<EnumOption> updateEnumOption(
+    int optionId, {
+    String? valueVi,
+    int? sortOrder,
+    int? active,
+  }) async {
+    final data = <String, dynamic>{};
+    if (valueVi != null) data['value_vi'] = valueVi;
+    if (sortOrder != null) data['sort_order'] = sortOrder;
+    if (active != null) data['active'] = active;
+    final response = await _dio.patch(
+      '/api/product-attribute-options/$optionId',
+      data: data,
+    );
+    return EnumOption.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<void> deleteEnumOption(int optionId) async {
+    await _dio.delete('/api/product-attribute-options/$optionId');
+  }
+
+  Future<void> reorderEnumOptions(
+    String attributeType,
+    List<int> orderedIds,
+  ) async {
+    await _dio.post(
+      '/api/product-attributes/$attributeType/options/reorder',
+      data: {'ordered_ids': orderedIds},
+    );
+  }
+
+  Future<void> setEnumAttributeDefault(
+    String attributeType,
+    String defaultValue,
+  ) async {
+    await _dio.patch(
+      '/api/product-attributes/$attributeType',
+      data: {'default_value': defaultValue},
+    );
   }
 }
 

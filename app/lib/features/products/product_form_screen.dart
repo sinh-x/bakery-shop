@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../data/api/api_client.dart';
 import '../../data/api/product_service.dart';
 import '../../data/models/catalog_photo.dart';
+import '../../data/models/enum_attribute.dart';
 import '../../data/models/price_chip.dart';
 import '../../data/models/category.dart';
 import '../../data/models/product.dart';
@@ -45,6 +46,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late final TextEditingController _codeCtrl;
   late final List<PriceChip> _originalPriceChips;
   late final List<_PriceChipFormRow> _priceChipRows;
+  late final List<_EnumAttributeFormSection> _enumSections;
   late String _category;
   late bool _rutTien;
   late bool _trungBay;
@@ -88,6 +90,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           ),
         )
         .toList();
+    _enumSections = (p?.enumAttributes ?? const <EnumAttribute>[])
+        .map(_EnumAttributeFormSection.fromAttribute)
+        .toList();
     // Store only the suffix portion so the prefix can be shown read-only.
     _codeCtrl = TextEditingController(text: _extractSuffix(p?.productCode));
     _category = widget.initialCategory ?? p?.category ?? 'banh_kem';
@@ -105,6 +110,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _codeCtrl.dispose();
     for (final row in _priceChipRows) {
       row.dispose();
+    }
+    for (final section in _enumSections) {
+      section.dispose();
     }
     super.dispose();
   }
@@ -407,6 +415,268 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     );
   }
 
+  // ----- Enum attribute options editor (DG-092 Phase 4.5) -----
+
+  void _addEnumOption(_EnumAttributeFormSection section) {
+    setState(() {
+      section.rows.add(
+        _EnumOptionFormRow(
+          sortOrder: section.rows.length,
+        ),
+      );
+    });
+  }
+
+  void _toggleRemoveEnumOption(_EnumAttributeFormSection section, int index) {
+    final row = section.rows[index];
+    setState(() {
+      if (row.id == null) {
+        row.dispose();
+        section.rows.removeAt(index);
+      } else {
+        row.removed = !row.removed;
+        if (row.removed && row.isDefault) {
+          row.isDefault = false;
+        }
+      }
+    });
+  }
+
+  void _setEnumDefault(_EnumAttributeFormSection section, int index) {
+    setState(() {
+      for (var i = 0; i < section.rows.length; i++) {
+        section.rows[i].isDefault = i == index;
+      }
+    });
+  }
+
+  void _reorderEnumOptions(
+    _EnumAttributeFormSection section,
+    int oldIndex,
+    int newIndex,
+  ) {
+    if (newIndex > oldIndex) newIndex -= 1;
+    setState(() {
+      final row = section.rows.removeAt(oldIndex);
+      section.rows.insert(newIndex, row);
+    });
+  }
+
+  /// Returns true if all enum sections validate (every section with at least
+  /// one non-removed row must have exactly one default selected, and no row
+  /// has an empty value). Reports per-row errors via setState.
+  bool _validateEnumOptions() {
+    var ok = true;
+    var changed = false;
+    for (final section in _enumSections) {
+      var sectionChanged = section.clearError();
+      var defaultCount = 0;
+      var liveRowCount = 0;
+      for (final row in section.rows) {
+        final newError = !row.removed && row.valueController.text.trim().isEmpty
+            ? VN.enumOptionValueRequired
+            : null;
+        sectionChanged = row.setValueError(newError) || sectionChanged;
+        if (row.valueError != null) ok = false;
+        if (!row.removed) {
+          liveRowCount++;
+          if (row.isDefault) defaultCount++;
+        }
+      }
+      if (liveRowCount > 0 && defaultCount != 1) {
+        sectionChanged = section.setError(VN.enumOptionDefaultRequired) || sectionChanged;
+        ok = false;
+      }
+      changed = changed || sectionChanged;
+    }
+    if (changed) setState(() {});
+    return ok;
+  }
+
+  bool _hasEnumOptionChanges() {
+    for (final section in _enumSections) {
+      if (section.hasChanges()) return true;
+    }
+    return false;
+  }
+
+  Future<void> _syncEnumOptionEdits() async {
+    final productSvc = ref.read(productServiceProvider);
+    for (final section in _enumSections) {
+      if (!section.hasChanges()) continue;
+
+      // 1. Deletions (rows that have an id and are flagged removed)
+      for (final row in section.rows.where((r) => r.id != null && r.removed)) {
+        await productSvc.deleteEnumOption(row.id!);
+      }
+
+      // 2. Updates (rows that have an id, not removed, with value/sort/active diff)
+      final liveRows = section.rows.where((r) => !r.removed).toList();
+      for (var i = 0; i < liveRows.length; i++) {
+        final row = liveRows[i];
+        if (row.id == null) continue;
+        final original = section.originalById[row.id!];
+        final newValue = row.valueController.text.trim();
+        if (original == null) continue;
+        final valueChanged = original.valueVi != newValue;
+        final sortChanged = original.sortOrder != i;
+        if (valueChanged || sortChanged) {
+          await productSvc.updateEnumOption(
+            row.id!,
+            valueVi: valueChanged ? newValue : null,
+            sortOrder: sortChanged ? i : null,
+          );
+        }
+      }
+
+      // 3. Inserts (rows without id, not removed)
+      for (var i = 0; i < liveRows.length; i++) {
+        final row = liveRows[i];
+        if (row.id != null) continue;
+        final newValue = row.valueController.text.trim();
+        final created = await productSvc.createEnumOption(
+          attributeType: section.attribute.attributeType,
+          valueVi: newValue,
+          sortOrder: i,
+        );
+        row.id = created.id;
+      }
+
+      // 4. Default change (after inserts so new-row defaults have ids)
+      final defaultRow = liveRows.firstWhere(
+        (r) => r.isDefault,
+        orElse: () => liveRows.first,
+      );
+      if (defaultRow.id != null && defaultRow.id != section.originalDefaultId) {
+        await productSvc.setEnumAttributeDefault(
+          section.attribute.attributeType,
+          defaultRow.id!.toString(),
+        );
+        section.originalDefaultId = defaultRow.id;
+      }
+
+      // 5. Reset baseline so subsequent saves don't replay history
+      section.applySaved();
+    }
+  }
+
+  Widget _buildEnumOptionsSection() {
+    if (_enumSections.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(VN.enumOptionsSection, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Text(
+          VN.enumOptionsHintAttributeWide,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        for (final section in _enumSections) _buildEnumSection(section),
+      ],
+    );
+  }
+
+  Widget _buildEnumSection(_EnumAttributeFormSection section) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 4),
+          child: Text(
+            section.attribute.labelVi,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+        ),
+        if (section.error != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              section.error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        ReorderableListView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          itemCount: section.rows.length,
+          onReorder: (oldIndex, newIndex) =>
+              _reorderEnumOptions(section, oldIndex, newIndex),
+          buildDefaultDragHandles: false,
+          itemBuilder: (context, index) {
+            final row = section.rows[index];
+            return Padding(
+              key: ValueKey(row),
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Opacity(
+                opacity: row.removed ? 0.5 : 1.0,
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: VN.enumOptionDefaultLabel,
+                      icon: Icon(
+                        row.isDefault
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                        color: row.isDefault
+                            ? Theme.of(context).colorScheme.primary
+                            : null,
+                      ),
+                      onPressed: row.removed
+                          ? null
+                          : () => _setEnumDefault(section, index),
+                    ),
+                    Expanded(
+                      child: TextFormField(
+                        controller: row.valueController,
+                        enabled: !row.removed,
+                        decoration: InputDecoration(
+                          labelText: VN.enumOptionValueLabel,
+                          errorText: row.valueError,
+                          helperText: row.removed ? VN.enumOptionRemoved : null,
+                        ),
+                        onChanged: (_) {
+                          if (row.valueError != null) {
+                            setState(() => row.setValueError(null));
+                          }
+                        },
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: row.removed ? VN.enumOptionRestore : VN.remove,
+                      icon: Icon(row.removed ? Icons.restore : Icons.delete_outline),
+                      onPressed: () => _toggleRemoveEnumOption(section, index),
+                    ),
+                    ReorderableDragStartListener(
+                      index: index,
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 12,
+                        ),
+                        child: Icon(Icons.drag_handle),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: () => _addEnumOption(section),
+            icon: const Icon(Icons.add),
+            label: Text(VN.addEnumOption),
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
   Future<void> _pickPhoto() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -440,6 +710,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_validatePriceChipRows().isNotEmpty) return;
+    if (!_validateEnumOptions()) return;
     setState(() => _saving = true);
 
     try {
@@ -477,6 +748,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         final origRutTien = orig.attributes['rut_tien']?.toString() == 'true';
         final origTrungBay = orig.attributes['trung_bay']?.toString() == 'true';
         final origTangKem = orig.attributes['tang_kem']?.toString() == 'true';
+        final hasEnumOptionChanges = _hasEnumOptionChanges();
         final hasChanges =
             newName != orig.name ||
             _category != orig.category ||
@@ -486,6 +758,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             newCode != orig.productCode ||
             _pickedPhoto != null ||
             hasPriceChipChanges ||
+            hasEnumOptionChanges ||
             _rutTien != origRutTien ||
             _trungBay != origTrungBay ||
             _tangKem != origTangKem;
@@ -576,6 +849,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
       if (hasPriceChipChanges) {
         await _syncPriceChipEdits(saved.id);
+      }
+
+      if (_hasEnumOptionChanges()) {
+        await _syncEnumOptionEdits();
+        await ref.read(productsProvider.notifier).refresh();
       }
 
       if (_pickedPhoto != null) {
@@ -817,6 +1095,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             _buildPriceChipSection(),
             const SizedBox(height: 16),
 
+            // Enum attribute options editor (DG-092)
+            _buildEnumOptionsSection(),
+
             // Notes
             TextFormField(
               controller: _notesCtrl,
@@ -928,6 +1209,146 @@ class _PriceChipValidationErrors {
   final String? priceError;
 
   bool get hasError => labelError != null || priceError != null;
+}
+
+/// Mutable per-row state for an enum attribute option in the product form.
+class _EnumOptionFormRow {
+  _EnumOptionFormRow({
+    this.id,
+    String valueVi = '',
+    this.sortOrder = 0,
+    this.active = 1,
+    this.isDefault = false,
+  }) : valueController = TextEditingController(text: valueVi);
+
+  int? id;
+  final TextEditingController valueController;
+  int sortOrder;
+  int active;
+  bool isDefault;
+  bool removed = false;
+  String? _valueError;
+
+  String? get valueError => _valueError;
+
+  bool setValueError(String? error) {
+    if (_valueError == error) return false;
+    _valueError = error;
+    return true;
+  }
+
+  void dispose() {
+    valueController.dispose();
+  }
+}
+
+/// Per-attribute editor state. Mirrors `_originalPriceChips` / `_priceChipRows`
+/// but for one enum attribute (e.g. `nhan_banh`).
+class _EnumAttributeFormSection {
+  _EnumAttributeFormSection({
+    required this.attribute,
+    required List<EnumOption> originalOptions,
+    required this.originalDefaultId,
+  })  : _originalOptions = List<EnumOption>.of(originalOptions),
+        rows = originalOptions
+            .map(
+              (opt) => _EnumOptionFormRow(
+                id: opt.id,
+                valueVi: opt.valueVi,
+                sortOrder: opt.sortOrder,
+                active: opt.active,
+                isDefault: opt.id == originalDefaultId,
+              ),
+            )
+            .toList();
+
+  factory _EnumAttributeFormSection.fromAttribute(EnumAttribute attribute) {
+    return _EnumAttributeFormSection(
+      attribute: attribute,
+      originalOptions: attribute.options,
+      originalDefaultId: attribute.defaultOptionId,
+    );
+  }
+
+  final EnumAttribute attribute;
+  final List<_EnumOptionFormRow> rows;
+  List<EnumOption> _originalOptions;
+  int? originalDefaultId;
+  String? _error;
+
+  String? get error => _error;
+
+  Map<int, EnumOption> get originalById => {
+        for (final opt in _originalOptions) opt.id: opt,
+      };
+
+  bool clearError() {
+    if (_error == null) return false;
+    _error = null;
+    return true;
+  }
+
+  bool setError(String? error) {
+    if (_error == error) return false;
+    _error = error;
+    return true;
+  }
+
+  bool hasChanges() {
+    final originalMap = originalById;
+    final liveRows = rows.where((r) => !r.removed).toList();
+
+    if (rows.any((r) => r.id != null && r.removed)) return true;
+    if (rows.any((r) => r.id == null && !r.removed)) return true;
+    if (liveRows.length != _originalOptions.length) return true;
+
+    int? selectedDefaultId;
+    for (final r in liveRows) {
+      if (r.isDefault) {
+        selectedDefaultId = r.id;
+        break;
+      }
+    }
+    if (selectedDefaultId != originalDefaultId) return true;
+
+    for (var i = 0; i < liveRows.length; i++) {
+      final row = liveRows[i];
+      final original = originalMap[row.id];
+      if (original == null) return true;
+      if (original.valueVi != row.valueController.text.trim()) return true;
+      if (_originalOptions[i].id != row.id) return true;
+    }
+    return false;
+  }
+
+  void applySaved() {
+    rows.removeWhere((r) {
+      if (r.removed) {
+        r.dispose();
+        return true;
+      }
+      return false;
+    });
+    _originalOptions = [
+      for (var i = 0; i < rows.length; i++)
+        EnumOption(
+          id: rows[i].id ?? -1,
+          valueVi: rows[i].valueController.text.trim(),
+          sortOrder: i,
+          active: rows[i].active,
+          isDefault: rows[i].isDefault,
+        ),
+    ];
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].sortOrder = i;
+    }
+  }
+
+  void dispose() {
+    for (final row in rows) {
+      row.dispose();
+    }
+  }
 }
 
 class _PhotoSection extends StatelessWidget {
