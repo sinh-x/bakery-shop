@@ -294,6 +294,33 @@ def _shop_config(conn) -> dict:
     return cfg
 
 
+def _enum_attribute_labels(conn) -> dict:
+    """Map enum attribute_type → label_vi for receipt rendering."""
+    rows = conn.execute(
+        "SELECT attribute_type, label_vi FROM product_attributes WHERE value_type = 'enum'"
+    ).fetchall()
+    return {r["attribute_type"]: r["label_vi"] for r in rows}
+
+
+def _enum_attribute_lines(item: dict, labels: dict) -> list:
+    """Extract enum attribute lines as `[(label_vi, value_vi), ...]` for an item.
+
+    Each enum attribute renders on its own line per Q3 / R3 (32-char-width concern).
+    Returns empty list when no enum attributes are set on this item.
+    """
+    attrs = item.get("attributes") or {}
+    out = []
+    for attribute_type, label_vi in labels.items():
+        value = attrs.get(attribute_type)
+        if value is None:
+            continue
+        s = str(value).strip()
+        if not s:
+            continue
+        out.append((label_vi, s))
+    return out
+
+
 # --- Header (matching physical biên nhận) ---
 
 def _header(draw, y, cfg):
@@ -449,6 +476,11 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
         draw.text((MARGIN, y), icon, font=ef, fill=(0, 100, 180))
         draw.text((MARGIN + icon_w + 4, y), " PHỤ LIỆU", font=tf, fill=(0, 100, 180))
         y += max(_th(icon, ef), _th(" PHỤ LIỆU", tf)) + LINE_GAP
+
+    # Enum attribute lines — each on its own row (Q3 / R3)
+    enum_labels = _enum_attribute_labels(conn)
+    for label_vi, value_vi in _enum_attribute_lines(work_item, enum_labels):
+        y = _left(draw, y, f"{label_vi}: {value_vi}", _font(_SZ_MEDIUM, True))
 
     # Spacer between badge(s) and next section
     y += 10
@@ -714,6 +746,7 @@ def _render_bus_label(order, cfg) -> Image.Image:
 
 def _render_items_table(draw, y, work_items, fb, fbb, fs, conn) -> int:
     """Render items table for shop/delivery receipts. Returns y after table."""
+    enum_labels = _enum_attribute_labels(conn)
     # Table header
     col_sl = MARGIN + 320
     col_gia = MARGIN + 380
@@ -769,6 +802,10 @@ def _render_items_table(draw, y, work_items, fb, fbb, fs, conn) -> int:
             age = item.get("age")
             age_suffix = f" SINH NHẬT{(' - ' + str(age) + ' tuổi') if age else ''}"
             y = _icon_text(draw, y, "\U0001F382", age_suffix, fbb, (180, 0, 0), x=MARGIN + 10)
+
+        # Enum attribute lines — each on its own row (Q3 / R3), indented
+        for label_vi, value_vi in _enum_attribute_lines(item, enum_labels):
+            y = _left(draw, y, f"{label_vi}: {value_vi}", fb, x=MARGIN + 10)
 
         # Item notes (sub-row, indented)
         notes = item.get("notes", "") or ""
@@ -997,6 +1034,8 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
     fs = _font(_SZ_SMALL)
     ft = _font(_SZ_TITLE, True)
 
+    enum_labels = _enum_attribute_labels(conn)
+
     y = MARGIN
     y = _header(draw, y, cfg)
 
@@ -1084,6 +1123,10 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
             age = item.get("age")
             age_suffix = f" SINH NHẬT{(' - ' + str(age) + ' tuổi') if age else ''}"
             y = _icon_text(draw, y, "\U0001F382", age_suffix, fbb, (180, 0, 0), x=MARGIN + 10)
+
+        # Enum attribute lines — each on its own row (Q3 / R3), indented
+        for label_vi, value_vi in _enum_attribute_lines(item, enum_labels):
+            y = _left(draw, y, f"{label_vi}: {value_vi}", fb, x=MARGIN + 10)
 
         # Photo — only for cake-category products, larger + centered, display only
         item_id = item.get("id")
