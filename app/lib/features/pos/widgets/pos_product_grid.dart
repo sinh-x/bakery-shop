@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/product.dart';
-import '../../../data/models/price_chip.dart';
 import '../../../data/api/api_client.dart';
 import '../../../providers/pos_provider.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
@@ -42,13 +41,6 @@ class PosProductGrid extends ConsumerWidget {
           isOutOfStock: isOutOfStock,
           baseUrl: baseUrl,
           onTap: () => _onProductTap(context, ref, product, isOutOfStock),
-          onChipTap: (chip) => _onChipTap(
-            context,
-            ref,
-            product,
-            chip,
-            isOutOfStock,
-          ),
         );
       },
     );
@@ -60,7 +52,11 @@ class PosProductGrid extends ConsumerWidget {
     Product product,
     bool isOutOfStock,
   ) {
-    if (isOutOfStock) {
+    final hasPriceChips = product.priceChips.isNotEmpty;
+
+    if (hasPriceChips) {
+      _showChipPickerDialog(context, ref, product, isOutOfStock);
+    } else if (isOutOfStock) {
       _showForceSellDialog(context, ref, product);
     } else {
       ref.read(posCartProvider.notifier).addItem(product);
@@ -68,32 +64,138 @@ class PosProductGrid extends ConsumerWidget {
     }
   }
 
-  void _onChipTap(
+  void _showChipPickerDialog(
     BuildContext context,
     WidgetRef ref,
     Product product,
-    PriceChip chip,
     bool isOutOfStock,
   ) {
-    if (isOutOfStock) {
-      _showForceSellDialog(
-        context,
-        ref,
-        product,
-        selectedPrice: chip.price,
-        selectedChipId: chip.id,
-        selectedChipLabel: chip.label,
-      );
-      return;
-    }
+    final theme = Theme.of(context);
+    final chips = product.priceChips;
 
-    ref.read(posCartProvider.notifier).addItem(
-      product,
-      selectedPrice: chip.price,
-      selectedChipId: chip.id,
-      selectedChipLabel: chip.label,
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        final defaultPrice = chips.isNotEmpty
+            ? chips
+                .map((c) => c.price)
+                .reduce((a, b) => a < b ? a : b)
+            : product.basePrice;
+
+        int? selectedChipId;
+        String? selectedChipLabel;
+        double selectedPrice = defaultPrice;
+        final priceCtrl = TextEditingController(
+          text: defaultPrice.toInt().toString(),
+        );
+
+        return StatefulBuilder(
+          builder: (ctx, setState) => AlertDialog(
+            title: Text(
+              product.name,
+              style: theme.textTheme.titleMedium,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (chips.isNotEmpty) ...[
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: chips.map((chip) {
+                        final isSelected = selectedChipId == chip.id;
+                        return ChoiceChip(
+                          label: Text(
+                            '${chip.label} · ${formatVND(chip.price)}',
+                          ),
+                          selected: isSelected,
+                          onSelected: (_) {
+                            setState(() {
+                              selectedChipId = chip.id;
+                              selectedChipLabel = chip.label;
+                              selectedPrice = chip.price;
+                              priceCtrl.text = chip.price.toInt().toString();
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  TextFormField(
+                    controller: priceCtrl,
+                    decoration: const InputDecoration(
+                      labelText: VN.itemPrice,
+                      border: OutlineInputBorder(),
+                      suffixText: 'đ',
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (v) {
+                      final parsed = double.tryParse(v.trim());
+                      if (parsed != null) {
+                        setState(() {
+                          selectedPrice = parsed;
+                          final matchesChip = chips.any(
+                            (c) => c.id == selectedChipId &&
+                                c.price == parsed,
+                          );
+                          if (!matchesChip) {
+                            selectedChipId = null;
+                            selectedChipLabel = null;
+                          }
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx),
+                child: const Text(VN.cancel),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(dialogCtx);
+                  if (isOutOfStock) {
+                    _showForceSellDialog(
+                      context,
+                      ref,
+                      product,
+                      selectedPrice: selectedPrice,
+                      selectedChipId: selectedChipId,
+                      selectedChipLabel: selectedChipLabel,
+                    );
+                  } else {
+                    ref.read(posCartProvider.notifier).addItem(
+                      product,
+                      selectedPrice: selectedPrice,
+                      selectedChipId: selectedChipId,
+                      selectedChipLabel: selectedChipLabel,
+                    );
+                    final labelSuffix = selectedChipLabel != null
+                        ? ' (${selectedChipLabel})'
+                        : '';
+                    showTopSnackBar(
+                      context,
+                      '${product.name}$labelSuffix đã thêm vào giỏ',
+                    );
+                  }
+                },
+                child: const Text('Thêm'),
+              ),
+            ],
+          ),
+        );
+      },
     );
-    showTopSnackBar(context, '${product.name} (${chip.label}) đã thêm vào giỏ');
   }
 
   void _showForceSellDialog(
@@ -148,7 +250,6 @@ class _ProductPosCard extends StatelessWidget {
     required this.isOutOfStock,
     required this.baseUrl,
     required this.onTap,
-    required this.onChipTap,
   });
 
   final Product product;
@@ -157,20 +258,34 @@ class _ProductPosCard extends StatelessWidget {
   final bool isOutOfStock;
   final String baseUrl;
   final VoidCallback onTap;
-  final ValueChanged<PriceChip> onChipTap;
+
+  String _displayPrice(Product product) {
+    if (product.priceChips.isEmpty) {
+      return formatVND(product.basePrice);
+    }
+
+    final chipMin = product.priceChips
+        .map((chip) => chip.price)
+        .reduce((a, b) => a < b ? a : b);
+    final hasPositiveBasePrice = product.basePrice > 0;
+    final minPrice =
+        hasPositiveBasePrice && product.basePrice < chipMin
+            ? product.basePrice
+            : chipMin;
+
+    return '${VN.priceFrom} ${formatVND(minPrice)}';
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final visibleChips = product.priceChips.take(6).toList();
-    final hasPriceChips = visibleChips.isNotEmpty;
 
     return Opacity(
       opacity: isOutOfStock ? 0.5 : 1.0,
       child: Card(
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: hasPriceChips ? null : onTap,
+          onTap: onTap,
           child: Stack(
             children: [
               Column(
@@ -209,9 +324,7 @@ class _ProductPosCard extends StatelessWidget {
                           Row(
                             children: [
                               Text(
-                                hasPriceChips
-                                    ? 'Chọn giá'
-                                    : formatVND(product.basePrice),
+                                _displayPrice(product),
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   color: theme.colorScheme.primary,
                                   fontWeight: FontWeight.bold,
@@ -221,25 +334,6 @@ class _ProductPosCard extends StatelessWidget {
                               _buildStockBadge(stockQty),
                             ],
                           ),
-                          if (hasPriceChips)
-                            Wrap(
-                              spacing: 4,
-                              runSpacing: 4,
-                              children: visibleChips
-                                  .map(
-                                    (chip) => ActionChip(
-                                      label: Text(
-                                        '${chip.label} • ${formatVND(chip.price)}',
-                                        style: theme.textTheme.labelSmall,
-                                      ),
-                                      materialTapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                      visualDensity: VisualDensity.compact,
-                                      onPressed: () => onChipTap(chip),
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
                         ],
                       ),
                     ),
