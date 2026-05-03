@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -8,6 +9,7 @@ import '../../data/api/order_service.dart';
 import '../../data/api/receipt_service.dart';
 import '../../data/models/work_item.dart';
 import '../../data/services/printer_service.dart';
+import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/printer_picker_dialog.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
@@ -835,6 +837,23 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
     });
 
     try {
+      if (kIsWeb) {
+        final receiptService = ref.read(receiptServiceProvider);
+        final printedBy = ref.read(loggedByProvider);
+        await receiptService.printReceipt(
+          orderRef: widget.orderRef,
+          type: ReceiptType.workTicket,
+          itemId: widget.itemId,
+          printedBy: printedBy,
+        );
+        ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
+        if (mounted) {
+          showTopSnackBar(context, VN.internalReceiptPrinted);
+          Navigator.pop(context);
+        }
+        return;
+      }
+
       final printerService = ref.read(printerServiceProvider);
       await printerService.init();
 
