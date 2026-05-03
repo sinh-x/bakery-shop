@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/product.dart';
+import '../../../data/models/price_chip.dart';
 import '../../../data/api/api_client.dart';
 import '../../../providers/pos_provider.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
@@ -29,16 +30,25 @@ class PosProductGrid extends ConsumerWidget {
       itemBuilder: (context, i) {
         final product = products[i];
         final stockQty = product.stockQty ?? 0;
-        final inCart = cart.items.where((c) => c.product.id == product.id).firstOrNull;
+        final inCartQty = cart.items
+            .where((c) => c.product.id == product.id)
+            .fold<int>(0, (sum, item) => sum + item.quantity);
         final isOutOfStock = stockQty <= 0;
 
         return _ProductPosCard(
           product: product,
           stockQty: stockQty,
-          inCartQty: inCart?.quantity,
+          inCartQty: inCartQty > 0 ? inCartQty : null,
           isOutOfStock: isOutOfStock,
           baseUrl: baseUrl,
           onTap: () => _onProductTap(context, ref, product, isOutOfStock),
+          onChipTap: (chip) => _onChipTap(
+            context,
+            ref,
+            product,
+            chip,
+            isOutOfStock,
+          ),
         );
       },
     );
@@ -58,7 +68,42 @@ class PosProductGrid extends ConsumerWidget {
     }
   }
 
-  void _showForceSellDialog(BuildContext context, WidgetRef ref, Product product) {
+  void _onChipTap(
+    BuildContext context,
+    WidgetRef ref,
+    Product product,
+    PriceChip chip,
+    bool isOutOfStock,
+  ) {
+    if (isOutOfStock) {
+      _showForceSellDialog(
+        context,
+        ref,
+        product,
+        selectedPrice: chip.price,
+        selectedChipId: chip.id,
+        selectedChipLabel: chip.label,
+      );
+      return;
+    }
+
+    ref.read(posCartProvider.notifier).addItem(
+      product,
+      selectedPrice: chip.price,
+      selectedChipId: chip.id,
+      selectedChipLabel: chip.label,
+    );
+    showTopSnackBar(context, '${product.name} (${chip.label}) đã thêm vào giỏ');
+  }
+
+  void _showForceSellDialog(
+    BuildContext context,
+    WidgetRef ref,
+    Product product, {
+    double? selectedPrice,
+    int? selectedChipId,
+    String? selectedChipLabel,
+  }) {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
@@ -72,11 +117,18 @@ class PosProductGrid extends ConsumerWidget {
           FilledButton(
             onPressed: () {
               Navigator.pop(dialogCtx);
-              ref.read(posCartProvider.notifier).addItem(product);
+              ref.read(posCartProvider.notifier).addItem(
+                product,
+                selectedPrice: selectedPrice,
+                selectedChipId: selectedChipId,
+                selectedChipLabel: selectedChipLabel,
+              );
               if (context.mounted) {
                 showTopSnackBar(
                   context,
-                  '${product.name} đã thêm vào giỏ (force-sell)',
+                  selectedChipLabel != null
+                      ? '${product.name} ($selectedChipLabel) đã thêm vào giỏ (force-sell)'
+                      : '${product.name} đã thêm vào giỏ (force-sell)',
                 );
               }
             },
@@ -96,6 +148,7 @@ class _ProductPosCard extends StatelessWidget {
     required this.isOutOfStock,
     required this.baseUrl,
     required this.onTap,
+    required this.onChipTap,
   });
 
   final Product product;
@@ -104,17 +157,20 @@ class _ProductPosCard extends StatelessWidget {
   final bool isOutOfStock;
   final String baseUrl;
   final VoidCallback onTap;
+  final ValueChanged<PriceChip> onChipTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final visibleChips = product.priceChips.take(6).toList();
+    final hasPriceChips = visibleChips.isNotEmpty;
 
     return Opacity(
       opacity: isOutOfStock ? 0.5 : 1.0,
       child: Card(
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: onTap,
+          onTap: hasPriceChips ? null : onTap,
           child: Stack(
             children: [
               Column(
@@ -153,7 +209,9 @@ class _ProductPosCard extends StatelessWidget {
                           Row(
                             children: [
                               Text(
-                                formatVND(product.basePrice),
+                                hasPriceChips
+                                    ? 'Chọn giá'
+                                    : formatVND(product.basePrice),
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   color: theme.colorScheme.primary,
                                   fontWeight: FontWeight.bold,
@@ -163,6 +221,25 @@ class _ProductPosCard extends StatelessWidget {
                               _buildStockBadge(stockQty),
                             ],
                           ),
+                          if (hasPriceChips)
+                            Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: visibleChips
+                                  .map(
+                                    (chip) => ActionChip(
+                                      label: Text(
+                                        '${chip.label} • ${formatVND(chip.price)}',
+                                        style: theme.textTheme.labelSmall,
+                                      ),
+                                      materialTapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                      visualDensity: VisualDensity.compact,
+                                      onPressed: () => onChipTap(chip),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
                         ],
                       ),
                     ),
