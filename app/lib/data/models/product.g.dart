@@ -26,6 +26,11 @@ _Product _$ProductFromJson(Map<String, dynamic> json) => _Product(
         (k, e) => MapEntry(k, e as String),
       ) ??
       const {},
+  enumAttributes:
+      (json['enum_attributes'] as List<dynamic>?)
+          ?.map((e) => EnumAttribute.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const [],
   stockQty: (json['stock_qty'] as num?)?.toInt(),
 );
 
@@ -41,5 +46,6 @@ Map<String, dynamic> _$ProductToJson(_Product instance) => <String, dynamic>{
   'product_code': instance.productCode,
   'price_chips': instance.priceChips,
   'attributes': instance.attributes,
+  'enum_attributes': instance.enumAttributes,
   'stock_qty': instance.stockQty,
 };

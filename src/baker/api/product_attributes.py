@@ -151,6 +151,36 @@ def update_attribute_type(attribute_type: str, body: AttributeTypeUpdate):
             updates.append("applicable_categories = ?")
             params.append(json.dumps(body.applicable_categories))
         if body.default_value is not None:
+            effective_value_type = body.value_type if body.value_type is not None else row["value_type"]
+            if effective_value_type == "enum" and body.default_value == "":
+                active_options = conn.execute(
+                    "SELECT 1 FROM product_attribute_options "
+                    "WHERE attribute_id = ? AND active = 1 LIMIT 1",
+                    (row["id"],),
+                ).fetchone()
+                if active_options:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Phải chọn một tuỳ chọn mặc định",
+                    )
+            elif effective_value_type == "enum":
+                try:
+                    option_id_int = int(body.default_value)
+                except ValueError:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="default_value phải là id của tuỳ chọn (số nguyên)",
+                    )
+                option_row = conn.execute(
+                    "SELECT id FROM product_attribute_options "
+                    "WHERE id = ? AND attribute_id = ? AND active = 1",
+                    (option_id_int, row["id"]),
+                ).fetchone()
+                if not option_row:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="default_value không hợp lệ: tuỳ chọn không tồn tại hoặc không thuộc attribute này",
+                    )
             updates.append("default_value = ?")
             params.append(body.default_value)
         if body.sort_order is not None:
