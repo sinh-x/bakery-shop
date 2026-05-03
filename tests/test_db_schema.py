@@ -232,3 +232,13 @@ def test_schema_migration_v31_idempotent():
         ).fetchone()[0]
         assert opt_count == 5
         _assert_print_tracking_schema(conn)
+
+
+def test_schema_migration_v32_handles_preexisting_printed_by_column():
+    with get_db() as conn:
+        _migrate_to_version(conn, 31)
+        conn.execute("ALTER TABLE orders ADD COLUMN work_ticket_printed_by TEXT DEFAULT ''")
+        _migrate_to_version(conn, 32)
+
+        assert _migrated_version(conn) == 32
+        _assert_print_tracking_schema(conn)

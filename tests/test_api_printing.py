@@ -84,6 +84,32 @@ def test_second_print_appends_log_without_overwriting_first_print_fields(mock_pr
     assert order_detail["workTicketPrintedBy"] == "An"
 
 
+@patch("baker.api.printing.usb_printer.print_receipt")
+def test_print_fills_missing_printed_by_when_legacy_timestamp_exists(mock_print, api_client):
+    mock_print.return_value = None
+    order = _create_order(api_client)
+    order_ref = order["orderRef"]
+    item_id = _first_work_item_id(api_client, order_ref)
+
+    detail_before = api_client.get(f"/api/orders/{order_ref}").json()
+    order_id = detail_before["id"]
+    legacy_ts = "2026-04-01T08:30:00"
+
+    from baker.db.connection import get_db
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE orders SET work_ticket_printed_at = ?, work_ticket_printed_by = '' WHERE id = ?",
+            (legacy_ts, order_id),
+        )
+
+    resp = _print_work_ticket(api_client, order_ref, item_id, printed_by="Ngân")
+    assert resp.status_code == 200
+
+    order_detail = api_client.get(f"/api/orders/{order_ref}").json()
+    assert order_detail["workTicketPrintedAt"] == legacy_ts
+    assert order_detail["workTicketPrintedBy"] == "Ngân"
+
+
 @patch("baker.api.printing.usb_printer.print_receipt", side_effect=FileNotFoundError)
 def test_print_failure_returns_503_and_does_not_write_logs_or_first_print(
     _mock_print,

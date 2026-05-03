@@ -148,13 +148,22 @@ def print_receipt(
 
             conn.execute(
                 """UPDATE orders
-                   SET work_ticket_printed_at = COALESCE(work_ticket_printed_at, strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
+                   SET work_ticket_printed_at = CASE
+                           WHEN work_ticket_printed_at IS NULL THEN strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+                           ELSE work_ticket_printed_at
+                       END,
                        work_ticket_printed_by = CASE
                            WHEN work_ticket_printed_at IS NULL THEN ?
+                           WHEN COALESCE(work_ticket_printed_by, '') = '' AND ? <> '' THEN ?
                            ELSE work_ticket_printed_by
                        END
                    WHERE id = ?""",
-                (normalized_printed_by, order_id),
+                (
+                    normalized_printed_by,
+                    normalized_printed_by,
+                    normalized_printed_by,
+                    order_id,
+                ),
             )
 
     return {

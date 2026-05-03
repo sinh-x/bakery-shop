@@ -637,8 +637,12 @@ CREATE TABLE IF NOT EXISTS print_log (
     printed_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_print_log_order ON print_log(order_id);
-ALTER TABLE orders ADD COLUMN work_ticket_printed_by TEXT DEFAULT '';
 """
+
+
+def _migrate_v32_print_tracking(conn):
+    """Add print tracking schema with idempotent orders column migration."""
+    _guard_add_column(conn, "orders", "work_ticket_printed_by", "work_ticket_printed_by TEXT DEFAULT ''")
 
 PRODUCT_ATTRIBUTES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS product_attributes (
@@ -1109,6 +1113,7 @@ MIGRATIONS = {
     32: {
         "description": "Print tracking: print_log table and work_ticket_printed_by column",
         "sql": PRINT_LOG_AND_PRINTED_BY_SCHEMA,
+        "callable": _migrate_v32_print_tracking,
     },
 }
 
