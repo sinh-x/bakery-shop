@@ -137,6 +137,25 @@ def _assert_product_attribute_options_schema(conn) -> None:
     assert "idx_attr_options_attr" in index_names
 
 
+def _assert_print_tracking_schema(conn) -> None:
+    orders = _schema_columns(conn, "orders")
+    assert "work_ticket_printed_by" in orders
+
+    print_log = _schema_columns(conn, "print_log")
+    assert set(print_log) >= {
+        "id",
+        "order_id",
+        "item_id",
+        "receipt_type",
+        "printed_by",
+        "printed_at",
+    }
+
+    index_rows = conn.execute("PRAGMA index_list(print_log)").fetchall()
+    index_names = [row["name"] for row in index_rows]
+    assert "idx_print_log_order" in index_names
+
+
 def _assert_nhan_banh_seed(conn) -> None:
     attr_row = conn.execute(
         "SELECT id, label_vi, value_type, applicable_categories, default_value, active "
@@ -173,9 +192,10 @@ def _assert_nhan_banh_seed(conn) -> None:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 31
+        assert _migrated_version(conn) == 32
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
+        _assert_print_tracking_schema(conn)
 
 
 def test_schema_migration_v30_to_v31():
@@ -184,18 +204,19 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 31
+        assert _migrated_version(conn) == 32
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
+        _assert_print_tracking_schema(conn)
 
 
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 31
+        assert _migrated_version(conn) == 32
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 31
+        assert _migrated_version(conn) == 32
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -210,3 +231,4 @@ def test_schema_migration_v31_idempotent():
             (attr_id,),
         ).fetchone()[0]
         assert opt_count == 5
+        _assert_print_tracking_schema(conn)

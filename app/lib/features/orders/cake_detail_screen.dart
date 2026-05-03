@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
-import '../../data/api/order_service.dart';
 import '../../data/api/receipt_service.dart';
 import '../../data/models/work_item.dart';
 import '../../data/services/printer_service.dart';
@@ -886,11 +885,6 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
       }
 
       if (result == PrinterPickerResult.success) {
-        final orderService = ref.read(orderServiceProvider);
-        await orderService.updateWorkTicketPrintedAt(
-          widget.orderRef,
-          DateTime.now().toIso8601String(),
-        );
         ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
         if (mounted) {
           showTopSnackBar(context, VN.internalReceiptPrinted);

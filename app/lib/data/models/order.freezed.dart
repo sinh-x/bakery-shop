@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$Order {
 
- String get id; String get orderRef; String get customerName; String get customerPhone; List<OrderItem> get items; double get totalPrice; String get status; String? get dueDate; String? get dueTime; String get deliveryType; String get deliveryAddress; double get shippingFee; String get notes; String get source; String get createdBy; double get amountPaid; bool get isPaid; List<PackingItem> get packingChecklist; String? get workTicketPrintedAt; DateTime get createdAt; DateTime get updatedAt;
+ String get id; String get orderRef; String get customerName; String get customerPhone; List<OrderItem> get items; double get totalPrice; String get status; String? get dueDate; String? get dueTime; String get deliveryType; String get deliveryAddress; double get shippingFee; String get notes; String get source; String get createdBy; double get amountPaid; bool get isPaid; List<PackingItem> get packingChecklist; String? get workTicketPrintedAt; String? get workTicketPrintedBy; DateTime get createdAt; DateTime get updatedAt;
 /// Create a copy of Order
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $OrderCopyWith<Order> get copyWith => _$OrderCopyWithImpl<Order>(this as Order, 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Order&&(identical(other.id, id) || other.id == id)&&(identical(other.orderRef, orderRef) || other.orderRef == orderRef)&&(identical(other.customerName, customerName) || other.customerName == customerName)&&(identical(other.customerPhone, customerPhone) || other.customerPhone == customerPhone)&&const DeepCollectionEquality().equals(other.items, items)&&(identical(other.totalPrice, totalPrice) || other.totalPrice == totalPrice)&&(identical(other.status, status) || other.status == status)&&(identical(other.dueDate, dueDate) || other.dueDate == dueDate)&&(identical(other.dueTime, dueTime) || other.dueTime == dueTime)&&(identical(other.deliveryType, deliveryType) || other.deliveryType == deliveryType)&&(identical(other.deliveryAddress, deliveryAddress) || other.deliveryAddress == deliveryAddress)&&(identical(other.shippingFee, shippingFee) || other.shippingFee == shippingFee)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.source, source) || other.source == source)&&(identical(other.createdBy, createdBy) || other.createdBy == createdBy)&&(identical(other.amountPaid, amountPaid) || other.amountPaid == amountPaid)&&(identical(other.isPaid, isPaid) || other.isPaid == isPaid)&&const DeepCollectionEquality().equals(other.packingChecklist, packingChecklist)&&(identical(other.workTicketPrintedAt, workTicketPrintedAt) || other.workTicketPrintedAt == workTicketPrintedAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Order&&(identical(other.id, id) || other.id == id)&&(identical(other.orderRef, orderRef) || other.orderRef == orderRef)&&(identical(other.customerName, customerName) || other.customerName == customerName)&&(identical(other.customerPhone, customerPhone) || other.customerPhone == customerPhone)&&const DeepCollectionEquality().equals(other.items, items)&&(identical(other.totalPrice, totalPrice) || other.totalPrice == totalPrice)&&(identical(other.status, status) || other.status == status)&&(identical(other.dueDate, dueDate) || other.dueDate == dueDate)&&(identical(other.dueTime, dueTime) || other.dueTime == dueTime)&&(identical(other.deliveryType, deliveryType) || other.deliveryType == deliveryType)&&(identical(other.deliveryAddress, deliveryAddress) || other.deliveryAddress == deliveryAddress)&&(identical(other.shippingFee, shippingFee) || other.shippingFee == shippingFee)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.source, source) || other.source == source)&&(identical(other.createdBy, createdBy) || other.createdBy == createdBy)&&(identical(other.amountPaid, amountPaid) || other.amountPaid == amountPaid)&&(identical(other.isPaid, isPaid) || other.isPaid == isPaid)&&const DeepCollectionEquality().equals(other.packingChecklist, packingChecklist)&&(identical(other.workTicketPrintedAt, workTicketPrintedAt) || other.workTicketPrintedAt == workTicketPrintedAt)&&(identical(other.workTicketPrintedBy, workTicketPrintedBy) || other.workTicketPrintedBy == workTicketPrintedBy)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hashAll([runtimeType,id,orderRef,customerName,customerPhone,const DeepCollectionEquality().hash(items),totalPrice,status,dueDate,dueTime,deliveryType,deliveryAddress,shippingFee,notes,source,createdBy,amountPaid,isPaid,const DeepCollectionEquality().hash(packingChecklist),workTicketPrintedAt,createdAt,updatedAt]);
+int get hashCode => Object.hashAll([runtimeType,id,orderRef,customerName,customerPhone,const DeepCollectionEquality().hash(items),totalPrice,status,dueDate,dueTime,deliveryType,deliveryAddress,shippingFee,notes,source,createdBy,amountPaid,isPaid,const DeepCollectionEquality().hash(packingChecklist),workTicketPrintedAt,workTicketPrintedBy,createdAt,updatedAt]);
 
 @override
 String toString() {
-  return 'Order(id: $id, orderRef: $orderRef, customerName: $customerName, customerPhone: $customerPhone, items: $items, totalPrice: $totalPrice, status: $status, dueDate: $dueDate, dueTime: $dueTime, deliveryType: $deliveryType, deliveryAddress: $deliveryAddress, shippingFee: $shippingFee, notes: $notes, source: $source, createdBy: $createdBy, amountPaid: $amountPaid, isPaid: $isPaid, packingChecklist: $packingChecklist, workTicketPrintedAt: $workTicketPrintedAt, createdAt: $createdAt, updatedAt: $updatedAt)';
+  return 'Order(id: $id, orderRef: $orderRef, customerName: $customerName, customerPhone: $customerPhone, items: $items, totalPrice: $totalPrice, status: $status, dueDate: $dueDate, dueTime: $dueTime, deliveryType: $deliveryType, deliveryAddress: $deliveryAddress, shippingFee: $shippingFee, notes: $notes, source: $source, createdBy: $createdBy, amountPaid: $amountPaid, isPaid: $isPaid, packingChecklist: $packingChecklist, workTicketPrintedAt: $workTicketPrintedAt, workTicketPrintedBy: $workTicketPrintedBy, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $OrderCopyWith<$Res>  {
   factory $OrderCopyWith(Order value, $Res Function(Order) _then) = _$OrderCopyWithImpl;
 @useResult
 $Res call({
- String id, String orderRef, String customerName, String customerPhone, List<OrderItem> items, double totalPrice, String status, String? dueDate, String? dueTime, String deliveryType, String deliveryAddress, double shippingFee, String notes, String source, String createdBy, double amountPaid, bool isPaid, List<PackingItem> packingChecklist, String? workTicketPrintedAt, DateTime createdAt, DateTime updatedAt
+ String id, String orderRef, String customerName, String customerPhone, List<OrderItem> items, double totalPrice, String status, String? dueDate, String? dueTime, String deliveryType, String deliveryAddress, double shippingFee, String notes, String source, String createdBy, double amountPaid, bool isPaid, List<PackingItem> packingChecklist, String? workTicketPrintedAt, String? workTicketPrintedBy, DateTime createdAt, DateTime updatedAt
 });
 
 
@@ -65,7 +65,7 @@ class _$OrderCopyWithImpl<$Res>
 
 /// Create a copy of Order
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? orderRef = null,Object? customerName = null,Object? customerPhone = null,Object? items = null,Object? totalPrice = null,Object? status = null,Object? dueDate = freezed,Object? dueTime = freezed,Object? deliveryType = null,Object? deliveryAddress = null,Object? shippingFee = null,Object? notes = null,Object? source = null,Object? createdBy = null,Object? amountPaid = null,Object? isPaid = null,Object? packingChecklist = null,Object? workTicketPrintedAt = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? orderRef = null,Object? customerName = null,Object? customerPhone = null,Object? items = null,Object? totalPrice = null,Object? status = null,Object? dueDate = freezed,Object? dueTime = freezed,Object? deliveryType = null,Object? deliveryAddress = null,Object? shippingFee = null,Object? notes = null,Object? source = null,Object? createdBy = null,Object? amountPaid = null,Object? isPaid = null,Object? packingChecklist = null,Object? workTicketPrintedAt = freezed,Object? workTicketPrintedBy = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,orderRef: null == orderRef ? _self.orderRef : orderRef // ignore: cast_nullable_to_non_nullable
@@ -86,6 +86,7 @@ as String,amountPaid: null == amountPaid ? _self.amountPaid : amountPaid // igno
 as double,isPaid: null == isPaid ? _self.isPaid : isPaid // ignore: cast_nullable_to_non_nullable
 as bool,packingChecklist: null == packingChecklist ? _self.packingChecklist : packingChecklist // ignore: cast_nullable_to_non_nullable
 as List<PackingItem>,workTicketPrintedAt: freezed == workTicketPrintedAt ? _self.workTicketPrintedAt : workTicketPrintedAt // ignore: cast_nullable_to_non_nullable
+as String?,workTicketPrintedBy: freezed == workTicketPrintedBy ? _self.workTicketPrintedBy : workTicketPrintedBy // ignore: cast_nullable_to_non_nullable
 as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime,
@@ -170,10 +171,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String orderRef,  String customerName,  String customerPhone,  List<OrderItem> items,  double totalPrice,  String status,  String? dueDate,  String? dueTime,  String deliveryType,  String deliveryAddress,  double shippingFee,  String notes,  String source,  String createdBy,  double amountPaid,  bool isPaid,  List<PackingItem> packingChecklist,  String? workTicketPrintedAt,  DateTime createdAt,  DateTime updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String orderRef,  String customerName,  String customerPhone,  List<OrderItem> items,  double totalPrice,  String status,  String? dueDate,  String? dueTime,  String deliveryType,  String deliveryAddress,  double shippingFee,  String notes,  String source,  String createdBy,  double amountPaid,  bool isPaid,  List<PackingItem> packingChecklist,  String? workTicketPrintedAt,  String? workTicketPrintedBy,  DateTime createdAt,  DateTime updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Order() when $default != null:
-return $default(_that.id,_that.orderRef,_that.customerName,_that.customerPhone,_that.items,_that.totalPrice,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.shippingFee,_that.notes,_that.source,_that.createdBy,_that.amountPaid,_that.isPaid,_that.packingChecklist,_that.workTicketPrintedAt,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.orderRef,_that.customerName,_that.customerPhone,_that.items,_that.totalPrice,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.shippingFee,_that.notes,_that.source,_that.createdBy,_that.amountPaid,_that.isPaid,_that.packingChecklist,_that.workTicketPrintedAt,_that.workTicketPrintedBy,_that.createdAt,_that.updatedAt);case _:
   return orElse();
 
 }
@@ -191,10 +192,10 @@ return $default(_that.id,_that.orderRef,_that.customerName,_that.customerPhone,_
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String orderRef,  String customerName,  String customerPhone,  List<OrderItem> items,  double totalPrice,  String status,  String? dueDate,  String? dueTime,  String deliveryType,  String deliveryAddress,  double shippingFee,  String notes,  String source,  String createdBy,  double amountPaid,  bool isPaid,  List<PackingItem> packingChecklist,  String? workTicketPrintedAt,  DateTime createdAt,  DateTime updatedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String orderRef,  String customerName,  String customerPhone,  List<OrderItem> items,  double totalPrice,  String status,  String? dueDate,  String? dueTime,  String deliveryType,  String deliveryAddress,  double shippingFee,  String notes,  String source,  String createdBy,  double amountPaid,  bool isPaid,  List<PackingItem> packingChecklist,  String? workTicketPrintedAt,  String? workTicketPrintedBy,  DateTime createdAt,  DateTime updatedAt)  $default,) {final _that = this;
 switch (_that) {
 case _Order():
-return $default(_that.id,_that.orderRef,_that.customerName,_that.customerPhone,_that.items,_that.totalPrice,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.shippingFee,_that.notes,_that.source,_that.createdBy,_that.amountPaid,_that.isPaid,_that.packingChecklist,_that.workTicketPrintedAt,_that.createdAt,_that.updatedAt);}
+return $default(_that.id,_that.orderRef,_that.customerName,_that.customerPhone,_that.items,_that.totalPrice,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.shippingFee,_that.notes,_that.source,_that.createdBy,_that.amountPaid,_that.isPaid,_that.packingChecklist,_that.workTicketPrintedAt,_that.workTicketPrintedBy,_that.createdAt,_that.updatedAt);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -208,10 +209,10 @@ return $default(_that.id,_that.orderRef,_that.customerName,_that.customerPhone,_
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String orderRef,  String customerName,  String customerPhone,  List<OrderItem> items,  double totalPrice,  String status,  String? dueDate,  String? dueTime,  String deliveryType,  String deliveryAddress,  double shippingFee,  String notes,  String source,  String createdBy,  double amountPaid,  bool isPaid,  List<PackingItem> packingChecklist,  String? workTicketPrintedAt,  DateTime createdAt,  DateTime updatedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String orderRef,  String customerName,  String customerPhone,  List<OrderItem> items,  double totalPrice,  String status,  String? dueDate,  String? dueTime,  String deliveryType,  String deliveryAddress,  double shippingFee,  String notes,  String source,  String createdBy,  double amountPaid,  bool isPaid,  List<PackingItem> packingChecklist,  String? workTicketPrintedAt,  String? workTicketPrintedBy,  DateTime createdAt,  DateTime updatedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _Order() when $default != null:
-return $default(_that.id,_that.orderRef,_that.customerName,_that.customerPhone,_that.items,_that.totalPrice,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.shippingFee,_that.notes,_that.source,_that.createdBy,_that.amountPaid,_that.isPaid,_that.packingChecklist,_that.workTicketPrintedAt,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.orderRef,_that.customerName,_that.customerPhone,_that.items,_that.totalPrice,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.shippingFee,_that.notes,_that.source,_that.createdBy,_that.amountPaid,_that.isPaid,_that.packingChecklist,_that.workTicketPrintedAt,_that.workTicketPrintedBy,_that.createdAt,_that.updatedAt);case _:
   return null;
 
 }
@@ -223,7 +224,7 @@ return $default(_that.id,_that.orderRef,_that.customerName,_that.customerPhone,_
 @JsonSerializable()
 
 class _Order implements Order {
-  const _Order({required this.id, required this.orderRef, required this.customerName, this.customerPhone = '', required final  List<OrderItem> items, required this.totalPrice, this.status = 'new', this.dueDate, this.dueTime, this.deliveryType = 'pickup', this.deliveryAddress = '', this.shippingFee = 0.0, this.notes = '', this.source = '', this.createdBy = '', this.amountPaid = 0.0, this.isPaid = false, final  List<PackingItem> packingChecklist = const [], this.workTicketPrintedAt, required this.createdAt, required this.updatedAt}): _items = items,_packingChecklist = packingChecklist;
+  const _Order({required this.id, required this.orderRef, required this.customerName, this.customerPhone = '', required final  List<OrderItem> items, required this.totalPrice, this.status = 'new', this.dueDate, this.dueTime, this.deliveryType = 'pickup', this.deliveryAddress = '', this.shippingFee = 0.0, this.notes = '', this.source = '', this.createdBy = '', this.amountPaid = 0.0, this.isPaid = false, final  List<PackingItem> packingChecklist = const [], this.workTicketPrintedAt, this.workTicketPrintedBy, required this.createdAt, required this.updatedAt}): _items = items,_packingChecklist = packingChecklist;
   factory _Order.fromJson(Map<String, dynamic> json) => _$OrderFromJson(json);
 
 @override final  String id;
@@ -257,6 +258,7 @@ class _Order implements Order {
 }
 
 @override final  String? workTicketPrintedAt;
+@override final  String? workTicketPrintedBy;
 @override final  DateTime createdAt;
 @override final  DateTime updatedAt;
 
@@ -273,16 +275,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Order&&(identical(other.id, id) || other.id == id)&&(identical(other.orderRef, orderRef) || other.orderRef == orderRef)&&(identical(other.customerName, customerName) || other.customerName == customerName)&&(identical(other.customerPhone, customerPhone) || other.customerPhone == customerPhone)&&const DeepCollectionEquality().equals(other._items, _items)&&(identical(other.totalPrice, totalPrice) || other.totalPrice == totalPrice)&&(identical(other.status, status) || other.status == status)&&(identical(other.dueDate, dueDate) || other.dueDate == dueDate)&&(identical(other.dueTime, dueTime) || other.dueTime == dueTime)&&(identical(other.deliveryType, deliveryType) || other.deliveryType == deliveryType)&&(identical(other.deliveryAddress, deliveryAddress) || other.deliveryAddress == deliveryAddress)&&(identical(other.shippingFee, shippingFee) || other.shippingFee == shippingFee)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.source, source) || other.source == source)&&(identical(other.createdBy, createdBy) || other.createdBy == createdBy)&&(identical(other.amountPaid, amountPaid) || other.amountPaid == amountPaid)&&(identical(other.isPaid, isPaid) || other.isPaid == isPaid)&&const DeepCollectionEquality().equals(other._packingChecklist, _packingChecklist)&&(identical(other.workTicketPrintedAt, workTicketPrintedAt) || other.workTicketPrintedAt == workTicketPrintedAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Order&&(identical(other.id, id) || other.id == id)&&(identical(other.orderRef, orderRef) || other.orderRef == orderRef)&&(identical(other.customerName, customerName) || other.customerName == customerName)&&(identical(other.customerPhone, customerPhone) || other.customerPhone == customerPhone)&&const DeepCollectionEquality().equals(other._items, _items)&&(identical(other.totalPrice, totalPrice) || other.totalPrice == totalPrice)&&(identical(other.status, status) || other.status == status)&&(identical(other.dueDate, dueDate) || other.dueDate == dueDate)&&(identical(other.dueTime, dueTime) || other.dueTime == dueTime)&&(identical(other.deliveryType, deliveryType) || other.deliveryType == deliveryType)&&(identical(other.deliveryAddress, deliveryAddress) || other.deliveryAddress == deliveryAddress)&&(identical(other.shippingFee, shippingFee) || other.shippingFee == shippingFee)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.source, source) || other.source == source)&&(identical(other.createdBy, createdBy) || other.createdBy == createdBy)&&(identical(other.amountPaid, amountPaid) || other.amountPaid == amountPaid)&&(identical(other.isPaid, isPaid) || other.isPaid == isPaid)&&const DeepCollectionEquality().equals(other._packingChecklist, _packingChecklist)&&(identical(other.workTicketPrintedAt, workTicketPrintedAt) || other.workTicketPrintedAt == workTicketPrintedAt)&&(identical(other.workTicketPrintedBy, workTicketPrintedBy) || other.workTicketPrintedBy == workTicketPrintedBy)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hashAll([runtimeType,id,orderRef,customerName,customerPhone,const DeepCollectionEquality().hash(_items),totalPrice,status,dueDate,dueTime,deliveryType,deliveryAddress,shippingFee,notes,source,createdBy,amountPaid,isPaid,const DeepCollectionEquality().hash(_packingChecklist),workTicketPrintedAt,createdAt,updatedAt]);
+int get hashCode => Object.hashAll([runtimeType,id,orderRef,customerName,customerPhone,const DeepCollectionEquality().hash(_items),totalPrice,status,dueDate,dueTime,deliveryType,deliveryAddress,shippingFee,notes,source,createdBy,amountPaid,isPaid,const DeepCollectionEquality().hash(_packingChecklist),workTicketPrintedAt,workTicketPrintedBy,createdAt,updatedAt]);
 
 @override
 String toString() {
-  return 'Order(id: $id, orderRef: $orderRef, customerName: $customerName, customerPhone: $customerPhone, items: $items, totalPrice: $totalPrice, status: $status, dueDate: $dueDate, dueTime: $dueTime, deliveryType: $deliveryType, deliveryAddress: $deliveryAddress, shippingFee: $shippingFee, notes: $notes, source: $source, createdBy: $createdBy, amountPaid: $amountPaid, isPaid: $isPaid, packingChecklist: $packingChecklist, workTicketPrintedAt: $workTicketPrintedAt, createdAt: $createdAt, updatedAt: $updatedAt)';
+  return 'Order(id: $id, orderRef: $orderRef, customerName: $customerName, customerPhone: $customerPhone, items: $items, totalPrice: $totalPrice, status: $status, dueDate: $dueDate, dueTime: $dueTime, deliveryType: $deliveryType, deliveryAddress: $deliveryAddress, shippingFee: $shippingFee, notes: $notes, source: $source, createdBy: $createdBy, amountPaid: $amountPaid, isPaid: $isPaid, packingChecklist: $packingChecklist, workTicketPrintedAt: $workTicketPrintedAt, workTicketPrintedBy: $workTicketPrintedBy, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
@@ -293,7 +295,7 @@ abstract mixin class _$OrderCopyWith<$Res> implements $OrderCopyWith<$Res> {
   factory _$OrderCopyWith(_Order value, $Res Function(_Order) _then) = __$OrderCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String orderRef, String customerName, String customerPhone, List<OrderItem> items, double totalPrice, String status, String? dueDate, String? dueTime, String deliveryType, String deliveryAddress, double shippingFee, String notes, String source, String createdBy, double amountPaid, bool isPaid, List<PackingItem> packingChecklist, String? workTicketPrintedAt, DateTime createdAt, DateTime updatedAt
+ String id, String orderRef, String customerName, String customerPhone, List<OrderItem> items, double totalPrice, String status, String? dueDate, String? dueTime, String deliveryType, String deliveryAddress, double shippingFee, String notes, String source, String createdBy, double amountPaid, bool isPaid, List<PackingItem> packingChecklist, String? workTicketPrintedAt, String? workTicketPrintedBy, DateTime createdAt, DateTime updatedAt
 });
 
 
@@ -310,7 +312,7 @@ class __$OrderCopyWithImpl<$Res>
 
 /// Create a copy of Order
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? orderRef = null,Object? customerName = null,Object? customerPhone = null,Object? items = null,Object? totalPrice = null,Object? status = null,Object? dueDate = freezed,Object? dueTime = freezed,Object? deliveryType = null,Object? deliveryAddress = null,Object? shippingFee = null,Object? notes = null,Object? source = null,Object? createdBy = null,Object? amountPaid = null,Object? isPaid = null,Object? packingChecklist = null,Object? workTicketPrintedAt = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? orderRef = null,Object? customerName = null,Object? customerPhone = null,Object? items = null,Object? totalPrice = null,Object? status = null,Object? dueDate = freezed,Object? dueTime = freezed,Object? deliveryType = null,Object? deliveryAddress = null,Object? shippingFee = null,Object? notes = null,Object? source = null,Object? createdBy = null,Object? amountPaid = null,Object? isPaid = null,Object? packingChecklist = null,Object? workTicketPrintedAt = freezed,Object? workTicketPrintedBy = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
   return _then(_Order(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,orderRef: null == orderRef ? _self.orderRef : orderRef // ignore: cast_nullable_to_non_nullable
@@ -331,6 +333,7 @@ as String,amountPaid: null == amountPaid ? _self.amountPaid : amountPaid // igno
 as double,isPaid: null == isPaid ? _self.isPaid : isPaid // ignore: cast_nullable_to_non_nullable
 as bool,packingChecklist: null == packingChecklist ? _self._packingChecklist : packingChecklist // ignore: cast_nullable_to_non_nullable
 as List<PackingItem>,workTicketPrintedAt: freezed == workTicketPrintedAt ? _self.workTicketPrintedAt : workTicketPrintedAt // ignore: cast_nullable_to_non_nullable
+as String?,workTicketPrintedBy: freezed == workTicketPrintedBy ? _self.workTicketPrintedBy : workTicketPrintedBy // ignore: cast_nullable_to_non_nullable
 as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime,

@@ -2188,11 +2188,6 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
         }
 
         if (mainItemIds.isNotEmpty) {
-          final orderService = ref.read(orderServiceProvider);
-          await orderService.updateWorkTicketPrintedAt(
-            widget.orderRef,
-            DateTime.now().toIso8601String(),
-          );
           if (mounted) {
             showTopSnackBar(context, VN.internalReceiptPrinted);
           }
@@ -2349,11 +2344,6 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
         );
       }
 
-      final orderService = ref.read(orderServiceProvider);
-      await orderService.updateWorkTicketPrintedAt(
-        widget.orderRef,
-        DateTime.now().toIso8601String(),
-      );
       ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
       if (mounted) {
         showTopSnackBar(context, VN.internalReceiptPrinted);

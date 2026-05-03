@@ -627,6 +627,19 @@ WORK_TICKET_PRINTED_AT_SCHEMA = """
 ALTER TABLE orders ADD COLUMN work_ticket_printed_at TEXT DEFAULT NULL;
 """
 
+PRINT_LOG_AND_PRINTED_BY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS print_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id     INTEGER NOT NULL REFERENCES orders(id),
+    item_id      INTEGER,
+    receipt_type TEXT NOT NULL,
+    printed_by   TEXT NOT NULL DEFAULT '',
+    printed_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_print_log_order ON print_log(order_id);
+ALTER TABLE orders ADD COLUMN work_ticket_printed_by TEXT DEFAULT '';
+"""
+
 PRODUCT_ATTRIBUTES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS product_attributes (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1092,6 +1105,10 @@ MIGRATIONS = {
         "description": "Enum product attributes: product_attribute_options table; seed nhan_banh attribute with 5 fillings for banh_kem (Sầu riêng default)",
         "sql": PRODUCT_ATTRIBUTE_OPTIONS_SCHEMA,
         "callable": _migrate_v31_enum_attributes,
+    },
+    32: {
+        "description": "Print tracking: print_log table and work_ticket_printed_by column",
+        "sql": PRINT_LOG_AND_PRINTED_BY_SCHEMA,
     },
 }
 
