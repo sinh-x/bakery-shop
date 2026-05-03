@@ -1,5 +1,5 @@
 from baker.db.connection import get_db
-from baker.db.schema import MIGRATIONS, ensure_schema
+from baker.db.schema import MIGRATIONS, PRINT_LOG_AND_PRINTED_BY_SCHEMA, ensure_schema
 
 
 def _migrate_to_version(conn, target_version: int) -> None:
@@ -242,3 +242,7 @@ def test_schema_migration_v32_handles_preexisting_printed_by_column():
 
         assert _migrated_version(conn) == 32
         _assert_print_tracking_schema(conn)
+
+
+def test_schema_migration_v32_sql_block_does_not_readd_orders_column():
+    assert "ALTER TABLE orders ADD COLUMN work_ticket_printed_by" not in PRINT_LOG_AND_PRINTED_BY_SCHEMA
