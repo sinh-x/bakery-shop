@@ -24,12 +24,19 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     final cart = ref.read(posCartProvider);
     final orderItems = cart.items
         .where((i) => !i.isGift)
-        .map((i) => <String, dynamic>{
+        .map((i) {
+          final hasChipLabel = (i.selectedChipLabel ?? '').trim().isNotEmpty;
+          final productName = hasChipLabel
+              ? '${i.product.name} (${i.selectedChipLabel!.trim()})'
+              : i.product.name;
+
+          return <String, dynamic>{
               'productId': i.product.id.toString(),
-              'productName': i.product.name,
+              'productName': productName,
               'quantity': i.quantity,
-              'unitPrice': i.product.basePrice,
-            })
+              'unitPrice': i.unitPrice,
+            };
+        })
         .toList();
 
     final giftItems = cart.items
@@ -322,10 +329,10 @@ class _CheckoutCartItemTile extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return Dismissible(
-      key: ValueKey('${item.product.id}-${item.isGift}'),
+      key: ValueKey('${item.lineKey}-${item.isGift}'),
       direction: DismissDirection.endToStart,
       onDismissed: (_) {
-        ref.read(posCartProvider.notifier).removeItem(item.product.id);
+        ref.read(posCartProvider.notifier).removeItemByLineKey(item.lineKey);
       },
       background: Container(
         alignment: Alignment.centerRight,
@@ -355,14 +362,20 @@ class _CheckoutCartItemTile extends ConsumerWidget {
                   ),
                 ),
           title: Text(
-            item.isGift ? '${item.product.name} (Quà tặng)' : item.product.name,
+            item.isGift
+                ? '${item.product.name} (Quà tặng)'
+                : item.selectedChipLabel != null
+                ? '${item.product.name} (${item.selectedChipLabel})'
+                : item.product.name,
             style: item.isGift
-                ? theme.textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic)
+                ? theme.textTheme.bodyMedium?.copyWith(
+                    fontStyle: FontStyle.italic,
+                  )
                 : null,
           ),
           subtitle: item.isGift
               ? null
-              : Text(formatVND(item.product.basePrice)),
+              : Text(formatVND(item.unitPrice)),
           trailing: item.isGift
               ? Icon(
                   Icons.chevron_left,
@@ -374,8 +387,8 @@ class _CheckoutCartItemTile extends ConsumerWidget {
                     IconButton(
                       icon: const Icon(Icons.remove_circle_outline, size: 20),
                       onPressed: () {
-                        ref.read(posCartProvider.notifier).updateQuantity(
-                              item.product.id,
+                        ref.read(posCartProvider.notifier).updateQuantityByLineKey(
+                              item.lineKey,
                               item.quantity - 1,
                             );
                       },
@@ -387,8 +400,8 @@ class _CheckoutCartItemTile extends ConsumerWidget {
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline, size: 20),
                       onPressed: () {
-                        ref.read(posCartProvider.notifier).updateQuantity(
-                              item.product.id,
+                        ref.read(posCartProvider.notifier).updateQuantityByLineKey(
+                              item.lineKey,
                               item.quantity + 1,
                             );
                       },
