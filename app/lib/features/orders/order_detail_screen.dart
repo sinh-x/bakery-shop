@@ -14,6 +14,7 @@ import '../../data/models/order_photo.dart';
 import '../../data/models/payment_transaction.dart';
 import '../../data/models/product.dart';
 import '../../data/models/work_item.dart';
+import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/phone_formatter.dart';
@@ -2164,6 +2165,7 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
 
     try {
       final receiptService = ref.read(receiptServiceProvider);
+      final printedBy = ref.read(loggedByProvider);
 
       // Print internal receipt — one per main work item (via server USB printer)
       if (_printInternal) {
@@ -2181,15 +2183,11 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
             orderRef: widget.orderRef,
             type: ReceiptType.workTicket,
             itemId: itemId,
+            printedBy: printedBy,
           );
         }
 
         if (mainItemIds.isNotEmpty) {
-          final orderService = ref.read(orderServiceProvider);
-          await orderService.updateWorkTicketPrintedAt(
-            widget.orderRef,
-            DateTime.now().toIso8601String(),
-          );
           if (mounted) {
             showTopSnackBar(context, VN.internalReceiptPrinted);
           }
@@ -2202,6 +2200,7 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
         await receiptService.printReceipt(
           orderRef: widget.orderRef,
           type: ReceiptType.customer,
+          printedBy: printedBy,
         );
       }
 
@@ -2313,6 +2312,7 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
 
     try {
       final receiptService = ref.read(receiptServiceProvider);
+      final printedBy = ref.read(loggedByProvider);
 
       // Determine which items to print
       List<int> itemIds;
@@ -2340,14 +2340,10 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
           orderRef: widget.orderRef,
           type: ReceiptType.workTicket,
           itemId: id,
+          printedBy: printedBy,
         );
       }
 
-      final orderService = ref.read(orderServiceProvider);
-      await orderService.updateWorkTicketPrintedAt(
-        widget.orderRef,
-        DateTime.now().toIso8601String(),
-      );
       ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
       if (mounted) {
         showTopSnackBar(context, VN.internalReceiptPrinted);

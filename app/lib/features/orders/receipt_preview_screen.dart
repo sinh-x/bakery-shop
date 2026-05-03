@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/api/receipt_service.dart';
-import '../../data/api/order_service.dart';
+import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 
@@ -113,12 +113,14 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
     setState(() => _printing = true);
     try {
       final receiptService = ref.read(receiptServiceProvider);
+      final printedBy = ref.read(loggedByProvider);
 
       // Always use server-side print API (USB thermal printer)
       await receiptService.printReceipt(
         orderRef: widget.orderRef,
         type: widget.receiptType,
         itemId: widget.itemId,
+        printedBy: printedBy,
       );
       if (!mounted) return;
       showTopSnackBar(context, VN.printSuccess);
@@ -128,11 +130,6 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
         await ref
             .read(orderDetailProvider(widget.orderRef).notifier)
             .transitionTo('confirmed');
-        final orderService = ref.read(orderServiceProvider);
-        await orderService.updateWorkTicketPrintedAt(
-          widget.orderRef,
-          DateTime.now().toIso8601String(),
-        );
         if (mounted) {
           showTopSnackBar(context, VN.orderAutoConfirmed);
         }

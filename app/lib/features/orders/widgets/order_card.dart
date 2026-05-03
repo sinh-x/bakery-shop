@@ -137,6 +137,10 @@ class OrderCard extends ConsumerWidget {
     final paymentLabel = _paymentBadge().$2;
     final isTerminal =
         ['completed', 'cancelled', 'delivered'].contains(order.status);
+    final printedBy = (order.workTicketPrintedBy ?? '').trim();
+    final printedLabel = printedBy.isNotEmpty
+        ? '${VN.printStatusPrintedShort}: $printedBy'
+        : VN.printStatusPrintedShort;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -252,32 +256,49 @@ class OrderCard extends ConsumerWidget {
                   children: [
                     const Spacer(),
                     if (order.workTicketPrintedAt != null) ...[
-                      Icon(
-                        Icons.check_circle_outline,
-                        size: 12,
-                        color: Colors.green.shade600,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        VN.printStatusPrintedShort,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: Colors.green.shade600,
-                          fontSize: 10,
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 190),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: Colors.green.shade200),
+                          ),
+                          child: Text(
+                            printedLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Colors.green.shade700,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
                     ] else if (order.status == 'confirmed' ||
                         order.status == 'in_progress') ...[
-                      Icon(
-                        Icons.print_outlined,
-                        size: 12,
-                        color: Colors.orange.shade600,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        VN.printStatusUnprintedShort,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: Colors.orange.shade600,
-                          fontSize: 10,
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: Colors.orange.shade200),
+                        ),
+                        child: Text(
+                          VN.printStatusUnprintedShort,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: Colors.orange.shade800,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ],

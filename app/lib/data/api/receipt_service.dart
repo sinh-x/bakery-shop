@@ -61,10 +61,14 @@ class ReceiptService {
     required String orderRef,
     required ReceiptType type,
     int? itemId,
+    String? printedBy,
   }) async {
     final params = <String, dynamic>{'type': type.value};
     if (itemId != null) {
       params['item_id'] = itemId.toString();
+    }
+    if (printedBy != null) {
+      params['printed_by'] = printedBy;
     }
 
     await _dio.post(

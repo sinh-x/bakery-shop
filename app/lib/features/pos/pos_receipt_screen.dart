@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/receipt_service.dart';
+import '../../providers/events_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 
 
@@ -58,11 +59,13 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
     setState(() => _printing = true);
     try {
       final receiptService = ref.read(receiptServiceProvider);
+      final printedBy = ref.read(loggedByProvider);
 
       // Always use server-side print API (USB thermal printer)
       await receiptService.printReceipt(
         orderRef: widget.orderRef,
         type: ReceiptType.customer,
+        printedBy: printedBy,
       );
       if (!mounted) return;
       showTopSnackBar(context, VN.printSuccess);

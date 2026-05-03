@@ -28,6 +28,7 @@ sealed class Order with _$Order {
     @Default(false) bool isPaid,
     @Default([]) List<PackingItem> packingChecklist,
     String? workTicketPrintedAt,
+    String? workTicketPrintedBy,
     required DateTime createdAt,
     required DateTime updatedAt,
   }) = _Order;
