@@ -181,7 +181,7 @@ class PosProductGrid extends ConsumerWidget {
                       selectedChipLabel: selectedChipLabel,
                     );
                     final labelSuffix = selectedChipLabel != null
-                        ? ' (${selectedChipLabel})'
+                        ? ' ($selectedChipLabel)'
                         : '';
                     showTopSnackBar(
                       context,
