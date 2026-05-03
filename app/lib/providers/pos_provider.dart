@@ -9,13 +9,26 @@ class PosCartItem {
     required this.product,
     required this.quantity,
     this.isGift = false,
+    this.selectedPrice,
+    this.selectedChipId,
+    this.selectedChipLabel,
   });
 
   final Product product;
   int quantity;
   final bool isGift;
+  final double? selectedPrice;
+  final int? selectedChipId;
+  final String? selectedChipLabel;
 
-  double get total => product.basePrice * quantity;
+  String get lineKey =>
+      selectedChipId != null
+          ? '${product.id}:chip:$selectedChipId'
+          : '${product.id}:base';
+
+  double get unitPrice => selectedPrice ?? product.basePrice;
+
+  double get total => unitPrice * quantity;
 }
 
 /// The state of the POS cart.
@@ -33,18 +46,34 @@ class PosCartNotifier extends Notifier<PosCartState> {
   @override
   PosCartState build() => PosCartState();
 
-  void addItem(Product product) {
+  void addItem(
+    Product product, {
+    double? selectedPrice,
+    int? selectedChipId,
+    String? selectedChipLabel,
+  }) {
     final items = List<PosCartItem>.from(state.items);
+    final lineKey = selectedChipId != null
+        ? '${product.id}:chip:$selectedChipId'
+        : '${product.id}:base';
 
-    // Check if product already in cart (not as gift)
+    // Check if same product + same chip selection is already in cart.
     final existing = items.where(
-      (i) => i.product.id == product.id && !i.isGift,
+      (i) => i.lineKey == lineKey && !i.isGift,
     ).firstOrNull;
 
     if (existing != null) {
       existing.quantity += 1;
     } else {
-      items.add(PosCartItem(product: product, quantity: 1));
+      items.add(
+        PosCartItem(
+          product: product,
+          quantity: 1,
+          selectedPrice: selectedPrice,
+          selectedChipId: selectedChipId,
+          selectedChipLabel: selectedChipLabel,
+        ),
+      );
     }
 
     // Auto-gift: if tang_kem + total >= threshold, add gift extras
@@ -81,19 +110,19 @@ class PosCartNotifier extends Notifier<PosCartState> {
     state = PosCartState(items: items);
   }
 
-  void removeItem(int productId) {
+  void removeItemByLineKey(String lineKey) {
     state = PosCartState(
-      items: state.items.where((i) => i.product.id != productId).toList(),
+      items: state.items.where((i) => i.lineKey != lineKey).toList(),
     );
   }
 
-  void updateQuantity(int productId, int qty) {
+  void updateQuantityByLineKey(String lineKey, int qty) {
     if (qty <= 0) {
-      removeItem(productId);
+      removeItemByLineKey(lineKey);
       return;
     }
     final items = List<PosCartItem>.from(state.items);
-    final item = items.where((i) => i.product.id == productId).firstOrNull;
+    final item = items.where((i) => i.lineKey == lineKey).firstOrNull;
     if (item != null) {
       item.quantity = qty;
     }
