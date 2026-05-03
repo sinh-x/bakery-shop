@@ -263,7 +263,7 @@ class Order:
             shipping_fee=row["shipping_fee"] if "shipping_fee" in row.keys() else 0.0,
             created_at=row["created_at"], updated_at=row["updated_at"],
             work_ticket_printed_at=row["work_ticket_printed_at"] if "work_ticket_printed_at" in row.keys() else None,
-            work_ticket_printed_by=row["work_ticket_printed_by"],
+            work_ticket_printed_by=row["work_ticket_printed_by"] if "work_ticket_printed_by" in row.keys() else "",
         )
 
     def to_api_dict(self) -> dict:
