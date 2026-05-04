@@ -116,6 +116,11 @@ class _StockScreenState extends ConsumerState<StockScreen>
             onPressed: () => context.push('/stock/reconciliation'),
           ),
           IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: VN.lichSuDoiSoatTonKho,
+            onPressed: () => context.push('/stock/reconciliation/history'),
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: VN.lamMoi,
             onPressed: () => ref.invalidate(stockOverviewProvider),

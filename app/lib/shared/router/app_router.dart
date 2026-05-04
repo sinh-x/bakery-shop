@@ -34,6 +34,7 @@ import '../../features/products/widgets/catalog_photo_viewer.dart';
 import '../../providers/catalog_provider.dart';
 import '../../features/stock/stock_screen.dart';
 import '../../features/stock/stock_reconciliation_screen.dart';
+import '../../features/stock/stock_reconciliation_history_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../providers/products_provider.dart';
@@ -258,6 +259,19 @@ final appRouter = GoRouter(
       path: '/stock/reconciliation',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const StockReconciliationScreen(),
+    ),
+    GoRoute(
+      path: '/stock/reconciliation/history',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const StockReconciliationHistoryScreen(),
+    ),
+    GoRoute(
+      path: '/stock/reconciliation/history/:id',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final sessionId = int.parse(state.pathParameters['id']!);
+        return StockReconciliationHistoryDetailScreen(sessionId: sessionId);
+      },
     ),
     // Knowledge — full-screen (outside shell)
     GoRoute(

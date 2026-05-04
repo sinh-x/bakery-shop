@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../data/api/reconciliation_service.dart';
 import '../../data/providers/reconciliation_provider.dart';
 import '../../providers/events_provider.dart';
+import '../../providers/products_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+import 'stock_screen.dart';
 
 class StockReconciliationScreen extends ConsumerStatefulWidget {
   const StockReconciliationScreen({super.key});
@@ -39,6 +42,13 @@ class _StockReconciliationScreenState
             tooltip: VN.lamMoi,
             onPressed: state.isSubmitting ? null : notifier.loadDraft,
           ),
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: VN.lichSuDoiSoatTonKho,
+            onPressed: state.isSubmitting
+                ? null
+                : () => context.push('/stock/reconciliation/history'),
+          ),
         ],
       ),
       body: state.isLoading && state.draft == null
@@ -69,6 +79,11 @@ class _StockReconciliationScreenState
                     return;
                   }
                   final nextState = ref.read(reconciliationProvider);
+                  if (success) {
+                    ref.invalidate(productsProvider);
+                    ref.invalidate(stockOverviewProvider);
+                    ref.invalidate(reconciliationHistoryListProvider);
+                  }
                   final message = success
                       ? (nextState.submitSuccessMessage ?? VN.doiSoatThanhCong)
                       : (nextState.errorMessage ?? VN.doiSoatThatBai);
@@ -81,6 +96,15 @@ class _StockReconciliationScreenState
                       SnackBar(
                         content: Text(message),
                         backgroundColor: background,
+                        action:
+                            success && nextState.lastSubmittedSessionId != null
+                            ? SnackBarAction(
+                                label: VN.xemLichSu,
+                                onPressed: () => context.push(
+                                  '/stock/reconciliation/history/${nextState.lastSubmittedSessionId}',
+                                ),
+                              )
+                            : null,
                       ),
                     );
                 },

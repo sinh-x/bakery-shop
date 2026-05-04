@@ -549,6 +549,19 @@ class VN {
   static const khongCoSanPhamTrungBay =
       'Không có sản phẩm trưng bày cần đối soát';
   static const chuaChonNhanVien = 'Chưa chọn nhân viên';
+  static const lichSuDoiSoatTonKho = 'Lịch sử đối soát tồn kho';
+  static const xemLichSu = 'Xem lịch sử';
+  static const chuaCoLichSuDoiSoat = 'Chưa có lịch sử đối soát';
+  static const khongTaiDuocLichSuDoiSoat = 'Không tải được lịch sử đối soát';
+  static const chiTietDoiSoat = 'Chi tiết đối soát';
+  static const khongTaiDuocChiTietDoiSoat = 'Không tải được chi tiết đối soát';
+  static const soDong = 'Số dòng';
+  static const thamChieuDonHang = 'Tham chiếu đơn hàng';
+  static const thamChieuThanhToan = 'Tham chiếu thanh toán';
+  static const thamChieuDongDonHang = 'Tham chiếu dòng đơn hàng';
+  static const thamChieuXuatBan = 'Tham chiếu xuất bán';
+  static const thamChieuXuatHaoHut = 'Tham chiếu xuất hao hụt';
+  static const khongCo = 'Không có';
 
   // Catalog browse
   static const danhMuc = 'Danh mục';

@@ -313,3 +313,106 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
             "date": date.today().isoformat(),
             "message": "Đã lưu đối soát thành công",
         }
+
+
+@router.get("/history")
+def get_reconciliation_history(limit: int = 30):
+    bounded_limit = max(1, min(limit, 200))
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT rs.id,
+                      rs.reconciliation_date,
+                      rs.staff_name,
+                      rs.payment_method,
+                      rs.waste_reason,
+                      rs.linked_order_ref,
+                      rs.created_at,
+                      COUNT(rl.id) AS line_count
+               FROM reconciliation_sessions rs
+               LEFT JOIN reconciliation_lines rl ON rl.session_id = rs.id
+               GROUP BY rs.id
+               ORDER BY rs.id DESC
+               LIMIT ?""",
+            (bounded_limit,),
+        ).fetchall()
+        return {
+            "sessions": [
+                {
+                    "id": row["id"],
+                    "reconciliation_date": row["reconciliation_date"],
+                    "staff_name": row["staff_name"],
+                    "payment_method": row["payment_method"] or "",
+                    "waste_reason": row["waste_reason"] or "",
+                    "linked_order_ref": row["linked_order_ref"],
+                    "created_at": row["created_at"],
+                    "line_count": row["line_count"],
+                }
+                for row in rows
+            ]
+        }
+
+
+@router.get("/history/{session_id}")
+def get_reconciliation_history_detail(session_id: int):
+    with get_db() as conn:
+        session = conn.execute(
+            """SELECT id,
+                      reconciliation_date,
+                      staff_name,
+                      payment_method,
+                      waste_reason,
+                      linked_order_ref,
+                      linked_payment_ref,
+                      created_at
+               FROM reconciliation_sessions
+               WHERE id = ?""",
+            (session_id,),
+        ).fetchone()
+        if session is None:
+            raise HTTPException(status_code=404, detail="Không tìm thấy phiên đối soát")
+
+        line_rows = conn.execute(
+            """SELECT rl.id,
+                      rl.product_id,
+                      p.name AS product_name,
+                      rl.expected_qty,
+                      rl.counted_qty,
+                      rl.sale_qty,
+                      rl.waste_qty,
+                      rl.manual_unit_price,
+                      rl.linked_order_item_id,
+                      rl.linked_stock_movement_sale_id,
+                      rl.linked_stock_movement_waste_id
+               FROM reconciliation_lines rl
+               LEFT JOIN products p ON p.id = rl.product_id
+               WHERE rl.session_id = ?
+               ORDER BY p.name, rl.id""",
+            (session_id,),
+        ).fetchall()
+
+        return {
+            "id": session["id"],
+            "reconciliation_date": session["reconciliation_date"],
+            "staff_name": session["staff_name"],
+            "payment_method": session["payment_method"] or "",
+            "waste_reason": session["waste_reason"] or "",
+            "linked_order_ref": session["linked_order_ref"],
+            "linked_payment_ref": session["linked_payment_ref"],
+            "created_at": session["created_at"],
+            "lines": [
+                {
+                    "id": row["id"],
+                    "product_id": row["product_id"],
+                    "product_name": row["product_name"] or "",
+                    "expected_qty": row["expected_qty"],
+                    "counted_qty": row["counted_qty"],
+                    "sale_qty": row["sale_qty"],
+                    "waste_qty": row["waste_qty"],
+                    "manual_unit_price": row["manual_unit_price"],
+                    "linked_order_item_id": row["linked_order_item_id"],
+                    "linked_stock_movement_sale_id": row["linked_stock_movement_sale_id"],
+                    "linked_stock_movement_waste_id": row["linked_stock_movement_waste_id"],
+                }
+                for row in line_rows
+            ],
+        }

@@ -153,6 +153,131 @@ class ReconciliationSubmitResult {
   }
 }
 
+class ReconciliationHistorySession {
+  ReconciliationHistorySession({
+    required this.id,
+    required this.reconciliationDate,
+    required this.staffName,
+    required this.paymentMethod,
+    required this.wasteReason,
+    required this.linkedOrderRef,
+    required this.lineCount,
+    required this.createdAt,
+  });
+
+  final int id;
+  final String reconciliationDate;
+  final String staffName;
+  final String paymentMethod;
+  final String wasteReason;
+  final String? linkedOrderRef;
+  final int lineCount;
+  final String createdAt;
+
+  factory ReconciliationHistorySession.fromJson(Map<String, dynamic> json) {
+    return ReconciliationHistorySession(
+      id: json['id'] as int,
+      reconciliationDate: json['reconciliation_date'] as String,
+      staffName: json['staff_name'] as String,
+      paymentMethod: (json['payment_method'] as String?) ?? '',
+      wasteReason: (json['waste_reason'] as String?) ?? '',
+      linkedOrderRef: json['linked_order_ref'] as String?,
+      lineCount: (json['line_count'] as num?)?.toInt() ?? 0,
+      createdAt: (json['created_at'] as String?) ?? '',
+    );
+  }
+}
+
+class ReconciliationHistoryLine {
+  ReconciliationHistoryLine({
+    required this.id,
+    required this.productId,
+    required this.productName,
+    required this.expectedQty,
+    required this.countedQty,
+    required this.saleQty,
+    required this.wasteQty,
+    required this.manualUnitPrice,
+    required this.linkedOrderItemId,
+    required this.linkedStockMovementSaleId,
+    required this.linkedStockMovementWasteId,
+  });
+
+  final int id;
+  final int productId;
+  final String productName;
+  final int expectedQty;
+  final int countedQty;
+  final int saleQty;
+  final int wasteQty;
+  final double? manualUnitPrice;
+  final int? linkedOrderItemId;
+  final int? linkedStockMovementSaleId;
+  final int? linkedStockMovementWasteId;
+
+  factory ReconciliationHistoryLine.fromJson(Map<String, dynamic> json) {
+    return ReconciliationHistoryLine(
+      id: json['id'] as int,
+      productId: json['product_id'] as int,
+      productName: (json['product_name'] as String?) ?? '',
+      expectedQty: json['expected_qty'] as int,
+      countedQty: json['counted_qty'] as int,
+      saleQty: json['sale_qty'] as int,
+      wasteQty: json['waste_qty'] as int,
+      manualUnitPrice: (json['manual_unit_price'] as num?)?.toDouble(),
+      linkedOrderItemId: (json['linked_order_item_id'] as num?)?.toInt(),
+      linkedStockMovementSaleId: (json['linked_stock_movement_sale_id'] as num?)
+          ?.toInt(),
+      linkedStockMovementWasteId:
+          (json['linked_stock_movement_waste_id'] as num?)?.toInt(),
+    );
+  }
+}
+
+class ReconciliationHistoryDetail {
+  ReconciliationHistoryDetail({
+    required this.id,
+    required this.reconciliationDate,
+    required this.staffName,
+    required this.paymentMethod,
+    required this.wasteReason,
+    required this.linkedOrderRef,
+    required this.linkedPaymentRef,
+    required this.createdAt,
+    required this.lines,
+  });
+
+  final int id;
+  final String reconciliationDate;
+  final String staffName;
+  final String paymentMethod;
+  final String wasteReason;
+  final String? linkedOrderRef;
+  final String? linkedPaymentRef;
+  final String createdAt;
+  final List<ReconciliationHistoryLine> lines;
+
+  factory ReconciliationHistoryDetail.fromJson(Map<String, dynamic> json) {
+    final lines = (json['lines'] as List<dynamic>? ?? <dynamic>[])
+        .map(
+          (item) =>
+              ReconciliationHistoryLine.fromJson(item as Map<String, dynamic>),
+        )
+        .toList();
+    return ReconciliationHistoryDetail(
+      id: json['id'] as int,
+      reconciliationDate: json['reconciliation_date'] as String,
+      staffName: json['staff_name'] as String,
+      paymentMethod: (json['payment_method'] as String?) ?? '',
+      wasteReason: (json['waste_reason'] as String?) ?? '',
+      linkedOrderRef: json['linked_order_ref'] as String?,
+      linkedPaymentRef: json['linked_payment_ref'] as String?,
+      createdAt: (json['created_at'] as String?) ?? '',
+      lines: lines,
+    );
+  }
+}
+
 class ReconciliationService {
   ReconciliationService(this._dio);
 
@@ -171,6 +296,26 @@ class ReconciliationService {
       data: request.toJson(),
     );
     return ReconciliationSubmitResult.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  Future<List<ReconciliationHistorySession>> getHistorySessions() async {
+    final response = await _dio.get('/api/reconciliations/history');
+    final data = response.data as Map<String, dynamic>;
+    final sessions = (data['sessions'] as List<dynamic>? ?? <dynamic>[])
+        .map(
+          (item) => ReconciliationHistorySession.fromJson(
+            item as Map<String, dynamic>,
+          ),
+        )
+        .toList();
+    return sessions;
+  }
+
+  Future<ReconciliationHistoryDetail> getHistoryDetail(int sessionId) async {
+    final response = await _dio.get('/api/reconciliations/history/$sessionId');
+    return ReconciliationHistoryDetail.fromJson(
       response.data as Map<String, dynamic>,
     );
   }

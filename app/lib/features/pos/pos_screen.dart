@@ -129,6 +129,11 @@ class _PosScreenState extends ConsumerState<PosScreen>
             onPressed: () => context.push('/stock/reconciliation'),
           ),
           IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: VN.lichSuDoiSoatTonKho,
+            onPressed: () => context.push('/stock/reconciliation/history'),
+          ),
+          IconButton(
             icon: const Icon(Icons.inventory_2_outlined),
             tooltip: 'Kho hàng',
             onPressed: () => context.push('/stock'),

@@ -10,6 +10,7 @@ class ReconciliationState {
     this.isLoading = false,
     this.isSubmitting = false,
     this.submitSuccessMessage,
+    this.lastSubmittedSessionId,
     this.errorMessage,
     this.draft,
     this.paymentMethod,
@@ -26,6 +27,7 @@ class ReconciliationState {
   final bool isLoading;
   final bool isSubmitting;
   final String? submitSuccessMessage;
+  final int? lastSubmittedSessionId;
   final String? errorMessage;
   final ReconciliationDraft? draft;
   final String? paymentMethod;
@@ -43,6 +45,8 @@ class ReconciliationState {
     bool? isSubmitting,
     String? submitSuccessMessage,
     bool clearSubmitSuccessMessage = false,
+    int? lastSubmittedSessionId,
+    bool clearLastSubmittedSessionId = false,
     String? errorMessage,
     bool clearErrorMessage = false,
     ReconciliationDraft? draft,
@@ -60,6 +64,9 @@ class ReconciliationState {
       submitSuccessMessage: clearSubmitSuccessMessage
           ? null
           : (submitSuccessMessage ?? this.submitSuccessMessage),
+      lastSubmittedSessionId: clearLastSubmittedSessionId
+          ? null
+          : (lastSubmittedSessionId ?? this.lastSubmittedSessionId),
       errorMessage: clearErrorMessage
           ? null
           : (errorMessage ?? this.errorMessage),
@@ -88,6 +95,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       isLoading: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
+      clearLastSubmittedSessionId: true,
     );
     try {
       final draft = await ref.read(reconciliationServiceProvider).getDraft();
@@ -111,6 +119,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
         manualUnitPriceByProduct: prices,
         clearPaymentMethod: true,
         wasteReason: '',
+        clearLastSubmittedSessionId: true,
       );
     } on DioException catch (error) {
       state = state.copyWith(
@@ -132,6 +141,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       countedQtyByProduct: next,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
+      clearLastSubmittedSessionId: true,
     );
   }
 
@@ -142,6 +152,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       saleQtyByProduct: next,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
+      clearLastSubmittedSessionId: true,
     );
   }
 
@@ -152,6 +163,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       wasteQtyByProduct: next,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
+      clearLastSubmittedSessionId: true,
     );
   }
 
@@ -162,6 +174,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       manualUnitPriceByProduct: next,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
+      clearLastSubmittedSessionId: true,
     );
   }
 
@@ -170,6 +183,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       paymentMethod: method,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
+      clearLastSubmittedSessionId: true,
     );
   }
 
@@ -178,6 +192,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       wasteReason: value,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
+      clearLastSubmittedSessionId: true,
     );
   }
 
@@ -214,6 +229,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       isSubmitting: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
+      clearLastSubmittedSessionId: true,
     );
 
     try {
@@ -231,6 +247,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       await loadDraft();
       state = state.copyWith(
         submitSuccessMessage: result.message,
+        lastSubmittedSessionId: result.id,
         isSubmitting: false,
       );
       return true;
@@ -315,3 +332,18 @@ final reconciliationProvider =
     NotifierProvider<ReconciliationNotifier, ReconciliationState>(
       ReconciliationNotifier.new,
     );
+
+final reconciliationHistoryListProvider =
+    FutureProvider<List<ReconciliationHistorySession>>((ref) async {
+      return ref.read(reconciliationServiceProvider).getHistorySessions();
+    });
+
+final reconciliationHistoryDetailProvider =
+    FutureProvider.family<ReconciliationHistoryDetail, int>((
+      ref,
+      sessionId,
+    ) async {
+      return ref
+          .read(reconciliationServiceProvider)
+          .getHistoryDetail(sessionId);
+    });
