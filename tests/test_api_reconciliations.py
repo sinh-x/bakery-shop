@@ -46,7 +46,7 @@ def test_draft_returns_active_trung_bay_products_with_price_chips(api_client):
     assert p1["price_chips"][0]["price"] == 12000
 
 
-def test_submit_valid_persists_session_and_lines(api_client):
+def test_submit_valid_creates_order_payment_waste_and_links(api_client):
     with get_db() as conn:
         _mark_product_display(conn, 1, "true")
         _set_stock(conn, 1, 9)
@@ -77,6 +77,57 @@ def test_submit_valid_persists_session_and_lines(api_client):
         assert session is not None
         assert session["staff_name"] == "An"
         assert session["payment_method"] == "cash"
+        assert session["linked_order_ref"]
+        assert session["linked_payment_ref"]
+
+        order = conn.execute(
+            "SELECT * FROM orders WHERE order_ref = ?",
+            (session["linked_order_ref"],),
+        ).fetchone()
+        assert order is not None
+        assert order["status"] == "delivered"
+
+        order_item = conn.execute(
+            "SELECT * FROM order_items WHERE order_id = ?",
+            (order["id"],),
+        ).fetchone()
+        assert order_item is not None
+        assert order_item["quantity"] == 1
+        assert order_item["unit_price"] == 15000
+
+        payment = conn.execute(
+            "SELECT * FROM payment_transactions WHERE order_id = ?",
+            (order["id"],),
+        ).fetchone()
+        assert payment is not None
+        assert payment["method"] == "cash"
+        assert payment["type"] == "payment"
+
+        stock = conn.execute(
+            "SELECT quantity FROM product_stock WHERE product_id = ?",
+            (1,),
+        ).fetchone()
+        assert stock["quantity"] == 7
+
+        sale_movement = conn.execute(
+            "SELECT * FROM stock_movements WHERE movement_type = 'sale' AND reference_id = ?",
+            (order["order_ref"],),
+        ).fetchone()
+        assert sale_movement is not None
+        assert sale_movement["quantity"] == -1
+
+        waste_movement = conn.execute(
+            "SELECT * FROM stock_movements WHERE movement_type = 'waste' AND reference_id = ?",
+            (f"reconciliation:{session['id']}",),
+        ).fetchone()
+        assert waste_movement is not None
+        assert waste_movement["quantity"] == -1
+        assert waste_movement["reason"] == "Bị hỏng"
+
+        inventory_events = conn.execute(
+            "SELECT COUNT(*) FROM events WHERE type = 'inventory'",
+        ).fetchone()[0]
+        assert inventory_events >= 2
 
         line = conn.execute("SELECT * FROM reconciliation_lines").fetchone()
         assert line is not None
@@ -85,6 +136,74 @@ def test_submit_valid_persists_session_and_lines(api_client):
         assert line["sale_qty"] == 1
         assert line["waste_qty"] == 1
         assert line["manual_unit_price"] == 15000
+        assert line["linked_order_item_id"] == order_item["id"]
+        assert line["linked_stock_movement_sale_id"] == sale_movement["id"]
+        assert line["linked_stock_movement_waste_id"] == waste_movement["id"]
+
+
+def test_submit_sale_only_creates_one_order_and_one_payment(api_client):
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 6)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": "transfer",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 6,
+                    "counted_qty": 4,
+                    "sale_qty": 2,
+                    "waste_qty": 0,
+                    "manual_unit_price": 12000,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201
+
+    with get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM payment_transactions").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM stock_movements WHERE movement_type = 'sale'").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM stock_movements WHERE movement_type = 'waste'").fetchone()[0] == 0
+
+
+def test_submit_stale_stock_creates_zero_side_effect_rows(api_client):
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 8)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": "cash",
+            "waste_reason": "Bị hỏng",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 7,
+                    "counted_qty": 5,
+                    "sale_qty": 1,
+                    "waste_qty": 1,
+                    "manual_unit_price": 10000,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 409
+
+    with get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM reconciliation_sessions").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM reconciliation_lines").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM payment_transactions").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM stock_movements").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
 
 
 def test_submit_invalid_split_no_partial_writes(api_client):

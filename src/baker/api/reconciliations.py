@@ -5,7 +5,13 @@ from datetime import date
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from baker.api.orders import _auto_decrement_stock
+from baker.api.stock import _upsert_stock
 from baker.db.connection import get_db
+from baker.models.event import Event
+from baker.models.order import Order, OrderItem
+from baker.models.payment_transaction import PaymentTransaction
+from baker.models.work_item import WorkItem
 
 
 router = APIRouter(prefix="/api/reconciliations", tags=["reconciliations"])
@@ -115,6 +121,65 @@ def _validate_submit(payload: ReconciliationSubmitIn):
         raise HTTPException(status_code=422, detail="Vui lòng nhập lý do hao hụt")
 
 
+def _create_sale_order(conn, payload: ReconciliationSubmitIn, session_id: int, latest_by_id: dict[int, dict]):
+    sale_lines = [line for line in payload.lines if line.sale_qty > 0]
+    if not sale_lines:
+        return None, {}, None
+
+    order_items = []
+    for line in sale_lines:
+        latest = latest_by_id[line.product_id]
+        order_items.append(
+            OrderItem(
+                product=latest["name"],
+                qty=line.sale_qty,
+                price=float(line.manual_unit_price or 0),
+                product_id=str(line.product_id),
+            )
+        )
+
+    order = Order(
+        customer_name="Đối soát tồn kho",
+        items=order_items,
+        status="new",
+        source="reconciliation",
+        notes=f"Đối soát phiên #{session_id}",
+        created_by=payload.staff_name.strip(),
+    )
+    order.calculate_total()
+    order.save(conn)
+
+    order_item_ids_by_product: dict[int, int] = {}
+    for position, line in enumerate(sale_lines):
+        latest = latest_by_id[line.product_id]
+        work_item = WorkItem(
+            order_id=order.id or 0,
+            product_id=str(line.product_id),
+            product_name=latest["name"],
+            quantity=line.sale_qty,
+            unit_price=float(line.manual_unit_price or 0),
+            position=position,
+        )
+        work_item.save(conn)
+        order_item_ids_by_product[line.product_id] = work_item.id or 0
+
+    payment_txn = None
+    if payload.payment_method:
+        payment_txn = PaymentTransaction(
+            order_id=order.id or 0,
+            amount=float(order.total_price),
+            type="payment",
+            method=payload.payment_method,
+            note=f"Đối soát phiên #{session_id}",
+        )
+        payment_txn.save(conn)
+
+    Order.update_status(conn, order.order_ref, "delivered", "")
+    _auto_decrement_stock(conn, order.id or 0, order.order_ref)
+
+    return order, order_item_ids_by_product, payment_txn
+
+
 @router.get("/draft")
 def get_reconciliation_draft():
     with get_db() as conn:
@@ -152,11 +217,83 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
         )
         session_id = session_cursor.lastrowid
 
+        order, order_item_ids_by_product, payment_txn = _create_sale_order(
+            conn,
+            payload,
+            session_id,
+            latest_by_id,
+        )
+
+        waste_reason = (payload.waste_reason or "").strip()
+        sale_movement_ids_by_product: dict[int, int] = {}
+        if order:
+            sale_rows = conn.execute(
+                """SELECT id, product_id
+                   FROM stock_movements
+                   WHERE movement_type = 'sale' AND reference_id = ?
+                   ORDER BY id""",
+                (order.order_ref,),
+            ).fetchall()
+            for row in sale_rows:
+                sale_movement_ids_by_product[row["product_id"]] = row["id"]
+
+        waste_movement_ids_by_product: dict[int, int] = {}
+        for line in payload.lines:
+            if line.waste_qty <= 0:
+                continue
+
+            stock_row = conn.execute(
+                "SELECT quantity FROM product_stock WHERE product_id = ?",
+                (line.product_id,),
+            ).fetchone()
+            current_qty = stock_row["quantity"] if stock_row else 0
+            new_qty = max(0, current_qty - line.waste_qty)
+            _upsert_stock(conn, line.product_id, new_qty)
+
+            movement_cursor = conn.execute(
+                """INSERT INTO stock_movements
+                   (product_id, movement_type, quantity, reason, reference_id)
+                   VALUES (?, 'waste', ?, ?, ?)""",
+                (line.product_id, -line.waste_qty, waste_reason, f"reconciliation:{session_id}"),
+            )
+            waste_movement_id = movement_cursor.lastrowid
+            waste_movement_ids_by_product[line.product_id] = waste_movement_id
+
+            product_name_row = conn.execute(
+                "SELECT name FROM products WHERE id = ?",
+                (line.product_id,),
+            ).fetchone()
+            product_name = product_name_row["name"] if product_name_row else f"product_id={line.product_id}"
+            Event(
+                summary=f"Hao hụt -{line.waste_qty} {product_name}",
+                type="inventory",
+                data={
+                    "product_id": line.product_id,
+                    "product_name": product_name,
+                    "movement_type": "waste",
+                    "quantity": -line.waste_qty,
+                    "reason": waste_reason,
+                    "reference_id": f"reconciliation:{session_id}",
+                },
+            ).save(conn)
+
+        conn.execute(
+            """UPDATE reconciliation_sessions
+               SET linked_order_ref = ?, linked_payment_ref = ?
+               WHERE id = ?""",
+            (
+                order.order_ref if order else None,
+                str(payment_txn.id) if payment_txn else None,
+                session_id,
+            ),
+        )
+
         for line in payload.lines:
             conn.execute(
                 """INSERT INTO reconciliation_lines
-                   (session_id, product_id, expected_qty, counted_qty, sale_qty, waste_qty, manual_unit_price)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (session_id, product_id, expected_qty, counted_qty, sale_qty, waste_qty, manual_unit_price,
+                    linked_order_item_id, linked_stock_movement_sale_id, linked_stock_movement_waste_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     line.product_id,
@@ -165,6 +302,9 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
                     line.sale_qty,
                     line.waste_qty,
                     line.manual_unit_price,
+                    order_item_ids_by_product.get(line.product_id),
+                    sale_movement_ids_by_product.get(line.product_id),
+                    waste_movement_ids_by_product.get(line.product_id),
                 ),
             )
 
