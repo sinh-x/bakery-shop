@@ -200,6 +200,7 @@ class ReconciliationHistoryLine {
     required this.countedQty,
     required this.saleQty,
     required this.wasteQty,
+    this.wasteReason,
     required this.manualUnitPrice,
     required this.linkedOrderItemId,
     required this.linkedStockMovementSaleId,
@@ -213,6 +214,7 @@ class ReconciliationHistoryLine {
   final int countedQty;
   final int saleQty;
   final int wasteQty;
+  final String? wasteReason;
   final double? manualUnitPrice;
   final int? linkedOrderItemId;
   final int? linkedStockMovementSaleId;
@@ -227,6 +229,7 @@ class ReconciliationHistoryLine {
       countedQty: json['counted_qty'] as int,
       saleQty: json['sale_qty'] as int,
       wasteQty: json['waste_qty'] as int,
+      wasteReason: json['waste_reason'] as String?,
       manualUnitPrice: (json['manual_unit_price'] as num?)?.toDouble(),
       linkedOrderItemId: (json['linked_order_item_id'] as num?)?.toInt(),
       linkedStockMovementSaleId: (json['linked_stock_movement_sale_id'] as num?)

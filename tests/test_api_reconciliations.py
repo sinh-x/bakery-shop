@@ -458,3 +458,39 @@ def test_submit_rejects_stale_stock_no_partial_writes(api_client):
         assert conn.execute("SELECT COUNT(*) FROM payment_transactions").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM stock_movements").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
+
+
+def test_history_detail_exposes_per_line_waste_reason(api_client):
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 9)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": "cash",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 9,
+                    "counted_qty": 7,
+                    "sale_qty": 1,
+                    "waste_qty": 1,
+                    "waste_reason": "Bị hỏng",
+                    "manual_unit_price": 15000,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201
+    session_id = resp.json()["id"]
+
+    hist_resp = api_client.get(f"/api/reconciliations/history/{session_id}")
+    assert hist_resp.status_code == 200
+    detail = hist_resp.json()
+
+    assert len(detail["lines"]) == 1
+    line = detail["lines"][0]
+    assert line["waste_qty"] == 1
+    assert line["waste_reason"] == "Bị hỏng"

@@ -301,11 +301,12 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
         )
 
         for line in payload.lines:
+            per_line_reason = (line.waste_reason or "").strip() or (payload.waste_reason or "").strip()
             conn.execute(
                 """INSERT INTO reconciliation_lines
-                   (session_id, product_id, expected_qty, counted_qty, sale_qty, waste_qty, manual_unit_price,
+                   (session_id, product_id, expected_qty, counted_qty, sale_qty, waste_qty, waste_reason, manual_unit_price,
                     linked_order_item_id, linked_stock_movement_sale_id, linked_stock_movement_waste_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     line.product_id,
@@ -313,6 +314,7 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
                     line.counted_qty,
                     line.sale_qty,
                     line.waste_qty,
+                    per_line_reason,
                     line.manual_unit_price,
                     order_item_ids_by_product.get(line.product_id),
                     sale_movement_ids_by_product.get(line.product_id),
@@ -391,6 +393,7 @@ def get_reconciliation_history_detail(session_id: int):
                       rl.counted_qty,
                       rl.sale_qty,
                       rl.waste_qty,
+                      rl.waste_reason,
                       rl.manual_unit_price,
                       rl.linked_order_item_id,
                       rl.linked_stock_movement_sale_id,
@@ -420,6 +423,7 @@ def get_reconciliation_history_detail(session_id: int):
                     "counted_qty": row["counted_qty"],
                     "sale_qty": row["sale_qty"],
                     "waste_qty": row["waste_qty"],
+                    "waste_reason": row["waste_reason"] or "",
                     "manual_unit_price": row["manual_unit_price"],
                     "linked_order_item_id": row["linked_order_item_id"],
                     "linked_stock_movement_sale_id": row["linked_stock_movement_sale_id"],

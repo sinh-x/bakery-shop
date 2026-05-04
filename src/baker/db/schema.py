@@ -660,6 +660,7 @@ CREATE TABLE IF NOT EXISTS reconciliation_lines (
     counted_qty                  INTEGER NOT NULL,
     sale_qty                     INTEGER NOT NULL DEFAULT 0,
     waste_qty                    INTEGER NOT NULL DEFAULT 0,
+    waste_reason                 TEXT DEFAULT '',
     manual_unit_price            REAL DEFAULT NULL,
     linked_order_item_id         INTEGER DEFAULT NULL,
     linked_stock_movement_sale_id INTEGER DEFAULT NULL,
