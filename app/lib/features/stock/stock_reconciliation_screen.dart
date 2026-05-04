@@ -90,14 +90,20 @@ class _StockReconciliationScreenState
                   final background = success
                       ? Colors.green[700]
                       : Colors.red[700];
+                  final isWasteOverInventory = nextState.errorMessage != null &&
+                      nextState.errorMessage!.contains('Số hao hụt vượt quá số thiếu');
                   messenger
                     ..hideCurrentSnackBar()
                     ..showSnackBar(
                       SnackBar(
                         content: Text(message),
                         backgroundColor: background,
-                        action:
-                            success && nextState.lastSubmittedSessionId != null
+                        action: isWasteOverInventory
+                            ? SnackBarAction(
+                                label: VN.nhapHangSheet,
+                                onPressed: () => context.push('/stock'),
+                              )
+                            : success && nextState.lastSubmittedSessionId != null
                             ? SnackBarAction(
                                 label: VN.xemLichSu,
                                 onPressed: () => context.push(
@@ -215,6 +221,15 @@ class _StockReconciliationScreenState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
+        final hasEmptyWasteReason = draft.products.any((product) {
+          final waste = state.wasteQtyByProduct[product.productId] ?? 0;
+          if (waste > 0) {
+            final reason = (state.wasteReasonByProduct[product.productId] ?? '').trim();
+            return reason.isEmpty;
+          }
+          return false;
+        });
+
         return AlertDialog(
           title: const Text(VN.xacNhanGuiDoiSoat),
           content: Column(
@@ -231,8 +246,14 @@ class _StockReconciliationScreenState
                 Text(
                   '${VN.phuongThucThanhToan}: ${paymentMethodLabel(state.paymentMethod ?? '')}',
                 ),
-              if (state.hasWaste)
-                Text('${VN.lyDoHaoHut}: ${state.wasteReason.trim()}'),
+              if (state.hasWaste && hasEmptyWasteReason)
+                Text(
+                  '(${VN.lyDoHaoHut}: ${VN.khongCo})',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
             ],
           ),
           actions: [
@@ -252,21 +273,59 @@ class _StockReconciliationScreenState
   }
 }
 
-class _ProductCard extends ConsumerWidget {
+class _ProductCard extends ConsumerStatefulWidget {
   const _ProductCard({required this.product});
 
   final ReconciliationDraftProduct product;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ProductCard> createState() => _ProductCardState();
+}
+
+class _ProductCardState extends ConsumerState<_ProductCard> {
+  late TextEditingController _countedController;
+  late TextEditingController _saleController;
+  late TextEditingController _wasteController;
+  late TextEditingController _manualPriceController;
+  late TextEditingController _wasteReasonController;
+
+  @override
+  void initState() {
+    super.initState();
+    final productId = widget.product.productId;
+    final state = ref.read(reconciliationProvider);
+    final counted = state.countedQtyByProduct[productId] ?? widget.product.expectedQty;
+    final sale = state.saleQtyByProduct[productId] ?? 0;
+    final waste = state.wasteQtyByProduct[productId] ?? 0;
+    final manualPrice = state.manualUnitPriceByProduct[productId] ?? '';
+    final wasteReason = state.wasteReasonByProduct[productId] ?? '';
+
+    _countedController = TextEditingController(text: '$counted');
+    _saleController = TextEditingController(text: '$sale');
+    _wasteController = TextEditingController(text: '$waste');
+    _manualPriceController = TextEditingController(text: manualPrice);
+    _wasteReasonController = TextEditingController(text: wasteReason);
+  }
+
+  @override
+  void dispose() {
+    _countedController.dispose();
+    _saleController.dispose();
+    _wasteController.dispose();
+    _manualPriceController.dispose();
+    _wasteReasonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(reconciliationProvider);
     final notifier = ref.read(reconciliationProvider.notifier);
     final counted =
-        state.countedQtyByProduct[product.productId] ?? product.expectedQty;
-    final sale = state.saleQtyByProduct[product.productId] ?? 0;
-    final waste = state.wasteQtyByProduct[product.productId] ?? 0;
-    final missing = product.expectedQty - counted;
-    final manualPrice = state.manualUnitPriceByProduct[product.productId] ?? '';
+        state.countedQtyByProduct[widget.product.productId] ?? widget.product.expectedQty;
+    final sale = state.saleQtyByProduct[widget.product.productId] ?? 0;
+    final waste = state.wasteQtyByProduct[widget.product.productId] ?? 0;
+    final missing = widget.product.expectedQty - counted;
 
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
@@ -275,15 +334,15 @@ class _ProductCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(product.name, style: Theme.of(context).textTheme.titleMedium),
+            Text(widget.product.name, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 4),
-            Text('${VN.tonDuKien}: ${product.expectedQty}'),
-            Text('${VN.giaCoSo}: ${product.basePrice.toStringAsFixed(0)}đ'),
-            if (product.priceChips.isNotEmpty)
+            Text('${VN.tonDuKien}: ${widget.product.expectedQty}'),
+            Text('${VN.giaCoSo}: ${widget.product.basePrice.toStringAsFixed(0)}đ'),
+            if (widget.product.priceChips.isNotEmpty)
               Wrap(
                 spacing: 6,
                 runSpacing: 4,
-                children: product.priceChips
+                children: widget.product.priceChips
                     .map(
                       (chip) => Chip(
                         label: Text(
@@ -301,12 +360,10 @@ class _ProductCard extends ConsumerWidget {
                 labelText: VN.tonDaDem,
                 border: OutlineInputBorder(),
               ),
-              controller: TextEditingController(
-                text: '$counted',
-              )..selection = TextSelection.collapsed(offset: '$counted'.length),
+              controller: _countedController,
               onChanged: (value) {
                 final parsed = int.tryParse(value) ?? 0;
-                notifier.setCountedQty(product.productId, parsed);
+                notifier.setCountedQty(widget.product.productId, parsed);
               },
             ),
             if (missing > 0) ...[
@@ -328,13 +385,10 @@ class _ProductCard extends ConsumerWidget {
                         labelText: VN.soLuongBan,
                         border: OutlineInputBorder(),
                       ),
-                      controller: TextEditingController(text: '$sale')
-                        ..selection = TextSelection.collapsed(
-                          offset: '$sale'.length,
-                        ),
+                      controller: _saleController,
                       onChanged: (value) {
                         notifier.setSaleQty(
-                          product.productId,
+                          widget.product.productId,
                           int.tryParse(value) ?? 0,
                         );
                       },
@@ -348,13 +402,10 @@ class _ProductCard extends ConsumerWidget {
                         labelText: VN.soLuongHaoHut,
                         border: OutlineInputBorder(),
                       ),
-                      controller: TextEditingController(text: '$waste')
-                        ..selection = TextSelection.collapsed(
-                          offset: '$waste'.length,
-                        ),
+                      controller: _wasteController,
                       onChanged: (value) {
                         notifier.setWasteQty(
-                          product.productId,
+                          widget.product.productId,
                           int.tryParse(value) ?? 0,
                         );
                       },
@@ -371,12 +422,22 @@ class _ProductCard extends ConsumerWidget {
                   labelText: VN.donGiaNhapTay,
                   border: OutlineInputBorder(),
                 ),
-                controller: TextEditingController(text: manualPrice)
-                  ..selection = TextSelection.collapsed(
-                    offset: manualPrice.length,
-                  ),
+                controller: _manualPriceController,
                 onChanged: (value) {
-                  notifier.setManualUnitPrice(product.productId, value);
+                  notifier.setManualUnitPrice(widget.product.productId, value);
+                },
+              ),
+            ],
+            if (waste > 0) ...[
+              const SizedBox(height: 8),
+              TextField(
+                decoration: const InputDecoration(
+                  labelText: VN.lyDoHaoHut,
+                  border: OutlineInputBorder(),
+                ),
+                controller: _wasteReasonController,
+                onChanged: (value) {
+                  notifier.setWasteReasonForProduct(widget.product.productId, value);
                 },
               ),
             ],
@@ -422,15 +483,6 @@ class _SubmitOptionsPanel extends ConsumerWidget {
                 ),
               ],
               onChanged: notifier.setPaymentMethod,
-            ),
-          if (state.hasSale) const SizedBox(height: 8),
-          if (state.hasWaste)
-            TextField(
-              decoration: const InputDecoration(
-                labelText: VN.lyDoHaoHut,
-                border: OutlineInputBorder(),
-              ),
-              onChanged: notifier.setWasteReason,
             ),
         ],
       ),

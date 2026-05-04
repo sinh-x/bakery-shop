@@ -89,6 +89,7 @@ class ReconciliationSubmitLine {
     required this.saleQty,
     required this.wasteQty,
     this.manualUnitPrice,
+    this.wasteReason,
   });
 
   final int productId;
@@ -97,6 +98,7 @@ class ReconciliationSubmitLine {
   final int saleQty;
   final int wasteQty;
   final double? manualUnitPrice;
+  final String? wasteReason;
 
   Map<String, dynamic> toJson() {
     return {
@@ -106,6 +108,7 @@ class ReconciliationSubmitLine {
       'sale_qty': saleQty,
       'waste_qty': wasteQty,
       'manual_unit_price': manualUnitPrice,
+      'waste_reason': wasteReason,
     };
   }
 }

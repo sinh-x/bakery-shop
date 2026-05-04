@@ -24,6 +24,7 @@ class ReconciliationLineIn(BaseModel):
     sale_qty: int = 0
     waste_qty: int = 0
     manual_unit_price: float | None = None
+    waste_reason: str | None = None
 
 
 class ReconciliationSubmitIn(BaseModel):
@@ -90,6 +91,7 @@ def _validate_submit(payload: ReconciliationSubmitIn):
 
     has_sale = False
     has_waste = False
+    lines_missing_reason: list[int] = []
 
     for line in payload.lines:
         if line.expected_qty < 0 or line.counted_qty < 0:
@@ -100,6 +102,11 @@ def _validate_submit(payload: ReconciliationSubmitIn):
         missing_qty = line.expected_qty - line.counted_qty
         if missing_qty < 0:
             raise HTTPException(status_code=422, detail="Số đếm thực tế không được lớn hơn số tồn dự kiến")
+        if missing_qty > 0 and line.waste_qty > missing_qty:
+            raise HTTPException(
+                status_code=422,
+                detail="Số hao hụt vượt quá số thiếu. Vui lòng vào màn hình 'Nhập hàng' để bổ sung tồn kho trước.",
+            )
         if missing_qty > 0 and line.sale_qty + line.waste_qty != missing_qty:
             raise HTTPException(status_code=422, detail="Sản phẩm thiếu phải tách đúng: bán + hao hụt = số thiếu")
         if missing_qty == 0 and (line.sale_qty > 0 or line.waste_qty > 0):
@@ -111,14 +118,18 @@ def _validate_submit(payload: ReconciliationSubmitIn):
                 raise HTTPException(status_code=422, detail="Mỗi dòng bán phải có đơn giá nhập tay lớn hơn 0")
         if line.waste_qty > 0:
             has_waste = True
+            if not (line.waste_reason or "").strip():
+                lines_missing_reason.append(line.product_id)
 
     if has_sale:
         method = (payload.payment_method or "").strip()
         if method not in {"cash", "transfer"}:
             raise HTTPException(status_code=422, detail="Vui lòng chọn phương thức thanh toán (tiền mặt hoặc chuyển khoản)")
 
-    if has_waste and not (payload.waste_reason or "").strip():
-        raise HTTPException(status_code=422, detail="Vui lòng nhập lý do hao hụt")
+    if lines_missing_reason:
+        session_reason = (payload.waste_reason or "").strip()
+        if not session_reason:
+            raise HTTPException(status_code=422, detail="Sản phẩm có hao hụt phải nhập lý do")
 
 
 def _create_sale_order(conn, payload: ReconciliationSubmitIn, session_id: int, latest_by_id: dict[int, dict]):
@@ -250,11 +261,12 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
             new_qty = max(0, current_qty - line.waste_qty)
             _upsert_stock(conn, line.product_id, new_qty)
 
+            per_line_reason = (line.waste_reason or "").strip() or (payload.waste_reason or "").strip()
             movement_cursor = conn.execute(
                 """INSERT INTO stock_movements
                    (product_id, movement_type, quantity, reason, reference_id)
                    VALUES (?, 'waste', ?, ?, ?)""",
-                (line.product_id, -line.waste_qty, waste_reason, f"reconciliation:{session_id}"),
+                (line.product_id, -line.waste_qty, per_line_reason, f"reconciliation:{session_id}"),
             )
             waste_movement_id = movement_cursor.lastrowid
             waste_movement_ids_by_product[line.product_id] = waste_movement_id
@@ -272,7 +284,7 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
                     "product_name": product_name,
                     "movement_type": "waste",
                     "quantity": -line.waste_qty,
-                    "reason": waste_reason,
+                    "reason": per_line_reason,
                     "reference_id": f"reconciliation:{session_id}",
                 },
             ).save(conn)

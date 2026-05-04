@@ -157,7 +157,7 @@ class _DetailView extends StatelessWidget {
                   Text('${VN.soLuongBan}: ${line.saleQty}'),
                   Text('${VN.soLuongHaoHut}: ${line.wasteQty}'),
                   Text(
-                    '${VN.donGiaNhapTay}: ${line.manualUnitPrice?.toStringAsFixed(0) ?? VN.khongCo}',
+                    '${VN.donGiaNhapTay}: ${line.manualUnitPrice != null ? formatVND(line.manualUnitPrice!) : VN.khongCo}',
                   ),
                   Text(
                     '${VN.thamChieuDongDonHang}: ${line.linkedOrderItemId?.toString() ?? VN.khongCo}',

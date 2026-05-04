@@ -19,10 +19,12 @@ class ReconciliationState {
     Map<int, int>? saleQtyByProduct,
     Map<int, int>? wasteQtyByProduct,
     Map<int, String>? manualUnitPriceByProduct,
+    Map<int, String>? wasteReasonByProduct,
   }) : countedQtyByProduct = countedQtyByProduct ?? <int, int>{},
        saleQtyByProduct = saleQtyByProduct ?? <int, int>{},
        wasteQtyByProduct = wasteQtyByProduct ?? <int, int>{},
-       manualUnitPriceByProduct = manualUnitPriceByProduct ?? <int, String>{};
+       manualUnitPriceByProduct = manualUnitPriceByProduct ?? <int, String>{},
+       wasteReasonByProduct = wasteReasonByProduct ?? <int, String>{};
 
   final bool isLoading;
   final bool isSubmitting;
@@ -36,6 +38,7 @@ class ReconciliationState {
   final Map<int, int> saleQtyByProduct;
   final Map<int, int> wasteQtyByProduct;
   final Map<int, String> manualUnitPriceByProduct;
+  final Map<int, String> wasteReasonByProduct;
 
   bool get hasSale => saleQtyByProduct.values.any((value) => value > 0);
   bool get hasWaste => wasteQtyByProduct.values.any((value) => value > 0);
@@ -57,6 +60,7 @@ class ReconciliationState {
     Map<int, int>? saleQtyByProduct,
     Map<int, int>? wasteQtyByProduct,
     Map<int, String>? manualUnitPriceByProduct,
+    Map<int, String>? wasteReasonByProduct,
   }) {
     return ReconciliationState(
       isLoading: isLoading ?? this.isLoading,
@@ -80,6 +84,8 @@ class ReconciliationState {
       wasteQtyByProduct: wasteQtyByProduct ?? this.wasteQtyByProduct,
       manualUnitPriceByProduct:
           manualUnitPriceByProduct ?? this.manualUnitPriceByProduct,
+      wasteReasonByProduct:
+          wasteReasonByProduct ?? this.wasteReasonByProduct,
     );
   }
 }
@@ -103,11 +109,13 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       final sale = <int, int>{};
       final waste = <int, int>{};
       final prices = <int, String>{};
+      final wasteReasons = <int, String>{};
       for (final product in draft.products) {
         counted[product.productId] = product.expectedQty;
         sale[product.productId] = 0;
         waste[product.productId] = 0;
         prices[product.productId] = '';
+        wasteReasons[product.productId] = '';
       }
 
       state = state.copyWith(
@@ -117,6 +125,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
         saleQtyByProduct: sale,
         wasteQtyByProduct: waste,
         manualUnitPriceByProduct: prices,
+        wasteReasonByProduct: wasteReasons,
         clearPaymentMethod: true,
         wasteReason: '',
         clearLastSubmittedSessionId: true,
@@ -178,6 +187,17 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
+  void setWasteReasonForProduct(int productId, String reason) {
+    final next = Map<int, String>.from(state.wasteReasonByProduct);
+    next[productId] = reason;
+    state = state.copyWith(
+      wasteReasonByProduct: next,
+      clearErrorMessage: true,
+      clearSubmitSuccessMessage: true,
+      clearLastSubmittedSessionId: true,
+    );
+  }
+
   void setPaymentMethod(String? method) {
     state = state.copyWith(
       paymentMethod: method,
@@ -215,13 +235,15 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
           state.manualUnitPriceByProduct[product.productId] ?? '';
       final parsedPrice = double.tryParse(manualValue.trim());
       final saleQty = state.saleQtyByProduct[product.productId] ?? 0;
+      final wasteQty = state.wasteQtyByProduct[product.productId] ?? 0;
       return ReconciliationSubmitLine(
         productId: product.productId,
         expectedQty: product.expectedQty,
         countedQty: state.countedQtyByProduct[product.productId] ?? 0,
         saleQty: saleQty,
-        wasteQty: state.wasteQtyByProduct[product.productId] ?? 0,
+        wasteQty: wasteQty,
         manualUnitPrice: saleQty > 0 ? parsedPrice : null,
+        wasteReason: wasteQty > 0 ? state.wasteReasonByProduct[product.productId]?.trim() : null,
       );
     }).toList();
 
@@ -287,7 +309,13 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       }
 
       final missing = product.expectedQty - counted;
-      if (missing != sale + waste) {
+      if (missing < 0) {
+        return 'Số đếm thực tế không được lớn hơn số tồn dự kiến';
+      }
+      if (waste > missing) {
+        return 'Số hao hụt vượt quá số thiếu. Vui lòng vào màn hình \'Nhập hàng\' để bổ sung tồn kho trước.';
+      }
+      if (missing > 0 && sale + waste != missing) {
         return 'Sản phẩm thiếu phải tách đúng: bán + hao hụt = số thiếu';
       }
 
@@ -300,6 +328,13 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
           return 'Mỗi dòng bán phải có đơn giá nhập tay lớn hơn 0';
         }
       }
+
+      if (waste > 0) {
+        final reason = (currentState.wasteReasonByProduct[product.productId] ?? '').trim();
+        if (reason.isEmpty) {
+          return 'Sản phẩm có hao hụt phải nhập lý do';
+        }
+      }
     }
 
     if (currentState.hasSale &&
@@ -308,9 +343,6 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       return 'Vui lòng chọn phương thức thanh toán';
     }
 
-    if (currentState.hasWaste && currentState.wasteReason.trim().isEmpty) {
-      return 'Vui lòng nhập lý do hao hụt';
-    }
     return null;
   }
 

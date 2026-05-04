@@ -334,7 +334,98 @@ def test_submit_requires_waste_reason(api_client):
         },
     )
     assert resp.status_code == 422
-    assert "lý do hao hụt" in resp.json()["detail"]
+    assert "hao hụt" in resp.json()["detail"] and "lý do" in resp.json()["detail"]
+
+
+def test_submit_per_line_waste_reason(api_client):
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 5)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": "cash",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 5,
+                    "counted_qty": 4,
+                    "sale_qty": 0,
+                    "waste_qty": 1,
+                    "waste_reason": "Bị rụng",
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201
+
+    with get_db() as conn:
+        waste_movement = conn.execute(
+            "SELECT * FROM stock_movements WHERE movement_type = 'waste' AND reference_id LIKE 'reconciliation:%'",
+        ).fetchone()
+        assert waste_movement is not None
+        assert waste_movement["reason"] == "Bị rụng"
+
+
+def test_submit_per_line_waste_reason_overrides_session_reason(api_client):
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 5)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": "cash",
+            "waste_reason": "Session-level reason",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 5,
+                    "counted_qty": 4,
+                    "sale_qty": 0,
+                    "waste_qty": 1,
+                    "waste_reason": "Line-level reason",
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201
+
+    with get_db() as conn:
+        waste_movement = conn.execute(
+            "SELECT * FROM stock_movements WHERE movement_type = 'waste' AND reference_id LIKE 'reconciliation:%'",
+        ).fetchone()
+        assert waste_movement is not None
+        assert waste_movement["reason"] == "Line-level reason"
+
+
+def test_submit_waste_qty_over_missing_qty_rejects(api_client):
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 5)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 5,
+                    "counted_qty": 4,
+                    "sale_qty": 0,
+                    "waste_qty": 2,
+                    "waste_reason": "Bị hỏng",
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 422
+    assert "hao hụt vượt quá số thiếu" in resp.json()["detail"]
+    assert "Nhập hàng" in resp.json()["detail"]
 
 
 def test_submit_rejects_stale_stock_no_partial_writes(api_client):
