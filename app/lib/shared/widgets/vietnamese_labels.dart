@@ -526,6 +526,29 @@ class VN {
   static const khongCoSanPhamTonKho = 'Không có sản phẩm tồn kho';
   static const capNhatThanhCong = 'Cập nhật thành công';
   static const loiHeThong = 'Lỗi hệ thống';
+  static const doiSoatTonKhoHomNay = 'Đối soát tồn kho hôm nay';
+  static const nhanVien = 'Nhân viên';
+  static const ngayDoiSoat = 'Ngày đối soát';
+  static const tonDuKien = 'Tồn dự kiến';
+  static const giaCoSo = 'Giá cơ sở';
+  static const tonDaDem = 'Tồn đã đếm';
+  static const soLuongThieu = 'Số lượng thiếu';
+  static const soLuongBan = 'Số lượng bán';
+  static const soLuongHaoHut = 'Số lượng hao hụt';
+  static const donGiaNhapTay = 'Đơn giá nhập tay';
+  static const phuongThucThanhToan = 'Phương thức thanh toán';
+  static const lyDoHaoHut = 'Lý do hao hụt';
+  static const guiDoiSoat = 'Gửi đối soát';
+  static const dangGuiDoiSoat = 'Đang gửi đối soát...';
+  static const xacNhanGuiDoiSoat = 'Xác nhận gửi đối soát';
+  static const tongSoLuongBan = 'Tổng số lượng bán';
+  static const tongSoLuongHaoHut = 'Tổng số lượng hao hụt';
+  static const doiSoatThanhCong = 'Đã lưu đối soát thành công';
+  static const doiSoatThatBai = 'Gửi đối soát thất bại';
+  static const khongTheTaiDuLieuDoiSoat = 'Không thể tải dữ liệu đối soát';
+  static const khongCoSanPhamTrungBay =
+      'Không có sản phẩm trưng bày cần đối soát';
+  static const chuaChonNhanVien = 'Chưa chọn nhân viên';
 
   // Catalog browse
   static const danhMuc = 'Danh mục';
