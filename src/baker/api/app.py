@@ -20,6 +20,7 @@ from baker.api.printing import router as printing_router
 from baker.api.product_attributes import router as product_attributes_router
 from baker.api.product_attribute_options import router as product_attribute_options_router
 from baker.api.product_price_chips import router as product_price_chips_router
+from baker.api.reconciliations import router as reconciliations_router
 from baker.api.receipts import router as receipts_router
 from baker.api.photos import router as photos_router
 from baker.api.products import router as products_router
@@ -81,5 +82,6 @@ def create_app() -> FastAPI:
     app.include_router(receipts_router)
     app.include_router(printing_router)
     app.include_router(stock_router)
+    app.include_router(reconciliations_router)
 
     return app
