@@ -31,11 +31,12 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
               : i.product.name;
 
           return <String, dynamic>{
-              'productId': i.product.id.toString(),
-              'productName': productName,
-              'quantity': i.quantity,
-              'unitPrice': i.unitPrice,
-            };
+            'productId': i.product.id.toString(),
+            'productName': productName,
+            'quantity': i.quantity,
+            'unitPrice': i.unitPrice,
+            'priceChipId': i.selectedChipId,
+          };
         })
         .toList();
 

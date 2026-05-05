@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from baker.api.inventory_fifo import consume_fifo_items, normalize_price_chip
 from baker.db.connection import get_db
 from baker.logging import log_context
 from baker.models.order import Order, OrderItem, is_backward_transition, validate_transition
@@ -26,6 +27,7 @@ class OrderItemIn(BaseModel):
     age: Optional[int] = None
     isExtra: bool = False
     isGift: bool = False
+    priceChipId: int | None = None
     attributes: dict = Field(default_factory=dict)
 
 
@@ -95,11 +97,11 @@ def _auto_decrement_stock(conn, order_id: int, order_ref: str):
     from baker.models.event import Event
 
     order_items = conn.execute(
-        """SELECT oi.product_id, oi.product_name, oi.quantity
+        """SELECT oi.product_id, oi.product_name, oi.quantity, oi.price_chip_id
            FROM order_items oi
            WHERE oi.order_id = ?
              AND oi.product_id != ''
-             AND oi.is_gift = 0""",
+              AND oi.is_gift = 0""",
         (order_id,),
     ).fetchall()
 
@@ -122,6 +124,7 @@ def _auto_decrement_stock(conn, order_id: int, order_ref: str):
 
         product_id = product_row["id"]
         qty = item["quantity"]
+        chip_id = normalize_price_chip(conn, product_id, item["price_chip_id"])
 
         attr_row = conn.execute(
             """SELECT value FROM product_attribute_values
@@ -131,27 +134,25 @@ def _auto_decrement_stock(conn, order_id: int, order_ref: str):
         if not attr_row or attr_row["value"] != "true":
             continue
 
-        stock_row = conn.execute(
-            "SELECT quantity FROM product_stock WHERE product_id = ?",
-            (product_id,),
+        movement_cursor = conn.execute(
+            """INSERT INTO stock_movements
+               (product_id, movement_type, quantity, reason, reference_id, price_chip_id)
+               VALUES (?, 'sale', ?, ?, ?, ?)""",
+            (product_id, -qty, f"Order {order_ref}", order_ref, chip_id),
+        )
+        movement_id = movement_cursor.lastrowid
+        consume_fifo_items(conn, product_id, chip_id, qty, movement_id)
+
+        lot_row = conn.execute(
+            "SELECT lot_id FROM inventory_items WHERE consumed_by_movement_id = ? ORDER BY id ASC LIMIT 1",
+            (movement_id,),
         ).fetchone()
-        if stock_row:
+        if lot_row:
             conn.execute(
-                "UPDATE product_stock SET quantity = ? WHERE product_id = ?",
-                (max(0, stock_row["quantity"] - qty), product_id),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO product_stock (product_id, quantity) VALUES (?, 0)",
-                (product_id,),
+                "UPDATE stock_movements SET lot_id = ? WHERE id = ?",
+                (lot_row["lot_id"], movement_id),
             )
 
-        conn.execute(
-            """INSERT INTO stock_movements
-               (product_id, movement_type, quantity, reason, reference_id)
-               VALUES (?, 'sale', ?, ?, ?)""",
-            (product_id, -qty, f"Order {order_ref}", order_ref),
-        )
         Event(
             summary=f"Bán hàng -{qty} {item['product_name']}",
             type="inventory",
@@ -161,6 +162,7 @@ def _auto_decrement_stock(conn, order_id: int, order_ref: str):
                 "movement_type": "sale",
                 "quantity": -qty,
                 "reference_id": order_ref,
+                "price_chip_id": chip_id,
             },
         ).save(conn)
 
@@ -177,6 +179,7 @@ def _item_in_to_model(item: OrderItemIn) -> OrderItem:
         is_extra=item.isExtra,
         is_gift=item.isGift,
         attributes=item.attributes,
+        price_chip_id=item.priceChipId,
     )
 
 
@@ -266,6 +269,7 @@ def create_order(body: OrderCreate, request: Request):
                 is_extra=item.isExtra,
                 is_gift=item.isGift,
                 attributes=item.attributes,
+                price_chip_id=item.priceChipId,
             )
             work_item.save(conn)
 

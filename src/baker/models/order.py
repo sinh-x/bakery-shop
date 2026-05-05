@@ -88,6 +88,7 @@ class OrderItem:
     age: Optional[int] = None
     is_extra: bool = False
     is_gift: bool = False
+    price_chip_id: Optional[int] = None
     attributes: dict = field(default_factory=dict)
 
     def to_dict(self):
@@ -101,6 +102,7 @@ class OrderItem:
             "age": self.age,
             "is_extra": self.is_extra,
             "is_gift": self.is_gift,
+            "price_chip_id": self.price_chip_id,
             "attributes": self.attributes,
         }
 
@@ -115,6 +117,7 @@ class OrderItem:
             "age": self.age,
             "isExtra": self.is_extra,
             "isGift": self.is_gift,
+            "priceChipId": self.price_chip_id,
             "attributes": self.attributes,
         }
 
