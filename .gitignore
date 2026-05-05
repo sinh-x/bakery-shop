@@ -12,3 +12,4 @@ certs/
 prod/data/
 .env
 samples/
+/.claude/ai-sessions.md

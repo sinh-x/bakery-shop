@@ -46,10 +46,9 @@ class _PosScreenState extends ConsumerState<PosScreen>
 
     // Category filter
     if (_selectedCategoryIndex != null) {
-      final categories = ref.read(categoriesProvider).maybeWhen(
-        data: (cats) => cats,
-        orElse: () => <Category>[],
-      );
+      final categories = ref
+          .read(categoriesProvider)
+          .maybeWhen(data: (cats) => cats, orElse: () => <Category>[]);
       if (_selectedCategoryIndex! < categories.length) {
         final cat = categories[_selectedCategoryIndex!];
         result = result.where((p) => p.category == cat.slug).toList();
@@ -125,6 +124,16 @@ class _PosScreenState extends ConsumerState<PosScreen>
             onPressed: _refreshStock,
           ),
           IconButton(
+            icon: const Icon(Icons.fact_check_outlined),
+            tooltip: VN.doiSoatTonKhoHomNay,
+            onPressed: () => context.push('/stock/reconciliation'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: VN.lichSuDoiSoatTonKho,
+            onPressed: () => context.push('/stock/reconciliation/history'),
+          ),
+          IconButton(
             icon: const Icon(Icons.inventory_2_outlined),
             tooltip: 'Kho hàng',
             onPressed: () => context.push('/stock'),
@@ -155,8 +164,9 @@ class _PosScreenState extends ConsumerState<PosScreen>
             error: (_, _) => const SizedBox.shrink(),
             data: (categories) {
               if (categories.isEmpty) return const SizedBox.shrink();
-              final activeCats =
-                  categories.where((c) => c.active == 1).toList();
+              final activeCats = categories
+                  .where((c) => c.active == 1)
+                  .toList();
 
               return SizedBox(
                 height: 48,
@@ -185,8 +195,8 @@ class _PosScreenState extends ConsumerState<PosScreen>
                       child: FilterChip(
                         label: Text('$emoji ${cat.name}'),
                         selected: _selectedCategoryIndex == index - 1,
-                        onSelected: (_) => setState(
-                            () => _selectedCategoryIndex = index - 1),
+                        onSelected: (_) =>
+                            setState(() => _selectedCategoryIndex = index - 1),
                       ),
                     );
                   },
@@ -202,7 +212,8 @@ class _PosScreenState extends ConsumerState<PosScreen>
             child: Stack(
               children: [
                 productsAsync.when(
-                  loading: () => const Center(child: CircularProgressIndicator()),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
                   error: (e, _) => Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,

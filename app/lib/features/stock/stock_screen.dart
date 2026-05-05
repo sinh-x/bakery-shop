@@ -12,8 +12,8 @@ import 'widgets/stock_action_sheet.dart';
 /// Provider for stock overview list.
 final stockOverviewProvider =
     AsyncNotifierProvider<StockOverviewNotifier, List<StockOverviewItem>>(
-  StockOverviewNotifier.new,
-);
+      StockOverviewNotifier.new,
+    );
 
 class StockOverviewNotifier extends AsyncNotifier<List<StockOverviewItem>> {
   @override
@@ -111,6 +111,16 @@ class _StockScreenState extends ConsumerState<StockScreen>
         title: const Text(VN.quanLyTonKho),
         actions: [
           IconButton(
+            icon: const Icon(Icons.fact_check_outlined),
+            tooltip: VN.doiSoatTonKhoHomNay,
+            onPressed: () => context.push('/stock/reconciliation'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: VN.lichSuDoiSoatTonKho,
+            onPressed: () => context.push('/stock/reconciliation/history'),
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: VN.lamMoi,
             onPressed: () => ref.invalidate(stockOverviewProvider),
@@ -125,10 +135,7 @@ class _StockScreenState extends ConsumerState<StockScreen>
             children: [
               const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
               const SizedBox(height: 16),
-              Text(
-                VN.apiError,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text(VN.apiError, style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               FilledButton.icon(
                 onPressed: () =>
@@ -145,8 +152,11 @@ class _StockScreenState extends ConsumerState<StockScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.inventory_2_outlined,
-                      size: 64, color: Colors.grey),
+                  const Icon(
+                    Icons.inventory_2_outlined,
+                    size: 64,
+                    color: Colors.grey,
+                  ),
                   const SizedBox(height: 16),
                   Text(
                     VN.khongCoSanPhamTonKho,
@@ -169,15 +179,12 @@ class _StockScreenState extends ConsumerState<StockScreen>
                   item: item,
                   emoji: emoji,
                   baseUrl: baseUrl,
-                  onRestock: () => _showActionSheet(
-                    context, ref, item, ActionType.restock,
-                  ),
-                  onWaste: () => _showActionSheet(
-                    context, ref, item, ActionType.waste,
-                  ),
-                  onAdjust: () => _showActionSheet(
-                    context, ref, item, ActionType.adjust,
-                  ),
+                  onRestock: () =>
+                      _showActionSheet(context, ref, item, ActionType.restock),
+                  onWaste: () =>
+                      _showActionSheet(context, ref, item, ActionType.waste),
+                  onAdjust: () =>
+                      _showActionSheet(context, ref, item, ActionType.adjust),
                 );
               },
             ),
@@ -272,7 +279,9 @@ class _StockItemCard extends StatelessWidget {
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: statusColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(12),
@@ -297,15 +306,15 @@ class _StockItemCard extends StatelessWidget {
                 Text(
                   '${item.quantity}',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: statusColor,
-                      ),
+                    fontWeight: FontWeight.bold,
+                    color: statusColor,
+                  ),
                 ),
                 Text(
                   VN.tonKho,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.grey),
                 ),
               ],
             ),

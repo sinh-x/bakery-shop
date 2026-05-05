@@ -639,10 +639,66 @@ CREATE TABLE IF NOT EXISTS print_log (
 CREATE INDEX IF NOT EXISTS idx_print_log_order ON print_log(order_id);
 """
 
+RECONCILIATIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS reconciliation_sessions (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    reconciliation_date     TEXT NOT NULL,
+    staff_name              TEXT NOT NULL,
+    payment_method          TEXT DEFAULT '',
+    waste_reason            TEXT DEFAULT '',
+    linked_order_ref        TEXT DEFAULT NULL,
+    linked_payment_ref      TEXT DEFAULT NULL,
+    created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_reconciliation_sessions_date ON reconciliation_sessions(reconciliation_date);
+
+CREATE TABLE IF NOT EXISTS reconciliation_lines (
+    id                           INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id                   INTEGER NOT NULL REFERENCES reconciliation_sessions(id) ON DELETE CASCADE,
+    product_id                   INTEGER NOT NULL REFERENCES products(id),
+    expected_qty                 INTEGER NOT NULL,
+    counted_qty                  INTEGER NOT NULL,
+    sale_qty                     INTEGER NOT NULL DEFAULT 0,
+    waste_qty                    INTEGER NOT NULL DEFAULT 0,
+    waste_reason                 TEXT DEFAULT '',
+    manual_unit_price            REAL DEFAULT NULL,
+    linked_order_item_id         INTEGER DEFAULT NULL,
+    linked_stock_movement_sale_id INTEGER DEFAULT NULL,
+    linked_stock_movement_waste_id INTEGER DEFAULT NULL,
+    created_at                   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_reconciliation_lines_session ON reconciliation_lines(session_id);
+CREATE INDEX IF NOT EXISTS idx_reconciliation_lines_product ON reconciliation_lines(product_id);
+"""
+
+RECONCILIATION_SALE_ROWS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS reconciliation_sale_rows (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    line_id             INTEGER NOT NULL REFERENCES reconciliation_lines(id) ON DELETE CASCADE,
+    quantity            INTEGER NOT NULL,
+    unit_price          REAL NOT NULL,
+    payment_method      TEXT NOT NULL,
+    linked_order_ref    TEXT DEFAULT NULL,
+    linked_payment_ref  TEXT DEFAULT NULL,
+    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_reconciliation_sale_rows_line ON reconciliation_sale_rows(line_id);
+"""
+
 
 def _migrate_v32_print_tracking(conn):
     """Add print tracking schema with idempotent orders column migration."""
     _guard_add_column(conn, "orders", "work_ticket_printed_by", "work_ticket_printed_by TEXT DEFAULT ''")
+
+
+def _migrate_v35_reconciliation_line_waste_reason(conn):
+    """Repair DBs that created reconciliation_lines before per-line waste reasons."""
+    _guard_add_column(
+        conn,
+        "reconciliation_lines",
+        "waste_reason",
+        "waste_reason TEXT DEFAULT ''",
+    )
 
 PRODUCT_ATTRIBUTES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS product_attributes (
@@ -1114,6 +1170,19 @@ MIGRATIONS = {
         "description": "Print tracking: print_log table and work_ticket_printed_by column",
         "sql": PRINT_LOG_AND_PRINTED_BY_SCHEMA,
         "callable": _migrate_v32_print_tracking,
+    },
+    33: {
+        "description": "Reconciliation sessions and line history tables",
+        "sql": RECONCILIATIONS_SCHEMA,
+    },
+    34: {
+        "description": "Grouped reconciliation sale rows table",
+        "sql": RECONCILIATION_SALE_ROWS_SCHEMA,
+    },
+    35: {
+        "description": "Add per-line waste reason to reconciliation lines",
+        "sql": "",
+        "callable": _migrate_v35_reconciliation_line_waste_reason,
     },
 }
 
