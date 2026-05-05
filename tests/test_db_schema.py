@@ -218,14 +218,78 @@ def _assert_nhan_banh_seed(conn) -> None:
     assert default_match["value_vi"] == "Sầu riêng"
 
 
+def _assert_chip_aware_inventory_schema(conn) -> None:
+    stock_lot_columns = _schema_columns(conn, "stock_lots")
+    assert set(stock_lot_columns) >= {
+        "id",
+        "product_id",
+        "price_chip_id",
+        "quantity",
+        "remaining_qty",
+        "restocked_at",
+        "created_at",
+    }
+
+    item_columns = _schema_columns(conn, "inventory_items")
+    assert set(item_columns) >= {
+        "id",
+        "lot_id",
+        "uuid",
+        "status",
+        "consumed_by_movement_id",
+        "created_at",
+    }
+    assert item_columns["uuid"]["notnull"] == 1
+
+    stock_movement_columns = _schema_columns(conn, "stock_movements")
+    assert "lot_id" in stock_movement_columns
+    assert "price_chip_id" in stock_movement_columns
+
+    order_item_columns = _schema_columns(conn, "order_items")
+    assert "price_chip_id" in order_item_columns
+
+    reconciliation_line_columns = _schema_columns(conn, "reconciliation_lines")
+    assert "price_chip_id" in reconciliation_line_columns
+
+
+def _seed_v35_stock(conn) -> tuple[int, int, int]:
+    conn.execute(
+        """INSERT INTO products (name, category, base_price, cost, recipe_notes)
+           VALUES ('Migration Product A', 'banh_mi', 15000, 0, '')"""
+    )
+    product_a_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+    conn.execute(
+        """INSERT INTO products (name, category, base_price, cost, recipe_notes)
+           VALUES ('Migration Product B', 'banh_kem', 12000, 0, '')"""
+    )
+    product_b_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+    conn.execute(
+        "INSERT INTO product_price_chips (product_id, label, price, position) VALUES (?, 'Chip Low', 9000, 1)",
+        (product_a_id,),
+    )
+    chip_a_low_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+    conn.execute(
+        "INSERT INTO product_price_chips (product_id, label, price, position) VALUES (?, 'Chip High', 18000, 2)",
+        (product_a_id,),
+    )
+
+    conn.execute("INSERT INTO product_stock (product_id, quantity) VALUES (?, ?)", (product_a_id, 3))
+    conn.execute("INSERT INTO product_stock (product_id, quantity) VALUES (?, ?)", (product_b_id, 2))
+
+    return product_a_id, product_b_id, chip_a_low_id
+
+
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 35
+        assert _migrated_version(conn) == 36
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
         _assert_reconciliation_sale_rows_schema(conn)
+        _assert_chip_aware_inventory_schema(conn)
 
 
 def test_schema_migration_v30_to_v31():
@@ -234,20 +298,21 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 35
+        assert _migrated_version(conn) == 36
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
         _assert_reconciliation_sale_rows_schema(conn)
+        _assert_chip_aware_inventory_schema(conn)
 
 
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 35
+        assert _migrated_version(conn) == 36
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 35
+        assert _migrated_version(conn) == 36
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -264,6 +329,7 @@ def test_schema_migration_v31_idempotent():
         assert opt_count == 5
         _assert_print_tracking_schema(conn)
         _assert_reconciliation_sale_rows_schema(conn)
+        _assert_chip_aware_inventory_schema(conn)
 
 
 def test_schema_migration_v32_handles_preexisting_printed_by_column():
@@ -311,6 +377,50 @@ def test_schema_migration_v35_repairs_missing_reconciliation_line_waste_reason()
 
         ensure_schema(conn)
 
-        assert _migrated_version(conn) == 35
+        assert _migrated_version(conn) == 36
         line_columns = _schema_columns(conn, "reconciliation_lines")
         assert "waste_reason" in line_columns
+
+
+def test_schema_migration_v36_migrates_product_stock_to_lots_and_items():
+    with get_db() as conn:
+        _migrate_to_version(conn, 35)
+        product_a_id, product_b_id, chip_a_low_id = _seed_v35_stock(conn)
+
+        _migrate_to_version(conn, 36)
+
+        assert _migrated_version(conn) == 36
+        _assert_chip_aware_inventory_schema(conn)
+
+        has_product_stock = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='product_stock'"
+        ).fetchone()
+        assert has_product_stock is None
+
+        lots = conn.execute(
+            "SELECT product_id, price_chip_id, quantity, remaining_qty FROM stock_lots ORDER BY product_id"
+        ).fetchall()
+        assert len(lots) == 2
+
+        lot_a = next(row for row in lots if row["product_id"] == product_a_id)
+        assert lot_a["price_chip_id"] == chip_a_low_id
+        assert lot_a["quantity"] == 3
+        assert lot_a["remaining_qty"] == 3
+
+        lot_b = next(row for row in lots if row["product_id"] == product_b_id)
+        assert lot_b["price_chip_id"] is None
+        assert lot_b["quantity"] == 2
+        assert lot_b["remaining_qty"] == 2
+
+        item_count = conn.execute("SELECT COUNT(*) FROM inventory_items").fetchone()[0]
+        assert item_count == 5
+
+        distinct_uuid_count = conn.execute(
+            "SELECT COUNT(DISTINCT uuid) FROM inventory_items"
+        ).fetchone()[0]
+        assert distinct_uuid_count == 5
+
+        invalid_uuid_count = conn.execute(
+            "SELECT COUNT(*) FROM inventory_items WHERE uuid NOT GLOB '????????-????-4???-[89abAB]???-????????????'"
+        ).fetchone()[0]
+        assert invalid_uuid_count == 0
