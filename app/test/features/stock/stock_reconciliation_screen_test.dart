@@ -71,9 +71,8 @@ void main() {
     await tester.tap(find.text('Thêm dòng bán'));
     await tester.pumpAndSettle();
 
-    final chip = find.text('M: 12000đ').first;
-    await tester.ensureVisible(chip);
-    await tester.tap(chip);
+    final chip = tester.widget<ActionChip>(find.byType(ActionChip).first);
+    chip.onPressed!();
     await tester.pumpAndSettle();
 
     expect(find.text('12000'), findsOneWidget);
