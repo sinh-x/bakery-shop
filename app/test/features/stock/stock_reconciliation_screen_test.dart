@@ -33,7 +33,12 @@ void main() {
             expectedQty: 5,
             basePrice: 100000,
             priceChips: [
-              ReconciliationPriceChip(id: 1, label: 'M', price: 12000, position: 1),
+              ReconciliationPriceChip(
+                id: 1,
+                label: 'M',
+                price: 12000,
+                position: 1,
+              ),
             ],
           ),
         ],
@@ -42,7 +47,10 @@ void main() {
 
     final router = GoRouter(
       routes: [
-        GoRoute(path: '/', builder: (context, state) => const StockReconciliationScreen()),
+        GoRoute(
+          path: '/',
+          builder: (context, state) => const StockReconciliationScreen(),
+        ),
       ],
     );
 
@@ -58,6 +66,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).first, '3');
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Thêm dòng bán'));
     await tester.tap(find.text('Thêm dòng bán'));
     await tester.pumpAndSettle();
