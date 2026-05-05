@@ -671,6 +671,20 @@ CREATE INDEX IF NOT EXISTS idx_reconciliation_lines_session ON reconciliation_li
 CREATE INDEX IF NOT EXISTS idx_reconciliation_lines_product ON reconciliation_lines(product_id);
 """
 
+RECONCILIATION_SALE_ROWS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS reconciliation_sale_rows (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    line_id             INTEGER NOT NULL REFERENCES reconciliation_lines(id) ON DELETE CASCADE,
+    quantity            INTEGER NOT NULL,
+    unit_price          REAL NOT NULL,
+    payment_method      TEXT NOT NULL,
+    linked_order_ref    TEXT DEFAULT NULL,
+    linked_payment_ref  TEXT DEFAULT NULL,
+    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_reconciliation_sale_rows_line ON reconciliation_sale_rows(line_id);
+"""
+
 
 def _migrate_v32_print_tracking(conn):
     """Add print tracking schema with idempotent orders column migration."""
@@ -1150,6 +1164,10 @@ MIGRATIONS = {
     33: {
         "description": "Reconciliation sessions and line history tables",
         "sql": RECONCILIATIONS_SCHEMA,
+    },
+    34: {
+        "description": "Grouped reconciliation sale rows table",
+        "sql": RECONCILIATION_SALE_ROWS_SCHEMA,
     },
 }
 

@@ -494,3 +494,71 @@ def test_history_detail_exposes_per_line_waste_reason(api_client):
     line = detail["lines"][0]
     assert line["waste_qty"] == 1
     assert line["waste_reason"] == "Bị hỏng"
+
+
+def test_submit_accepts_grouped_sale_rows_and_persists_row_details(api_client):
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 8)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 8,
+                    "counted_qty": 5,
+                    "waste_qty": 0,
+                    "sale_rows": [
+                        {"quantity": 1, "unit_price": 12000, "payment_method": "cash"},
+                        {"quantity": 2, "unit_price": 15000, "payment_method": "transfer"},
+                    ],
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 201
+
+    with get_db() as conn:
+        line = conn.execute("SELECT * FROM reconciliation_lines").fetchone()
+        assert line is not None
+        assert line["sale_qty"] == 3
+
+        sale_rows = conn.execute(
+            "SELECT quantity, unit_price, payment_method FROM reconciliation_sale_rows ORDER BY id"
+        ).fetchall()
+        assert len(sale_rows) == 2
+        assert sale_rows[0]["quantity"] == 1
+        assert sale_rows[0]["unit_price"] == 12000
+        assert sale_rows[0]["payment_method"] == "cash"
+        assert sale_rows[1]["quantity"] == 2
+        assert sale_rows[1]["unit_price"] == 15000
+        assert sale_rows[1]["payment_method"] == "transfer"
+
+
+def test_history_detail_exposes_legacy_sale_row_adapter(api_client):
+    with get_db() as conn:
+        session_id = conn.execute(
+            """INSERT INTO reconciliation_sessions
+               (reconciliation_date, staff_name, payment_method, linked_order_ref, linked_payment_ref)
+               VALUES (date('now'), 'An', 'cash', 'ORD-LEGACY', '9')"""
+        ).lastrowid
+        conn.execute(
+            """INSERT INTO reconciliation_lines
+               (session_id, product_id, expected_qty, counted_qty, sale_qty, waste_qty, manual_unit_price)
+               VALUES (?, 1, 10, 8, 2, 0, 13000)""",
+            (session_id,),
+        )
+
+    resp = api_client.get(f"/api/reconciliations/history/{session_id}")
+    assert resp.status_code == 200
+    detail = resp.json()
+    line = detail["lines"][0]
+    assert len(line["sale_rows"]) == 1
+    sale_row = line["sale_rows"][0]
+    assert sale_row["is_legacy"] is True
+    assert sale_row["quantity"] == 2
+    assert sale_row["unit_price"] == 13000
+    assert sale_row["payment_method"] == "cash"

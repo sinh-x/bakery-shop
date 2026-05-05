@@ -3,7 +3,7 @@
 from datetime import date
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from baker.api.orders import _auto_decrement_stock
 from baker.api.stock import _upsert_stock
@@ -17,6 +17,12 @@ from baker.models.work_item import WorkItem
 router = APIRouter(prefix="/api/reconciliations", tags=["reconciliations"])
 
 
+class ReconciliationSaleRowIn(BaseModel):
+    quantity: int
+    unit_price: float
+    payment_method: str
+
+
 class ReconciliationLineIn(BaseModel):
     product_id: int
     expected_qty: int
@@ -25,6 +31,7 @@ class ReconciliationLineIn(BaseModel):
     waste_qty: int = 0
     manual_unit_price: float | None = None
     waste_reason: str | None = None
+    sale_rows: list[ReconciliationSaleRowIn] = Field(default_factory=list)
 
 
 class ReconciliationSubmitIn(BaseModel):
@@ -32,6 +39,12 @@ class ReconciliationSubmitIn(BaseModel):
     payment_method: str | None = None
     waste_reason: str | None = None
     lines: list[ReconciliationLineIn]
+
+
+def _resolved_sale_qty(line: ReconciliationLineIn) -> int:
+    if line.sale_rows:
+        return sum(row.quantity for row in line.sale_rows)
+    return line.sale_qty
 
 
 def _load_display_products(conn) -> list[dict]:
@@ -99,7 +112,17 @@ def _validate_submit(payload: ReconciliationSubmitIn):
         if line.sale_qty < 0 or line.waste_qty < 0:
             raise HTTPException(status_code=422, detail="Số lượng bán và hao hụt không được âm")
 
+        if line.sale_rows:
+            for sale_row in line.sale_rows:
+                if sale_row.quantity <= 0:
+                    raise HTTPException(status_code=422, detail="Số lượng dòng bán phải lớn hơn 0")
+                if sale_row.unit_price <= 0:
+                    raise HTTPException(status_code=422, detail="Đơn giá dòng bán phải lớn hơn 0")
+                if sale_row.payment_method not in {"cash", "transfer"}:
+                    raise HTTPException(status_code=422, detail="Dòng bán phải có phương thức thanh toán hợp lệ")
+
         missing_qty = line.expected_qty - line.counted_qty
+        resolved_sale_qty = _resolved_sale_qty(line)
         if missing_qty < 0:
             raise HTTPException(status_code=422, detail="Số đếm thực tế không được lớn hơn số tồn dự kiến")
         if missing_qty > 0 and line.waste_qty > missing_qty:
@@ -107,14 +130,14 @@ def _validate_submit(payload: ReconciliationSubmitIn):
                 status_code=422,
                 detail="Số hao hụt vượt quá số thiếu. Vui lòng vào màn hình 'Nhập hàng' để bổ sung tồn kho trước.",
             )
-        if missing_qty > 0 and line.sale_qty + line.waste_qty != missing_qty:
+        if missing_qty > 0 and resolved_sale_qty + line.waste_qty != missing_qty:
             raise HTTPException(status_code=422, detail="Sản phẩm thiếu phải tách đúng: bán + hao hụt = số thiếu")
-        if missing_qty == 0 and (line.sale_qty > 0 or line.waste_qty > 0):
+        if missing_qty == 0 and (resolved_sale_qty > 0 or line.waste_qty > 0):
             raise HTTPException(status_code=422, detail="Sản phẩm không thiếu thì không được nhập bán hoặc hao hụt")
 
-        if line.sale_qty > 0:
+        if resolved_sale_qty > 0:
             has_sale = True
-            if line.manual_unit_price is None or line.manual_unit_price <= 0:
+            if not line.sale_rows and (line.manual_unit_price is None or line.manual_unit_price <= 0):
                 raise HTTPException(status_code=422, detail="Mỗi dòng bán phải có đơn giá nhập tay lớn hơn 0")
         if line.waste_qty > 0:
             has_waste = True
@@ -123,7 +146,8 @@ def _validate_submit(payload: ReconciliationSubmitIn):
 
     if has_sale:
         method = (payload.payment_method or "").strip()
-        if method not in {"cash", "transfer"}:
+        has_row_methods = any(line.sale_rows for line in payload.lines)
+        if not has_row_methods and method not in {"cash", "transfer"}:
             raise HTTPException(status_code=422, detail="Vui lòng chọn phương thức thanh toán (tiền mặt hoặc chuyển khoản)")
 
     if lines_missing_reason:
@@ -133,7 +157,7 @@ def _validate_submit(payload: ReconciliationSubmitIn):
 
 
 def _create_sale_order(conn, payload: ReconciliationSubmitIn, session_id: int, latest_by_id: dict[int, dict]):
-    sale_lines = [line for line in payload.lines if line.sale_qty > 0]
+    sale_lines = [line for line in payload.lines if _resolved_sale_qty(line) > 0]
     if not sale_lines:
         return None, {}, None
 
@@ -143,7 +167,7 @@ def _create_sale_order(conn, payload: ReconciliationSubmitIn, session_id: int, l
         order_items.append(
             OrderItem(
                 product=latest["name"],
-                qty=line.sale_qty,
+                qty=_resolved_sale_qty(line),
                 price=float(line.manual_unit_price or 0),
                 product_id=str(line.product_id),
             )
@@ -167,7 +191,7 @@ def _create_sale_order(conn, payload: ReconciliationSubmitIn, session_id: int, l
             order_id=order.id or 0,
             product_id=str(line.product_id),
             product_name=latest["name"],
-            quantity=line.sale_qty,
+            quantity=_resolved_sale_qty(line),
             unit_price=float(line.manual_unit_price or 0),
             position=position,
         )
@@ -302,17 +326,17 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
 
         for line in payload.lines:
             per_line_reason = (line.waste_reason or "").strip() or (payload.waste_reason or "").strip()
-            conn.execute(
+            line_cursor = conn.execute(
                 """INSERT INTO reconciliation_lines
                    (session_id, product_id, expected_qty, counted_qty, sale_qty, waste_qty, waste_reason, manual_unit_price,
-                    linked_order_item_id, linked_stock_movement_sale_id, linked_stock_movement_waste_id)
+                     linked_order_item_id, linked_stock_movement_sale_id, linked_stock_movement_waste_id)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     line.product_id,
                     line.expected_qty,
                     line.counted_qty,
-                    line.sale_qty,
+                    _resolved_sale_qty(line),
                     line.waste_qty,
                     per_line_reason,
                     line.manual_unit_price,
@@ -321,6 +345,15 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
                     waste_movement_ids_by_product.get(line.product_id),
                 ),
             )
+            line_id = line_cursor.lastrowid
+
+            for sale_row in line.sale_rows:
+                conn.execute(
+                    """INSERT INTO reconciliation_sale_rows
+                       (line_id, quantity, unit_price, payment_method)
+                       VALUES (?, ?, ?, ?)""",
+                    (line_id, sale_row.quantity, sale_row.unit_price, sale_row.payment_method),
+                )
 
         return {
             "id": session_id,
@@ -405,6 +438,35 @@ def get_reconciliation_history_detail(session_id: int):
             (session_id,),
         ).fetchall()
 
+        sale_row_rows = conn.execute(
+            """SELECT id,
+                      line_id,
+                      quantity,
+                      unit_price,
+                      payment_method,
+                      linked_order_ref,
+                      linked_payment_ref
+               FROM reconciliation_sale_rows
+               WHERE line_id IN (
+                   SELECT id FROM reconciliation_lines WHERE session_id = ?
+               )
+               ORDER BY id""",
+            (session_id,),
+        ).fetchall()
+        sale_rows_by_line_id: dict[int, list[dict]] = {}
+        for row in sale_row_rows:
+            sale_rows_by_line_id.setdefault(row["line_id"], []).append(
+                {
+                    "id": row["id"],
+                    "quantity": row["quantity"],
+                    "unit_price": row["unit_price"],
+                    "payment_method": row["payment_method"],
+                    "linked_order_ref": row["linked_order_ref"],
+                    "linked_payment_ref": row["linked_payment_ref"],
+                    "is_legacy": False,
+                }
+            )
+
         return {
             "id": session["id"],
             "reconciliation_date": session["reconciliation_date"],
@@ -428,6 +490,22 @@ def get_reconciliation_history_detail(session_id: int):
                     "linked_order_item_id": row["linked_order_item_id"],
                     "linked_stock_movement_sale_id": row["linked_stock_movement_sale_id"],
                     "linked_stock_movement_waste_id": row["linked_stock_movement_waste_id"],
+                    "sale_rows": sale_rows_by_line_id.get(row["id"], [])
+                    or (
+                        [
+                            {
+                                "id": None,
+                                "quantity": row["sale_qty"],
+                                "unit_price": row["manual_unit_price"],
+                                "payment_method": session["payment_method"] or "",
+                                "linked_order_ref": session["linked_order_ref"],
+                                "linked_payment_ref": session["linked_payment_ref"],
+                                "is_legacy": True,
+                            }
+                        ]
+                        if row["sale_qty"] > 0
+                        else []
+                    ),
                 }
                 for row in line_rows
             ],

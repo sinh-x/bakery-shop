@@ -156,6 +156,32 @@ def _assert_print_tracking_schema(conn) -> None:
     assert "idx_print_log_order" in index_names
 
 
+def _assert_reconciliation_sale_rows_schema(conn) -> None:
+    columns = _schema_columns(conn, "reconciliation_sale_rows")
+    assert set(columns) >= {
+        "id",
+        "line_id",
+        "quantity",
+        "unit_price",
+        "payment_method",
+        "linked_order_ref",
+        "linked_payment_ref",
+        "created_at",
+    }
+
+    fk_rows = conn.execute("PRAGMA foreign_key_list(reconciliation_sale_rows)").fetchall()
+    assert len(fk_rows) == 1
+    fk = fk_rows[0]
+    assert fk["table"] == "reconciliation_lines"
+    assert fk["from"] == "line_id"
+    assert fk["to"] == "id"
+    assert fk["on_delete"] == "CASCADE"
+
+    index_rows = conn.execute("PRAGMA index_list(reconciliation_sale_rows)").fetchall()
+    index_names = [row["name"] for row in index_rows]
+    assert "idx_reconciliation_sale_rows_line" in index_names
+
+
 def _assert_nhan_banh_seed(conn) -> None:
     attr_row = conn.execute(
         "SELECT id, label_vi, value_type, applicable_categories, default_value, active "
@@ -192,10 +218,11 @@ def _assert_nhan_banh_seed(conn) -> None:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 33
+        assert _migrated_version(conn) == 34
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
+        _assert_reconciliation_sale_rows_schema(conn)
 
 
 def test_schema_migration_v30_to_v31():
@@ -204,19 +231,20 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 33
+        assert _migrated_version(conn) == 34
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
+        _assert_reconciliation_sale_rows_schema(conn)
 
 
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 33
+        assert _migrated_version(conn) == 34
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 33
+        assert _migrated_version(conn) == 34
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -232,6 +260,7 @@ def test_schema_migration_v31_idempotent():
         ).fetchone()[0]
         assert opt_count == 5
         _assert_print_tracking_schema(conn)
+        _assert_reconciliation_sale_rows_schema(conn)
 
 
 def test_schema_migration_v32_handles_preexisting_printed_by_column():
