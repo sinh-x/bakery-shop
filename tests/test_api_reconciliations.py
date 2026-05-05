@@ -520,6 +520,7 @@ def test_submit_accepts_grouped_sale_rows_and_persists_row_details(api_client):
         },
     )
     assert resp.status_code == 201
+    session_id = resp.json()["id"]
 
     with get_db() as conn:
         line = conn.execute("SELECT * FROM reconciliation_lines").fetchone()
@@ -553,6 +554,25 @@ def test_submit_accepts_grouped_sale_rows_and_persists_row_details(api_client):
         assert sale_rows[1]["payment_method"] == "transfer"
         assert sale_rows[1]["linked_order_ref"] == orders[1]["order_ref"]
         assert sale_rows[1]["linked_payment_ref"]
+
+    history_resp = api_client.get(f"/api/reconciliations/history/{session_id}")
+    assert history_resp.status_code == 200
+    line = history_resp.json()["lines"][0]
+    assert len(line["sale_rows"]) == 2
+    row1 = line["sale_rows"][0]
+    row2 = line["sale_rows"][1]
+    assert row1["quantity"] == 1
+    assert row1["unit_price"] == 12000
+    assert row1["payment_method"] == "cash"
+    assert row1["linked_order_ref"]
+    assert row1["linked_payment_ref"]
+    assert row1["is_legacy"] is False
+    assert row2["quantity"] == 2
+    assert row2["unit_price"] == 15000
+    assert row2["payment_method"] == "transfer"
+    assert row2["linked_order_ref"]
+    assert row2["linked_payment_ref"]
+    assert row2["is_legacy"] is False
 
 
 def test_submit_grouped_rows_rejects_invalid_rows_with_zero_partial_writes(api_client):
@@ -647,3 +667,5 @@ def test_history_detail_exposes_legacy_sale_row_adapter(api_client):
     assert sale_row["quantity"] == 2
     assert sale_row["unit_price"] == 13000
     assert sale_row["payment_method"] == "cash"
+    assert sale_row["linked_order_ref"] == "ORD-LEGACY"
+    assert sale_row["linked_payment_ref"] == "9"

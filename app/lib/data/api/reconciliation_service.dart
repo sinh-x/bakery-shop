@@ -228,6 +228,7 @@ class ReconciliationHistoryLine {
     required this.linkedOrderItemId,
     required this.linkedStockMovementSaleId,
     required this.linkedStockMovementWasteId,
+    required this.saleRows,
   });
 
   final int id;
@@ -242,8 +243,16 @@ class ReconciliationHistoryLine {
   final int? linkedOrderItemId;
   final int? linkedStockMovementSaleId;
   final int? linkedStockMovementWasteId;
+  final List<ReconciliationHistorySaleRow> saleRows;
 
   factory ReconciliationHistoryLine.fromJson(Map<String, dynamic> json) {
+    final saleRows = (json['sale_rows'] as List<dynamic>? ?? <dynamic>[])
+        .map(
+          (item) => ReconciliationHistorySaleRow.fromJson(
+            item as Map<String, dynamic>,
+          ),
+        )
+        .toList();
     return ReconciliationHistoryLine(
       id: json['id'] as int,
       productId: json['product_id'] as int,
@@ -259,6 +268,39 @@ class ReconciliationHistoryLine {
           ?.toInt(),
       linkedStockMovementWasteId:
           (json['linked_stock_movement_waste_id'] as num?)?.toInt(),
+      saleRows: saleRows,
+    );
+  }
+}
+
+class ReconciliationHistorySaleRow {
+  ReconciliationHistorySaleRow({
+    required this.id,
+    required this.quantity,
+    required this.unitPrice,
+    required this.paymentMethod,
+    required this.linkedOrderRef,
+    required this.linkedPaymentRef,
+    required this.isLegacy,
+  });
+
+  final int? id;
+  final int quantity;
+  final double? unitPrice;
+  final String paymentMethod;
+  final String? linkedOrderRef;
+  final String? linkedPaymentRef;
+  final bool isLegacy;
+
+  factory ReconciliationHistorySaleRow.fromJson(Map<String, dynamic> json) {
+    return ReconciliationHistorySaleRow(
+      id: (json['id'] as num?)?.toInt(),
+      quantity: (json['quantity'] as num?)?.toInt() ?? 0,
+      unitPrice: (json['unit_price'] as num?)?.toDouble(),
+      paymentMethod: (json['payment_method'] as String?) ?? '',
+      linkedOrderRef: json['linked_order_ref'] as String?,
+      linkedPaymentRef: json['linked_payment_ref'] as String?,
+      isLegacy: (json['is_legacy'] as bool?) ?? false,
     );
   }
 }

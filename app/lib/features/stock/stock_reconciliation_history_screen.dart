@@ -155,6 +155,11 @@ class _DetailView extends StatelessWidget {
                   Text('${VN.tonDuKien}: ${line.expectedQty}'),
                   Text('${VN.tonDaDem}: ${line.countedQty}'),
                   Text('${VN.soLuongBan}: ${line.saleQty}'),
+                  if (line.saleRows.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    for (var i = 0; i < line.saleRows.length; i++)
+                      _SaleRowView(row: line.saleRows[i], index: i),
+                  ],
                   Text('${VN.soLuongHaoHut}: ${line.wasteQty}'),
                   if (line.wasteQty > 0)
                     Text(
@@ -177,6 +182,46 @@ class _DetailView extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _SaleRowView extends StatelessWidget {
+  const _SaleRowView({required this.row, required this.index});
+
+  final ReconciliationHistorySaleRow row;
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = row.isLegacy
+        ? '${index + 1}. Dòng bán cũ'
+        : '${index + 1}. Dòng bán';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.black12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 4),
+          Text('${VN.soLuongBan}: ${row.quantity}'),
+          Text(
+            '${VN.donGia}: ${row.unitPrice != null ? formatVND(row.unitPrice!) : VN.khongCo}',
+          ),
+          Text(
+            '${VN.phuongThucThanhToan}: ${paymentMethodLabel(row.paymentMethod)}',
+          ),
+          Text('${VN.thamChieuDonHang}: ${row.linkedOrderRef ?? VN.khongCo}'),
+          Text(
+            '${VN.thamChieuThanhToan}: ${row.linkedPaymentRef ?? VN.khongCo}',
+          ),
+        ],
+      ),
     );
   }
 }
