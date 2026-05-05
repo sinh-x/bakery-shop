@@ -72,6 +72,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final chip = find.text('M: 12000đ').first;
+    await tester.ensureVisible(chip);
     await tester.tap(chip);
     await tester.pumpAndSettle();
 
