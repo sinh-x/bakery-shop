@@ -151,6 +151,7 @@ class _DetailView extends StatelessWidget {
                     line.productName,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
+                  Text('Tuy chon: ${line.chipLabel}'),
                   const SizedBox(height: 6),
                   Text('${VN.tonDuKien}: ${line.expectedQty}'),
                   Text('${VN.tonDaDem}: ${line.countedQty}'),

@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/order_service.dart';
+import '../../features/stock/stock_screen.dart';
 import '../../providers/pos_provider.dart';
+import '../../providers/products_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 
 /// POS checkout screen — editable cart on checkout, single Thanh toán button.
@@ -83,6 +85,8 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       );
 
       ref.read(posCartProvider.notifier).clearCart();
+      ref.invalidate(productsProvider);
+      ref.invalidate(stockOverviewProvider);
 
       if (!mounted) return;
 
@@ -162,6 +166,8 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       );
 
       ref.read(posCartProvider.notifier).clearCart();
+      ref.invalidate(productsProvider);
+      ref.invalidate(stockOverviewProvider);
 
       if (!mounted) return;
       _navigatingAfterCheckout = true;

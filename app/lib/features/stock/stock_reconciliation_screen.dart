@@ -218,22 +218,35 @@ class _StockReconciliationScreenState
     var totalSale = 0;
     var totalWaste = 0;
     for (final product in draft.products) {
-      final rows =
-          state.saleRowsByProduct[product.productId] ??
-          const <ReconciliationSaleRowInput>[];
-      totalSale += rows.fold<int>(0, (sum, row) => sum + row.quantity);
-      totalWaste += state.wasteQtyByProduct[product.productId] ?? 0;
+      for (final option in product.options) {
+        final optionKey = reconciliationOptionKey(
+          product.productId,
+          option.priceChipId,
+        );
+        final rows =
+            state.saleRowsByOption[optionKey] ??
+            const <ReconciliationSaleRowInput>[];
+        totalSale += rows.fold<int>(0, (sum, row) => sum + row.quantity);
+        totalWaste += state.wasteQtyByOption[optionKey] ?? 0;
+      }
     }
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
         final hasEmptyWasteReason = draft.products.any((product) {
-          final waste = state.wasteQtyByProduct[product.productId] ?? 0;
-          if (waste > 0) {
-            final reason = (state.wasteReasonByProduct[product.productId] ?? '')
-                .trim();
-            return reason.isEmpty;
+          for (final option in product.options) {
+            final optionKey = reconciliationOptionKey(
+              product.productId,
+              option.priceChipId,
+            );
+            final waste = state.wasteQtyByOption[optionKey] ?? 0;
+            if (waste > 0) {
+              final reason = (state.wasteReasonByOption[optionKey] ?? '').trim();
+              if (reason.isEmpty) {
+                return true;
+              }
+            }
           }
           return false;
         });
@@ -287,9 +300,9 @@ class _ProductCard extends ConsumerStatefulWidget {
 }
 
 class _ProductCardState extends ConsumerState<_ProductCard> {
-  late TextEditingController _countedController;
-  late TextEditingController _wasteController;
-  late TextEditingController _wasteReasonController;
+  final Map<String, TextEditingController> _countedControllers = {};
+  final Map<String, TextEditingController> _wasteControllers = {};
+  final Map<String, TextEditingController> _wasteReasonControllers = {};
 
   void _syncIntController(TextEditingController controller, int value) {
     final next = '$value';
@@ -305,23 +318,32 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
   @override
   void initState() {
     super.initState();
-    final productId = widget.product.productId;
     final state = ref.read(reconciliationProvider);
-    final counted =
-        state.countedQtyByProduct[productId] ?? widget.product.expectedQty;
-    final waste = state.wasteQtyByProduct[productId] ?? 0;
-    final wasteReason = state.wasteReasonByProduct[productId] ?? '';
-
-    _countedController = TextEditingController(text: '$counted');
-    _wasteController = TextEditingController(text: '$waste');
-    _wasteReasonController = TextEditingController(text: wasteReason);
+    for (final option in widget.product.options) {
+      final optionKey = reconciliationOptionKey(
+        widget.product.productId,
+        option.priceChipId,
+      );
+      final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
+      final waste = state.wasteQtyByOption[optionKey] ?? 0;
+      final wasteReason = state.wasteReasonByOption[optionKey] ?? '';
+      _countedControllers[optionKey] = TextEditingController(text: '$counted');
+      _wasteControllers[optionKey] = TextEditingController(text: '$waste');
+      _wasteReasonControllers[optionKey] = TextEditingController(text: wasteReason);
+    }
   }
 
   @override
   void dispose() {
-    _countedController.dispose();
-    _wasteController.dispose();
-    _wasteReasonController.dispose();
+    for (final controller in _countedControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _wasteControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _wasteReasonControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -329,22 +351,6 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
   Widget build(BuildContext context) {
     final state = ref.watch(reconciliationProvider);
     final notifier = ref.read(reconciliationProvider.notifier);
-    final counted =
-        state.countedQtyByProduct[widget.product.productId] ??
-        widget.product.expectedQty;
-    final saleRows =
-        state.saleRowsByProduct[widget.product.productId] ??
-        const <ReconciliationSaleRowInput>[];
-    final waste = state.wasteQtyByProduct[widget.product.productId] ?? 0;
-    final missing = widget.product.expectedQty - counted;
-    final productError = state.productErrors[widget.product.productId];
-    final saleRowErrors =
-        state.saleRowErrorsByProduct[widget.product.productId] ??
-        const <ReconciliationSaleRowError>[];
-
-    _syncIntController(_countedController, counted);
-    _syncIntController(_wasteController, waste);
-
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
       child: Padding(
@@ -362,21 +368,44 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
               '${VN.giaCoSo}: ${widget.product.basePrice.toStringAsFixed(0)}đ',
             ),
             const SizedBox(height: 12),
-            _QuantityStepperField(
-              label: VN.tonDaDem,
-              controller: _countedController,
-              onChanged: (value) =>
-                  notifier.setCountedQty(widget.product.productId, value),
-              onDecrement: () {
-                if (counted <= 0) {
-                  return;
-                }
-                notifier.setCountedQty(widget.product.productId, counted - 1);
-              },
-              onIncrement: () =>
-                  notifier.setCountedQty(widget.product.productId, counted + 1),
-            ),
-            if (missing > 0) ...[
+            for (final option in widget.product.options) ...[
+              _OptionHeader(option: option),
+              Builder(builder: (context) {
+                final optionKey = reconciliationOptionKey(
+                  widget.product.productId,
+                  option.priceChipId,
+                );
+                final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
+                final saleRows =
+                    state.saleRowsByOption[optionKey] ??
+                    const <ReconciliationSaleRowInput>[];
+                final waste = state.wasteQtyByOption[optionKey] ?? 0;
+                final missing = option.expectedQty - counted;
+                final optionError = state.optionErrors[optionKey];
+                final saleRowErrors =
+                    state.saleRowErrorsByOption[optionKey] ??
+                    const <ReconciliationSaleRowError>[];
+
+                final countedController = _countedControllers[optionKey]!;
+                final wasteController = _wasteControllers[optionKey]!;
+                final wasteReasonController = _wasteReasonControllers[optionKey]!;
+                _syncIntController(countedController, counted);
+                _syncIntController(wasteController, waste);
+
+                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _QuantityStepperField(
+                    label: VN.tonDaDem,
+                    controller: countedController,
+                    onChanged: (value) => notifier.setCountedQty(optionKey, value),
+                    onDecrement: () {
+                      if (counted <= 0) {
+                        return;
+                      }
+                      notifier.setCountedQty(optionKey, counted - 1);
+                    },
+                    onIncrement: () => notifier.setCountedQty(optionKey, counted + 1),
+                  ),
+                  if (missing > 0) ...[
               const SizedBox(height: 8),
               Text(
                 '${VN.soLuongThieu}: $missing',
@@ -388,17 +417,15 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
               const SizedBox(height: 8),
               _QuantityStepperField(
                 label: VN.soLuongHaoHut,
-                controller: _wasteController,
-                onChanged: (value) =>
-                    notifier.setWasteQty(widget.product.productId, value),
+                controller: wasteController,
+                onChanged: (value) => notifier.setWasteQty(optionKey, value),
                 onDecrement: () {
                   if (waste <= 0) {
                     return;
                   }
-                  notifier.setWasteQty(widget.product.productId, waste - 1);
+                  notifier.setWasteQty(optionKey, waste - 1);
                 },
-                onIncrement: () =>
-                    notifier.setWasteQty(widget.product.productId, waste + 1),
+                onIncrement: () => notifier.setWasteQty(optionKey, waste + 1),
               ),
               if (waste > 0) ...[
                 const SizedBox(height: 8),
@@ -407,12 +434,9 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                     labelText: VN.lyDoHaoHut,
                     border: OutlineInputBorder(),
                   ),
-                  controller: _wasteReasonController,
+                  controller: wasteReasonController,
                   onChanged: (value) {
-                    notifier.setWasteReasonForProduct(
-                      widget.product.productId,
-                      value,
-                    );
+                    notifier.setWasteReasonForOption(optionKey, value);
                   },
                 ),
               ],
@@ -420,8 +444,7 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: OutlinedButton.icon(
-                  onPressed: () =>
-                      notifier.addSaleRow(widget.product.productId),
+                  onPressed: () => notifier.addSaleRow(optionKey),
                   icon: const Icon(Icons.add),
                   label: const Text('Thêm dòng bán'),
                 ),
@@ -434,44 +457,56 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                   rowError: rowIndex < saleRowErrors.length
                       ? saleRowErrors[rowIndex]
                       : null,
-                  onQtyChanged: (value) => notifier.setSaleRowQty(
-                    widget.product.productId,
-                    rowIndex,
-                    value,
-                  ),
-                  onPriceChanged: (value) => notifier.setSaleRowUnitPrice(
-                    widget.product.productId,
-                    rowIndex,
-                    value,
-                  ),
+                  onQtyChanged: (value) =>
+                      notifier.setSaleRowQty(optionKey, rowIndex, value),
+                  onPriceChanged: (value) =>
+                      notifier.setSaleRowUnitPrice(optionKey, rowIndex, value),
                   onMethodChanged: (value) => notifier.setSaleRowPaymentMethod(
-                    widget.product.productId,
+                    optionKey,
                     rowIndex,
                     value,
                   ),
-                  onRemove: () => notifier.removeSaleRow(
-                    widget.product.productId,
-                    rowIndex,
-                  ),
+                  onRemove: () => notifier.removeSaleRow(optionKey, rowIndex),
                   onPriceChipTap: (price) => notifier.fillSaleRowPriceFromChip(
-                    widget.product.productId,
+                    optionKey,
                     rowIndex,
                     price,
                   ),
                 ),
             ],
-            if (productError != null) ...[
+            if (optionError != null) ...[
               const SizedBox(height: 8),
               Text(
-                productError,
+                optionError,
                 style: TextStyle(
                   color: Colors.red[700],
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ],
+                ]);
+              }),
+              const SizedBox(height: 10),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _OptionHeader extends StatelessWidget {
+  const _OptionHeader({required this.option});
+
+  final ReconciliationDraftOption option;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        '${option.chipLabel} - ${VN.tonDuKien}: ${option.expectedQty}',
+        style: Theme.of(context).textTheme.titleSmall,
       ),
     );
   }
