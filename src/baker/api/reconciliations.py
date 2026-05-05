@@ -5,8 +5,8 @@ from datetime import date
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from baker.api.inventory_fifo import consume_fifo_items, normalize_price_chip
 from baker.api.orders import _auto_decrement_stock
-from baker.api.stock import _upsert_stock
 from baker.db.connection import get_db
 from baker.models.event import Event
 from baker.models.order import Order, OrderItem
@@ -25,6 +25,7 @@ class ReconciliationSaleRowIn(BaseModel):
 
 class ReconciliationLineIn(BaseModel):
     product_id: int
+    price_chip_id: int | None = None
     expected_qty: int
     counted_qty: int
     sale_qty: int = 0
@@ -49,16 +50,8 @@ def _resolved_sale_qty(line: ReconciliationLineIn) -> int:
 
 def _load_display_products(conn) -> list[dict]:
     rows = conn.execute(
-        """SELECT p.id, p.name, p.category, p.base_price,
-                  COALESCE(ps.quantity, 0) AS expected_qty
+        """SELECT p.id, p.name, p.category, p.base_price
            FROM products p
-           LEFT JOIN (
-               SELECT sl.product_id, COUNT(ii.id) AS quantity
-               FROM stock_lots sl
-               LEFT JOIN inventory_items ii
-                 ON ii.lot_id = sl.id AND ii.status = 'available'
-               GROUP BY sl.product_id
-           ) ps ON ps.product_id = p.id
            WHERE p.active = 1
              AND EXISTS (
                  SELECT 1 FROM product_attribute_values pav
@@ -71,8 +64,25 @@ def _load_display_products(conn) -> list[dict]:
 
     product_ids = [row["id"] for row in rows]
     chips_map: dict[int, list[dict]] = {pid: [] for pid in product_ids}
+    expected_by_option: dict[tuple[int, int | None], int] = {}
+
     if product_ids:
         placeholders = ",".join("?" * len(product_ids))
+        expected_rows = conn.execute(
+            """SELECT sl.product_id, sl.price_chip_id, COUNT(ii.id) AS quantity
+               FROM stock_lots sl
+               LEFT JOIN inventory_items ii
+                 ON ii.lot_id = sl.id AND ii.status = 'available'
+               WHERE sl.product_id IN ("""
+            + placeholders
+            + ") GROUP BY sl.product_id, sl.price_chip_id",
+            product_ids,
+        ).fetchall()
+        for stock_row in expected_rows:
+            expected_by_option[(stock_row["product_id"], stock_row["price_chip_id"])] = int(
+                stock_row["quantity"] or 0
+            )
+
         chip_rows = conn.execute(
             "SELECT id, product_id, label, price, position "
             f"FROM product_price_chips WHERE product_id IN ({placeholders}) "
@@ -89,17 +99,54 @@ def _load_display_products(conn) -> list[dict]:
                 }
             )
 
-    return [
-        {
-            "product_id": row["id"],
-            "name": row["name"],
-            "category": row["category"],
-            "expected_qty": row["expected_qty"],
-            "base_price": row["base_price"],
-            "price_chips": chips_map.get(row["id"], []),
-        }
-        for row in rows
-    ]
+    products: list[dict] = []
+    for row in rows:
+        product_id = row["id"]
+        chips = chips_map.get(product_id, [])
+        option_rows: list[dict] = []
+        if chips:
+            for chip in chips:
+                option_rows.append(
+                    {
+                        "product_id": product_id,
+                        "price_chip_id": chip["id"],
+                        "chip_label": chip["label"],
+                        "expected_qty": expected_by_option.get((product_id, chip["id"]), 0),
+                    }
+                )
+            base_qty = expected_by_option.get((product_id, None), 0)
+            if base_qty > 0:
+                option_rows.append(
+                    {
+                        "product_id": product_id,
+                        "price_chip_id": None,
+                        "chip_label": "Giá gốc",
+                        "expected_qty": base_qty,
+                    }
+                )
+        else:
+            option_rows.append(
+                {
+                    "product_id": product_id,
+                    "price_chip_id": None,
+                    "chip_label": "Giá gốc",
+                    "expected_qty": expected_by_option.get((product_id, None), 0),
+                }
+            )
+
+        products.append(
+            {
+                "product_id": product_id,
+                "name": row["name"],
+                "category": row["category"],
+                "expected_qty": sum(option["expected_qty"] for option in option_rows),
+                "base_price": row["base_price"],
+                "price_chips": chips,
+                "options": option_rows,
+            }
+        )
+
+    return products
 
 
 def _validate_submit(payload: ReconciliationSubmitIn):
@@ -181,7 +228,7 @@ def _create_sale_orders(
     conn,
     payload: ReconciliationSubmitIn,
     session_id: int,
-    latest_by_id: dict[int, dict],
+    latest_by_key: dict[tuple[int, int | None], dict],
 ) -> list[list[dict]]:
     orders_by_line: list[list[dict]] = []
 
@@ -208,7 +255,8 @@ def _create_sale_orders(
             row_payloads = []
 
         for row_payload in row_payloads:
-            latest = latest_by_id[line.product_id]
+            chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
+            latest = latest_by_key[(line.product_id, chip_id)]
             order = Order(
                 customer_name="Đối soát tồn kho",
                 items=[
@@ -217,6 +265,7 @@ def _create_sale_orders(
                         qty=row_payload["quantity"],
                         price=row_payload["unit_price"],
                         product_id=str(line.product_id),
+                        price_chip_id=chip_id,
                     )
                 ],
                 status="new",
@@ -234,6 +283,7 @@ def _create_sale_orders(
                 quantity=row_payload["quantity"],
                 unit_price=row_payload["unit_price"],
                 position=0,
+                price_chip_id=chip_id,
             )
             work_item.save(conn)
 
@@ -253,9 +303,10 @@ def _create_sale_orders(
                 """SELECT id
                    FROM stock_movements
                    WHERE movement_type = 'sale' AND reference_id = ? AND product_id = ?
+                     AND ((price_chip_id IS NULL AND ? IS NULL) OR price_chip_id = ?)
                    ORDER BY id DESC
                    LIMIT 1""",
-                (order.order_ref, line.product_id),
+                (order.order_ref, line.product_id, chip_id, chip_id),
             ).fetchone()
 
             line_rows.append(
@@ -267,6 +318,7 @@ def _create_sale_orders(
                     "payment_ref": str(payment_txn.id),
                     "order_item_id": work_item.id,
                     "sale_movement_id": sale_movement["id"] if sale_movement else None,
+                    "price_chip_id": chip_id,
                 }
             )
 
@@ -290,10 +342,17 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
         _validate_submit(payload)
 
         latest_products = _load_display_products(conn)
-        latest_by_id = {item["product_id"]: item for item in latest_products}
+        latest_by_key: dict[tuple[int, int | None], dict] = {}
+        for item in latest_products:
+            for option in item.get("options", []):
+                latest_by_key[(item["product_id"], option["price_chip_id"])] = {
+                    **option,
+                    "name": item["name"],
+                }
 
         for line in payload.lines:
-            latest = latest_by_id.get(line.product_id)
+            chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
+            latest = latest_by_key.get((line.product_id, chip_id))
             if latest is None:
                 raise HTTPException(status_code=422, detail="Có sản phẩm không còn trong danh sách trưng bày")
             if latest["expected_qty"] != line.expected_qty:
@@ -316,31 +375,35 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
             conn,
             payload,
             session_id,
-            latest_by_id,
+            latest_by_key,
         )
 
-        waste_movement_ids_by_product: dict[int, int] = {}
+        waste_movement_ids_by_option: dict[tuple[int, int | None], int] = {}
         for line in payload.lines:
             if line.waste_qty <= 0:
                 continue
 
-            stock_row = conn.execute(
-                "SELECT quantity FROM product_stock WHERE product_id = ?",
-                (line.product_id,),
-            ).fetchone()
-            current_qty = stock_row["quantity"] if stock_row else 0
-            new_qty = max(0, current_qty - line.waste_qty)
-            _upsert_stock(conn, line.product_id, new_qty)
+            chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
 
             per_line_reason = (line.waste_reason or "").strip() or (payload.waste_reason or "").strip()
             movement_cursor = conn.execute(
                 """INSERT INTO stock_movements
-                   (product_id, movement_type, quantity, reason, reference_id)
-                   VALUES (?, 'waste', ?, ?, ?)""",
-                (line.product_id, -line.waste_qty, per_line_reason, f"reconciliation:{session_id}"),
+                   (product_id, movement_type, quantity, reason, reference_id, price_chip_id)
+                   VALUES (?, 'waste', ?, ?, ?, ?)""",
+                (line.product_id, -line.waste_qty, per_line_reason, f"reconciliation:{session_id}", chip_id),
             )
             waste_movement_id = movement_cursor.lastrowid
-            waste_movement_ids_by_product[line.product_id] = waste_movement_id
+            consume_fifo_items(conn, line.product_id, chip_id, line.waste_qty, waste_movement_id)
+            lot_row = conn.execute(
+                "SELECT lot_id FROM inventory_items WHERE consumed_by_movement_id = ? ORDER BY id ASC LIMIT 1",
+                (waste_movement_id,),
+            ).fetchone()
+            if lot_row:
+                conn.execute(
+                    "UPDATE stock_movements SET lot_id = ? WHERE id = ?",
+                    (lot_row["lot_id"], waste_movement_id),
+                )
+            waste_movement_ids_by_option[(line.product_id, chip_id)] = waste_movement_id
 
             product_name_row = conn.execute(
                 "SELECT name FROM products WHERE id = ?",
@@ -357,6 +420,7 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
                     "quantity": -line.waste_qty,
                     "reason": per_line_reason,
                     "reference_id": f"reconciliation:{session_id}",
+                    "price_chip_id": chip_id,
                 },
             ).save(conn)
 
@@ -376,6 +440,7 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
         )
 
         for line_index, line in enumerate(payload.lines):
+            chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
             per_line_reason = (line.waste_reason or "").strip() or (payload.waste_reason or "").strip()
             line_sale_rows = sale_rows_by_line[line_index]
             linked_order_item_id = line_sale_rows[0]["order_item_id"] if line_sale_rows else None
@@ -383,8 +448,8 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
             line_cursor = conn.execute(
                 """INSERT INTO reconciliation_lines
                    (session_id, product_id, expected_qty, counted_qty, sale_qty, waste_qty, waste_reason, manual_unit_price,
-                     linked_order_item_id, linked_stock_movement_sale_id, linked_stock_movement_waste_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                     price_chip_id, linked_order_item_id, linked_stock_movement_sale_id, linked_stock_movement_waste_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     line.product_id,
@@ -394,9 +459,10 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
                     line.waste_qty,
                     per_line_reason,
                     line.manual_unit_price,
+                    chip_id,
                     linked_order_item_id,
                     linked_sale_movement_id,
-                    waste_movement_ids_by_product.get(line.product_id),
+                    waste_movement_ids_by_option.get((line.product_id, chip_id)),
                 ),
             )
             line_id = line_cursor.lastrowid
@@ -483,6 +549,7 @@ def get_reconciliation_history_detail(session_id: int):
         line_rows = conn.execute(
             """SELECT rl.id,
                       rl.product_id,
+                      rl.price_chip_id,
                       p.name AS product_name,
                       rl.expected_qty,
                       rl.counted_qty,
@@ -495,8 +562,9 @@ def get_reconciliation_history_detail(session_id: int):
                       rl.linked_stock_movement_waste_id
                FROM reconciliation_lines rl
                LEFT JOIN products p ON p.id = rl.product_id
+               LEFT JOIN product_price_chips ppc ON ppc.id = rl.price_chip_id
                WHERE rl.session_id = ?
-               ORDER BY p.name, rl.id""",
+               ORDER BY p.name, COALESCE(ppc.position, 999), rl.price_chip_id, rl.id""",
             (session_id,),
         ).fetchall()
 
@@ -542,6 +610,7 @@ def get_reconciliation_history_detail(session_id: int):
                 {
                     "id": row["id"],
                     "product_id": row["product_id"],
+                    "price_chip_id": row["price_chip_id"],
                     "product_name": row["product_name"] or "",
                     "expected_qty": row["expected_qty"],
                     "counted_qty": row["counted_qty"],
