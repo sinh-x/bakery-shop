@@ -53,6 +53,22 @@ def _chip_rows(conn, product_id: int) -> list[dict]:
     ]
 
 
+def _chip_has_stock_or_history(conn, chip_id: int) -> bool:
+    checks = [
+        "SELECT 1 FROM stock_lots WHERE price_chip_id = ? LIMIT 1",
+        """SELECT 1 FROM inventory_items ii
+           JOIN stock_lots sl ON sl.id = ii.lot_id
+           WHERE sl.price_chip_id = ? LIMIT 1""",
+        "SELECT 1 FROM stock_movements WHERE price_chip_id = ? LIMIT 1",
+        "SELECT 1 FROM order_items WHERE price_chip_id = ? LIMIT 1",
+        "SELECT 1 FROM reconciliation_lines WHERE price_chip_id = ? LIMIT 1",
+    ]
+    for query in checks:
+        if conn.execute(query, (chip_id,)).fetchone():
+            return True
+    return False
+
+
 @router.get("/products/{product_id}/price-chips")
 def list_product_price_chips(
     product_id: int = Path(ge=0, description="Product ID"),
@@ -154,6 +170,11 @@ def delete_product_price_chip(
     with get_db() as conn:
         _ensure_product_exists(conn, product_id)
         _ensure_chip_exists(conn, chip_id, product_id)
+        if _chip_has_stock_or_history(conn, chip_id):
+            raise HTTPException(
+                status_code=422,
+                detail="Không thể xóa mức giá vì đã có tồn kho hoặc lịch sử liên quan",
+            )
         conn.execute(
             "DELETE FROM product_price_chips WHERE id = ? AND product_id = ?",
             (chip_id, product_id),

@@ -1,4 +1,5 @@
 from baker.db.connection import get_db
+from baker.api.inventory_fifo import create_lot_with_items
 
 
 def _mark_product_display(conn, product_id: int, value: str = "true"):
@@ -12,10 +13,12 @@ def _mark_product_display(conn, product_id: int, value: str = "true"):
 
 def _set_stock(conn, product_id: int, quantity: int):
     conn.execute(
-        """INSERT INTO product_stock (product_id, quantity) VALUES (?, ?)
-           ON CONFLICT(product_id) DO UPDATE SET quantity = excluded.quantity""",
-        (product_id, quantity),
+        "DELETE FROM inventory_items WHERE lot_id IN (SELECT id FROM stock_lots WHERE product_id = ?)",
+        (product_id,),
     )
+    conn.execute("DELETE FROM stock_lots WHERE product_id = ?", (product_id,))
+    if quantity > 0:
+        create_lot_with_items(conn, product_id, None, quantity)
 
 
 def test_draft_returns_active_trung_bay_products_with_price_chips(api_client):

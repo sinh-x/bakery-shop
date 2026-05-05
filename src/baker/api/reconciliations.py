@@ -52,7 +52,13 @@ def _load_display_products(conn) -> list[dict]:
         """SELECT p.id, p.name, p.category, p.base_price,
                   COALESCE(ps.quantity, 0) AS expected_qty
            FROM products p
-           LEFT JOIN product_stock ps ON ps.product_id = p.id
+           LEFT JOIN (
+               SELECT sl.product_id, COUNT(ii.id) AS quantity
+               FROM stock_lots sl
+               LEFT JOIN inventory_items ii
+                 ON ii.lot_id = sl.id AND ii.status = 'available'
+               GROUP BY sl.product_id
+           ) ps ON ps.product_id = p.id
            WHERE p.active = 1
              AND EXISTS (
                  SELECT 1 FROM product_attribute_values pav

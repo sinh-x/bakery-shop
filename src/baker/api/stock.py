@@ -4,6 +4,12 @@ from fastapi import APIRouter, HTTPException
 
 from pydantic import BaseModel
 
+from baker.api.inventory_fifo import (
+    available_quantity,
+    consume_fifo_items,
+    create_lot_with_items,
+    normalize_price_chip,
+)
 from baker.db.connection import get_db
 from baker.models.event import Event
 
@@ -20,16 +26,24 @@ class StockGetResponse(BaseModel):
 class RestockRequest(BaseModel):
     quantity: int
     note: str = ""
+    price_chip_id: int | None = None
 
 
 class WasteRequest(BaseModel):
     quantity: int
     reason: str = ""
+    price_chip_id: int | None = None
 
 
 class AdjustRequest(BaseModel):
     quantity: int
     reason: str = ""
+    price_chip_id: int | None = None
+
+
+class StockOverviewChipItem(BaseModel):
+    price_chip_id: int | None
+    quantity: int
 
 
 class StockOverviewItem(BaseModel):
@@ -37,15 +51,25 @@ class StockOverviewItem(BaseModel):
     product_name: str
     category: str
     quantity: int
+    per_chip: list[StockOverviewChipItem]
 
 
 def _upsert_stock(conn, product_id: int, new_qty: int):
-    """Insert or update stock quantity for a product."""
-    conn.execute(
-        """INSERT INTO product_stock (product_id, quantity) VALUES (?, ?)
-           ON CONFLICT(product_id) DO UPDATE SET quantity = excluded.quantity""",
-        (product_id, new_qty),
-    )
+    """Backward-compatible stock setter for base-price option."""
+    old_qty = available_quantity(conn, product_id, None)
+    delta = new_qty - old_qty
+    if delta > 0:
+        create_lot_with_items(conn, product_id, None, delta)
+    elif delta < 0:
+        movement_id = _log_stock_movement(
+            conn,
+            product_id,
+            "adjustment",
+            delta,
+            reason="reconciliation-sync",
+            price_chip_id=None,
+        )
+        consume_fifo_items(conn, product_id, None, -delta, movement_id)
 
 
 def _log_stock_movement(
@@ -55,14 +79,17 @@ def _log_stock_movement(
     quantity: int,
     reason: str = "",
     reference_id: str = "",
+    price_chip_id: int | None = None,
+    lot_id: int | None = None,
 ):
     """Insert a stock movement record and log to events table."""
-    conn.execute(
+    cursor = conn.execute(
         """INSERT INTO stock_movements
-           (product_id, movement_type, quantity, reason, reference_id)
-           VALUES (?, ?, ?, ?, ?)""",
-        (product_id, movement_type, quantity, reason, reference_id),
+           (product_id, movement_type, quantity, reason, reference_id, price_chip_id, lot_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (product_id, movement_type, quantity, reason, reference_id, price_chip_id, lot_id),
     )
+    movement_id = cursor.lastrowid
     # Build product name for event summary
     product_row = conn.execute(
         "SELECT name FROM products WHERE id = ?", (product_id,)
@@ -88,7 +115,12 @@ def _log_stock_movement(
         data["reason"] = reason
     if reference_id:
         data["reference_id"] = reference_id
+    if price_chip_id is not None:
+        data["price_chip_id"] = price_chip_id
+    if lot_id is not None:
+        data["lot_id"] = lot_id
     Event(summary=summary, type="inventory", data=data).save(conn)
+    return movement_id
 
 
 @router.get("/products/{product_id}/stock", response_model=StockGetResponse)
@@ -102,10 +134,13 @@ def get_stock(product_id: int):
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
         row = conn.execute(
-            "SELECT quantity FROM product_stock WHERE product_id = ?",
+            """SELECT COUNT(*) AS qty
+               FROM inventory_items ii
+               JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = ? AND ii.status = 'available'""",
             (product_id,),
         ).fetchone()
-        quantity = row["quantity"] if row else 0
+        quantity = int(row["qty"] if row else 0)
         return StockGetResponse(quantity=quantity)
 
 
@@ -122,12 +157,8 @@ def restock_product(product_id: int, body: RestockRequest):
         if not product:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-        existing = conn.execute(
-            "SELECT quantity FROM product_stock WHERE product_id = ?",
-            (product_id,),
-        ).fetchone()
-        new_qty = (existing["quantity"] if existing else 0) + body.quantity
-        _upsert_stock(conn, product_id, new_qty)
+        chip_id = normalize_price_chip(conn, product_id, body.price_chip_id)
+        lot_id = create_lot_with_items(conn, product_id, chip_id, body.quantity)
 
         _log_stock_movement(
             conn,
@@ -135,9 +166,25 @@ def restock_product(product_id: int, body: RestockRequest):
             "restock",
             body.quantity,
             reason=body.note,
+            price_chip_id=chip_id,
+            lot_id=lot_id,
         )
 
-        return {"product_id": product_id, "quantity": new_qty}
+        option_qty = available_quantity(conn, product_id, chip_id)
+        total_qty = conn.execute(
+            """SELECT COUNT(*) AS qty
+               FROM inventory_items ii
+               JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = ? AND ii.status = 'available'""",
+            (product_id,),
+        ).fetchone()["qty"]
+
+        return {
+            "product_id": product_id,
+            "price_chip_id": chip_id,
+            "quantity": int(total_qty),
+            "option_quantity": option_qty,
+        }
 
 
 @router.post("/products/{product_id}/stock/waste", status_code=200)
@@ -155,22 +202,25 @@ def waste_stock(product_id: int, body: WasteRequest):
         if not product:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-        existing = conn.execute(
-            "SELECT quantity FROM product_stock WHERE product_id = ?",
-            (product_id,),
-        ).fetchone()
-        new_qty = max(0, (existing["quantity"] if existing else 0) - body.quantity)
-        _upsert_stock(conn, product_id, new_qty)
+        chip_id = normalize_price_chip(conn, product_id, body.price_chip_id)
 
-        _log_stock_movement(
+        movement_id = _log_stock_movement(
             conn,
             product_id,
             "waste",
             -body.quantity,
             reason=body.reason,
+            price_chip_id=chip_id,
         )
+        consume_fifo_items(conn, product_id, chip_id, body.quantity, movement_id)
 
-        return {"product_id": product_id, "quantity": new_qty}
+        option_qty = available_quantity(conn, product_id, chip_id)
+
+        return {
+            "product_id": product_id,
+            "price_chip_id": chip_id,
+            "quantity": option_qty,
+        }
 
 
 @router.post("/products/{product_id}/stock/adjust", status_code=200)
@@ -188,24 +238,31 @@ def adjust_stock(product_id: int, body: AdjustRequest):
         if not product:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-        old_row = conn.execute(
-            "SELECT quantity FROM product_stock WHERE product_id = ?",
-            (product_id,),
-        ).fetchone()
-        old_qty = old_row["quantity"] if old_row else 0
-
-        _upsert_stock(conn, product_id, body.quantity)
-
+        chip_id = normalize_price_chip(conn, product_id, body.price_chip_id)
+        old_qty = available_quantity(conn, product_id, chip_id)
         delta = body.quantity - old_qty
-        _log_stock_movement(
+        if delta > 0:
+            lot_id = create_lot_with_items(conn, product_id, chip_id, delta)
+        else:
+            lot_id = None
+
+        movement_id = _log_stock_movement(
             conn,
             product_id,
             "adjustment",
             delta,
             reason=body.reason,
+            price_chip_id=chip_id,
+            lot_id=lot_id,
         )
+        if delta < 0:
+            consume_fifo_items(conn, product_id, chip_id, -delta, movement_id)
 
-        return {"product_id": product_id, "quantity": body.quantity}
+        return {
+            "product_id": product_id,
+            "price_chip_id": chip_id,
+            "quantity": available_quantity(conn, product_id, chip_id),
+        }
 
 
 @router.get("/stock/overview", response_model=list[StockOverviewItem])
@@ -213,25 +270,43 @@ def stock_overview():
     """List all trưng bày products with current stock quantity."""
     with get_db() as conn:
         rows = conn.execute(
-            """SELECT p.id AS product_id, p.name AS product_name, p.category,
-                      COALESCE(ps.quantity, 0) AS quantity
+            """SELECT p.id AS product_id,
+                      p.name AS product_name,
+                      p.category,
+                      sl.price_chip_id,
+                      COUNT(ii.id) AS quantity
                FROM products p
-               LEFT JOIN product_stock ps ON p.id = ps.product_id
+               LEFT JOIN stock_lots sl ON p.id = sl.product_id
+               LEFT JOIN inventory_items ii ON ii.lot_id = sl.id AND ii.status = 'available'
                WHERE p.active = 1
-                 AND EXISTS (
-                     SELECT 1 FROM product_attribute_values pav
+                  AND EXISTS (
+                      SELECT 1 FROM product_attribute_values pav
                      WHERE pav.product_id = p.id
                        AND pav.attribute_type = 'trung_bay'
-                       AND pav.value = 'true'
-                 )
-               ORDER BY p.category, p.name""",
+                        AND pav.value = 'true'
+                  )
+               GROUP BY p.id, p.name, p.category, sl.price_chip_id
+               ORDER BY p.category, p.name, sl.price_chip_id""",
         ).fetchall()
-        return [
-            StockOverviewItem(
-                product_id=r["product_id"],
-                product_name=r["product_name"],
-                category=r["category"],
-                quantity=r["quantity"],
+
+        grouped: dict[int, StockOverviewItem] = {}
+        for row in rows:
+            pid = row["product_id"]
+            if pid not in grouped:
+                grouped[pid] = StockOverviewItem(
+                    product_id=pid,
+                    product_name=row["product_name"],
+                    category=row["category"],
+                    quantity=0,
+                    per_chip=[],
+                )
+            qty = int(row["quantity"] or 0)
+            grouped[pid].quantity += qty
+            grouped[pid].per_chip.append(
+                StockOverviewChipItem(
+                    price_chip_id=row["price_chip_id"],
+                    quantity=qty,
+                )
             )
-            for r in rows
-        ]
+
+        return list(grouped.values())
