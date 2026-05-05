@@ -113,13 +113,22 @@ def _validate_submit(payload: ReconciliationSubmitIn):
             raise HTTPException(status_code=422, detail="Số lượng bán và hao hụt không được âm")
 
         if line.sale_rows:
-            for sale_row in line.sale_rows:
+            for row_index, sale_row in enumerate(line.sale_rows, start=1):
                 if sale_row.quantity <= 0:
-                    raise HTTPException(status_code=422, detail="Số lượng dòng bán phải lớn hơn 0")
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Sản phẩm #{line.product_id}, dòng bán #{row_index}: số lượng phải lớn hơn 0",
+                    )
                 if sale_row.unit_price <= 0:
-                    raise HTTPException(status_code=422, detail="Đơn giá dòng bán phải lớn hơn 0")
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Sản phẩm #{line.product_id}, dòng bán #{row_index}: đơn giá phải lớn hơn 0",
+                    )
                 if sale_row.payment_method not in {"cash", "transfer"}:
-                    raise HTTPException(status_code=422, detail="Dòng bán phải có phương thức thanh toán hợp lệ")
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Sản phẩm #{line.product_id}, dòng bán #{row_index}: phương thức thanh toán không hợp lệ",
+                    )
 
         missing_qty = line.expected_qty - line.counted_qty
         resolved_sale_qty = _resolved_sale_qty(line)
@@ -131,7 +140,13 @@ def _validate_submit(payload: ReconciliationSubmitIn):
                 detail="Số hao hụt vượt quá số thiếu. Vui lòng vào màn hình 'Nhập hàng' để bổ sung tồn kho trước.",
             )
         if missing_qty > 0 and resolved_sale_qty + line.waste_qty != missing_qty:
-            raise HTTPException(status_code=422, detail="Sản phẩm thiếu phải tách đúng: bán + hao hụt = số thiếu")
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Sản phẩm #{line.product_id} thiếu phải tách đúng: "
+                    "bán + hao hụt = số thiếu"
+                ),
+            )
         if missing_qty == 0 and (resolved_sale_qty > 0 or line.waste_qty > 0):
             raise HTTPException(status_code=422, detail="Sản phẩm không thiếu thì không được nhập bán hoặc hao hụt")
 
@@ -156,63 +171,102 @@ def _validate_submit(payload: ReconciliationSubmitIn):
             raise HTTPException(status_code=422, detail="Sản phẩm có hao hụt phải nhập lý do")
 
 
-def _create_sale_order(conn, payload: ReconciliationSubmitIn, session_id: int, latest_by_id: dict[int, dict]):
-    sale_lines = [line for line in payload.lines if _resolved_sale_qty(line) > 0]
-    if not sale_lines:
-        return None, {}, None
+def _create_sale_orders(
+    conn,
+    payload: ReconciliationSubmitIn,
+    session_id: int,
+    latest_by_id: dict[int, dict],
+) -> list[list[dict]]:
+    orders_by_line: list[list[dict]] = []
 
-    order_items = []
-    for line in sale_lines:
-        latest = latest_by_id[line.product_id]
-        order_items.append(
-            OrderItem(
-                product=latest["name"],
-                qty=_resolved_sale_qty(line),
-                price=float(line.manual_unit_price or 0),
-                product_id=str(line.product_id),
+    for line in payload.lines:
+        line_rows: list[dict] = []
+        if line.sale_rows:
+            row_payloads = [
+                {
+                    "quantity": sale_row.quantity,
+                    "unit_price": float(sale_row.unit_price),
+                    "payment_method": sale_row.payment_method,
+                }
+                for sale_row in line.sale_rows
+            ]
+        elif line.sale_qty > 0:
+            row_payloads = [
+                {
+                    "quantity": line.sale_qty,
+                    "unit_price": float(line.manual_unit_price or 0),
+                    "payment_method": (payload.payment_method or "").strip(),
+                }
+            ]
+        else:
+            row_payloads = []
+
+        for row_payload in row_payloads:
+            latest = latest_by_id[line.product_id]
+            order = Order(
+                customer_name="Đối soát tồn kho",
+                items=[
+                    OrderItem(
+                        product=latest["name"],
+                        qty=row_payload["quantity"],
+                        price=row_payload["unit_price"],
+                        product_id=str(line.product_id),
+                    )
+                ],
+                status="new",
+                source="reconciliation",
+                notes=f"Đối soát phiên #{session_id}",
+                created_by=payload.staff_name.strip(),
             )
-        )
+            order.calculate_total()
+            order.save(conn)
 
-    order = Order(
-        customer_name="Đối soát tồn kho",
-        items=order_items,
-        status="new",
-        source="reconciliation",
-        notes=f"Đối soát phiên #{session_id}",
-        created_by=payload.staff_name.strip(),
-    )
-    order.calculate_total()
-    order.save(conn)
+            work_item = WorkItem(
+                order_id=order.id or 0,
+                product_id=str(line.product_id),
+                product_name=latest["name"],
+                quantity=row_payload["quantity"],
+                unit_price=row_payload["unit_price"],
+                position=0,
+            )
+            work_item.save(conn)
 
-    order_item_ids_by_product: dict[int, int] = {}
-    for position, line in enumerate(sale_lines):
-        latest = latest_by_id[line.product_id]
-        work_item = WorkItem(
-            order_id=order.id or 0,
-            product_id=str(line.product_id),
-            product_name=latest["name"],
-            quantity=_resolved_sale_qty(line),
-            unit_price=float(line.manual_unit_price or 0),
-            position=position,
-        )
-        work_item.save(conn)
-        order_item_ids_by_product[line.product_id] = work_item.id or 0
+            payment_txn = PaymentTransaction(
+                order_id=order.id or 0,
+                amount=float(order.total_price),
+                type="payment",
+                method=row_payload["payment_method"],
+                note=f"Đối soát phiên #{session_id}",
+            )
+            payment_txn.save(conn)
 
-    payment_txn = None
-    if payload.payment_method:
-        payment_txn = PaymentTransaction(
-            order_id=order.id or 0,
-            amount=float(order.total_price),
-            type="payment",
-            method=payload.payment_method,
-            note=f"Đối soát phiên #{session_id}",
-        )
-        payment_txn.save(conn)
+            Order.update_status(conn, order.order_ref, "delivered", "")
+            _auto_decrement_stock(conn, order.id or 0, order.order_ref)
 
-    Order.update_status(conn, order.order_ref, "delivered", "")
-    _auto_decrement_stock(conn, order.id or 0, order.order_ref)
+            sale_movement = conn.execute(
+                """SELECT id
+                   FROM stock_movements
+                   WHERE movement_type = 'sale' AND reference_id = ? AND product_id = ?
+                   ORDER BY id DESC
+                   LIMIT 1""",
+                (order.order_ref, line.product_id),
+            ).fetchone()
 
-    return order, order_item_ids_by_product, payment_txn
+            line_rows.append(
+                {
+                    "quantity": row_payload["quantity"],
+                    "unit_price": row_payload["unit_price"],
+                    "payment_method": row_payload["payment_method"],
+                    "order_ref": order.order_ref,
+                    "payment_ref": str(payment_txn.id),
+                    "order_item_id": work_item.id,
+                    "sale_movement_id": sale_movement["id"] if sale_movement else None,
+                }
+            )
+
+        orders_by_line.append(line_rows)
+
+    return orders_by_line
 
 
 @router.get("/draft")
@@ -252,25 +306,12 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
         )
         session_id = session_cursor.lastrowid
 
-        order, order_item_ids_by_product, payment_txn = _create_sale_order(
+        sale_rows_by_line = _create_sale_orders(
             conn,
             payload,
             session_id,
             latest_by_id,
         )
-
-        waste_reason = (payload.waste_reason or "").strip()
-        sale_movement_ids_by_product: dict[int, int] = {}
-        if order:
-            sale_rows = conn.execute(
-                """SELECT id, product_id
-                   FROM stock_movements
-                   WHERE movement_type = 'sale' AND reference_id = ?
-                   ORDER BY id""",
-                (order.order_ref,),
-            ).fetchall()
-            for row in sale_rows:
-                sale_movement_ids_by_product[row["product_id"]] = row["id"]
 
         waste_movement_ids_by_product: dict[int, int] = {}
         for line in payload.lines:
@@ -313,19 +354,26 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
                 },
             ).save(conn)
 
+        first_sale_row = next(
+            (sale_row for line_rows in sale_rows_by_line for sale_row in line_rows),
+            None,
+        )
         conn.execute(
             """UPDATE reconciliation_sessions
                SET linked_order_ref = ?, linked_payment_ref = ?
                WHERE id = ?""",
             (
-                order.order_ref if order else None,
-                str(payment_txn.id) if payment_txn else None,
+                first_sale_row["order_ref"] if first_sale_row else None,
+                first_sale_row["payment_ref"] if first_sale_row else None,
                 session_id,
             ),
         )
 
-        for line in payload.lines:
+        for line_index, line in enumerate(payload.lines):
             per_line_reason = (line.waste_reason or "").strip() or (payload.waste_reason or "").strip()
+            line_sale_rows = sale_rows_by_line[line_index]
+            linked_order_item_id = line_sale_rows[0]["order_item_id"] if line_sale_rows else None
+            linked_sale_movement_id = line_sale_rows[0]["sale_movement_id"] if line_sale_rows else None
             line_cursor = conn.execute(
                 """INSERT INTO reconciliation_lines
                    (session_id, product_id, expected_qty, counted_qty, sale_qty, waste_qty, waste_reason, manual_unit_price,
@@ -340,19 +388,27 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
                     line.waste_qty,
                     per_line_reason,
                     line.manual_unit_price,
-                    order_item_ids_by_product.get(line.product_id),
-                    sale_movement_ids_by_product.get(line.product_id),
+                    linked_order_item_id,
+                    linked_sale_movement_id,
                     waste_movement_ids_by_product.get(line.product_id),
                 ),
             )
             line_id = line_cursor.lastrowid
 
-            for sale_row in line.sale_rows:
+            for row_index, sale_row in enumerate(line.sale_rows):
+                row_link = line_sale_rows[row_index]
                 conn.execute(
                     """INSERT INTO reconciliation_sale_rows
-                       (line_id, quantity, unit_price, payment_method)
-                       VALUES (?, ?, ?, ?)""",
-                    (line_id, sale_row.quantity, sale_row.unit_price, sale_row.payment_method),
+                       (line_id, quantity, unit_price, payment_method, linked_order_ref, linked_payment_ref)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (
+                        line_id,
+                        sale_row.quantity,
+                        sale_row.unit_price,
+                        sale_row.payment_method,
+                        row_link["order_ref"],
+                        row_link["payment_ref"],
+                    ),
                 )
 
         return {

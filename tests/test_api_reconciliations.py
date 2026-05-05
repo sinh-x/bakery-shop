@@ -526,16 +526,101 @@ def test_submit_accepts_grouped_sale_rows_and_persists_row_details(api_client):
         assert line is not None
         assert line["sale_qty"] == 3
 
+        orders = conn.execute("SELECT order_ref, total_price FROM orders ORDER BY id").fetchall()
+        assert len(orders) == 2
+
+        payments = conn.execute(
+            "SELECT method, amount FROM payment_transactions ORDER BY id"
+        ).fetchall()
+        assert len(payments) == 2
+        assert payments[0]["method"] == "cash"
+        assert payments[0]["amount"] == 12000
+        assert payments[1]["method"] == "transfer"
+        assert payments[1]["amount"] == 30000
+
         sale_rows = conn.execute(
-            "SELECT quantity, unit_price, payment_method FROM reconciliation_sale_rows ORDER BY id"
+            "SELECT quantity, unit_price, payment_method, linked_order_ref, linked_payment_ref "
+            "FROM reconciliation_sale_rows ORDER BY id"
         ).fetchall()
         assert len(sale_rows) == 2
         assert sale_rows[0]["quantity"] == 1
         assert sale_rows[0]["unit_price"] == 12000
         assert sale_rows[0]["payment_method"] == "cash"
+        assert sale_rows[0]["linked_order_ref"] == orders[0]["order_ref"]
+        assert sale_rows[0]["linked_payment_ref"]
         assert sale_rows[1]["quantity"] == 2
         assert sale_rows[1]["unit_price"] == 15000
         assert sale_rows[1]["payment_method"] == "transfer"
+        assert sale_rows[1]["linked_order_ref"] == orders[1]["order_ref"]
+        assert sale_rows[1]["linked_payment_ref"]
+
+
+def test_submit_grouped_rows_rejects_invalid_rows_with_zero_partial_writes(api_client):
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 8)
+
+    invalid_cases = [
+        (
+            {
+                "staff_name": "An",
+                "lines": [
+                    {
+                        "product_id": 1,
+                        "expected_qty": 8,
+                        "counted_qty": 5,
+                        "waste_qty": 0,
+                        "sale_rows": [{"quantity": -1, "unit_price": 12000, "payment_method": "cash"}],
+                    }
+                ],
+            },
+            "số lượng",
+        ),
+        (
+            {
+                "staff_name": "An",
+                "lines": [
+                    {
+                        "product_id": 1,
+                        "expected_qty": 8,
+                        "counted_qty": 5,
+                        "waste_qty": 0,
+                        "sale_rows": [{"quantity": 1, "unit_price": 0, "payment_method": "cash"}],
+                    }
+                ],
+            },
+            "đơn giá",
+        ),
+        (
+            {
+                "staff_name": "An",
+                "lines": [
+                    {
+                        "product_id": 1,
+                        "expected_qty": 8,
+                        "counted_qty": 5,
+                        "waste_qty": 0,
+                        "sale_rows": [{"quantity": 1, "unit_price": 12000, "payment_method": ""}],
+                    }
+                ],
+            },
+            "phương thức thanh toán",
+        ),
+    ]
+
+    for payload, expected_error in invalid_cases:
+        resp = api_client.post("/api/reconciliations/submit", json=payload)
+        assert resp.status_code == 422
+        assert expected_error in resp.json()["detail"]
+
+        with get_db() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM reconciliation_sessions").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM reconciliation_lines").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM reconciliation_sale_rows").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM payment_transactions").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM stock_movements").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
 
 
 def test_history_detail_exposes_legacy_sale_row_adapter(api_client):
