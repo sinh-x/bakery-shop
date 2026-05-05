@@ -196,7 +196,6 @@ class _StockReconciliationScreenState
                   },
                 ),
         ),
-        _SubmitOptionsPanel(state: state),
       ],
     );
   }
@@ -214,7 +213,9 @@ class _StockReconciliationScreenState
     var totalSale = 0;
     var totalWaste = 0;
     for (final product in draft.products) {
-      totalSale += state.saleQtyByProduct[product.productId] ?? 0;
+      final rows = state.saleRowsByProduct[product.productId] ??
+          const <ReconciliationSaleRowInput>[];
+      totalSale += rows.fold<int>(0, (sum, row) => sum + row.quantity);
       totalWaste += state.wasteQtyByProduct[product.productId] ?? 0;
     }
 
@@ -242,10 +243,6 @@ class _StockReconciliationScreenState
               const SizedBox(height: 4),
               Text('${VN.tongSoLuongBan}: $totalSale'),
               Text('${VN.tongSoLuongHaoHut}: $totalWaste'),
-              if (state.hasSale)
-                Text(
-                  '${VN.phuongThucThanhToan}: ${paymentMethodLabel(state.paymentMethod ?? '')}',
-                ),
               if (state.hasWaste && hasEmptyWasteReason)
                 Text(
                   '(${VN.lyDoHaoHut}: ${VN.khongCo})',
@@ -284,9 +281,7 @@ class _ProductCard extends ConsumerStatefulWidget {
 
 class _ProductCardState extends ConsumerState<_ProductCard> {
   late TextEditingController _countedController;
-  late TextEditingController _saleController;
   late TextEditingController _wasteController;
-  late TextEditingController _manualPriceController;
   late TextEditingController _wasteReasonController;
 
   @override
@@ -295,24 +290,18 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
     final productId = widget.product.productId;
     final state = ref.read(reconciliationProvider);
     final counted = state.countedQtyByProduct[productId] ?? widget.product.expectedQty;
-    final sale = state.saleQtyByProduct[productId] ?? 0;
     final waste = state.wasteQtyByProduct[productId] ?? 0;
-    final manualPrice = state.manualUnitPriceByProduct[productId] ?? '';
     final wasteReason = state.wasteReasonByProduct[productId] ?? '';
 
     _countedController = TextEditingController(text: '$counted');
-    _saleController = TextEditingController(text: '$sale');
     _wasteController = TextEditingController(text: '$waste');
-    _manualPriceController = TextEditingController(text: manualPrice);
     _wasteReasonController = TextEditingController(text: wasteReason);
   }
 
   @override
   void dispose() {
     _countedController.dispose();
-    _saleController.dispose();
     _wasteController.dispose();
-    _manualPriceController.dispose();
     _wasteReasonController.dispose();
     super.dispose();
   }
@@ -323,9 +312,14 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
     final notifier = ref.read(reconciliationProvider.notifier);
     final counted =
         state.countedQtyByProduct[widget.product.productId] ?? widget.product.expectedQty;
-    final sale = state.saleQtyByProduct[widget.product.productId] ?? 0;
+    final saleRows = state.saleRowsByProduct[widget.product.productId] ??
+        const <ReconciliationSaleRowInput>[];
     final waste = state.wasteQtyByProduct[widget.product.productId] ?? 0;
     final missing = widget.product.expectedQty - counted;
+    final productError = state.productErrors[widget.product.productId];
+    final saleRowErrors =
+        state.saleRowErrorsByProduct[widget.product.productId] ??
+        const <ReconciliationSaleRowError>[];
 
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
@@ -338,21 +332,6 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
             const SizedBox(height: 4),
             Text('${VN.tonDuKien}: ${widget.product.expectedQty}'),
             Text('${VN.giaCoSo}: ${widget.product.basePrice.toStringAsFixed(0)}đ'),
-            if (widget.product.priceChips.isNotEmpty)
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: widget.product.priceChips
-                    .map(
-                      (chip) => Chip(
-                        label: Text(
-                          '${chip.label}: ${chip.price.toStringAsFixed(0)}đ',
-                        ),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    )
-                    .toList(),
-              ),
             const SizedBox(height: 12),
             TextField(
               keyboardType: TextInputType.number,
@@ -376,57 +355,62 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                 ),
               ),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: VN.soLuongBan,
-                        border: OutlineInputBorder(),
-                      ),
-                      controller: _saleController,
-                      onChanged: (value) {
-                        notifier.setSaleQty(
-                          widget.product.productId,
-                          int.tryParse(value) ?? 0,
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: VN.soLuongHaoHut,
-                        border: OutlineInputBorder(),
-                      ),
-                      controller: _wasteController,
-                      onChanged: (value) {
-                        notifier.setWasteQty(
-                          widget.product.productId,
-                          int.tryParse(value) ?? 0,
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            if (sale > 0) ...[
-              const SizedBox(height: 8),
               TextField(
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
-                  labelText: VN.donGiaNhapTay,
+                  labelText: VN.soLuongHaoHut,
                   border: OutlineInputBorder(),
                 ),
-                controller: _manualPriceController,
+                controller: _wasteController,
                 onChanged: (value) {
-                  notifier.setManualUnitPrice(widget.product.productId, value);
+                  notifier.setWasteQty(
+                    widget.product.productId,
+                    int.tryParse(value) ?? 0,
+                  );
                 },
               ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: () => notifier.addSaleRow(widget.product.productId),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Thêm dòng bán'),
+                ),
+              ),
+              for (var rowIndex = 0; rowIndex < saleRows.length; rowIndex++)
+                _SaleRowEditor(
+                  rowIndex: rowIndex,
+                  row: saleRows[rowIndex],
+                  product: widget.product,
+                  rowError: rowIndex < saleRowErrors.length
+                      ? saleRowErrors[rowIndex]
+                      : null,
+                  onQtyChanged: (value) => notifier.setSaleRowQty(
+                    widget.product.productId,
+                    rowIndex,
+                    int.tryParse(value) ?? 0,
+                  ),
+                  onPriceChanged: (value) => notifier.setSaleRowUnitPrice(
+                    widget.product.productId,
+                    rowIndex,
+                    value,
+                  ),
+                  onMethodChanged: (value) => notifier.setSaleRowPaymentMethod(
+                    widget.product.productId,
+                    rowIndex,
+                    value,
+                  ),
+                  onRemove: () => notifier.removeSaleRow(
+                    widget.product.productId,
+                    rowIndex,
+                  ),
+                  onPriceChipTap: (price) => notifier.fillSaleRowPriceFromChip(
+                    widget.product.productId,
+                    rowIndex,
+                    price,
+                  ),
+                ),
             ],
             if (waste > 0) ...[
               const SizedBox(height: 8),
@@ -441,6 +425,16 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                 },
               ),
             ],
+            if (productError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                productError,
+                style: TextStyle(
+                  color: Colors.red[700],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -448,42 +442,112 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
   }
 }
 
-class _SubmitOptionsPanel extends ConsumerWidget {
-  const _SubmitOptionsPanel({required this.state});
+class _SaleRowEditor extends StatelessWidget {
+  const _SaleRowEditor({
+    required this.rowIndex,
+    required this.row,
+    required this.product,
+    required this.onQtyChanged,
+    required this.onPriceChanged,
+    required this.onMethodChanged,
+    required this.onRemove,
+    required this.onPriceChipTap,
+    this.rowError,
+  });
 
-  final ReconciliationState state;
+  final int rowIndex;
+  final ReconciliationSaleRowInput row;
+  final ReconciliationDraftProduct product;
+  final ReconciliationSaleRowError? rowError;
+  final ValueChanged<String> onQtyChanged;
+  final ValueChanged<String> onPriceChanged;
+  final ValueChanged<String?> onMethodChanged;
+  final VoidCallback onRemove;
+  final ValueChanged<double> onPriceChipTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final notifier = ref.read(reconciliationProvider.notifier);
-
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border(
-          top: BorderSide(color: Colors.grey.withValues(alpha: 0.2)),
-        ),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (state.hasSale)
-            DropdownButtonFormField<String>(
-              initialValue: state.paymentMethod,
-              decoration: const InputDecoration(
-                labelText: VN.phuongThucThanhToan,
-                border: OutlineInputBorder(),
+          Row(
+            children: [
+              Text('Dòng bán ${rowIndex + 1}'),
+              const Spacer(),
+              IconButton(
+                tooltip: VN.xoa,
+                onPressed: onRemove,
+                icon: const Icon(Icons.delete_outline),
               ),
-              items: const [
-                DropdownMenuItem(value: 'cash', child: Text(VN.methodCash)),
-                DropdownMenuItem(
-                  value: 'transfer',
-                  child: Text(VN.methodTransfer),
-                ),
-              ],
-              onChanged: notifier.setPaymentMethod,
+            ],
+          ),
+          TextFormField(
+            key: ValueKey(
+              'sale-row-qty-$rowIndex-${product.productId}-${row.quantity}',
             ),
+            keyboardType: TextInputType.number,
+            initialValue: '${row.quantity}',
+            onChanged: onQtyChanged,
+            decoration: InputDecoration(
+              labelText: VN.soLuongBan,
+              border: const OutlineInputBorder(),
+              isDense: true,
+              errorText: rowError?.quantity,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            key: ValueKey(
+              'sale-row-price-$rowIndex-${product.productId}-${row.unitPrice}',
+            ),
+            keyboardType: TextInputType.number,
+            initialValue: row.unitPrice,
+            onChanged: onPriceChanged,
+            decoration: InputDecoration(
+              labelText: VN.donGiaNhapTay,
+              border: const OutlineInputBorder(),
+              isDense: true,
+              errorText: rowError?.unitPrice,
+            ),
+          ),
+          if (product.priceChips.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: product.priceChips
+                  .map(
+                    (chip) => ActionChip(
+                      visualDensity: VisualDensity.compact,
+                      label: Text('${chip.label}: ${chip.price.toStringAsFixed(0)}đ'),
+                      onPressed: () => onPriceChipTap(chip.price),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: row.paymentMethod,
+            decoration: InputDecoration(
+              labelText: VN.phuongThucThanhToan,
+              border: const OutlineInputBorder(),
+              isDense: true,
+              errorText: rowError?.paymentMethod,
+            ),
+            items: const [
+              DropdownMenuItem(value: 'cash', child: Text(VN.methodCash)),
+              DropdownMenuItem(value: 'transfer', child: Text(VN.methodTransfer)),
+            ],
+            onChanged: onMethodChanged,
+          ),
         ],
       ),
     );

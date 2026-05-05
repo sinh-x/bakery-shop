@@ -90,7 +90,8 @@ class ReconciliationSubmitLine {
     required this.wasteQty,
     this.manualUnitPrice,
     this.wasteReason,
-  });
+    List<ReconciliationSubmitSaleRow>? saleRows,
+  }) : saleRows = saleRows ?? <ReconciliationSubmitSaleRow>[];
 
   final int productId;
   final int expectedQty;
@@ -99,6 +100,7 @@ class ReconciliationSubmitLine {
   final int wasteQty;
   final double? manualUnitPrice;
   final String? wasteReason;
+  final List<ReconciliationSubmitSaleRow> saleRows;
 
   Map<String, dynamic> toJson() {
     return {
@@ -109,6 +111,27 @@ class ReconciliationSubmitLine {
       'waste_qty': wasteQty,
       'manual_unit_price': manualUnitPrice,
       'waste_reason': wasteReason,
+      'sale_rows': saleRows.map((row) => row.toJson()).toList(),
+    };
+  }
+}
+
+class ReconciliationSubmitSaleRow {
+  ReconciliationSubmitSaleRow({
+    required this.quantity,
+    required this.unitPrice,
+    required this.paymentMethod,
+  });
+
+  final int quantity;
+  final double unitPrice;
+  final String paymentMethod;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'quantity': quantity,
+      'unit_price': unitPrice,
+      'payment_method': paymentMethod,
     };
   }
 }

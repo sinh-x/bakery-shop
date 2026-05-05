@@ -5,6 +5,44 @@ import '../../providers/events_provider.dart';
 import '../../providers/products_provider.dart';
 import '../api/reconciliation_service.dart';
 
+class ReconciliationSaleRowInput {
+  ReconciliationSaleRowInput({
+    this.quantity = 0,
+    this.unitPrice = '',
+    this.paymentMethod,
+  });
+
+  final int quantity;
+  final String unitPrice;
+  final String? paymentMethod;
+
+  ReconciliationSaleRowInput copyWith({
+    int? quantity,
+    String? unitPrice,
+    String? paymentMethod,
+    bool clearPaymentMethod = false,
+  }) {
+    return ReconciliationSaleRowInput(
+      quantity: quantity ?? this.quantity,
+      unitPrice: unitPrice ?? this.unitPrice,
+      paymentMethod: clearPaymentMethod
+          ? null
+          : (paymentMethod ?? this.paymentMethod),
+    );
+  }
+}
+
+class ReconciliationSaleRowError {
+  ReconciliationSaleRowError({this.quantity, this.unitPrice, this.paymentMethod});
+
+  final String? quantity;
+  final String? unitPrice;
+  final String? paymentMethod;
+
+  bool get hasError =>
+      quantity != null || unitPrice != null || paymentMethod != null;
+}
+
 class ReconciliationState {
   ReconciliationState({
     this.isLoading = false,
@@ -16,15 +54,19 @@ class ReconciliationState {
     this.paymentMethod,
     this.wasteReason = '',
     Map<int, int>? countedQtyByProduct,
-    Map<int, int>? saleQtyByProduct,
     Map<int, int>? wasteQtyByProduct,
-    Map<int, String>? manualUnitPriceByProduct,
     Map<int, String>? wasteReasonByProduct,
+    Map<int, List<ReconciliationSaleRowInput>>? saleRowsByProduct,
+    Map<int, String>? productErrors,
+    Map<int, List<ReconciliationSaleRowError>>? saleRowErrorsByProduct,
   }) : countedQtyByProduct = countedQtyByProduct ?? <int, int>{},
-       saleQtyByProduct = saleQtyByProduct ?? <int, int>{},
        wasteQtyByProduct = wasteQtyByProduct ?? <int, int>{},
-       manualUnitPriceByProduct = manualUnitPriceByProduct ?? <int, String>{},
-       wasteReasonByProduct = wasteReasonByProduct ?? <int, String>{};
+       wasteReasonByProduct = wasteReasonByProduct ?? <int, String>{},
+       saleRowsByProduct = saleRowsByProduct ??
+           <int, List<ReconciliationSaleRowInput>>{},
+       productErrors = productErrors ?? <int, String>{},
+       saleRowErrorsByProduct =
+           saleRowErrorsByProduct ?? <int, List<ReconciliationSaleRowError>>{};
 
   final bool isLoading;
   final bool isSubmitting;
@@ -35,12 +77,15 @@ class ReconciliationState {
   final String? paymentMethod;
   final String wasteReason;
   final Map<int, int> countedQtyByProduct;
-  final Map<int, int> saleQtyByProduct;
   final Map<int, int> wasteQtyByProduct;
-  final Map<int, String> manualUnitPriceByProduct;
   final Map<int, String> wasteReasonByProduct;
+  final Map<int, List<ReconciliationSaleRowInput>> saleRowsByProduct;
+  final Map<int, String> productErrors;
+  final Map<int, List<ReconciliationSaleRowError>> saleRowErrorsByProduct;
 
-  bool get hasSale => saleQtyByProduct.values.any((value) => value > 0);
+  bool get hasSale => saleRowsByProduct.values.any(
+    (rows) => rows.any((row) => row.quantity > 0),
+  );
   bool get hasWaste => wasteQtyByProduct.values.any((value) => value > 0);
 
   ReconciliationState copyWith({
@@ -57,10 +102,12 @@ class ReconciliationState {
     bool clearPaymentMethod = false,
     String? wasteReason,
     Map<int, int>? countedQtyByProduct,
-    Map<int, int>? saleQtyByProduct,
     Map<int, int>? wasteQtyByProduct,
-    Map<int, String>? manualUnitPriceByProduct,
     Map<int, String>? wasteReasonByProduct,
+    Map<int, List<ReconciliationSaleRowInput>>? saleRowsByProduct,
+    Map<int, String>? productErrors,
+    Map<int, List<ReconciliationSaleRowError>>? saleRowErrorsByProduct,
+    bool clearInlineErrors = false,
   }) {
     return ReconciliationState(
       isLoading: isLoading ?? this.isLoading,
@@ -80,12 +127,16 @@ class ReconciliationState {
           : (paymentMethod ?? this.paymentMethod),
       wasteReason: wasteReason ?? this.wasteReason,
       countedQtyByProduct: countedQtyByProduct ?? this.countedQtyByProduct,
-      saleQtyByProduct: saleQtyByProduct ?? this.saleQtyByProduct,
       wasteQtyByProduct: wasteQtyByProduct ?? this.wasteQtyByProduct,
-      manualUnitPriceByProduct:
-          manualUnitPriceByProduct ?? this.manualUnitPriceByProduct,
       wasteReasonByProduct:
           wasteReasonByProduct ?? this.wasteReasonByProduct,
+      saleRowsByProduct: saleRowsByProduct ?? this.saleRowsByProduct,
+      productErrors: clearInlineErrors
+          ? <int, String>{}
+          : (productErrors ?? this.productErrors),
+      saleRowErrorsByProduct: clearInlineErrors
+          ? <int, List<ReconciliationSaleRowError>>{}
+          : (saleRowErrorsByProduct ?? this.saleRowErrorsByProduct),
     );
   }
 }
@@ -106,26 +157,24 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     try {
       final draft = await ref.read(reconciliationServiceProvider).getDraft();
       final counted = <int, int>{};
-      final sale = <int, int>{};
       final waste = <int, int>{};
-      final prices = <int, String>{};
       final wasteReasons = <int, String>{};
+      final saleRows = <int, List<ReconciliationSaleRowInput>>{};
       for (final product in draft.products) {
         counted[product.productId] = product.expectedQty;
-        sale[product.productId] = 0;
         waste[product.productId] = 0;
-        prices[product.productId] = '';
         wasteReasons[product.productId] = '';
+        saleRows[product.productId] = <ReconciliationSaleRowInput>[];
       }
 
       state = state.copyWith(
         isLoading: false,
         draft: draft,
         countedQtyByProduct: counted,
-        saleQtyByProduct: sale,
         wasteQtyByProduct: waste,
-        manualUnitPriceByProduct: prices,
         wasteReasonByProduct: wasteReasons,
+        saleRowsByProduct: saleRows,
+        clearInlineErrors: true,
         clearPaymentMethod: true,
         wasteReason: '',
         clearLastSubmittedSessionId: true,
@@ -148,17 +197,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     next[productId] = value;
     state = state.copyWith(
       countedQtyByProduct: next,
-      clearErrorMessage: true,
-      clearSubmitSuccessMessage: true,
-      clearLastSubmittedSessionId: true,
-    );
-  }
-
-  void setSaleQty(int productId, int value) {
-    final next = Map<int, int>.from(state.saleQtyByProduct);
-    next[productId] = value;
-    state = state.copyWith(
-      saleQtyByProduct: next,
+      clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
       clearLastSubmittedSessionId: true,
@@ -170,17 +209,93 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     next[productId] = value;
     state = state.copyWith(
       wasteQtyByProduct: next,
+      clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
       clearLastSubmittedSessionId: true,
     );
   }
 
-  void setManualUnitPrice(int productId, String value) {
-    final next = Map<int, String>.from(state.manualUnitPriceByProduct);
-    next[productId] = value;
+  void addSaleRow(int productId) {
+    final next = Map<int, List<ReconciliationSaleRowInput>>.from(
+      state.saleRowsByProduct,
+    );
+    final rows = List<ReconciliationSaleRowInput>.from(next[productId] ?? []);
+    rows.add(ReconciliationSaleRowInput());
+    next[productId] = rows;
     state = state.copyWith(
-      manualUnitPriceByProduct: next,
+      saleRowsByProduct: next,
+      clearInlineErrors: true,
+      clearErrorMessage: true,
+      clearSubmitSuccessMessage: true,
+      clearLastSubmittedSessionId: true,
+    );
+  }
+
+  void removeSaleRow(int productId, int rowIndex) {
+    final next = Map<int, List<ReconciliationSaleRowInput>>.from(
+      state.saleRowsByProduct,
+    );
+    final rows = List<ReconciliationSaleRowInput>.from(next[productId] ?? []);
+    if (rowIndex < 0 || rowIndex >= rows.length) {
+      return;
+    }
+    rows.removeAt(rowIndex);
+    next[productId] = rows;
+    state = state.copyWith(
+      saleRowsByProduct: next,
+      clearInlineErrors: true,
+      clearErrorMessage: true,
+      clearSubmitSuccessMessage: true,
+      clearLastSubmittedSessionId: true,
+    );
+  }
+
+  void setSaleRowQty(int productId, int rowIndex, int value) {
+    _updateSaleRow(
+      productId,
+      rowIndex,
+      (row) => row.copyWith(quantity: value),
+    );
+  }
+
+  void setSaleRowUnitPrice(int productId, int rowIndex, String value) {
+    _updateSaleRow(
+      productId,
+      rowIndex,
+      (row) => row.copyWith(unitPrice: value),
+    );
+  }
+
+  void setSaleRowPaymentMethod(int productId, int rowIndex, String? method) {
+    _updateSaleRow(
+      productId,
+      rowIndex,
+      (row) => row.copyWith(paymentMethod: method),
+    );
+  }
+
+  void fillSaleRowPriceFromChip(int productId, int rowIndex, double unitPrice) {
+    setSaleRowUnitPrice(productId, rowIndex, unitPrice.toStringAsFixed(0));
+  }
+
+  void _updateSaleRow(
+    int productId,
+    int rowIndex,
+    ReconciliationSaleRowInput Function(ReconciliationSaleRowInput row) updater,
+  ) {
+    final next = Map<int, List<ReconciliationSaleRowInput>>.from(
+      state.saleRowsByProduct,
+    );
+    final rows = List<ReconciliationSaleRowInput>.from(next[productId] ?? []);
+    if (rowIndex < 0 || rowIndex >= rows.length) {
+      return;
+    }
+    rows[rowIndex] = updater(rows[rowIndex]);
+    next[productId] = rows;
+    state = state.copyWith(
+      saleRowsByProduct: next,
+      clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
       clearLastSubmittedSessionId: true,
@@ -192,6 +307,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     next[productId] = reason;
     state = state.copyWith(
       wasteReasonByProduct: next,
+      clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
       clearLastSubmittedSessionId: true,
@@ -201,6 +317,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
   void setPaymentMethod(String? method) {
     state = state.copyWith(
       paymentMethod: method,
+      clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
       clearLastSubmittedSessionId: true,
@@ -210,6 +327,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
   void setWasteReason(String value) {
     state = state.copyWith(
       wasteReason: value,
+      clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
       clearLastSubmittedSessionId: true,
@@ -224,17 +342,21 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       return false;
     }
 
-    final validationMessage = _validate(state, staffName);
-    if (validationMessage != null) {
-      state = state.copyWith(errorMessage: validationMessage);
+    final validation = _validate(state, staffName);
+    if (validation != null) {
+      state = state.copyWith(
+        errorMessage: validation.message,
+        productErrors: validation.productErrors,
+        saleRowErrorsByProduct: validation.saleRowErrorsByProduct,
+      );
       return false;
     }
 
     final lines = draft.products.map((product) {
-      final manualValue =
-          state.manualUnitPriceByProduct[product.productId] ?? '';
-      final parsedPrice = double.tryParse(manualValue.trim());
-      final saleQty = state.saleQtyByProduct[product.productId] ?? 0;
+      final rows = state.saleRowsByProduct[product.productId] ??
+          const <ReconciliationSaleRowInput>[];
+      final activeRows = rows.where((row) => row.quantity > 0).toList();
+      final saleQty = activeRows.fold<int>(0, (sum, row) => sum + row.quantity);
       final wasteQty = state.wasteQtyByProduct[product.productId] ?? 0;
       return ReconciliationSubmitLine(
         productId: product.productId,
@@ -242,8 +364,17 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
         countedQty: state.countedQtyByProduct[product.productId] ?? 0,
         saleQty: saleQty,
         wasteQty: wasteQty,
-        manualUnitPrice: saleQty > 0 ? parsedPrice : null,
+        manualUnitPrice: null,
         wasteReason: wasteQty > 0 ? state.wasteReasonByProduct[product.productId]?.trim() : null,
+        saleRows: activeRows
+            .map(
+              (row) => ReconciliationSubmitSaleRow(
+                quantity: row.quantity,
+                unitPrice: double.parse(row.unitPrice.trim()),
+                paymentMethod: row.paymentMethod!,
+              ),
+            )
+            .toList(),
       );
     }).toList();
 
@@ -257,7 +388,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     try {
       final request = ReconciliationSubmitRequest(
         staffName: staffName,
-        paymentMethod: state.hasSale ? state.paymentMethod : null,
+        paymentMethod: null,
         wasteReason: state.hasWaste ? state.wasteReason.trim() : null,
         lines: lines,
       );
@@ -288,59 +419,92 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     }
   }
 
-  String? _validate(ReconciliationState currentState, String staffName) {
+  _ValidationResult? _validate(ReconciliationState currentState, String staffName) {
     if (staffName.isEmpty) {
-      return 'Vui lòng chọn tên nhân viên trong Cài đặt trước khi đối soát';
+      return _ValidationResult('Vui lòng chọn tên nhân viên trong Cài đặt trước khi đối soát');
     }
     final draft = currentState.draft;
     if (draft == null) {
-      return 'Chưa có dữ liệu đối soát';
+      return _ValidationResult('Chưa có dữ liệu đối soát');
     }
+
+    final productErrors = <int, String>{};
+    final rowErrors = <int, List<ReconciliationSaleRowError>>{};
 
     for (final product in draft.products) {
       final counted = currentState.countedQtyByProduct[product.productId] ?? 0;
-      final sale = currentState.saleQtyByProduct[product.productId] ?? 0;
+      final rows = currentState.saleRowsByProduct[product.productId] ??
+          const <ReconciliationSaleRowInput>[];
+      final sale = rows.fold<int>(0, (sum, row) => sum + row.quantity);
       final waste = currentState.wasteQtyByProduct[product.productId] ?? 0;
       if (counted < 0 || sale < 0 || waste < 0) {
-        return 'Số lượng không được âm';
+        return _ValidationResult('Số lượng không được âm');
       }
       if (counted > product.expectedQty) {
-        return 'Số đếm thực tế không được lớn hơn số tồn dự kiến';
+        productErrors[product.productId] =
+            'Số đếm thực tế không được lớn hơn số tồn dự kiến';
+        continue;
       }
 
       final missing = product.expectedQty - counted;
       if (missing < 0) {
-        return 'Số đếm thực tế không được lớn hơn số tồn dự kiến';
+        productErrors[product.productId] =
+            'Số đếm thực tế không được lớn hơn số tồn dự kiến';
+        continue;
       }
       if (waste > missing) {
-        return 'Số hao hụt vượt quá số thiếu. Vui lòng vào màn hình \'Nhập hàng\' để bổ sung tồn kho trước.';
+        productErrors[product.productId] =
+            'Số hao hụt vượt quá số thiếu. Vui lòng vào màn hình \'Nhập hàng\' để bổ sung tồn kho trước.';
+        continue;
       }
       if (missing > 0 && sale + waste != missing) {
-        return 'Sản phẩm thiếu phải tách đúng: bán + hao hụt = số thiếu';
+        productErrors[product.productId] =
+            'Sản phẩm thiếu phải tách đúng: bán + hao hụt = số thiếu';
       }
 
-      if (sale > 0) {
-        final priceText =
-            (currentState.manualUnitPriceByProduct[product.productId] ?? '')
-                .trim();
-        final parsedPrice = double.tryParse(priceText);
-        if (parsedPrice == null || parsedPrice <= 0) {
-          return 'Mỗi dòng bán phải có đơn giá nhập tay lớn hơn 0';
+      final itemErrors = <ReconciliationSaleRowError>[];
+      for (final row in rows) {
+        String? qtyError;
+        String? priceError;
+        String? methodError;
+        if (row.quantity < 0) {
+          qtyError = 'Số lượng không được âm';
         }
+        if (row.quantity > 0) {
+          final parsedPrice = double.tryParse(row.unitPrice.trim());
+          if (parsedPrice == null || parsedPrice <= 0) {
+            priceError = 'Đơn giá phải lớn hơn 0';
+          }
+          if (row.paymentMethod != 'cash' && row.paymentMethod != 'transfer') {
+            methodError = 'Chọn phương thức';
+          }
+        }
+        itemErrors.add(
+          ReconciliationSaleRowError(
+            quantity: qtyError,
+            unitPrice: priceError,
+            paymentMethod: methodError,
+          ),
+        );
+      }
+      if (itemErrors.any((error) => error.hasError)) {
+        rowErrors[product.productId] = itemErrors;
       }
 
       if (waste > 0) {
         final reason = (currentState.wasteReasonByProduct[product.productId] ?? '').trim();
         if (reason.isEmpty) {
-          return 'Sản phẩm có hao hụt phải nhập lý do';
+          productErrors[product.productId] = 'Sản phẩm có hao hụt phải nhập lý do';
         }
       }
     }
 
-    if (currentState.hasSale &&
-        (currentState.paymentMethod != 'cash' &&
-            currentState.paymentMethod != 'transfer')) {
-      return 'Vui lòng chọn phương thức thanh toán';
+    if (productErrors.isNotEmpty || rowErrors.isNotEmpty) {
+      return _ValidationResult(
+        'Vui lòng kiểm tra dữ liệu đối soát',
+        productErrors: productErrors,
+        saleRowErrorsByProduct: rowErrors,
+      );
     }
 
     return null;
@@ -358,6 +522,18 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     }
     return 'Có lỗi xảy ra khi gửi đối soát';
   }
+}
+
+class _ValidationResult {
+  _ValidationResult(
+    this.message, {
+    this.productErrors = const <int, String>{},
+    this.saleRowErrorsByProduct = const <int, List<ReconciliationSaleRowError>>{},
+  });
+
+  final String message;
+  final Map<int, String> productErrors;
+  final Map<int, List<ReconciliationSaleRowError>> saleRowErrorsByProduct;
 }
 
 final reconciliationProvider =
