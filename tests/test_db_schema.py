@@ -157,6 +157,9 @@ def _assert_print_tracking_schema(conn) -> None:
 
 
 def _assert_reconciliation_sale_rows_schema(conn) -> None:
+    line_columns = _schema_columns(conn, "reconciliation_lines")
+    assert "waste_reason" in line_columns
+
     columns = _schema_columns(conn, "reconciliation_sale_rows")
     assert set(columns) >= {
         "id",
@@ -218,7 +221,7 @@ def _assert_nhan_banh_seed(conn) -> None:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 34
+        assert _migrated_version(conn) == 35
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -231,7 +234,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 34
+        assert _migrated_version(conn) == 35
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -241,10 +244,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 34
+        assert _migrated_version(conn) == 35
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 34
+        assert _migrated_version(conn) == 35
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -275,3 +278,39 @@ def test_schema_migration_v32_handles_preexisting_printed_by_column():
 
 def test_schema_migration_v32_sql_block_does_not_readd_orders_column():
     assert "ALTER TABLE orders ADD COLUMN work_ticket_printed_by" not in PRINT_LOG_AND_PRINTED_BY_SCHEMA
+
+
+def test_schema_migration_v35_repairs_missing_reconciliation_line_waste_reason():
+    with get_db() as conn:
+        conn.execute(
+            """CREATE TABLE schema_version (
+                version INTEGER PRIMARY KEY,
+                description TEXT NOT NULL,
+                applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+            )"""
+        )
+        conn.execute(
+            """CREATE TABLE reconciliation_lines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                expected_qty INTEGER NOT NULL,
+                counted_qty INTEGER NOT NULL,
+                sale_qty INTEGER NOT NULL DEFAULT 0,
+                waste_qty INTEGER NOT NULL DEFAULT 0,
+                manual_unit_price REAL DEFAULT NULL,
+                linked_order_item_id INTEGER DEFAULT NULL,
+                linked_stock_movement_sale_id INTEGER DEFAULT NULL,
+                linked_stock_movement_waste_id INTEGER DEFAULT NULL,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+            )"""
+        )
+        conn.execute(
+            "INSERT INTO schema_version (version, description) VALUES (34, 'Grouped reconciliation sale rows table')"
+        )
+
+        ensure_schema(conn)
+
+        assert _migrated_version(conn) == 35
+        line_columns = _schema_columns(conn, "reconciliation_lines")
+        assert "waste_reason" in line_columns

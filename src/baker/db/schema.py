@@ -690,6 +690,16 @@ def _migrate_v32_print_tracking(conn):
     """Add print tracking schema with idempotent orders column migration."""
     _guard_add_column(conn, "orders", "work_ticket_printed_by", "work_ticket_printed_by TEXT DEFAULT ''")
 
+
+def _migrate_v35_reconciliation_line_waste_reason(conn):
+    """Repair DBs that created reconciliation_lines before per-line waste reasons."""
+    _guard_add_column(
+        conn,
+        "reconciliation_lines",
+        "waste_reason",
+        "waste_reason TEXT DEFAULT ''",
+    )
+
 PRODUCT_ATTRIBUTES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS product_attributes (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1168,6 +1178,11 @@ MIGRATIONS = {
     34: {
         "description": "Grouped reconciliation sale rows table",
         "sql": RECONCILIATION_SALE_ROWS_SCHEMA,
+    },
+    35: {
+        "description": "Add per-line waste reason to reconciliation lines",
+        "sql": "",
+        "callable": _migrate_v35_reconciliation_line_waste_reason,
     },
 }
 
