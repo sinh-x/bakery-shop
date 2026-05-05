@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -90,8 +91,11 @@ class _StockReconciliationScreenState
                   final background = success
                       ? Colors.green[700]
                       : Colors.red[700];
-                  final isWasteOverInventory = nextState.errorMessage != null &&
-                      nextState.errorMessage!.contains('Số hao hụt vượt quá số thiếu');
+                  final isWasteOverInventory =
+                      nextState.errorMessage != null &&
+                      nextState.errorMessage!.contains(
+                        'Số hao hụt vượt quá số thiếu',
+                      );
                   messenger
                     ..hideCurrentSnackBar()
                     ..showSnackBar(
@@ -103,7 +107,8 @@ class _StockReconciliationScreenState
                                 label: VN.nhapHangSheet,
                                 onPressed: () => context.push('/stock'),
                               )
-                            : success && nextState.lastSubmittedSessionId != null
+                            : success &&
+                                  nextState.lastSubmittedSessionId != null
                             ? SnackBarAction(
                                 label: VN.xemLichSu,
                                 onPressed: () => context.push(
@@ -213,7 +218,8 @@ class _StockReconciliationScreenState
     var totalSale = 0;
     var totalWaste = 0;
     for (final product in draft.products) {
-      final rows = state.saleRowsByProduct[product.productId] ??
+      final rows =
+          state.saleRowsByProduct[product.productId] ??
           const <ReconciliationSaleRowInput>[];
       totalSale += rows.fold<int>(0, (sum, row) => sum + row.quantity);
       totalWaste += state.wasteQtyByProduct[product.productId] ?? 0;
@@ -225,7 +231,8 @@ class _StockReconciliationScreenState
         final hasEmptyWasteReason = draft.products.any((product) {
           final waste = state.wasteQtyByProduct[product.productId] ?? 0;
           if (waste > 0) {
-            final reason = (state.wasteReasonByProduct[product.productId] ?? '').trim();
+            final reason = (state.wasteReasonByProduct[product.productId] ?? '')
+                .trim();
             return reason.isEmpty;
           }
           return false;
@@ -284,12 +291,24 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
   late TextEditingController _wasteController;
   late TextEditingController _wasteReasonController;
 
+  void _syncIntController(TextEditingController controller, int value) {
+    final next = '$value';
+    if (controller.text == next) {
+      return;
+    }
+    controller.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     final productId = widget.product.productId;
     final state = ref.read(reconciliationProvider);
-    final counted = state.countedQtyByProduct[productId] ?? widget.product.expectedQty;
+    final counted =
+        state.countedQtyByProduct[productId] ?? widget.product.expectedQty;
     final waste = state.wasteQtyByProduct[productId] ?? 0;
     final wasteReason = state.wasteReasonByProduct[productId] ?? '';
 
@@ -311,8 +330,10 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
     final state = ref.watch(reconciliationProvider);
     final notifier = ref.read(reconciliationProvider.notifier);
     final counted =
-        state.countedQtyByProduct[widget.product.productId] ?? widget.product.expectedQty;
-    final saleRows = state.saleRowsByProduct[widget.product.productId] ??
+        state.countedQtyByProduct[widget.product.productId] ??
+        widget.product.expectedQty;
+    final saleRows =
+        state.saleRowsByProduct[widget.product.productId] ??
         const <ReconciliationSaleRowInput>[];
     final waste = state.wasteQtyByProduct[widget.product.productId] ?? 0;
     final missing = widget.product.expectedQty - counted;
@@ -321,6 +342,9 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
         state.saleRowErrorsByProduct[widget.product.productId] ??
         const <ReconciliationSaleRowError>[];
 
+    _syncIntController(_countedController, counted);
+    _syncIntController(_wasteController, waste);
+
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
       child: Padding(
@@ -328,22 +352,29 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.product.name, style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              widget.product.name,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 4),
             Text('${VN.tonDuKien}: ${widget.product.expectedQty}'),
-            Text('${VN.giaCoSo}: ${widget.product.basePrice.toStringAsFixed(0)}đ'),
+            Text(
+              '${VN.giaCoSo}: ${widget.product.basePrice.toStringAsFixed(0)}đ',
+            ),
             const SizedBox(height: 12),
-            TextField(
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: VN.tonDaDem,
-                border: OutlineInputBorder(),
-              ),
+            _QuantityStepperField(
+              label: VN.tonDaDem,
               controller: _countedController,
-              onChanged: (value) {
-                final parsed = int.tryParse(value) ?? 0;
-                notifier.setCountedQty(widget.product.productId, parsed);
+              onChanged: (value) =>
+                  notifier.setCountedQty(widget.product.productId, value),
+              onDecrement: () {
+                if (counted <= 0) {
+                  return;
+                }
+                notifier.setCountedQty(widget.product.productId, counted - 1);
               },
+              onIncrement: () =>
+                  notifier.setCountedQty(widget.product.productId, counted + 1),
             ),
             if (missing > 0) ...[
               const SizedBox(height: 8),
@@ -355,25 +386,42 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                 ),
               ),
               const SizedBox(height: 8),
-              TextField(
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: VN.soLuongHaoHut,
-                  border: OutlineInputBorder(),
-                ),
+              _QuantityStepperField(
+                label: VN.soLuongHaoHut,
                 controller: _wasteController,
-                onChanged: (value) {
-                  notifier.setWasteQty(
-                    widget.product.productId,
-                    int.tryParse(value) ?? 0,
-                  );
+                onChanged: (value) =>
+                    notifier.setWasteQty(widget.product.productId, value),
+                onDecrement: () {
+                  if (waste <= 0) {
+                    return;
+                  }
+                  notifier.setWasteQty(widget.product.productId, waste - 1);
                 },
+                onIncrement: () =>
+                    notifier.setWasteQty(widget.product.productId, waste + 1),
               ),
+              if (waste > 0) ...[
+                const SizedBox(height: 8),
+                TextField(
+                  decoration: const InputDecoration(
+                    labelText: VN.lyDoHaoHut,
+                    border: OutlineInputBorder(),
+                  ),
+                  controller: _wasteReasonController,
+                  onChanged: (value) {
+                    notifier.setWasteReasonForProduct(
+                      widget.product.productId,
+                      value,
+                    );
+                  },
+                ),
+              ],
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerLeft,
                 child: OutlinedButton.icon(
-                  onPressed: () => notifier.addSaleRow(widget.product.productId),
+                  onPressed: () =>
+                      notifier.addSaleRow(widget.product.productId),
                   icon: const Icon(Icons.add),
                   label: const Text('Thêm dòng bán'),
                 ),
@@ -389,7 +437,7 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                   onQtyChanged: (value) => notifier.setSaleRowQty(
                     widget.product.productId,
                     rowIndex,
-                    int.tryParse(value) ?? 0,
+                    value,
                   ),
                   onPriceChanged: (value) => notifier.setSaleRowUnitPrice(
                     widget.product.productId,
@@ -412,19 +460,6 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                   ),
                 ),
             ],
-            if (waste > 0) ...[
-              const SizedBox(height: 8),
-              TextField(
-                decoration: const InputDecoration(
-                  labelText: VN.lyDoHaoHut,
-                  border: OutlineInputBorder(),
-                ),
-                controller: _wasteReasonController,
-                onChanged: (value) {
-                  notifier.setWasteReasonForProduct(widget.product.productId, value);
-                },
-              ),
-            ],
             if (productError != null) ...[
               const SizedBox(height: 8),
               Text(
@@ -442,7 +477,7 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
   }
 }
 
-class _SaleRowEditor extends StatelessWidget {
+class _SaleRowEditor extends StatefulWidget {
   const _SaleRowEditor({
     required this.rowIndex,
     required this.row,
@@ -459,14 +494,59 @@ class _SaleRowEditor extends StatelessWidget {
   final ReconciliationSaleRowInput row;
   final ReconciliationDraftProduct product;
   final ReconciliationSaleRowError? rowError;
-  final ValueChanged<String> onQtyChanged;
+  final ValueChanged<int> onQtyChanged;
   final ValueChanged<String> onPriceChanged;
   final ValueChanged<String?> onMethodChanged;
   final VoidCallback onRemove;
   final ValueChanged<double> onPriceChipTap;
 
   @override
+  State<_SaleRowEditor> createState() => _SaleRowEditorState();
+}
+
+class _SaleRowEditorState extends State<_SaleRowEditor> {
+  late TextEditingController _qtyController;
+  late TextEditingController _priceController;
+  final FocusNode _priceFocusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _qtyController = TextEditingController(text: '${widget.row.quantity}');
+    _priceController = TextEditingController(text: widget.row.unitPrice);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SaleRowEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextQty = '${widget.row.quantity}';
+    if (_qtyController.text != nextQty) {
+      _qtyController.value = TextEditingValue(
+        text: nextQty,
+        selection: TextSelection.collapsed(offset: nextQty.length),
+      );
+    }
+
+    if (!_priceFocusNode.hasFocus &&
+        _priceController.text != widget.row.unitPrice) {
+      _priceController.value = TextEditingValue(
+        text: widget.row.unitPrice,
+        selection: TextSelection.collapsed(offset: widget.row.unitPrice.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _qtyController.dispose();
+    _priceController.dispose();
+    _priceFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final quantity = widget.row.quantity;
     return Container(
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.all(8),
@@ -479,55 +559,57 @@ class _SaleRowEditor extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text('Dòng bán ${rowIndex + 1}'),
+              Text('Dòng bán ${widget.rowIndex + 1}'),
               const Spacer(),
               IconButton(
                 tooltip: VN.xoa,
-                onPressed: onRemove,
+                onPressed: widget.onRemove,
                 icon: const Icon(Icons.delete_outline),
               ),
             ],
           ),
-          TextFormField(
-            key: ValueKey(
-              'sale-row-qty-$rowIndex-${product.productId}-${row.quantity}',
-            ),
-            keyboardType: TextInputType.number,
-            initialValue: '${row.quantity}',
-            onChanged: onQtyChanged,
-            decoration: InputDecoration(
-              labelText: VN.soLuongBan,
-              border: const OutlineInputBorder(),
-              isDense: true,
-              errorText: rowError?.quantity,
-            ),
+          _QuantityStepperField(
+            label: VN.soLuongBan,
+            controller: _qtyController,
+            errorText: widget.rowError?.quantity,
+            onChanged: widget.onQtyChanged,
+            onDecrement: () {
+              if (quantity <= 0) {
+                return;
+              }
+              widget.onQtyChanged(quantity - 1);
+            },
+            onIncrement: () => widget.onQtyChanged(quantity + 1),
           ),
           const SizedBox(height: 8),
           TextFormField(
-            key: ValueKey(
-              'sale-row-price-$rowIndex-${product.productId}-${row.unitPrice}',
-            ),
+            controller: _priceController,
+            focusNode: _priceFocusNode,
             keyboardType: TextInputType.number,
-            initialValue: row.unitPrice,
-            onChanged: onPriceChanged,
+            onChanged: widget.onPriceChanged,
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+            ],
             decoration: InputDecoration(
               labelText: VN.donGiaNhapTay,
               border: const OutlineInputBorder(),
               isDense: true,
-              errorText: rowError?.unitPrice,
+              errorText: widget.rowError?.unitPrice,
             ),
           ),
-          if (product.priceChips.isNotEmpty) ...[
+          if (widget.product.priceChips.isNotEmpty) ...[
             const SizedBox(height: 6),
             Wrap(
               spacing: 6,
               runSpacing: 4,
-              children: product.priceChips
+              children: widget.product.priceChips
                   .map(
                     (chip) => ActionChip(
                       visualDensity: VisualDensity.compact,
-                      label: Text('${chip.label}: ${chip.price.toStringAsFixed(0)}đ'),
-                      onPressed: () => onPriceChipTap(chip.price),
+                      label: Text(
+                        '${chip.label}: ${chip.price.toStringAsFixed(0)}đ',
+                      ),
+                      onPressed: () => widget.onPriceChipTap(chip.price),
                     ),
                   )
                   .toList(),
@@ -535,21 +617,74 @@ class _SaleRowEditor extends StatelessWidget {
           ],
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            initialValue: row.paymentMethod,
+            initialValue: widget.row.paymentMethod,
             decoration: InputDecoration(
               labelText: VN.phuongThucThanhToan,
               border: const OutlineInputBorder(),
               isDense: true,
-              errorText: rowError?.paymentMethod,
+              errorText: widget.rowError?.paymentMethod,
             ),
             items: const [
               DropdownMenuItem(value: 'cash', child: Text(VN.methodCash)),
-              DropdownMenuItem(value: 'transfer', child: Text(VN.methodTransfer)),
+              DropdownMenuItem(
+                value: 'transfer',
+                child: Text(VN.methodTransfer),
+              ),
             ],
-            onChanged: onMethodChanged,
+            onChanged: widget.onMethodChanged,
           ),
         ],
       ),
+    );
+  }
+}
+
+class _QuantityStepperField extends StatelessWidget {
+  const _QuantityStepperField({
+    required this.label,
+    required this.controller,
+    required this.onChanged,
+    required this.onDecrement,
+    required this.onIncrement,
+    this.errorText,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final ValueChanged<int> onChanged;
+  final VoidCallback onDecrement;
+  final VoidCallback onIncrement;
+  final String? errorText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        IconButton(
+          onPressed: onDecrement,
+          icon: const Icon(Icons.remove_circle_outline),
+          tooltip: 'Giảm',
+        ),
+        Expanded(
+          child: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: InputDecoration(
+              labelText: label,
+              border: const OutlineInputBorder(),
+              errorText: errorText,
+            ),
+            onChanged: (value) => onChanged(int.tryParse(value) ?? 0),
+          ),
+        ),
+        IconButton(
+          onPressed: onIncrement,
+          icon: const Icon(Icons.add_circle_outline),
+          tooltip: 'Tăng',
+        ),
+      ],
     );
   }
 }
