@@ -305,10 +305,6 @@ def stock_overview():
 
             # Base option (price_chip_id=None)
             base_qty = stock_map.get((pid, None), 0)
-            base_label = conn.execute(
-                "SELECT value FROM product_attribute_values WHERE product_id = ? AND attribute_type = 'trung_bay' AND value = 'true'",
-                (pid,),
-            ).fetchone()
             chips.append(StockOverviewChipItem(
                 price_chip_id=None,
                 quantity=base_qty,

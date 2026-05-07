@@ -83,30 +83,6 @@ class ReconciliationState {
   final Map<String, String> optionErrors;
   final Map<String, List<ReconciliationSaleRowError>> saleRowErrorsByOption;
 
-  Map<int, String> get productErrors {
-    final result = <int, String>{};
-    for (final entry in optionErrors.entries) {
-      final parts = entry.key.split(':');
-      final productId = int.tryParse(parts.first);
-      if (productId != null && !result.containsKey(productId)) {
-        result[productId] = entry.value;
-      }
-    }
-    return result;
-  }
-
-  Map<int, List<ReconciliationSaleRowError>> get saleRowErrorsByProduct {
-    final result = <int, List<ReconciliationSaleRowError>>{};
-    for (final entry in saleRowErrorsByOption.entries) {
-      final parts = entry.key.split(':');
-      final productId = int.tryParse(parts.first);
-      if (productId != null && !result.containsKey(productId)) {
-        result[productId] = entry.value;
-      }
-    }
-    return result;
-  }
-
   bool get hasSale => saleRowsByOption.values.any(
     (rows) => rows.any((row) => row.quantity > 0),
   );
@@ -499,7 +475,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       if (counted < 0 || sale < 0 || waste < 0) {
         return _ValidationResult('Số lượng không được âm');
       }
-      if (counted > product.expectedQty) {
+      if (counted > option.expectedQty) {
         productErrors[optionKey] =
             'Số đếm thực tế không được lớn hơn số tồn dự kiến';
         continue;
