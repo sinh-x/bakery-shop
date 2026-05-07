@@ -187,7 +187,13 @@ def list_products(
             params.append(f"%{code}%")
 
         joins.append(
-            """LEFT JOIN product_stock ps ON ps.product_id = p.id"""
+            """LEFT JOIN (
+                   SELECT sl.product_id, COUNT(ii.id) AS quantity
+                   FROM stock_lots sl
+                   LEFT JOIN inventory_items ii
+                     ON ii.lot_id = sl.id AND ii.status = 'available'
+                   GROUP BY sl.product_id
+               ) ps ON ps.product_id = p.id"""
         )
         select_cols = "p.*, COALESCE(ps.quantity, 0) AS stock_qty"
         if trung_bay:

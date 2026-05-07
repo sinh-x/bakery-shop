@@ -53,20 +53,20 @@ class ReconciliationState {
     this.draft,
     this.paymentMethod,
     this.wasteReason = '',
-    Map<int, int>? countedQtyByProduct,
-    Map<int, int>? wasteQtyByProduct,
-    Map<int, String>? wasteReasonByProduct,
-    Map<int, List<ReconciliationSaleRowInput>>? saleRowsByProduct,
-    Map<int, String>? productErrors,
-    Map<int, List<ReconciliationSaleRowError>>? saleRowErrorsByProduct,
-  }) : countedQtyByProduct = countedQtyByProduct ?? <int, int>{},
-       wasteQtyByProduct = wasteQtyByProduct ?? <int, int>{},
-       wasteReasonByProduct = wasteReasonByProduct ?? <int, String>{},
-       saleRowsByProduct = saleRowsByProduct ??
-           <int, List<ReconciliationSaleRowInput>>{},
-       productErrors = productErrors ?? <int, String>{},
-       saleRowErrorsByProduct =
-           saleRowErrorsByProduct ?? <int, List<ReconciliationSaleRowError>>{};
+    Map<String, int>? countedQtyByOption,
+    Map<String, int>? wasteQtyByOption,
+    Map<String, String>? wasteReasonByOption,
+    Map<String, List<ReconciliationSaleRowInput>>? saleRowsByOption,
+    Map<String, String>? optionErrors,
+    Map<String, List<ReconciliationSaleRowError>>? saleRowErrorsByOption,
+  }) : countedQtyByOption = countedQtyByOption ?? <String, int>{},
+       wasteQtyByOption = wasteQtyByOption ?? <String, int>{},
+       wasteReasonByOption = wasteReasonByOption ?? <String, String>{},
+       saleRowsByOption = saleRowsByOption ??
+            <String, List<ReconciliationSaleRowInput>>{},
+       optionErrors = optionErrors ?? <String, String>{},
+       saleRowErrorsByOption =
+            saleRowErrorsByOption ?? <String, List<ReconciliationSaleRowError>>{};
 
   final bool isLoading;
   final bool isSubmitting;
@@ -76,17 +76,17 @@ class ReconciliationState {
   final ReconciliationDraft? draft;
   final String? paymentMethod;
   final String wasteReason;
-  final Map<int, int> countedQtyByProduct;
-  final Map<int, int> wasteQtyByProduct;
-  final Map<int, String> wasteReasonByProduct;
-  final Map<int, List<ReconciliationSaleRowInput>> saleRowsByProduct;
-  final Map<int, String> productErrors;
-  final Map<int, List<ReconciliationSaleRowError>> saleRowErrorsByProduct;
+  final Map<String, int> countedQtyByOption;
+  final Map<String, int> wasteQtyByOption;
+  final Map<String, String> wasteReasonByOption;
+  final Map<String, List<ReconciliationSaleRowInput>> saleRowsByOption;
+  final Map<String, String> optionErrors;
+  final Map<String, List<ReconciliationSaleRowError>> saleRowErrorsByOption;
 
-  bool get hasSale => saleRowsByProduct.values.any(
+  bool get hasSale => saleRowsByOption.values.any(
     (rows) => rows.any((row) => row.quantity > 0),
   );
-  bool get hasWaste => wasteQtyByProduct.values.any((value) => value > 0);
+  bool get hasWaste => wasteQtyByOption.values.any((value) => value > 0);
 
   ReconciliationState copyWith({
     bool? isLoading,
@@ -101,12 +101,12 @@ class ReconciliationState {
     String? paymentMethod,
     bool clearPaymentMethod = false,
     String? wasteReason,
-    Map<int, int>? countedQtyByProduct,
-    Map<int, int>? wasteQtyByProduct,
-    Map<int, String>? wasteReasonByProduct,
-    Map<int, List<ReconciliationSaleRowInput>>? saleRowsByProduct,
-    Map<int, String>? productErrors,
-    Map<int, List<ReconciliationSaleRowError>>? saleRowErrorsByProduct,
+    Map<String, int>? countedQtyByOption,
+    Map<String, int>? wasteQtyByOption,
+    Map<String, String>? wasteReasonByOption,
+    Map<String, List<ReconciliationSaleRowInput>>? saleRowsByOption,
+    Map<String, String>? optionErrors,
+    Map<String, List<ReconciliationSaleRowError>>? saleRowErrorsByOption,
     bool clearInlineErrors = false,
   }) {
     return ReconciliationState(
@@ -126,19 +126,33 @@ class ReconciliationState {
           ? null
           : (paymentMethod ?? this.paymentMethod),
       wasteReason: wasteReason ?? this.wasteReason,
-      countedQtyByProduct: countedQtyByProduct ?? this.countedQtyByProduct,
-      wasteQtyByProduct: wasteQtyByProduct ?? this.wasteQtyByProduct,
-      wasteReasonByProduct:
-          wasteReasonByProduct ?? this.wasteReasonByProduct,
-      saleRowsByProduct: saleRowsByProduct ?? this.saleRowsByProduct,
-      productErrors: clearInlineErrors
-          ? <int, String>{}
-          : (productErrors ?? this.productErrors),
-      saleRowErrorsByProduct: clearInlineErrors
-          ? <int, List<ReconciliationSaleRowError>>{}
-          : (saleRowErrorsByProduct ?? this.saleRowErrorsByProduct),
+      countedQtyByOption: countedQtyByOption ?? this.countedQtyByOption,
+      wasteQtyByOption: wasteQtyByOption ?? this.wasteQtyByOption,
+      wasteReasonByOption:
+          wasteReasonByOption ?? this.wasteReasonByOption,
+      saleRowsByOption: saleRowsByOption ?? this.saleRowsByOption,
+      optionErrors: clearInlineErrors
+          ? <String, String>{}
+          : (optionErrors ?? this.optionErrors),
+      saleRowErrorsByOption: clearInlineErrors
+          ? <String, List<ReconciliationSaleRowError>>{}
+          : (saleRowErrorsByOption ?? this.saleRowErrorsByOption),
     );
   }
+}
+
+String reconciliationOptionKey(int productId, int? priceChipId) {
+  return '$productId:${priceChipId ?? 'base'}';
+}
+
+String _normalizeOptionKey(Object optionKeyOrProductId) {
+  if (optionKeyOrProductId is String) {
+    return optionKeyOrProductId;
+  }
+  if (optionKeyOrProductId is int) {
+    return reconciliationOptionKey(optionKeyOrProductId, null);
+  }
+  throw ArgumentError('Invalid option key: $optionKeyOrProductId');
 }
 
 class ReconciliationNotifier extends Notifier<ReconciliationState> {
@@ -156,24 +170,30 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
     try {
       final draft = await ref.read(reconciliationServiceProvider).getDraft();
-      final counted = <int, int>{};
-      final waste = <int, int>{};
-      final wasteReasons = <int, String>{};
-      final saleRows = <int, List<ReconciliationSaleRowInput>>{};
+      final counted = <String, int>{};
+      final waste = <String, int>{};
+      final wasteReasons = <String, String>{};
+      final saleRows = <String, List<ReconciliationSaleRowInput>>{};
       for (final product in draft.products) {
-        counted[product.productId] = product.expectedQty;
-        waste[product.productId] = 0;
-        wasteReasons[product.productId] = '';
-        saleRows[product.productId] = <ReconciliationSaleRowInput>[];
+        for (final option in product.options) {
+          final key = reconciliationOptionKey(
+            option.productId,
+            option.priceChipId,
+          );
+          counted[key] = option.expectedQty;
+          waste[key] = 0;
+          wasteReasons[key] = '';
+          saleRows[key] = <ReconciliationSaleRowInput>[];
+        }
       }
 
       state = state.copyWith(
         isLoading: false,
         draft: draft,
-        countedQtyByProduct: counted,
-        wasteQtyByProduct: waste,
-        wasteReasonByProduct: wasteReasons,
-        saleRowsByProduct: saleRows,
+        countedQtyByOption: counted,
+        wasteQtyByOption: waste,
+        wasteReasonByOption: wasteReasons,
+        saleRowsByOption: saleRows,
         clearInlineErrors: true,
         clearPaymentMethod: true,
         wasteReason: '',
@@ -192,11 +212,12 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     }
   }
 
-  void setCountedQty(int productId, int value) {
-    final next = Map<int, int>.from(state.countedQtyByProduct);
-    next[productId] = value;
+  void setCountedQty(Object optionKeyOrProductId, int value) {
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    final next = Map<String, int>.from(state.countedQtyByOption);
+    next[optionKey] = value;
     state = state.copyWith(
-      countedQtyByProduct: next,
+      countedQtyByOption: next,
       clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
@@ -204,11 +225,12 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
-  void setWasteQty(int productId, int value) {
-    final next = Map<int, int>.from(state.wasteQtyByProduct);
-    next[productId] = value;
+  void setWasteQty(Object optionKeyOrProductId, int value) {
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    final next = Map<String, int>.from(state.wasteQtyByOption);
+    next[optionKey] = value;
     state = state.copyWith(
-      wasteQtyByProduct: next,
+      wasteQtyByOption: next,
       clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
@@ -216,15 +238,16 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
-  void addSaleRow(int productId) {
-    final next = Map<int, List<ReconciliationSaleRowInput>>.from(
-      state.saleRowsByProduct,
+  void addSaleRow(Object optionKeyOrProductId) {
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    final next = Map<String, List<ReconciliationSaleRowInput>>.from(
+      state.saleRowsByOption,
     );
-    final rows = List<ReconciliationSaleRowInput>.from(next[productId] ?? []);
+    final rows = List<ReconciliationSaleRowInput>.from(next[optionKey] ?? []);
     rows.add(ReconciliationSaleRowInput());
-    next[productId] = rows;
+    next[optionKey] = rows;
     state = state.copyWith(
-      saleRowsByProduct: next,
+      saleRowsByOption: next,
       clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
@@ -232,18 +255,19 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
-  void removeSaleRow(int productId, int rowIndex) {
-    final next = Map<int, List<ReconciliationSaleRowInput>>.from(
-      state.saleRowsByProduct,
+  void removeSaleRow(Object optionKeyOrProductId, int rowIndex) {
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    final next = Map<String, List<ReconciliationSaleRowInput>>.from(
+      state.saleRowsByOption,
     );
-    final rows = List<ReconciliationSaleRowInput>.from(next[productId] ?? []);
+    final rows = List<ReconciliationSaleRowInput>.from(next[optionKey] ?? []);
     if (rowIndex < 0 || rowIndex >= rows.length) {
       return;
     }
     rows.removeAt(rowIndex);
-    next[productId] = rows;
+    next[optionKey] = rows;
     state = state.copyWith(
-      saleRowsByProduct: next,
+      saleRowsByOption: next,
       clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
@@ -251,50 +275,54 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
-  void setSaleRowQty(int productId, int rowIndex, int value) {
+  void setSaleRowQty(Object optionKeyOrProductId, int rowIndex, int value) {
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
     _updateSaleRow(
-      productId,
+      optionKey,
       rowIndex,
       (row) => row.copyWith(quantity: value),
     );
   }
 
-  void setSaleRowUnitPrice(int productId, int rowIndex, String value) {
+  void setSaleRowUnitPrice(Object optionKeyOrProductId, int rowIndex, String value) {
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
     _updateSaleRow(
-      productId,
+      optionKey,
       rowIndex,
       (row) => row.copyWith(unitPrice: value),
     );
   }
 
-  void setSaleRowPaymentMethod(int productId, int rowIndex, String? method) {
+  void setSaleRowPaymentMethod(Object optionKeyOrProductId, int rowIndex, String? method) {
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
     _updateSaleRow(
-      productId,
+      optionKey,
       rowIndex,
       (row) => row.copyWith(paymentMethod: method),
     );
   }
 
-  void fillSaleRowPriceFromChip(int productId, int rowIndex, double unitPrice) {
-    setSaleRowUnitPrice(productId, rowIndex, unitPrice.toStringAsFixed(0));
+  void fillSaleRowPriceFromChip(Object optionKeyOrProductId, int rowIndex, double unitPrice) {
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    setSaleRowUnitPrice(optionKey, rowIndex, unitPrice.toStringAsFixed(0));
   }
 
   void _updateSaleRow(
-    int productId,
+    String optionKey,
     int rowIndex,
     ReconciliationSaleRowInput Function(ReconciliationSaleRowInput row) updater,
   ) {
-    final next = Map<int, List<ReconciliationSaleRowInput>>.from(
-      state.saleRowsByProduct,
+    final next = Map<String, List<ReconciliationSaleRowInput>>.from(
+      state.saleRowsByOption,
     );
-    final rows = List<ReconciliationSaleRowInput>.from(next[productId] ?? []);
+    final rows = List<ReconciliationSaleRowInput>.from(next[optionKey] ?? []);
     if (rowIndex < 0 || rowIndex >= rows.length) {
       return;
     }
     rows[rowIndex] = updater(rows[rowIndex]);
-    next[productId] = rows;
+    next[optionKey] = rows;
     state = state.copyWith(
-      saleRowsByProduct: next,
+      saleRowsByOption: next,
       clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
@@ -302,11 +330,12 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
-  void setWasteReasonForProduct(int productId, String reason) {
-    final next = Map<int, String>.from(state.wasteReasonByProduct);
-    next[productId] = reason;
+  void setWasteReasonForOption(Object optionKeyOrProductId, String reason) {
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    final next = Map<String, String>.from(state.wasteReasonByOption);
+    next[optionKey] = reason;
     state = state.copyWith(
-      wasteReasonByProduct: next,
+      wasteReasonByOption: next,
       clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
@@ -346,36 +375,40 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     if (validation != null) {
       state = state.copyWith(
         errorMessage: validation.message,
-        productErrors: validation.productErrors,
-        saleRowErrorsByProduct: validation.saleRowErrorsByProduct,
+        optionErrors: validation.optionErrors,
+        saleRowErrorsByOption: validation.saleRowErrorsByOption,
       );
       return false;
     }
 
-    final lines = draft.products.map((product) {
-      final rows = state.saleRowsByProduct[product.productId] ??
+    final lines = draft.products.expand((product) {
+      return product.options.map((option) {
+      final optionKey = reconciliationOptionKey(product.productId, option.priceChipId);
+      final rows = state.saleRowsByOption[optionKey] ??
           const <ReconciliationSaleRowInput>[];
       final activeRows = rows.where((row) => row.quantity > 0).toList();
       final saleQty = activeRows.fold<int>(0, (sum, row) => sum + row.quantity);
-      final wasteQty = state.wasteQtyByProduct[product.productId] ?? 0;
+      final wasteQty = state.wasteQtyByOption[optionKey] ?? 0;
       return ReconciliationSubmitLine(
         productId: product.productId,
-        expectedQty: product.expectedQty,
-        countedQty: state.countedQtyByProduct[product.productId] ?? 0,
+        priceChipId: option.priceChipId,
+        expectedQty: option.expectedQty,
+        countedQty: state.countedQtyByOption[optionKey] ?? 0,
         saleQty: saleQty,
         wasteQty: wasteQty,
         manualUnitPrice: null,
-        wasteReason: wasteQty > 0 ? state.wasteReasonByProduct[product.productId]?.trim() : null,
+        wasteReason: wasteQty > 0 ? state.wasteReasonByOption[optionKey]?.trim() : null,
         saleRows: activeRows
             .map(
               (row) => ReconciliationSubmitSaleRow(
                 quantity: row.quantity,
-                unitPrice: double.parse(row.unitPrice.trim()),
+                unitPrice: double.tryParse(row.unitPrice.trim()) ?? 0,
                 paymentMethod: row.paymentMethod!,
               ),
             )
             .toList(),
       );
+    });
     }).toList();
 
     state = state.copyWith(
@@ -428,37 +461,39 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       return _ValidationResult('Chưa có dữ liệu đối soát');
     }
 
-    final productErrors = <int, String>{};
-    final rowErrors = <int, List<ReconciliationSaleRowError>>{};
+    final productErrors = <String, String>{};
+    final rowErrors = <String, List<ReconciliationSaleRowError>>{};
 
     for (final product in draft.products) {
-      final counted = currentState.countedQtyByProduct[product.productId] ?? 0;
-      final rows = currentState.saleRowsByProduct[product.productId] ??
+      for (final option in product.options) {
+      final optionKey = reconciliationOptionKey(product.productId, option.priceChipId);
+      final counted = currentState.countedQtyByOption[optionKey] ?? 0;
+      final rows = currentState.saleRowsByOption[optionKey] ??
           const <ReconciliationSaleRowInput>[];
       final sale = rows.fold<int>(0, (sum, row) => sum + row.quantity);
-      final waste = currentState.wasteQtyByProduct[product.productId] ?? 0;
+      final waste = currentState.wasteQtyByOption[optionKey] ?? 0;
       if (counted < 0 || sale < 0 || waste < 0) {
         return _ValidationResult('Số lượng không được âm');
       }
-      if (counted > product.expectedQty) {
-        productErrors[product.productId] =
+      if (counted > option.expectedQty) {
+        productErrors[optionKey] =
             'Số đếm thực tế không được lớn hơn số tồn dự kiến';
         continue;
       }
 
-      final missing = product.expectedQty - counted;
+      final missing = option.expectedQty - counted;
       if (missing < 0) {
-        productErrors[product.productId] =
+        productErrors[optionKey] =
             'Số đếm thực tế không được lớn hơn số tồn dự kiến';
         continue;
       }
       if (waste > missing) {
-        productErrors[product.productId] =
+        productErrors[optionKey] =
             'Số hao hụt vượt quá số thiếu. Vui lòng vào màn hình \'Nhập hàng\' để bổ sung tồn kho trước.';
         continue;
       }
       if (missing > 0 && sale + waste != missing) {
-        productErrors[product.productId] =
+        productErrors[optionKey] =
             'Sản phẩm thiếu phải tách đúng: bán + hao hụt = số thiếu';
       }
 
@@ -488,22 +523,23 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
         );
       }
       if (itemErrors.any((error) => error.hasError)) {
-        rowErrors[product.productId] = itemErrors;
+        rowErrors[optionKey] = itemErrors;
       }
 
       if (waste > 0) {
-        final reason = (currentState.wasteReasonByProduct[product.productId] ?? '').trim();
+        final reason = (currentState.wasteReasonByOption[optionKey] ?? '').trim();
         if (reason.isEmpty) {
-          productErrors[product.productId] = 'Sản phẩm có hao hụt phải nhập lý do';
+          productErrors[optionKey] = 'Sản phẩm có hao hụt phải nhập lý do';
         }
+      }
       }
     }
 
     if (productErrors.isNotEmpty || rowErrors.isNotEmpty) {
       return _ValidationResult(
         'Vui lòng kiểm tra dữ liệu đối soát',
-        productErrors: productErrors,
-        saleRowErrorsByProduct: rowErrors,
+        optionErrors: productErrors,
+        saleRowErrorsByOption: rowErrors,
       );
     }
 
@@ -527,13 +563,13 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
 class _ValidationResult {
   _ValidationResult(
     this.message, {
-    this.productErrors = const <int, String>{},
-    this.saleRowErrorsByProduct = const <int, List<ReconciliationSaleRowError>>{},
+    this.optionErrors = const <String, String>{},
+    this.saleRowErrorsByOption = const <String, List<ReconciliationSaleRowError>>{},
   });
 
   final String message;
-  final Map<int, String> productErrors;
-  final Map<int, List<ReconciliationSaleRowError>> saleRowErrorsByProduct;
+  final Map<String, String> optionErrors;
+  final Map<String, List<ReconciliationSaleRowError>> saleRowErrorsByOption;
 }
 
 final reconciliationProvider =

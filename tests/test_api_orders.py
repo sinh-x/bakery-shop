@@ -2,6 +2,8 @@
 
 import pytest
 
+from baker.db.connection import get_db
+
 
 # --- Helpers ---
 
@@ -12,6 +14,25 @@ def _create_order(client, customer="Nguyễn Văn A", items=None, **kwargs):
     resp = client.post("/api/orders", json=payload)
     assert resp.status_code == 201
     return resp.json()
+
+
+def _ensure_trung_bay(product_id: int) -> None:
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO product_attribute_values (product_id, attribute_type, value)
+               VALUES (?, 'trung_bay', 'true')
+               ON CONFLICT(product_id, attribute_type) DO UPDATE SET value = excluded.value""",
+            (product_id,),
+        )
+
+
+def _create_chip(client, product_id: int, label: str, price: float) -> int:
+    resp = client.post(
+        f"/api/products/{product_id}/price-chips",
+        json={"label": label, "price": price},
+    )
+    assert resp.status_code == 201
+    return int(resp.json()["id"])
 
 
 # --- List orders ---
@@ -806,3 +827,90 @@ def test_list_orders_returns_partial_is_paid_false(api_client):
     assert found["isPaid"] is False
     assert found["amountPaid"] == partial
 
+
+def test_pos_order_with_chip_persists_price_chip_and_fifo_consumes(api_client):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "POS-Nhỏ", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 2, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 1,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+            }
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    assert order["status"] == "delivered"
+
+    with get_db() as conn:
+        saved_item = conn.execute(
+            "SELECT price_chip_id FROM order_items WHERE order_id = ? ORDER BY id ASC LIMIT 1",
+            (int(order["id"]),),
+        ).fetchone()
+        assert saved_item["price_chip_id"] == chip_id
+
+        movement = conn.execute(
+            """SELECT id, lot_id, price_chip_id
+               FROM stock_movements
+               WHERE movement_type = 'sale' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (order["orderRef"],),
+        ).fetchone()
+        assert movement["price_chip_id"] == chip_id
+        assert movement["lot_id"] is not None
+
+        consumed = conn.execute(
+            "SELECT COUNT(*) AS c FROM inventory_items WHERE consumed_by_movement_id = ?",
+            (movement["id"],),
+        ).fetchone()
+        assert consumed["c"] == 1
+
+
+def test_pos_order_without_chip_uses_base_option_and_still_works(api_client):
+    _ensure_trung_bay(1)
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 2},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 1,
+                "unitPrice": 10000,
+            }
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+
+    with get_db() as conn:
+        saved_item = conn.execute(
+            "SELECT price_chip_id FROM order_items WHERE order_id = ? ORDER BY id ASC LIMIT 1",
+            (int(order["id"]),),
+        ).fetchone()
+        assert saved_item["price_chip_id"] is None
+
+        movement = conn.execute(
+            "SELECT id, price_chip_id FROM stock_movements WHERE movement_type = 'sale' AND reference_id = ? ORDER BY id DESC LIMIT 1",
+            (order["orderRef"],),
+        ).fetchone()
+        assert movement["price_chip_id"] is None

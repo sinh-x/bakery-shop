@@ -235,124 +235,142 @@ class _StockItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = stockStatusColor(item.quantity);
-    final statusLabel = stockStatusLabel(item.quantity);
+    final totalQty = item.totalQuantity;
+    final statusColor = stockStatusColor(totalQty);
+    final statusLabel = stockStatusLabel(totalQty);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Product image
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                '$baseUrl/api/products/${item.productId}/photo',
-                width: 64,
-                height: 64,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  width: 64,
-                  height: 64,
-                  color: Colors.grey[100],
-                  child: Center(
-                    child: Text(emoji, style: const TextStyle(fontSize: 32)),
+            Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    '$baseUrl/api/products/${item.productId}/photo',
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      width: 64,
+                      height: 64,
+                      color: Colors.grey[100],
+                      child: Center(
+                        child: Text(
+                          emoji,
+                          style: const TextStyle(fontSize: 32),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Product info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.productName,
-                    style: Theme.of(context).textTheme.titleMedium,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: statusColor.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          statusLabel,
-                          style: TextStyle(
-                            color: statusColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                      Text(
+                        item.productName,
+                        style: Theme.of(context).textTheme.titleMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              statusLabel,
+                              style: TextStyle(
+                                color: statusColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            // Quantity
-            Column(
-              children: [
-                Text(
-                  '${item.quantity}',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: statusColor,
-                  ),
                 ),
-                Text(
-                  VN.tonKho,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                const SizedBox(width: 8),
+                Column(
+                  children: [
+                    Text(
+                      '$totalQty',
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: statusColor,
+                          ),
+                    ),
+                    Text(
+                      VN.tonKho,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                    ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(width: 8),
-            // Action buttons
-            Column(
-              mainAxisSize: MainAxisSize.min,
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: item.perChip
+                  .map(
+                    (option) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Text('${option.label}: ${option.quantity}'),
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 10),
+            Row(
               children: [
-                SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: IconButton.filledTonal(
+                Expanded(
+                  child: FilledButton.tonalIcon(
                     icon: const Icon(Icons.add, size: 18),
-                    tooltip: VN.nhapHang,
+                    label: const Text(VN.nhapHang),
                     onPressed: onRestock,
-                    padding: EdgeInsets.zero,
                   ),
                 ),
-                const SizedBox(height: 4),
-                SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: IconButton.filledTonal(
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.tonalIcon(
                     icon: const Icon(Icons.remove, size: 18),
-                    tooltip: VN.haoHut,
+                    label: const Text(VN.haoHut),
                     onPressed: onWaste,
-                    padding: EdgeInsets.zero,
                   ),
                 ),
-                const SizedBox(height: 4),
-                SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: IconButton.filledTonal(
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.tonalIcon(
                     icon: const Icon(Icons.edit, size: 18),
-                    tooltip: VN.dieuChinh,
+                    label: const Text(VN.dieuChinh),
                     onPressed: onAdjust,
-                    padding: EdgeInsets.zero,
                   ),
                 ),
               ],

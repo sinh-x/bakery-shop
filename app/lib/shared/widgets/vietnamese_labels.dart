@@ -514,6 +514,8 @@ class VN {
   static const nhapHangSheet = 'Nhập hàng';
   static const haoHutSheet = 'Hao hụt';
   static const dieuChinhSheet = 'Điều chỉnh';
+  static const tuyChonGia = 'Tùy chọn giá';
+  static const tuyChon = 'Tùy chọn';
   static const ghiChuLabel = 'Ghi chú';
   static const ghiChuHint = 'Ghi chú (tùy chọn)';
   static const lyDoLabel = 'Lý do';

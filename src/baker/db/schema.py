@@ -700,6 +700,136 @@ def _migrate_v35_reconciliation_line_waste_reason(conn):
         "waste_reason TEXT DEFAULT ''",
     )
 
+
+STOCK_LOTS_AND_ITEMS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS stock_lots (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id      INTEGER NOT NULL REFERENCES products(id),
+    price_chip_id   INTEGER REFERENCES product_price_chips(id),
+    quantity        INTEGER NOT NULL DEFAULT 0,
+    remaining_qty   INTEGER NOT NULL DEFAULT 0,
+    restocked_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_stock_lots_product_chip ON stock_lots(product_id, price_chip_id);
+CREATE INDEX IF NOT EXISTS idx_stock_lots_fifo ON stock_lots(product_id, price_chip_id, restocked_at ASC);
+
+CREATE TABLE IF NOT EXISTS inventory_items (
+    id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+    lot_id                      INTEGER NOT NULL REFERENCES stock_lots(id),
+    uuid                        TEXT NOT NULL UNIQUE,
+    status                      TEXT NOT NULL DEFAULT 'available',
+    consumed_by_movement_id     INTEGER REFERENCES stock_movements(id),
+    created_at                  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_inventory_items_lot ON inventory_items(lot_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_items_uuid ON inventory_items(uuid);
+CREATE INDEX IF NOT EXISTS idx_inventory_items_lot_status ON inventory_items(lot_id, status, created_at);
+"""
+
+
+def _migrate_v36_chip_aware_inventory(conn):
+    """Migrate product_stock rows into stock_lots + inventory_items using lowest-priced option."""
+    import uuid
+
+    def _table_exists(table_name: str) -> bool:
+        exists_row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+            (table_name,),
+        ).fetchone()
+        return exists_row is not None
+
+    if _table_exists("stock_movements"):
+        _guard_add_column(
+            conn,
+            "stock_movements",
+            "lot_id",
+            "lot_id INTEGER REFERENCES stock_lots(id)",
+        )
+        _guard_add_column(
+            conn,
+            "stock_movements",
+            "price_chip_id",
+            "price_chip_id INTEGER REFERENCES product_price_chips(id)",
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_stock_movements_lot ON stock_movements(lot_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_stock_movements_product_chip_created "
+            "ON stock_movements(product_id, price_chip_id, created_at)"
+        )
+
+    if _table_exists("order_items"):
+        _guard_add_column(
+            conn,
+            "order_items",
+            "price_chip_id",
+            "price_chip_id INTEGER REFERENCES product_price_chips(id)",
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_order_items_price_chip ON order_items(price_chip_id)"
+        )
+
+    if _table_exists("reconciliation_lines"):
+        _guard_add_column(
+            conn,
+            "reconciliation_lines",
+            "price_chip_id",
+            "price_chip_id INTEGER REFERENCES product_price_chips(id)",
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reconciliation_lines_price_chip ON reconciliation_lines(price_chip_id)"
+        )
+
+    has_product_stock = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='product_stock'"
+    ).fetchone()
+    if has_product_stock:
+        rows = conn.execute(
+            "SELECT product_id, quantity FROM product_stock ORDER BY product_id"
+        ).fetchall()
+
+        for row in rows:
+            product_id = int(row["product_id"])
+            quantity = int(row["quantity"] or 0)
+
+            base_row = conn.execute(
+                "SELECT base_price FROM products WHERE id = ?",
+                (product_id,),
+            ).fetchone()
+            if base_row is None:
+                continue
+
+            best_chip_id = None
+            best_price = float(base_row["base_price"] or 0)
+
+            chip_rows = conn.execute(
+                "SELECT id, price FROM product_price_chips WHERE product_id = ? ORDER BY id",
+                (product_id,),
+            ).fetchall()
+            for chip in chip_rows:
+                chip_price = float(chip["price"] or 0)
+                if chip_price < best_price:
+                    best_price = chip_price
+                    best_chip_id = int(chip["id"])
+
+            lot_cursor = conn.execute(
+                """INSERT INTO stock_lots (product_id, price_chip_id, quantity, remaining_qty)
+                   VALUES (?, ?, ?, ?)""",
+                (product_id, best_chip_id, quantity, quantity),
+            )
+            lot_id = int(lot_cursor.lastrowid)
+
+            for _ in range(quantity):
+                conn.execute(
+                    """INSERT INTO inventory_items (lot_id, uuid, status)
+                       VALUES (?, ?, 'available')""",
+                    (lot_id, str(uuid.uuid4())),
+                )
+
+        conn.execute("DROP TABLE product_stock")
+
 PRODUCT_ATTRIBUTES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS product_attributes (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1183,6 +1313,11 @@ MIGRATIONS = {
         "description": "Add per-line waste reason to reconciliation lines",
         "sql": "",
         "callable": _migrate_v35_reconciliation_line_waste_reason,
+    },
+    36: {
+        "description": "Chip-aware inventory schema: stock_lots, inventory_items, option columns, and product_stock migration",
+        "sql": STOCK_LOTS_AND_ITEMS_SCHEMA,
+        "callable": _migrate_v36_chip_aware_inventory,
     },
 }
 

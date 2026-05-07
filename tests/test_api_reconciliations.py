@@ -1,4 +1,5 @@
 from baker.db.connection import get_db
+from baker.api.inventory_fifo import create_lot_with_items
 
 
 def _mark_product_display(conn, product_id: int, value: str = "true"):
@@ -12,10 +13,12 @@ def _mark_product_display(conn, product_id: int, value: str = "true"):
 
 def _set_stock(conn, product_id: int, quantity: int):
     conn.execute(
-        """INSERT INTO product_stock (product_id, quantity) VALUES (?, ?)
-           ON CONFLICT(product_id) DO UPDATE SET quantity = excluded.quantity""",
-        (product_id, quantity),
+        "DELETE FROM inventory_items WHERE lot_id IN (SELECT id FROM stock_lots WHERE product_id = ?)",
+        (product_id,),
     )
+    conn.execute("DELETE FROM stock_lots WHERE product_id = ?", (product_id,))
+    if quantity > 0:
+        create_lot_with_items(conn, product_id, None, quantity)
 
 
 def test_draft_returns_active_trung_bay_products_with_price_chips(api_client):
@@ -104,10 +107,13 @@ def test_submit_valid_creates_order_payment_waste_and_links(api_client):
         assert payment["type"] == "payment"
 
         stock = conn.execute(
-            "SELECT quantity FROM product_stock WHERE product_id = ?",
+            """SELECT COUNT(*) AS qty
+               FROM inventory_items ii
+               JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = ? AND ii.status = 'available'""",
             (1,),
         ).fetchone()
-        assert stock["quantity"] == 7
+        assert stock["qty"] == 7
 
         sale_movement = conn.execute(
             "SELECT * FROM stock_movements WHERE movement_type = 'sale' AND reference_id = ?",
@@ -669,3 +675,143 @@ def test_history_detail_exposes_legacy_sale_row_adapter(api_client):
     assert sale_row["payment_method"] == "cash"
     assert sale_row["linked_order_ref"] == "ORD-LEGACY"
     assert sale_row["linked_payment_ref"] == "9"
+
+
+def test_draft_returns_per_chip_expected_rows(api_client):
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        small_chip = conn.execute(
+            "INSERT INTO product_price_chips (product_id, label, price, position) VALUES (?, ?, ?, ?)",
+            (1, "S", 12000, 1),
+        ).lastrowid
+        large_chip = conn.execute(
+            "INSERT INTO product_price_chips (product_id, label, price, position) VALUES (?, ?, ?, ?)",
+            (1, "L", 18000, 2),
+        ).lastrowid
+        create_lot_with_items(conn, 1, small_chip, 3)
+        create_lot_with_items(conn, 1, large_chip, 2)
+
+    resp = api_client.get("/api/reconciliations/draft")
+    assert resp.status_code == 200
+    products = resp.json()["products"]
+    product = next(p for p in products if p["product_id"] == 1)
+    assert product["expected_qty"] == 5
+    options = {(row["price_chip_id"], row["expected_qty"]) for row in product["options"]}
+    assert (small_chip, 3) in options
+    assert (large_chip, 2) in options
+
+
+def test_submit_per_chip_lines_and_history(api_client):
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        chip_id = conn.execute(
+            "INSERT INTO product_price_chips (product_id, label, price, position) VALUES (?, ?, ?, ?)",
+            (1, "S", 12000, 1),
+        ).lastrowid
+        create_lot_with_items(conn, 1, chip_id, 5)
+
+    payload = {
+        "staff_name": "An",
+        "payment_method": "cash",
+        "waste_reason": "Bị hỏng",
+        "lines": [
+            {
+                "product_id": 1,
+                "price_chip_id": chip_id,
+                "expected_qty": 5,
+                "counted_qty": 2,
+                "sale_qty": 2,
+                "waste_qty": 1,
+                "manual_unit_price": 12000,
+            }
+        ],
+    }
+    resp = api_client.post("/api/reconciliations/submit", json=payload)
+    assert resp.status_code == 201
+    session_id = resp.json()["id"]
+
+    with get_db() as conn:
+        line = conn.execute("SELECT * FROM reconciliation_lines").fetchone()
+        assert line is not None
+        assert line["price_chip_id"] == chip_id
+
+        waste = conn.execute(
+            "SELECT * FROM stock_movements WHERE movement_type = 'waste' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert waste is not None
+        assert waste["price_chip_id"] == chip_id
+
+        option_qty = conn.execute(
+            """SELECT COUNT(*) AS qty
+               FROM inventory_items ii
+               JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = ? AND sl.price_chip_id = ? AND ii.status = 'available'""",
+            (1, chip_id),
+        ).fetchone()["qty"]
+        assert option_qty == 2
+
+    history = api_client.get(f"/api/reconciliations/history/{session_id}")
+    assert history.status_code == 200
+    hist_line = history.json()["lines"][0]
+    assert hist_line["price_chip_id"] == chip_id
+
+
+def test_submit_returns_409_when_any_chip_expected_is_stale(api_client):
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        chip_id = conn.execute(
+            "INSERT INTO product_price_chips (product_id, label, price, position) VALUES (?, ?, ?, ?)",
+            (1, "S", 12000, 1),
+        ).lastrowid
+        create_lot_with_items(conn, 1, chip_id, 4)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "price_chip_id": chip_id,
+                    "expected_qty": 3,
+                    "counted_qty": 3,
+                    "sale_qty": 0,
+                    "waste_qty": 0,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 409
+
+
+def test_submit_no_chip_product_still_works_with_base_row(api_client):
+    with get_db() as conn:
+        _mark_product_display(conn, 2, "true")
+        _set_stock(conn, 2, 3)
+
+    draft = api_client.get("/api/reconciliations/draft")
+    assert draft.status_code == 200
+    product = next(p for p in draft.json()["products"] if p["product_id"] == 2)
+    assert len(product["options"]) == 1
+    assert product["options"][0]["price_chip_id"] is None
+    assert product["options"][0]["expected_qty"] == 3
+
+    submit = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "lines": [
+                {
+                    "product_id": 2,
+                    "price_chip_id": None,
+                    "expected_qty": 3,
+                    "counted_qty": 2,
+                    "sale_qty": 1,
+                    "waste_qty": 0,
+                    "manual_unit_price": 10000,
+                }
+            ],
+            "payment_method": "cash",
+        },
+    )
+    assert submit.status_code == 201
