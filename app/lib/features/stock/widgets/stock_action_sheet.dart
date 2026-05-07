@@ -191,7 +191,7 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                   DropdownButtonFormField<int?>(
                     initialValue: _selectedPriceChipId,
                     decoration: const InputDecoration(
-                      labelText: 'Tùy chọn giá',
+                      labelText: VN.tuyChonGia,
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.sell_outlined),
                     ),

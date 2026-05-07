@@ -57,24 +57,6 @@ class StockOverviewItem(BaseModel):
     per_chip: list[StockOverviewChipItem]
 
 
-def _upsert_stock(conn, product_id: int, new_qty: int):
-    """Backward-compatible stock setter for base-price option."""
-    old_qty = available_quantity(conn, product_id, None)
-    delta = new_qty - old_qty
-    if delta > 0:
-        create_lot_with_items(conn, product_id, None, delta)
-    elif delta < 0:
-        movement_id = _log_stock_movement(
-            conn,
-            product_id,
-            "adjustment",
-            delta,
-            reason="reconciliation-sync",
-            price_chip_id=None,
-        )
-        consume_fifo_items(conn, product_id, None, -delta, movement_id)
-
-
 def _log_stock_movement(
     conn,
     product_id: int,

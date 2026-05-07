@@ -426,7 +426,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
             .map(
               (row) => ReconciliationSubmitSaleRow(
                 quantity: row.quantity,
-                unitPrice: double.parse(row.unitPrice.trim()),
+                unitPrice: double.tryParse(row.unitPrice.trim()) ?? 0,
                 paymentMethod: row.paymentMethod!,
               ),
             )
