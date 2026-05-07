@@ -9,6 +9,7 @@ class StockOverviewItem {
   final String productName;
   final String category;
   final int quantity;
+  final double? basePrice;
   final List<StockOverviewOption> perChip;
 
   StockOverviewItem({
@@ -16,6 +17,7 @@ class StockOverviewItem {
     required this.productName,
     required this.category,
     required this.quantity,
+    required this.basePrice,
     required this.perChip,
   });
 
@@ -28,6 +30,7 @@ class StockOverviewItem {
       productName: json['product_name'] as String,
       category: json['category'] as String,
       quantity: json['quantity'] as int? ?? 0,
+      basePrice: (json['base_price'] as num?)?.toDouble(),
       perChip: (json['per_chip'] as List<dynamic>? ?? <dynamic>[])
           .map(
             (entry) =>
@@ -42,11 +45,13 @@ class StockOverviewOption {
   final int? priceChipId;
   final int quantity;
   final String label;
+  final double? price;
 
   StockOverviewOption({
     required this.priceChipId,
     required this.quantity,
     required this.label,
+    required this.price,
   });
 
   factory StockOverviewOption.fromJson(Map<String, dynamic> json) {
@@ -59,6 +64,7 @@ class StockOverviewOption {
       priceChipId: chipId,
       quantity: json['quantity'] as int? ?? 0,
       label: parsedLabel ?? (chipId == null ? 'Giá gốc' : 'Tùy chọn #$chipId'),
+      price: (json['price'] as num?)?.toDouble(),
     );
   }
 }

@@ -44,6 +44,8 @@ class AdjustRequest(BaseModel):
 class StockOverviewChipItem(BaseModel):
     price_chip_id: int | None
     quantity: int
+    label: str | None = None
+    price: float | None = None
 
 
 class StockOverviewItem(BaseModel):
@@ -51,6 +53,7 @@ class StockOverviewItem(BaseModel):
     product_name: str
     category: str
     quantity: int
+    base_price: float | None = None
     per_chip: list[StockOverviewChipItem]
 
 
@@ -273,11 +276,15 @@ def stock_overview():
             """SELECT p.id AS product_id,
                       p.name AS product_name,
                       p.category,
+                      p.base_price,
                       sl.price_chip_id,
+                      pc.label AS chip_label,
+                      pc.price AS chip_price,
                       COUNT(ii.id) AS quantity
                FROM products p
                LEFT JOIN stock_lots sl ON p.id = sl.product_id
                LEFT JOIN inventory_items ii ON ii.lot_id = sl.id AND ii.status = 'available'
+               LEFT JOIN product_price_chips pc ON pc.id = sl.price_chip_id
                WHERE p.active = 1
                   AND EXISTS (
                       SELECT 1 FROM product_attribute_values pav
@@ -285,7 +292,7 @@ def stock_overview():
                        AND pav.attribute_type = 'trung_bay'
                         AND pav.value = 'true'
                   )
-               GROUP BY p.id, p.name, p.category, sl.price_chip_id
+               GROUP BY p.id, p.name, p.category, p.base_price, sl.price_chip_id
                ORDER BY p.category, p.name, sl.price_chip_id""",
         ).fetchall()
 
@@ -298,6 +305,7 @@ def stock_overview():
                     product_name=row["product_name"],
                     category=row["category"],
                     quantity=0,
+                    base_price=row["base_price"],
                     per_chip=[],
                 )
             qty = int(row["quantity"] or 0)
@@ -306,6 +314,8 @@ def stock_overview():
                 StockOverviewChipItem(
                     price_chip_id=row["price_chip_id"],
                     quantity=qty,
+                    label=row["chip_label"],
+                    price=row["chip_price"],
                 )
             )
 

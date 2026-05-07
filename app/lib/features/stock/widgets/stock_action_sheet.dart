@@ -197,10 +197,16 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                     ),
                     items: widget.item.perChip
                         .map(
-                          (option) => DropdownMenuItem<int?>(
-                            value: option.priceChipId,
-                            child: Text('${option.label} (${option.quantity})'),
-                          ),
+                          (option) {
+                            final price = option.price ?? widget.item.basePrice;
+                            final priceText = price != null
+                                ? '${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}đ'
+                                : 'N/A';
+                            return DropdownMenuItem<int?>(
+                              value: option.priceChipId,
+                              child: Text('${option.label} - $priceText (${option.quantity})'),
+                            );
+                          },
                         )
                         .toList(),
                     onChanged: (value) {
