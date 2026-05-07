@@ -270,53 +270,90 @@ def adjust_stock(product_id: int, body: AdjustRequest):
 
 @router.get("/stock/overview", response_model=list[StockOverviewItem])
 def stock_overview():
-    """List all trưng bày products with current stock quantity."""
+    """List all trưng bày products with current stock quantity and configured price chips."""
     with get_db() as conn:
-        rows = conn.execute(
-            """SELECT p.id AS product_id,
-                      p.name AS product_name,
-                      p.category,
-                      p.base_price,
-                      sl.price_chip_id,
-                      pc.label AS chip_label,
-                      pc.price AS chip_price,
-                      COUNT(ii.id) AS quantity
+        # Get all trưng bày products
+        products = conn.execute(
+            """SELECT p.id, p.name, p.category, p.base_price
                FROM products p
-               LEFT JOIN stock_lots sl ON p.id = sl.product_id
-               LEFT JOIN inventory_items ii ON ii.lot_id = sl.id AND ii.status = 'available'
-               LEFT JOIN product_price_chips pc ON pc.id = sl.price_chip_id
                WHERE p.active = 1
-                  AND EXISTS (
-                      SELECT 1 FROM product_attribute_values pav
-                     WHERE pav.product_id = p.id
-                       AND pav.attribute_type = 'trung_bay'
-                        AND pav.value = 'true'
-                  )
-               GROUP BY p.id, p.name, p.category, p.base_price, sl.price_chip_id
-               ORDER BY p.category, p.name, sl.price_chip_id""",
+                 AND EXISTS (
+                     SELECT 1 FROM product_attribute_values pav
+                    WHERE pav.product_id = p.id
+                      AND pav.attribute_type = 'trung_bay'
+                       AND pav.value = 'true'
+                 )
+               ORDER BY p.category, p.name""",
         ).fetchall()
 
-        grouped: dict[int, StockOverviewItem] = {}
-        for row in rows:
-            pid = row["product_id"]
-            if pid not in grouped:
-                grouped[pid] = StockOverviewItem(
-                    product_id=pid,
-                    product_name=row["product_name"],
-                    category=row["category"],
-                    quantity=0,
-                    base_price=row["base_price"],
-                    per_chip=[],
-                )
-            qty = int(row["quantity"] or 0)
-            grouped[pid].quantity += qty
-            grouped[pid].per_chip.append(
-                StockOverviewChipItem(
-                    price_chip_id=row["price_chip_id"],
-                    quantity=qty,
-                    label=row["chip_label"],
-                    price=row["chip_price"],
-                )
-            )
+        # Get per-chip stock quantities from stock_lots + inventory_items
+        stock_rows = conn.execute(
+            """SELECT sl.product_id, sl.price_chip_id, COUNT(ii.id) AS quantity
+               FROM stock_lots sl
+               LEFT JOIN inventory_items ii ON ii.lot_id = sl.id AND ii.status = 'available'
+               GROUP BY sl.product_id, sl.price_chip_id""",
+        ).fetchall()
+        stock_map: dict[tuple[int, int | None], int] = {}
+        for sr in stock_rows:
+            stock_map[(sr["product_id"], sr["price_chip_id"])] = int(sr["quantity"] or 0)
 
-        return list(grouped.values())
+        # Get all configured price chips for these products
+        all_chips = conn.execute(
+            """SELECT pc.product_id, pc.id AS chip_id, pc.label, pc.price, pc.position
+               FROM product_price_chips pc
+               JOIN products p ON p.id = pc.product_id
+               WHERE p.active = 1
+                 AND EXISTS (
+                     SELECT 1 FROM product_attribute_values pav
+                    WHERE pav.product_id = p.id
+                      AND pav.attribute_type = 'trung_bay'
+                       AND pav.value = 'true'
+                 )
+               ORDER BY pc.product_id, pc.position, pc.id""",
+        ).fetchall()
+
+        chips_map: dict[int, list[dict]] = {}
+        for c in all_chips:
+            chips_map.setdefault(c["product_id"], []).append(c)
+
+        result: list[StockOverviewItem] = []
+        for p in products:
+            pid = p["id"]
+            chips: list[StockOverviewChipItem] = []
+
+            # Base option (price_chip_id=None)
+            base_qty = stock_map.get((pid, None), 0)
+            base_label = conn.execute(
+                "SELECT value FROM product_attribute_values WHERE product_id = ? AND attribute_type = 'trung_bay' AND value = 'true'",
+                (pid,),
+            ).fetchone()
+            chips.append(StockOverviewChipItem(
+                price_chip_id=None,
+                quantity=base_qty,
+                label=None,
+                price=None,
+            ))
+
+            total_qty = base_qty
+
+            # Configured chip options
+            for c in chips_map.get(pid, []):
+                qty = stock_map.get((pid, c["chip_id"]), 0)
+                total_qty += qty
+                chips.append(StockOverviewChipItem(
+                    price_chip_id=c["chip_id"],
+                    quantity=qty,
+                    label=c["label"],
+                    price=c["price"],
+                ))
+
+            result.append(StockOverviewItem(
+                product_id=pid,
+                product_name=p["name"],
+                category=p["category"],
+                quantity=total_qty,
+                base_price=p["base_price"],
+                per_chip=chips,
+            ))
+
+        return result
