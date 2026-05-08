@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -14,18 +13,23 @@ import '../../shared/widgets/vietnamese_labels.dart';
 @visibleForTesting
 String resolvePosCheckoutErrorMessage(Object error) {
   if (error is DioException) {
-    final data = error.response?.data;
-    final detail = extractBackendDetail(data);
-    if (detail != null) {
-      return detail;
+    final response = error.response;
+    if (response == null) {
+      return VN.apiError;
     }
-    if (error.response?.statusCode == 422) {
+
+    if (response.statusCode == 422) {
+      final detail = extractBackendDetail(response.data);
+      if (detail != null) {
+        return detail;
+      }
       return VN.loiKhongXacDinhTuMayChu;
     }
-    return VN.apiError;
+
+    return VN.loiMayChu;
   }
 
-  return 'Lỗi: $error';
+  return VN.loiHeThong;
 }
 
 @visibleForTesting

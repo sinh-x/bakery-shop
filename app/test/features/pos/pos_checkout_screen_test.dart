@@ -4,6 +4,31 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('extractBackendDetail', () {
+    test('returns null for null input', () {
+      expect(extractBackendDetail(null), isNull);
+    });
+
+    test('returns null for non-map input', () {
+      expect(extractBackendDetail(['detail']), isNull);
+      expect(extractBackendDetail('detail'), isNull);
+    });
+
+    test('returns null when detail key is missing', () {
+      expect(extractBackendDetail(<String, dynamic>{'message': 'x'}), isNull);
+    });
+
+    test('returns null when detail is not a string', () {
+      expect(extractBackendDetail(<String, dynamic>{'detail': 123}), isNull);
+      expect(extractBackendDetail(<String, dynamic>{'detail': true}), isNull);
+    });
+
+    test('returns null when detail is empty or whitespace', () {
+      expect(extractBackendDetail(<String, dynamic>{'detail': ''}), isNull);
+      expect(extractBackendDetail(<String, dynamic>{'detail': '   '}), isNull);
+    });
+  });
+
   group('resolvePosCheckoutErrorMessage', () {
     test('returns backend 422 detail when present', () {
       final error = DioException(
