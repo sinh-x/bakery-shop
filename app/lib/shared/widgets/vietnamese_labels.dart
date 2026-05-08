@@ -430,6 +430,7 @@ class VN {
   static const donGia = 'Đơn giá';
   static const xoa = 'Xóa';
   static const thanhToanThanhCong = 'Thanh toán thành công';
+  static const loiKhongXacDinhTuMayChu = 'Lỗi không xác định từ máy chủ';
   static const taiLai = 'Tải lại';
   static const khongCoSanPham = 'Chưa có sản phẩm';
   static const trongLuong = 'Trọng lượng';

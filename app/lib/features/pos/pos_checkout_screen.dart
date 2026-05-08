@@ -1,4 +1,6 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -8,6 +10,35 @@ import '../../features/stock/stock_screen.dart';
 import '../../providers/pos_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+
+@visibleForTesting
+String resolvePosCheckoutErrorMessage(Object error) {
+  if (error is DioException) {
+    final data = error.response?.data;
+    final detail = extractBackendDetail(data);
+    if (detail != null) {
+      return detail;
+    }
+    if (error.response?.statusCode == 422) {
+      return VN.loiKhongXacDinhTuMayChu;
+    }
+    return VN.apiError;
+  }
+
+  return 'Lỗi: $error';
+}
+
+@visibleForTesting
+String? extractBackendDetail(Object? data) {
+  if (data is Map<String, dynamic>) {
+    final detail = data['detail'];
+    if (detail is String && detail.trim().isNotEmpty) {
+      return detail.trim();
+    }
+  }
+
+  return null;
+}
 
 /// POS checkout screen — editable cart on checkout, single Thanh toán button.
 class PosCheckoutScreen extends ConsumerStatefulWidget {
@@ -24,32 +55,31 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
   List<Map<String, dynamic>> _buildOrderItems() {
     final cart = ref.read(posCartProvider);
-    final orderItems = cart.items
-        .where((i) => !i.isGift)
-        .map((i) {
-          final hasChipLabel = (i.selectedChipLabel ?? '').trim().isNotEmpty;
-          final productName = hasChipLabel
-              ? '${i.product.name} (${i.selectedChipLabel!.trim()})'
-              : i.product.name;
+    final orderItems = cart.items.where((i) => !i.isGift).map((i) {
+      final hasChipLabel = (i.selectedChipLabel ?? '').trim().isNotEmpty;
+      final productName = hasChipLabel
+          ? '${i.product.name} (${i.selectedChipLabel!.trim()})'
+          : i.product.name;
 
-          return <String, dynamic>{
-            'productId': i.product.id.toString(),
-            'productName': productName,
-            'quantity': i.quantity,
-            'unitPrice': i.unitPrice,
-            'priceChipId': i.selectedChipId,
-          };
-        })
-        .toList();
+      return <String, dynamic>{
+        'productId': i.product.id.toString(),
+        'productName': productName,
+        'quantity': i.quantity,
+        'unitPrice': i.unitPrice,
+        'priceChipId': i.selectedChipId,
+      };
+    }).toList();
 
     final giftItems = cart.items
         .where((i) => i.isGift)
-        .map((i) => <String, dynamic>{
-              'productName': i.product.name,
-              'quantity': i.quantity,
-              'unitPrice': i.product.basePrice,
-              'isGift': true,
-            })
+        .map(
+          (i) => <String, dynamic>{
+            'productName': i.product.name,
+            'quantity': i.quantity,
+            'unitPrice': i.product.basePrice,
+            'isGift': true,
+          },
+        )
         .toList();
 
     orderItems.addAll(giftItems);
@@ -94,7 +124,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       context.pushReplacement('/pos/receipt/${order.orderRef}');
     } catch (e) {
       if (!mounted) return;
-      showTopSnackBar(context, 'Lỗi: $e');
+      showTopSnackBar(context, resolvePosCheckoutErrorMessage(e));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -175,7 +205,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       context.pushReplacement('/pos/receipt/${order.orderRef}');
     } catch (e) {
       if (!mounted) return;
-      showTopSnackBar(context, 'Lỗi: $e');
+      showTopSnackBar(context, resolvePosCheckoutErrorMessage(e));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -250,8 +280,9 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: theme.colorScheme.primaryContainer,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
             ),
             child: SafeArea(
               top: false,
@@ -261,10 +292,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        VN.total,
-                        style: theme.textTheme.titleLarge,
-                      ),
+                      Text(VN.total, style: theme.textTheme.titleLarge),
                       Text(
                         formatVND(cart.total),
                         style: theme.textTheme.headlineMedium?.copyWith(
@@ -380,21 +408,18 @@ class _CheckoutCartItemTile extends ConsumerWidget {
                   )
                 : null,
           ),
-          subtitle: item.isGift
-              ? null
-              : Text(formatVND(item.unitPrice)),
+          subtitle: item.isGift ? null : Text(formatVND(item.unitPrice)),
           trailing: item.isGift
-              ? Icon(
-                  Icons.chevron_left,
-                  color: theme.colorScheme.outline,
-                )
+              ? Icon(Icons.chevron_left, color: theme.colorScheme.outline)
               : Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
                       icon: const Icon(Icons.remove_circle_outline, size: 20),
                       onPressed: () {
-                        ref.read(posCartProvider.notifier).updateQuantityByLineKey(
+                        ref
+                            .read(posCartProvider.notifier)
+                            .updateQuantityByLineKey(
                               item.lineKey,
                               item.quantity - 1,
                             );
@@ -407,7 +432,9 @@ class _CheckoutCartItemTile extends ConsumerWidget {
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline, size: 20),
                       onPressed: () {
-                        ref.read(posCartProvider.notifier).updateQuantityByLineKey(
+                        ref
+                            .read(posCartProvider.notifier)
+                            .updateQuantityByLineKey(
                               item.lineKey,
                               item.quantity + 1,
                             );
