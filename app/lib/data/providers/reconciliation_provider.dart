@@ -145,16 +145,30 @@ class ReconciliationState {
   }
 }
 
-String reconciliationOptionKey(int productId, int? priceChipId) {
-  return '$productId:$priceChipId';
+String reconciliationOptionKey(int productId, int normalizedPrice) {
+  return '$productId:$normalizedPrice';
 }
 
-String _normalizeOptionKey(Object optionKeyOrProductId) {
+String _normalizeOptionKey(
+  Object optionKeyOrProductId,
+  ReconciliationState currentState,
+) {
   if (optionKeyOrProductId is String) {
     return optionKeyOrProductId;
   }
   if (optionKeyOrProductId is int) {
-    return reconciliationOptionKey(optionKeyOrProductId, null);
+    final prefix = '$optionKeyOrProductId:';
+    final allKeys = <String>{
+      ...currentState.countedQtyByOption.keys,
+      ...currentState.wasteQtyByOption.keys,
+      ...currentState.wasteReasonByOption.keys,
+      ...currentState.saleRowsByOption.keys,
+    };
+    final matched = allKeys.where((key) => key.startsWith(prefix)).toList();
+    if (matched.length == 1) {
+      return matched.first;
+    }
+    return reconciliationOptionKey(optionKeyOrProductId, 0);
   }
   throw ArgumentError('Invalid option key: $optionKeyOrProductId');
 }
@@ -182,7 +196,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
         for (final option in product.options) {
           final key = reconciliationOptionKey(
             option.productId,
-            option.priceChipId,
+            option.normalizedPrice,
           );
           counted[key] = option.expectedQty;
           waste[key] = 0;
@@ -217,7 +231,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
   }
 
   void setCountedQty(Object optionKeyOrProductId, int value) {
-    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
     final next = Map<String, int>.from(state.countedQtyByOption);
     next[optionKey] = value;
     state = state.copyWith(
@@ -230,7 +244,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
   }
 
   void setWasteQty(Object optionKeyOrProductId, int value) {
-    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
     final next = Map<String, int>.from(state.wasteQtyByOption);
     next[optionKey] = value;
     state = state.copyWith(
@@ -243,7 +257,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
   }
 
   void addSaleRow(Object optionKeyOrProductId) {
-    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
     final next = Map<String, List<ReconciliationSaleRowInput>>.from(
       state.saleRowsByOption,
     );
@@ -260,7 +274,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
   }
 
   void removeSaleRow(Object optionKeyOrProductId, int rowIndex) {
-    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
     final next = Map<String, List<ReconciliationSaleRowInput>>.from(
       state.saleRowsByOption,
     );
@@ -280,7 +294,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
   }
 
   void setSaleRowQty(Object optionKeyOrProductId, int rowIndex, int value) {
-    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
     _updateSaleRow(optionKey, rowIndex, (row) => row.copyWith(quantity: value));
   }
 
@@ -289,7 +303,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     int rowIndex,
     String value,
   ) {
-    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
     _updateSaleRow(
       optionKey,
       rowIndex,
@@ -302,7 +316,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     int rowIndex,
     String? method,
   ) {
-    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
     _updateSaleRow(
       optionKey,
       rowIndex,
@@ -315,7 +329,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     int rowIndex,
     double unitPrice,
   ) {
-    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
     setSaleRowUnitPrice(optionKey, rowIndex, unitPrice.toStringAsFixed(0));
   }
 
@@ -343,7 +357,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
   }
 
   void setWasteReasonForOption(Object optionKeyOrProductId, String reason) {
-    final optionKey = _normalizeOptionKey(optionKeyOrProductId);
+    final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
     final next = Map<String, String>.from(state.wasteReasonByOption);
     next[optionKey] = reason;
     state = state.copyWith(
@@ -397,7 +411,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       return product.options.map((option) {
         final optionKey = reconciliationOptionKey(
           product.productId,
-          option.priceChipId,
+          option.normalizedPrice,
         );
         final rows =
             state.saleRowsByOption[optionKey] ??
@@ -410,7 +424,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
         final wasteQty = state.wasteQtyByOption[optionKey] ?? 0;
         return ReconciliationSubmitLine(
           productId: product.productId,
-          priceChipId: option.priceChipId,
+          normalizedPrice: option.normalizedPrice,
           expectedQty: option.expectedQty,
           countedQty: state.countedQtyByOption[optionKey] ?? 0,
           saleQty: saleQty,
@@ -494,7 +508,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       for (final option in product.options) {
         final optionKey = reconciliationOptionKey(
           product.productId,
-          option.priceChipId,
+          option.normalizedPrice,
         );
         final counted = currentState.countedQtyByOption[optionKey] ?? 0;
         final rows =

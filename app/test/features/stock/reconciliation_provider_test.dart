@@ -77,7 +77,7 @@ void main() {
     final state = container.read(reconciliationProvider);
     expect(ok, isFalse);
     expect(service.submitCalls, 0);
-    expect(state.optionErrors['1:null'], isNotNull);
+    expect(state.optionErrors['1:100000'], isNotNull);
   });
 
   test('submit blocks and marks row fields inline when row invalid', () async {
@@ -108,7 +108,7 @@ void main() {
     final state = container.read(reconciliationProvider);
     expect(ok, isFalse);
     expect(service.submitCalls, 0);
-    final rowErrors = state.saleRowErrorsByOption['1:null']!;
+    final rowErrors = state.saleRowErrorsByOption['1:100000']!;
     expect(rowErrors[0].unitPrice, isNotNull);
     expect(rowErrors[0].paymentMethod, isNotNull);
   });

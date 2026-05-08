@@ -221,7 +221,7 @@ class _StockReconciliationScreenState
       for (final option in product.options) {
         final optionKey = reconciliationOptionKey(
           product.productId,
-          option.priceChipId,
+          option.normalizedPrice,
         );
         final rows =
             state.saleRowsByOption[optionKey] ??
@@ -238,7 +238,7 @@ class _StockReconciliationScreenState
           for (final option in product.options) {
             final optionKey = reconciliationOptionKey(
               product.productId,
-              option.priceChipId,
+              option.normalizedPrice,
             );
             final waste = state.wasteQtyByOption[optionKey] ?? 0;
             if (waste > 0) {
@@ -322,7 +322,7 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
     for (final option in widget.product.options) {
       final optionKey = reconciliationOptionKey(
         widget.product.productId,
-        option.priceChipId,
+        option.normalizedPrice,
       );
       final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
       final waste = state.wasteQtyByOption[optionKey] ?? 0;
@@ -373,7 +373,7 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
               Builder(builder: (context) {
                 final optionKey = reconciliationOptionKey(
                   widget.product.productId,
-                  option.priceChipId,
+                  option.normalizedPrice,
                 );
                 final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
                 final saleRows =
@@ -502,11 +502,22 @@ class _OptionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final labels = option.chipLabelMetadata;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Text(
-        '${option.chipLabel} - ${VN.tonDuKien}: ${option.expectedQty}',
-        style: Theme.of(context).textTheme.titleSmall,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Gia ${option.normalizedPrice} - ${VN.tonDuKien}: ${option.expectedQty}',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          if (labels.isNotEmpty)
+            Text(
+              'Nhan chip: $labels',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+        ],
       ),
     );
   }
