@@ -18,6 +18,51 @@ def normalize_price_chip(conn, product_id: int, price_chip_id: int | None) -> in
     return price_chip_id
 
 
+def normalize_price_value(price_value: float | int | None) -> int:
+    return int(round(float(price_value or 0)))
+
+
+def product_base_normalized_price(conn, product_id: int) -> int:
+    row = conn.execute(
+        "SELECT base_price FROM products WHERE id = ?",
+        (product_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
+    return normalize_price_value(row["base_price"])
+
+
+def normalized_price_for_chip(conn, product_id: int, price_chip_id: int | None) -> int:
+    if price_chip_id is None:
+        return product_base_normalized_price(conn, product_id)
+    chip_row = conn.execute(
+        "SELECT price FROM product_price_chips WHERE id = ? AND product_id = ?",
+        (price_chip_id, product_id),
+    ).fetchone()
+    if chip_row is None:
+        raise HTTPException(status_code=422, detail="Mức giá không hợp lệ cho sản phẩm")
+    return normalize_price_value(chip_row["price"])
+
+
+def resolve_price_bucket_chip_id(conn, product_id: int, normalized_price: int) -> int | None:
+    base_price = product_base_normalized_price(conn, product_id)
+    if base_price == normalized_price:
+        return None
+
+    chip_rows = conn.execute(
+        """SELECT id, price
+           FROM product_price_chips
+           WHERE product_id = ?
+           ORDER BY position ASC, id ASC""",
+        (product_id,),
+    ).fetchall()
+    for chip_row in chip_rows:
+        if normalize_price_value(chip_row["price"]) == normalized_price:
+            return int(chip_row["id"])
+
+    raise HTTPException(status_code=422, detail="Mức giá không hợp lệ cho sản phẩm")
+
+
 def create_lot_with_items(conn, product_id: int, price_chip_id: int | None, quantity: int) -> int:
     """Create one stock lot and N available inventory items."""
     cursor = conn.execute(

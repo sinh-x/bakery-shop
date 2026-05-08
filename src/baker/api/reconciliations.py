@@ -5,7 +5,12 @@ from datetime import date
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from baker.api.inventory_fifo import consume_fifo_items, normalize_price_chip
+from baker.api.inventory_fifo import (
+    consume_fifo_items,
+    normalize_price_chip,
+    normalize_price_value,
+    resolve_price_bucket_chip_id,
+)
 from baker.api.orders import _auto_decrement_stock
 from baker.db.connection import get_db
 from baker.models.event import Event
@@ -25,6 +30,7 @@ class ReconciliationSaleRowIn(BaseModel):
 
 class ReconciliationLineIn(BaseModel):
     product_id: int
+    normalized_price: int | None = None
     price_chip_id: int | None = None
     expected_qty: int
     counted_qty: int
@@ -109,8 +115,10 @@ def _load_display_products(conn) -> list[dict]:
                 option_rows.append(
                     {
                         "product_id": product_id,
+                        "normalized_price": normalize_price_value(chip["price"]),
                         "price_chip_id": chip["id"],
                         "chip_label": chip["label"],
+                        "source_chip_ids": [chip["id"]],
                         "expected_qty": expected_by_option.get((product_id, chip["id"]), 0),
                     }
                 )
@@ -119,8 +127,10 @@ def _load_display_products(conn) -> list[dict]:
                 option_rows.append(
                     {
                         "product_id": product_id,
+                        "normalized_price": normalize_price_value(row["base_price"]),
                         "price_chip_id": None,
                         "chip_label": "Giá gốc",
+                        "source_chip_ids": [],
                         "expected_qty": base_qty,
                     }
                 )
@@ -128,8 +138,10 @@ def _load_display_products(conn) -> list[dict]:
             option_rows.append(
                 {
                     "product_id": product_id,
+                    "normalized_price": normalize_price_value(row["base_price"]),
                     "price_chip_id": None,
                     "chip_label": "Giá gốc",
+                    "source_chip_ids": [],
                     "expected_qty": expected_by_option.get((product_id, None), 0),
                 }
             )
@@ -255,7 +267,10 @@ def _create_sale_orders(
             row_payloads = []
 
         for row_payload in row_payloads:
-            chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
+            if line.normalized_price is not None:
+                chip_id = resolve_price_bucket_chip_id(conn, line.product_id, line.normalized_price)
+            else:
+                chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
             latest = latest_by_key[(line.product_id, chip_id)]
             order = Order(
                 customer_name="Đối soát tồn kho",
@@ -351,7 +366,10 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
                 }
 
         for line in payload.lines:
-            chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
+            if line.normalized_price is not None:
+                chip_id = resolve_price_bucket_chip_id(conn, line.product_id, line.normalized_price)
+            else:
+                chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
             latest = latest_by_key.get((line.product_id, chip_id))
             if latest is None:
                 raise HTTPException(status_code=422, detail="Có sản phẩm không còn trong danh sách trưng bày")
@@ -383,7 +401,10 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
             if line.waste_qty <= 0:
                 continue
 
-            chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
+            if line.normalized_price is not None:
+                chip_id = resolve_price_bucket_chip_id(conn, line.product_id, line.normalized_price)
+            else:
+                chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
 
             per_line_reason = (line.waste_reason or "").strip() or (payload.waste_reason or "").strip()
             movement_cursor = conn.execute(
@@ -440,7 +461,10 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
         )
 
         for line_index, line in enumerate(payload.lines):
-            chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
+            if line.normalized_price is not None:
+                chip_id = resolve_price_bucket_chip_id(conn, line.product_id, line.normalized_price)
+            else:
+                chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
             per_line_reason = (line.waste_reason or "").strip() or (payload.waste_reason or "").strip()
             line_sale_rows = sale_rows_by_line[line_index]
             linked_order_item_id = line_sale_rows[0]["order_item_id"] if line_sale_rows else None
@@ -549,7 +573,8 @@ def get_reconciliation_history_detail(session_id: int):
         line_rows = conn.execute(
             """SELECT rl.id,
                       rl.product_id,
-                      rl.price_chip_id,
+                       rl.price_chip_id,
+                      CAST(ROUND(COALESCE(ppc.price, p.base_price)) AS INTEGER) AS normalized_price,
                       p.name AS product_name,
                       rl.expected_qty,
                       rl.counted_qty,
@@ -610,6 +635,7 @@ def get_reconciliation_history_detail(session_id: int):
                 {
                     "id": row["id"],
                     "product_id": row["product_id"],
+                    "normalized_price": row["normalized_price"],
                     "price_chip_id": row["price_chip_id"],
                     "product_name": row["product_name"] or "",
                     "expected_qty": row["expected_qty"],

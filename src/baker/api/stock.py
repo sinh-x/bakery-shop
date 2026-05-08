@@ -2,13 +2,16 @@
 
 from fastapi import APIRouter, HTTPException
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from baker.api.inventory_fifo import (
     available_quantity,
     consume_fifo_items,
     create_lot_with_items,
+    normalized_price_for_chip,
     normalize_price_chip,
+    normalize_price_value,
+    resolve_price_bucket_chip_id,
 )
 from baker.db.connection import get_db
 from baker.models.event import Event
@@ -26,26 +29,31 @@ class StockGetResponse(BaseModel):
 class RestockRequest(BaseModel):
     quantity: int
     note: str = ""
+    normalized_price: int | None = None
     price_chip_id: int | None = None
 
 
 class WasteRequest(BaseModel):
     quantity: int
     reason: str = ""
+    normalized_price: int | None = None
     price_chip_id: int | None = None
 
 
 class AdjustRequest(BaseModel):
     quantity: int
     reason: str = ""
+    normalized_price: int | None = None
     price_chip_id: int | None = None
 
 
 class StockOverviewChipItem(BaseModel):
+    normalized_price: int
     price_chip_id: int | None
     quantity: int
-    label: str | None = None
-    price: float | None = None
+    chip_labels: list[str] = Field(default_factory=list)
+    source_chip_ids: list[int] = Field(default_factory=list)
+    chip_label: str | None = None
 
 
 class StockOverviewItem(BaseModel):
@@ -142,7 +150,12 @@ def restock_product(product_id: int, body: RestockRequest):
         if not product:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-        chip_id = normalize_price_chip(conn, product_id, body.price_chip_id)
+        if body.normalized_price is not None:
+            chip_id = resolve_price_bucket_chip_id(conn, product_id, body.normalized_price)
+            normalized_price = int(body.normalized_price)
+        else:
+            chip_id = normalize_price_chip(conn, product_id, body.price_chip_id)
+            normalized_price = normalized_price_for_chip(conn, product_id, chip_id)
         lot_id = create_lot_with_items(conn, product_id, chip_id, body.quantity)
 
         _log_stock_movement(
@@ -166,6 +179,7 @@ def restock_product(product_id: int, body: RestockRequest):
 
         return {
             "product_id": product_id,
+            "normalized_price": normalized_price,
             "price_chip_id": chip_id,
             "quantity": int(total_qty),
             "option_quantity": option_qty,
@@ -187,7 +201,12 @@ def waste_stock(product_id: int, body: WasteRequest):
         if not product:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-        chip_id = normalize_price_chip(conn, product_id, body.price_chip_id)
+        if body.normalized_price is not None:
+            chip_id = resolve_price_bucket_chip_id(conn, product_id, body.normalized_price)
+            normalized_price = int(body.normalized_price)
+        else:
+            chip_id = normalize_price_chip(conn, product_id, body.price_chip_id)
+            normalized_price = normalized_price_for_chip(conn, product_id, chip_id)
 
         movement_id = _log_stock_movement(
             conn,
@@ -203,6 +222,7 @@ def waste_stock(product_id: int, body: WasteRequest):
 
         return {
             "product_id": product_id,
+            "normalized_price": normalized_price,
             "price_chip_id": chip_id,
             "quantity": option_qty,
         }
@@ -223,7 +243,12 @@ def adjust_stock(product_id: int, body: AdjustRequest):
         if not product:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-        chip_id = normalize_price_chip(conn, product_id, body.price_chip_id)
+        if body.normalized_price is not None:
+            chip_id = resolve_price_bucket_chip_id(conn, product_id, body.normalized_price)
+            normalized_price = int(body.normalized_price)
+        else:
+            chip_id = normalize_price_chip(conn, product_id, body.price_chip_id)
+            normalized_price = normalized_price_for_chip(conn, product_id, chip_id)
         old_qty = available_quantity(conn, product_id, chip_id)
         delta = body.quantity - old_qty
         if delta > 0:
@@ -245,6 +270,7 @@ def adjust_stock(product_id: int, body: AdjustRequest):
 
         return {
             "product_id": product_id,
+            "normalized_price": normalized_price,
             "price_chip_id": chip_id,
             "quantity": available_quantity(conn, product_id, chip_id),
         }
@@ -301,29 +327,47 @@ def stock_overview():
         result: list[StockOverviewItem] = []
         for p in products:
             pid = p["id"]
-            chips: list[StockOverviewChipItem] = []
+            buckets: dict[int, dict] = {}
 
-            # Base option (price_chip_id=None)
+            base_price = normalize_price_value(p["base_price"])
             base_qty = stock_map.get((pid, None), 0)
-            chips.append(StockOverviewChipItem(
-                price_chip_id=None,
-                quantity=base_qty,
-                label=None,
-                price=None,
-            ))
+            buckets[base_price] = {
+                "normalized_price": base_price,
+                "price_chip_id": None,
+                "quantity": base_qty,
+                "chip_labels": ["Giá gốc"],
+                "source_chip_ids": [],
+            }
 
-            total_qty = base_qty
-
-            # Configured chip options
             for c in chips_map.get(pid, []):
                 qty = stock_map.get((pid, c["chip_id"]), 0)
-                total_qty += qty
-                chips.append(StockOverviewChipItem(
-                    price_chip_id=c["chip_id"],
-                    quantity=qty,
-                    label=c["label"],
-                    price=c["price"],
-                ))
+                normalized_price = normalize_price_value(c["price"])
+                bucket = buckets.get(normalized_price)
+                if bucket is None:
+                    bucket = {
+                        "normalized_price": normalized_price,
+                        "price_chip_id": c["chip_id"],
+                        "quantity": 0,
+                        "chip_labels": [],
+                        "source_chip_ids": [],
+                    }
+                    buckets[normalized_price] = bucket
+                bucket["quantity"] += qty
+                bucket["chip_labels"].append(c["label"])
+                bucket["source_chip_ids"].append(c["chip_id"])
+
+            chips = [
+                StockOverviewChipItem(
+                    normalized_price=b["normalized_price"],
+                    price_chip_id=b["price_chip_id"],
+                    quantity=b["quantity"],
+                    chip_labels=b["chip_labels"],
+                    source_chip_ids=b["source_chip_ids"],
+                    chip_label=", ".join(b["chip_labels"]) if b["chip_labels"] else None,
+                )
+                for b in sorted(buckets.values(), key=lambda x: x["normalized_price"])
+            ]
+            total_qty = sum(item.quantity for item in chips)
 
             result.append(StockOverviewItem(
                 product_id=pid,

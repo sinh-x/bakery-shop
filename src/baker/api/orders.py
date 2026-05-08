@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from baker.api.inventory_fifo import consume_fifo_items, normalize_price_chip
+from baker.api.inventory_fifo import consume_fifo_items, normalize_price_chip, resolve_price_bucket_chip_id
 from baker.db.connection import get_db
 from baker.logging import log_context
 from baker.models.order import Order, OrderItem, is_backward_transition, validate_transition
@@ -97,11 +97,11 @@ def _auto_decrement_stock(conn, order_id: int, order_ref: str):
     from baker.models.event import Event
 
     order_items = conn.execute(
-        """SELECT oi.product_id, oi.product_name, oi.quantity, oi.price_chip_id
+        """SELECT oi.product_id, oi.product_name, oi.quantity, oi.price_chip_id, oi.unit_price
            FROM order_items oi
            WHERE oi.order_id = ?
-             AND oi.product_id != ''
-              AND oi.is_gift = 0""",
+              AND oi.product_id != ''
+               AND oi.is_gift = 0""",
         (order_id,),
     ).fetchall()
 
@@ -124,7 +124,10 @@ def _auto_decrement_stock(conn, order_id: int, order_ref: str):
 
         product_id = product_row["id"]
         qty = item["quantity"]
-        chip_id = normalize_price_chip(conn, product_id, item["price_chip_id"])
+        try:
+            chip_id = resolve_price_bucket_chip_id(conn, product_id, int(item["unit_price"]))
+        except HTTPException:
+            chip_id = normalize_price_chip(conn, product_id, item["price_chip_id"])
 
         attr_row = conn.execute(
             """SELECT value FROM product_attribute_values

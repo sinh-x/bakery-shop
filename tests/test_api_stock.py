@@ -111,6 +111,23 @@ def test_stock_overview_returns_per_chip_aggregates_without_uuids(api_client):
     assert all("uuid" not in entry for entry in item["per_chip"])
 
 
+def test_stock_overview_groups_base_and_same_price_chip_into_one_bucket(api_client):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "chip 130", 10000)
+    api_client.post("/api/products/1/stock/restock", json={"quantity": 2})
+    api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 3, "price_chip_id": chip_id},
+    )
+
+    resp = api_client.get("/api/stock/overview")
+    assert resp.status_code == 200
+    item = next(row for row in resp.json() if row["product_id"] == 1)
+    same_price_buckets = [b for b in item["per_chip"] if b["normalized_price"] == 10000]
+    assert len(same_price_buckets) == 1
+    assert same_price_buckets[0]["quantity"] == 5
+
+
 def test_delete_chip_blocked_when_stock_exists(api_client):
     chip_id = _create_chip(api_client, 1, "Guard", 18000)
     restock = api_client.post(
@@ -121,3 +138,21 @@ def test_delete_chip_blocked_when_stock_exists(api_client):
 
     delete_resp = api_client.delete(f"/api/products/1/price-chips/{chip_id}")
     assert delete_resp.status_code == 422
+
+
+def test_restock_accepts_normalized_price_and_targets_price_bucket(api_client):
+    chip_id = _create_chip(api_client, 1, "130", 13000)
+
+    resp = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 4, "normalized_price": 13000},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["normalized_price"] == 13000
+
+    with get_db() as conn:
+        lot = conn.execute(
+            "SELECT price_chip_id, quantity FROM stock_lots WHERE product_id = 1 ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert lot["price_chip_id"] in {None, chip_id}
+        assert lot["quantity"] == 4
