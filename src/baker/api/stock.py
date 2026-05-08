@@ -8,10 +8,8 @@ from baker.api.inventory_fifo import (
     available_quantity,
     consume_fifo_items,
     create_lot_with_items,
-    normalized_price_for_chip,
-    normalize_price_chip,
     normalize_price_value,
-    resolve_price_bucket_chip_id,
+    resolve_price_bucket_option,
 )
 from baker.db.connection import get_db
 from baker.models.event import Event
@@ -150,12 +148,12 @@ def restock_product(product_id: int, body: RestockRequest):
         if not product:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-        if body.normalized_price is not None:
-            chip_id = resolve_price_bucket_chip_id(conn, product_id, body.normalized_price)
-            normalized_price = int(body.normalized_price)
-        else:
-            chip_id = normalize_price_chip(conn, product_id, body.price_chip_id)
-            normalized_price = normalized_price_for_chip(conn, product_id, chip_id)
+        chip_id, normalized_price = resolve_price_bucket_option(
+            conn,
+            product_id,
+            body.normalized_price,
+            body.price_chip_id,
+        )
         lot_id = create_lot_with_items(conn, product_id, chip_id, body.quantity)
 
         _log_stock_movement(
@@ -201,12 +199,12 @@ def waste_stock(product_id: int, body: WasteRequest):
         if not product:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-        if body.normalized_price is not None:
-            chip_id = resolve_price_bucket_chip_id(conn, product_id, body.normalized_price)
-            normalized_price = int(body.normalized_price)
-        else:
-            chip_id = normalize_price_chip(conn, product_id, body.price_chip_id)
-            normalized_price = normalized_price_for_chip(conn, product_id, chip_id)
+        chip_id, normalized_price = resolve_price_bucket_option(
+            conn,
+            product_id,
+            body.normalized_price,
+            body.price_chip_id,
+        )
 
         movement_id = _log_stock_movement(
             conn,
@@ -243,12 +241,12 @@ def adjust_stock(product_id: int, body: AdjustRequest):
         if not product:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-        if body.normalized_price is not None:
-            chip_id = resolve_price_bucket_chip_id(conn, product_id, body.normalized_price)
-            normalized_price = int(body.normalized_price)
-        else:
-            chip_id = normalize_price_chip(conn, product_id, body.price_chip_id)
-            normalized_price = normalized_price_for_chip(conn, product_id, chip_id)
+        chip_id, normalized_price = resolve_price_bucket_option(
+            conn,
+            product_id,
+            body.normalized_price,
+            body.price_chip_id,
+        )
         old_qty = available_quantity(conn, product_id, chip_id)
         delta = body.quantity - old_qty
         if delta > 0:

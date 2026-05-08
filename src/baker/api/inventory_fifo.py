@@ -63,6 +63,21 @@ def resolve_price_bucket_chip_id(conn, product_id: int, normalized_price: int) -
     raise HTTPException(status_code=422, detail="Mức giá không hợp lệ cho sản phẩm")
 
 
+def resolve_price_bucket_option(
+    conn,
+    product_id: int,
+    normalized_price: int | None,
+    price_chip_id: int | None,
+) -> tuple[int | None, int]:
+    if normalized_price is not None:
+        resolved_chip_id = resolve_price_bucket_chip_id(conn, product_id, normalized_price)
+        return resolved_chip_id, int(normalized_price)
+
+    resolved_chip_id = normalize_price_chip(conn, product_id, price_chip_id)
+    resolved_price = normalized_price_for_chip(conn, product_id, resolved_chip_id)
+    return resolved_chip_id, resolved_price
+
+
 def create_lot_with_items(conn, product_id: int, price_chip_id: int | None, quantity: int) -> int:
     """Create one stock lot and N available inventory items."""
     cursor = conn.execute(

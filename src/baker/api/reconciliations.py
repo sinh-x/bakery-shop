@@ -7,9 +7,8 @@ from pydantic import BaseModel, Field
 
 from baker.api.inventory_fifo import (
     consume_fifo_items,
-    normalize_price_chip,
     normalize_price_value,
-    resolve_price_bucket_chip_id,
+    resolve_price_bucket_option,
 )
 from baker.api.orders import _auto_decrement_stock
 from baker.db.connection import get_db
@@ -52,6 +51,16 @@ def _resolved_sale_qty(line: ReconciliationLineIn) -> int:
     if line.sale_rows:
         return sum(row.quantity for row in line.sale_rows)
     return line.sale_qty
+
+
+def _resolve_line_chip_id(conn, line: ReconciliationLineIn) -> int | None:
+    chip_id, _ = resolve_price_bucket_option(
+        conn,
+        line.product_id,
+        line.normalized_price,
+        line.price_chip_id,
+    )
+    return chip_id
 
 
 def _load_display_products(conn) -> list[dict]:
@@ -172,48 +181,9 @@ def _validate_submit(payload: ReconciliationSubmitIn):
     lines_missing_reason: list[int] = []
 
     for line in payload.lines:
-        if line.expected_qty < 0 or line.counted_qty < 0:
-            raise HTTPException(status_code=422, detail="Số lượng tồn không được âm")
-        if line.sale_qty < 0 or line.waste_qty < 0:
-            raise HTTPException(status_code=422, detail="Số lượng bán và hao hụt không được âm")
-
-        if line.sale_rows:
-            for row_index, sale_row in enumerate(line.sale_rows, start=1):
-                if sale_row.quantity <= 0:
-                    raise HTTPException(
-                        status_code=422,
-                        detail=f"Sản phẩm #{line.product_id}, dòng bán #{row_index}: số lượng phải lớn hơn 0",
-                    )
-                if sale_row.unit_price <= 0:
-                    raise HTTPException(
-                        status_code=422,
-                        detail=f"Sản phẩm #{line.product_id}, dòng bán #{row_index}: đơn giá phải lớn hơn 0",
-                    )
-                if sale_row.payment_method not in {"cash", "transfer"}:
-                    raise HTTPException(
-                        status_code=422,
-                        detail=f"Sản phẩm #{line.product_id}, dòng bán #{row_index}: phương thức thanh toán không hợp lệ",
-                    )
-
-        missing_qty = line.expected_qty - line.counted_qty
+        _validate_line_sale_rows(line)
+        _validate_line_constraints(line)
         resolved_sale_qty = _resolved_sale_qty(line)
-        if missing_qty < 0:
-            raise HTTPException(status_code=422, detail="Số đếm thực tế không được lớn hơn số tồn dự kiến")
-        if missing_qty > 0 and line.waste_qty > missing_qty:
-            raise HTTPException(
-                status_code=422,
-                detail="Số hao hụt vượt quá số thiếu. Vui lòng vào màn hình 'Nhập hàng' để bổ sung tồn kho trước.",
-            )
-        if missing_qty > 0 and resolved_sale_qty + line.waste_qty != missing_qty:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"Sản phẩm #{line.product_id} thiếu phải tách đúng: "
-                    "bán + hao hụt = số thiếu"
-                ),
-            )
-        if missing_qty == 0 and (resolved_sale_qty > 0 or line.waste_qty > 0):
-            raise HTTPException(status_code=422, detail="Sản phẩm không thiếu thì không được nhập bán hoặc hao hụt")
 
         if resolved_sale_qty > 0:
             has_sale = True
@@ -234,6 +204,52 @@ def _validate_submit(payload: ReconciliationSubmitIn):
         session_reason = (payload.waste_reason or "").strip()
         if not session_reason:
             raise HTTPException(status_code=422, detail="Sản phẩm có hao hụt phải nhập lý do")
+
+
+def _validate_line_sale_rows(line: ReconciliationLineIn) -> None:
+    if line.expected_qty < 0 or line.counted_qty < 0:
+        raise HTTPException(status_code=422, detail="Số lượng tồn không được âm")
+    if line.sale_qty < 0 or line.waste_qty < 0:
+        raise HTTPException(status_code=422, detail="Số lượng bán và hao hụt không được âm")
+
+    for row_index, sale_row in enumerate(line.sale_rows, start=1):
+        if sale_row.quantity <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Sản phẩm #{line.product_id}, dòng bán #{row_index}: số lượng phải lớn hơn 0",
+            )
+        if sale_row.unit_price <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Sản phẩm #{line.product_id}, dòng bán #{row_index}: đơn giá phải lớn hơn 0",
+            )
+        if sale_row.payment_method not in {"cash", "transfer"}:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Sản phẩm #{line.product_id}, dòng bán #{row_index}: phương thức thanh toán không hợp lệ",
+            )
+
+
+def _validate_line_constraints(line: ReconciliationLineIn) -> None:
+    missing_qty = line.expected_qty - line.counted_qty
+    resolved_sale_qty = _resolved_sale_qty(line)
+    if missing_qty < 0:
+        raise HTTPException(status_code=422, detail="Số đếm thực tế không được lớn hơn số tồn dự kiến")
+    if missing_qty > 0 and line.waste_qty > missing_qty:
+        raise HTTPException(
+            status_code=422,
+            detail="Số hao hụt vượt quá số thiếu. Vui lòng vào màn hình 'Nhập hàng' để bổ sung tồn kho trước.",
+        )
+    if missing_qty > 0 and resolved_sale_qty + line.waste_qty != missing_qty:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Sản phẩm #{line.product_id} thiếu phải tách đúng: "
+                "bán + hao hụt = số thiếu"
+            ),
+        )
+    if missing_qty == 0 and (resolved_sale_qty > 0 or line.waste_qty > 0):
+        raise HTTPException(status_code=422, detail="Sản phẩm không thiếu thì không được nhập bán hoặc hao hụt")
 
 
 def _create_sale_orders(
@@ -267,10 +283,7 @@ def _create_sale_orders(
             row_payloads = []
 
         for row_payload in row_payloads:
-            if line.normalized_price is not None:
-                chip_id = resolve_price_bucket_chip_id(conn, line.product_id, line.normalized_price)
-            else:
-                chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
+            chip_id = _resolve_line_chip_id(conn, line)
             latest = latest_by_key[(line.product_id, chip_id)]
             order = Order(
                 customer_name="Đối soát tồn kho",
@@ -366,10 +379,7 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
                 }
 
         for line in payload.lines:
-            if line.normalized_price is not None:
-                chip_id = resolve_price_bucket_chip_id(conn, line.product_id, line.normalized_price)
-            else:
-                chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
+            chip_id = _resolve_line_chip_id(conn, line)
             latest = latest_by_key.get((line.product_id, chip_id))
             if latest is None:
                 raise HTTPException(status_code=422, detail="Có sản phẩm không còn trong danh sách trưng bày")
@@ -401,10 +411,7 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
             if line.waste_qty <= 0:
                 continue
 
-            if line.normalized_price is not None:
-                chip_id = resolve_price_bucket_chip_id(conn, line.product_id, line.normalized_price)
-            else:
-                chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
+            chip_id = _resolve_line_chip_id(conn, line)
 
             per_line_reason = (line.waste_reason or "").strip() or (payload.waste_reason or "").strip()
             movement_cursor = conn.execute(
@@ -461,10 +468,7 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
         )
 
         for line_index, line in enumerate(payload.lines):
-            if line.normalized_price is not None:
-                chip_id = resolve_price_bucket_chip_id(conn, line.product_id, line.normalized_price)
-            else:
-                chip_id = normalize_price_chip(conn, line.product_id, line.price_chip_id)
+            chip_id = _resolve_line_chip_id(conn, line)
             per_line_reason = (line.waste_reason or "").strip() or (payload.waste_reason or "").strip()
             line_sale_rows = sale_rows_by_line[line_index]
             linked_order_item_id = line_sale_rows[0]["order_item_id"] if line_sale_rows else None
