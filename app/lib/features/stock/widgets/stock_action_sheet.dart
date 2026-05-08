@@ -31,7 +31,7 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
   final _formKey = GlobalKey<FormState>();
 
   bool _isLoading = false;
-  int? _selectedPriceChipId;
+  int? _selectedNormalizedPrice;
 
   String get _title {
     switch (widget.actionType) {
@@ -66,8 +66,8 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedPriceChipId = widget.item.perChip.isNotEmpty
-        ? widget.item.perChip.first.priceChipId
+    _selectedNormalizedPrice = widget.item.perChip.isNotEmpty
+        ? widget.item.perChip.first.normalizedPrice
         : null;
   }
 
@@ -90,21 +90,21 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
             widget.item.productId,
             quantity,
             note: _noteController.text,
-            priceChipId: _selectedPriceChipId,
+            normalizedPrice: _selectedNormalizedPrice,
           );
         case ActionType.waste:
           await service.waste(
             widget.item.productId,
             quantity,
             _reasonController.text,
-            priceChipId: _selectedPriceChipId,
+            normalizedPrice: _selectedNormalizedPrice,
           );
         case ActionType.adjust:
           await service.adjust(
             widget.item.productId,
             quantity,
             _reasonController.text,
-            priceChipId: _selectedPriceChipId,
+            normalizedPrice: _selectedNormalizedPrice,
           );
       }
       widget.onDone();
@@ -188,8 +188,8 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                 const SizedBox(height: 16),
 
                 if (widget.item.perChip.isNotEmpty) ...[
-                  DropdownButtonFormField<int?>(
-                    initialValue: _selectedPriceChipId,
+                  DropdownButtonFormField<int>(
+                    initialValue: _selectedNormalizedPrice,
                     decoration: const InputDecoration(
                       labelText: VN.tuyChonGia,
                       border: OutlineInputBorder(),
@@ -198,19 +198,18 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                     items: widget.item.perChip
                         .map(
                           (option) {
-                            final price = option.price ?? widget.item.basePrice;
-                            final priceText = price != null
-                                ? '${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}đ'
-                                : 'N/A';
-                            return DropdownMenuItem<int?>(
-                              value: option.priceChipId,
-                              child: Text('${option.label} - $priceText (${option.quantity})'),
+                            final price = option.normalizedPrice;
+                            final priceText =
+                                '${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}đ';
+                            return DropdownMenuItem<int>(
+                              value: option.normalizedPrice,
+                              child: Text('${option.displayLabel} - $priceText (${option.quantity})'),
                             );
                           },
                         )
                         .toList(),
                     onChanged: (value) {
-                      setState(() => _selectedPriceChipId = value);
+                      setState(() => _selectedNormalizedPrice = value);
                     },
                   ),
                   const SizedBox(height: 12),

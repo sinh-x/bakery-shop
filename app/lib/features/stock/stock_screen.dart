@@ -342,7 +342,9 @@ class _StockItemCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: Colors.grey.shade300),
                       ),
-                      child: Text('${option.label}: ${option.quantity}'),
+                      child: Text(
+                        '${option.displayLabel} (${option.normalizedPrice}): ${option.quantity}',
+                      ),
                     ),
                   )
                   .toList(),

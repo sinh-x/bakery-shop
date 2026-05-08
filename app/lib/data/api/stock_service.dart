@@ -42,29 +42,41 @@ class StockOverviewItem {
 }
 
 class StockOverviewOption {
-  final int? priceChipId;
+  final int normalizedPrice;
   final int quantity;
-  final String label;
-  final double? price;
+  final List<String> chipLabels;
+  final String? chipLabel;
 
   StockOverviewOption({
-    required this.priceChipId,
+    required this.normalizedPrice,
     required this.quantity,
-    required this.label,
-    required this.price,
+    required this.chipLabels,
+    required this.chipLabel,
   });
 
+  String get displayLabel {
+    if (chipLabel != null && chipLabel!.trim().isNotEmpty) {
+      return chipLabel!.trim();
+    }
+    if (chipLabels.isNotEmpty) {
+      return chipLabels.join(', ');
+    }
+    return 'Giá gốc';
+  }
+
   factory StockOverviewOption.fromJson(Map<String, dynamic> json) {
-    final chipId = json['price_chip_id'] as int?;
-    final rawLabel = json['label'] as String?;
-    final parsedLabel = rawLabel == null || rawLabel.trim().isEmpty
-        ? null
-        : rawLabel.trim();
+    final labels = (json['chip_labels'] as List<dynamic>? ?? <dynamic>[])
+        .map((entry) => entry.toString().trim())
+        .where((entry) => entry.isNotEmpty)
+        .toList();
+    final fallbackPrice = (json['price'] as num?)?.toInt();
+    final normalizedPrice =
+        (json['normalized_price'] as num?)?.toInt() ?? fallbackPrice ?? 0;
     return StockOverviewOption(
-      priceChipId: chipId,
+      normalizedPrice: normalizedPrice,
       quantity: json['quantity'] as int? ?? 0,
-      label: parsedLabel ?? (chipId == null ? 'Giá gốc' : 'Tùy chọn #$chipId'),
-      price: (json['price'] as num?)?.toDouble(),
+      chipLabels: labels,
+      chipLabel: (json['chip_label'] as String?)?.trim(),
     );
   }
 }
@@ -84,11 +96,15 @@ class StockService {
     int productId,
     int quantity, {
     String note = '',
-    int? priceChipId,
+    int? normalizedPrice,
   }) async {
     await _dio.post(
       '/api/products/$productId/stock/restock',
-      data: {'quantity': quantity, 'note': note, 'price_chip_id': priceChipId},
+      data: {
+        'quantity': quantity,
+        'note': note,
+        'normalized_price': normalizedPrice,
+      },
     );
   }
 
@@ -96,14 +112,14 @@ class StockService {
     int productId,
     int quantity,
     String reason, {
-    int? priceChipId,
+    int? normalizedPrice,
   }) async {
     await _dio.post(
       '/api/products/$productId/stock/waste',
       data: {
         'quantity': quantity,
         'reason': reason,
-        'price_chip_id': priceChipId,
+        'normalized_price': normalizedPrice,
       },
     );
   }
@@ -112,14 +128,14 @@ class StockService {
     int productId,
     int quantity,
     String reason, {
-    int? priceChipId,
+    int? normalizedPrice,
   }) async {
     await _dio.post(
       '/api/products/$productId/stock/adjust',
       data: {
         'quantity': quantity,
         'reason': reason,
-        'price_chip_id': priceChipId,
+        'normalized_price': normalizedPrice,
       },
     );
   }
