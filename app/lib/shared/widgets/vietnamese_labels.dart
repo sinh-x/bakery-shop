@@ -431,7 +431,7 @@ class VN {
   static const xoa = 'Xóa';
   static const thanhToanThanhCong = 'Thanh toán thành công';
   static const loiKhongXacDinhTuMayChu = 'Lỗi không xác định từ máy chủ';
-  static const loiMayChu = 'Loi may chu';
+  static const loiMayChu = 'Lỗi máy chủ';
   static const taiLai = 'Tải lại';
   static const khongCoSanPham = 'Chưa có sản phẩm';
   static const trongLuong = 'Trọng lượng';
@@ -529,7 +529,7 @@ class VN {
   static const xacNhanNhapHang = 'Nhập hàng';
   static const khongCoSanPhamTonKho = 'Không có sản phẩm tồn kho';
   static const capNhatThanhCong = 'Cập nhật thành công';
-  static const loiHeThong = 'Loi he thong';
+  static const loiHeThong = 'Lỗi hệ thống';
   static const doiSoatTonKhoHomNay = 'Đối soát tồn kho hôm nay';
   static const nhanVien = 'Nhân viên';
   static const ngayDoiSoat = 'Ngày đối soát';

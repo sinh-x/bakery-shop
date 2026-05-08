@@ -62,5 +62,32 @@ void main() {
         isNot(contains('DioException')),
       );
     });
+
+    test('returns VN.apiError when DioException response is null', () {
+      final error = DioException(
+        requestOptions: RequestOptions(path: '/api/orders'),
+      );
+
+      expect(resolvePosCheckoutErrorMessage(error), VN.apiError);
+    });
+
+    test('returns VN.loiMayChu for non-422 server responses', () {
+      final error = DioException(
+        requestOptions: RequestOptions(path: '/api/orders'),
+        response: Response(
+          requestOptions: RequestOptions(path: '/api/orders'),
+          statusCode: 500,
+          data: <String, dynamic>{'detail': 'Internal Server Error'},
+        ),
+      );
+
+      expect(resolvePosCheckoutErrorMessage(error), VN.loiMayChu);
+    });
+
+    test('returns VN.loiHeThong for non-Dio exceptions', () {
+      final error = Exception('unexpected');
+
+      expect(resolvePosCheckoutErrorMessage(error), VN.loiHeThong);
+    });
   });
 }
