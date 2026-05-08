@@ -34,8 +34,18 @@ class ReconciliationDraftProduct {
     required this.expectedQty,
     required this.basePrice,
     required this.priceChips,
-    this.options = const <ReconciliationDraftOption>[],
-  });
+    List<ReconciliationDraftOption> options =
+        const <ReconciliationDraftOption>[],
+  }) : options = options.isEmpty
+           ? [
+               ReconciliationDraftOption(
+                 productId: productId,
+                 priceChipId: null,
+                 chipLabel: 'Gia goc',
+                 expectedQty: expectedQty,
+               ),
+             ]
+           : options;
 
   final int productId;
   final String name;

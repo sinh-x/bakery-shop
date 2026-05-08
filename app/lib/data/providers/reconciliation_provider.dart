@@ -33,7 +33,11 @@ class ReconciliationSaleRowInput {
 }
 
 class ReconciliationSaleRowError {
-  ReconciliationSaleRowError({this.quantity, this.unitPrice, this.paymentMethod});
+  ReconciliationSaleRowError({
+    this.quantity,
+    this.unitPrice,
+    this.paymentMethod,
+  });
 
   final String? quantity;
   final String? unitPrice;
@@ -62,11 +66,12 @@ class ReconciliationState {
   }) : countedQtyByOption = countedQtyByOption ?? <String, int>{},
        wasteQtyByOption = wasteQtyByOption ?? <String, int>{},
        wasteReasonByOption = wasteReasonByOption ?? <String, String>{},
-       saleRowsByOption = saleRowsByOption ??
-            <String, List<ReconciliationSaleRowInput>>{},
+       saleRowsByOption =
+           saleRowsByOption ?? <String, List<ReconciliationSaleRowInput>>{},
        optionErrors = optionErrors ?? <String, String>{},
        saleRowErrorsByOption =
-            saleRowErrorsByOption ?? <String, List<ReconciliationSaleRowError>>{};
+           saleRowErrorsByOption ??
+           <String, List<ReconciliationSaleRowError>>{};
 
   final bool isLoading;
   final bool isSubmitting;
@@ -128,8 +133,7 @@ class ReconciliationState {
       wasteReason: wasteReason ?? this.wasteReason,
       countedQtyByOption: countedQtyByOption ?? this.countedQtyByOption,
       wasteQtyByOption: wasteQtyByOption ?? this.wasteQtyByOption,
-      wasteReasonByOption:
-          wasteReasonByOption ?? this.wasteReasonByOption,
+      wasteReasonByOption: wasteReasonByOption ?? this.wasteReasonByOption,
       saleRowsByOption: saleRowsByOption ?? this.saleRowsByOption,
       optionErrors: clearInlineErrors
           ? <String, String>{}
@@ -142,7 +146,7 @@ class ReconciliationState {
 }
 
 String reconciliationOptionKey(int productId, int? priceChipId) {
-  return '$productId:${priceChipId ?? 'base'}';
+  return '$productId:$priceChipId';
 }
 
 String _normalizeOptionKey(Object optionKeyOrProductId) {
@@ -277,14 +281,14 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
 
   void setSaleRowQty(Object optionKeyOrProductId, int rowIndex, int value) {
     final optionKey = _normalizeOptionKey(optionKeyOrProductId);
-    _updateSaleRow(
-      optionKey,
-      rowIndex,
-      (row) => row.copyWith(quantity: value),
-    );
+    _updateSaleRow(optionKey, rowIndex, (row) => row.copyWith(quantity: value));
   }
 
-  void setSaleRowUnitPrice(Object optionKeyOrProductId, int rowIndex, String value) {
+  void setSaleRowUnitPrice(
+    Object optionKeyOrProductId,
+    int rowIndex,
+    String value,
+  ) {
     final optionKey = _normalizeOptionKey(optionKeyOrProductId);
     _updateSaleRow(
       optionKey,
@@ -293,7 +297,11 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
-  void setSaleRowPaymentMethod(Object optionKeyOrProductId, int rowIndex, String? method) {
+  void setSaleRowPaymentMethod(
+    Object optionKeyOrProductId,
+    int rowIndex,
+    String? method,
+  ) {
     final optionKey = _normalizeOptionKey(optionKeyOrProductId);
     _updateSaleRow(
       optionKey,
@@ -302,7 +310,11 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
-  void fillSaleRowPriceFromChip(Object optionKeyOrProductId, int rowIndex, double unitPrice) {
+  void fillSaleRowPriceFromChip(
+    Object optionKeyOrProductId,
+    int rowIndex,
+    double unitPrice,
+  ) {
     final optionKey = _normalizeOptionKey(optionKeyOrProductId);
     setSaleRowUnitPrice(optionKey, rowIndex, unitPrice.toStringAsFixed(0));
   }
@@ -383,32 +395,41 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
 
     final lines = draft.products.expand((product) {
       return product.options.map((option) {
-      final optionKey = reconciliationOptionKey(product.productId, option.priceChipId);
-      final rows = state.saleRowsByOption[optionKey] ??
-          const <ReconciliationSaleRowInput>[];
-      final activeRows = rows.where((row) => row.quantity > 0).toList();
-      final saleQty = activeRows.fold<int>(0, (sum, row) => sum + row.quantity);
-      final wasteQty = state.wasteQtyByOption[optionKey] ?? 0;
-      return ReconciliationSubmitLine(
-        productId: product.productId,
-        priceChipId: option.priceChipId,
-        expectedQty: option.expectedQty,
-        countedQty: state.countedQtyByOption[optionKey] ?? 0,
-        saleQty: saleQty,
-        wasteQty: wasteQty,
-        manualUnitPrice: null,
-        wasteReason: wasteQty > 0 ? state.wasteReasonByOption[optionKey]?.trim() : null,
-        saleRows: activeRows
-            .map(
-              (row) => ReconciliationSubmitSaleRow(
-                quantity: row.quantity,
-                unitPrice: double.tryParse(row.unitPrice.trim()) ?? 0,
-                paymentMethod: row.paymentMethod!,
-              ),
-            )
-            .toList(),
-      );
-    });
+        final optionKey = reconciliationOptionKey(
+          product.productId,
+          option.priceChipId,
+        );
+        final rows =
+            state.saleRowsByOption[optionKey] ??
+            const <ReconciliationSaleRowInput>[];
+        final activeRows = rows.where((row) => row.quantity > 0).toList();
+        final saleQty = activeRows.fold<int>(
+          0,
+          (sum, row) => sum + row.quantity,
+        );
+        final wasteQty = state.wasteQtyByOption[optionKey] ?? 0;
+        return ReconciliationSubmitLine(
+          productId: product.productId,
+          priceChipId: option.priceChipId,
+          expectedQty: option.expectedQty,
+          countedQty: state.countedQtyByOption[optionKey] ?? 0,
+          saleQty: saleQty,
+          wasteQty: wasteQty,
+          manualUnitPrice: null,
+          wasteReason: wasteQty > 0
+              ? state.wasteReasonByOption[optionKey]?.trim()
+              : null,
+          saleRows: activeRows
+              .map(
+                (row) => ReconciliationSubmitSaleRow(
+                  quantity: row.quantity,
+                  unitPrice: double.tryParse(row.unitPrice.trim()) ?? 0,
+                  paymentMethod: row.paymentMethod!,
+                ),
+              )
+              .toList(),
+        );
+      });
     }).toList();
 
     state = state.copyWith(
@@ -452,9 +473,14 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     }
   }
 
-  _ValidationResult? _validate(ReconciliationState currentState, String staffName) {
+  _ValidationResult? _validate(
+    ReconciliationState currentState,
+    String staffName,
+  ) {
     if (staffName.isEmpty) {
-      return _ValidationResult('Vui lòng chọn tên nhân viên trong Cài đặt trước khi đối soát');
+      return _ValidationResult(
+        'Vui lòng chọn tên nhân viên trong Cài đặt trước khi đối soát',
+      );
     }
     final draft = currentState.draft;
     if (draft == null) {
@@ -466,72 +492,78 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
 
     for (final product in draft.products) {
       for (final option in product.options) {
-      final optionKey = reconciliationOptionKey(product.productId, option.priceChipId);
-      final counted = currentState.countedQtyByOption[optionKey] ?? 0;
-      final rows = currentState.saleRowsByOption[optionKey] ??
-          const <ReconciliationSaleRowInput>[];
-      final sale = rows.fold<int>(0, (sum, row) => sum + row.quantity);
-      final waste = currentState.wasteQtyByOption[optionKey] ?? 0;
-      if (counted < 0 || sale < 0 || waste < 0) {
-        return _ValidationResult('Số lượng không được âm');
-      }
-      if (counted > option.expectedQty) {
-        productErrors[optionKey] =
-            'Số đếm thực tế không được lớn hơn số tồn dự kiến';
-        continue;
-      }
-
-      final missing = option.expectedQty - counted;
-      if (missing < 0) {
-        productErrors[optionKey] =
-            'Số đếm thực tế không được lớn hơn số tồn dự kiến';
-        continue;
-      }
-      if (waste > missing) {
-        productErrors[optionKey] =
-            'Số hao hụt vượt quá số thiếu. Vui lòng vào màn hình \'Nhập hàng\' để bổ sung tồn kho trước.';
-        continue;
-      }
-      if (missing > 0 && sale + waste != missing) {
-        productErrors[optionKey] =
-            'Sản phẩm thiếu phải tách đúng: bán + hao hụt = số thiếu';
-      }
-
-      final itemErrors = <ReconciliationSaleRowError>[];
-      for (final row in rows) {
-        String? qtyError;
-        String? priceError;
-        String? methodError;
-        if (row.quantity < 0) {
-          qtyError = 'Số lượng không được âm';
-        }
-        if (row.quantity > 0) {
-          final parsedPrice = double.tryParse(row.unitPrice.trim());
-          if (parsedPrice == null || parsedPrice <= 0) {
-            priceError = 'Đơn giá phải lớn hơn 0';
-          }
-          if (row.paymentMethod != 'cash' && row.paymentMethod != 'transfer') {
-            methodError = 'Chọn phương thức';
-          }
-        }
-        itemErrors.add(
-          ReconciliationSaleRowError(
-            quantity: qtyError,
-            unitPrice: priceError,
-            paymentMethod: methodError,
-          ),
+        final optionKey = reconciliationOptionKey(
+          product.productId,
+          option.priceChipId,
         );
-      }
-      if (itemErrors.any((error) => error.hasError)) {
-        rowErrors[optionKey] = itemErrors;
-      }
-
-      if (waste > 0) {
-        final reason = (currentState.wasteReasonByOption[optionKey] ?? '').trim();
-        if (reason.isEmpty) {
-          productErrors[optionKey] = 'Sản phẩm có hao hụt phải nhập lý do';
+        final counted = currentState.countedQtyByOption[optionKey] ?? 0;
+        final rows =
+            currentState.saleRowsByOption[optionKey] ??
+            const <ReconciliationSaleRowInput>[];
+        final sale = rows.fold<int>(0, (sum, row) => sum + row.quantity);
+        final waste = currentState.wasteQtyByOption[optionKey] ?? 0;
+        if (counted < 0 || sale < 0 || waste < 0) {
+          return _ValidationResult('Số lượng không được âm');
         }
-      }
+        if (counted > option.expectedQty) {
+          productErrors[optionKey] =
+              'Số đếm thực tế không được lớn hơn số tồn dự kiến';
+          continue;
+        }
+
+        final missing = option.expectedQty - counted;
+        if (missing < 0) {
+          productErrors[optionKey] =
+              'Số đếm thực tế không được lớn hơn số tồn dự kiến';
+          continue;
+        }
+        if (waste > missing) {
+          productErrors[optionKey] =
+              'Số hao hụt vượt quá số thiếu. Vui lòng vào màn hình \'Nhập hàng\' để bổ sung tồn kho trước.';
+          continue;
+        }
+        if (missing > 0 && sale + waste != missing) {
+          productErrors[optionKey] =
+              'Sản phẩm thiếu phải tách đúng: bán + hao hụt = số thiếu';
+        }
+
+        final itemErrors = <ReconciliationSaleRowError>[];
+        for (final row in rows) {
+          String? qtyError;
+          String? priceError;
+          String? methodError;
+          if (row.quantity < 0) {
+            qtyError = 'Số lượng không được âm';
+          }
+          if (row.quantity > 0) {
+            final parsedPrice = double.tryParse(row.unitPrice.trim());
+            if (parsedPrice == null || parsedPrice <= 0) {
+              priceError = 'Đơn giá phải lớn hơn 0';
+            }
+            if (row.paymentMethod != 'cash' &&
+                row.paymentMethod != 'transfer') {
+              methodError = 'Chọn phương thức';
+            }
+          }
+          itemErrors.add(
+            ReconciliationSaleRowError(
+              quantity: qtyError,
+              unitPrice: priceError,
+              paymentMethod: methodError,
+            ),
+          );
+        }
+        if (itemErrors.any((error) => error.hasError)) {
+          rowErrors[optionKey] = itemErrors;
+        }
+
+        if (waste > 0) {
+          final reason = (currentState.wasteReasonByOption[optionKey] ?? '')
+              .trim();
+          if (reason.isEmpty) {
+            productErrors[optionKey] = 'Sản phẩm có hao hụt phải nhập lý do';
+          }
+        }
       }
     }
 
@@ -564,7 +596,8 @@ class _ValidationResult {
   _ValidationResult(
     this.message, {
     this.optionErrors = const <String, String>{},
-    this.saleRowErrorsByOption = const <String, List<ReconciliationSaleRowError>>{},
+    this.saleRowErrorsByOption =
+        const <String, List<ReconciliationSaleRowError>>{},
   });
 
   final String message;
