@@ -18,6 +18,8 @@ DEPLOY_LOG="$REMOTE_PATH/deploy-history/deploy-history.log"
 source "$(dirname "$0")/lib.sh"
 load_env
 
+REMOTE_PRINTER_DEVICE="${BAKER_PRINTER_DEVICE:-/dev/usb/lp0}"
+
 DRY_RUN=0
 ROLLBACK=0
 FORCE=0
@@ -82,6 +84,33 @@ remote_cmd() {
   fi
 }
 
+check_remote_printer_device() {
+  if [ "$WEB_ONLY" -eq 1 ]; then
+    return 0
+  fi
+
+  echo "--- Printer device check ---"
+  if [ "$REMOTE_PRINTER_DEVICE" = "/dev/null" ]; then
+    echo "ERROR: BAKER_PRINTER_DEVICE is /dev/null. This discards print jobs while the API can still return success."
+    exit 1
+  fi
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "  Would verify on $REMOTE_HOST: test -c $REMOTE_PRINTER_DEVICE"
+    return 0
+  fi
+
+  if ! ssh "$REMOTE_HOST" "test -c '$REMOTE_PRINTER_DEVICE'"; then
+    echo "ERROR: Printer device not found on $REMOTE_HOST: $REMOTE_PRINTER_DEVICE"
+    echo "Check that the thermal printer is connected and the usblp device exists."
+    exit 1
+  fi
+
+  ssh "$REMOTE_HOST" "ls -l '$REMOTE_PRINTER_DEVICE'"
+  echo "  Will mount $REMOTE_PRINTER_DEVICE -> /dev/usb/lp0 in baker-prod"
+  echo ""
+}
+
 # --- Phase 1: Flutter web build (unless --backend-only) ---
 if [ "$BACKEND_ONLY" -eq 0 ]; then
   echo "=== Building Flutter web ==="
@@ -96,14 +125,15 @@ fi
 # --- Rollback flow ---
 if [ "$ROLLBACK" -eq 1 ]; then
   echo "=== Remote operations on $REMOTE_HOST ==="
+  check_remote_printer_device
   echo "--- Rolling back ---"
   remote_cmd "cd $REMOTE_PATH && docker compose --profile prod stop"
   echo "  Restoring previous web-build..."
   remote_cmd "cd $REMOTE_PATH && if [ -d web-build.prev ]; then mv web-build web-build.new && mv web-build.prev web-build && rm -rf web-build.new; fi"
   echo "  Rebuilding Docker image..."
-  remote_cmd "cd $REMOTE_PATH && docker compose --profile prod build baker-prod"
+  remote_cmd "cd $REMOTE_PATH && BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod build baker-prod"
   echo "  Restarting containers..."
-  remote_cmd "cd $REMOTE_PATH && docker compose --profile prod up -d"
+  remote_cmd "cd $REMOTE_PATH && BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod up -d"
   echo "  Running health check..."
   remote_cmd "curl -sf --max-time 10 http://localhost:2108/api/health || echo 'Health check failed'"
   echo "  Logging rollback..."
@@ -116,6 +146,7 @@ fi
 
 # --- Normal deploy flow (rsync-only, no git on lily) ---
 echo "=== Remote operations on $REMOTE_HOST ==="
+check_remote_printer_device
 
 # 1. Snapshot previous web-build/ BEFORE rsync (for rollback)
 if [ "$BACKEND_ONLY" -eq 0 ]; then
@@ -185,7 +216,7 @@ if [ "$WEB_ONLY" -eq 0 ]; then
   echo "--- Docker rebuild ---"
   REMOTE_UID=$(ssh "$REMOTE_HOST" "id -u" 2>/dev/null)
   echo "  Remote sinh UID: $REMOTE_UID"
-  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID docker compose --profile prod build baker-prod"
+  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod build baker-prod"
   echo ""
 fi
 
@@ -193,7 +224,7 @@ fi
 echo "--- Restarting containers ---"
 if [ "$WEB_ONLY" -eq 0 ]; then
   REMOTE_UID="${REMOTE_UID:-$(ssh "$REMOTE_HOST" "id -u" 2>/dev/null)}"
-  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID docker compose --profile prod up -d"
+  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod up -d"
 else
   remote_cmd "cd $REMOTE_PATH && docker compose --profile prod restart caddy"
 fi
@@ -225,7 +256,18 @@ else
 fi
 echo ""
 
-# 9. Deploy log
+# 9. Printer mount verification
+if [ "$WEB_ONLY" -eq 0 ]; then
+  echo "--- Printer mount verification ---"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    remote_exec "$REMOTE_HOST" "cd $REMOTE_PATH && docker compose --profile prod exec -T baker-prod ls -l /dev/usb/lp0 && curl -sf --max-time 5 http://localhost:2108/api/orders/print/status"
+  else
+    echo "  Would verify baker-prod /dev/usb/lp0 and /api/orders/print/status"
+  fi
+  echo ""
+fi
+
+# 10. Deploy log
 echo "--- Logging deployment ---"
 if [ "$DRY_RUN" -eq 0 ]; then
   log_deploy "$REMOTE_HOST" "$APP_VERSION" "$GIT_COMMIT" "success"
