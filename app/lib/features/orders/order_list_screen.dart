@@ -417,6 +417,44 @@ class _DateHeader extends StatelessWidget {
 /// 'awaiting_payment' is a virtual status for delivered+unpaid orders
 const _kanbanStatuses = ['new', 'confirmed', 'in_progress', 'ready', 'to_deliver', 'awaiting_payment'];
 
+/// Groups active orders into Kanban columns.
+///
+/// Handles virtual columns:
+/// - 'ready' = status=ready AND is pickup (not bus/door)
+/// - 'to_deliver' = status=ready AND deliveryType is bus or door
+/// - 'awaiting_payment' = status=delivered AND not paid
+///
+/// Terminal statuses (completed, cancelled) are not included in any column.
+Map<String, List<Order>> groupOrdersByKanbanStatus(List<Order> orders) {
+  final result = <String, List<Order>>{};
+  for (final status in _kanbanStatuses) {
+    if (status == 'to_deliver') {
+      // Ready orders that need delivery (bus/door-to-door)
+      result[status] = orders
+          .where((o) =>
+              o.status == 'ready' &&
+              (o.deliveryType == 'bus' || o.deliveryType == 'door'))
+          .toList();
+    } else if (status == 'ready') {
+      // Ready orders excluding delivery ones (pickup only)
+      result[status] = orders
+          .where((o) =>
+              o.status == 'ready' &&
+              o.deliveryType != 'bus' &&
+              o.deliveryType != 'door')
+          .toList();
+    } else if (status == 'awaiting_payment') {
+      result[status] = orders
+          .where((o) => o.status == 'delivered' && !o.isPaid)
+          .toList();
+    } else {
+      result[status] =
+          orders.where((o) => o.status == status).toList();
+    }
+  }
+  return result;
+}
+
 class _KanbanBoard extends ConsumerWidget {
   const _KanbanBoard({required this.filteredOrders});
 
@@ -424,34 +462,7 @@ class _KanbanBoard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Group orders by status for active columns
-    // 'awaiting_payment' is a virtual column: delivered orders that are not paid
-    final ordersByStatus = <String, List<Order>>{};
-    for (final status in _kanbanStatuses) {
-      if (status == 'to_deliver') {
-        // Ready orders that need delivery (bus/door-to-door)
-        ordersByStatus[status] = filteredOrders
-            .where((o) =>
-                o.status == 'ready' &&
-                (o.deliveryType == 'bus' || o.deliveryType == 'door'))
-            .toList();
-      } else if (status == 'ready') {
-        // Ready orders excluding delivery ones (pickup only)
-        ordersByStatus[status] = filteredOrders
-            .where((o) =>
-                o.status == 'ready' &&
-                o.deliveryType != 'bus' &&
-                o.deliveryType != 'door')
-            .toList();
-      } else if (status == 'awaiting_payment') {
-        ordersByStatus[status] = filteredOrders
-            .where((o) => o.status == 'delivered' && !o.isPaid)
-            .toList();
-      } else {
-        ordersByStatus[status] =
-            filteredOrders.where((o) => o.status == status).toList();
-      }
-    }
+    final ordersByStatus = groupOrdersByKanbanStatus(filteredOrders);
 
     return ListView.builder(
       scrollDirection: Axis.horizontal,
