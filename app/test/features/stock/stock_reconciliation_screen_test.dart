@@ -14,9 +14,22 @@ class _FakeService extends ReconciliationService {
   _FakeService(this._draft) : super(Dio());
 
   final ReconciliationDraft _draft;
+  int submitCalls = 0;
 
   @override
   Future<ReconciliationDraft> getDraft() async => _draft;
+
+  @override
+  Future<ReconciliationSubmitResult> submit(
+    ReconciliationSubmitRequest request,
+  ) async {
+    submitCalls += 1;
+    return ReconciliationSubmitResult(
+      id: 1,
+      date: '2026-05-04',
+      message: 'Đã lưu đối soát thành công',
+    );
+  }
 }
 
 void main() {
@@ -208,5 +221,88 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('12000'), findsOneWidget);
+  });
+
+  testWidgets('invalid sale row keeps inline errors and collapsed error status', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _FakeService(
+      ReconciliationDraft(
+        date: '2026-05-04',
+        products: [
+          ReconciliationDraftProduct(
+            productId: 1,
+            name: 'Bánh kem dâu',
+            category: 'banh_kem',
+            expectedQty: 5,
+            basePrice: 100000,
+            priceChips: const [],
+          ),
+        ],
+      ),
+    );
+
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) => const StockReconciliationScreen(),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reconciliationServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Bánh kem dâu'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, '4');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.themDongBan));
+    await tester.pumpAndSettle();
+    final saleRow = find.ancestor(
+      of: find.text('${VN.dongBan} 1'),
+      matching: find.byType(Container),
+    );
+    await tester.enterText(
+      find.descendant(of: saleRow.first, matching: find.byType(TextField)).first,
+      '1',
+    );
+    await tester.enterText(_unitPriceFieldFinder(), '');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(FilledButton).first);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, VN.guiDoiSoat),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(service.submitCalls, 0);
+    expect(find.text('Đơn giá phải lớn hơn 0'), findsOneWidget);
+    expect(find.text('Chọn phương thức'), findsOneWidget);
+
+    await tester.tap(find.byType(InkWell).first);
+    await tester.pumpAndSettle();
+    expect(find.text('Trạng thái: Có lỗi'), findsOneWidget);
+
+    await tester.tap(find.byType(InkWell).first);
+    await tester.pumpAndSettle();
+    expect(find.text('Đơn giá phải lớn hơn 0'), findsOneWidget);
+    expect(find.text('Chọn phương thức'), findsOneWidget);
   });
 }

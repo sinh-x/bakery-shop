@@ -468,6 +468,7 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                     final saleRowErrors =
                         state.saleRowErrorsByOption[optionKey] ??
                         const <ReconciliationSaleRowError>[];
+                    final showSaleEditor = missing > 0 || saleRows.isNotEmpty;
 
                     final countedController = _countedControllers[optionKey]!;
                     final wasteController = _wasteControllers[optionKey]!;
@@ -533,6 +534,8 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                               },
                             ),
                           ],
+                        ],
+                        if (showSaleEditor) ...[
                           const SizedBox(height: 8),
                           Align(
                             alignment: Alignment.centerLeft,
