@@ -1,3 +1,4 @@
+// ignore_for_file: unnecessary_lambdas
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/knowledge_service.dart';

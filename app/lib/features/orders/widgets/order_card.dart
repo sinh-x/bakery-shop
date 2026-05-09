@@ -1,3 +1,4 @@
+// ignore_for_file: prefer_const_declarations
 import 'dart:math';
 
 import 'package:cached_network_image/cached_network_image.dart';

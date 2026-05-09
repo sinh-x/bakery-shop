@@ -1,3 +1,4 @@
+// ignore_for_file: prefer_const_constructors
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;

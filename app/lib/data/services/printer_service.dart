@@ -1,3 +1,4 @@
+// ignore_for_file: unnecessary_lambdas, prefer_const_declarations
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';

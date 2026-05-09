@@ -1,3 +1,4 @@
+// ignore_for_file: prefer_const_constructors
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

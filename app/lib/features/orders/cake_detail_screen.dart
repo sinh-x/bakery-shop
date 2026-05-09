@@ -1,3 +1,4 @@
+// ignore_for_file: prefer_const_constructors, avoid_types_on_closure_parameters
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint, debugPrintStack;
