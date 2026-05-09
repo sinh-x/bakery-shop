@@ -28,7 +28,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
   Timer? _stockPollingTimer;
   bool _wasNavigatedAway = false;
   GoRouter? _goRouter;
-  DateTime? _lastStockRefreshAt;
+  DateTime _lastStockRefreshAt = DateTime.now();
 
   /// Filtered products based on selected category and search query.
   List<Product> _filteredProducts(List<Product> products) {
@@ -67,7 +67,6 @@ class _PosScreenState extends ConsumerState<PosScreen>
       const Duration(seconds: 60),
       (_) => _refreshStock(),
     );
-    _lastStockRefreshAt = DateTime.now();
   }
 
   @override
@@ -105,7 +104,6 @@ class _PosScreenState extends ConsumerState<PosScreen>
 
   String _refreshLabel() {
     final ts = _lastStockRefreshAt;
-    if (ts == null) return VN.stockNotUpdated;
     final hh = ts.hour.toString().padLeft(2, '0');
     final mm = ts.minute.toString().padLeft(2, '0');
     return VN.stockUpdatedAt('$hh:$mm');

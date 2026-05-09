@@ -10,6 +10,7 @@ import '../../providers/config_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/gift_config.dart';
+import '../../shared/utils/config_parsers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/vnd_units.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
@@ -433,12 +434,12 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     final shippingBusAsync = ref.watch(shippingFeeBusProvider);
     final shippingDoorAsync = ref.watch(shippingFeeDoorProvider);
     final double shippingBusDefault = shippingBusAsync.when(
-      data: (values) => _firstFeeOrFallback(values, 25000),
+      data: (values) => firstFeeOrFallback(values, 25000),
       loading: () => 25000,
       error: (_, _) => 25000,
     );
     final double shippingDoorDefault = shippingDoorAsync.when(
-      data: (values) => _firstFeeOrFallback(values, 20000),
+      data: (values) => firstFeeOrFallback(values, 20000),
       loading: () => 20000,
       error: (_, _) => 20000,
     );
@@ -879,16 +880,6 @@ class _SectionHeader extends StatelessWidget {
       ),
     );
   }
-}
-
-double _firstFeeOrFallback(List<String> values, double fallback) {
-  for (final value in values) {
-    final parsed = double.tryParse(value.trim());
-    if (parsed != null && parsed >= 0) {
-      return parsed;
-    }
-  }
-  return fallback;
 }
 
 // ── Extras section ────────────────────────────────────────────────────────────

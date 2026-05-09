@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:dio/dio.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/order.dart';
@@ -12,6 +11,7 @@ import '../../data/models/work_item.dart';
 import '../../providers/config_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
+import '../../shared/utils/config_parsers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
@@ -206,12 +206,12 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     final shippingBusAsync = ref.watch(shippingFeeBusProvider);
     final shippingDoorAsync = ref.watch(shippingFeeDoorProvider);
     final double shippingBusDefault = shippingBusAsync.when(
-      data: (values) => _firstFeeOrFallback(values, 25000),
+      data: (values) => firstFeeOrFallback(values, 25000),
       loading: () => 25000,
       error: (_, _) => 25000,
     );
     final double shippingDoorDefault = shippingDoorAsync.when(
-      data: (values) => _firstFeeOrFallback(values, 20000),
+      data: (values) => firstFeeOrFallback(values, 20000),
       loading: () => 20000,
       error: (_, _) => 20000,
     );
@@ -680,7 +680,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
           );
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, _resolveOrderEditErrorMessage(e));
+        showTopSnackBar(context, normalizeApiError(e).message);
       }
     }
   }
@@ -1386,33 +1386,4 @@ class _ExtraEditRow extends StatelessWidget {
       ),
     );
   }
-}
-
-double _firstFeeOrFallback(List<String> values, double fallback) {
-  for (final value in values) {
-    final parsed = double.tryParse(value.trim());
-    if (parsed != null && parsed >= 0) {
-      return parsed;
-    }
-  }
-  return fallback;
-}
-
-String _resolveOrderEditErrorMessage(Object error) {
-  if (error is DioException) {
-    final response = error.response;
-    if (response == null) return VN.apiError;
-    if (response.statusCode == 422) {
-      final data = response.data;
-      if (data is Map<String, dynamic>) {
-        final detail = data['detail'];
-        if (detail is String && detail.trim().isNotEmpty) {
-          return detail.trim();
-        }
-      }
-      return VN.loiKhongXacDinhTuMayChu;
-    }
-    return VN.loiMayChu;
-  }
-  return VN.loiHeThong;
 }

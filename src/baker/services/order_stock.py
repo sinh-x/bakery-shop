@@ -4,6 +4,7 @@ from fastapi import HTTPException
 
 from baker.api.inventory_fifo import (
     consume_fifo_items,
+    normalize_price_value,
     normalize_price_chip,
     resolve_price_bucket_chip_id,
 )
@@ -40,8 +41,13 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
 
         product_id = product_row["id"]
         qty = item["quantity"]
+        normalized_unit_price = normalize_price_value(item["unit_price"])
         try:
-            chip_id = resolve_price_bucket_chip_id(conn, product_id, int(item["unit_price"]))
+            chip_id = resolve_price_bucket_chip_id(
+                conn,
+                product_id,
+                normalized_unit_price,
+            )
         except HTTPException:
             chip_id = normalize_price_chip(conn, product_id, item["price_chip_id"])
 

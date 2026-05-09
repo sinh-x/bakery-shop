@@ -153,7 +153,7 @@ class _DetailView extends StatelessWidget {
                   ),
                   Text(
                     line.normalizedPrice != null
-                        ? 'Gia bucket: ${line.normalizedPrice}'
+                        ? '${VN.tuyChonGia}: ${line.normalizedPrice}'
                         : '${VN.tuyChon}: ${line.chipLabel}',
                   ),
                   Text(
