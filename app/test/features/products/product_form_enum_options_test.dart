@@ -195,10 +195,9 @@ class _FakeCategoryService implements CategoryService {
   }
 
   @override
-  // Fake-service noSuchMethod; dynamic return type satisfies
-  // always_declare_return_types. Replace with mocktail Fake/Mock
-  // once mocktail is added to project dependencies.
-  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
+  // DG-138#todo: replace with mocktail Fake/Mock once mocktail is added to project dependencies
+  // ignore: always_declare_return_types
+  noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
 
 const _nhanBanh = EnumAttribute(

@@ -62,10 +62,15 @@ jobs:
         run: flutter test --coverage
         working-directory: app
 
+      - name: Check dependency health
+        run: flutter pub outdated --no-color
+        working-directory: app
+        continue-on-error: true
+
       - name: Check code generation freshness
         run: |
           dart run build_runner build --delete-conflicting-outputs
-          git diff --exit-code lib/data/models/
+          git diff --exit-code
         working-directory: app
 
   docker-build:

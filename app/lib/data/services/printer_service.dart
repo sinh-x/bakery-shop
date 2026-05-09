@@ -1,4 +1,4 @@
-// ignore_for_file: prefer_const_declarations
+// ignore_for_file: prefer_const_declarations  // DG-138#todo: replace with per-line suppressions after const declaration audit
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
