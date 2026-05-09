@@ -146,6 +146,17 @@ def test_upload_order_photo_non_image_rejected(api_client):
     assert resp.status_code == 400
 
 
+def test_upload_order_photo_rejects_over_10mb(api_client):
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    payload = b"x" * (10 * 1024 * 1024 + 1)
+    resp = api_client.post(
+        f"/api/orders/{ref}/photos",
+        files={"file": ("too-large.jpg", payload, "image/jpeg")},
+    )
+    assert resp.status_code == 413
+
+
 def test_upload_order_photo_lookup_by_numeric_id(api_client):
     """Order photos endpoint works with numeric order id as well."""
     order = _create_order(api_client)

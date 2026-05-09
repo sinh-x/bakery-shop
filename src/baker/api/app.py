@@ -54,7 +54,17 @@ def create_app() -> FastAPI:
         allow_origins=['https://lily.tail10c2c6.ts.net'],
         allow_credentials=True,
         allow_methods=['*'],
-        allow_headers=['*'],
+        allow_headers=[
+            'Accept',
+            'Accept-Language',
+            'Content-Language',
+            'Content-Type',
+            'Authorization',
+            'X-Requested-With',
+            'x-device-model',
+            'x-app-version',
+            'x-os-version',
+        ],
     )
 
     @app.get("/api/health")

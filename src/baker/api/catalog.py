@@ -3,10 +3,11 @@
 import logging
 from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from PIL import UnidentifiedImageError
 from pydantic import BaseModel
 
 import baker.config
-from baker.api.photos import save_photo
+from baker.api.photos import read_image_upload, save_photo
 from baker.db.connection import get_db
 
 
@@ -143,16 +144,11 @@ async def upload_catalog_photo(
     with get_db() as conn:
         _get_product_or_404(conn, product_id)
 
-    if file.content_type and not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Tệp phải là hình ảnh")
-
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="Tệp rỗng")
+    data = await read_image_upload(file)
 
     try:
         hash_hex = save_photo(data, file.filename or "")
-    except Exception:
+    except (UnidentifiedImageError, OSError, ValueError):
         logger.exception("Catalog photo upload failed for file: %s", file.filename)
         raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
 

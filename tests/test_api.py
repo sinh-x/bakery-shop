@@ -787,6 +787,53 @@ def test_upload_photo_empty_file_rejected(api_client):
     assert "rỗng" in resp.json()["detail"]
 
 
+def test_upload_photo_rejects_over_10mb(api_client):
+    payload = b"x" * (10 * 1024 * 1024 + 1)
+    resp = api_client.post(
+        "/api/photos",
+        files={"file": ("too-large.jpg", payload, "image/jpeg")},
+    )
+    assert resp.status_code == 413
+
+
+def test_get_photo_by_hash_rejects_invalid_hash(api_client):
+    resp = api_client.get("/api/photos/not-a-sha256.jpg")
+    assert resp.status_code == 400
+
+
+def test_product_photo_upload_rejects_over_10mb(api_client):
+    payload = b"x" * (10 * 1024 * 1024 + 1)
+    resp = api_client.post(
+        "/api/products/1/photo",
+        files={"file": ("too-large.jpg", payload, "image/jpeg")},
+    )
+    assert resp.status_code == 413
+
+
+def test_catalog_photo_upload_rejects_over_10mb(api_client):
+    payload = b"x" * (10 * 1024 * 1024 + 1)
+    resp = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("too-large.jpg", payload, "image/jpeg")},
+    )
+    assert resp.status_code == 413
+
+
+def test_cors_allow_headers_are_explicit(api_client):
+    resp = api_client.options(
+        "/api/health",
+        headers={
+            "Origin": "https://lily.tail10c2c6.ts.net",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "x-app-version,x-device-model,content-type",
+        },
+    )
+    assert resp.status_code == 200
+    allow_headers = resp.headers.get("access-control-allow-headers", "")
+    assert "*" not in allow_headers
+    assert "content-type" in allow_headers.lower()
+
+
 # --- PATCH /api/categories/reorder ---
 
 

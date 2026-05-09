@@ -1,0 +1,86 @@
+"""Public stock service helpers used by order-related APIs."""
+
+from fastapi import HTTPException
+
+from baker.api.inventory_fifo import (
+    consume_fifo_items,
+    normalize_price_chip,
+    resolve_price_bucket_chip_id,
+)
+from baker.models.event import Event
+
+
+def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
+    """Auto-decrement stock for trung bay products when order completes."""
+    order_items = conn.execute(
+        """SELECT oi.product_id, oi.product_name, oi.quantity, oi.price_chip_id, oi.unit_price
+           FROM order_items oi
+           WHERE oi.order_id = ?
+              AND oi.product_id != ''
+               AND oi.is_gift = 0""",
+        (order_id,),
+    ).fetchall()
+
+    for item in order_items:
+        code_or_id = item["product_id"]
+        product_row = conn.execute(
+            "SELECT id FROM products WHERE product_code = ?",
+            (code_or_id,),
+        ).fetchone()
+        if not product_row:
+            try:
+                product_row = conn.execute(
+                    "SELECT id FROM products WHERE id = ?",
+                    (int(code_or_id),),
+                ).fetchone()
+            except (ValueError, TypeError):
+                continue
+        if not product_row:
+            continue
+
+        product_id = product_row["id"]
+        qty = item["quantity"]
+        try:
+            chip_id = resolve_price_bucket_chip_id(conn, product_id, int(item["unit_price"]))
+        except HTTPException:
+            chip_id = normalize_price_chip(conn, product_id, item["price_chip_id"])
+
+        attr_row = conn.execute(
+            """SELECT value FROM product_attribute_values
+               WHERE product_id = ? AND attribute_type = 'trung_bay'""",
+            (product_id,),
+        ).fetchone()
+        if not attr_row or attr_row["value"] != "true":
+            continue
+
+        movement_cursor = conn.execute(
+            """INSERT INTO stock_movements
+               (product_id, movement_type, quantity, reason, reference_id, price_chip_id)
+               VALUES (?, 'sale', ?, ?, ?, ?)""",
+            (product_id, -qty, f"Order {order_ref}", order_ref, chip_id),
+        )
+        movement_id = movement_cursor.lastrowid
+        consume_fifo_items(conn, product_id, chip_id, qty, movement_id)
+
+        lot_row = conn.execute(
+            "SELECT lot_id FROM inventory_items WHERE consumed_by_movement_id = ? ORDER BY id ASC LIMIT 1",
+            (movement_id,),
+        ).fetchone()
+        if lot_row:
+            conn.execute(
+                "UPDATE stock_movements SET lot_id = ? WHERE id = ?",
+                (lot_row["lot_id"], movement_id),
+            )
+
+        Event(
+            summary=f"Ban hang -{qty} {item['product_name']}",
+            type="inventory",
+            data={
+                "product_id": product_id,
+                "product_name": item["product_name"],
+                "movement_type": "sale",
+                "quantity": -qty,
+                "reference_id": order_ref,
+                "price_chip_id": chip_id,
+            },
+        ).save(conn)

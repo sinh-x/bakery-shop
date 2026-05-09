@@ -10,12 +10,12 @@ from baker.api.inventory_fifo import (
     normalize_price_value,
     resolve_price_bucket_option,
 )
-from baker.api.orders import _auto_decrement_stock
 from baker.db.connection import get_db
 from baker.models.event import Event
 from baker.models.order import Order, OrderItem
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
+from baker.services.order_stock import auto_decrement_stock
 
 
 router = APIRouter(prefix="/api/reconciliations", tags=["reconciliations"])
@@ -325,7 +325,7 @@ def _create_sale_orders(
             payment_txn.save(conn)
 
             Order.update_status(conn, order.order_ref, "delivered", "")
-            _auto_decrement_stock(conn, order.id or 0, order.order_ref)
+            auto_decrement_stock(conn, order.id or 0, order.order_ref)
 
             sale_movement = conn.execute(
                 """SELECT id

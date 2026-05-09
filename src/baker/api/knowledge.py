@@ -2,12 +2,13 @@
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from typing import Optional
+from PIL import UnidentifiedImageError
 
 from pydantic import BaseModel
 
 from baker.db.connection import get_db
 from baker.models.knowledge import Knowledge
-from baker.api.photos import save_photo
+from baker.api.photos import read_image_upload, save_photo
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
@@ -273,12 +274,7 @@ def unpin_knowledge(entry_id: int):
 @router.post("/{entry_id}/photos", status_code=201)
 async def attach_photo(entry_id: int, file: UploadFile, caption: str = ""):
     """Đính kèm ảnh vào mục tri thức."""
-    if file.content_type and not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Tệp phải là hình ảnh")
-
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="Tệp rỗng")
+    data = await read_image_upload(file)
 
     with get_db() as conn:
         # Verify entry exists
@@ -290,7 +286,7 @@ async def attach_photo(entry_id: int, file: UploadFile, caption: str = ""):
 
         try:
             hash_hex = save_photo(data, file.filename or "")
-        except Exception:
+        except (UnidentifiedImageError, OSError, ValueError):
             raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
 
         photo_row = conn.execute(

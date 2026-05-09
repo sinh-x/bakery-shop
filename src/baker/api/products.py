@@ -3,12 +3,13 @@
 import json
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from PIL import UnidentifiedImageError
 from pydantic import BaseModel
 
 import baker.config
 from baker.code_gen import generate_code, get_category_prefix
 from baker.db.connection import get_db
-from baker.api.photos import save_photo
+from baker.api.photos import read_image_upload, save_photo
 
 
 router = APIRouter(prefix="/api/products", tags=["products"])
@@ -405,16 +406,11 @@ async def upload_photo(product_id: int, file: UploadFile):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-    if file.content_type and not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Tệp phải là hình ảnh")
-
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="Tệp rỗng")
+    data = await read_image_upload(file)
 
     try:
         hash_hex = save_photo(data, file.filename or "")
-    except Exception:
+    except (UnidentifiedImageError, OSError, ValueError):
         raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
 
     with get_db() as conn:
