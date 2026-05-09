@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -84,6 +83,7 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
   }
 
   @override
+  // ignore: prefer_const_constructors
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -141,7 +141,7 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(VN.apiError),
+            const Text(VN.apiError),
             const SizedBox(height: 8),
             Text(
               _error!,

@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors
 import 'package:flutter/material.dart';
 
 import '../../../shared/widgets/vietnamese_labels.dart';
@@ -24,7 +23,7 @@ class HourPickerDialog extends StatelessWidget {
           controller: controller,
           itemCount: 24,
           itemBuilder: (ctx, hour) => ListTile(
-            title: Text('$hour:00'),
+            title: Text('$hour:00'), // ignore: prefer_const_constructors
             selected: hour == initialHour,
             onTap: () => Navigator.pop(context, hour),
           ),
@@ -52,6 +51,7 @@ class HourPresetChips extends StatelessWidget {
       spacing: 8,
       children: [
         ChoiceChip(
+          // ignore: prefer_const_constructors
           label: Text('${VN.timeSlotMorning} 8:00'),
           selected: selectedTime != null &&
               selectedTime!.hour == 8 &&
@@ -59,6 +59,7 @@ class HourPresetChips extends StatelessWidget {
           onSelected: (_) => onSelected(const TimeOfDay(hour: 8, minute: 0)),
         ),
         ChoiceChip(
+          // ignore: prefer_const_constructors
           label: Text('${VN.timeSlotAfternoon} 14:00'),
           selected: selectedTime != null &&
               selectedTime!.hour == 14 &&
@@ -66,6 +67,7 @@ class HourPresetChips extends StatelessWidget {
           onSelected: (_) => onSelected(const TimeOfDay(hour: 14, minute: 0)),
         ),
         ChoiceChip(
+          // ignore: prefer_const_constructors
           label: Text('${VN.timeSlotEvening} 18:00'),
           selected: selectedTime != null &&
               selectedTime!.hour == 18 &&

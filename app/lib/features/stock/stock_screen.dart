@@ -1,4 +1,3 @@
-// ignore_for_file: unnecessary_lambdas
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -29,7 +28,7 @@ class StockOverviewNotifier extends AsyncNotifier<List<StockOverviewItem>> {
 
   Future<void> refresh() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _fetch());
+    state = await AsyncValue.guard(_fetch);
   }
 }
 

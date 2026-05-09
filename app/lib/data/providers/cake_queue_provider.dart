@@ -1,4 +1,3 @@
-// ignore_for_file: unnecessary_lambdas
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/work_item_service.dart';
@@ -26,7 +25,7 @@ class CakeQueueNotifier extends AsyncNotifier<List<CakeQueueItem>> {
 
 final cakeQueueProvider =
     AsyncNotifierProvider.family<CakeQueueNotifier, List<CakeQueueItem>, bool>(
-  (includeReady) => CakeQueueNotifier(includeReady),
+  CakeQueueNotifier.new,
 );
 
 /// Delivery queue — work items with status = 'ready', sorted by due date.

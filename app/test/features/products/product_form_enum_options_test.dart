@@ -1,4 +1,3 @@
-// ignore_for_file: always_declare_return_types
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/category_service.dart';
 import 'package:bakery_app/data/api/product_service.dart';
@@ -196,7 +195,7 @@ class _FakeCategoryService implements CategoryService {
   }
 
   @override
-  noSuchMethod(Invocation invocation) => throw UnimplementedError();
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
 
 const _nhanBanh = EnumAttribute(

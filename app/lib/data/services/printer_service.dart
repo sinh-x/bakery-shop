@@ -1,4 +1,4 @@
-// ignore_for_file: unnecessary_lambdas, prefer_const_declarations
+// ignore_for_file: prefer_const_declarations
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -131,7 +131,7 @@ class PrinterService {
       'star', 'bixolon', 'munbyn', 'peripage', 'phomemo',
       'niimbot', 'zebra', 'brother', 'rongta', 'hprt',
     ];
-    return patterns.any((p) => lower.contains(p));
+    return patterns.any(lower.contains);
   }
 
   /// Connects to a printer by MAC address.

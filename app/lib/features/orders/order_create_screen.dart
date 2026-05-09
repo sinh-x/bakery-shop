@@ -1,4 +1,4 @@
-// ignore_for_file: unnecessary_lambdas, prefer_const_constructors
+// ignore_for_file: prefer_const_constructors
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -287,13 +287,11 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         fullscreenDialog: true,
         builder: (_) => ProductPickerPage(
           selectedItems: _items,
-          onChanged: () => setState(() {}),
+          onChanged: () => setState(() {}), // ignore: unnecessary_lambdas
         ),
       ),
     );
-    setState(() {
-      _checkAutoGift();
-    });
+    setState(_checkAutoGift);
   }
 
   Future<void> _submit() async {

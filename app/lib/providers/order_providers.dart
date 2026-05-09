@@ -1,4 +1,3 @@
-// ignore_for_file: unnecessary_lambdas
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
@@ -110,7 +109,7 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
 
 final orderDetailProvider =
     AsyncNotifierProvider.family<OrderDetailNotifier, Order, String>(
-  (ref) => OrderDetailNotifier(ref),
+  OrderDetailNotifier.new,
 );
 
 /// Provides all active (non-terminal) orders for the dashboard view.
@@ -168,7 +167,7 @@ class OrderPhotosNotifier extends AsyncNotifier<List<OrderPhoto>> {
 
 final orderPhotosProvider =
     AsyncNotifierProvider.family<OrderPhotosNotifier, List<OrderPhoto>, String>(
-  (ref) => OrderPhotosNotifier(ref),
+  OrderPhotosNotifier.new,
 );
 
 // Family provider for the work items of a single order, keyed by orderRef.
@@ -286,7 +285,7 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
 
 final orderWorkItemsProvider = AsyncNotifierProvider.family<
     OrderWorkItemsNotifier, List<WorkItem>, String>(
-  (ref) => OrderWorkItemsNotifier(ref),
+  OrderWorkItemsNotifier.new,
 );
 
 // Family provider for the payment transactions of a single order, keyed by orderRef.
@@ -368,7 +367,7 @@ class OrderPaymentTransactionsNotifier
 
 final orderPaymentTransactionsProvider = AsyncNotifierProvider.family<
     OrderPaymentTransactionsNotifier, List<PaymentTransaction>, String>(
-  (ref) => OrderPaymentTransactionsNotifier(ref),
+  OrderPaymentTransactionsNotifier.new,
 );
 
 // ── Order creation draft ──────────────────────────────────────────────────────

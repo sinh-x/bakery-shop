@@ -1,4 +1,3 @@
-// ignore_for_file: unnecessary_lambdas
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/api/config_service.dart';
@@ -27,7 +26,7 @@ class ConfigValuesNotifier extends AsyncNotifier<List<String>> {
 
 final configValuesProvider =
     AsyncNotifierProvider.family<ConfigValuesNotifier, List<String>, String>(
-  (configKey) => ConfigValuesNotifier(configKey),
+  ConfigValuesNotifier.new,
 );
 
 /// Convenience provider for order source options.

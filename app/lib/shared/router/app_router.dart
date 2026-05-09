@@ -1,4 +1,4 @@
-// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables
+// ignore_for_file: prefer_const_constructors
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -464,28 +464,28 @@ class _ShellScaffold extends StatelessWidget {
         selectedIndex: _selectedIndex(context),
         onDestinationSelected: (index) =>
             _onDestinationSelected(context, index),
-        destinations: [
-          const NavigationDestination(
+        destinations: const [
+          NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
             selectedIcon: Icon(Icons.dashboard),
             label: VN.tabDashboard,
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long),
             label: VN.tabOrders,
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.cake_outlined),
             selectedIcon: Icon(Icons.cake),
             label: VN.tabProducts,
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.menu_book_outlined),
             selectedIcon: Icon(Icons.menu_book),
             label: VN.tabKnowledgeBase,
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.storefront_outlined),
             selectedIcon: Icon(Icons.storefront),
             label: VN.banHang,

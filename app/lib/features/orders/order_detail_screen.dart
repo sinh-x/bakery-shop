@@ -1,4 +1,4 @@
-// ignore_for_file: prefer_const_constructors, unnecessary_lambdas
+// ignore_for_file: prefer_const_constructors
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -531,8 +531,8 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         // ── Print status line ──────────────────────────────────────────
         _PrintStatusRow(
           printedAt: order.workTicketPrintedAt,
-          onMarkPrinted: () => _onMarkAsPrinted(),
-          onUnmarkPrinted: () => _onUnmarkPrinted(),
+          onMarkPrinted: _onMarkAsPrinted,
+          onUnmarkPrinted: _onUnmarkPrinted,
         ),
         const SizedBox(height: 16),
 

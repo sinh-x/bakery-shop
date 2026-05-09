@@ -1,4 +1,3 @@
-// ignore_for_file: unnecessary_lambdas
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -82,7 +81,7 @@ class CatalogNotifier extends AsyncNotifier<List<CatalogPhoto>> {
 
 final catalogProvider = AsyncNotifierProvider.family<CatalogNotifier,
     List<CatalogPhoto>, int>(
-  (productId) => CatalogNotifier(productId),
+  CatalogNotifier.new,
 );
 
 // ---------------------------------------------------------------------------
@@ -126,13 +125,13 @@ class CatalogBrowseNotifier extends AsyncNotifier<List<CatalogBrowsePhoto>> {
 
   Future<void> refresh() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => build());
+    state = await AsyncValue.guard(build);
   }
 }
 
 final catalogBrowseProvider = AsyncNotifierProvider.family<CatalogBrowseNotifier,
     List<CatalogBrowsePhoto>, String>(
-  (filterKey) => CatalogBrowseNotifier(filterKey),
+  CatalogBrowseNotifier.new,
 );
 
 class CatalogTagDefsNotifier extends AsyncNotifier<List<CatalogTagDef>> {
@@ -144,7 +143,7 @@ class CatalogTagDefsNotifier extends AsyncNotifier<List<CatalogTagDef>> {
 
   Future<void> refresh() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => build());
+    state = await AsyncValue.guard(build);
   }
 }
 

@@ -1,4 +1,3 @@
-// ignore_for_file: unnecessary_lambdas
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,7 +20,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
 
   Future<void> refresh() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _fetchProducts());
+    state = await AsyncValue.guard(_fetchProducts);
   }
 
   Future<Product> createProduct({

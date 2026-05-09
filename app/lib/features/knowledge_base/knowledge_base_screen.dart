@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -24,7 +23,7 @@ class KnowledgeBaseScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tiles = [
+    const tiles = [
       _HubTile(
         icon: Icons.event_note_outlined,
         title: 'Sự kiện',
@@ -45,6 +44,7 @@ class KnowledgeBaseScreen extends ConsumerWidget {
       ),
     ];
 
+    // ignore: prefer_const_constructors
     return Scaffold(
       appBar: AppBar(
         title: const Text(VN.tabKnowledgeBase),
