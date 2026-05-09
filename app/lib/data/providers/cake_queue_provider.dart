@@ -25,7 +25,7 @@ class CakeQueueNotifier extends AsyncNotifier<List<CakeQueueItem>> {
 
 final cakeQueueProvider =
     AsyncNotifierProvider.family<CakeQueueNotifier, List<CakeQueueItem>, bool>(
-  (includeReady) => CakeQueueNotifier(includeReady),
+  CakeQueueNotifier.new,
 );
 
 /// Delivery queue — work items with status = 'ready', sorted by due date.

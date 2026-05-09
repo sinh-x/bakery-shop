@@ -20,7 +20,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
 
   Future<void> refresh() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _fetchProducts());
+    state = await AsyncValue.guard(_fetchProducts);
   }
 
   Future<Product> createProduct({

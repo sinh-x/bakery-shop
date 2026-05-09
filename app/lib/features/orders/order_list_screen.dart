@@ -1,3 +1,4 @@
+// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -322,7 +323,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                 child: _viewMode == 'kanban'
                     ? _KanbanBoard(
                         filteredOrders: ordersAsync.maybeWhen(
-                          data: (orders) => _applySearchFilter(orders),
+                          data: _applySearchFilter,
                           orElse: () => <Order>[],
                         ),
                       )
@@ -619,8 +620,7 @@ class _KanbanColumn extends ConsumerWidget {
                             final order = orders[index];
                             return LongPressDraggable<Order>(
                               data: order,
-                              onDragStarted: () =>
-                                  HapticFeedback.mediumImpact(),
+                              onDragStarted: HapticFeedback.mediumImpact,
                               feedback: Material(
                                 elevation: 8,
                                 borderRadius: BorderRadius.circular(8),

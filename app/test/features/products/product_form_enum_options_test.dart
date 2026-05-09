@@ -195,6 +195,8 @@ class _FakeCategoryService implements CategoryService {
   }
 
   @override
+  // DG-138#todo: replace with mocktail Fake/Mock once mocktail is added to project dependencies
+  // ignore: always_declare_return_types
   noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
 

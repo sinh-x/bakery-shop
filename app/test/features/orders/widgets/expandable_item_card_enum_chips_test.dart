@@ -1,3 +1,4 @@
+// ignore_for_file: prefer_const_declarations  // DG-138#todo: replace with per-line suppressions after const declaration audit
 import 'package:bakery_app/data/models/enum_attribute.dart';
 import 'package:bakery_app/data/models/price_chip.dart';
 import 'package:bakery_app/data/models/product.dart';

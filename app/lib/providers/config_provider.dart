@@ -26,7 +26,7 @@ class ConfigValuesNotifier extends AsyncNotifier<List<String>> {
 
 final configValuesProvider =
     AsyncNotifierProvider.family<ConfigValuesNotifier, List<String>, String>(
-  (configKey) => ConfigValuesNotifier(configKey),
+  ConfigValuesNotifier.new,
 );
 
 /// Convenience provider for order source options.

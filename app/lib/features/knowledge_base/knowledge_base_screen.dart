@@ -23,7 +23,7 @@ class KnowledgeBaseScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tiles = [
+    const tiles = [
       _HubTile(
         icon: Icons.event_note_outlined,
         title: 'Sự kiện',
@@ -44,6 +44,7 @@ class KnowledgeBaseScreen extends ConsumerWidget {
       ),
     ];
 
+    // ignore: prefer_const_constructors
     return Scaffold(
       appBar: AppBar(
         title: const Text(VN.tabKnowledgeBase),

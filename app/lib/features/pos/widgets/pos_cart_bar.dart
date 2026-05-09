@@ -10,6 +10,7 @@ class PosCartBar extends ConsumerWidget {
   const PosCartBar({super.key});
 
   @override
+  // ignore: prefer_const_constructors
   Widget build(BuildContext context, WidgetRef ref) {
     final cart = ref.watch(posCartProvider);
     final itemCount = cart.items.where((i) => !i.isGift).fold(0, (sum, i) => sum + i.quantity);
@@ -80,9 +81,10 @@ class PosCartBar extends ConsumerWidget {
 
                 // Payment button
                 FilledButton.icon(
+                  // ignore: prefer_const_constructors
                   onPressed: () => context.push('/pos/checkout'),
                   icon: const Icon(Icons.payment, size: 18),
-                  label: Text(VN.thanhToan),
+                  label: const Text(VN.thanhToan),
                 ),
               ],
             ),

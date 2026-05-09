@@ -1,3 +1,4 @@
+// ignore_for_file: prefer_const_declarations  // DG-138#todo: replace with per-line suppressions after const declaration audit
 import 'dart:math';
 
 import 'package:cached_network_image/cached_network_image.dart';

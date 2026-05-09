@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:bakery_app/app.dart';
 
 void main() {
-  testWidgets('App launches with bakery title', (WidgetTester tester) async {
+  testWidgets('App launches with bakery title', (tester) async {
     await tester.pumpWidget(
       const ProviderScope(child: BakeryApp()),
     );

@@ -28,7 +28,7 @@ class StockOverviewNotifier extends AsyncNotifier<List<StockOverviewItem>> {
 
   Future<void> refresh() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _fetch());
+    state = await AsyncValue.guard(_fetch);
   }
 }
 

@@ -103,5 +103,5 @@ class KnowledgeEntryDetailNotifier
 
 final knowledgeEntryDetailProvider = AsyncNotifierProvider.family<
     KnowledgeEntryDetailNotifier, KnowledgeEntry?, int>(
-  (id) => KnowledgeEntryDetailNotifier(id),
+  KnowledgeEntryDetailNotifier.new,
 );
