@@ -11,7 +11,7 @@ services:
     volumes:
       - ./prod/data:/var/lib/baker
     devices:
-      - "/dev/usb/lp0:/dev/usb/lp0"
+      - "${BAKER_PRINTER_DEVICE:-/dev/null}:/dev/usb/lp0"
     group_add:
       - "20"  # host GID 'lp' — grants access to /dev/usb/lp0
     environment:
