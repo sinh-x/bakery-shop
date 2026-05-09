@@ -2,6 +2,7 @@ import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/reconciliation_service.dart';
 import 'package:bakery_app/features/stock/stock_reconciliation_screen.dart';
 import 'package:bakery_app/providers/events_provider.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,7 +20,13 @@ class _FakeService extends ReconciliationService {
 }
 
 void main() {
-  testWidgets('product card toggles and shows collapsed summary', (tester) async {
+  Finder _unitPriceFieldFinder() {
+    return find.byType(TextFormField).first;
+  }
+
+  testWidgets('product card toggles and shows collapsed summary', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
     final prefs = await SharedPreferences.getInstance();
     final service = _FakeService(
@@ -66,6 +73,79 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Tồn đã đếm'), findsOneWidget);
+  });
+
+  testWidgets('add row defaults option unit price and keeps manual edit', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _FakeService(
+      ReconciliationDraft(
+        date: '2026-05-04',
+        products: [
+          ReconciliationDraftProduct(
+            productId: 1,
+            name: 'Bánh kem dâu',
+            category: 'banh_kem',
+            expectedQty: 5,
+            basePrice: 100000,
+            priceChips: [
+              ReconciliationPriceChip(
+                id: 1,
+                label: 'M',
+                price: 12000,
+                position: 1,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) => const StockReconciliationScreen(),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reconciliationServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Bánh kem dâu'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, '3');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.themDongBan));
+    await tester.pumpAndSettle();
+
+    final unitPriceField = tester.widget<TextFormField>(
+      _unitPriceFieldFinder(),
+    );
+    expect(unitPriceField.controller?.text, '100000');
+
+    await tester.enterText(_unitPriceFieldFinder(), '15000');
+    await tester.pumpAndSettle();
+    final editedUnitPriceField = tester.widget<TextFormField>(
+      _unitPriceFieldFinder(),
+    );
+    expect(editedUnitPriceField.controller?.text, '15000');
+
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pumpAndSettle();
+    expect(find.text('${VN.dongBan} 1'), findsNothing);
   });
 
   testWidgets('price chip fills only tapped row price', (tester) async {
@@ -119,8 +199,8 @@ void main() {
 
     await tester.enterText(find.byType(TextField).first, '3');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Thêm dòng bán'));
-    await tester.tap(find.text('Thêm dòng bán'));
+    await tester.tap(find.text(VN.themDongBan));
+    await tester.tap(find.text(VN.themDongBan));
     await tester.pumpAndSettle();
 
     final chip = tester.widget<ActionChip>(find.byType(ActionChip).first);

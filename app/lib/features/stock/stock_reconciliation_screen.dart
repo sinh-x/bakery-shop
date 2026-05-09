@@ -242,7 +242,8 @@ class _StockReconciliationScreenState
             );
             final waste = state.wasteQtyByOption[optionKey] ?? 0;
             if (waste > 0) {
-              final reason = (state.wasteReasonByOption[optionKey] ?? '').trim();
+              final reason = (state.wasteReasonByOption[optionKey] ?? '')
+                  .trim();
               if (reason.isEmpty) {
                 return true;
               }
@@ -330,7 +331,9 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
       final wasteReason = state.wasteReasonByOption[optionKey] ?? '';
       _countedControllers[optionKey] = TextEditingController(text: '$counted');
       _wasteControllers[optionKey] = TextEditingController(text: '$waste');
-      _wasteReasonControllers[optionKey] = TextEditingController(text: wasteReason);
+      _wasteReasonControllers[optionKey] = TextEditingController(
+        text: wasteReason,
+      );
     }
   }
 
@@ -446,123 +449,155 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
             if (_isExpanded) ...[
               const SizedBox(height: 10),
               for (final option in widget.product.options) ...[
-              _OptionHeader(option: option),
-              Builder(builder: (context) {
-                final optionKey = reconciliationOptionKey(
-                  widget.product.productId,
-                  option.normalizedPrice,
-                );
-                final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
-                final saleRows =
-                    state.saleRowsByOption[optionKey] ??
-                    const <ReconciliationSaleRowInput>[];
-                final waste = state.wasteQtyByOption[optionKey] ?? 0;
-                final missing = option.expectedQty - counted;
-                final optionError = state.optionErrors[optionKey];
-                final saleRowErrors =
-                    state.saleRowErrorsByOption[optionKey] ??
-                    const <ReconciliationSaleRowError>[];
+                _OptionHeader(option: option),
+                Builder(
+                  builder: (context) {
+                    final optionKey = reconciliationOptionKey(
+                      widget.product.productId,
+                      option.normalizedPrice,
+                    );
+                    final counted =
+                        state.countedQtyByOption[optionKey] ??
+                        option.expectedQty;
+                    final saleRows =
+                        state.saleRowsByOption[optionKey] ??
+                        const <ReconciliationSaleRowInput>[];
+                    final waste = state.wasteQtyByOption[optionKey] ?? 0;
+                    final missing = option.expectedQty - counted;
+                    final optionError = state.optionErrors[optionKey];
+                    final saleRowErrors =
+                        state.saleRowErrorsByOption[optionKey] ??
+                        const <ReconciliationSaleRowError>[];
 
-                final countedController = _countedControllers[optionKey]!;
-                final wasteController = _wasteControllers[optionKey]!;
-                final wasteReasonController = _wasteReasonControllers[optionKey]!;
-                _syncIntController(countedController, counted);
-                _syncIntController(wasteController, waste);
+                    final countedController = _countedControllers[optionKey]!;
+                    final wasteController = _wasteControllers[optionKey]!;
+                    final wasteReasonController =
+                        _wasteReasonControllers[optionKey]!;
+                    _syncIntController(countedController, counted);
+                    _syncIntController(wasteController, waste);
 
-                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  _QuantityStepperField(
-                    label: VN.tonDaDem,
-                    controller: countedController,
-                    onChanged: (value) => notifier.setCountedQty(optionKey, value),
-                    onDecrement: () {
-                      if (counted <= 0) {
-                        return;
-                      }
-                      notifier.setCountedQty(optionKey, counted - 1);
-                    },
-                    onIncrement: () => notifier.setCountedQty(optionKey, counted + 1),
-                  ),
-                  if (missing > 0) ...[
-              const SizedBox(height: 8),
-              Text(
-                '${VN.soLuongThieu}: $missing',
-                style: TextStyle(
-                  color: Colors.orange[800],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              _QuantityStepperField(
-                label: VN.soLuongHaoHut,
-                controller: wasteController,
-                onChanged: (value) => notifier.setWasteQty(optionKey, value),
-                onDecrement: () {
-                  if (waste <= 0) {
-                    return;
-                  }
-                  notifier.setWasteQty(optionKey, waste - 1);
-                },
-                onIncrement: () => notifier.setWasteQty(optionKey, waste + 1),
-              ),
-              if (waste > 0) ...[
-                const SizedBox(height: 8),
-                TextField(
-                  decoration: const InputDecoration(
-                    labelText: VN.lyDoHaoHut,
-                    border: OutlineInputBorder(),
-                  ),
-                  controller: wasteReasonController,
-                  onChanged: (value) {
-                    notifier.setWasteReasonForOption(optionKey, value);
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _QuantityStepperField(
+                          label: VN.tonDaDem,
+                          controller: countedController,
+                          onChanged: (value) =>
+                              notifier.setCountedQty(optionKey, value),
+                          onDecrement: () {
+                            if (counted <= 0) {
+                              return;
+                            }
+                            notifier.setCountedQty(optionKey, counted - 1);
+                          },
+                          onIncrement: () =>
+                              notifier.setCountedQty(optionKey, counted + 1),
+                        ),
+                        if (missing > 0) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            '${VN.soLuongThieu}: $missing',
+                            style: TextStyle(
+                              color: Colors.orange[800],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _QuantityStepperField(
+                            label: VN.soLuongHaoHut,
+                            controller: wasteController,
+                            onChanged: (value) =>
+                                notifier.setWasteQty(optionKey, value),
+                            onDecrement: () {
+                              if (waste <= 0) {
+                                return;
+                              }
+                              notifier.setWasteQty(optionKey, waste - 1);
+                            },
+                            onIncrement: () =>
+                                notifier.setWasteQty(optionKey, waste + 1),
+                          ),
+                          if (waste > 0) ...[
+                            const SizedBox(height: 8),
+                            TextField(
+                              decoration: const InputDecoration(
+                                labelText: VN.lyDoHaoHut,
+                                border: OutlineInputBorder(),
+                              ),
+                              controller: wasteReasonController,
+                              onChanged: (value) {
+                                notifier.setWasteReasonForOption(
+                                  optionKey,
+                                  value,
+                                );
+                              },
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: OutlinedButton.icon(
+                              onPressed: () => notifier.addSaleRow(
+                                optionKey,
+                                defaultUnitPrice: option.normalizedPrice,
+                              ),
+                              icon: const Icon(Icons.add),
+                              label: const Text(VN.themDongBan),
+                            ),
+                          ),
+                          for (
+                            var rowIndex = 0;
+                            rowIndex < saleRows.length;
+                            rowIndex++
+                          )
+                            _SaleRowEditor(
+                              rowIndex: rowIndex,
+                              row: saleRows[rowIndex],
+                              product: widget.product,
+                              rowError: rowIndex < saleRowErrors.length
+                                  ? saleRowErrors[rowIndex]
+                                  : null,
+                              onQtyChanged: (value) => notifier.setSaleRowQty(
+                                optionKey,
+                                rowIndex,
+                                value,
+                              ),
+                              onPriceChanged: (value) =>
+                                  notifier.setSaleRowUnitPrice(
+                                    optionKey,
+                                    rowIndex,
+                                    value,
+                                  ),
+                              onMethodChanged: (value) =>
+                                  notifier.setSaleRowPaymentMethod(
+                                    optionKey,
+                                    rowIndex,
+                                    value,
+                                  ),
+                              onRemove: () =>
+                                  notifier.removeSaleRow(optionKey, rowIndex),
+                              onPriceChipTap: (price) =>
+                                  notifier.fillSaleRowPriceFromChip(
+                                    optionKey,
+                                    rowIndex,
+                                    price,
+                                  ),
+                            ),
+                        ],
+                        if (optionError != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            optionError,
+                            style: TextStyle(
+                              color: Colors.red[700],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
                   },
                 ),
-              ],
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  onPressed: () => notifier.addSaleRow(optionKey),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Thêm dòng bán'),
-                ),
-              ),
-              for (var rowIndex = 0; rowIndex < saleRows.length; rowIndex++)
-                _SaleRowEditor(
-                  rowIndex: rowIndex,
-                  row: saleRows[rowIndex],
-                  product: widget.product,
-                  rowError: rowIndex < saleRowErrors.length
-                      ? saleRowErrors[rowIndex]
-                      : null,
-                  onQtyChanged: (value) =>
-                      notifier.setSaleRowQty(optionKey, rowIndex, value),
-                  onPriceChanged: (value) =>
-                      notifier.setSaleRowUnitPrice(optionKey, rowIndex, value),
-                  onMethodChanged: (value) => notifier.setSaleRowPaymentMethod(
-                    optionKey,
-                    rowIndex,
-                    value,
-                  ),
-                  onRemove: () => notifier.removeSaleRow(optionKey, rowIndex),
-                  onPriceChipTap: (price) => notifier.fillSaleRowPriceFromChip(
-                    optionKey,
-                    rowIndex,
-                    price,
-                  ),
-                ),
-            ],
-            if (optionError != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                optionError,
-                style: TextStyle(
-                  color: Colors.red[700],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-                ]);
-              }),
                 const SizedBox(height: 10),
               ],
             ],
@@ -587,7 +622,10 @@ class _SummaryChip extends StatelessWidget {
         color: Colors.grey.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text('$label: $value', style: Theme.of(context).textTheme.bodySmall),
+      child: Text(
+        '$label: $value',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
     );
   }
 }
@@ -634,7 +672,7 @@ class _OptionHeader extends StatelessWidget {
           ),
           if (labels.isNotEmpty)
             Text(
-              'Nhan chip: $labels',
+              '${VN.nhanChip}: $labels',
               style: Theme.of(context).textTheme.bodySmall,
             ),
         ],
@@ -725,7 +763,7 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
         children: [
           Row(
             children: [
-              Text('Dòng bán ${widget.rowIndex + 1}'),
+              Text('${VN.dongBan} ${widget.rowIndex + 1}'),
               const Spacer(),
               IconButton(
                 tooltip: VN.xoa,
@@ -830,7 +868,7 @@ class _QuantityStepperField extends StatelessWidget {
         IconButton(
           onPressed: onDecrement,
           icon: const Icon(Icons.remove_circle_outline),
-          tooltip: 'Giảm',
+          tooltip: VN.giam,
         ),
         Expanded(
           child: TextField(
@@ -848,7 +886,7 @@ class _QuantityStepperField extends StatelessWidget {
         IconButton(
           onPressed: onIncrement,
           icon: const Icon(Icons.add_circle_outline),
-          tooltip: 'Tăng',
+          tooltip: VN.tang,
         ),
       ],
     );

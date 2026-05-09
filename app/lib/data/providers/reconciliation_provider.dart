@@ -257,13 +257,15 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
-  void addSaleRow(Object optionKeyOrProductId) {
+  void addSaleRow(Object optionKeyOrProductId, {int? defaultUnitPrice}) {
     final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
     final next = Map<String, List<ReconciliationSaleRowInput>>.from(
       state.saleRowsByOption,
     );
     final rows = List<ReconciliationSaleRowInput>.from(next[optionKey] ?? []);
-    rows.add(ReconciliationSaleRowInput());
+    rows.add(
+      ReconciliationSaleRowInput(unitPrice: defaultUnitPrice?.toString() ?? ''),
+    );
     next[optionKey] = rows;
     state = state.copyWith(
       saleRowsByOption: next,
@@ -592,7 +594,6 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
 
     return null;
   }
-
 }
 
 class _ValidationResult {

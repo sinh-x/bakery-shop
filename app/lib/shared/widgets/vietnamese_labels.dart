@@ -440,7 +440,8 @@ class VN {
   static const skip = 'Bỏ qua';
   static const photoLibrary = '🖼️ Thư viện';
   static const clearCartTitle = 'Xóa giỏ hàng?';
-  static const clearCartPrompt = 'Bạn có chắc muốn xóa tất cả sản phẩm trong giỏ?';
+  static const clearCartPrompt =
+      'Bạn có chắc muốn xóa tất cả sản phẩm trong giỏ?';
   static const clear = 'Xóa';
   static const backToCart = 'Quay lại giỏ hàng';
   static const clearCart = 'Xóa giỏ';
@@ -590,6 +591,11 @@ class VN {
   static const trangThai = 'Trạng thái';
   static const trangThaiOn = 'Ổn';
   static const trangThaiCoLoi = 'Có lỗi';
+  static const themDongBan = 'Thêm dòng bán';
+  static const dongBan = 'Dòng bán';
+  static const nhanChip = 'Nhãn chip';
+  static const giam = 'Giảm';
+  static const tang = 'Tăng';
   static const chuaCoLichSuDoiSoat = 'Chưa có lịch sử đối soát';
   static const khongTaiDuocLichSuDoiSoat = 'Không tải được lịch sử đối soát';
   static const chiTietDoiSoat = 'Chi tiết đối soát';
