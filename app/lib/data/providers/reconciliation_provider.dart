@@ -9,23 +9,24 @@ import '../api/reconciliation_service.dart';
 class ReconciliationSaleRowInput {
   ReconciliationSaleRowInput({
     this.quantity = 0,
-    this.unitPrice = '',
+    this.unitPrice,
     this.paymentMethod,
   });
 
   final int quantity;
-  final String unitPrice;
+  final double? unitPrice;
   final String? paymentMethod;
 
   ReconciliationSaleRowInput copyWith({
     int? quantity,
-    String? unitPrice,
+    double? unitPrice,
     String? paymentMethod,
+    bool clearUnitPrice = false,
     bool clearPaymentMethod = false,
   }) {
     return ReconciliationSaleRowInput(
       quantity: quantity ?? this.quantity,
-      unitPrice: unitPrice ?? this.unitPrice,
+      unitPrice: clearUnitPrice ? null : (unitPrice ?? this.unitPrice),
       paymentMethod: clearPaymentMethod
           ? null
           : (paymentMethod ?? this.paymentMethod),
@@ -257,13 +258,15 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
   }
 
-  void addSaleRow(Object optionKeyOrProductId) {
+  void addSaleRow(Object optionKeyOrProductId, {int? defaultUnitPrice}) {
     final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
     final next = Map<String, List<ReconciliationSaleRowInput>>.from(
       state.saleRowsByOption,
     );
     final rows = List<ReconciliationSaleRowInput>.from(next[optionKey] ?? []);
-    rows.add(ReconciliationSaleRowInput());
+    rows.add(
+      ReconciliationSaleRowInput(unitPrice: defaultUnitPrice?.toDouble()),
+    );
     next[optionKey] = rows;
     state = state.copyWith(
       saleRowsByOption: next,
@@ -302,7 +305,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
   void setSaleRowUnitPrice(
     Object optionKeyOrProductId,
     int rowIndex,
-    String value,
+    double? value,
   ) {
     final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
     _updateSaleRow(
@@ -331,7 +334,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     double unitPrice,
   ) {
     final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
-    setSaleRowUnitPrice(optionKey, rowIndex, unitPrice.toStringAsFixed(0));
+    setSaleRowUnitPrice(optionKey, rowIndex, unitPrice);
   }
 
   void _updateSaleRow(
@@ -438,7 +441,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
               .map(
                 (row) => ReconciliationSubmitSaleRow(
                   quantity: row.quantity,
-                  unitPrice: double.tryParse(row.unitPrice.trim()) ?? 0,
+                  unitPrice: row.unitPrice ?? 0,
                   paymentMethod: row.paymentMethod!,
                 ),
               )
@@ -486,6 +489,26 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
       );
       return false;
     }
+  }
+
+  bool prepareSubmitReview() {
+    final staffName = ref.read(loggedByProvider).trim();
+    final validation = _validate(state, staffName);
+    if (validation == null) {
+      state = state.copyWith(
+        clearErrorMessage: true,
+        optionErrors: <String, String>{},
+        saleRowErrorsByOption: <String, List<ReconciliationSaleRowError>>{},
+      );
+      return true;
+    }
+
+    state = state.copyWith(
+      errorMessage: validation.message,
+      optionErrors: validation.optionErrors,
+      saleRowErrorsByOption: validation.saleRowErrorsByOption,
+    );
+    return false;
   }
 
   _ValidationResult? _validate(
@@ -551,7 +574,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
             qtyError = 'Số lượng không được âm';
           }
           if (row.quantity > 0) {
-            final parsedPrice = double.tryParse(row.unitPrice.trim());
+            final parsedPrice = row.unitPrice;
             if (parsedPrice == null || parsedPrice <= 0) {
               priceError = 'Đơn giá phải lớn hơn 0';
             }
@@ -592,7 +615,6 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
 
     return null;
   }
-
 }
 
 class _ValidationResult {

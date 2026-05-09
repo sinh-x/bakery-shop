@@ -32,7 +32,9 @@ class _FakeReconciliationService extends ReconciliationService {
 }
 
 void main() {
-  Future<ProviderContainer> buildContainer(_FakeReconciliationService service) async {
+  Future<ProviderContainer> buildContainer(
+    _FakeReconciliationService service,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     return ProviderContainer(
       overrides: [
@@ -46,39 +48,46 @@ void main() {
     SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
   });
 
-  test('submit blocks when sale and waste do not match missing quantity', () async {
-    final service = _FakeReconciliationService(
-      ReconciliationDraft(
-        date: '2026-05-04',
-        products: [
-          ReconciliationDraftProduct(
-            productId: 1,
-            name: 'Bánh kem dâu',
-            category: 'banh_kem',
-            expectedQty: 5,
-            basePrice: 100000,
-            priceChips: [],
-          ),
-        ],
-      ),
-    );
-    final container = await buildContainer(service);
-    addTearDown(container.dispose);
+  test(
+    'submit blocks when sale and waste do not match missing quantity',
+    () async {
+      final service = _FakeReconciliationService(
+        ReconciliationDraft(
+          date: '2026-05-04',
+          products: [
+            ReconciliationDraftProduct(
+              productId: 1,
+              name: 'Bánh kem dâu',
+              category: 'banh_kem',
+              expectedQty: 5,
+              basePrice: 100000,
+              priceChips: [],
+            ),
+          ],
+        ),
+      );
+      final container = await buildContainer(service);
+      addTearDown(container.dispose);
 
-    await container.read(reconciliationProvider.notifier).loadDraft();
-    container.read(reconciliationProvider.notifier).setCountedQty(1, 2);
-    container.read(reconciliationProvider.notifier).setWasteQty(1, 1);
-    container.read(reconciliationProvider.notifier).addSaleRow(1);
-    container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
-    container.read(reconciliationProvider.notifier).setSaleRowUnitPrice(1, 0, '12000');
-    container.read(reconciliationProvider.notifier).setSaleRowPaymentMethod(1, 0, 'cash');
+      await container.read(reconciliationProvider.notifier).loadDraft();
+      container.read(reconciliationProvider.notifier).setCountedQty(1, 2);
+      container.read(reconciliationProvider.notifier).setWasteQty(1, 1);
+      container.read(reconciliationProvider.notifier).addSaleRow(1);
+      container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
+      container
+          .read(reconciliationProvider.notifier)
+          .setSaleRowUnitPrice(1, 0, 12000);
+      container
+          .read(reconciliationProvider.notifier)
+          .setSaleRowPaymentMethod(1, 0, 'cash');
 
-    final ok = await container.read(reconciliationProvider.notifier).submit();
-    final state = container.read(reconciliationProvider);
-    expect(ok, isFalse);
-    expect(service.submitCalls, 0);
-    expect(state.optionErrors['1:100000'], isNotNull);
-  });
+      final ok = await container.read(reconciliationProvider.notifier).submit();
+      final state = container.read(reconciliationProvider);
+      expect(ok, isFalse);
+      expect(service.submitCalls, 0);
+      expect(state.optionErrors['1:100000'], isNotNull);
+    },
+  );
 
   test('submit blocks and marks row fields inline when row invalid', () async {
     final service = _FakeReconciliationService(
@@ -136,12 +145,20 @@ void main() {
     container.read(reconciliationProvider.notifier).setCountedQty(1, 3);
     container.read(reconciliationProvider.notifier).addSaleRow(1);
     container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
-    container.read(reconciliationProvider.notifier).setSaleRowUnitPrice(1, 0, '10000');
-    container.read(reconciliationProvider.notifier).setSaleRowPaymentMethod(1, 0, 'cash');
+    container
+        .read(reconciliationProvider.notifier)
+        .setSaleRowUnitPrice(1, 0, 10000);
+    container
+        .read(reconciliationProvider.notifier)
+        .setSaleRowPaymentMethod(1, 0, 'cash');
     container.read(reconciliationProvider.notifier).addSaleRow(1);
     container.read(reconciliationProvider.notifier).setSaleRowQty(1, 1, 2);
-    container.read(reconciliationProvider.notifier).setSaleRowUnitPrice(1, 1, '15000');
-    container.read(reconciliationProvider.notifier).setSaleRowPaymentMethod(1, 1, 'transfer');
+    container
+        .read(reconciliationProvider.notifier)
+        .setSaleRowUnitPrice(1, 1, 15000);
+    container
+        .read(reconciliationProvider.notifier)
+        .setSaleRowPaymentMethod(1, 1, 'transfer');
 
     final ok = await container.read(reconciliationProvider.notifier).submit();
     expect(ok, isTrue);
@@ -175,8 +192,12 @@ void main() {
       container.read(reconciliationProvider.notifier).setCountedQty(i, 1);
       container.read(reconciliationProvider.notifier).addSaleRow(i);
       container.read(reconciliationProvider.notifier).setSaleRowQty(i, 0, 1);
-      container.read(reconciliationProvider.notifier).setSaleRowUnitPrice(i, 0, '10000');
-      container.read(reconciliationProvider.notifier).setSaleRowPaymentMethod(i, 0, 'cash');
+      container
+          .read(reconciliationProvider.notifier)
+          .setSaleRowUnitPrice(i, 0, 10000);
+      container
+          .read(reconciliationProvider.notifier)
+          .setSaleRowPaymentMethod(i, 0, 'cash');
       container.read(reconciliationProvider.notifier).addSaleRow(i);
       container.read(reconciliationProvider.notifier).setSaleRowQty(i, 1, 1);
     }
