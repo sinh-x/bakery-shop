@@ -1,5 +1,4 @@
 // ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
-// ignore_for_file: avoid_types_on_closure_parameters
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint, debugPrintStack;
@@ -245,7 +244,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
             transitioning: _transitioning,
             saving: _saving,
             onTransition: (t) => _onTransition(item, t),
-            onSave: (notes, isBirthday, age, unitPrice, {Map<String, dynamic>? attributes}) => _onSave(
+            onSave: (notes, isBirthday, age, unitPrice, {attributes}) => _onSave(
               item,
               notes: notes,
               isBirthday: isBirthday,

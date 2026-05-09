@@ -1,11 +1,10 @@
-// ignore_for_file: avoid_types_on_closure_parameters
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:bakery_app/app.dart';
 
 void main() {
-  testWidgets('App launches with bakery title', (WidgetTester tester) async {
+  testWidgets('App launches with bakery title', (tester) async {
     await tester.pumpWidget(
       const ProviderScope(child: BakeryApp()),
     );
