@@ -23,7 +23,7 @@ class OrderListNotifier extends AsyncNotifier<List<Order>> {
 
   Future<List<Order>> _fetch() async {
     final service = ref.read(orderServiceProvider);
-    return service.listOrders(status: _statusFilter);
+    return service.listOrders(status: _statusFilter, activeOnly: true);
   }
 
   Future<void> filterByStatus(String? status) async {

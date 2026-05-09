@@ -16,10 +16,12 @@ class OrderService {
     String? dueDate,
     int limit = 50,
     int offset = 0,
+    bool activeOnly = false,
   }) async {
     final params = <String, dynamic>{'limit': limit, 'offset': offset};
     if (status != null) params['status'] = status;
     if (dueDate != null) params['due_date'] = dueDate;
+    if (activeOnly) params['active_only'] = true;
 
     final response = await _dio.get('/api/orders', queryParameters: params);
     final list = response.data as List;
@@ -189,12 +191,11 @@ class OrderService {
   Future<List<Order>> listActiveOrders({int limit = 200}) async {
     final response = await _dio.get(
       '/api/orders',
-      queryParameters: {'limit': limit, 'offset': 0},
+      queryParameters: {'limit': limit, 'offset': 0, 'active_only': true},
     );
     final list = response.data as List;
     return list
         .map((json) => Order.fromJson(json as Map<String, dynamic>))
-        .where((o) => o.status != 'completed' && o.status != 'cancelled')
         .toList();
   }
 }
