@@ -2,6 +2,7 @@
 
 import json
 import logging
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
@@ -82,7 +83,7 @@ def log_to_db(entry: dict) -> None:
                     json.dumps(entry.get("detail", {}), ensure_ascii=False),
                 ),
             )
-    except Exception:
+    except (sqlite3.Error, TypeError, ValueError):
         # Never let DB logging failure crash the request
         logger.warning("Failed to write log to DB", exc_info=True)
 

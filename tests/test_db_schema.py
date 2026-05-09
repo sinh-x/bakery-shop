@@ -284,7 +284,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 36
+        assert _migrated_version(conn) == 37
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -298,7 +298,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 36
+        assert _migrated_version(conn) == 37
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -309,10 +309,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 36
+        assert _migrated_version(conn) == 37
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 36
+        assert _migrated_version(conn) == 37
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -377,7 +377,7 @@ def test_schema_migration_v35_repairs_missing_reconciliation_line_waste_reason()
 
         ensure_schema(conn)
 
-        assert _migrated_version(conn) == 36
+        assert _migrated_version(conn) == 37
         line_columns = _schema_columns(conn, "reconciliation_lines")
         assert "waste_reason" in line_columns
 
@@ -424,3 +424,54 @@ def test_schema_migration_v36_migrates_product_stock_to_lots_and_items():
             "SELECT COUNT(*) FROM inventory_items WHERE uuid NOT GLOB '????????-????-4???-[89abAB]???-????????????'"
         ).fetchone()[0]
         assert invalid_uuid_count == 0
+
+
+def test_schema_migration_v37_merges_duplicate_price_buckets_without_data_loss():
+    with get_db() as conn:
+        _migrate_to_version(conn, 36)
+        conn.execute(
+            """INSERT INTO products (name, category, base_price, cost, recipe_notes)
+               VALUES ('Bucket Merge Product', 'banh_mi', 13000, 0, '')"""
+        )
+        product_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        conn.execute(
+            "INSERT INTO product_price_chips (product_id, label, price, position) VALUES (?, 'chip 130', 13000, 1)",
+            (product_id,),
+        )
+        chip_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+        conn.execute(
+            "INSERT INTO stock_lots (product_id, price_chip_id, quantity, remaining_qty) VALUES (?, NULL, 2, 2)",
+            (product_id,),
+        )
+        base_lot_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        conn.execute(
+            "INSERT INTO stock_lots (product_id, price_chip_id, quantity, remaining_qty) VALUES (?, ?, 3, 3)",
+            (product_id, chip_id),
+        )
+        chip_lot_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+        for lot_id in (base_lot_id, chip_lot_id):
+            for idx in range(2 if lot_id == base_lot_id else 3):
+                conn.execute(
+                    "INSERT INTO inventory_items (lot_id, uuid, status) VALUES (?, ?, 'available')",
+                    (lot_id, f"{lot_id}-uuid-{idx}"),
+                )
+
+        _migrate_to_version(conn, 37)
+        assert _migrated_version(conn) == 37
+
+        lots = conn.execute(
+            "SELECT id, price_chip_id, quantity, remaining_qty FROM stock_lots WHERE product_id = ? ORDER BY id",
+            (product_id,),
+        ).fetchall()
+        assert len(lots) == 1
+        assert lots[0]["price_chip_id"] is None
+        assert lots[0]["quantity"] == 5
+        assert lots[0]["remaining_qty"] == 5
+
+        inventory_count = conn.execute(
+            "SELECT COUNT(*) FROM inventory_items WHERE lot_id = ?",
+            (lots[0]["id"],),
+        ).fetchone()[0]
+        assert inventory_count == 5

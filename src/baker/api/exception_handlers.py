@@ -1,6 +1,4 @@
 """Global exception handler for Baker API."""
-
-import traceback
 from datetime import datetime
 
 from fastapi import Request
@@ -10,9 +8,7 @@ from baker.logging import log_to_db, log_to_file, logger
 
 
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Catch unhandled exceptions, log with full traceback, return 500."""
-    tb = traceback.format_exception(type(exc), exc, exc.__traceback__)
-    tb_str = "".join(tb)
+    """Catch unhandled exceptions, log safely, return 500."""
 
     # Extract device headers and ref context
     device_model = request.headers.get("x-device-model", "")
@@ -35,10 +31,13 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
         "ref_type": ctx.get("ref_type", ""),
         "ref_id": ctx.get("ref_id"),
         "message": f"Unhandled exception: {type(exc).__name__}: {exc}",
-        "detail": {"traceback": tb_str},
+        "detail": {
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+        },
     }
 
-    logger.error(f"Unhandled exception on {request.method} {request.url.path}: {exc}")
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
     log_to_file(entry)
     log_to_db(entry)
 

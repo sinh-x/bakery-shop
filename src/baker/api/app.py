@@ -4,8 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from baker.api.cake_queue import router as cake_queue_router
+from baker.api.catalog import catalog_router as catalog_browse_router
 from baker.api.catalog import router as catalog_router
-from baker.api.catalog import catalog_router as cross_catalog_router
 from baker.api.checklist import router as checklist_router
 from baker.api.categories import router as categories_router
 from baker.api.config import router as config_router
@@ -54,7 +54,17 @@ def create_app() -> FastAPI:
         allow_origins=['https://lily.tail10c2c6.ts.net'],
         allow_credentials=True,
         allow_methods=['*'],
-        allow_headers=['*'],
+        allow_headers=[
+            'Accept',
+            'Accept-Language',
+            'Content-Language',
+            'Content-Type',
+            'Authorization',
+            'X-Requested-With',
+            'x-device-model',
+            'x-app-version',
+            'x-os-version',
+        ],
     )
 
     @app.get("/api/health")
@@ -63,8 +73,8 @@ def create_app() -> FastAPI:
 
     app.include_router(photos_router)
     app.include_router(products_router)
+    app.include_router(catalog_browse_router)
     app.include_router(catalog_router)
-    app.include_router(cross_catalog_router)
     app.include_router(categories_router)
     app.include_router(config_router)
     app.include_router(events_router)

@@ -11,7 +11,9 @@ import '../../data/models/work_item.dart';
 import '../../providers/config_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
+import '../../shared/utils/config_parsers.dart';
 import '../../shared/utils/phone_formatter.dart';
+import '../../shared/utils/api_error.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/hour_picker.dart';
 import 'widgets/order_photo_section.dart';
@@ -65,7 +67,10 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     if (order.dueDate != null) {
       try {
         _dueDate = DateFormat('yyyy-MM-dd').parse(order.dueDate!);
-      } catch (_) {}
+      } catch (error, stackTrace) {
+        debugPrint('order_edit: invalid due date "${order.dueDate}": $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
     }
     if (order.dueTime != null) {
       final parts = order.dueTime!.split(':');
@@ -78,27 +83,28 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     }
   }
 
-  bool get _needsAddress =>
-      _deliveryType == 'bus' || _deliveryType == 'door';
+  bool get _needsAddress => _deliveryType == 'bus' || _deliveryType == 'door';
 
-  String _formatDateDisplay(DateTime d) =>
-      DateFormat('dd/MM/yyyy').format(d);
+  String _formatDateDisplay(DateTime d) => DateFormat('dd/MM/yyyy').format(d);
 
-  String _formatDateApi(DateTime d) =>
-      DateFormat('yyyy-MM-dd').format(d);
+  String _formatDateApi(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
 
   String _formatTime(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-  void _updateShippingFeeForDeliveryType(String type) {
+  void _updateShippingFeeForDeliveryType(
+    String type, {
+    required double busDefault,
+    required double doorDefault,
+  }) {
     setState(() {
       _deliveryType = type;
       switch (type) {
         case 'bus':
-          _shippingFee = 25000;
+          _shippingFee = busDefault;
           break;
         case 'door':
-          _shippingFee = 20000;
+          _shippingFee = doorDefault;
           break;
         case 'pickup':
         default:
@@ -149,7 +155,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   void _commitNewItems() {
     final toAdd = List<DraftOrderItem>.from(_pendingNewItems);
     for (final draft in toAdd) {
-      ref.read(orderWorkItemsProvider(widget.orderRef).notifier).add(
+      ref
+          .read(orderWorkItemsProvider(widget.orderRef).notifier)
+          .add(
             productName: draft.product.name,
             productId: draft.product.productCode,
             quantity: draft.quantity,
@@ -163,13 +171,14 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     try {
-      await ref.read(orderDetailProvider(widget.orderRef).notifier).save(
+      await ref
+          .read(orderDetailProvider(widget.orderRef).notifier)
+          .save(
             notes: _notesCtrl.text.trim(),
             dueDate: _dueDate != null ? _formatDateApi(_dueDate!) : null,
             dueTime: _dueTime != null ? _formatTime(_dueTime!) : null,
             customerPhone: _phoneCtrl.text.trim(),
-            deliveryAddress:
-                _needsAddress ? _addressCtrl.text.trim() : '',
+            deliveryAddress: _needsAddress ? _addressCtrl.text.trim() : '',
             deliveryType: _deliveryType,
             source: _source.isEmpty ? null : _source,
             customerName: _nameCtrl.text.trim(),
@@ -179,9 +188,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         showTopSnackBar(context, VN.orderEditSaved);
         context.pop();
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('order_edit: save failed for ${widget.orderRef}: $e');
+      debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, normalizeApiError(e).message);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -192,6 +203,18 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   Widget build(BuildContext context) {
     final orderAsync = ref.watch(orderDetailProvider(widget.orderRef));
     final sourcesAsync = ref.watch(orderSourcesProvider); // F1
+    final shippingBusAsync = ref.watch(shippingFeeBusProvider);
+    final shippingDoorAsync = ref.watch(shippingFeeDoorProvider);
+    final double shippingBusDefault = shippingBusAsync.when(
+      data: (values) => firstFeeOrFallback(values, 25000),
+      loading: () => 25000,
+      error: (_, _) => 25000,
+    );
+    final double shippingDoorDefault = shippingDoorAsync.when(
+      data: (values) => firstFeeOrFallback(values, 20000),
+      loading: () => 20000,
+      error: (_, _) => 20000,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -226,23 +249,25 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                     spacing: 8,
                     runSpacing: 4,
                     children: sources
-                        .map((s) => ChoiceChip(
-                              label: Text(s),
-                              selected: _source == s,
-                              onSelected: (_) => setState(() {
-                                final wasSelected = _source == s;
-                                _source = wasSelected ? '' : s;
-                                if (!wasSelected &&
-                                    s == 'Tại Tiệm' &&
-                                    _nameCtrl.text.isEmpty) {
-                                  _nameCtrl.text = 'Khách Vãng Lai';
-                                } else if (wasSelected &&
-                                    s == 'Tại Tiệm' &&
-                                    _nameCtrl.text == 'Khách Vãng Lai') {
-                                  _nameCtrl.text = '';
-                                }
-                              }),
-                            ))
+                        .map(
+                          (s) => ChoiceChip(
+                            label: Text(s),
+                            selected: _source == s,
+                            onSelected: (_) => setState(() {
+                              final wasSelected = _source == s;
+                                  _source = wasSelected ? '' : s;
+                                  if (!wasSelected &&
+                                  s == VN.sourceTaiTiem &&
+                                  _nameCtrl.text.isEmpty) {
+                                _nameCtrl.text = VN.walkInCustomer;
+                              } else if (wasSelected &&
+                                  s == VN.sourceTaiTiem &&
+                                  _nameCtrl.text == VN.walkInCustomer) {
+                                _nameCtrl.text = '';
+                              }
+                            }),
+                          ),
+                        )
                         .toList(),
                   ),
                   loading: () => const SizedBox.shrink(),
@@ -338,8 +363,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                     ),
                   ],
                   selected: {_deliveryType},
-                  onSelectionChanged: (s) =>
-                      _updateShippingFeeForDeliveryType(s.first),
+                  onSelectionChanged: (s) => _updateShippingFeeForDeliveryType(
+                    s.first,
+                    busDefault: shippingBusDefault,
+                    doorDefault: shippingDoorDefault,
+                  ),
                 ),
                 if (_needsAddress) ...[
                   const SizedBox(height: 12),
@@ -351,8 +379,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                     ),
                     validator: (v) =>
                         _needsAddress && (v == null || v.trim().isEmpty)
-                            ? VN.fieldRequired
-                            : null,
+                        ? VN.fieldRequired
+                        : null,
                   ),
                 ],
                 const SizedBox(height: 20),
@@ -365,19 +393,21 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                     children: [
                       IconButton.filled(
                         onPressed: _shippingFee >= 5000
-                            ? () => _setShippingFee(_shippingFee - 5000)
+                            ? () => _setShippingFee(_shippingFee - 5000.0)
                             : null,
                         icon: const Icon(Icons.remove),
                       ),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Text(
-                          _shippingFee == 0 ? VN.shippingFree : formatVND(_shippingFee),
+                          _shippingFee == 0
+                              ? VN.shippingFree
+                              : formatVND(_shippingFee),
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                       ),
                       IconButton.filled(
-                        onPressed: () => _setShippingFee(_shippingFee + 5000),
+                        onPressed: () => _setShippingFee(_shippingFee + 5000.0),
                         icon: const Icon(Icons.add),
                       ),
                     ],
@@ -450,8 +480,8 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }
@@ -460,10 +490,7 @@ class _SectionHeader extends StatelessWidget {
 // ── Work items section ────────────────────────────────────────────────────────
 
 class _WorkItemsSection extends ConsumerWidget {
-  const _WorkItemsSection({
-    required this.orderRef,
-    required this.onAddTap,
-  });
+  const _WorkItemsSection({required this.orderRef, required this.onAddTap});
 
   final String orderRef;
   final VoidCallback onAddTap;
@@ -479,29 +506,29 @@ class _WorkItemsSection extends ConsumerWidget {
       data: (items) {
         final regularItems = items.where((i) => !i.isExtra).toList();
         return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ...regularItems.map(
-            (item) => _WorkItemEditCard(orderRef: orderRef, item: item),
-          ),
-          if (regularItems.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                VN.noWorkItems,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.outline,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ...regularItems.map(
+              (item) => _WorkItemEditCard(orderRef: orderRef, item: item),
+            ),
+            if (regularItems.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  VN.noWorkItems,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.outline,
+                  ),
                 ),
               ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: onAddTap,
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text(VN.addProduct),
             ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: onAddTap,
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text(VN.addProduct),
-          ),
-        ],
-      );
+          ],
+        );
       },
     );
   }
@@ -510,10 +537,7 @@ class _WorkItemsSection extends ConsumerWidget {
 // ── Work item edit card ───────────────────────────────────────────────────────
 
 class _WorkItemEditCard extends ConsumerStatefulWidget {
-  const _WorkItemEditCard({
-    required this.orderRef,
-    required this.item,
-  });
+  const _WorkItemEditCard({required this.orderRef, required this.item});
 
   final String orderRef;
   final WorkItem item;
@@ -561,7 +585,9 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
     final cashAmount = widget.item.attributes['cash_amount']?.toString() ?? '';
     final cashFee = widget.item.attributes['cash_fee']?.toString() ?? '';
     _cashAmountCtrl = TextEditingController(text: cashAmount);
-    _cashFeeCtrl = TextEditingController(text: cashFee.isNotEmpty ? cashFee : '$_defaultCashFee');
+    _cashFeeCtrl = TextEditingController(
+      text: cashFee.isNotEmpty ? cashFee : '$_defaultCashFee',
+    );
     _rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
     _notesFocus = FocusNode()..addListener(_onNotesFocusChange);
     _ageFocus = FocusNode()..addListener(_onAgeFocusChange);
@@ -641,22 +667,27 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
     try {
       await ref
           .read(orderWorkItemsProvider(widget.orderRef).notifier)
-          .edit(widget.item.id,
-              notes: notes,
-              unitPrice: unitPrice,
-              isBirthday: isBirthday,
-              age: age,
-              quantity: quantity,
-              isExtra: isExtra,
-              isGift: isGift,
-              attributes: attributes);
-    } catch (_) {}
+          .edit(
+            widget.item.id,
+            notes: notes,
+            unitPrice: unitPrice,
+            isBirthday: isBirthday,
+            age: age,
+            quantity: quantity,
+            isExtra: isExtra,
+            isGift: isGift,
+            attributes: attributes,
+          );
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, normalizeApiError(e).message);
+      }
+    }
   }
 
   void _toggleGift() {
     _editItem(isGift: !widget.item.isGift);
   }
-
 
   Future<void> _confirmRemove() async {
     final confirm = await showDialog<bool>(
@@ -673,9 +704,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
               VN.remove,
-              style: TextStyle(
-                color: Theme.of(ctx).colorScheme.error,
-              ),
+              style: TextStyle(color: Theme.of(ctx).colorScheme.error),
             ),
           ),
         ],
@@ -695,7 +724,8 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
   }
 
   Product? _findProduct() {
-    final products = ref.watch(productsProvider).asData?.value ?? const <Product>[];
+    final products =
+        ref.watch(productsProvider).asData?.value ?? const <Product>[];
     final pid = widget.item.productId;
     if (pid.isEmpty) return null;
     for (final p in products) {
@@ -714,8 +744,9 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
     if (product == null) return const [];
     final result = <Widget>[];
     for (final ea in product.enumAttributes) {
-      final activeOptions =
-          ea.options.where((o) => o.active == 1).toList(growable: false);
+      final activeOptions = ea.options
+          .where((o) => o.active == 1)
+          .toList(growable: false);
       if (activeOptions.isEmpty) continue;
       final selected = widget.item.attributes[ea.attributeType]?.toString();
       result.add(
@@ -773,10 +804,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        item.productName,
-                        style: theme.textTheme.bodyMedium,
-                      ),
+                      Text(item.productName, style: theme.textTheme.bodyMedium),
                       Text(
                         formatVND(item.unitPrice),
                         style: theme.textTheme.bodySmall?.copyWith(
@@ -798,10 +826,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                       ? () => _editItem(quantity: item.quantity - 1)
                       : null,
                 ),
-                Text(
-                  '${item.quantity}',
-                  style: theme.textTheme.bodyMedium,
-                ),
+                Text('${item.quantity}', style: theme.textTheme.bodyMedium),
                 IconButton(
                   icon: const Icon(Icons.add, size: 18),
                   padding: EdgeInsets.zero,
@@ -820,14 +845,19 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                       onTap: _toggleGift,
                       borderRadius: BorderRadius.circular(4),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: item.isGift
                               ? Colors.green.withValues(alpha: 0.2)
                               : Colors.grey.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(4),
                           border: Border.all(
-                            color: item.isGift ? Colors.green : Colors.grey.shade300,
+                            color: item.isGift
+                                ? Colors.green
+                                : Colors.grey.shade300,
                           ),
                         ),
                         child: Row(
@@ -955,7 +985,15 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                           if (_savedCashFee.isNotEmpty) {
                             _cashFeeCtrl.text = _savedCashFee;
                           }
-                          _editItem(attributes: {'rut_tien': 'true', 'cash_amount': _cashAmountCtrl.text.trim(), 'cash_fee': _cashFeeCtrl.text.trim().isNotEmpty ? _cashFeeCtrl.text.trim() : '$_defaultCashFee'});
+                          _editItem(
+                            attributes: {
+                              'rut_tien': 'true',
+                              'cash_amount': _cashAmountCtrl.text.trim(),
+                              'cash_fee': _cashFeeCtrl.text.trim().isNotEmpty
+                                  ? _cashFeeCtrl.text.trim()
+                                  : '$_defaultCashFee',
+                            },
+                          );
                         }
                       },
                       title: Text(VN.rutTien),
@@ -970,10 +1008,13 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                           Text('${VN.soTienRut}: '),
                           IconButton.filled(
                             onPressed: () {
-                              final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                              final current =
+                                  int.tryParse(_cashAmountCtrl.text) ?? 0;
                               if (current > _minCashAmount) {
                                 final next = current - _cashAmountStep;
-                                final clamped = next < _minCashAmount ? _minCashAmount : next;
+                                final clamped = next < _minCashAmount
+                                    ? _minCashAmount
+                                    : next;
                                 setState(() {
                                   _cashAmountCtrl.text = '$clamped';
                                   _editingCashAmount = false;
@@ -982,15 +1023,21 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                               }
                             },
                             icon: const Icon(Icons.remove, size: 16),
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                             padding: EdgeInsets.zero,
                           ),
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setState(() => _editingCashAmount = true),
+                              onTap: () =>
+                                  setState(() => _editingCashAmount = true),
                               child: _editingCashAmount
                                   ? Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
                                       child: TextFormField(
                                         controller: _cashAmountCtrl,
                                         autofocus: true,
@@ -998,39 +1045,63 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                                         decoration: const InputDecoration(
                                           isDense: true,
                                           suffixText: 'đ',
-                                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                          contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 8,
+                                          ),
                                         ),
                                         keyboardType: TextInputType.number,
                                         inputFormatters: [
-                                          FilteringTextInputFormatter.digitsOnly,
+                                          FilteringTextInputFormatter
+                                              .digitsOnly,
                                           LengthLimitingTextInputFormatter(9),
                                         ],
                                         onChanged: (_) => _saveCashAttributes(),
                                         onEditingComplete: () {
-                                          final val = int.tryParse(_cashAmountCtrl.text) ?? 0;
-                                          if (val < _minCashAmount && val != 0) {
-                                            _cashAmountCtrl.text = '$_minCashAmount';
+                                          final val =
+                                              int.tryParse(
+                                                _cashAmountCtrl.text,
+                                              ) ??
+                                              0;
+                                          if (val < _minCashAmount &&
+                                              val != 0) {
+                                            _cashAmountCtrl.text =
+                                                '$_minCashAmount';
                                           }
                                           _saveCashAttributes();
-                                          setState(() => _editingCashAmount = false);
+                                          setState(
+                                            () => _editingCashAmount = false,
+                                          );
                                         },
                                       ),
                                     )
                                   : Center(
                                       child: Text(
-                                        _cashAmountCtrl.text.isEmpty || _cashAmountCtrl.text == '0'
+                                        _cashAmountCtrl.text.isEmpty ||
+                                                _cashAmountCtrl.text == '0'
                                             ? '0đ'
-                                            : formatVND((int.tryParse(_cashAmountCtrl.text) ?? 0).toDouble()),
-                                        style: Theme.of(context).textTheme.titleMedium,
+                                            : formatVND(
+                                                (int.tryParse(
+                                                          _cashAmountCtrl.text,
+                                                        ) ??
+                                                        0)
+                                                    .toDouble(),
+                                              ),
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleMedium,
                                       ),
                                     ),
                             ),
                           ),
                           IconButton.filled(
                             onPressed: () {
-                              final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                              final current =
+                                  int.tryParse(_cashAmountCtrl.text) ?? 0;
                               final next = current + _cashAmountStep;
-                              final clamped = next < _minCashAmount ? _minCashAmount : next;
+                              final clamped = next < _minCashAmount
+                                  ? _minCashAmount
+                                  : next;
                               setState(() {
                                 _cashAmountCtrl.text = '$clamped';
                                 _editingCashAmount = false;
@@ -1038,7 +1109,10 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                               _saveCashAttributes();
                             },
                             icon: const Icon(Icons.add, size: 16),
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                             padding: EdgeInsets.zero,
                           ),
                         ],
@@ -1049,7 +1123,8 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                           Text('${VN.phiRutTien}: '),
                           IconButton.filled(
                             onPressed: () {
-                              final current = int.tryParse(_cashFeeCtrl.text) ?? 0;
+                              final current =
+                                  int.tryParse(_cashFeeCtrl.text) ?? 0;
                               if (current >= _cashFeeStep) {
                                 final next = current - _cashFeeStep;
                                 _cashFeeCtrl.text = '$next';
@@ -1057,25 +1132,37 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                               }
                             },
                             icon: const Icon(Icons.remove, size: 16),
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                             padding: EdgeInsets.zero,
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             child: Text(
-                              formatVND((int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee).toDouble()),
+                              formatVND(
+                                (int.tryParse(_cashFeeCtrl.text) ??
+                                        _defaultCashFee)
+                                    .toDouble(),
+                              ),
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                           ),
                           IconButton.filled(
                             onPressed: () {
-                              final current = int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee;
+                              final current =
+                                  int.tryParse(_cashFeeCtrl.text) ??
+                                  _defaultCashFee;
                               final next = current + _cashFeeStep;
                               _cashFeeCtrl.text = '$next';
                               _saveCashAttributes();
                             },
                             icon: const Icon(Icons.add, size: 16),
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                             padding: EdgeInsets.zero,
                           ),
                         ],
@@ -1151,25 +1238,33 @@ class _EditExtrasSection extends ConsumerWidget {
                     ),
                   )
                 else
-                  ...extras.map((extra) => _ExtraEditRow(
-                        item: extra,
-                        onIncrement: () async {
-                          await notifier.edit(extra.id, quantity: extra.quantity + 1);
-                        },
-                        onDecrement: () async {
-                          if (extra.quantity > 1) {
-                            await notifier.edit(extra.id, quantity: extra.quantity - 1);
-                          } else {
-                            await notifier.remove(extra.id);
-                          }
-                        },
-                        onToggleGift: () async {
-                          await notifier.edit(extra.id, isGift: !extra.isGift);
-                        },
-                        onRemove: () async {
+                  ...extras.map(
+                    (extra) => _ExtraEditRow(
+                      item: extra,
+                      onIncrement: () async {
+                        await notifier.edit(
+                          extra.id,
+                          quantity: extra.quantity + 1,
+                        );
+                      },
+                      onDecrement: () async {
+                        if (extra.quantity > 1) {
+                          await notifier.edit(
+                            extra.id,
+                            quantity: extra.quantity - 1,
+                          );
+                        } else {
                           await notifier.remove(extra.id);
-                        },
-                      )),
+                        }
+                      },
+                      onToggleGift: () async {
+                        await notifier.edit(extra.id, isGift: !extra.isGift);
+                      },
+                      onRemove: () async {
+                        await notifier.remove(extra.id);
+                      },
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 if (presets.isNotEmpty)
                   Wrap(
@@ -1182,11 +1277,14 @@ class _EditExtrasSection extends ConsumerWidget {
                         label: Text('$name (${formatVND(price)})'),
                         onPressed: () async {
                           // Reuse existing paid item if same name
-                          final existing = extras.where(
-                            (e) => e.productName == name && !e.isGift,
-                          ).firstOrNull;
+                          final existing = extras
+                              .where((e) => e.productName == name && !e.isGift)
+                              .firstOrNull;
                           if (existing != null) {
-                            await notifier.edit(existing.id, quantity: existing.quantity + 1);
+                            await notifier.edit(
+                              existing.id,
+                              quantity: existing.quantity + 1,
+                            );
                           } else {
                             await notifier.add(
                               productName: name,
@@ -1245,8 +1343,8 @@ class _ExtraEditRow extends StatelessWidget {
                   color: item.isGift ? Colors.green : Colors.grey.shade300,
                 ),
               ),
-              child: Text(
-                item.isGift ? VN.giftBadge : 'Trả phí',
+                child: Text(
+                item.isGift ? VN.giftBadge : VN.paymentFee,
                 style: TextStyle(
                   fontSize: 10,
                   color: item.isGift ? Colors.green : Colors.grey,

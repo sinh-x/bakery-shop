@@ -295,6 +295,16 @@ def test_attach_photo_entry_not_found(api_client):
     assert resp.status_code == 404
 
 
+def test_attach_photo_rejects_over_10mb(api_client):
+    create_resp = api_client.post("/api/knowledge", json={"title": "Banh"})
+    entry_id = create_resp.json()["id"]
+    payload = b"x" * (10 * 1024 * 1024 + 1)
+
+    files = {"file": ("too-large.jpg", payload, "image/jpeg")}
+    resp = api_client.post(f"/api/knowledge/{entry_id}/photos", files=files)
+    assert resp.status_code == 413
+
+
 def test_list_photos(api_client):
     create_resp = api_client.post("/api/knowledge", json={"title": "Test"})
     entry_id = create_resp.json()["id"]

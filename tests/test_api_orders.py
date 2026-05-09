@@ -914,3 +914,76 @@ def test_pos_order_without_chip_uses_base_option_and_still_works(api_client):
             (order["orderRef"],),
         ).fetchone()
         assert movement["price_chip_id"] is None
+
+
+@pytest.mark.parametrize("payment_method", ["cash", "transfer"])
+def test_pos_chip_order_with_gift_creates_order_tracks_payment_and_skips_gift_stock(api_client, payment_method):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "POS-Nhỏ", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 3, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem (POS-Nhỏ)",
+                "quantity": 2,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+            },
+            {
+                "productName": "Dao nhựa",
+                "quantity": 1,
+                "unitPrice": 1000,
+                "isGift": True,
+            },
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod=payment_method,
+    )
+    assert order["status"] == "delivered"
+
+    with get_db() as conn:
+        payment_rows = conn.execute(
+            "SELECT amount, method, type FROM payment_transactions WHERE order_id = ? ORDER BY id",
+            (int(order["id"]),),
+        ).fetchall()
+        assert len(payment_rows) == 1
+        assert payment_rows[0]["type"] == "payment"
+        assert payment_rows[0]["method"] == payment_method
+        assert payment_rows[0]["amount"] == float(order["totalPrice"])
+
+        movement_rows = conn.execute(
+            """SELECT id, quantity, price_chip_id
+               FROM stock_movements
+               WHERE movement_type = 'sale' AND reference_id = ?
+               ORDER BY id""",
+            (order["orderRef"],),
+        ).fetchall()
+        assert len(movement_rows) == 1
+        assert movement_rows[0]["quantity"] == -2
+        assert movement_rows[0]["price_chip_id"] == chip_id
+
+        consumed = conn.execute(
+            "SELECT COUNT(*) AS c FROM inventory_items WHERE consumed_by_movement_id = ?",
+            (movement_rows[0]["id"],),
+        ).fetchone()
+        assert consumed["c"] == 2
+
+        gift_row = conn.execute(
+            """SELECT product_id, is_gift, price_chip_id
+               FROM order_items
+               WHERE order_id = ? AND is_gift = 1
+               ORDER BY id ASC LIMIT 1""",
+            (int(order["id"]),),
+        ).fetchone()
+        assert gift_row is not None
+        assert gift_row["product_id"] == ""
+        assert gift_row["price_chip_id"] is None

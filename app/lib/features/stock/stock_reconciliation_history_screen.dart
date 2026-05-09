@@ -151,7 +151,14 @@ class _DetailView extends StatelessWidget {
                     line.productName,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  Text('${VN.tuyChon}: ${line.chipLabel}'),
+                  Text(
+                    line.normalizedPrice != null
+                        ? '${VN.tuyChonGia}: ${line.normalizedPrice}'
+                        : '${VN.tuyChon}: ${line.chipLabel}',
+                  ),
+                  Text(
+                    '${VN.tuyChon}: ${line.sourceChipLabels.isNotEmpty ? line.sourceChipLabels.join(', ') : line.chipLabel}',
+                  ),
                   const SizedBox(height: 6),
                   Text('${VN.tonDuKien}: ${line.expectedQty}'),
                   Text('${VN.tonDaDem}: ${line.countedQty}'),
