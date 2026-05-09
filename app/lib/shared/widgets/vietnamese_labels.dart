@@ -529,6 +529,15 @@ class VN {
   static const noBrowsePhotos = 'Chưa có ảnh mẫu';
   static const noBrowsePhotosForFilter = 'Không có ảnh phù hợp bộ lọc';
   static const xoaLoc = 'Xoá lọc';
+  static const catalogFilterLoadError = 'Không tải được bộ lọc ảnh';
+  static const categoryLoadError = 'Không tải được danh mục sản phẩm';
+
+  // POS stock labels
+  static const stockNotUpdated = 'Chưa cập nhật kho';
+  static String stockUpdatedAt(String hhmm) => 'Cập nhật kho: $hhmm';
+  static String availableStock(int qty) => 'Còn $qty';
+  static String lowStock(int qty) => 'Sắp hết ($qty)';
+  static const outOfStock = 'Hết hàng';
 
   // Stock management
   static const quanLyTonKho = 'Quản lý tồn kho';

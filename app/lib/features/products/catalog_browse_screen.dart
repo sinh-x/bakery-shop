@@ -252,7 +252,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text('Không tải được bộ lọc ảnh'),
+                      const Text(VN.catalogFilterLoadError),
                       const SizedBox(height: 6),
                       FilledButton.tonal(
                         onPressed: () => ref.invalidate(catalogTagDefsProvider),

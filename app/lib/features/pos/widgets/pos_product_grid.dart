@@ -245,9 +245,9 @@ class PosProductGrid extends ConsumerWidget {
 
 @visibleForTesting
 String posStockStatusLabel(int qty) {
-  if (qty > 3) return 'Còn $qty';
-  if (qty >= 1) return 'Sắp hết ($qty)';
-  return 'Hết hàng';
+  if (qty > 3) return VN.availableStock(qty);
+  if (qty >= 1) return VN.lowStock(qty);
+  return VN.outOfStock;
 }
 
 @visibleForTesting

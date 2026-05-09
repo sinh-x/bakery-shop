@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/events_provider.dart';
 import '../../providers/products_provider.dart';
+import '../../shared/utils/api_error.dart' as api_error;
 import '../api/reconciliation_service.dart';
 
 class ReconciliationSaleRowInput {
@@ -220,7 +221,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     } on DioException catch (error) {
       state = state.copyWith(
         isLoading: false,
-        errorMessage: _resolveDioError(error),
+        errorMessage: api_error.normalizeApiError(error).message,
       );
     } catch (_) {
       state = state.copyWith(
@@ -475,7 +476,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     } on DioException catch (error) {
       state = state.copyWith(
         isSubmitting: false,
-        errorMessage: _resolveDioError(error),
+        errorMessage: api_error.normalizeApiError(error).message,
       );
       return false;
     } catch (_) {
@@ -592,18 +593,6 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     return null;
   }
 
-  String _resolveDioError(DioException error) {
-    final data = error.response?.data;
-    if (data is Map<String, dynamic> && data['detail'] is String) {
-      return data['detail'] as String;
-    }
-    if (error.type == DioExceptionType.connectionTimeout ||
-        error.type == DioExceptionType.receiveTimeout ||
-        error.type == DioExceptionType.connectionError) {
-      return 'Không thể kết nối máy chủ';
-    }
-    return 'Có lỗi xảy ra khi gửi đối soát';
-  }
 }
 
 class _ValidationResult {

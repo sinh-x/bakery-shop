@@ -105,10 +105,10 @@ class _PosScreenState extends ConsumerState<PosScreen>
 
   String _refreshLabel() {
     final ts = _lastStockRefreshAt;
-    if (ts == null) return 'Chưa cập nhật kho';
+    if (ts == null) return VN.stockNotUpdated;
     final hh = ts.hour.toString().padLeft(2, '0');
     final mm = ts.minute.toString().padLeft(2, '0');
-    return 'Cập nhật kho: $hh:$mm';
+    return VN.stockUpdatedAt('$hh:$mm');
   }
 
   void _onRouteChange() {
@@ -194,7 +194,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
                   const Icon(Icons.error_outline, size: 18),
                   const SizedBox(width: 8),
                   const Expanded(
-                    child: Text('Không tải được danh mục sản phẩm'),
+                    child: Text(VN.categoryLoadError),
                   ),
                   TextButton(
                     onPressed: () => ref.invalidate(categoriesProvider),
