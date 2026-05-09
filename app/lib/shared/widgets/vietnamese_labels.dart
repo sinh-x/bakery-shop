@@ -580,11 +580,19 @@ class VN {
   static const xacNhanGuiDoiSoat = 'Xác nhận gửi đối soát';
   static const tongSoLuongBan = 'Tổng số lượng bán';
   static const tongSoLuongHaoHut = 'Tổng số lượng hao hụt';
+  static const vanDeCanXuLyTruocKhiGui = 'Vấn đề cần xử lý trước khi gửi';
+  static const daSanSangGuiDoiSoat = 'Dữ liệu hợp lệ. Có thể gửi đối soát.';
+  static const daTatGuiDoiSoatKhiCoLoi =
+      'Nút gửi tạm khóa cho đến khi xử lý hết lỗi.';
   static const doiSoatThanhCong = 'Đã lưu đối soát thành công';
   static const doiSoatThatBai = 'Gửi đối soát thất bại';
   static const khongTheTaiDuLieuDoiSoat = 'Không thể tải dữ liệu đối soát';
+  static const huongDanTaiLaiDoiSoat =
+      'Kiểm tra kết nối mạng rồi bấm tải lại để thử lại bản nháp.';
   static const khongCoSanPhamTrungBay =
       'Không có sản phẩm trưng bày cần đối soát';
+  static const huongDanKhongCoSanPhamTrungBay =
+      'Nếu hôm nay có sản phẩm, hãy tải lại để đồng bộ dữ liệu mới nhất.';
   static const chuaChonNhanVien = 'Chưa chọn nhân viên';
   static const lichSuDoiSoatTonKho = 'Lịch sử đối soát tồn kho';
   static const xemLichSu = 'Xem lịch sử';

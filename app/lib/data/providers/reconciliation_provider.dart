@@ -490,6 +490,26 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     }
   }
 
+  bool prepareSubmitReview() {
+    final staffName = ref.read(loggedByProvider).trim();
+    final validation = _validate(state, staffName);
+    if (validation == null) {
+      state = state.copyWith(
+        clearErrorMessage: true,
+        optionErrors: <String, String>{},
+        saleRowErrorsByOption: <String, List<ReconciliationSaleRowError>>{},
+      );
+      return true;
+    }
+
+    state = state.copyWith(
+      errorMessage: validation.message,
+      optionErrors: validation.optionErrors,
+      saleRowErrorsByOption: validation.saleRowErrorsByOption,
+    );
+    return false;
+  }
+
   _ValidationResult? _validate(
     ReconciliationState currentState,
     String staffName,

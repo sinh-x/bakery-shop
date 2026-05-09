@@ -62,10 +62,15 @@ class _StockReconciliationScreenState
               ? null
               : () async {
                   final messenger = ScaffoldMessenger.of(context);
+                  final canSubmit = ref
+                      .read(reconciliationProvider.notifier)
+                      .prepareSubmitReview();
+                  final previewState = ref.read(reconciliationProvider);
                   final ok = await _confirmBeforeSubmit(
                     context,
-                    state,
+                    previewState,
                     staffName,
+                    canSubmit,
                   );
                   if (!ok) {
                     return;
@@ -149,6 +154,11 @@ class _StockReconciliationScreenState
               state.errorMessage ?? VN.khongTheTaiDuLieuDoiSoat,
               textAlign: TextAlign.center,
             ),
+            const SizedBox(height: 8),
+            const Text(
+              VN.huongDanTaiLaiDoiSoat,
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: () =>
@@ -191,7 +201,31 @@ class _StockReconciliationScreenState
         ),
         Expanded(
           child: draft.products.isEmpty
-              ? const Center(child: Text(VN.khongCoSanPhamTrungBay))
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.inventory_2_outlined, size: 48),
+                        const SizedBox(height: 12),
+                        const Text(VN.khongCoSanPhamTrungBay),
+                        const SizedBox(height: 8),
+                        const Text(
+                          VN.huongDanKhongCoSanPhamTrungBay,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: () =>
+                              ref.read(reconciliationProvider.notifier).loadDraft(),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text(VN.taiLai),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
               : ListView.builder(
                   padding: const EdgeInsets.only(bottom: 12),
                   itemCount: draft.products.length,
@@ -209,6 +243,7 @@ class _StockReconciliationScreenState
     BuildContext context,
     ReconciliationState state,
     String staffName,
+    bool canSubmit,
   ) async {
     final draft = state.draft;
     if (draft == null) {
@@ -231,27 +266,11 @@ class _StockReconciliationScreenState
       }
     }
 
+    final issues = _collectUnresolvedIssues(state);
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
-        final hasEmptyWasteReason = draft.products.any((product) {
-          for (final option in product.options) {
-            final optionKey = reconciliationOptionKey(
-              product.productId,
-              option.normalizedPrice,
-            );
-            final waste = state.wasteQtyByOption[optionKey] ?? 0;
-            if (waste > 0) {
-              final reason = (state.wasteReasonByOption[optionKey] ?? '')
-                  .trim();
-              if (reason.isEmpty) {
-                return true;
-              }
-            }
-          }
-          return false;
-        });
-
         return AlertDialog(
           title: const Text(VN.xacNhanGuiDoiSoat),
           content: Column(
@@ -264,9 +283,32 @@ class _StockReconciliationScreenState
               const SizedBox(height: 4),
               Text('${VN.tongSoLuongBan}: $totalSale'),
               Text('${VN.tongSoLuongHaoHut}: $totalWaste'),
-              if (state.hasWaste && hasEmptyWasteReason)
+              const SizedBox(height: 8),
+              Text(
+                VN.vanDeCanXuLyTruocKhiGui,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (issues.isEmpty)
                 Text(
-                  '(${VN.lyDoHaoHut}: ${VN.khongCo})',
+                  VN.daSanSangGuiDoiSoat,
+                  style: TextStyle(color: Colors.green[700]),
+                )
+              else
+                ...issues.map(
+                  (issue) => Text(
+                    '- $issue',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              if (!canSubmit)
+                Text(
+                  VN.daTatGuiDoiSoatKhiCoLoi,
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.error,
                     fontWeight: FontWeight.w600,
@@ -280,7 +322,7 @@ class _StockReconciliationScreenState
               child: const Text(VN.huy),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: canSubmit ? () => Navigator.of(context).pop(true) : null,
               child: const Text(VN.guiDoiSoat),
             ),
           ],
@@ -288,6 +330,46 @@ class _StockReconciliationScreenState
       },
     );
     return confirmed ?? false;
+  }
+
+  List<String> _collectUnresolvedIssues(ReconciliationState state) {
+    final draft = state.draft;
+    if (draft == null) {
+      return <String>[];
+    }
+
+    final optionNameByKey = <String, String>{};
+    for (final product in draft.products) {
+      for (final option in product.options) {
+        final key = reconciliationOptionKey(
+          product.productId,
+          option.normalizedPrice,
+        );
+        optionNameByKey[key] = '${product.name} - Gia ${option.normalizedPrice}';
+      }
+    }
+
+    final issues = <String>[];
+    for (final entry in state.optionErrors.entries) {
+      final optionLabel = optionNameByKey[entry.key] ?? entry.key;
+      issues.add('$optionLabel: ${entry.value}');
+    }
+
+    for (final entry in state.saleRowErrorsByOption.entries) {
+      final optionLabel = optionNameByKey[entry.key] ?? entry.key;
+      for (var index = 0; index < entry.value.length; index += 1) {
+        final rowError = entry.value[index];
+        final parts = <String>[
+          if (rowError.quantity != null) rowError.quantity!,
+          if (rowError.unitPrice != null) rowError.unitPrice!,
+          if (rowError.paymentMethod != null) rowError.paymentMethod!,
+        ];
+        if (parts.isNotEmpty) {
+          issues.add('$optionLabel - ${VN.dongBan} ${index + 1}: ${parts.join(', ')}');
+        }
+      }
+    }
+    return issues;
   }
 }
 

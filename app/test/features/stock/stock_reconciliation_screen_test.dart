@@ -11,13 +11,25 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeService extends ReconciliationService {
-  _FakeService(this._draft) : super(Dio());
+  _FakeService(this._draft, {this.failDraftTimes = 0}) : super(Dio());
 
   final ReconciliationDraft _draft;
+  int failDraftTimes;
+  int draftCalls = 0;
   int submitCalls = 0;
 
   @override
-  Future<ReconciliationDraft> getDraft() async => _draft;
+  Future<ReconciliationDraft> getDraft() async {
+    draftCalls += 1;
+    if (failDraftTimes > 0) {
+      failDraftTimes -= 1;
+      throw DioException(
+        requestOptions: RequestOptions(path: '/stock/reconciliation/draft'),
+        type: DioExceptionType.connectionError,
+      );
+    }
+    return _draft;
+  }
 
   @override
   Future<ReconciliationSubmitResult> submit(
@@ -33,13 +45,29 @@ class _FakeService extends ReconciliationService {
 }
 
 void main() {
-  Finder _unitPriceFieldFinder() {
-    return find.byType(TextFormField).first;
+  Finder _unitPriceFieldFinder() => find.byType(TextFormField).first;
+
+  GoRouter _buildRouter() {
+    return GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) => const StockReconciliationScreen(),
+        ),
+        GoRoute(
+          path: '/stock/reconciliation/history',
+          builder: (context, state) => const Scaffold(body: Text('Lịch sử')),
+        ),
+        GoRoute(
+          path: '/stock/reconciliation/history/:id',
+          builder: (context, state) =>
+              Scaffold(body: Text('Chi tiết #${state.pathParameters['id']}')),
+        ),
+      ],
+    );
   }
 
-  testWidgets('product card toggles and shows collapsed summary', (
-    tester,
-  ) async {
+  testWidgets('product card toggles and shows collapsed summary', (tester) async {
     SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
     final prefs = await SharedPreferences.getInstance();
     final service = _FakeService(
@@ -58,22 +86,13 @@ void main() {
       ),
     );
 
-    final router = GoRouter(
-      routes: [
-        GoRoute(
-          path: '/',
-          builder: (context, state) => const StockReconciliationScreen(),
-        ),
-      ],
-    );
-
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
           reconciliationServiceProvider.overrideWithValue(service),
         ],
-        child: MaterialApp.router(routerConfig: router),
+        child: MaterialApp.router(routerConfig: _buildRouter()),
       ),
     );
     await tester.pumpAndSettle();
@@ -88,9 +107,7 @@ void main() {
     expect(find.text('Tồn đã đếm'), findsOneWidget);
   });
 
-  testWidgets('add row defaults option unit price and keeps manual edit', (
-    tester,
-  ) async {
+  testWidgets('add row defaults option unit price and keeps manual edit', (tester) async {
     SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
     final prefs = await SharedPreferences.getInstance();
     final service = _FakeService(
@@ -116,22 +133,13 @@ void main() {
       ),
     );
 
-    final router = GoRouter(
-      routes: [
-        GoRoute(
-          path: '/',
-          builder: (context, state) => const StockReconciliationScreen(),
-        ),
-      ],
-    );
-
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
           reconciliationServiceProvider.overrideWithValue(service),
         ],
-        child: MaterialApp.router(routerConfig: router),
+        child: MaterialApp.router(routerConfig: _buildRouter()),
       ),
     );
     await tester.pumpAndSettle();
@@ -144,9 +152,7 @@ void main() {
     await tester.tap(find.text(VN.themDongBan));
     await tester.pumpAndSettle();
 
-    final unitPriceField = tester.widget<TextFormField>(
-      _unitPriceFieldFinder(),
-    );
+    final unitPriceField = tester.widget<TextFormField>(_unitPriceFieldFinder());
     expect(unitPriceField.controller?.text, '100000');
 
     await tester.enterText(_unitPriceFieldFinder(), '15000');
@@ -187,22 +193,13 @@ void main() {
       ),
     );
 
-    final router = GoRouter(
-      routes: [
-        GoRoute(
-          path: '/',
-          builder: (context, state) => const StockReconciliationScreen(),
-        ),
-      ],
-    );
-
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
           reconciliationServiceProvider.overrideWithValue(service),
         ],
-        child: MaterialApp.router(routerConfig: router),
+        child: MaterialApp.router(routerConfig: _buildRouter()),
       ),
     );
     await tester.pumpAndSettle();
@@ -223,7 +220,7 @@ void main() {
     expect(find.text('12000'), findsOneWidget);
   });
 
-  testWidgets('invalid sale row keeps inline errors and collapsed error status', (
+  testWidgets('invalid submit review shows issues and blocks final submit', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
@@ -244,22 +241,13 @@ void main() {
       ),
     );
 
-    final router = GoRouter(
-      routes: [
-        GoRoute(
-          path: '/',
-          builder: (context, state) => const StockReconciliationScreen(),
-        ),
-      ],
-    );
-
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
           reconciliationServiceProvider.overrideWithValue(service),
         ],
-        child: MaterialApp.router(routerConfig: router),
+        child: MaterialApp.router(routerConfig: _buildRouter()),
       ),
     );
     await tester.pumpAndSettle();
@@ -282,7 +270,93 @@ void main() {
     await tester.enterText(_unitPriceFieldFinder(), '');
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(FilledButton).first);
+    await tester.tap(find.widgetWithText(FilledButton, VN.guiDoiSoat));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining(VN.tongSoLuongBan), findsOneWidget);
+    expect(find.textContaining(VN.tongSoLuongHaoHut), findsOneWidget);
+    expect(find.text(VN.vanDeCanXuLyTruocKhiGui), findsOneWidget);
+    expect(find.textContaining('Đơn giá phải lớn hơn 0'), findsWidgets);
+
+    final confirmButton = tester.widget<FilledButton>(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, VN.guiDoiSoat),
+      ),
+    );
+    expect(confirmButton.onPressed, isNull);
+    expect(service.submitCalls, 0);
+
+    await tester.tap(find.byType(InkWell).first);
+    await tester.pumpAndSettle();
+    expect(find.text('Trạng thái: Có lỗi'), findsOneWidget);
+  });
+
+  testWidgets('load failure and empty states show guidance with retry', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _FakeService(
+      ReconciliationDraft(date: '2026-05-04', products: const []),
+      failDraftTimes: 1,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reconciliationServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(routerConfig: _buildRouter()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(FilledButton, VN.taiLai), findsOneWidget);
+    expect(find.text(VN.huongDanTaiLaiDoiSoat), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, VN.taiLai));
+    await tester.pumpAndSettle();
+
+    expect(service.draftCalls, 2);
+    expect(find.text(VN.khongCoSanPhamTrungBay), findsOneWidget);
+    expect(find.text(VN.huongDanKhongCoSanPhamTrungBay), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, VN.taiLai), findsOneWidget);
+  });
+
+  testWidgets('submit success keeps action to open saved history detail', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _FakeService(
+      ReconciliationDraft(
+        date: '2026-05-04',
+        products: [
+          ReconciliationDraftProduct(
+            productId: 1,
+            name: 'Bánh kem dâu',
+            category: 'banh_kem',
+            expectedQty: 1,
+            basePrice: 100000,
+            priceChips: const [],
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reconciliationServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(routerConfig: _buildRouter()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, VN.guiDoiSoat));
     await tester.pumpAndSettle();
     await tester.tap(
       find.descendant(
@@ -292,17 +366,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(service.submitCalls, 0);
-    expect(find.text('Đơn giá phải lớn hơn 0'), findsOneWidget);
-    expect(find.text('Chọn phương thức'), findsOneWidget);
-
-    await tester.tap(find.byType(InkWell).first);
+    expect(service.submitCalls, 1);
+    await tester.tap(find.widgetWithText(SnackBarAction, VN.xemLichSu));
     await tester.pumpAndSettle();
-    expect(find.text('Trạng thái: Có lỗi'), findsOneWidget);
-
-    await tester.tap(find.byType(InkWell).first);
-    await tester.pumpAndSettle();
-    expect(find.text('Đơn giá phải lớn hơn 0'), findsOneWidget);
-    expect(find.text('Chọn phương thức'), findsOneWidget);
+    expect(find.text('Chi tiết #1'), findsOneWidget);
   });
 }
