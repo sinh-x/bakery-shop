@@ -3,7 +3,7 @@
 Deploying baker to lily using Docker Compose with HTTPS via Caddy.
 
 **Target:** lily server (NixOS + Docker + Tailscale)
-**Last updated:** 2026-03-29 (revised)
+**Last updated:** 2026-05-09 (printer deployment guardrails)
 
 ---
 
@@ -21,7 +21,10 @@ Deploying baker to lily using Docker Compose with HTTPS via Caddy.
   ```bash
   tailscale cert --cert-file=certs/lily.tail1234.ts.net.crt --key-file=certs/lily.tail1234.ts.net.key lily.tail1234.ts.net
   ```
-- [ ] USB printer (optional): if using thermal printing, verify `/dev/usb/lp0` exists on lily. The docker-compose mounts this device — skip if no printer.
+- [ ] USB printer: verify `/dev/usb/lp0` exists on lily before deploying thermal printing. `baker-prod` must mount the real host printer device; never map `/dev/null` as the printer.
+  ```bash
+  ssh lily 'ls -l /dev/usb/lp0'
+  ```
 - [ ] Rustic backup tools installed (for automated backups):
   ```bash
   # Install rustic
@@ -84,6 +87,13 @@ Set your Tailscale domain:
 ```
 DOMAIN=lily.tail1234.ts.net
 ```
+
+Set the host thermal printer device:
+```
+BAKER_PRINTER_DEVICE=/dev/usb/lp0
+```
+
+Do not set `BAKER_PRINTER_DEVICE=/dev/null`. Docker can mount `/dev/null` at `/dev/usb/lp0`, the backend can write successfully, and the app can show print success while no paper prints.
 
 ### 3.2 Set Up Tailscale Certs
 
@@ -179,6 +189,12 @@ docker compose ps
 docker compose logs --tail=50
 ```
 
+For Lily with thermal printing, the printer device must be real before starting containers:
+```bash
+test -c /dev/usb/lp0
+BAKER_PRINTER_DEVICE=/dev/usb/lp0 docker compose --profile prod up -d
+```
+
 Expected output:
 ```
 NAME          IMAGE          STATUS
@@ -222,6 +238,52 @@ ls -la /home/sinh/bakery-shop/prod/data/
 
 # Should contain: baker.db, photos/, logs/
 ```
+
+### 7.4 Verify Thermal Printer Mapping
+
+The host and container must both show the printer as USB major/minor `180,0` or another real USB printer device, not `/dev/null` (`1,3`).
+
+```bash
+# Host device
+ls -l /dev/usb/lp0
+
+# Container device should not be major/minor 1,3
+docker compose --profile prod exec baker-prod ls -l /dev/usb/lp0
+
+# Backend print status
+curl http://localhost:2108/api/orders/print/status
+
+# Compose mapping should show /dev/usb/lp0, not /dev/null
+docker inspect bakery-shop-baker-prod-1 --format '{{json .HostConfig.Devices}}'
+```
+
+Expected status response:
+```json
+{"status":"ok","printer":"available","device":"/dev/usb/lp0"}
+```
+
+If the container device is `crw-rw-rw- ... 1, 3 /dev/usb/lp0`, it is `/dev/null`; restart with `BAKER_PRINTER_DEVICE=/dev/usb/lp0`.
+
+### 7.5 Printer Incident Note - 2026-05-09
+
+Symptom: appweb showed receipt print success for all receipt types, but Lily's thermal printer produced no paper output.
+
+Root cause: `baker-prod` was running with Docker device mapping `/dev/null:/dev/usb/lp0`. The backend opened and wrote to `/dev/usb/lp0` successfully because it was actually `/dev/null`, so `/api/orders/{ref}/print` returned HTTP 200 while the print bytes were discarded.
+
+Confirmed diagnostics:
+- Host Lily had the real printer: `/dev/usb/lp0` as major/minor `180,0`.
+- Container had `/dev/usb/lp0` as major/minor `1,3`, meaning `/dev/null`.
+- `/api/orders/print/status` returned OK before the fix because `/dev/null` is writable.
+
+Immediate live remediation used on Lily:
+```bash
+cd /home/sinh/bakery-shop
+BAKER_PRINTER_DEVICE=/dev/usb/lp0 docker compose --profile prod up -d --force-recreate baker-prod
+curl http://localhost:2108/api/orders/print/status
+docker exec bakery-shop-baker-prod-1 ls -l /dev/usb/lp0
+```
+
+The persistent deployment fix is to keep `BAKER_PRINTER_DEVICE=/dev/usb/lp0` in Lily's `.env` and use `scripts/deploy-lily.sh`, which now verifies the remote printer device and the container mount.
 
 ---
 
@@ -353,7 +415,7 @@ sudo nixos-rebuild switch --flake /home/sinh/bakery-shop#
 ### Restart Containers
 
 ```bash
-docker compose --profile prod restart
+BAKER_PRINTER_DEVICE=/dev/usb/lp0 docker compose --profile prod restart
 ```
 
 ### Update to New Version
@@ -388,7 +450,7 @@ git pull
 docker compose --profile prod build baker-prod
 
 # Restart
-docker compose --profile prod up -d
+BAKER_PRINTER_DEVICE=/dev/usb/lp0 docker compose --profile prod up -d
 ```
 
 ### View Logs
@@ -437,6 +499,39 @@ docker compose --profile prod exec baker-prod python -c "import urllib.request; 
 
 # Check if port is correct
 docker compose --profile prod exec baker-prod ss -tlnp | grep 2108
+```
+
+### Receipt print says success but printer does not print
+
+Check whether the container is writing to the real USB printer or to `/dev/null`:
+
+```bash
+cd /home/sinh/bakery-shop
+
+# Host should show a real USB printer character device, commonly major/minor 180,0
+ls -l /dev/usb/lp0
+
+# Container must not show major/minor 1,3; 1,3 is /dev/null
+docker compose --profile prod exec baker-prod ls -l /dev/usb/lp0
+
+# Inspect the actual Docker device mapping
+docker inspect bakery-shop-baker-prod-1 --format '{{json .HostConfig.Devices}}'
+
+# Backend status endpoint
+curl http://localhost:2108/api/orders/print/status
+```
+
+If Docker shows `PathOnHost` as `/dev/null`, recreate `baker-prod` with the real printer device:
+
+```bash
+BAKER_PRINTER_DEVICE=/dev/usb/lp0 docker compose --profile prod up -d --force-recreate baker-prod
+docker compose --profile prod exec baker-prod ls -l /dev/usb/lp0
+curl http://localhost:2108/api/orders/print/status
+```
+
+Then persist the setting in Lily's `.env`:
+```bash
+BAKER_PRINTER_DEVICE=/dev/usb/lp0
 ```
 
 ### Web app not loading
@@ -550,6 +645,8 @@ Consider setting a calendar reminder every 2 months.
 | `./scripts/deploy-lily.sh --dry-run` | Preview deploy steps |
 | `./scripts/deploy-lily.sh --rollback` | Revert to previous version |
 | `docker compose --profile prod up -d` | Start all prod services |
+| `BAKER_PRINTER_DEVICE=/dev/usb/lp0 docker compose --profile prod up -d --force-recreate baker-prod` | Recreate backend with real thermal printer |
+| `docker inspect bakery-shop-baker-prod-1 --format '{{json .HostConfig.Devices}}'` | Verify printer is not mapped to `/dev/null` |
 | `docker compose --profile prod restart` | Restart all prod services |
 | `docker compose --profile prod logs -f` | Follow logs |
 | `docker compose --profile prod down` | Stop all services |

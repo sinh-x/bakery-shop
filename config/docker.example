@@ -11,3 +11,7 @@ DOMAIN=drgnfly.tail10c2c6.ts.net
 
 # Rustic profile name for backup/restore (must match ~/.config/rustic/<name>.toml)
 RUSTIC_PROFILE=baker-prod
+
+# Host thermal printer device mounted into baker-prod at /dev/usb/lp0.
+# Do not set this to /dev/null: writes can appear successful while no receipt prints.
+BAKER_PRINTER_DEVICE=/dev/usb/lp0
