@@ -155,10 +155,7 @@ class _StockReconciliationScreenState
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
-            const Text(
-              VN.huongDanTaiLaiDoiSoat,
-              textAlign: TextAlign.center,
-            ),
+            const Text(VN.huongDanTaiLaiDoiSoat, textAlign: TextAlign.center),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: () =>
@@ -217,8 +214,9 @@ class _StockReconciliationScreenState
                         ),
                         const SizedBox(height: 12),
                         FilledButton.icon(
-                          onPressed: () =>
-                              ref.read(reconciliationProvider.notifier).loadDraft(),
+                          onPressed: () => ref
+                              .read(reconciliationProvider.notifier)
+                              .loadDraft(),
                           icon: const Icon(Icons.refresh),
                           label: const Text(VN.taiLai),
                         ),
@@ -322,7 +320,9 @@ class _StockReconciliationScreenState
               child: const Text(VN.huy),
             ),
             FilledButton(
-              onPressed: canSubmit ? () => Navigator.of(context).pop(true) : null,
+              onPressed: canSubmit
+                  ? () => Navigator.of(context).pop(true)
+                  : null,
               child: const Text(VN.guiDoiSoat),
             ),
           ],
@@ -345,7 +345,8 @@ class _StockReconciliationScreenState
           product.productId,
           option.normalizedPrice,
         );
-        optionNameByKey[key] = '${product.name} - Gia ${option.normalizedPrice}';
+        optionNameByKey[key] =
+            '${product.name} - Gia ${option.normalizedPrice}';
       }
     }
 
@@ -365,7 +366,9 @@ class _StockReconciliationScreenState
           if (rowError.paymentMethod != null) rowError.paymentMethod!,
         ];
         if (parts.isNotEmpty) {
-          issues.add('$optionLabel - ${VN.dongBan} ${index + 1}: ${parts.join(', ')}');
+          issues.add(
+            '$optionLabel - ${VN.dongBan} ${index + 1}: ${parts.join(', ')}',
+          );
         }
       }
     }
@@ -417,6 +420,24 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
         text: wasteReason,
       );
     }
+  }
+
+  bool _shouldShowSaleEditor(
+    int missing,
+    List<ReconciliationSaleRowInput> saleRows,
+  ) {
+    return missing > 0 || saleRows.isNotEmpty;
+  }
+
+  String _collapsedOptionPriceSummary() {
+    final prices = widget.product.options
+        .map((option) => option.normalizedPrice.toStringAsFixed(0))
+        .toSet()
+        .toList();
+    if (prices.isEmpty) {
+      return '';
+    }
+    return '${prices.length} options: ${prices.join(', ')}đ';
   }
 
   @override
@@ -527,6 +548,11 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                 '${VN.giaCoSo}: ${widget.product.basePrice.toStringAsFixed(0)}đ',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              if (widget.product.options.length > 1)
+                Text(
+                  _collapsedOptionPriceSummary(),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
             ],
             if (_isExpanded) ...[
               const SizedBox(height: 10),
@@ -550,7 +576,10 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                     final saleRowErrors =
                         state.saleRowErrorsByOption[optionKey] ??
                         const <ReconciliationSaleRowError>[];
-                    final showSaleEditor = missing > 0 || saleRows.isNotEmpty;
+                    final showSaleEditor = _shouldShowSaleEditor(
+                      missing,
+                      saleRows,
+                    );
 
                     final countedController = _countedControllers[optionKey]!;
                     final wasteController = _wasteControllers[optionKey]!;
@@ -784,7 +813,7 @@ class _SaleRowEditor extends StatefulWidget {
   final ReconciliationDraftProduct product;
   final ReconciliationSaleRowError? rowError;
   final ValueChanged<int> onQtyChanged;
-  final ValueChanged<String> onPriceChanged;
+  final ValueChanged<double?> onPriceChanged;
   final ValueChanged<String?> onMethodChanged;
   final VoidCallback onRemove;
   final ValueChanged<double> onPriceChipTap;
@@ -802,7 +831,18 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
   void initState() {
     super.initState();
     _qtyController = TextEditingController(text: '${widget.row.quantity}');
-    _priceController = TextEditingController(text: widget.row.unitPrice);
+    _priceController = TextEditingController(
+      text: _priceToText(widget.row.unitPrice),
+    );
+  }
+
+  String _priceToText(double? price) {
+    if (price == null) {
+      return '';
+    }
+    return price == price.roundToDouble()
+        ? price.toInt().toString()
+        : price.toString();
   }
 
   @override
@@ -816,11 +856,11 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
       );
     }
 
-    if (!_priceFocusNode.hasFocus &&
-        _priceController.text != widget.row.unitPrice) {
+    final nextPrice = _priceToText(widget.row.unitPrice);
+    if (!_priceFocusNode.hasFocus && _priceController.text != nextPrice) {
       _priceController.value = TextEditingValue(
-        text: widget.row.unitPrice,
-        selection: TextSelection.collapsed(offset: widget.row.unitPrice.length),
+        text: nextPrice,
+        selection: TextSelection.collapsed(offset: nextPrice.length),
       );
     }
   }
@@ -875,7 +915,12 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
             controller: _priceController,
             focusNode: _priceFocusNode,
             keyboardType: TextInputType.number,
-            onChanged: widget.onPriceChanged,
+            onChanged: (value) {
+              final trimmed = value.trim();
+              widget.onPriceChanged(
+                trimmed.isEmpty ? null : double.tryParse(trimmed),
+              );
+            },
             inputFormatters: [
               FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
             ],

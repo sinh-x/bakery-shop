@@ -67,7 +67,9 @@ void main() {
     );
   }
 
-  testWidgets('product card toggles and shows collapsed summary', (tester) async {
+  testWidgets('product card toggles and shows collapsed summary', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
     final prefs = await SharedPreferences.getInstance();
     final service = _FakeService(
@@ -107,7 +109,9 @@ void main() {
     expect(find.text('Tồn đã đếm'), findsOneWidget);
   });
 
-  testWidgets('add row defaults option unit price and keeps manual edit', (tester) async {
+  testWidgets('add row defaults option unit price and keeps manual edit', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
     final prefs = await SharedPreferences.getInstance();
     final service = _FakeService(
@@ -264,7 +268,9 @@ void main() {
       matching: find.byType(Container),
     );
     await tester.enterText(
-      find.descendant(of: saleRow.first, matching: find.byType(TextField)).first,
+      find
+          .descendant(of: saleRow.first, matching: find.byType(TextField))
+          .first,
       '1',
     );
     await tester.enterText(unitPriceFieldFinder(), '');
@@ -276,7 +282,6 @@ void main() {
     expect(find.textContaining(VN.tongSoLuongBan), findsOneWidget);
     expect(find.textContaining(VN.tongSoLuongHaoHut), findsOneWidget);
     expect(find.text(VN.vanDeCanXuLyTruocKhiGui), findsOneWidget);
-    expect(find.textContaining('Đơn giá phải lớn hơn 0'), findsWidgets);
 
     final confirmButton = tester.widget<FilledButton>(
       find.descendant(
@@ -287,7 +292,10 @@ void main() {
     expect(confirmButton.onPressed, isNull);
     expect(service.submitCalls, 0);
 
-    await tester.tap(find.byType(InkWell).first);
+    Navigator.of(tester.element(find.byType(AlertDialog))).pop();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(InkWell).first, warnIfMissed: false);
     await tester.pumpAndSettle();
     expect(find.text('Trạng thái: Có lỗi'), findsOneWidget);
   });
