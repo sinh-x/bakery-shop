@@ -29,6 +29,10 @@
 - This separation avoids cross-feature coupling, keeps Riverpod graph intent visible, and simplifies test setup.
 - Shared providers stay in shared/common directories; feature providers stay close to feature screens/services.
 
+## Flutter Coding Standards
+
+Future Flutter work must follow [docs/flutter-coding-standards.md](docs/flutter-coding-standards.md) for file sizing, widget extraction, provider placement, Riverpod state management, VN label organization, testing, and lint rules. The [docs/code-quality-audit.md](docs/code-quality-audit.md) catalogues pre-existing oversized files and extraction targets. DG-138 tracks the deferred const suppression audit.
+
 ## Review-Remediation Verification Expectations
 
 - If CI/deployment/runtime files are touched, verify Python discovery tests, compose config, and package version sync.
