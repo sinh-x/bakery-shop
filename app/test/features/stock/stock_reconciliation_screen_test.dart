@@ -45,9 +45,9 @@ class _FakeService extends ReconciliationService {
 }
 
 void main() {
-  Finder _unitPriceFieldFinder() => find.byType(TextFormField).first;
+  Finder unitPriceFieldFinder() => find.byType(TextFormField).first;
 
-  GoRouter _buildRouter() {
+  GoRouter buildRouter() {
     return GoRouter(
       routes: [
         GoRoute(
@@ -92,7 +92,7 @@ void main() {
           sharedPreferencesProvider.overrideWithValue(prefs),
           reconciliationServiceProvider.overrideWithValue(service),
         ],
-        child: MaterialApp.router(routerConfig: _buildRouter()),
+        child: MaterialApp.router(routerConfig: buildRouter()),
       ),
     );
     await tester.pumpAndSettle();
@@ -139,7 +139,7 @@ void main() {
           sharedPreferencesProvider.overrideWithValue(prefs),
           reconciliationServiceProvider.overrideWithValue(service),
         ],
-        child: MaterialApp.router(routerConfig: _buildRouter()),
+        child: MaterialApp.router(routerConfig: buildRouter()),
       ),
     );
     await tester.pumpAndSettle();
@@ -152,13 +152,13 @@ void main() {
     await tester.tap(find.text(VN.themDongBan));
     await tester.pumpAndSettle();
 
-    final unitPriceField = tester.widget<TextFormField>(_unitPriceFieldFinder());
+    final unitPriceField = tester.widget<TextFormField>(unitPriceFieldFinder());
     expect(unitPriceField.controller?.text, '100000');
 
-    await tester.enterText(_unitPriceFieldFinder(), '15000');
+    await tester.enterText(unitPriceFieldFinder(), '15000');
     await tester.pumpAndSettle();
     final editedUnitPriceField = tester.widget<TextFormField>(
-      _unitPriceFieldFinder(),
+      unitPriceFieldFinder(),
     );
     expect(editedUnitPriceField.controller?.text, '15000');
 
@@ -199,7 +199,7 @@ void main() {
           sharedPreferencesProvider.overrideWithValue(prefs),
           reconciliationServiceProvider.overrideWithValue(service),
         ],
-        child: MaterialApp.router(routerConfig: _buildRouter()),
+        child: MaterialApp.router(routerConfig: buildRouter()),
       ),
     );
     await tester.pumpAndSettle();
@@ -247,7 +247,7 @@ void main() {
           sharedPreferencesProvider.overrideWithValue(prefs),
           reconciliationServiceProvider.overrideWithValue(service),
         ],
-        child: MaterialApp.router(routerConfig: _buildRouter()),
+        child: MaterialApp.router(routerConfig: buildRouter()),
       ),
     );
     await tester.pumpAndSettle();
@@ -267,7 +267,7 @@ void main() {
       find.descendant(of: saleRow.first, matching: find.byType(TextField)).first,
       '1',
     );
-    await tester.enterText(_unitPriceFieldFinder(), '');
+    await tester.enterText(unitPriceFieldFinder(), '');
     await tester.pumpAndSettle();
 
     await tester.tap(find.widgetWithText(FilledButton, VN.guiDoiSoat));
@@ -308,7 +308,7 @@ void main() {
           sharedPreferencesProvider.overrideWithValue(prefs),
           reconciliationServiceProvider.overrideWithValue(service),
         ],
-        child: MaterialApp.router(routerConfig: _buildRouter()),
+        child: MaterialApp.router(routerConfig: buildRouter()),
       ),
     );
     await tester.pumpAndSettle();
@@ -351,7 +351,7 @@ void main() {
           sharedPreferencesProvider.overrideWithValue(prefs),
           reconciliationServiceProvider.overrideWithValue(service),
         ],
-        child: MaterialApp.router(routerConfig: _buildRouter()),
+        child: MaterialApp.router(routerConfig: buildRouter()),
       ),
     );
     await tester.pumpAndSettle();
