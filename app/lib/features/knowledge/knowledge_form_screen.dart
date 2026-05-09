@@ -1,4 +1,4 @@
-// ignore_for_file: prefer_const_constructors
+// ignore_for_file: prefer_const_constructors  // DG-120#todo: replace with per-method suppressions after const audit
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;

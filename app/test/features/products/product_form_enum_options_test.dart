@@ -195,6 +195,9 @@ class _FakeCategoryService implements CategoryService {
   }
 
   @override
+  // Fake-service noSuchMethod; dynamic return type satisfies
+  // always_declare_return_types. Replace with mocktail Fake/Mock
+  // once mocktail is added to project dependencies.
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
 
