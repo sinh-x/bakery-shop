@@ -40,3 +40,9 @@ final shippingFeeDoorProvider = configValuesProvider('shipping_fee_door');
 
 /// Extra items with prices (format: "name|price").
 final orderExtrasProvider = configValuesProvider('order_extra');
+
+/// Gift threshold in VND (single numeric value).
+final giftThresholdProvider = configValuesProvider('gift_threshold');
+
+/// Gift extras with prices (format: "name|price").
+final giftExtrasProvider = configValuesProvider('gift_extra');

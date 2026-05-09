@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,40 +7,17 @@ import '../../data/api/order_service.dart';
 import '../../features/stock/stock_screen.dart';
 import '../../providers/pos_provider.dart';
 import '../../providers/products_provider.dart';
+import '../../shared/utils/api_error.dart' as api_error;
 import '../../shared/widgets/vietnamese_labels.dart';
 
 @visibleForTesting
 String resolvePosCheckoutErrorMessage(Object error) {
-  if (error is DioException) {
-    final response = error.response;
-    if (response == null) {
-      return VN.apiError;
-    }
-
-    if (response.statusCode == 422) {
-      final detail = extractBackendDetail(response.data);
-      if (detail != null) {
-        return detail;
-      }
-      return VN.loiKhongXacDinhTuMayChu;
-    }
-
-    return VN.loiMayChu;
-  }
-
-  return VN.loiHeThong;
+  return api_error.normalizeApiError(error).message;
 }
 
 @visibleForTesting
 String? extractBackendDetail(Object? data) {
-  if (data is Map<String, dynamic>) {
-    final detail = data['detail'];
-    if (detail is String && detail.trim().isNotEmpty) {
-      return detail.trim();
-    }
-  }
-
-  return null;
+  return api_error.extractBackendDetail(data);
 }
 
 /// POS checkout screen — editable cart on checkout, single Thanh toán button.
@@ -140,12 +116,12 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     final source = await showDialog<Object>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text('Bằng chứng chuyển khoản'),
-        content: const Text('Chọn nguồn ảnh để xác nhận thanh toán.'),
+        title: const Text(VN.transferProofTitle),
+        content: const Text(VN.transferProofPrompt),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, 'skip'),
-            child: const Text('Bỏ qua'),
+            child: const Text(VN.skip),
           ),
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, ImageSource.camera),
@@ -153,7 +129,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogCtx, ImageSource.gallery),
-            child: const Text('🖼️ Thư viện'),
+            child: const Text(VN.photoLibrary),
           ),
         ],
       ),
@@ -217,8 +193,8 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text('Xóa giỏ hàng?'),
-        content: const Text('Bạn có chắc muốn xóa tất cả sản phẩm trong giỏ?'),
+        title: const Text(VN.clearCartTitle),
+        content: const Text(VN.clearCartPrompt),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx),
@@ -229,7 +205,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
               ref.read(posCartProvider.notifier).clearCart();
               Navigator.pop(dialogCtx);
             },
-            child: const Text('Xóa'),
+            child: const Text(VN.clear),
           ),
         ],
       ),
@@ -253,14 +229,14 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         title: Text(VN.thanhToan),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          tooltip: 'Quay lại giỏ hàng',
+          tooltip: VN.backToCart,
           onPressed: () => context.pop(),
         ),
         actions: [
           TextButton.icon(
             onPressed: _confirmClearCart,
             icon: const Icon(Icons.delete_outline, size: 18),
-            label: const Text('Xóa giỏ'),
+            label: const Text(VN.clearCart),
           ),
         ],
       ),
@@ -309,7 +285,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
                   // Cash / Transfer segmented toggle
                   Semantics(
-                    label: 'Chọn phương thức thanh toán',
+                    label: VN.selectPaymentMethod,
                     child: SegmentedButton<String>(
                       segments: const [
                         ButtonSegment(
@@ -338,7 +314,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: Tooltip(
-                      message: 'Xác nhận thanh toán đơn tại quầy',
+                      message: VN.confirmCounterPayment,
                       child: FilledButton.icon(
                         onPressed: _isProcessing ? null : _handleThanhToan,
                         icon: _isProcessing
@@ -382,9 +358,9 @@ class _CheckoutCartItemTile extends ConsumerWidget {
         return await showDialog<bool>(
               context: context,
               builder: (dialogCtx) => AlertDialog(
-                title: const Text('Xóa sản phẩm khỏi giỏ?'),
+                title: const Text(VN.removeFromCartTitle),
                 content: Text(
-                  'Xóa "${item.product.name}" khỏi giỏ thanh toán?',
+                  '${VN.clear} "${item.product.name}" ${VN.removedFromCartSuffix}?',
                 ),
                 actions: [
                   TextButton(
@@ -402,7 +378,10 @@ class _CheckoutCartItemTile extends ConsumerWidget {
       },
       onDismissed: (_) {
         ref.read(posCartProvider.notifier).removeItemByLineKey(item.lineKey);
-        showTopSnackBar(context, 'Đã xóa ${item.product.name} khỏi giỏ');
+        showTopSnackBar(
+          context,
+          '${VN.removedFromCartPrefix} ${item.product.name} ${VN.removedFromCartSuffix}',
+        );
       },
       background: Container(
         alignment: Alignment.centerRight,
@@ -433,7 +412,7 @@ class _CheckoutCartItemTile extends ConsumerWidget {
                 ),
           title: Text(
             item.isGift
-                ? '${item.product.name} (Quà tặng)'
+                ? '${item.product.name} (${VN.giftSuffix})'
                 : item.selectedChipLabel != null
                 ? '${item.product.name} (${item.selectedChipLabel})'
                 : item.product.name,
@@ -451,7 +430,7 @@ class _CheckoutCartItemTile extends ConsumerWidget {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.remove_circle_outline, size: 20),
-                      tooltip: 'Giảm số lượng',
+                      tooltip: VN.decreaseQuantity,
                       onPressed: () {
                         ref
                             .read(posCartProvider.notifier)
@@ -467,7 +446,7 @@ class _CheckoutCartItemTile extends ConsumerWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline, size: 20),
-                      tooltip: 'Tăng số lượng',
+                      tooltip: VN.increaseQuantity,
                       onPressed: () {
                         ref
                             .read(posCartProvider.notifier)

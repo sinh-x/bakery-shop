@@ -13,7 +13,10 @@ Color? urgencyBorderColor(String? dueDate) {
     final dueDateOnly = DateTime(due.year, due.month, due.day);
     if (dueDateOnly.isBefore(today)) return Colors.red;
     if (dueDateOnly.isAtSameMomentAs(today)) return Colors.amber;
-  } catch (_) {}
+  } catch (error, stackTrace) {
+    debugPrint('order_helpers: invalid dueDate "$dueDate": $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
   return null;
 }
 
@@ -29,7 +32,12 @@ bool isDueWithin2Hours(String? dueDate, String? dueTime) {
       due = DateTime.parse(dueDate);
     }
     return due.isAfter(now) && due.difference(now).inMinutes <= 120;
-  } catch (_) {}
+  } catch (error, stackTrace) {
+    debugPrint(
+      'order_helpers: invalid due date/time dueDate="$dueDate" dueTime="$dueTime": $error',
+    );
+    debugPrintStack(stackTrace: stackTrace);
+  }
   return false;
 }
 

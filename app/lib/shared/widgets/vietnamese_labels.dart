@@ -190,6 +190,7 @@ class VN {
   static const retry = 'Thử lại';
   static const noProducts = 'Không có sản phẩm';
   static const apiError = 'Không thể kết nối máy chủ';
+  static const apiTimeout = 'Kết nối máy chủ quá thời gian, vui lòng thử lại';
 
   // Category management
   static const manageCategories = 'Quản lý danh mục';
@@ -246,6 +247,8 @@ class VN {
 
   // Order create form extras
   static const orderSource = 'Nguồn đặt hàng';
+  static const sourceTaiTiem = 'Tại Tiệm';
+  static const walkInCustomer = 'Khách Vãng Lai';
   static const dueTime = 'Giờ giao';
   static const isBirthday = 'Nến tuổi sinh nhật';
   static const birthdayAge = 'Tuổi khách hàng';
@@ -298,6 +301,8 @@ class VN {
   static const paymentHistory = 'Lịch sử thanh toán';
   static const paymentRecorded = 'Đã ghi thanh toán';
   static const paymentUpdated = 'Đã cập nhật giao dịch';
+  static const paymentFee = 'Trả phí';
+  static const paymentThousandsHint = 'Nhập nghìn đồng (VD: 200 = 200.000đ)';
   static const editPayment = 'Sửa giao dịch';
   static const txnDetails = 'Chi tiết giao dịch';
   static const txnNoteLabel = 'Ghi chú';
@@ -430,6 +435,23 @@ class VN {
   static const donGia = 'Đơn giá';
   static const xoa = 'Xóa';
   static const thanhToanThanhCong = 'Thanh toán thành công';
+  static const transferProofTitle = 'Bằng chứng chuyển khoản';
+  static const transferProofPrompt = 'Chọn nguồn ảnh để xác nhận thanh toán.';
+  static const skip = 'Bỏ qua';
+  static const photoLibrary = '🖼️ Thư viện';
+  static const clearCartTitle = 'Xóa giỏ hàng?';
+  static const clearCartPrompt = 'Bạn có chắc muốn xóa tất cả sản phẩm trong giỏ?';
+  static const clear = 'Xóa';
+  static const backToCart = 'Quay lại giỏ hàng';
+  static const clearCart = 'Xóa giỏ';
+  static const selectPaymentMethod = 'Chọn phương thức thanh toán';
+  static const confirmCounterPayment = 'Xác nhận thanh toán đơn tại quầy';
+  static const removeFromCartTitle = 'Xóa sản phẩm khỏi giỏ?';
+  static const decreaseQuantity = 'Giảm số lượng';
+  static const increaseQuantity = 'Tăng số lượng';
+  static const giftSuffix = 'Quà tặng';
+  static const removedFromCartPrefix = 'Đã xóa';
+  static const removedFromCartSuffix = 'khỏi giỏ';
   static const loiKhongXacDinhTuMayChu = 'Lỗi không xác định từ máy chủ';
   static const loiMayChu = 'Lỗi máy chủ';
   static const taiLai = 'Tải lại';
@@ -478,6 +500,7 @@ class VN {
   static const shippingFee = 'Phí giao hàng';
   static const shippingFree = 'Miễn phí';
   static const extras = 'Phụ kiện';
+  static const noConfiguredExtras = 'Chưa có phụ kiện được cấu hình';
   static const giftBadge = 'Tặng';
   static const toggleGift = 'Tặng/Trả phí';
   static const giftToggleTooltip = 'Bấm để chuyển giữa tặng và trả phí';

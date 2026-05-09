@@ -11,6 +11,7 @@ import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/gift_config.dart';
 import '../../shared/utils/phone_formatter.dart';
+import '../../shared/utils/vnd_units.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/expandable_item_card.dart';
 import 'widgets/hour_picker.dart';
@@ -139,15 +140,19 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     return VN.timeSlotEvening;
   }
 
-  void _updateShippingFeeForDeliveryType(String type) {
+  void _updateShippingFeeForDeliveryType(
+    String type, {
+    required double busDefault,
+    required double doorDefault,
+  }) {
     setState(() {
       _deliveryType = type;
       switch (type) {
         case 'bus':
-          _shippingFee = 25000;
+          _shippingFee = busDefault;
           break;
         case 'door':
-          _shippingFee = 20000; // default to first tier
+          _shippingFee = doorDefault;
           break;
         case 'pickup':
         default:
@@ -172,15 +177,54 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       }
     }
 
-    // If qualified total >= threshold, auto-add gift extras
-    if (qualifiedTotal >= GiftConfig.giftThreshold) {
-      for (final (name, price) in GiftConfig.giftExtras) {
+    final giftThreshold = _giftThresholdFromConfig();
+    final giftExtras = _giftExtrasFromConfig();
+    if (qualifiedTotal >= giftThreshold) {
+      for (final (name, price) in giftExtras) {
         if (!_autoGiftExtras.contains(name)) {
           _autoGiftExtras.add(name);
-          _items.add(createExtraItem(name, price.toDouble(), isGift: true));
+          _items.add(createExtraItem(name, price, isGift: true));
         }
       }
     }
+  }
+
+  double _giftThresholdFromConfig() {
+    final thresholdAsync = ref.read(giftThresholdProvider);
+    return thresholdAsync.when(
+      data: (values) {
+        for (final value in values) {
+          final parsed = double.tryParse(value.trim());
+          if (parsed != null && parsed > 0) {
+            return parsed;
+          }
+        }
+        return GiftConfig.giftThreshold;
+      },
+      loading: () => GiftConfig.giftThreshold,
+      error: (_, _) => GiftConfig.giftThreshold,
+    );
+  }
+
+  List<(String, double)> _giftExtrasFromConfig() {
+    final extrasAsync = ref.read(giftExtrasProvider);
+    return extrasAsync.when(
+      data: (values) {
+        final parsedExtras = <(String, double)>[];
+        for (final value in values) {
+          final parts = value.split('|');
+          if (parts.length != 2) continue;
+          final name = parts[0].trim();
+          final price = double.tryParse(parts[1].trim());
+          if (name.isNotEmpty && price != null && price >= 0) {
+            parsedExtras.add((name, price));
+          }
+        }
+        return parsedExtras.isEmpty ? GiftConfig.giftExtras : parsedExtras;
+      },
+      loading: () => GiftConfig.giftExtras,
+      error: (_, _) => GiftConfig.giftExtras,
+    );
   }
 
   void _addExtra(String name, double price, {bool isGift = false}) {
@@ -334,7 +378,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       if (_depositEnabled) {
         final rawAmount = double.tryParse(_depositAmountCtrl.text.trim());
         // Multiply by 1000: staff types 200 → actual amount 200,000
-        final amount = rawAmount != null ? rawAmount * 1000 : null;
+        final amount = rawAmount != null ? vndFromThousands(rawAmount) : null;
         if (amount != null && amount > 0) {
           final txnService = ref.read(paymentTransactionServiceProvider);
           await txnService.createTransaction(
@@ -386,6 +430,18 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final sourcesAsync = ref.watch(orderSourcesProvider); // F1
+    final shippingBusAsync = ref.watch(shippingFeeBusProvider);
+    final shippingDoorAsync = ref.watch(shippingFeeDoorProvider);
+    final double shippingBusDefault = shippingBusAsync.when(
+      data: (values) => _firstFeeOrFallback(values, 25000),
+      loading: () => 25000,
+      error: (_, _) => 25000,
+    );
+    final double shippingDoorDefault = shippingDoorAsync.when(
+      data: (values) => _firstFeeOrFallback(values, 20000),
+      loading: () => 20000,
+      error: (_, _) => 20000,
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text(VN.createOrder)),
@@ -407,9 +463,9 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                           onSelected: (_) => setState(() {
                             final wasSelected = _source == s;
                             _source = wasSelected ? '' : s;
-                            if (!wasSelected && s == 'Tại Tiệm' && _nameCtrl.text.isEmpty) {
-                              _nameCtrl.text = 'Khách Vãng Lai';
-                            } else if (wasSelected && s == 'Tại Tiệm' && _nameCtrl.text == 'Khách Vãng Lai') {
+                            if (!wasSelected && s == VN.sourceTaiTiem && _nameCtrl.text.isEmpty) {
+                              _nameCtrl.text = VN.walkInCustomer;
+                            } else if (wasSelected && s == VN.sourceTaiTiem && _nameCtrl.text == VN.walkInCustomer) {
                               _nameCtrl.text = '';
                             }
                           }),
@@ -539,7 +595,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      item.isGift ? VN.giftBadge : 'Trả phí',
+                      item.isGift ? VN.giftBadge : VN.paymentFee,
                       style: TextStyle(
                         fontSize: 10,
                         color: item.isGift ? Colors.green : Colors.grey,
@@ -661,8 +717,11 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                 ),
               ],
               selected: {_deliveryType},
-              onSelectionChanged: (s) =>
-                  _updateShippingFeeForDeliveryType(s.first),
+              onSelectionChanged: (s) => _updateShippingFeeForDeliveryType(
+                s.first,
+                busDefault: shippingBusDefault,
+                doorDefault: shippingDoorDefault,
+              ),
             ),
             if (_needsAddress) ...[
               const SizedBox(height: 12),
@@ -703,7 +762,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                 children: [
                   IconButton.filled(
                     onPressed: _shippingFee >= 5000
-                        ? () => _setShippingFee(_shippingFee - 5000)
+                        ? () => _setShippingFee(_shippingFee - 5000.0)
                         : null,
                     icon: const Icon(Icons.remove),
                   ),
@@ -715,7 +774,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                     ),
                   ),
                   IconButton.filled(
-                    onPressed: () => _setShippingFee(_shippingFee + 5000),
+                    onPressed: () => _setShippingFee(_shippingFee + 5000.0),
                     icon: const Icon(Icons.add),
                   ),
                 ],
@@ -752,7 +811,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                   labelText: VN.depositAmount,
                   border: OutlineInputBorder(),
                   suffixText: ',000đ',
-                  helperText: 'Nhập nghìn đồng (VD: 200 = 200.000đ)',
+                  helperText: VN.paymentThousandsHint,
                 ),
                 keyboardType: TextInputType.number,
                 validator: (v) {
@@ -822,6 +881,16 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
+double _firstFeeOrFallback(List<String> values, double fallback) {
+  for (final value in values) {
+    final parsed = double.tryParse(value.trim());
+    if (parsed != null && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return fallback;
+}
+
 // ── Extras section ────────────────────────────────────────────────────────────
 
 class _ExtrasSection extends ConsumerWidget {
@@ -851,8 +920,8 @@ class _ExtrasSection extends ConsumerWidget {
         if (extras.isEmpty) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              'Chưa có phụ kiện được cấu hình',
+              child: Text(
+              VN.noConfiguredExtras,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.outline,
               ),
@@ -876,4 +945,3 @@ class _ExtrasSection extends ConsumerWidget {
     );
   }
 }
-

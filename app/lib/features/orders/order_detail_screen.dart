@@ -18,6 +18,7 @@ import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/phone_formatter.dart';
+import '../../shared/utils/vnd_units.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/enum_attribute_display.dart';
@@ -1167,7 +1168,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     super.initState();
     _type = widget.initialType ?? 'deposit';
     if (widget.initialAmount != null && widget.initialAmount! > 0) {
-      _amountCtrl.text = (widget.initialAmount! / 1000).round().toString();
+      _amountCtrl.text = vndThousandsTextFromAmount(widget.initialAmount!);
     }
   }
 
@@ -1175,7 +1176,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     setState(() => _type = type);
     if (type == 'full_payment' && widget.remaining > 0) {
       // Display the amount in thousands (user types 200 → means 200,000)
-      _amountCtrl.text = (widget.remaining / 1000).round().toString();
+      _amountCtrl.text = vndThousandsTextFromAmount(widget.remaining);
     }
   }
 
@@ -1189,7 +1190,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     // Multiply by 1000: staff types 200 → actual amount 200,000
-    final amount = double.parse(_amountCtrl.text.trim()) * 1000;
+    final amount = vndFromThousands(double.parse(_amountCtrl.text.trim()));
     setState(() => _submitting = true);
     try {
       await ref
@@ -1281,7 +1282,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                 labelText: VN.paymentAmountLabel,
                 border: OutlineInputBorder(),
                 suffixText: ',000đ',
-                helperText: 'Nhập nghìn đồng (VD: 200 = 200.000đ)',
+                helperText: VN.paymentThousandsHint,
               ),
               keyboardType: TextInputType.number,
               autofocus: true,
@@ -1459,7 +1460,7 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
     _method = widget.txn.method;
     // Convert back from actual amount to thousands for display
     _amountCtrl = TextEditingController(
-      text: (widget.txn.amount / 1000).round().toString(),
+      text: vndThousandsTextFromAmount(widget.txn.amount),
     );
     _notesCtrl = TextEditingController(text: widget.txn.notes);
   }
@@ -1473,7 +1474,7 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    final amount = double.parse(_amountCtrl.text.trim()) * 1000;
+    final amount = vndFromThousands(double.parse(_amountCtrl.text.trim()));
     setState(() => _submitting = true);
     try {
       await ref
@@ -1565,7 +1566,7 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
                 labelText: VN.paymentAmountLabel,
                 border: OutlineInputBorder(),
                 suffixText: ',000đ',
-                helperText: 'Nhập nghìn đồng (VD: 200 = 200.000đ)',
+                helperText: VN.paymentThousandsHint,
               ),
               keyboardType: TextInputType.number,
               autofocus: true,
@@ -1865,7 +1866,7 @@ class _WorkItemCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 2),
                           Text(
-                            item.isGift ? VN.giftBadge : 'Trả phí',
+                            item.isGift ? VN.giftBadge : VN.paymentFee,
                             style: TextStyle(
                               fontSize: 9,
                               color: item.isGift ? Colors.green : Colors.grey,

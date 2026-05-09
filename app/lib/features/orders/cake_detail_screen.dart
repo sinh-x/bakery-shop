@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint, debugPrintStack;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -10,6 +10,7 @@ import '../../data/models/work_item.dart';
 import '../../data/services/printer_service.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../shared/utils/vnd_units.dart';
 import '../../shared/widgets/printer_picker_dialog.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/order_photo_section.dart';
@@ -329,7 +330,7 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
     _ageCtrl.text = widget.item.age?.toString() ?? '';
     // ×1000 convention: store 150000, display 150
     _priceCtrl.text = widget.item.unitPrice > 0
-        ? (widget.item.unitPrice / 1000).toStringAsFixed(0)
+        ? vndToThousands(widget.item.unitPrice).toStringAsFixed(0)
         : '';
     _isBirthday = widget.item.isBirthday;
     // F15: Initialize rut tien state from attributes['rut_tien'] directly
@@ -347,7 +348,7 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
 
   Future<void> _submit() async {
     final rawPrice = double.tryParse(_priceCtrl.text.trim());
-    final unitPrice = rawPrice != null ? rawPrice * 1000 : widget.item.unitPrice;
+    final unitPrice = rawPrice != null ? vndFromThousands(rawPrice) : widget.item.unitPrice;
     final age = _isBirthday ? int.tryParse(_ageCtrl.text.trim()) : null;
     Map<String, dynamic>? attributes;
     if (_rutTien) {
@@ -370,7 +371,9 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
         attributes: attributes,
       );
       if (mounted) setState(() => _editing = false);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('cake_detail: save failed for item ${widget.item.id}: $error');
+      debugPrintStack(stackTrace: stackTrace);
       // Error already shown by parent via snackbar; stay in edit mode
     }
   }

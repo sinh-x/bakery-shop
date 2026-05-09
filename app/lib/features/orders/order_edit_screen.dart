@@ -13,6 +13,7 @@ import '../../providers/config_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/phone_formatter.dart';
+import '../../shared/utils/api_error.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/hour_picker.dart';
 import 'widgets/order_photo_section.dart';
@@ -66,7 +67,10 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     if (order.dueDate != null) {
       try {
         _dueDate = DateFormat('yyyy-MM-dd').parse(order.dueDate!);
-      } catch (_) {}
+      } catch (error, stackTrace) {
+        debugPrint('order_edit: invalid due date "${order.dueDate}": $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
     }
     if (order.dueTime != null) {
       final parts = order.dueTime!.split(':');
@@ -88,15 +92,19 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   String _formatTime(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-  void _updateShippingFeeForDeliveryType(String type) {
+  void _updateShippingFeeForDeliveryType(
+    String type, {
+    required double busDefault,
+    required double doorDefault,
+  }) {
     setState(() {
       _deliveryType = type;
       switch (type) {
         case 'bus':
-          _shippingFee = 25000;
+          _shippingFee = busDefault;
           break;
         case 'door':
-          _shippingFee = 20000;
+          _shippingFee = doorDefault;
           break;
         case 'pickup':
         default:
@@ -180,9 +188,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         showTopSnackBar(context, VN.orderEditSaved);
         context.pop();
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('order_edit: save failed for ${widget.orderRef}: $e');
+      debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
-        showTopSnackBar(context, _resolveOrderEditErrorMessage(e));
+        showTopSnackBar(context, normalizeApiError(e).message);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -193,6 +203,18 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   Widget build(BuildContext context) {
     final orderAsync = ref.watch(orderDetailProvider(widget.orderRef));
     final sourcesAsync = ref.watch(orderSourcesProvider); // F1
+    final shippingBusAsync = ref.watch(shippingFeeBusProvider);
+    final shippingDoorAsync = ref.watch(shippingFeeDoorProvider);
+    final double shippingBusDefault = shippingBusAsync.when(
+      data: (values) => _firstFeeOrFallback(values, 25000),
+      loading: () => 25000,
+      error: (_, _) => 25000,
+    );
+    final double shippingDoorDefault = shippingDoorAsync.when(
+      data: (values) => _firstFeeOrFallback(values, 20000),
+      loading: () => 20000,
+      error: (_, _) => 20000,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -233,14 +255,14 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                             selected: _source == s,
                             onSelected: (_) => setState(() {
                               final wasSelected = _source == s;
-                              _source = wasSelected ? '' : s;
-                              if (!wasSelected &&
-                                  s == 'Tại Tiệm' &&
+                                  _source = wasSelected ? '' : s;
+                                  if (!wasSelected &&
+                                  s == VN.sourceTaiTiem &&
                                   _nameCtrl.text.isEmpty) {
-                                _nameCtrl.text = 'Khách Vãng Lai';
+                                _nameCtrl.text = VN.walkInCustomer;
                               } else if (wasSelected &&
-                                  s == 'Tại Tiệm' &&
-                                  _nameCtrl.text == 'Khách Vãng Lai') {
+                                  s == VN.sourceTaiTiem &&
+                                  _nameCtrl.text == VN.walkInCustomer) {
                                 _nameCtrl.text = '';
                               }
                             }),
@@ -341,8 +363,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                     ),
                   ],
                   selected: {_deliveryType},
-                  onSelectionChanged: (s) =>
-                      _updateShippingFeeForDeliveryType(s.first),
+                  onSelectionChanged: (s) => _updateShippingFeeForDeliveryType(
+                    s.first,
+                    busDefault: shippingBusDefault,
+                    doorDefault: shippingDoorDefault,
+                  ),
                 ),
                 if (_needsAddress) ...[
                   const SizedBox(height: 12),
@@ -368,7 +393,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                     children: [
                       IconButton.filled(
                         onPressed: _shippingFee >= 5000
-                            ? () => _setShippingFee(_shippingFee - 5000)
+                            ? () => _setShippingFee(_shippingFee - 5000.0)
                             : null,
                         icon: const Icon(Icons.remove),
                       ),
@@ -382,7 +407,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         ),
                       ),
                       IconButton.filled(
-                        onPressed: () => _setShippingFee(_shippingFee + 5000),
+                        onPressed: () => _setShippingFee(_shippingFee + 5000.0),
                         icon: const Icon(Icons.add),
                       ),
                     ],
@@ -1318,8 +1343,8 @@ class _ExtraEditRow extends StatelessWidget {
                   color: item.isGift ? Colors.green : Colors.grey.shade300,
                 ),
               ),
-              child: Text(
-                item.isGift ? VN.giftBadge : 'Trả phí',
+                child: Text(
+                item.isGift ? VN.giftBadge : VN.paymentFee,
                 style: TextStyle(
                   fontSize: 10,
                   color: item.isGift ? Colors.green : Colors.grey,
@@ -1361,6 +1386,16 @@ class _ExtraEditRow extends StatelessWidget {
       ),
     );
   }
+}
+
+double _firstFeeOrFallback(List<String> values, double fallback) {
+  for (final value in values) {
+    final parsed = double.tryParse(value.trim());
+    if (parsed != null && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return fallback;
 }
 
 String _resolveOrderEditErrorMessage(Object error) {
