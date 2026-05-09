@@ -174,6 +174,20 @@ def list_orders(
                 result.append(order.to_api_dict())
             return result
 
+        active_statuses = {"new", "confirmed", "in_progress", "ready", "delivered"}
+        if status and status in active_statuses:
+            rows = conn.execute(
+                f"SELECT * FROM orders {where} ORDER BY id DESC",
+                params,
+            ).fetchall()
+            result = []
+            for r in rows:
+                order = Order.from_row(r, conn)
+                if order.status == "delivered" and order.amount_paid >= order.total_price:
+                    continue
+                result.append(order.to_api_dict())
+            return result
+
         rows = conn.execute(
             f"SELECT * FROM orders {where} ORDER BY id DESC LIMIT ? OFFSET ?",
             params + [limit, offset],
