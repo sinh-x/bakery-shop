@@ -77,9 +77,7 @@ class PosProductGrid extends ConsumerWidget {
       context: context,
       builder: (dialogCtx) {
         final defaultPrice = chips.isNotEmpty
-            ? chips
-                .map((c) => c.price)
-                .reduce((a, b) => a < b ? a : b)
+            ? chips.map((c) => c.price).reduce((a, b) => a < b ? a : b)
             : product.basePrice;
 
         int? selectedChipId;
@@ -142,8 +140,7 @@ class PosProductGrid extends ConsumerWidget {
                         setState(() {
                           selectedPrice = parsed;
                           final matchesChip = chips.any(
-                            (c) => c.id == selectedChipId &&
-                                c.price == parsed,
+                            (c) => c.id == selectedChipId && c.price == parsed,
                           );
                           if (!matchesChip) {
                             selectedChipId = null;
@@ -174,12 +171,14 @@ class PosProductGrid extends ConsumerWidget {
                       selectedChipLabel: selectedChipLabel,
                     );
                   } else {
-                    ref.read(posCartProvider.notifier).addItem(
-                      product,
-                      selectedPrice: selectedPrice,
-                      selectedChipId: selectedChipId,
-                      selectedChipLabel: selectedChipLabel,
-                    );
+                    ref
+                        .read(posCartProvider.notifier)
+                        .addItem(
+                          product,
+                          selectedPrice: selectedPrice,
+                          selectedChipId: selectedChipId,
+                          selectedChipLabel: selectedChipLabel,
+                        );
                     final labelSuffix = selectedChipLabel != null
                         ? ' ($selectedChipLabel)'
                         : '';
@@ -219,12 +218,14 @@ class PosProductGrid extends ConsumerWidget {
           FilledButton(
             onPressed: () {
               Navigator.pop(dialogCtx);
-              ref.read(posCartProvider.notifier).addItem(
-                product,
-                selectedPrice: selectedPrice,
-                selectedChipId: selectedChipId,
-                selectedChipLabel: selectedChipLabel,
-              );
+              ref
+                  .read(posCartProvider.notifier)
+                  .addItem(
+                    product,
+                    selectedPrice: selectedPrice,
+                    selectedChipId: selectedChipId,
+                    selectedChipLabel: selectedChipLabel,
+                  );
               if (context.mounted) {
                 showTopSnackBar(
                   context,
@@ -240,6 +241,20 @@ class PosProductGrid extends ConsumerWidget {
       ),
     );
   }
+}
+
+@visibleForTesting
+String posStockStatusLabel(int qty) {
+  if (qty > 3) return 'Còn $qty';
+  if (qty >= 1) return 'Sắp hết ($qty)';
+  return 'Hết hàng';
+}
+
+@visibleForTesting
+IconData posStockStatusIcon(int qty) {
+  if (qty > 3) return Icons.check_circle;
+  if (qty >= 1) return Icons.warning_amber;
+  return Icons.remove_circle;
 }
 
 class _ProductPosCard extends StatelessWidget {
@@ -268,10 +283,9 @@ class _ProductPosCard extends StatelessWidget {
         .map((chip) => chip.price)
         .reduce((a, b) => a < b ? a : b);
     final hasPositiveBasePrice = product.basePrice > 0;
-    final minPrice =
-        hasPositiveBasePrice && product.basePrice < chipMin
-            ? product.basePrice
-            : chipMin;
+    final minPrice = hasPositiveBasePrice && product.basePrice < chipMin
+        ? product.basePrice
+        : chipMin;
 
     return '${VN.priceFrom} ${formatVND(minPrice)}';
   }
@@ -298,8 +312,8 @@ class _ProductPosCard extends StatelessWidget {
                         ? Image.network(
                             '$baseUrl/api/products/${product.id}/photo',
                             fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) =>
-                                _buildPlaceholder(theme),
+                            semanticLabel: 'Ảnh sản phẩm ${product.name}',
+                            errorBuilder: (_, _, _) => _buildPlaceholder(theme),
                           )
                         : _buildPlaceholder(theme),
                   ),
@@ -347,7 +361,10 @@ class _ProductPosCard extends StatelessWidget {
                   top: 6,
                   right: 6,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.primary,
                       borderRadius: BorderRadius.circular(10),
@@ -372,11 +389,7 @@ class _ProductPosCard extends StatelessWidget {
   Widget _buildPlaceholder(ThemeData theme) {
     return Container(
       color: theme.colorScheme.surfaceContainerHighest,
-      child: Icon(
-        Icons.cake,
-        size: 40,
-        color: theme.colorScheme.outline,
-      ),
+      child: Icon(Icons.cake, size: 40, color: theme.colorScheme.outline),
     );
   }
 
@@ -390,18 +403,31 @@ class _ProductPosCard extends StatelessWidget {
       bg = Colors.red;
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        qty > 0 ? '$qty' : 'Hết',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
+    final label = posStockStatusLabel(qty);
+    final icon = posStockStatusIcon(qty);
+
+    return Semantics(
+      label: 'Tồn kho: $label',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 11, color: Colors.white),
+            const SizedBox(width: 3),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
       ),
     );

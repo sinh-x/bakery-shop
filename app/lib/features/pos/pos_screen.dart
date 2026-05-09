@@ -28,6 +28,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
   Timer? _stockPollingTimer;
   bool _wasNavigatedAway = false;
   GoRouter? _goRouter;
+  DateTime? _lastStockRefreshAt;
 
   /// Filtered products based on selected category and search query.
   List<Product> _filteredProducts(List<Product> products) {
@@ -66,6 +67,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
       const Duration(seconds: 60),
       (_) => _refreshStock(),
     );
+    _lastStockRefreshAt = DateTime.now();
   }
 
   @override
@@ -96,6 +98,17 @@ class _PosScreenState extends ConsumerState<PosScreen>
 
   void _refreshStock() {
     ref.invalidate(productsProvider);
+    if (mounted) {
+      setState(() => _lastStockRefreshAt = DateTime.now());
+    }
+  }
+
+  String _refreshLabel() {
+    final ts = _lastStockRefreshAt;
+    if (ts == null) return 'Chưa cập nhật kho';
+    final hh = ts.hour.toString().padLeft(2, '0');
+    final mm = ts.minute.toString().padLeft(2, '0');
+    return 'Cập nhật kho: $hh:$mm';
   }
 
   void _onRouteChange() {
@@ -157,11 +170,39 @@ class _PosScreenState extends ConsumerState<PosScreen>
               onChanged: (value) => setState(() => _searchQuery = value),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                _refreshLabel(),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
 
           // Category tabs
           categoriesAsync.when(
             loading: () => const SizedBox.shrink(),
-            error: (_, _) => const SizedBox.shrink(),
+            error: (_, _) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline, size: 18),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text('Không tải được danh mục sản phẩm'),
+                  ),
+                  TextButton(
+                    onPressed: () => ref.invalidate(categoriesProvider),
+                    child: const Text(VN.taiLai),
+                  ),
+                ],
+              ),
+            ),
             data: (categories) {
               if (categories.isEmpty) return const SizedBox.shrink();
               final activeCats = categories

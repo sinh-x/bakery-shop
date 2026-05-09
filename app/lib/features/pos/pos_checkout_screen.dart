@@ -118,14 +118,13 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         paymentMethod: paymentMethod,
       );
 
-      ref.read(posCartProvider.notifier).clearCart();
-      ref.invalidate(productsProvider);
-      ref.invalidate(stockOverviewProvider);
-
       if (!mounted) return;
 
       _navigatingAfterCheckout = true;
       context.pushReplacement('/pos/receipt/${order.orderRef}');
+      ref.read(posCartProvider.notifier).clearCart();
+      ref.invalidate(productsProvider);
+      ref.invalidate(stockOverviewProvider);
     } catch (e) {
       if (!mounted) return;
       showTopSnackBar(context, resolvePosCheckoutErrorMessage(e));
@@ -199,14 +198,13 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         tags: 'chuyen-khoan',
       );
 
-      ref.read(posCartProvider.notifier).clearCart();
-      ref.invalidate(productsProvider);
-      ref.invalidate(stockOverviewProvider);
-
       if (!mounted) return;
       _navigatingAfterCheckout = true;
       showTopSnackBar(context, VN.thanhToanThanhCong);
       context.pushReplacement('/pos/receipt/${order.orderRef}');
+      ref.read(posCartProvider.notifier).clearCart();
+      ref.invalidate(productsProvider);
+      ref.invalidate(stockOverviewProvider);
     } catch (e) {
       if (!mounted) return;
       showTopSnackBar(context, resolvePosCheckoutErrorMessage(e));
@@ -255,6 +253,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         title: Text(VN.thanhToan),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
+          tooltip: 'Quay lại giỏ hàng',
           onPressed: () => context.pop(),
         ),
         actions: [
@@ -309,42 +308,51 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
                   const SizedBox(height: 16),
 
                   // Cash / Transfer segmented toggle
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(
-                        value: 'cash',
-                        label: Text(VN.tienMat),
-                        icon: Icon(Icons.money),
-                      ),
-                      ButtonSegment(
-                        value: 'transfer',
-                        label: Text(VN.chuyenKhoan),
-                        icon: Icon(Icons.qr_code),
-                      ),
-                    ],
-                    selected: {_selectedPaymentMethod},
-                    onSelectionChanged: (selection) {
-                      setState(() => _selectedPaymentMethod = selection.first);
-                    },
+                  Semantics(
+                    label: 'Chọn phương thức thanh toán',
+                    child: SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(
+                          value: 'cash',
+                          label: Text(VN.tienMat),
+                          icon: Icon(Icons.money),
+                        ),
+                        ButtonSegment(
+                          value: 'transfer',
+                          label: Text(VN.chuyenKhoan),
+                          icon: Icon(Icons.qr_code),
+                        ),
+                      ],
+                      selected: {_selectedPaymentMethod},
+                      onSelectionChanged: (selection) {
+                        setState(
+                          () => _selectedPaymentMethod = selection.first,
+                        );
+                      },
+                      showSelectedIcon: false,
+                    ),
                   ),
                   const SizedBox(height: 16),
 
                   // Single Thanh toán button
                   SizedBox(
                     width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _isProcessing ? null : _handleThanhToan,
-                      icon: _isProcessing
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.payment),
-                      label: Text(VN.thanhToan),
+                    child: Tooltip(
+                      message: 'Xác nhận thanh toán đơn tại quầy',
+                      child: FilledButton.icon(
+                        onPressed: _isProcessing ? null : _handleThanhToan,
+                        icon: _isProcessing
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.payment),
+                        label: Text(VN.thanhToan),
+                      ),
                     ),
                   ),
                 ],
@@ -370,8 +378,31 @@ class _CheckoutCartItemTile extends ConsumerWidget {
     return Dismissible(
       key: ValueKey('${item.lineKey}-${item.isGift}'),
       direction: DismissDirection.endToStart,
+      confirmDismiss: (_) async {
+        return await showDialog<bool>(
+              context: context,
+              builder: (dialogCtx) => AlertDialog(
+                title: const Text('Xóa sản phẩm khỏi giỏ?'),
+                content: Text(
+                  'Xóa "${item.product.name}" khỏi giỏ thanh toán?',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogCtx, false),
+                    child: const Text(VN.huy),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(dialogCtx, true),
+                    child: const Text(VN.xoa),
+                  ),
+                ],
+              ),
+            ) ??
+            false;
+      },
       onDismissed: (_) {
         ref.read(posCartProvider.notifier).removeItemByLineKey(item.lineKey);
+        showTopSnackBar(context, 'Đã xóa ${item.product.name} khỏi giỏ');
       },
       background: Container(
         alignment: Alignment.centerRight,
@@ -420,6 +451,7 @@ class _CheckoutCartItemTile extends ConsumerWidget {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.remove_circle_outline, size: 20),
+                      tooltip: 'Giảm số lượng',
                       onPressed: () {
                         ref
                             .read(posCartProvider.notifier)
@@ -435,6 +467,7 @@ class _CheckoutCartItemTile extends ConsumerWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline, size: 20),
+                      tooltip: 'Tăng số lượng',
                       onPressed: () {
                         ref
                             .read(posCartProvider.notifier)

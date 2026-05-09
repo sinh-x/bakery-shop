@@ -246,7 +246,22 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                 height: 120,
                 child: Center(child: CircularProgressIndicator()),
               ),
-              error: (err, stack) => const SizedBox(height: 120),
+              error: (err, stack) => SizedBox(
+                height: 120,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Không tải được bộ lọc ảnh'),
+                      const SizedBox(height: 6),
+                      FilledButton.tonal(
+                        onPressed: () => ref.invalidate(catalogTagDefsProvider),
+                        child: const Text(VN.taiLai),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               data: (tagDefs) => _TagFilterBar(
                 tagDefs: tagDefs,
                 selectedTags: _selectedTags,
