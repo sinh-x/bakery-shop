@@ -1136,6 +1136,68 @@ def test_pagination_unaffected_by_active_only_param(api_client):
     assert len(resp.json()) == 2
 
 
+def test_active_only_returns_all_orders_for_single_customer(api_client):
+    """Customer with 3 active orders sees all 3 in the active_only listing."""
+    customer = "Thôn Nữ"
+    order1 = _create_order(api_client, customer=customer)
+    order2 = _create_order(api_client, customer=customer)
+    order3 = _create_order(api_client, customer=customer)
+    for i in range(10):
+        _create_order(api_client, customer=f"Other {i}")
+
+    resp = api_client.get("/api/orders", params={"active_only": True})
+    assert resp.status_code == 200
+    result = resp.json()
+    customer_orders = [o for o in result if o["customerName"] == customer]
+    assert len(customer_orders) == 3
+    refs = {o["orderRef"] for o in customer_orders}
+    assert order1["orderRef"] in refs
+    assert order2["orderRef"] in refs
+    assert order3["orderRef"] in refs
+
+
+def test_active_only_multi_customer_orders_beyond_cutoff(api_client):
+    """All orders for one customer appear even when 60 fillers exist beyond cutoff."""
+    customer = "Khách quen"
+    orders = []
+    for _ in range(3):
+        orders.append(_create_order(api_client, customer=customer))
+    for i in range(60):
+        _create_order(api_client, customer=f"Filler {i}")
+
+    resp = api_client.get("/api/orders", params={"active_only": True})
+    assert resp.status_code == 200
+    result = resp.json()
+    customer_orders = [o for o in result if o["customerName"] == customer]
+    assert len(customer_orders) == 3
+    refs = {o["orderRef"] for o in customer_orders}
+    for o in orders:
+        assert o["orderRef"] in refs
+
+
+def test_active_only_customer_with_mixed_statuses(api_client):
+    """Customer with orders in different active statuses: all appear."""
+    customer = "Khách VIP"
+    o1 = _create_order(api_client, customer=customer)
+    o2 = _create_order(api_client, customer=customer)
+    ref2 = o2["orderRef"]
+    api_client.post(f"/api/orders/{ref2}/status", json={"status": "confirmed"})
+    o3 = _create_order(api_client, customer=customer)
+    ref3 = o3["orderRef"]
+    for s in ("confirmed", "in_progress", "ready"):
+        api_client.post(f"/api/orders/{ref3}/status", json={"status": s})
+
+    resp = api_client.get("/api/orders", params={"active_only": True})
+    assert resp.status_code == 200
+    result = resp.json()
+    customer_orders = [o for o in result if o["customerName"] == customer]
+    assert len(customer_orders) == 3
+    statuses = {o["status"] for o in customer_orders}
+    assert "new" in statuses
+    assert "confirmed" in statuses
+    assert "ready" in statuses
+
+
 def test_active_only_performance_500_orders(api_client):
     """P95 under 500 ms for 500 active orders."""
     import time

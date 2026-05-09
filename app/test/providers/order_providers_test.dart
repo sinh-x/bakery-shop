@@ -195,4 +195,84 @@ void main() {
       expect(interceptor.lastQueryParams, containsPair('active_only', true));
     });
   });
+
+  group('multi-order customer visibility', () {
+    List<Map<String, dynamic>> customerWith3ActiveOrders() {
+      final rows = <Map<String, dynamic>>[
+        _makeOrderJson(id: 90, ref: 'ORD-260508-009', customerName: 'Thôn Nữ'),
+        _makeOrderJson(id: 91, ref: 'ORD-260508-010', customerName: 'Thôn Nữ'),
+        _makeOrderJson(id: 95, ref: 'ORD-260508-014', customerName: 'Thôn Nữ'),
+      ];
+      for (var i = 1; i <= 10; i++) {
+        rows.add(_makeOrderJson(id: i, ref: 'ORD-260501-${i.toString().padLeft(3, '0')}'));
+      }
+      return rows;
+    }
+
+    List<Map<String, dynamic>> customerWith3ActiveAndFillerOrders() {
+      final rows = <Map<String, dynamic>>[
+        _makeOrderJson(id: 900, ref: 'ORD-260101-900', customerName: 'Quen A'),
+        _makeOrderJson(id: 901, ref: 'ORD-260101-901', customerName: 'Quen A'),
+        _makeOrderJson(id: 902, ref: 'ORD-260101-902', customerName: 'Quen A'),
+      ];
+      for (var i = 1; i <= 60; i++) {
+        rows.add(_makeOrderJson(
+          id: i,
+          ref: 'ORD-260501-${i.toString().padLeft(3, '0')}',
+          customerName: 'Khach $i',
+        ));
+      }
+      return rows;
+    }
+
+    test('search by customer name finds all 3 matching orders', () async {
+      final dataset = customerWith3ActiveOrders();
+      final interceptor = _MockInterceptor(dataset);
+      final dio = Dio()..interceptors.add(interceptor);
+      final service = OrderService(dio);
+
+      final orders = await service.listOrders(activeOnly: true);
+      final matches = orders
+          .where((o) => o.customerName.toLowerCase().contains('thôn nữ'))
+          .toList();
+
+      expect(matches.length, 3);
+      final refs = matches.map((o) => o.orderRef).toSet();
+      expect(refs, containsAll(['ORD-260508-009', 'ORD-260508-010', 'ORD-260508-014']));
+    });
+
+    test('search by exact ref finds the single matching order among 3 for same customer', () async {
+      final dataset = customerWith3ActiveOrders();
+      final interceptor = _MockInterceptor(dataset);
+      final dio = Dio()..interceptors.add(interceptor);
+      final service = OrderService(dio);
+
+      final orders = await service.listOrders(activeOnly: true);
+      const query = 'ORD-260508-010';
+      final matches = orders
+          .where((o) => o.orderRef.toLowerCase().contains(query.toLowerCase()))
+          .toList();
+
+      expect(matches.length, 1);
+      expect(matches.first.orderRef, 'ORD-260508-010');
+      expect(matches.first.customerName, 'Thôn Nữ');
+    });
+
+    test('customer name search finds all 3 even when 60 filler orders exist', () async {
+      final dataset = customerWith3ActiveAndFillerOrders();
+      final interceptor = _MockInterceptor(dataset);
+      final dio = Dio()..interceptors.add(interceptor);
+      final service = OrderService(dio);
+
+      final orders = await service.listOrders(activeOnly: true);
+      expect(orders.length, 63);
+
+      final matches = orders
+          .where((o) => o.customerName.toLowerCase().contains('quen a'))
+          .toList();
+      expect(matches.length, 3);
+      final refs = matches.map((o) => o.orderRef).toSet();
+      expect(refs, containsAll(['ORD-260101-900', 'ORD-260101-901', 'ORD-260101-902']));
+    });
+  });
 }

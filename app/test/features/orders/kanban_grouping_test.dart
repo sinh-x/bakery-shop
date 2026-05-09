@@ -265,6 +265,79 @@ void main() {
         expect(grouped['ready']!.length, 1);
       });
     });
+
+    group('multi-order customer visibility', () {
+      test('customer with 3 active new orders shows all 3 in new column', () {
+        final orders = [
+          _order(id: 90, ref: 'ORD-260508-009', status: 'new'),
+          _order(id: 91, ref: 'ORD-260508-010', status: 'new'),
+          _order(id: 95, ref: 'ORD-260508-014', status: 'new'),
+          _order(id: 1, ref: 'ORD-001', status: 'new'),
+        ];
+        final grouped = groupOrdersByKanbanStatus(orders);
+
+        expect(grouped['new']!.length, 4);
+        final newRefs = grouped['new']!.map((o) => o.orderRef).toSet();
+        expect(newRefs, containsAll(['ORD-260508-009', 'ORD-260508-010', 'ORD-260508-014']));
+      });
+
+      test('customer with 3 active orders across statuses: all in correct columns', () {
+        final orders = [
+          _order(id: 90, ref: 'ORD-90', status: 'new'),
+          _order(id: 91, ref: 'ORD-91', status: 'confirmed'),
+          _order(id: 95, ref: 'ORD-95', status: 'new'),
+        ];
+        final grouped = groupOrdersByKanbanStatus(orders);
+
+        expect(grouped['new']!.length, 2);
+        expect(grouped['confirmed']!.length, 1);
+        expect(grouped['confirmed']!.first.orderRef, 'ORD-91');
+      });
+
+      test('customer 3 orders with one cancelled: cancelled excluded, active remain', () {
+        final orders = [
+          _order(id: 90, ref: 'ORD-90', status: 'new'),
+          _order(id: 91, ref: 'ORD-91', status: 'new'),
+          _order(id: 89, ref: 'ORD-89', status: 'cancelled'),
+        ];
+        final grouped = groupOrdersByKanbanStatus(orders);
+
+        expect(grouped['new']!.length, 2);
+        var totalVisible = 0;
+        for (final c in grouped.values) {
+          totalVisible += c.length;
+        }
+        expect(totalVisible, 2);
+      });
+
+      test('multi-customer multi-order mixed dataset: all active orders visible', () {
+        final orders = [
+          _order(id: 90, ref: 'A1', status: 'new'),
+          _order(id: 91, ref: 'A2', status: 'new'),
+          _order(id: 92, ref: 'A3', status: 'new'),
+          _order(id: 80, ref: 'B1', status: 'confirmed'),
+          _order(id: 81, ref: 'B2', status: 'confirmed'),
+          _order(id: 70, ref: 'C1', status: 'in_progress'),
+          _order(id: 60, ref: 'D1', status: 'ready'),
+          _order(id: 61, ref: 'D2', status: 'ready'),
+          _order(id: 99, ref: 'CANCEL', status: 'cancelled'),
+        ];
+        final grouped = groupOrdersByKanbanStatus(orders);
+
+        expect(grouped['new']!.length, 3);
+        expect(grouped['confirmed']!.length, 2);
+        expect(grouped['in_progress']!.length, 1);
+        expect(grouped['ready']!.length, 2);
+
+        var totalVisible = 0;
+        for (final c in grouped.values) {
+          totalVisible += c.length;
+        }
+        expect(totalVisible, 8);
+        expect(grouped['new']!.map((o) => o.orderRef), containsAll(['A1', 'A2', 'A3']));
+        expect(grouped['confirmed']!.map((o) => o.orderRef), containsAll(['B1', 'B2']));
+      });
+    });
   });
 }
 
