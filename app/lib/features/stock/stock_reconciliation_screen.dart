@@ -303,6 +303,7 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
   final Map<String, TextEditingController> _countedControllers = {};
   final Map<String, TextEditingController> _wasteControllers = {};
   final Map<String, TextEditingController> _wasteReasonControllers = {};
+  bool _isExpanded = false;
 
   void _syncIntController(TextEditingController controller, int value) {
     final next = '$value';
@@ -351,6 +352,48 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
   Widget build(BuildContext context) {
     final state = ref.watch(reconciliationProvider);
     final notifier = ref.read(reconciliationProvider.notifier);
+    var expectedTotal = 0;
+    var countedTotal = 0;
+    var missingTotal = 0;
+    var saleTotal = 0;
+    var wasteTotal = 0;
+    var hasAnyError = false;
+
+    for (final option in widget.product.options) {
+      final optionKey = reconciliationOptionKey(
+        widget.product.productId,
+        option.normalizedPrice,
+      );
+      final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
+      final rows =
+          state.saleRowsByOption[optionKey] ??
+          const <ReconciliationSaleRowInput>[];
+      final waste = state.wasteQtyByOption[optionKey] ?? 0;
+      final missing = option.expectedQty - counted;
+      expectedTotal += option.expectedQty;
+      countedTotal += counted;
+      if (missing > 0) {
+        missingTotal += missing;
+      }
+      saleTotal += rows.fold<int>(0, (sum, row) => sum + row.quantity);
+      wasteTotal += waste;
+
+      if ((state.optionErrors[optionKey] ?? '').isNotEmpty) {
+        hasAnyError = true;
+      }
+      final rowErrors =
+          state.saleRowErrorsByOption[optionKey] ??
+          const <ReconciliationSaleRowError>[];
+      for (final rowError in rowErrors) {
+        if ((rowError.quantity ?? '').isNotEmpty ||
+            (rowError.unitPrice ?? '').isNotEmpty ||
+            (rowError.paymentMethod ?? '').isNotEmpty) {
+          hasAnyError = true;
+          break;
+        }
+      }
+    }
+
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
       child: Padding(
@@ -358,17 +401,51 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              widget.product.name,
-              style: Theme.of(context).textTheme.titleMedium,
+            InkWell(
+              onTap: () => setState(() => _isExpanded = !_isExpanded),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.product.name,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    Icon(
+                      _isExpanded
+                          ? Icons.keyboard_arrow_up
+                          : Icons.keyboard_arrow_down,
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 4),
-            Text('${VN.tonDuKien}: ${widget.product.expectedQty}'),
-            Text(
-              '${VN.giaCoSo}: ${widget.product.basePrice.toStringAsFixed(0)}đ',
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                _SummaryChip(label: VN.tonDuKien, value: expectedTotal),
+                _SummaryChip(label: VN.tonDaDem, value: countedTotal),
+                _SummaryChip(label: VN.soLuongThieu, value: missingTotal),
+                _SummaryChip(label: VN.soLuongBan, value: saleTotal),
+                _SummaryChip(label: VN.soLuongHaoHut, value: wasteTotal),
+                _StatusChip(hasError: hasAnyError),
+              ],
             ),
-            const SizedBox(height: 12),
-            for (final option in widget.product.options) ...[
+            if (!_isExpanded) ...[
+              const SizedBox(height: 6),
+              Text(
+                '${VN.giaCoSo}: ${widget.product.basePrice.toStringAsFixed(0)}đ',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+            if (_isExpanded) ...[
+              const SizedBox(height: 10),
+              for (final option in widget.product.options) ...[
               _OptionHeader(option: option),
               Builder(builder: (context) {
                 final optionKey = reconciliationOptionKey(
@@ -486,10 +563,53 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
             ],
                 ]);
               }),
-              const SizedBox(height: 10),
+                const SizedBox(height: 10),
+              ],
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SummaryChip extends StatelessWidget {
+  const _SummaryChip({required this.label, required this.value});
+
+  final String label;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text('$label: $value', style: Theme.of(context).textTheme.bodySmall),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.hasError});
+
+  final bool hasError;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = hasError ? Colors.red[700]! : Colors.green[700]!;
+    final text = hasError ? VN.trangThaiCoLoi : VN.trangThaiOn;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '${VN.trangThai}: $text',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
       ),
     );
   }

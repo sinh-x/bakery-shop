@@ -19,6 +19,55 @@ class _FakeService extends ReconciliationService {
 }
 
 void main() {
+  testWidgets('product card toggles and shows collapsed summary', (tester) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _FakeService(
+      ReconciliationDraft(
+        date: '2026-05-04',
+        products: [
+          ReconciliationDraftProduct(
+            productId: 1,
+            name: 'Bánh kem dâu',
+            category: 'banh_kem',
+            expectedQty: 5,
+            basePrice: 100000,
+            priceChips: const [],
+          ),
+        ],
+      ),
+    );
+
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) => const StockReconciliationScreen(),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reconciliationServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tồn dự kiến: 5'), findsOneWidget);
+    expect(find.text('Trạng thái: Ổn'), findsOneWidget);
+    expect(find.text('Tồn đã đếm'), findsNothing);
+
+    await tester.tap(find.text('Bánh kem dâu'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tồn đã đếm'), findsOneWidget);
+  });
+
   testWidgets('price chip fills only tapped row price', (tester) async {
     SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
     final prefs = await SharedPreferences.getInstance();
@@ -63,6 +112,9 @@ void main() {
         child: MaterialApp.router(routerConfig: router),
       ),
     );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Bánh kem dâu'));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).first, '3');

@@ -587,6 +587,9 @@ class VN {
   static const chuaChonNhanVien = 'Chưa chọn nhân viên';
   static const lichSuDoiSoatTonKho = 'Lịch sử đối soát tồn kho';
   static const xemLichSu = 'Xem lịch sử';
+  static const trangThai = 'Trạng thái';
+  static const trangThaiOn = 'Ổn';
+  static const trangThaiCoLoi = 'Có lỗi';
   static const chuaCoLichSuDoiSoat = 'Chưa có lịch sử đối soát';
   static const khongTaiDuocLichSuDoiSoat = 'Không tải được lịch sử đối soát';
   static const chiTietDoiSoat = 'Chi tiết đối soát';
