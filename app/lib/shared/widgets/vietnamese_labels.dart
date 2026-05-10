@@ -538,6 +538,7 @@ class VN {
   static String stockUpdatedAt(String hhmm) => 'Cập nhật kho: $hhmm';
   static String availableStock(int qty) => 'Còn $qty';
   static String lowStock(int qty) => 'Sắp hết ($qty)';
+  static String categorySectionCount(int count) => '$count mặt hàng';
   static const outOfStock = 'Hết hàng';
 
   // Stock management
