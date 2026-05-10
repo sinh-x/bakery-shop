@@ -6,6 +6,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/api/stock_service.dart';
+import '../../providers/categories_provider.dart';
+import '../../shared/utils/category_grouping.dart';
+import '../../shared/widgets/collapsible_category_sections.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'widgets/stock_action_sheet.dart';
 
@@ -58,6 +61,8 @@ class _StockScreenState extends ConsumerState<StockScreen>
     with WidgetsBindingObserver {
   bool _wasNavigatedAway = false;
   GoRouter? _goRouter;
+  final CategorySectionExpansionController _categoryExpansionController =
+      CategorySectionExpansionController();
 
   @override
   void initState() {
@@ -104,6 +109,7 @@ class _StockScreenState extends ConsumerState<StockScreen>
   @override
   Widget build(BuildContext context) {
     final stockAsync = ref.watch(stockOverviewProvider);
+    final categories = ref.watch(categoriesProvider).asData?.value ?? const [];
     final baseUrl = ref.watch(apiBaseUrlProvider);
 
     return Scaffold(
@@ -167,13 +173,20 @@ class _StockScreenState extends ConsumerState<StockScreen>
             );
           }
 
+          final groupedSections = groupItemsByCategory<StockOverviewItem>(
+            items: items,
+            categories: categories,
+            categoryKeyOf: (item) => item.category,
+            itemLabelOf: (item) => item.productName,
+          );
+
           return RefreshIndicator(
             onRefresh: () => ref.read(stockOverviewProvider.notifier).refresh(),
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final item = items[index];
+            child: CollapsibleCategorySections<StockOverviewItem>(
+              sections: groupedSections,
+              expansionController: _categoryExpansionController,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              itemBuilder: (context, item) {
                 final emoji = categoryEmojiMap[item.category] ?? '🍰';
                 return _StockItemCard(
                   item: item,

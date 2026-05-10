@@ -5,8 +5,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/reconciliation_service.dart';
 import '../../data/providers/reconciliation_provider.dart';
+import '../../data/models/category.dart';
+import '../../providers/categories_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/products_provider.dart';
+import '../../shared/utils/category_grouping.dart';
+import '../../shared/widgets/collapsible_category_sections.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
 import 'stock_screen.dart';
 
@@ -20,6 +24,9 @@ class StockReconciliationScreen extends ConsumerStatefulWidget {
 
 class _StockReconciliationScreenState
     extends ConsumerState<StockReconciliationScreen> {
+  final CategorySectionExpansionController _categoryExpansionController =
+      CategorySectionExpansionController();
+
   @override
   void initState() {
     super.initState();
@@ -142,6 +149,8 @@ class _StockReconciliationScreenState
     ReconciliationState state,
     String staffName,
   ) {
+    final categories =
+        ref.watch(categoriesProvider).asData?.value ?? const <Category>[];
     final draft = state.draft;
     if (draft == null) {
       return Center(
@@ -224,11 +233,16 @@ class _StockReconciliationScreenState
                     ),
                   ),
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  itemCount: draft.products.length,
-                  itemBuilder: (context, index) {
-                    final product = draft.products[index];
+              : CollapsibleCategorySections<ReconciliationDraftProduct>(
+                  sections: groupItemsByCategory<ReconciliationDraftProduct>(
+                    items: draft.products,
+                    categories: categories,
+                    categoryKeyOf: (product) => product.category,
+                    itemLabelOf: (product) => product.name,
+                  ),
+                  expansionController: _categoryExpansionController,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 0),
+                  itemBuilder: (context, product) {
                     return _ProductCard(product: product);
                   },
                 ),

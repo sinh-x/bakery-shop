@@ -47,6 +47,11 @@ class _FakeService extends ReconciliationService {
 void main() {
   Finder unitPriceFieldFinder() => find.byType(TextFormField).first;
 
+  Future<void> expandFirstCategory(WidgetTester tester) async {
+    await tester.tap(find.byIcon(Icons.expand_more).first);
+    await tester.pumpAndSettle();
+  }
+
   GoRouter buildRouter() {
     return GoRouter(
       routes: [
@@ -99,6 +104,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Bánh kem dâu'), findsNothing);
+    expect(find.text('banh_kem'), findsOneWidget);
+    await expandFirstCategory(tester);
+
     expect(find.text('Tồn dự kiến: 5'), findsOneWidget);
     expect(find.text('Trạng thái: Ổn'), findsOneWidget);
     expect(find.text('Tồn đã đếm'), findsNothing);
@@ -147,6 +156,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+
+    await expandFirstCategory(tester);
 
     await tester.tap(find.text('Bánh kem dâu'));
     await tester.pumpAndSettle();
@@ -208,6 +219,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await expandFirstCategory(tester);
+
     await tester.tap(find.text('Bánh kem dâu'));
     await tester.pumpAndSettle();
 
@@ -255,6 +268,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+
+    await expandFirstCategory(tester);
 
     await tester.tap(find.text('Bánh kem dâu'));
     await tester.pumpAndSettle();
