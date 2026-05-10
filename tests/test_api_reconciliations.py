@@ -1,4 +1,5 @@
 from baker.db.connection import get_db
+from baker.db.schema import MIGRATIONS
 from baker.api.inventory_fifo import create_lot_with_items
 
 
@@ -464,6 +465,23 @@ def test_submit_rejects_stale_stock_no_partial_writes(api_client):
         assert conn.execute("SELECT COUNT(*) FROM payment_transactions").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM stock_movements").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
+
+
+def test_draft_includes_migrated_accessories_when_eligible(api_client):
+    with get_db() as conn:
+        MIGRATIONS[38]["callable"](conn)
+        accessory = conn.execute(
+            "SELECT id FROM products WHERE category = 'phu_kien' AND name = 'Nến'"
+        ).fetchone()
+        assert accessory is not None
+        _set_stock(conn, accessory["id"], 3)
+
+    resp = api_client.get("/api/reconciliations/draft")
+    assert resp.status_code == 200
+    products = resp.json()["products"]
+    accessory_row = next(p for p in products if p["product_id"] == accessory["id"])
+    assert accessory_row["category"] == "phu_kien"
+    assert accessory_row["expected_qty"] == 3
 
 
 def test_history_detail_exposes_per_line_waste_reason(api_client):

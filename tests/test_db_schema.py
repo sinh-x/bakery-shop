@@ -284,7 +284,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 37
+        assert _migrated_version(conn) == 38
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -298,7 +298,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 37
+        assert _migrated_version(conn) == 38
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -309,10 +309,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 37
+        assert _migrated_version(conn) == 38
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 37
+        assert _migrated_version(conn) == 38
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -377,7 +377,7 @@ def test_schema_migration_v35_repairs_missing_reconciliation_line_waste_reason()
 
         ensure_schema(conn)
 
-        assert _migrated_version(conn) == 37
+        assert _migrated_version(conn) == 38
         line_columns = _schema_columns(conn, "reconciliation_lines")
         assert "waste_reason" in line_columns
 
@@ -475,3 +475,64 @@ def test_schema_migration_v37_merges_duplicate_price_buckets_without_data_loss()
             (lots[0]["id"],),
         ).fetchone()[0]
         assert inventory_count == 5
+
+
+def test_schema_migration_v38_creates_phu_kien_from_order_extra():
+    with get_db() as conn:
+        _migrate_to_version(conn, 37)
+        conn.execute("DELETE FROM app_config WHERE config_key = 'order_extra'")
+        conn.execute(
+            "INSERT INTO app_config (config_key, config_value, sort_order) VALUES ('order_extra', 'Hộp|20000', 1)"
+        )
+        conn.execute(
+            "INSERT INTO app_config (config_key, config_value, sort_order) VALUES ('order_extra', 'Nến|5000', 2)"
+        )
+
+        _migrate_to_version(conn, 38)
+
+        category = conn.execute(
+            "SELECT slug, name, active FROM categories WHERE slug = 'phu_kien'"
+        ).fetchone()
+        assert category is not None
+        assert category["name"] == "Phụ kiện"
+        assert category["active"] == 1
+
+        products = conn.execute(
+            "SELECT id, name, category, base_price, active FROM products WHERE category = 'phu_kien' ORDER BY name"
+        ).fetchall()
+        assert len(products) == 2
+        assert [row["name"] for row in products] == ["Hộp", "Nến"]
+        assert [int(row["base_price"]) for row in products] == [20000, 5000]
+        assert all(row["active"] == 1 for row in products)
+
+        for product in products:
+            attrs = conn.execute(
+                "SELECT attribute_type, value FROM product_attribute_values WHERE product_id = ?",
+                (product["id"],),
+            ).fetchall()
+            attr_map = {row["attribute_type"]: row["value"] for row in attrs}
+            assert attr_map["trung_bay"] == "true"
+            assert attr_map["tang_kem"] == "true"
+
+
+def test_schema_migration_v38_is_idempotent_for_normalized_accessory_names():
+    with get_db() as conn:
+        _migrate_to_version(conn, 37)
+        conn.execute("DELETE FROM app_config WHERE config_key = 'order_extra'")
+        conn.execute(
+            "INSERT INTO app_config (config_key, config_value, sort_order) VALUES ('order_extra', 'Hộp|20000', 1)"
+        )
+        conn.execute(
+            "INSERT INTO app_config (config_key, config_value, sort_order) VALUES ('order_extra', '  hộp  |20000', 2)"
+        )
+
+        _migrate_to_version(conn, 38)
+        MIGRATIONS[38]["callable"](conn)
+
+        rows = conn.execute(
+            "SELECT LOWER(TRIM(name)) AS normalized_name, COUNT(*) AS c "
+            "FROM products WHERE category = 'phu_kien' GROUP BY LOWER(TRIM(name))"
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["normalized_name"] == "hộp"
+        assert rows[0]["c"] == 1
