@@ -253,7 +253,7 @@ def test_find_product_by_code_in_db(api_client):
 
 
 def test_categories_table_seeded_in_db(api_client):
-    """Categories table has 5 seeded rows, queryable by CLI."""
+    """Categories table has expected seeded rows, queryable by CLI."""
     rows = _db_query("SELECT slug FROM categories WHERE active = 1 ORDER BY slug")
     slugs = [r["slug"] for r in rows]
-    assert slugs == ["banh_kem", "banh_mi", "banh_ngot", "cookie", "khac"]
+    assert slugs == ["banh_kem", "banh_mi", "banh_ngot", "cookie", "khac", "phu_kien"]

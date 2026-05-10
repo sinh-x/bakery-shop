@@ -1,6 +1,7 @@
 """Tests for chip-aware stock APIs and FIFO behavior."""
 
 from baker.db.connection import get_db
+from baker.db.schema import MIGRATIONS
 
 
 def _create_chip(client, product_id: int, label: str, price: float, position: int = 0) -> int:
@@ -156,3 +157,26 @@ def test_restock_accepts_normalized_price_and_targets_price_bucket(api_client):
         ).fetchone()
         assert lot["price_chip_id"] in {None, chip_id}
         assert lot["quantity"] == 4
+
+
+def test_stock_overview_includes_migrated_accessories_when_display_and_stock_eligible(api_client):
+    accessory_id = None
+    with get_db() as conn:
+        MIGRATIONS[38]["callable"](conn)
+        accessory = conn.execute(
+            "SELECT id FROM products WHERE category = 'phu_kien' AND name = 'Nến'"
+        ).fetchone()
+        assert accessory is not None
+        accessory_id = accessory["id"]
+
+    api_client.post(
+        f"/api/products/{accessory_id}/stock/restock",
+        json={"quantity": 2},
+    )
+
+    resp = api_client.get("/api/stock/overview")
+    assert resp.status_code == 200
+    overview = resp.json()
+    nen = next(item for item in overview if item["product_name"] == "Nến")
+    assert nen["category"] == "phu_kien"
+    assert nen["quantity"] == 2

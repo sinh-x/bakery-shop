@@ -20,11 +20,11 @@ def test_health(api_client):
 
 
 def test_list_products_returns_seeded(api_client):
-    """Migrations seed 40 products (23 base + 12 cake variants + 5 su kem sets)."""
+    """Migrations seed 40 base products plus migrated order_extra accessories."""
     resp = api_client.get("/api/products")
     assert resp.status_code == 200
     products = resp.json()
-    assert len(products) == 40
+    assert len(products) == 44
 
 
 def test_list_products_filter_by_category(api_client):
@@ -40,6 +40,14 @@ def test_list_products_filter_inactive(api_client):
     resp = api_client.get("/api/products", params={"active": 0})
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+def test_list_products_trung_bay_includes_migrated_accessories(api_client):
+    resp = api_client.get("/api/products", params={"trung_bay": 1})
+    assert resp.status_code == 200
+    products = resp.json()
+    accessory_names = {p["name"] for p in products if p["category"] == "phu_kien"}
+    assert {"Nến", "Đĩa muỗng", "Nón", "Pháo"}.issubset(accessory_names)
 
 
 # --- Get product ---
@@ -391,13 +399,13 @@ def test_list_categories(api_client):
     resp = api_client.get("/api/categories")
     assert resp.status_code == 200
     categories = resp.json()
-    assert len(categories) == 5
+    assert len(categories) == 6
 
 
 def test_list_categories_has_seeded_slugs(api_client):
     resp = api_client.get("/api/categories")
     slugs = {c["slug"] for c in resp.json()}
-    assert slugs == {"banh_mi", "banh_kem", "banh_ngot", "cookie", "khac"}
+    assert slugs == {"banh_mi", "banh_kem", "banh_ngot", "cookie", "khac", "phu_kien"}
 
 
 def test_list_categories_has_code_prefixes(api_client):
