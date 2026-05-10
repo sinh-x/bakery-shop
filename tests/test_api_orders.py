@@ -987,3 +987,232 @@ def test_pos_chip_order_with_gift_creates_order_tracks_payment_and_skips_gift_st
         assert gift_row is not None
         assert gift_row["product_id"] == ""
         assert gift_row["price_chip_id"] is None
+
+
+# --- Active-only listing (Phase 1: active-order-visibility) ---
+
+
+def test_active_only_includes_older_order_beyond_limit(api_client):
+    """Active order beyond newest 50 cutoff appears in active_only listing."""
+    old_order = _create_order(api_client, customer="Old Active")
+
+    for i in range(60):
+        _create_order(api_client, customer=f"Filler {i}")
+
+    resp = api_client.get("/api/orders", params={"active_only": True})
+    assert resp.status_code == 200
+    refs = [o["orderRef"] for o in resp.json()]
+    assert old_order["orderRef"] in refs
+
+
+def test_active_only_includes_all_supported_statuses(api_client):
+    """Active orders in new, confirmed, in_progress, ready appear in active_only."""
+    customers = {
+        "new": "StatusNew",
+        "confirmed": "StatusConfirmed",
+        "in_progress": "StatusInProgress",
+        "ready": "StatusReady",
+    }
+    orders = {}
+    for target_status, name in customers.items():
+        order = _create_order(api_client, customer=name)
+        ref = order["orderRef"]
+        if target_status != "new":
+            route = ["confirmed"]
+            if target_status in ("in_progress", "ready"):
+                route.append("in_progress")
+            if target_status == "ready":
+                route.append("ready")
+            for s in route:
+                api_client.post(
+                    f"/api/orders/{ref}/status",
+                    json={"status": s, "reason": "auto"},
+                )
+        orders[target_status] = order
+
+    resp = api_client.get("/api/orders", params={"active_only": True})
+    assert resp.status_code == 200
+    result = resp.json()
+    result_refs = {o["orderRef"] for o in result}
+    for key, order in orders.items():
+        assert order["orderRef"] in result_refs, f"{key} order missing from active_only"
+
+
+def test_active_only_excludes_completed(api_client):
+    """Completed orders are excluded from active_only listing."""
+    order = _create_order(api_client, customer="Will Complete")
+    ref = order["orderRef"]
+    total = order["totalPrice"]
+    for status in ["confirmed", "in_progress", "ready", "delivered"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+    api_client.patch(f"/api/orders/{ref}/payment", json={"amountPaid": total})
+    api_client.post(f"/api/orders/{ref}/status", json={"status": "completed"})
+
+    resp = api_client.get("/api/orders", params={"active_only": True})
+    assert resp.status_code == 200
+    refs = [o["orderRef"] for o in resp.json()]
+    assert order["orderRef"] not in refs
+
+
+def test_active_only_excludes_cancelled(api_client):
+    """Cancelled orders are excluded from active_only listing."""
+    order = _create_order(api_client, customer="Will Cancel")
+    ref = order["orderRef"]
+    api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "cancelled", "reason": "Khách hủy"},
+    )
+
+    resp = api_client.get("/api/orders", params={"active_only": True})
+    assert resp.status_code == 200
+    refs = [o["orderRef"] for o in resp.json()]
+    assert order["orderRef"] not in refs
+
+
+def test_active_only_includes_delivered_unpaid(api_client):
+    """Delivered-but-unpaid orders appear in active_only for awaiting_payment."""
+    order = _create_order(api_client, customer="Delivered Unpaid")
+    ref = order["orderRef"]
+    for status in ["confirmed", "in_progress", "ready", "delivered"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+
+    resp = api_client.get("/api/orders", params={"active_only": True})
+    assert resp.status_code == 200
+    refs = [o["orderRef"] for o in resp.json()]
+    assert order["orderRef"] in refs
+
+
+def test_active_only_excludes_delivered_fully_paid(api_client):
+    """Delivered and fully paid orders are excluded from active_only."""
+    order = _create_order(api_client, customer="Delivered Paid")
+    ref = order["orderRef"]
+    total = order["totalPrice"]
+    for status in ["confirmed", "in_progress", "ready", "delivered"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+    api_client.patch(f"/api/orders/{ref}/payment", json={"amountPaid": total})
+
+    resp = api_client.get("/api/orders", params={"active_only": True})
+    assert resp.status_code == 200
+    refs = [o["orderRef"] for o in resp.json()]
+    assert order["orderRef"] not in refs
+
+
+def test_active_only_delivered_status_filter_still_excludes_fully_paid(api_client):
+    """active_only with status=delivered excludes fully-paid delivered orders."""
+    order = _create_order(api_client, customer="Delivered Paid 2")
+    ref = order["orderRef"]
+    total = order["totalPrice"]
+    for status in ["confirmed", "in_progress", "ready", "delivered"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status})
+    api_client.patch(f"/api/orders/{ref}/payment", json={"amountPaid": total})
+
+    resp = api_client.get("/api/orders", params={"active_only": True})
+    assert resp.status_code == 200
+    refs = [o["orderRef"] for o in resp.json()]
+    assert order["orderRef"] not in refs
+
+
+def test_pagination_compatibility_limit_offset(api_client):
+    """Explicit limit and offset still work with default listing."""
+    for i in range(5):
+        _create_order(api_client, customer=f"Page {i}")
+
+    resp = api_client.get("/api/orders", params={"limit": 3, "offset": 0})
+    assert resp.status_code == 200
+    assert len(resp.json()) == 3
+
+    resp2 = api_client.get("/api/orders", params={"limit": 3, "offset": 3})
+    assert resp2.status_code == 200
+    assert len(resp2.json()) == 2
+
+
+def test_pagination_unaffected_by_active_only_param(api_client):
+    """active_only=False preserves default pagination with limit/offset."""
+    for i in range(10):
+        _create_order(api_client, customer=f"Paginate {i}")
+
+    resp = api_client.get("/api/orders", params={"limit": 2, "offset": 0, "active_only": False})
+    assert resp.status_code == 200
+    assert len(resp.json()) == 2
+
+
+def test_active_only_returns_all_orders_for_single_customer(api_client):
+    """Customer with 3 active orders sees all 3 in the active_only listing."""
+    customer = "Thôn Nữ"
+    order1 = _create_order(api_client, customer=customer)
+    order2 = _create_order(api_client, customer=customer)
+    order3 = _create_order(api_client, customer=customer)
+    for i in range(10):
+        _create_order(api_client, customer=f"Other {i}")
+
+    resp = api_client.get("/api/orders", params={"active_only": True})
+    assert resp.status_code == 200
+    result = resp.json()
+    customer_orders = [o for o in result if o["customerName"] == customer]
+    assert len(customer_orders) == 3
+    refs = {o["orderRef"] for o in customer_orders}
+    assert order1["orderRef"] in refs
+    assert order2["orderRef"] in refs
+    assert order3["orderRef"] in refs
+
+
+def test_active_only_multi_customer_orders_beyond_cutoff(api_client):
+    """All orders for one customer appear even when 60 fillers exist beyond cutoff."""
+    customer = "Khách quen"
+    orders = []
+    for _ in range(3):
+        orders.append(_create_order(api_client, customer=customer))
+    for i in range(60):
+        _create_order(api_client, customer=f"Filler {i}")
+
+    resp = api_client.get("/api/orders", params={"active_only": True})
+    assert resp.status_code == 200
+    result = resp.json()
+    customer_orders = [o for o in result if o["customerName"] == customer]
+    assert len(customer_orders) == 3
+    refs = {o["orderRef"] for o in customer_orders}
+    for o in orders:
+        assert o["orderRef"] in refs
+
+
+def test_active_only_customer_with_mixed_statuses(api_client):
+    """Customer with orders in different active statuses: all appear."""
+    customer = "Khách VIP"
+    o1 = _create_order(api_client, customer=customer)
+    o2 = _create_order(api_client, customer=customer)
+    ref2 = o2["orderRef"]
+    api_client.post(f"/api/orders/{ref2}/status", json={"status": "confirmed"})
+    o3 = _create_order(api_client, customer=customer)
+    ref3 = o3["orderRef"]
+    for s in ("confirmed", "in_progress", "ready"):
+        api_client.post(f"/api/orders/{ref3}/status", json={"status": s})
+
+    resp = api_client.get("/api/orders", params={"active_only": True})
+    assert resp.status_code == 200
+    result = resp.json()
+    customer_orders = [o for o in result if o["customerName"] == customer]
+    assert len(customer_orders) == 3
+    statuses = {o["status"] for o in customer_orders}
+    assert "new" in statuses
+    assert "confirmed" in statuses
+    assert "ready" in statuses
+
+
+def test_active_only_performance_500_orders(api_client):
+    """P95 under 500 ms for 500 active orders."""
+    import time
+
+    for i in range(500):
+        _create_order(api_client, customer=f"Perf {i}")
+
+    duration_ms_collect = []
+    for _ in range(3):
+        start = time.perf_counter()
+        resp = api_client.get("/api/orders", params={"active_only": True})
+        elapsed = (time.perf_counter() - start) * 1000
+        duration_ms_collect.append(elapsed)
+        assert resp.status_code == 200
+        assert len(resp.json()) == 500
+
+    avg_ms = sum(duration_ms_collect) / len(duration_ms_collect)
+    assert avg_ms < 500, f"Average response time {avg_ms:.0f}ms exceeds 500ms budget"

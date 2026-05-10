@@ -139,13 +139,19 @@ def list_orders(
     due_date: Optional[str] = Query(None, description="Lọc theo ngày giao (YYYY-MM-DD)"),
     limit: int = Query(50, description="Số lượng tối đa"),
     offset: int = Query(0, description="Bỏ qua N đơn đầu"),
+    active_only: bool = Query(False, description="Chỉ lấy đơn hàng đang hoạt động (không hoàn thành/hủy)"),
 ):
     """Danh sách đơn hàng."""
     with get_db() as conn:
         conditions = []
         params: list = []
 
-        if status:
+        if active_only:
+            active_statuses = ["new", "confirmed", "in_progress", "ready", "delivered"]
+            placeholders = ",".join("?" for _ in active_statuses)
+            conditions.append(f"status IN ({placeholders})")
+            params.extend(active_statuses)
+        elif status:
             conditions.append("status = ?")
             params.append(status)
 
@@ -154,6 +160,34 @@ def list_orders(
             params.append(due_date)
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        if active_only:
+            rows = conn.execute(
+                f"SELECT * FROM orders {where} ORDER BY id DESC",
+                params,
+            ).fetchall()
+            result = []
+            for r in rows:
+                order = Order.from_row(r, conn)
+                if order.status == "delivered" and order.amount_paid >= order.total_price:
+                    continue
+                result.append(order.to_api_dict())
+            return result
+
+        active_statuses = {"new", "confirmed", "in_progress", "ready", "delivered"}
+        if status and status in active_statuses:
+            rows = conn.execute(
+                f"SELECT * FROM orders {where} ORDER BY id DESC",
+                params,
+            ).fetchall()
+            result = []
+            for r in rows:
+                order = Order.from_row(r, conn)
+                if order.status == "delivered" and order.amount_paid >= order.total_price:
+                    continue
+                result.append(order.to_api_dict())
+            return result
+
         rows = conn.execute(
             f"SELECT * FROM orders {where} ORDER BY id DESC LIMIT ? OFFSET ?",
             params + [limit, offset],
