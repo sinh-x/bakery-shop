@@ -594,7 +594,12 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
             if (_isExpanded) ...[
               const SizedBox(height: 10),
               for (final option in widget.product.options) ...[
-                _OptionHeader(option: option),
+                _OptionHeader(
+                  option: option,
+                  visibleChipLabels: _chipsForOption(option)
+                      .map((chip) => chip.label)
+                      .join(', '),
+                ),
                 Builder(
                   builder: (context) {
                     final optionKey = reconciliationOptionKey(
@@ -805,13 +810,13 @@ class _StatusChip extends StatelessWidget {
 }
 
 class _OptionHeader extends StatelessWidget {
-  const _OptionHeader({required this.option});
+  const _OptionHeader({required this.option, required this.visibleChipLabels});
 
   final ReconciliationDraftOption option;
+  final String visibleChipLabels;
 
   @override
   Widget build(BuildContext context) {
-    final labels = option.chipLabelMetadata;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Column(
@@ -821,9 +826,9 @@ class _OptionHeader extends StatelessWidget {
             'Gia ${option.normalizedPrice} - ${VN.tonDuKien}: ${option.expectedQty}',
             style: Theme.of(context).textTheme.titleSmall,
           ),
-          if (labels.isNotEmpty)
+          if (visibleChipLabels.isNotEmpty)
             Text(
-              '${VN.nhanChip}: $labels',
+              '${VN.nhanChip}: $visibleChipLabels',
               style: Theme.of(context).textTheme.bodySmall,
             ),
         ],

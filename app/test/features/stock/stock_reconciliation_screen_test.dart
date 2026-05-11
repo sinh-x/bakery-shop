@@ -402,6 +402,77 @@ void main() {
     expect(find.text('L: 12000đ'), findsNothing);
   });
 
+  testWidgets('expanded option header hides chips without initial inventory', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _FakeService(
+      ReconciliationDraft(
+        date: '2026-05-04',
+        products: [
+          ReconciliationDraftProduct(
+            productId: 1,
+            name: 'Bánh kem dâu',
+            category: 'banh_kem',
+            expectedQty: 2,
+            basePrice: 100000,
+            priceChips: [
+              ReconciliationPriceChip(
+                id: 2,
+                label: 'M',
+                price: 10000,
+                position: 1,
+              ),
+              ReconciliationPriceChip(
+                id: 3,
+                label: 'L',
+                price: 12000,
+                position: 2,
+              ),
+            ],
+            options: [
+              ReconciliationDraftOption(
+                productId: 1,
+                normalizedPrice: 10000,
+                chipLabel: 'M',
+                sourceChipIds: [2],
+                sourceChipLabels: ['M'],
+                expectedQty: 2,
+              ),
+              ReconciliationDraftOption(
+                productId: 1,
+                normalizedPrice: 12000,
+                chipLabel: 'L',
+                sourceChipIds: [3],
+                sourceChipLabels: ['L'],
+                expectedQty: 0,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reconciliationServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(routerConfig: buildRouter()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await expandFirstCategory(tester);
+    await tester.tap(find.text('Bánh kem dâu'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('${VN.nhanChip}: M'), findsOneWidget);
+    expect(find.text('${VN.nhanChip}: L'), findsNothing);
+  });
+
   testWidgets('sale row falls back to normalizedPrice when sourceChipIds absent', (
     tester,
   ) async {
