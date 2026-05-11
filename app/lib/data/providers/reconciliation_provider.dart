@@ -176,6 +176,9 @@ String _normalizeOptionKey(
 }
 
 class ReconciliationNotifier extends Notifier<ReconciliationState> {
+  final Map<String, ReconciliationDraftOption> _draftOptionsByKey =
+      <String, ReconciliationDraftOption>{};
+
   @override
   ReconciliationState build() {
     return ReconciliationState();
@@ -190,6 +193,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
     try {
       final draft = await ref.read(reconciliationServiceProvider).getDraft();
+      _draftOptionsByKey.clear();
       final counted = <String, int>{};
       final waste = <String, int>{};
       final wasteReasons = <String, String>{};
@@ -200,6 +204,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
             option.productId,
             option.normalizedPrice,
           );
+          _draftOptionsByKey[key] = option;
           counted[key] = option.expectedQty;
           waste[key] = 0;
           wasteReasons[key] = '';
@@ -220,11 +225,13 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
         clearLastSubmittedSessionId: true,
       );
     } on DioException catch (error) {
+      _draftOptionsByKey.clear();
       state = state.copyWith(
         isLoading: false,
         errorMessage: api_error.normalizeApiError(error).message,
       );
     } catch (_) {
+      _draftOptionsByKey.clear();
       state = state.copyWith(
         isLoading: false,
         errorMessage: 'Không thể tải dữ liệu đối soát',
@@ -266,34 +273,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
   }
 
   ReconciliationDraftOption? _findDraftOption(String optionKey) {
-    final draft = state.draft;
-    if (draft == null) {
-      return null;
-    }
-
-    final parts = optionKey.split(':');
-    if (parts.length != 2) {
-      return null;
-    }
-
-    final productId = int.tryParse(parts.first);
-    final normalizedPrice = int.tryParse(parts.last);
-    if (productId == null || normalizedPrice == null) {
-      return null;
-    }
-
-    for (final product in draft.products) {
-      if (product.productId != productId) {
-        continue;
-      }
-      for (final option in product.options) {
-        if (option.normalizedPrice == normalizedPrice) {
-          return option;
-        }
-      }
-    }
-
-    return null;
+    return _draftOptionsByKey[optionKey];
   }
 
   void setWasteQty(Object optionKeyOrProductId, int value) {

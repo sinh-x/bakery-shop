@@ -623,16 +623,6 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                           onIncrement: () =>
                               notifier.setCountedQty(optionKey, counted + 1),
                         ),
-                        if (missing > 0) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            '${VN.soLuongThieu}: $missing',
-                            style: TextStyle(
-                              color: Colors.orange[800],
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
                         if (showSaleEditor) ...[
                           const SizedBox(height: 8),
                           Align(
@@ -686,6 +676,14 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                             ),
                         ],
                         if (missing > 0) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            '${VN.soLuongThieu}: $missing',
+                            style: TextStyle(
+                              color: Colors.orange[800],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           const SizedBox(height: 8),
                           _QuantityStepperField(
                             label: VN.soLuongHaoHut,
