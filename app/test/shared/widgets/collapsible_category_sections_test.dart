@@ -6,11 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   testWidgets('collapsed by default and toggles expansion', (tester) async {
     final sections = [
-      GroupedCategorySection<String>(
+      const GroupedCategorySection<String>(
         categoryKey: 'banh_kem',
         categoryName: 'Banh kem',
         categoryPosition: 1,
-        items: const ['Kem dau', 'Kem matcha'],
+        items: ['Kem dau', 'Kem matcha'],
       ),
     ];
 
@@ -43,11 +43,11 @@ void main() {
   ) async {
     final controller = CategorySectionExpansionController();
     final sections = [
-      GroupedCategorySection<String>(
+      const GroupedCategorySection<String>(
         categoryKey: 'phu_kien',
         categoryName: 'Phu kien',
         categoryPosition: 1,
-        items: const ['No'],
+        items: ['No'],
       ),
     ];
 
