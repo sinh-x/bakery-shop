@@ -106,6 +106,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.byIcon(Icons.refresh), findsWidgets);
+    expect(find.byIcon(Icons.history), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
+
     expect(find.text('Bánh kem dâu'), findsNothing);
     expect(find.text('banh_kem'), findsOneWidget);
     await expandFirstCategory(tester);
