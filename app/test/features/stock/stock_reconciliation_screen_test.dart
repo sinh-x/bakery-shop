@@ -194,6 +194,16 @@ void main() {
                 position: 1,
               ),
             ],
+            options: [
+              ReconciliationDraftOption(
+                productId: 1,
+                normalizedPrice: 12000,
+                chipLabel: 'M',
+                sourceChipIds: [1],
+                sourceChipLabels: ['M'],
+                expectedQty: 5,
+              ),
+            ],
           ),
         ],
       ),
@@ -221,7 +231,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final unitPriceField = tester.widget<TextFormField>(unitPriceFieldFinder());
-    expect(unitPriceField.controller?.text, '100000');
+    expect(unitPriceField.controller?.text, '12000');
 
     await tester.enterText(unitPriceFieldFinder(), '15000');
     await tester.pumpAndSettle();
@@ -265,6 +275,16 @@ void main() {
                 position: 1,
               ),
             ],
+            options: [
+              ReconciliationDraftOption(
+                productId: 1,
+                normalizedPrice: 12000,
+                chipLabel: 'M',
+                sourceChipIds: [1],
+                sourceChipLabels: ['M'],
+                expectedQty: 5,
+              ),
+            ],
           ),
         ],
       ),
@@ -296,8 +316,250 @@ void main() {
     chip.onPressed!();
     await tester.pumpAndSettle();
 
-    expect(find.text('12000'), findsOneWidget);
+    expect(find.text('12000'), findsAtLeastNWidgets(1));
   });
+
+  testWidgets('sale row shows only in-stock chips matching sourceChipIds', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _FakeService(
+      ReconciliationDraft(
+        date: '2026-05-04',
+        products: [
+          ReconciliationDraftProduct(
+            productId: 1,
+            name: 'Bánh kem dâu',
+            category: 'banh_kem',
+            expectedQty: 2,
+            basePrice: 100000,
+            priceChips: [
+              ReconciliationPriceChip(
+                id: 1,
+                label: 'S',
+                price: 10000,
+                position: 1,
+              ),
+              ReconciliationPriceChip(
+                id: 2,
+                label: 'M',
+                price: 10000,
+                position: 2,
+              ),
+              ReconciliationPriceChip(
+                id: 3,
+                label: 'L',
+                price: 12000,
+                position: 3,
+              ),
+            ],
+            options: [
+              ReconciliationDraftOption(
+                productId: 1,
+                normalizedPrice: 10000,
+                chipLabel: 'M',
+                sourceChipIds: [2],
+                sourceChipLabels: ['M'],
+                expectedQty: 2,
+              ),
+              ReconciliationDraftOption(
+                productId: 1,
+                normalizedPrice: 12000,
+                chipLabel: 'L',
+                sourceChipIds: [3],
+                sourceChipLabels: ['L'],
+                expectedQty: 0,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reconciliationServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(routerConfig: buildRouter()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await expandFirstCategory(tester);
+    await tester.tap(find.text('Bánh kem dâu'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, '1');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(OutlinedButton, VN.themDongBan));
+    await tester.pumpAndSettle();
+
+    expect(find.text('M: 10000đ'), findsAtLeastNWidgets(1));
+    expect(find.text('S: 10000đ'), findsNothing);
+    expect(find.text('L: 12000đ'), findsNothing);
+  });
+
+  testWidgets('sale row falls back to normalizedPrice when sourceChipIds absent', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _FakeService(
+      ReconciliationDraft(
+        date: '2026-05-04',
+        products: [
+          ReconciliationDraftProduct(
+            productId: 1,
+            name: 'Bánh kem dâu',
+            category: 'banh_kem',
+            expectedQty: 2,
+            basePrice: 100000,
+            priceChips: [
+              ReconciliationPriceChip(
+                id: 1,
+                label: 'A',
+                price: 12000,
+                position: 1,
+              ),
+              ReconciliationPriceChip(
+                id: 2,
+                label: 'B',
+                price: 14000,
+                position: 2,
+              ),
+            ],
+            options: [
+              ReconciliationDraftOption(
+                productId: 1,
+                normalizedPrice: 12000,
+                chipLabel: 'Gia 12k',
+                sourceChipIds: const <int>[],
+                sourceChipLabels: const <String>[],
+                expectedQty: 2,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reconciliationServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(routerConfig: buildRouter()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await expandFirstCategory(tester);
+    await tester.tap(find.text('Bánh kem dâu'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, '1');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(OutlinedButton, VN.themDongBan));
+    await tester.pumpAndSettle();
+
+    expect(find.text('A: 12000đ'), findsAtLeastNWidgets(1));
+    expect(find.text('B: 14000đ'), findsNothing);
+  });
+
+  testWidgets(
+    'manual unit price stays editable when chip shortcuts are filtered or hidden',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+      final prefs = await SharedPreferences.getInstance();
+      final service = _FakeService(
+        ReconciliationDraft(
+          date: '2026-05-04',
+          products: [
+            ReconciliationDraftProduct(
+              productId: 1,
+              name: 'Bánh kem dâu',
+              category: 'banh_kem',
+              expectedQty: 3,
+              basePrice: 100000,
+              priceChips: [
+                ReconciliationPriceChip(
+                  id: 1,
+                  label: 'A',
+                  price: 12000,
+                  position: 1,
+                ),
+                ReconciliationPriceChip(
+                  id: 2,
+                  label: 'B',
+                  price: 14000,
+                  position: 2,
+                ),
+              ],
+              options: [
+                ReconciliationDraftOption(
+                  productId: 1,
+                  normalizedPrice: 12000,
+                  chipLabel: 'Gia 12k',
+                  sourceChipIds: const <int>[],
+                  sourceChipLabels: const <String>[],
+                  expectedQty: 1,
+                ),
+                ReconciliationDraftOption(
+                  productId: 1,
+                  normalizedPrice: 16000,
+                  chipLabel: 'Gia 16k',
+                  sourceChipIds: const <int>[],
+                  sourceChipLabels: const <String>[],
+                  expectedQty: 2,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            reconciliationServiceProvider.overrideWithValue(service),
+          ],
+          child: MaterialApp.router(routerConfig: buildRouter()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await expandFirstCategory(tester);
+      await tester.tap(find.text('Bánh kem dâu'));
+      await tester.pumpAndSettle();
+
+      final countedFields = find.byType(TextField);
+      await tester.enterText(countedFields.at(0), '0');
+      await tester.enterText(countedFields.at(1), '1');
+      await tester.pumpAndSettle();
+
+      expect(find.text('${VN.dongBan} 1'), findsNWidgets(2));
+
+      expect(find.text('A: 12000đ'), findsAtLeastNWidgets(1));
+      expect(find.text('B: 14000đ'), findsNothing);
+
+      final unitPriceFields = find.byKey(const Key('reconciliation-unit-price-field'));
+      expect(unitPriceFields, findsNWidgets(2));
+
+      await tester.enterText(unitPriceFields.at(0), '15500');
+      await tester.enterText(unitPriceFields.at(1), '16600');
+      await tester.pumpAndSettle();
+
+      final firstEdited = tester.widget<TextFormField>(unitPriceFields.at(0));
+      final secondEdited = tester.widget<TextFormField>(unitPriceFields.at(1));
+      expect(firstEdited.controller?.text, '15500');
+      expect(secondEdited.controller?.text, '16600');
+    },
+  );
 
   testWidgets('invalid submit review shows issues and blocks final submit', (
     tester,
