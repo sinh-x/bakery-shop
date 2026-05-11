@@ -17,6 +17,7 @@ class _FakeService extends ReconciliationService {
   int failDraftTimes;
   int draftCalls = 0;
   int submitCalls = 0;
+  ReconciliationSubmitRequest? lastSubmitRequest;
 
   @override
   Future<ReconciliationDraft> getDraft() async {
@@ -36,6 +37,7 @@ class _FakeService extends ReconciliationService {
     ReconciliationSubmitRequest request,
   ) async {
     submitCalls += 1;
+    lastSubmitRequest = request;
     return ReconciliationSubmitResult(
       id: 1,
       date: '2026-05-04',
@@ -118,6 +120,52 @@ void main() {
     expect(find.text('Tồn đã đếm'), findsOneWidget);
   });
 
+  testWidgets('reconciliation list filters out products with expectedQty <= 0', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _FakeService(
+      ReconciliationDraft(
+        date: '2026-05-04',
+        products: [
+          ReconciliationDraftProduct(
+            productId: 1,
+            name: 'Bánh kem dâu',
+            category: 'banh_kem',
+            expectedQty: 5,
+            basePrice: 100000,
+            priceChips: const [],
+          ),
+          ReconciliationDraftProduct(
+            productId: 2,
+            name: 'Bánh su kem',
+            category: 'banh_kem',
+            expectedQty: 0,
+            basePrice: 12000,
+            priceChips: const [],
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reconciliationServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(routerConfig: buildRouter()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await expandFirstCategory(tester);
+
+    expect(find.text('Bánh kem dâu'), findsOneWidget);
+    expect(find.text('Bánh su kem'), findsNothing);
+  });
+
   testWidgets('add row defaults option unit price and keeps manual edit', (
     tester,
   ) async {
@@ -177,9 +225,18 @@ void main() {
     );
     expect(editedUnitPriceField.controller?.text, '15000');
 
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    final firstSaleRow = find.ancestor(
+      of: find.text('${VN.dongBan} 1'),
+      matching: find.byType(Container),
+    );
+    await tester.tap(
+      find.descendant(
+        of: firstSaleRow.first,
+        matching: find.byIcon(Icons.delete_outline),
+      ),
+    );
     await tester.pumpAndSettle();
-    expect(find.text('${VN.dongBan} 1'), findsNothing);
+    expect(find.text('${VN.dongBan} 1'), findsOneWidget);
   });
 
   testWidgets('price chip fills only tapped row price', (tester) async {
@@ -283,9 +340,15 @@ void main() {
       matching: find.byType(Container),
     );
     await tester.enterText(
-      find
-          .descendant(of: saleRow.first, matching: find.byType(TextField))
-          .first,
+      find.descendant(
+        of: saleRow.first,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField &&
+              widget.controller != null &&
+              widget.controller!.text == '0',
+        ),
+      ),
       '1',
     );
     await tester.enterText(unitPriceFieldFinder(), '');
@@ -393,5 +456,91 @@ void main() {
     await tester.tap(find.widgetWithText(SnackBarAction, VN.xemLichSu));
     await tester.pumpAndSettle();
     expect(find.text('Chi tiết #1'), findsOneWidget);
+  });
+
+  testWidgets('auto sales row supports reorder, manual price, and waste-only path', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _FakeService(
+      ReconciliationDraft(
+        date: '2026-05-04',
+        products: [
+          ReconciliationDraftProduct(
+            productId: 1,
+            name: 'Bánh kem dâu',
+            category: 'banh_kem',
+            expectedQty: 5,
+            basePrice: 100000,
+            priceChips: const [],
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reconciliationServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(routerConfig: buildRouter()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await expandFirstCategory(tester);
+    await tester.tap(find.text('Bánh kem dâu'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, '4');
+    await tester.pumpAndSettle();
+
+    expect(find.text('${VN.dongBan} 1'), findsOneWidget);
+    final prefilledUnitPrice = tester.widget<TextFormField>(
+      unitPriceFieldFinder(),
+    );
+    expect(prefilledUnitPrice.controller?.text, '100000');
+
+    final saleRowDy = tester.getTopLeft(find.text('${VN.dongBan} 1')).dy;
+    final wasteLabelDy = tester.getTopLeft(find.text(VN.soLuongHaoHut).last).dy;
+    expect(saleRowDy, lessThan(wasteLabelDy));
+
+    final saleRow = find.ancestor(
+      of: find.text('${VN.dongBan} 1'),
+      matching: find.byType(Container),
+    );
+    await tester.enterText(
+      find.descendant(
+        of: saleRow.first,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField &&
+              widget.controller != null &&
+              widget.controller!.text == '0',
+        ),
+      ),
+      '1',
+    );
+    await tester.enterText(unitPriceFieldFinder(), '15000');
+    await tester.pumpAndSettle();
+
+    final editedUnitPrice = tester.widget<TextFormField>(unitPriceFieldFinder());
+    expect(editedUnitPrice.controller?.text, '15000');
+
+    await tester.tap(
+      find.descendant(
+        of: saleRow.first,
+        matching: find.byIcon(Icons.delete_outline),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('${VN.dongBan} 1'), findsNothing);
+    expect(find.text(VN.soLuongHaoHut), findsWidgets);
+
+    final wasteField = find.byType(TextField).last;
+    await tester.enterText(wasteField, '1');
+    await tester.pumpAndSettle();
   });
 }
