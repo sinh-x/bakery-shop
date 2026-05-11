@@ -176,6 +176,12 @@ String _normalizeOptionKey(
 }
 
 class ReconciliationNotifier extends Notifier<ReconciliationState> {
+  // Draft-scoped lookup cache for fast option-key resolution.
+  // Keep this map in sync with state.draft by clearing/rebuilding whenever
+  // the draft payload changes.
+  final Map<String, ReconciliationDraftOption> _draftOptionsByKey =
+      <String, ReconciliationDraftOption>{};
+
   @override
   ReconciliationState build() {
     return ReconciliationState();
@@ -190,6 +196,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     );
     try {
       final draft = await ref.read(reconciliationServiceProvider).getDraft();
+      _draftOptionsByKey.clear();
       final counted = <String, int>{};
       final waste = <String, int>{};
       final wasteReasons = <String, String>{};
@@ -200,6 +207,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
             option.productId,
             option.normalizedPrice,
           );
+          _draftOptionsByKey[key] = option;
           counted[key] = option.expectedQty;
           waste[key] = 0;
           wasteReasons[key] = '';
@@ -220,11 +228,13 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
         clearLastSubmittedSessionId: true,
       );
     } on DioException catch (error) {
+      _draftOptionsByKey.clear();
       state = state.copyWith(
         isLoading: false,
         errorMessage: api_error.normalizeApiError(error).message,
       );
     } catch (_) {
+      _draftOptionsByKey.clear();
       state = state.copyWith(
         isLoading: false,
         errorMessage: 'Không thể tải dữ liệu đối soát',
@@ -234,15 +244,39 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
 
   void setCountedQty(Object optionKeyOrProductId, int value) {
     final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
+    final option = _findDraftOption(optionKey);
     final next = Map<String, int>.from(state.countedQtyByOption);
     next[optionKey] = value;
+    final nextSaleRows = Map<String, List<ReconciliationSaleRowInput>>.from(
+      state.saleRowsByOption,
+    );
+    final existingRows = List<ReconciliationSaleRowInput>.from(
+      nextSaleRows[optionKey] ?? const <ReconciliationSaleRowInput>[],
+    );
+
+    if (option != null) {
+      final missing = option.expectedQty - value;
+      if (missing > 0 && existingRows.isEmpty) {
+        nextSaleRows[optionKey] = <ReconciliationSaleRowInput>[
+          ReconciliationSaleRowInput(
+            unitPrice: option.normalizedPrice.toDouble(),
+          ),
+        ];
+      }
+    }
+
     state = state.copyWith(
       countedQtyByOption: next,
+      saleRowsByOption: nextSaleRows,
       clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
       clearLastSubmittedSessionId: true,
     );
+  }
+
+  ReconciliationDraftOption? _findDraftOption(String optionKey) {
+    return _draftOptionsByKey[optionKey];
   }
 
   void setWasteQty(Object optionKeyOrProductId, int value) {

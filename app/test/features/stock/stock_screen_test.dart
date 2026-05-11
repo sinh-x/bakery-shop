@@ -106,5 +106,8 @@ void main() {
     expect(find.text(VN.nhapHang), findsOneWidget);
     expect(find.text(VN.haoHut), findsOneWidget);
     expect(find.text(VN.dieuChinh), findsOneWidget);
+    expect(find.byIcon(Icons.add), findsWidgets);
+    expect(find.byIcon(Icons.remove), findsWidgets);
+    expect(find.byIcon(Icons.edit), findsWidgets);
   });
 }

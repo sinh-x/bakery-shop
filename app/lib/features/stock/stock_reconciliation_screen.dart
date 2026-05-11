@@ -177,6 +177,10 @@ class _StockReconciliationScreenState
       );
     }
 
+    final filteredProducts = draft.products
+        .where((product) => product.expectedQty > 0)
+        .toList(growable: false);
+
     return Column(
       children: [
         Container(
@@ -206,7 +210,7 @@ class _StockReconciliationScreenState
           ),
         ),
         Expanded(
-          child: draft.products.isEmpty
+          child: filteredProducts.isEmpty
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(20),
@@ -235,7 +239,7 @@ class _StockReconciliationScreenState
                 )
               : CollapsibleCategorySections<ReconciliationDraftProduct>(
                   sections: groupItemsByCategory<ReconciliationDraftProduct>(
-                    items: draft.products,
+                    items: filteredProducts,
                     categories: categories,
                     categoryKeyOf: (product) => product.category,
                     itemLabelOf: (product) => product.name,
@@ -619,47 +623,6 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                           onIncrement: () =>
                               notifier.setCountedQty(optionKey, counted + 1),
                         ),
-                        if (missing > 0) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            '${VN.soLuongThieu}: $missing',
-                            style: TextStyle(
-                              color: Colors.orange[800],
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          _QuantityStepperField(
-                            label: VN.soLuongHaoHut,
-                            controller: wasteController,
-                            onChanged: (value) =>
-                                notifier.setWasteQty(optionKey, value),
-                            onDecrement: () {
-                              if (waste <= 0) {
-                                return;
-                              }
-                              notifier.setWasteQty(optionKey, waste - 1);
-                            },
-                            onIncrement: () =>
-                                notifier.setWasteQty(optionKey, waste + 1),
-                          ),
-                          if (waste > 0) ...[
-                            const SizedBox(height: 8),
-                            TextField(
-                              decoration: const InputDecoration(
-                                labelText: VN.lyDoHaoHut,
-                                border: OutlineInputBorder(),
-                              ),
-                              controller: wasteReasonController,
-                              onChanged: (value) {
-                                notifier.setWasteReasonForOption(
-                                  optionKey,
-                                  value,
-                                );
-                              },
-                            ),
-                          ],
-                        ],
                         if (showSaleEditor) ...[
                           const SizedBox(height: 8),
                           Align(
@@ -711,6 +674,47 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                                     price,
                                   ),
                             ),
+                        ],
+                        if (missing > 0) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            '${VN.soLuongThieu}: $missing',
+                            style: TextStyle(
+                              color: Colors.orange[800],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _QuantityStepperField(
+                            label: VN.soLuongHaoHut,
+                            controller: wasteController,
+                            onChanged: (value) =>
+                                notifier.setWasteQty(optionKey, value),
+                            onDecrement: () {
+                              if (waste <= 0) {
+                                return;
+                              }
+                              notifier.setWasteQty(optionKey, waste - 1);
+                            },
+                            onIncrement: () =>
+                                notifier.setWasteQty(optionKey, waste + 1),
+                          ),
+                          if (waste > 0) ...[
+                            const SizedBox(height: 8),
+                            TextField(
+                              decoration: const InputDecoration(
+                                labelText: VN.lyDoHaoHut,
+                                border: OutlineInputBorder(),
+                              ),
+                              controller: wasteReasonController,
+                              onChanged: (value) {
+                                notifier.setWasteReasonForOption(
+                                  optionKey,
+                                  value,
+                                );
+                              },
+                            ),
+                          ],
                         ],
                         if (optionError != null) ...[
                           const SizedBox(height: 8),
@@ -926,6 +930,7 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
           ),
           const SizedBox(height: 8),
           TextFormField(
+            key: const Key('reconciliation-unit-price-field'),
             controller: _priceController,
             focusNode: _priceFocusNode,
             keyboardType: TextInputType.number,

@@ -53,20 +53,20 @@ void main() {
 
     test('filters sections but preserves grouped headers', () {
       final sections = [
-        GroupedCategorySection<_TestProduct>(
+        const GroupedCategorySection<_TestProduct>(
           categoryKey: 'banh_kem',
           categoryName: 'Banh kem',
           categoryPosition: 1,
-          items: const [
+          items: [
             _TestProduct('Kem dau', 'banh_kem'),
             _TestProduct('Kem socola', 'banh_kem'),
           ],
         ),
-        GroupedCategorySection<_TestProduct>(
+        const GroupedCategorySection<_TestProduct>(
           categoryKey: 'phu_kien',
           categoryName: 'Phu kien',
           categoryPosition: 2,
-          items: const [_TestProduct('No', 'phu_kien')],
+          items: [_TestProduct('No', 'phu_kien')],
         ),
       ];
 
