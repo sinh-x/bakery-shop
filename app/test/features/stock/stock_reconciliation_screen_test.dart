@@ -47,7 +47,8 @@ class _FakeService extends ReconciliationService {
 }
 
 void main() {
-  Finder unitPriceFieldFinder() => find.byType(TextFormField).first;
+  Finder unitPriceFieldFinder() =>
+      find.byKey(const Key('reconciliation-unit-price-field')).first;
 
   Future<void> expandFirstCategory(WidgetTester tester) async {
     await tester.tap(find.byIcon(Icons.expand_more).first);

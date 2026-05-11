@@ -930,6 +930,7 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
           ),
           const SizedBox(height: 8),
           TextFormField(
+            key: const Key('reconciliation-unit-price-field'),
             controller: _priceController,
             focusNode: _priceFocusNode,
             keyboardType: TextInputType.number,

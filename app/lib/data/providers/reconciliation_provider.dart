@@ -176,6 +176,9 @@ String _normalizeOptionKey(
 }
 
 class ReconciliationNotifier extends Notifier<ReconciliationState> {
+  // Draft-scoped lookup cache for fast option-key resolution.
+  // Keep this map in sync with state.draft by clearing/rebuilding whenever
+  // the draft payload changes.
   final Map<String, ReconciliationDraftOption> _draftOptionsByKey =
       <String, ReconciliationDraftOption>{};
 
