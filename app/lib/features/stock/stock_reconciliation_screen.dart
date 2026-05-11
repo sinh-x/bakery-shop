@@ -447,6 +447,25 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
     return missing > 0 || saleRows.isNotEmpty;
   }
 
+  List<ReconciliationPriceChip> _chipsForOption(
+    ReconciliationDraftOption option,
+  ) {
+    if (option.expectedQty <= 0) {
+      return const <ReconciliationPriceChip>[];
+    }
+
+    if (option.sourceChipIds.isNotEmpty) {
+      final sourceChipIds = option.sourceChipIds.toSet();
+      return widget.product.priceChips
+          .where((chip) => sourceChipIds.contains(chip.id))
+          .toList(growable: false);
+    }
+
+    return widget.product.priceChips
+        .where((chip) => chip.price.round() == option.normalizedPrice)
+        .toList(growable: false);
+  }
+
   String _collapsedOptionPriceSummary() {
     final prices = widget.product.options
         .map((option) => option.normalizedPrice.toStringAsFixed(0))
@@ -644,7 +663,7 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                             _SaleRowEditor(
                               rowIndex: rowIndex,
                               row: saleRows[rowIndex],
-                              product: widget.product,
+                              priceChips: _chipsForOption(option),
                               rowError: rowIndex < saleRowErrors.length
                                   ? saleRowErrors[rowIndex]
                                   : null,
@@ -817,7 +836,7 @@ class _SaleRowEditor extends StatefulWidget {
   const _SaleRowEditor({
     required this.rowIndex,
     required this.row,
-    required this.product,
+    required this.priceChips,
     required this.onQtyChanged,
     required this.onPriceChanged,
     required this.onMethodChanged,
@@ -828,7 +847,7 @@ class _SaleRowEditor extends StatefulWidget {
 
   final int rowIndex;
   final ReconciliationSaleRowInput row;
-  final ReconciliationDraftProduct product;
+  final List<ReconciliationPriceChip> priceChips;
   final ReconciliationSaleRowError? rowError;
   final ValueChanged<int> onQtyChanged;
   final ValueChanged<double?> onPriceChanged;
@@ -950,12 +969,12 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
               errorText: widget.rowError?.unitPrice,
             ),
           ),
-          if (widget.product.priceChips.isNotEmpty) ...[
+          if (widget.priceChips.isNotEmpty) ...[
             const SizedBox(height: 6),
             Wrap(
               spacing: 6,
               runSpacing: 4,
-              children: widget.product.priceChips
+              children: widget.priceChips
                   .map(
                     (chip) => ActionChip(
                       visualDensity: VisualDensity.compact,
