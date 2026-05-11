@@ -72,7 +72,6 @@ void main() {
       await container.read(reconciliationProvider.notifier).loadDraft();
       container.read(reconciliationProvider.notifier).setCountedQty(1, 2);
       container.read(reconciliationProvider.notifier).setWasteQty(1, 1);
-      container.read(reconciliationProvider.notifier).addSaleRow(1);
       container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
       container
           .read(reconciliationProvider.notifier)
@@ -110,7 +109,6 @@ void main() {
 
     await container.read(reconciliationProvider.notifier).loadDraft();
     container.read(reconciliationProvider.notifier).setCountedQty(1, 4);
-    container.read(reconciliationProvider.notifier).addSaleRow(1);
     container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
 
     final ok = await container.read(reconciliationProvider.notifier).submit();
@@ -118,7 +116,7 @@ void main() {
     expect(ok, isFalse);
     expect(service.submitCalls, 0);
     final rowErrors = state.saleRowErrorsByOption['1:100000']!;
-    expect(rowErrors[0].unitPrice, isNotNull);
+    expect(rowErrors[0].unitPrice, isNull);
     expect(rowErrors[0].paymentMethod, isNotNull);
   });
 
@@ -143,7 +141,6 @@ void main() {
 
     await container.read(reconciliationProvider.notifier).loadDraft();
     container.read(reconciliationProvider.notifier).setCountedQty(1, 3);
-    container.read(reconciliationProvider.notifier).addSaleRow(1);
     container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
     container
         .read(reconciliationProvider.notifier)
@@ -190,7 +187,6 @@ void main() {
     await container.read(reconciliationProvider.notifier).loadDraft();
     for (var i = 1; i <= 100; i++) {
       container.read(reconciliationProvider.notifier).setCountedQty(i, 1);
-      container.read(reconciliationProvider.notifier).addSaleRow(i);
       container.read(reconciliationProvider.notifier).setSaleRowQty(i, 0, 1);
       container
           .read(reconciliationProvider.notifier)
@@ -206,4 +202,140 @@ void main() {
     expect(ok, isFalse);
     expect(service.submitCalls, 0);
   });
+
+  test(
+    'setCountedQty auto-creates one sale row with normalizedPrice',
+    () async {
+      final service = _FakeReconciliationService(
+        ReconciliationDraft(
+          date: '2026-05-04',
+          products: [
+            ReconciliationDraftProduct(
+              productId: 1,
+              name: 'Banh su kem',
+              category: 'banh_ngot',
+              expectedQty: 5,
+              basePrice: 100000,
+              priceChips: [],
+              options: [
+                ReconciliationDraftOption(
+                  productId: 1,
+                  normalizedPrice: 13000,
+                  chipLabel: 'L',
+                  sourceChipIds: <int>[],
+                  sourceChipLabels: <String>[],
+                  expectedQty: 5,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      final container = await buildContainer(service);
+      addTearDown(container.dispose);
+
+      await container.read(reconciliationProvider.notifier).loadDraft();
+      container
+          .read(reconciliationProvider.notifier)
+          .setCountedQty('1:13000', 4);
+
+      final state = container.read(reconciliationProvider);
+      final rows = state.saleRowsByOption['1:13000']!;
+      expect(rows.length, 1);
+      expect(rows.first.quantity, 0);
+      expect(rows.first.unitPrice, 13000);
+    },
+  );
+
+  test(
+    'setCountedQty uses each option normalizedPrice and avoids duplicates',
+    () async {
+      final service = _FakeReconciliationService(
+        ReconciliationDraft(
+          date: '2026-05-04',
+          products: [
+            ReconciliationDraftProduct(
+              productId: 1,
+              name: 'Banh su kem',
+              category: 'banh_ngot',
+              expectedQty: 8,
+              basePrice: 100000,
+              priceChips: [],
+              options: [
+                ReconciliationDraftOption(
+                  productId: 1,
+                  normalizedPrice: 12000,
+                  chipLabel: 'S',
+                  sourceChipIds: <int>[],
+                  sourceChipLabels: <String>[],
+                  expectedQty: 3,
+                ),
+                ReconciliationDraftOption(
+                  productId: 1,
+                  normalizedPrice: 18000,
+                  chipLabel: 'L',
+                  sourceChipIds: <int>[],
+                  sourceChipLabels: <String>[],
+                  expectedQty: 5,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      final container = await buildContainer(service);
+      addTearDown(container.dispose);
+
+      await container.read(reconciliationProvider.notifier).loadDraft();
+      container
+          .read(reconciliationProvider.notifier)
+          .setCountedQty('1:12000', 2);
+      container
+          .read(reconciliationProvider.notifier)
+          .setCountedQty('1:18000', 4);
+      container
+          .read(reconciliationProvider.notifier)
+          .setCountedQty('1:12000', 1);
+
+      final state = container.read(reconciliationProvider);
+      final rows12000 = state.saleRowsByOption['1:12000']!;
+      final rows18000 = state.saleRowsByOption['1:18000']!;
+      expect(rows12000.length, 1);
+      expect(rows18000.length, 1);
+      expect(rows12000.first.unitPrice, 12000);
+      expect(rows18000.first.unitPrice, 18000);
+    },
+  );
+
+  test(
+    'auto-created row persists when countedQty returns to expectedQty',
+    () async {
+      final service = _FakeReconciliationService(
+        ReconciliationDraft(
+          date: '2026-05-04',
+          products: [
+            ReconciliationDraftProduct(
+              productId: 1,
+              name: 'Banh su kem',
+              category: 'banh_ngot',
+              expectedQty: 5,
+              basePrice: 100000,
+              priceChips: [],
+            ),
+          ],
+        ),
+      );
+      final container = await buildContainer(service);
+      addTearDown(container.dispose);
+
+      await container.read(reconciliationProvider.notifier).loadDraft();
+      container.read(reconciliationProvider.notifier).setCountedQty(1, 4);
+      container.read(reconciliationProvider.notifier).setCountedQty(1, 5);
+
+      final state = container.read(reconciliationProvider);
+      final rows = state.saleRowsByOption['1:100000']!;
+      expect(rows.length, 1);
+      expect(rows.first.unitPrice, 100000);
+    },
+  );
 }

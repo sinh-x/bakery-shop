@@ -234,15 +234,66 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
 
   void setCountedQty(Object optionKeyOrProductId, int value) {
     final optionKey = _normalizeOptionKey(optionKeyOrProductId, state);
+    final option = _findDraftOption(optionKey);
     final next = Map<String, int>.from(state.countedQtyByOption);
     next[optionKey] = value;
+    final nextSaleRows = Map<String, List<ReconciliationSaleRowInput>>.from(
+      state.saleRowsByOption,
+    );
+    final existingRows = List<ReconciliationSaleRowInput>.from(
+      nextSaleRows[optionKey] ?? const <ReconciliationSaleRowInput>[],
+    );
+
+    if (option != null) {
+      final missing = option.expectedQty - value;
+      if (missing > 0 && existingRows.isEmpty) {
+        nextSaleRows[optionKey] = <ReconciliationSaleRowInput>[
+          ReconciliationSaleRowInput(
+            unitPrice: option.normalizedPrice.toDouble(),
+          ),
+        ];
+      }
+    }
+
     state = state.copyWith(
       countedQtyByOption: next,
+      saleRowsByOption: nextSaleRows,
       clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
       clearLastSubmittedSessionId: true,
     );
+  }
+
+  ReconciliationDraftOption? _findDraftOption(String optionKey) {
+    final draft = state.draft;
+    if (draft == null) {
+      return null;
+    }
+
+    final parts = optionKey.split(':');
+    if (parts.length != 2) {
+      return null;
+    }
+
+    final productId = int.tryParse(parts.first);
+    final normalizedPrice = int.tryParse(parts.last);
+    if (productId == null || normalizedPrice == null) {
+      return null;
+    }
+
+    for (final product in draft.products) {
+      if (product.productId != productId) {
+        continue;
+      }
+      for (final option in product.options) {
+        if (option.normalizedPrice == normalizedPrice) {
+          return option;
+        }
+      }
+    }
+
+    return null;
   }
 
   void setWasteQty(Object optionKeyOrProductId, int value) {
