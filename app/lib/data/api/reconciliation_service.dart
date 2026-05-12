@@ -94,16 +94,23 @@ class ReconciliationDraftProduct {
         order.add(option.normalizedPrice);
         continue;
       }
-      final chipIdSet = <int>{...existing.sourceChipIds, ...option.sourceChipIds};
-      final labels = <String>[...existing.sourceChipLabels];
-      for (final label in option.sourceChipLabels) {
-        if (!labels.contains(label)) {
-          labels.add(label);
-        }
+      final chipIdSet = <int>{};
+      final labels = <String>[];
+      if (existing.expectedQty > 0) {
+        chipIdSet.addAll(existing.sourceChipIds);
+        labels.addAll(existing.sourceChipLabels);
       }
-      final fallbackLabel = option.chipLabel.trim();
-      if (labels.isEmpty && fallbackLabel.isNotEmpty && !labels.contains(fallbackLabel)) {
-        labels.add(fallbackLabel);
+      if (option.expectedQty > 0) {
+        chipIdSet.addAll(option.sourceChipIds);
+        for (final label in option.sourceChipLabels) {
+          if (!labels.contains(label)) {
+            labels.add(label);
+          }
+        }
+        final fallbackLabel = option.chipLabel.trim();
+        if (labels.isEmpty && fallbackLabel.isNotEmpty) {
+          labels.add(fallbackLabel);
+        }
       }
       merged[option.normalizedPrice] = ReconciliationDraftOption(
         productId: option.productId,
