@@ -254,154 +254,6 @@ void main() {
     expect(find.text('${VN.dongBan} 1'), findsOneWidget);
   });
 
-  testWidgets('price chip fills only tapped row price', (tester) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
-    final prefs = await SharedPreferences.getInstance();
-    final service = _FakeService(
-      ReconciliationDraft(
-        date: '2026-05-04',
-        products: [
-          ReconciliationDraftProduct(
-            productId: 1,
-            name: 'Bánh kem dâu',
-            category: 'banh_kem',
-            expectedQty: 5,
-            basePrice: 100000,
-            priceChips: [
-              ReconciliationPriceChip(
-                id: 1,
-                label: 'M',
-                price: 12000,
-                position: 1,
-              ),
-            ],
-            options: [
-              ReconciliationDraftOption(
-                productId: 1,
-                normalizedPrice: 12000,
-                chipLabel: 'M',
-                sourceChipIds: [1],
-                sourceChipLabels: ['M'],
-                expectedQty: 5,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          sharedPreferencesProvider.overrideWithValue(prefs),
-          reconciliationServiceProvider.overrideWithValue(service),
-        ],
-        child: MaterialApp.router(routerConfig: buildRouter()),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await expandFirstCategory(tester);
-
-    await tester.tap(find.text('Bánh kem dâu'));
-    await tester.pumpAndSettle();
-
-    await tester.enterText(find.byType(TextField).first, '3');
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.themDongBan));
-    await tester.tap(find.text(VN.themDongBan));
-    await tester.pumpAndSettle();
-
-    final chip = tester.widget<ActionChip>(find.byType(ActionChip).first);
-    chip.onPressed!();
-    await tester.pumpAndSettle();
-
-    expect(find.text('12000'), findsAtLeastNWidgets(1));
-  });
-
-  testWidgets('sale row shows only in-stock chips matching sourceChipIds', (
-    tester,
-  ) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
-    final prefs = await SharedPreferences.getInstance();
-    final service = _FakeService(
-      ReconciliationDraft(
-        date: '2026-05-04',
-        products: [
-          ReconciliationDraftProduct(
-            productId: 1,
-            name: 'Bánh kem dâu',
-            category: 'banh_kem',
-            expectedQty: 2,
-            basePrice: 100000,
-            priceChips: [
-              ReconciliationPriceChip(
-                id: 1,
-                label: 'S',
-                price: 10000,
-                position: 1,
-              ),
-              ReconciliationPriceChip(
-                id: 2,
-                label: 'M',
-                price: 10000,
-                position: 2,
-              ),
-              ReconciliationPriceChip(
-                id: 3,
-                label: 'L',
-                price: 12000,
-                position: 3,
-              ),
-            ],
-            options: [
-              ReconciliationDraftOption(
-                productId: 1,
-                normalizedPrice: 10000,
-                chipLabel: 'M',
-                sourceChipIds: [2],
-                sourceChipLabels: ['M'],
-                expectedQty: 2,
-              ),
-              ReconciliationDraftOption(
-                productId: 1,
-                normalizedPrice: 12000,
-                chipLabel: 'L',
-                sourceChipIds: [3],
-                sourceChipLabels: ['L'],
-                expectedQty: 0,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          sharedPreferencesProvider.overrideWithValue(prefs),
-          reconciliationServiceProvider.overrideWithValue(service),
-        ],
-        child: MaterialApp.router(routerConfig: buildRouter()),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await expandFirstCategory(tester);
-    await tester.tap(find.text('Bánh kem dâu'));
-    await tester.pumpAndSettle();
-
-    await tester.enterText(find.byType(TextField).first, '1');
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(OutlinedButton, VN.themDongBan));
-    await tester.pumpAndSettle();
-
-    expect(find.text('M: 10000đ'), findsAtLeastNWidgets(1));
-    expect(find.text('S: 10000đ'), findsNothing);
-    expect(find.text('L: 12000đ'), findsNothing);
-  });
-
   testWidgets('expanded option header hides chips without initial inventory', (
     tester,
   ) async {
@@ -473,150 +325,6 @@ void main() {
     expect(find.text('${VN.nhanChip}: L'), findsNothing);
   });
 
-  testWidgets('sale row falls back to normalizedPrice when sourceChipIds absent', (
-    tester,
-  ) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
-    final prefs = await SharedPreferences.getInstance();
-    final service = _FakeService(
-      ReconciliationDraft(
-        date: '2026-05-04',
-        products: [
-          ReconciliationDraftProduct(
-            productId: 1,
-            name: 'Bánh kem dâu',
-            category: 'banh_kem',
-            expectedQty: 2,
-            basePrice: 100000,
-            priceChips: [
-              ReconciliationPriceChip(
-                id: 1,
-                label: 'A',
-                price: 12000,
-                position: 1,
-              ),
-              ReconciliationPriceChip(
-                id: 2,
-                label: 'B',
-                price: 14000,
-                position: 2,
-              ),
-            ],
-            options: [
-              ReconciliationDraftOption(
-                productId: 1,
-                normalizedPrice: 12000,
-                chipLabel: 'Gia 12k',
-                sourceChipIds: const <int>[],
-                sourceChipLabels: const <String>[],
-                expectedQty: 2,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          sharedPreferencesProvider.overrideWithValue(prefs),
-          reconciliationServiceProvider.overrideWithValue(service),
-        ],
-        child: MaterialApp.router(routerConfig: buildRouter()),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await expandFirstCategory(tester);
-    await tester.tap(find.text('Bánh kem dâu'));
-    await tester.pumpAndSettle();
-
-    await tester.enterText(find.byType(TextField).first, '1');
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(OutlinedButton, VN.themDongBan));
-    await tester.pumpAndSettle();
-
-    expect(find.text('A: 12000đ'), findsAtLeastNWidgets(1));
-    expect(find.text('B: 14000đ'), findsNothing);
-  });
-
-  testWidgets(
-    'sale row shows all duplicate normalized-price chips when sourceChipIds absent',
-    (tester) async {
-      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
-      final prefs = await SharedPreferences.getInstance();
-      final service = _FakeService(
-        ReconciliationDraft(
-          date: '2026-05-04',
-          products: [
-            ReconciliationDraftProduct(
-              productId: 1,
-              name: 'Bánh kem dâu',
-              category: 'banh_kem',
-              expectedQty: 2,
-              basePrice: 100000,
-              priceChips: [
-                ReconciliationPriceChip(
-                  id: 1,
-                  label: 'A',
-                  price: 12000,
-                  position: 1,
-                ),
-                ReconciliationPriceChip(
-                  id: 2,
-                  label: 'A2',
-                  price: 12000,
-                  position: 2,
-                ),
-                ReconciliationPriceChip(
-                  id: 3,
-                  label: 'B',
-                  price: 14000,
-                  position: 3,
-                ),
-              ],
-              options: [
-                ReconciliationDraftOption(
-                  productId: 1,
-                  normalizedPrice: 12000,
-                  chipLabel: 'Gia 12k',
-                  sourceChipIds: const <int>[],
-                  sourceChipLabels: const <String>[],
-                  expectedQty: 2,
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            sharedPreferencesProvider.overrideWithValue(prefs),
-            reconciliationServiceProvider.overrideWithValue(service),
-          ],
-          child: MaterialApp.router(routerConfig: buildRouter()),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await expandFirstCategory(tester);
-      await tester.tap(find.text('Bánh kem dâu'));
-      await tester.pumpAndSettle();
-
-      await tester.enterText(find.byType(TextField).first, '1');
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(OutlinedButton, VN.themDongBan));
-      await tester.pumpAndSettle();
-
-      expect(find.text('A: 12000đ'), findsAtLeastNWidgets(1));
-      expect(find.text('A2: 12000đ'), findsAtLeastNWidgets(1));
-      expect(find.text('B: 14000đ'), findsNothing);
-    },
-  );
-
   testWidgets('sale row hides chip shortcut area when no chips qualify', (
     tester,
   ) async {
@@ -687,7 +395,7 @@ void main() {
   });
 
   testWidgets(
-    'manual unit price stays editable when chip shortcuts are filtered or hidden',
+    'sale row has no ActionChip and manual unit price stays editable',
     (tester) async {
       SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
       final prefs = await SharedPreferences.getInstance();
@@ -760,8 +468,22 @@ void main() {
 
       expect(find.text('${VN.dongBan} 1'), findsNWidgets(2));
 
-      expect(find.text('A: 12000đ'), findsAtLeastNWidgets(1));
-      expect(find.text('B: 14000đ'), findsNothing);
+      final saleRow1 = find.ancestor(
+        of: find.text('${VN.dongBan} 1').first,
+        matching: find.byType(Container),
+      );
+      expect(
+        find.descendant(of: saleRow1.first, matching: find.byType(ActionChip)),
+        findsNothing,
+      );
+      final saleRow2 = find.ancestor(
+        of: find.text('${VN.dongBan} 1').last,
+        matching: find.byType(Container),
+      );
+      expect(
+        find.descendant(of: saleRow2.first, matching: find.byType(ActionChip)),
+        findsNothing,
+      );
 
       final unitPriceFields = find.byKey(const Key('reconciliation-unit-price-field'));
       expect(unitPriceFields, findsNWidgets(2));
