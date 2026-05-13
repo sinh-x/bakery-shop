@@ -668,7 +668,6 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                             _SaleRowEditor(
                               rowIndex: rowIndex,
                               row: saleRows[rowIndex],
-                              priceChips: _chipsForOption(option),
                               rowError: rowIndex < saleRowErrors.length
                                   ? saleRowErrors[rowIndex]
                                   : null,
@@ -691,12 +690,6 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                                   ),
                               onRemove: () =>
                                   notifier.removeSaleRow(optionKey, rowIndex),
-                              onPriceChipTap: (price) =>
-                                  notifier.fillSaleRowPriceFromChip(
-                                    optionKey,
-                                    rowIndex,
-                                    price,
-                                  ),
                             ),
                         ],
                         if (missing > 0) ...[
@@ -841,24 +834,20 @@ class _SaleRowEditor extends StatefulWidget {
   const _SaleRowEditor({
     required this.rowIndex,
     required this.row,
-    required this.priceChips,
     required this.onQtyChanged,
     required this.onPriceChanged,
     required this.onMethodChanged,
     required this.onRemove,
-    required this.onPriceChipTap,
     this.rowError,
   });
 
   final int rowIndex;
   final ReconciliationSaleRowInput row;
-  final List<ReconciliationPriceChip> priceChips;
   final ReconciliationSaleRowError? rowError;
   final ValueChanged<int> onQtyChanged;
   final ValueChanged<double?> onPriceChanged;
   final ValueChanged<String?> onMethodChanged;
   final VoidCallback onRemove;
-  final ValueChanged<double> onPriceChipTap;
 
   @override
   State<_SaleRowEditor> createState() => _SaleRowEditorState();
@@ -974,24 +963,6 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
               errorText: widget.rowError?.unitPrice,
             ),
           ),
-          if (widget.priceChips.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: widget.priceChips
-                  .map(
-                    (chip) => ActionChip(
-                      visualDensity: VisualDensity.compact,
-                      label: Text(
-                        '${chip.label}: ${chip.price.toStringAsFixed(0)}đ',
-                      ),
-                      onPressed: () => widget.onPriceChipTap(chip.price),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ],
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             initialValue: widget.row.paymentMethod,
