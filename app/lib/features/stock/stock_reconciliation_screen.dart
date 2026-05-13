@@ -447,23 +447,20 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
     return missing > 0 || saleRows.isNotEmpty;
   }
 
-  List<ReconciliationPriceChip> _chipsForOption(
-    ReconciliationDraftOption option,
-  ) {
+  String _visibleChipLabelsForOption(ReconciliationDraftOption option) {
     if (option.expectedQty <= 0) {
-      return const <ReconciliationPriceChip>[];
+      return '';
     }
 
     if (option.sourceChipIds.isNotEmpty) {
       final sourceChipIds = option.sourceChipIds.toSet();
       return widget.product.priceChips
           .where((chip) => sourceChipIds.contains(chip.id))
-          .toList(growable: false);
+          .map((chip) => chip.label)
+          .join(', ');
     }
 
-    return widget.product.priceChips
-        .where((chip) => chip.price.round() == option.normalizedPrice)
-        .toList(growable: false);
+    return option.sourceChipLabels.join(', ');
   }
 
   String _collapsedOptionPriceSummary() {
@@ -596,9 +593,7 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
               for (final option in widget.product.options) ...[
                 _OptionHeader(
                   option: option,
-                  visibleChipLabels: _chipsForOption(option)
-                      .map((chip) => chip.label)
-                      .join(', '),
+                  visibleChipLabels: _visibleChipLabelsForOption(option),
                 ),
                 Builder(
                   builder: (context) {
