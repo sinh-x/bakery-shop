@@ -447,6 +447,22 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
     return missing > 0 || saleRows.isNotEmpty;
   }
 
+  String _visibleChipLabelsForOption(ReconciliationDraftOption option) {
+    if (option.expectedQty <= 0) {
+      return '';
+    }
+
+    if (option.sourceChipIds.isNotEmpty) {
+      final sourceChipIds = option.sourceChipIds.toSet();
+      return widget.product.priceChips
+          .where((chip) => sourceChipIds.contains(chip.id))
+          .map((chip) => chip.label)
+          .join(', ');
+    }
+
+    return option.sourceChipLabels.join(', ');
+  }
+
   String _collapsedOptionPriceSummary() {
     final prices = widget.product.options
         .map((option) => option.normalizedPrice.toStringAsFixed(0))
@@ -574,8 +590,11 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
             ],
             if (_isExpanded) ...[
               const SizedBox(height: 10),
-              for (final option in widget.product.options) ...[
-                _OptionHeader(option: option),
+              for (final option in widget.product.options.where((o) => o.expectedQty > 0)) ...[
+                _OptionHeader(
+                  option: option,
+                  visibleChipLabels: _visibleChipLabelsForOption(option),
+                ),
                 Builder(
                   builder: (context) {
                     final optionKey = reconciliationOptionKey(
@@ -644,7 +663,6 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                             _SaleRowEditor(
                               rowIndex: rowIndex,
                               row: saleRows[rowIndex],
-                              product: widget.product,
                               rowError: rowIndex < saleRowErrors.length
                                   ? saleRowErrors[rowIndex]
                                   : null,
@@ -667,12 +685,6 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
                                   ),
                               onRemove: () =>
                                   notifier.removeSaleRow(optionKey, rowIndex),
-                              onPriceChipTap: (price) =>
-                                  notifier.fillSaleRowPriceFromChip(
-                                    optionKey,
-                                    rowIndex,
-                                    price,
-                                  ),
                             ),
                         ],
                         if (missing > 0) ...[
@@ -786,13 +798,13 @@ class _StatusChip extends StatelessWidget {
 }
 
 class _OptionHeader extends StatelessWidget {
-  const _OptionHeader({required this.option});
+  const _OptionHeader({required this.option, required this.visibleChipLabels});
 
   final ReconciliationDraftOption option;
+  final String visibleChipLabels;
 
   @override
   Widget build(BuildContext context) {
-    final labels = option.chipLabelMetadata;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Column(
@@ -802,9 +814,9 @@ class _OptionHeader extends StatelessWidget {
             'Gia ${option.normalizedPrice} - ${VN.tonDuKien}: ${option.expectedQty}',
             style: Theme.of(context).textTheme.titleSmall,
           ),
-          if (labels.isNotEmpty)
+          if (visibleChipLabels.isNotEmpty)
             Text(
-              '${VN.nhanChip}: $labels',
+              '${VN.nhanChip}: $visibleChipLabels',
               style: Theme.of(context).textTheme.bodySmall,
             ),
         ],
@@ -817,24 +829,20 @@ class _SaleRowEditor extends StatefulWidget {
   const _SaleRowEditor({
     required this.rowIndex,
     required this.row,
-    required this.product,
     required this.onQtyChanged,
     required this.onPriceChanged,
     required this.onMethodChanged,
     required this.onRemove,
-    required this.onPriceChipTap,
     this.rowError,
   });
 
   final int rowIndex;
   final ReconciliationSaleRowInput row;
-  final ReconciliationDraftProduct product;
   final ReconciliationSaleRowError? rowError;
   final ValueChanged<int> onQtyChanged;
   final ValueChanged<double?> onPriceChanged;
   final ValueChanged<String?> onMethodChanged;
   final VoidCallback onRemove;
-  final ValueChanged<double> onPriceChipTap;
 
   @override
   State<_SaleRowEditor> createState() => _SaleRowEditorState();
@@ -950,24 +958,6 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
               errorText: widget.rowError?.unitPrice,
             ),
           ),
-          if (widget.product.priceChips.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: widget.product.priceChips
-                  .map(
-                    (chip) => ActionChip(
-                      visualDensity: VisualDensity.compact,
-                      label: Text(
-                        '${chip.label}: ${chip.price.toStringAsFixed(0)}đ',
-                      ),
-                      onPressed: () => widget.onPriceChipTap(chip.price),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ],
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             initialValue: widget.row.paymentMethod,

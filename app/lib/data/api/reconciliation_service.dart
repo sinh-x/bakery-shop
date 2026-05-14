@@ -36,18 +36,18 @@ class ReconciliationDraftProduct {
     required this.priceChips,
     List<ReconciliationDraftOption> options =
         const <ReconciliationDraftOption>[],
-   }) : options = options.isEmpty
+  }) : options = options.isEmpty
            ? [
                ReconciliationDraftOption(
-                  productId: productId,
-                  normalizedPrice: basePrice.round(),
-                  chipLabel: 'Gia goc',
-                  sourceChipIds: const <int>[],
-                  sourceChipLabels: const <String>[],
-                  expectedQty: expectedQty,
-                ),
-              ]
-            : options;
+                 productId: productId,
+                 normalizedPrice: basePrice.round(),
+                 chipLabel: 'Gia goc',
+                 sourceChipIds: const <int>[],
+                 sourceChipLabels: const <String>[],
+                 expectedQty: expectedQty,
+               ),
+             ]
+           : options;
 
   final int productId;
   final String name;
@@ -94,16 +94,19 @@ class ReconciliationDraftProduct {
         order.add(option.normalizedPrice);
         continue;
       }
-      final chipIdSet = <int>{...existing.sourceChipIds, ...option.sourceChipIds};
-      final labels = <String>[...existing.sourceChipLabels];
-      for (final label in option.sourceChipLabels) {
-        if (!labels.contains(label)) {
-          labels.add(label);
-        }
+      final chipIdSet = <int>{};
+      final labels = <String>[];
+      if (existing.expectedQty > 0) {
+        chipIdSet.addAll(existing.sourceChipIds);
+        labels.addAll(_stockedOptionLabels(existing));
       }
-      final fallbackLabel = option.chipLabel.trim();
-      if (labels.isEmpty && fallbackLabel.isNotEmpty && !labels.contains(fallbackLabel)) {
-        labels.add(fallbackLabel);
+      if (option.expectedQty > 0) {
+        chipIdSet.addAll(option.sourceChipIds);
+        for (final label in _stockedOptionLabels(option)) {
+          if (!labels.contains(label)) {
+            labels.add(label);
+          }
+        }
       }
       merged[option.normalizedPrice] = ReconciliationDraftOption(
         productId: option.productId,
@@ -115,6 +118,14 @@ class ReconciliationDraftProduct {
       );
     }
     return order.map((price) => merged[price]!).toList();
+  }
+
+  static List<String> _stockedOptionLabels(ReconciliationDraftOption option) {
+    if (option.sourceChipLabels.isNotEmpty) {
+      return option.sourceChipLabels;
+    }
+    final fallbackLabel = option.chipLabel.trim();
+    return fallbackLabel.isEmpty ? const <String>[] : <String>[fallbackLabel];
   }
 }
 
@@ -144,7 +155,9 @@ class ReconciliationDraftOption {
 
   factory ReconciliationDraftOption.fromJson(Map<String, dynamic> json) {
     final fallbackNormalizedPrice =
-        (json['price'] as num?)?.round() ?? (json['base_price'] as num?)?.round() ?? 0;
+        (json['price'] as num?)?.round() ??
+        (json['base_price'] as num?)?.round() ??
+        0;
     final chipLabels =
         (json['source_chip_labels'] as List<dynamic>? ?? <dynamic>[])
             .map((item) => item.toString().trim())
@@ -153,7 +166,8 @@ class ReconciliationDraftOption {
     return ReconciliationDraftOption(
       productId: json['product_id'] as int,
       normalizedPrice:
-          (json['normalized_price'] as num?)?.toInt() ?? fallbackNormalizedPrice,
+          (json['normalized_price'] as num?)?.toInt() ??
+          fallbackNormalizedPrice,
       chipLabel: (json['chip_label'] as String?) ?? 'Gia goc',
       sourceChipIds: (json['source_chip_ids'] as List<dynamic>? ?? <dynamic>[])
           .map((item) => (item as num).toInt())
@@ -374,10 +388,11 @@ class ReconciliationHistoryLine {
       priceChipId: (json['price_chip_id'] as num?)?.toInt(),
       chipLabel: (json['chip_label'] as String?) ?? 'Gia goc',
       normalizedPrice: (json['normalized_price'] as num?)?.toInt(),
-      sourceChipLabels: (json['source_chip_labels'] as List<dynamic>? ?? <dynamic>[])
-          .map((item) => item.toString().trim())
-          .where((item) => item.isNotEmpty)
-          .toList(),
+      sourceChipLabels:
+          (json['source_chip_labels'] as List<dynamic>? ?? <dynamic>[])
+              .map((item) => item.toString().trim())
+              .where((item) => item.isNotEmpty)
+              .toList(),
       expectedQty: json['expected_qty'] as int,
       countedQty: json['counted_qty'] as int,
       saleQty: json['sale_qty'] as int,
