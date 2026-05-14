@@ -38,8 +38,7 @@ class OrderListNotifier extends AsyncNotifier<List<Order>> {
   }
 }
 
-final orderListProvider =
-    AsyncNotifierProvider<OrderListNotifier, List<Order>>(
+final orderListProvider = AsyncNotifierProvider<OrderListNotifier, List<Order>>(
   OrderListNotifier.new,
 );
 
@@ -67,8 +66,12 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
   Future<Order> transitionTo(String targetStatus, {String reason = ''}) async {
     final service = ref.read(orderServiceProvider);
     final changedBy = ref.read(loggedByProvider);
-    final updated =
-        await service.updateStatus(orderRef, targetStatus, reason: reason, changedBy: changedBy);
+    final updated = await service.updateStatus(
+      orderRef,
+      targetStatus,
+      reason: reason,
+      changedBy: changedBy,
+    );
     state = AsyncData(updated);
     // Refresh the list so the status change is reflected there too.
     ref.read(orderListProvider.notifier).refresh();
@@ -109,8 +112,8 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
 
 final orderDetailProvider =
     AsyncNotifierProvider.family<OrderDetailNotifier, Order, String>(
-  OrderDetailNotifier.new,
-);
+      OrderDetailNotifier.new,
+    );
 
 /// Provides all active (non-terminal) orders for the dashboard view.
 final dashboardOrdersProvider = FutureProvider<List<Order>>((ref) async {
@@ -138,9 +141,18 @@ class OrderPhotosNotifier extends AsyncNotifier<List<OrderPhoto>> {
     });
   }
 
-  Future<OrderPhoto> upload(XFile file, {String tags = '', int? workItemId}) async {
+  Future<OrderPhoto> upload(
+    XFile file, {
+    String tags = '',
+    int? workItemId,
+  }) async {
     final service = ref.read(orderServiceProvider);
-    final photo = await service.uploadOrderPhoto(orderRef, file, tags: tags, workItemId: workItemId);
+    final photo = await service.uploadOrderPhoto(
+      orderRef,
+      file,
+      tags: tags,
+      workItemId: workItemId,
+    );
     // Append to list optimistically.
     final current = state.value ?? [];
     state = AsyncData([...current, photo]);
@@ -167,8 +179,8 @@ class OrderPhotosNotifier extends AsyncNotifier<List<OrderPhoto>> {
 
 final orderPhotosProvider =
     AsyncNotifierProvider.family<OrderPhotosNotifier, List<OrderPhoto>, String>(
-  OrderPhotosNotifier.new,
-);
+      OrderPhotosNotifier.new,
+    );
 
 // Family provider for the work items of a single order, keyed by orderRef.
 class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
@@ -257,7 +269,6 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     return updated;
   }
 
-
   Future<void> remove(String itemId) async {
     final service = ref.read(workItemServiceProvider);
     await service.deleteWorkItem(orderRef, itemId);
@@ -273,8 +284,12 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     String reason = '',
   }) async {
     final service = ref.read(workItemServiceProvider);
-    final updated =
-        await service.transitionStatus(orderRef, itemId, status, reason: reason);
+    final updated = await service.transitionStatus(
+      orderRef,
+      itemId,
+      status,
+      reason: reason,
+    );
     final current = state.value ?? [];
     state = AsyncData(
       current.map((i) => i.id == itemId ? updated : i).toList(),
@@ -283,10 +298,12 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
   }
 }
 
-final orderWorkItemsProvider = AsyncNotifierProvider.family<
-    OrderWorkItemsNotifier, List<WorkItem>, String>(
-  OrderWorkItemsNotifier.new,
-);
+final orderWorkItemsProvider =
+    AsyncNotifierProvider.family<
+      OrderWorkItemsNotifier,
+      List<WorkItem>,
+      String
+    >(OrderWorkItemsNotifier.new);
 
 // Family provider for the payment transactions of a single order, keyed by orderRef.
 class OrderPaymentTransactionsNotifier
@@ -347,9 +364,7 @@ class OrderPaymentTransactionsNotifier
       notes: notes,
     );
     final current = state.value ?? [];
-    state = AsyncData(
-      current.map((t) => t.id == txnId ? updated : t).toList(),
-    );
+    state = AsyncData(current.map((t) => t.id == txnId ? updated : t).toList());
     // Refresh order detail to update amountPaid.
     ref.read(orderDetailProvider(orderRef).notifier).refresh();
     return updated;
@@ -365,10 +380,12 @@ class OrderPaymentTransactionsNotifier
   }
 }
 
-final orderPaymentTransactionsProvider = AsyncNotifierProvider.family<
-    OrderPaymentTransactionsNotifier, List<PaymentTransaction>, String>(
-  OrderPaymentTransactionsNotifier.new,
-);
+final orderPaymentTransactionsProvider =
+    AsyncNotifierProvider.family<
+      OrderPaymentTransactionsNotifier,
+      List<PaymentTransaction>,
+      String
+    >(OrderPaymentTransactionsNotifier.new);
 
 // ── Order creation draft ──────────────────────────────────────────────────────
 
@@ -406,6 +423,10 @@ class DraftOrderItem {
     Map<String, dynamic>? provided,
   ) {
     final attrs = <String, dynamic>{...?provided};
+    final isTrungBay = product.attributes['trung_bay']?.toString() == 'true';
+    if (isTrungBay && !attrs.containsKey('useInventory')) {
+      attrs['useInventory'] = 'true';
+    }
     for (final ea in product.enumAttributes) {
       if (ea.options.isEmpty) continue;
       // caller wins
@@ -444,7 +465,11 @@ class DraftOrderItem {
 
 /// Creates a DraftOrderItem for an extra item (not from product catalog).
 /// Uses a placeholder product with id=0 and the extra name as product name.
-DraftOrderItem createExtraItem(String extraName, double extraPrice, {bool isGift = false}) {
+DraftOrderItem createExtraItem(
+  String extraName,
+  double extraPrice, {
+  bool isGift = false,
+}) {
   final fakeProduct = Product(
     id: 0,
     name: extraName,
@@ -465,7 +490,7 @@ class DraftPendingPhoto {
   final XFile file;
   Set<String> tags;
   DraftPendingPhoto({required this.file, Set<String>? tags})
-      : tags = tags ?? {};
+    : tags = tags ?? {};
 }
 
 /// In-memory draft for the order creation form.
@@ -498,8 +523,8 @@ class OrderDraft {
     this.depositMethod = 'cash',
     List<DraftPendingPhoto>? pendingPhotos,
     this.source = '',
-  })  : items = items ?? [],
-        pendingPhotos = pendingPhotos ?? [];
+  }) : items = items ?? [],
+       pendingPhotos = pendingPhotos ?? [];
 
   bool get isNotEmpty =>
       customerName.isNotEmpty ||
@@ -524,7 +549,6 @@ class OrderDraftNotifier extends Notifier<OrderDraft?> {
   void clear() => state = null;
 }
 
-final orderDraftProvider =
-    NotifierProvider<OrderDraftNotifier, OrderDraft?>(
+final orderDraftProvider = NotifierProvider<OrderDraftNotifier, OrderDraft?>(
   OrderDraftNotifier.new,
 );

@@ -252,6 +252,9 @@ class VN {
   static const dueTime = 'Giờ giao';
   static const isBirthday = 'Nến tuổi sinh nhật';
   static const birthdayAge = 'Tuổi khách hàng';
+  static const useInventory = 'Dùng tồn kho';
+  static const stockRemaining = 'Còn';
+  static const stockUnknown = 'Chưa có số tồn';
   static const orderCreated = 'Đã tạo đơn hàng';
   static const searchProducts = 'Tìm sản phẩm...';
 

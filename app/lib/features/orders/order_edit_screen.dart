@@ -256,8 +256,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                             selected: _source == s,
                             onSelected: (_) => setState(() {
                               final wasSelected = _source == s;
-                                  _source = wasSelected ? '' : s;
-                                  if (!wasSelected &&
+                              _source = wasSelected ? '' : s;
+                              if (!wasSelected &&
                                   s == VN.sourceTaiTiem &&
                                   _nameCtrl.text.isEmpty) {
                                 _nameCtrl.text = VN.walkInCustomer;
@@ -735,6 +735,20 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
     return null;
   }
 
+  bool get _isTrungBay {
+    final product = _findProduct();
+    return product?.attributes['trung_bay']?.toString() == 'true';
+  }
+
+  bool get _useInventory =>
+      widget.item.attributes['useInventory']?.toString() != 'false';
+
+  String _stockInlineText() {
+    final qty = _findProduct()?.stockQty;
+    if (qty == null) return VN.stockUnknown;
+    return '${VN.stockRemaining}: $qty';
+  }
+
   /// DG-092 §6 F7 / Q1: render one ChoiceChip row per enum attribute
   /// applicable to this product. Tap-to-change persists by sending the
   /// merged `attributes` map through the existing PATCH endpoint —
@@ -921,6 +935,23 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                     keyboardType: TextInputType.number,
                   ),
                   const SizedBox(height: 8),
+                  if (_isTrungBay) ...[
+                    SwitchListTile.adaptive(
+                      value: _useInventory,
+                      onChanged: (value) {
+                        final next = Map<String, dynamic>.from(
+                          widget.item.attributes,
+                        );
+                        next['useInventory'] = value ? 'true' : 'false';
+                        _editItem(attributes: next);
+                      },
+                      title: const Text(VN.useInventory),
+                      subtitle: _useInventory ? Text(_stockInlineText()) : null,
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   // Enum attribute ChoiceChip rows (DG-092 F7 / Q1 — editable on edit)
                   ..._buildEnumChipSections(theme),
                   // Notes
@@ -1344,7 +1375,7 @@ class _ExtraEditRow extends StatelessWidget {
                   color: item.isGift ? Colors.green : Colors.grey.shade300,
                 ),
               ),
-                child: Text(
+              child: Text(
                 item.isGift ? VN.giftBadge : VN.paymentFee,
                 style: TextStyle(
                   fontSize: 10,
