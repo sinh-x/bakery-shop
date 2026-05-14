@@ -165,6 +165,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             quantity: draft.quantity,
             unitPrice: draft.unitPrice,
             notes: draft.notes,
+            attributes: draft.attributes,
+            priceChipId: draft.priceChipId,
           );
     }
   }

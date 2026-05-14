@@ -43,15 +43,19 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
 
         product_id = product_row["id"]
         qty = item["quantity"]
-        normalized_unit_price = normalize_price_value(item["unit_price"])
-        try:
-            chip_id = resolve_price_bucket_chip_id(
-                conn,
-                product_id,
-                normalized_unit_price,
-            )
-        except HTTPException:
-            chip_id = normalize_price_chip(conn, product_id, item["price_chip_id"])
+        explicit_chip_id = item["price_chip_id"]
+        if explicit_chip_id is not None:
+            chip_id = normalize_price_chip(conn, product_id, explicit_chip_id)
+        else:
+            normalized_unit_price = normalize_price_value(item["unit_price"])
+            try:
+                chip_id = resolve_price_bucket_chip_id(
+                    conn,
+                    product_id,
+                    normalized_unit_price,
+                )
+            except HTTPException:
+                chip_id = None
 
         attr_row = conn.execute(
             """SELECT value FROM product_attribute_values

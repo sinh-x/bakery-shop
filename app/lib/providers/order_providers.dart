@@ -212,6 +212,7 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     bool isExtra = false,
     bool isGift = false,
     Map<String, dynamic>? attributes,
+    int? priceChipId,
   }) async {
     final service = ref.read(workItemServiceProvider);
     final item = await service.createWorkItem(
@@ -225,6 +226,7 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
       isExtra: isExtra,
       isGift: isGift,
       attributes: attributes,
+      priceChipId: priceChipId,
     );
     final current = state.value ?? [];
     state = AsyncData([...current, item]);
@@ -403,6 +405,7 @@ class DraftOrderItem {
   bool isGift;
   Map<String, dynamic> attributes;
   bool daDuaTienRut;
+  int? priceChipId;
 
   DraftOrderItem({
     required this.product,
@@ -416,6 +419,7 @@ class DraftOrderItem {
     this.isGift = false,
     Map<String, dynamic>? attributes,
     this.daDuaTienRut = false,
+    this.priceChipId,
   }) : pendingPhotos = pendingPhotos ?? [],
        attributes = _populateEnumDefaults(product, attributes);
 

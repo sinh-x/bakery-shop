@@ -63,6 +63,7 @@ class WorkItemCreate(BaseModel):
     isExtra: bool = False
     isGift: bool = False
     attributes: dict = Field(default_factory=dict)
+    priceChipId: int | None = None
 
 
 class WorkItemUpdate(BaseModel):
@@ -221,6 +222,7 @@ def create_work_item(ref: str, body: WorkItemCreate):
             is_extra=body.isExtra,
             is_gift=body.isGift,
             attributes=body.attributes,
+            price_chip_id=body.priceChipId,
         )
         item.save(conn)
         row = conn.execute("SELECT * FROM order_items WHERE id = ?", (item.id,)).fetchone()

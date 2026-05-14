@@ -42,11 +42,18 @@ def _row_to_dict(row) -> dict:
 def _product_price_chips(conn, product_id: int) -> list[dict]:
     """Get ordered price chips for a product."""
     rows = conn.execute(
-        "SELECT id, label, price, position "
-        "FROM product_price_chips "
-        "WHERE product_id = ? "
-        "ORDER BY position, id",
-        (product_id,),
+        "SELECT pc.id, pc.label, pc.price, pc.position, COALESCE(ps.quantity, 0) AS stock_qty "
+        "FROM product_price_chips pc "
+        "LEFT JOIN ("
+        "  SELECT sl.price_chip_id, COUNT(ii.id) AS quantity "
+        "  FROM stock_lots sl "
+        "  LEFT JOIN inventory_items ii ON ii.lot_id = sl.id AND ii.status = 'available' "
+        "  WHERE sl.product_id = ? "
+        "  GROUP BY sl.price_chip_id"
+        ") ps ON ps.price_chip_id = pc.id "
+        "WHERE pc.product_id = ? "
+        "ORDER BY pc.position, pc.id",
+        (product_id, product_id),
     ).fetchall()
     return [
         {
@@ -54,6 +61,7 @@ def _product_price_chips(conn, product_id: int) -> list[dict]:
             "label": row["label"],
             "price": row["price"],
             "position": row["position"],
+            "stock_qty": row["stock_qty"],
         }
         for row in rows
     ]

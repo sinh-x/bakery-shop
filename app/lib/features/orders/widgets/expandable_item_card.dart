@@ -99,6 +99,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
 
     if (manuallyClearPreset) {
       widget.item.attributes.remove('price_chip_label');
+      widget.item.priceChipId = null;
       if (mounted) {
         showTopSnackBar(context, 'Đã bỏ chọn mức giá nhanh khi chỉnh tay');
       }
@@ -112,7 +113,16 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
 
   bool get _useInventory => widget.item.attributes.useInventory;
 
-  String get _stockInlineText => widget.item.product.stockInlineText;
+  String get _stockInlineText {
+    final selectedChipId = widget.item.priceChipId;
+    if (selectedChipId == null) return widget.item.product.stockInlineText;
+    final selectedChip = widget.item.product.priceChips
+        .where((chip) => chip.id == selectedChipId)
+        .firstOrNull;
+    final chipQty = selectedChip?.stockQty;
+    if (chipQty == null) return VN.stockUnknown;
+    return '${VN.stockRemaining}: $chipQty';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -210,6 +220,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                             setState(() {
                               _priceCtrl.text = chip.price.toInt().toString();
                               widget.item.customUnitPrice = chip.price;
+                              widget.item.priceChipId = chip.id;
                               widget.item.attributes['price_chip_label'] =
                                   chip.label;
                             });
