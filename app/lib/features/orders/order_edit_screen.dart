@@ -16,6 +16,7 @@ import '../../shared/utils/config_parsers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+import 'utils/trung_bay_inventory_extensions.dart';
 import 'widgets/hour_picker.dart';
 import 'widgets/order_photo_section.dart';
 import 'widgets/product_picker_page.dart';
@@ -735,27 +736,12 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
     return null;
   }
 
-  bool get _isTrungBay {
-    final product = _findProduct();
-    return product?.attributes['trung_bay']?.toString() == 'true';
-  }
-
-  bool get _useInventory =>
-      widget.item.attributes['useInventory']?.toString() != 'false';
-
-  String _stockInlineText() {
-    final qty = _findProduct()?.stockQty;
-    if (qty == null) return VN.stockUnknown;
-    return '${VN.stockRemaining}: $qty';
-  }
-
   /// DG-092 §6 F7 / Q1: render one ChoiceChip row per enum attribute
   /// applicable to this product. Tap-to-change persists by sending the
   /// merged `attributes` map through the existing PATCH endpoint —
   /// `attributes` is replaced wholesale server-side, so we always send
   /// a copy of the current map with the updated key.
-  List<Widget> _buildEnumChipSections(ThemeData theme) {
-    final product = _findProduct();
+  List<Widget> _buildEnumChipSections(ThemeData theme, Product? product) {
     if (product == null) return const [];
     final result = <Widget>[];
     for (final ea in product.enumAttributes) {
@@ -805,6 +791,9 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
     final theme = Theme.of(context);
     final item = widget.item;
     final workItemId = int.tryParse(item.id);
+    final product = _findProduct();
+    final isTrungBay = product.isTrungBay;
+    final useInventory = item.attributes.useInventory;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -935,9 +924,9 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                     keyboardType: TextInputType.number,
                   ),
                   const SizedBox(height: 8),
-                  if (_isTrungBay) ...[
+                  if (isTrungBay) ...[
                     SwitchListTile.adaptive(
-                      value: _useInventory,
+                      value: useInventory,
                       onChanged: (value) {
                         final next = Map<String, dynamic>.from(
                           widget.item.attributes,
@@ -946,14 +935,14 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                         _editItem(attributes: next);
                       },
                       title: const Text(VN.useInventory),
-                      subtitle: _useInventory ? Text(_stockInlineText()) : null,
+                      subtitle: useInventory ? Text(product.stockInlineText) : null,
                       contentPadding: EdgeInsets.zero,
                       dense: true,
                     ),
                     const SizedBox(height: 8),
                   ],
                   // Enum attribute ChoiceChip rows (DG-092 F7 / Q1 — editable on edit)
-                  ..._buildEnumChipSections(theme),
+                  ..._buildEnumChipSections(theme, product),
                   // Notes
                   TextFormField(
                     controller: _notesCtrl,

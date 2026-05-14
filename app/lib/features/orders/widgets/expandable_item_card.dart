@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../providers/order_providers.dart';
+import '../utils/trung_bay_inventory_extensions.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 
 class ExpandableItemCard extends StatefulWidget {
@@ -107,17 +108,11 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
     widget.onStateChanged();
   }
 
-  bool get _isTrungBay =>
-      widget.item.product.attributes['trung_bay']?.toString() == 'true';
+  bool get _isTrungBay => widget.item.product.isTrungBay;
 
-  bool get _useInventory =>
-      widget.item.attributes['useInventory']?.toString() != 'false';
+  bool get _useInventory => widget.item.attributes.useInventory;
 
-  String get _stockInlineText {
-    final qty = widget.item.product.stockQty;
-    if (qty == null) return VN.stockUnknown;
-    return '${VN.stockRemaining}: $qty';
-  }
+  String get _stockInlineText => widget.item.product.stockInlineText;
 
   @override
   Widget build(BuildContext context) {
@@ -242,6 +237,8 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     SwitchListTile.adaptive(
                       value: _useInventory,
                       onChanged: (value) {
+                        // Lazy-save pattern: update local draft item state now,
+                        // then persist later when parent save flow runs.
                         setState(() {
                           widget.item.attributes['useInventory'] = value
                               ? 'true'
