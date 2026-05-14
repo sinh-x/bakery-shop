@@ -1,5 +1,7 @@
 """Public stock service helpers used by order-related APIs."""
 
+import json
+
 from fastapi import HTTPException
 
 from baker.api.inventory_fifo import (
@@ -14,11 +16,11 @@ from baker.models.event import Event
 def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
     """Auto-decrement stock for trung bay products when order completes."""
     order_items = conn.execute(
-        """SELECT oi.product_id, oi.product_name, oi.quantity, oi.price_chip_id, oi.unit_price
+        """SELECT oi.product_id, oi.product_name, oi.quantity, oi.price_chip_id, oi.unit_price, oi.attributes
            FROM order_items oi
            WHERE oi.order_id = ?
-              AND oi.product_id != ''
-               AND oi.is_gift = 0""",
+               AND oi.product_id != ''
+                AND oi.is_gift = 0""",
         (order_id,),
     ).fetchall()
 
@@ -59,6 +61,19 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
         if not attr_row or attr_row["value"] != "true":
             continue
 
+        attrs = {}
+        if item["attributes"]:
+            if isinstance(item["attributes"], str):
+                try:
+                    attrs = json.loads(item["attributes"])
+                except json.JSONDecodeError:
+                    attrs = {}
+            elif isinstance(item["attributes"], dict):
+                attrs = item["attributes"]
+
+        use_inventory = attrs.get("useInventory")
+        should_consume_fifo = use_inventory not in (False, "false")
+
         movement_cursor = conn.execute(
             """INSERT INTO stock_movements
                (product_id, movement_type, quantity, reason, reference_id, price_chip_id)
@@ -66,17 +81,19 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
             (product_id, -qty, f"Order {order_ref}", order_ref, chip_id),
         )
         movement_id = movement_cursor.lastrowid
-        consume_fifo_items(conn, product_id, chip_id, qty, movement_id)
+        if should_consume_fifo:
+            consume_fifo_items(conn, product_id, chip_id, qty, movement_id)
 
-        lot_row = conn.execute(
-            "SELECT lot_id FROM inventory_items WHERE consumed_by_movement_id = ? ORDER BY id ASC LIMIT 1",
-            (movement_id,),
-        ).fetchone()
-        if lot_row:
-            conn.execute(
-                "UPDATE stock_movements SET lot_id = ? WHERE id = ?",
-                (lot_row["lot_id"], movement_id),
-            )
+        if should_consume_fifo:
+            lot_row = conn.execute(
+                "SELECT lot_id FROM inventory_items WHERE consumed_by_movement_id = ? ORDER BY id ASC LIMIT 1",
+                (movement_id,),
+            ).fetchone()
+            if lot_row:
+                conn.execute(
+                    "UPDATE stock_movements SET lot_id = ? WHERE id = ?",
+                    (lot_row["lot_id"], movement_id),
+                )
 
         Event(
             summary=f"Ban hang -{qty} {item['product_name']}",

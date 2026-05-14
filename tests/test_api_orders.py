@@ -916,6 +916,51 @@ def test_pos_order_without_chip_uses_base_option_and_still_works(api_client):
         assert movement["price_chip_id"] is None
 
 
+def test_pos_order_trung_bay_with_use_inventory_false_skips_fifo(api_client):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "POS-Nhỏ", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 2, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 1,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+                "attributes": {"useInventory": "false"},
+            }
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+
+    with get_db() as conn:
+        movement = conn.execute(
+            """SELECT id, lot_id, price_chip_id
+               FROM stock_movements
+               WHERE movement_type = 'sale' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (order["orderRef"],),
+        ).fetchone()
+        assert movement["price_chip_id"] == chip_id
+        assert movement["lot_id"] is None
+
+        consumed = conn.execute(
+            "SELECT COUNT(*) AS c FROM inventory_items WHERE consumed_by_movement_id = ?",
+            (movement["id"],),
+        ).fetchone()
+        assert consumed["c"] == 0
+
+
 @pytest.mark.parametrize("payment_method", ["cash", "transfer"])
 def test_pos_chip_order_with_gift_creates_order_tracks_payment_and_skips_gift_stock(api_client, payment_method):
     _ensure_trung_bay(1)
