@@ -590,7 +590,7 @@ class _ProductCardState extends ConsumerState<_ProductCard> {
             ],
             if (_isExpanded) ...[
               const SizedBox(height: 10),
-              for (final option in widget.product.options) ...[
+              for (final option in widget.product.options.where((o) => o.expectedQty > 0)) ...[
                 _OptionHeader(
                   option: option,
                   visibleChipLabels: _visibleChipLabelsForOption(option),
