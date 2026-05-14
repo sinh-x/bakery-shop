@@ -11,6 +11,7 @@ import '../data/models/order_photo.dart';
 import '../data/models/payment_transaction.dart';
 import '../data/models/product.dart';
 import '../data/models/work_item.dart';
+import '../features/orders/utils/trung_bay_inventory_extensions.dart';
 import 'events_provider.dart';
 
 class OrderListNotifier extends AsyncNotifier<List<Order>> {
@@ -423,8 +424,7 @@ class DraftOrderItem {
     Map<String, dynamic>? provided,
   ) {
     final attrs = <String, dynamic>{...?provided};
-    final isTrungBay = product.attributes['trung_bay']?.toString() == 'true';
-    if (isTrungBay && !attrs.containsKey('useInventory')) {
+    if (product.isTrungBay && !attrs.containsKey('useInventory')) {
       attrs['useInventory'] = 'true';
     }
     for (final ea in product.enumAttributes) {
