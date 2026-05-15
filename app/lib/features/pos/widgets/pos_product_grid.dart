@@ -6,6 +6,7 @@ import '../../../data/api/api_client.dart';
 import '../../../providers/pos_provider.dart';
 import '../../../providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/utils/product_photo_url.dart';
 
 /// 2-column product grid with stock badges for POS screen.
 class PosProductGrid extends ConsumerWidget {
@@ -314,7 +315,7 @@ class _ProductPosCard extends StatelessWidget {
                   Expanded(
                     flex: 3,
                     child: Image.network(
-                      posProductPhotoUrl(
+                      productPhotoUrl(
                         baseUrl,
                         product.id,
                         cacheBuster: cacheBuster,
@@ -439,22 +440,4 @@ class _ProductPosCard extends StatelessWidget {
       ),
     );
   }
-}
-
-@visibleForTesting
-String posProductPhotoUrl(
-  String baseUrl,
-  int productId, {
-  String? cacheBuster,
-}) {
-  final uri = Uri.parse('$baseUrl/api/products/$productId/photo');
-  final tick = cacheBuster?.trim();
-  if (tick == null || tick.isEmpty) {
-    return uri.toString();
-  }
-  return uri
-      .replace(
-        queryParameters: <String, String>{...uri.queryParameters, 'v': tick},
-      )
-      .toString();
 }

@@ -1,4 +1,5 @@
 import 'package:bakery_app/features/pos/widgets/pos_product_grid.dart';
+import 'package:bakery_app/shared/utils/product_photo_url.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -21,7 +22,7 @@ void main() {
 
     test('builds cache-busted product photo URL', () {
       expect(
-        posProductPhotoUrl('http://localhost:8000', 7, cacheBuster: '3'),
+        productPhotoUrl('http://localhost:8000', 7, cacheBuster: '3'),
         'http://localhost:8000/api/products/7/photo?v=3',
       );
     });

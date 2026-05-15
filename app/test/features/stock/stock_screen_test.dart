@@ -4,6 +4,7 @@ import 'package:bakery_app/data/api/stock_service.dart';
 import 'package:bakery_app/data/models/category.dart';
 import 'package:bakery_app/features/stock/stock_screen.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/utils/product_photo_url.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -34,7 +35,7 @@ class _FakeCategoryService extends CategoryService {
 void main() {
   test('builds cache-busted stock product photo URL', () {
     expect(
-      stockProductPhotoUrl('http://localhost:8000', 9, cacheBuster: '11'),
+      productPhotoUrl('http://localhost:8000', 9, cacheBuster: '11'),
       'http://localhost:8000/api/products/9/photo?v=11',
     );
   });

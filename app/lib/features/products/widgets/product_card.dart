@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../data/models/product.dart';
 import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/utils/product_photo_url.dart';
 
 class ProductCard extends StatelessWidget {
   const ProductCard({
@@ -51,7 +52,7 @@ class ProductCard extends StatelessWidget {
           children: [
             // Photo fills the card
             Image.network(
-              productDisplayPhotoUrl(
+              productPhotoUrl(
                 photoBaseUrl,
                 product.id,
                 cacheBuster: cacheBuster,
@@ -144,24 +145,6 @@ class ProductCard extends StatelessWidget {
       ),
     );
   }
-}
-
-@visibleForTesting
-String productDisplayPhotoUrl(
-  String baseUrl,
-  int productId, {
-  String? cacheBuster,
-}) {
-  final uri = Uri.parse('$baseUrl/api/products/$productId/photo');
-  final tick = cacheBuster?.trim();
-  if (tick == null || tick.isEmpty) {
-    return uri.toString();
-  }
-  return uri
-      .replace(
-        queryParameters: <String, String>{...uri.queryParameters, 'v': tick},
-      )
-      .toString();
 }
 
 class _CodeBadge extends StatelessWidget {

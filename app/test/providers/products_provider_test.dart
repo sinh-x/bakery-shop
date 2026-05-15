@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:bakery_app/data/api/product_service.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/providers/products_provider.dart';
+import 'package:bakery_app/shared/services/image_cache_service.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,13 +28,22 @@ class _FakeProductService extends ProductService {
   }
 }
 
-void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+class _FakeImageCacheService implements ImageCacheService {
+  int clearCount = 0;
 
+  @override
+  void clearProductPhotos() {
+    clearCount++;
+  }
+}
+
+void main() {
   test('uploadPhoto bumps product photo refresh tick', () async {
+    final fakeImageCacheService = _FakeImageCacheService();
     final container = ProviderContainer(
       overrides: [
         productServiceProvider.overrideWithValue(_FakeProductService()),
+        imageCacheServiceProvider.overrideWithValue(fakeImageCacheService),
       ],
     );
     addTearDown(container.dispose);
@@ -49,5 +59,6 @@ void main() {
 
     final after = container.read(productPhotoRefreshTickProvider);
     expect(after, before + 1);
+    expect(fakeImageCacheService.clearCount, 1);
   });
 }

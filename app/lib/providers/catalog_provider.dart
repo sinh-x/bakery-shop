@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
+import 'package:bakery_app/shared/services/image_cache_service.dart';
 
 import '../data/api/catalog_service.dart';
 import '../data/models/catalog_photo.dart';
@@ -84,8 +84,7 @@ class CatalogNotifier extends AsyncNotifier<List<CatalogPhoto>> {
     final service = ref.read(catalogServiceProvider);
     await service.promoteCatalogPhoto(productId, photoId);
     ref.read(productPhotoRefreshTickProvider.notifier).bump();
-    PaintingBinding.instance.imageCache.clear();
-    PaintingBinding.instance.imageCache.clearLiveImages();
+    ref.read(imageCacheServiceProvider).clearProductPhotos();
     ref.invalidate(catalogProvider(productId));
     ref.invalidate(catalogBrowseProvider);
     ref.invalidate(productsProvider);

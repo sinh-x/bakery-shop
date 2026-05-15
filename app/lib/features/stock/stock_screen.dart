@@ -9,6 +9,7 @@ import '../../data/api/stock_service.dart';
 import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/category_grouping.dart';
+import '../../shared/utils/product_photo_url.dart';
 import '../../shared/widgets/collapsible_category_sections.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/stock_action_sheet.dart';
@@ -268,12 +269,12 @@ class _StockItemCard extends StatelessWidget {
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    stockProductPhotoUrl(
-                      baseUrl,
-                      item.productId,
-                      cacheBuster: cacheBuster,
-                    ),
+                    child: Image.network(
+                      productPhotoUrl(
+                        baseUrl,
+                        item.productId,
+                        cacheBuster: cacheBuster,
+                      ),
                     width: 64,
                     height: 64,
                     fit: BoxFit.cover,
@@ -404,21 +405,4 @@ class _StockItemCard extends StatelessWidget {
       ),
     );
   }
-}
-
-String stockProductPhotoUrl(
-  String baseUrl,
-  int productId, {
-  String? cacheBuster,
-}) {
-  final uri = Uri.parse('$baseUrl/api/products/$productId/photo');
-  final tick = cacheBuster?.trim();
-  if (tick == null || tick.isEmpty) {
-    return uri.toString();
-  }
-  return uri
-      .replace(
-        queryParameters: <String, String>{...uri.queryParameters, 'v': tick},
-      )
-      .toString();
 }
