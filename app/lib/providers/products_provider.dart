@@ -2,10 +2,23 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
+import 'package:bakery_app/shared/services/image_cache_service.dart';
 
 import '../data/api/product_service.dart';
 import '../data/models/product.dart';
 import 'catalog_provider.dart';
+
+class ProductPhotoRefreshTickNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void bump() => state++;
+}
+
+final productPhotoRefreshTickProvider =
+    NotifierProvider<ProductPhotoRefreshTickNotifier, int>(
+      ProductPhotoRefreshTickNotifier.new,
+    );
 
 class ProductsNotifier extends AsyncNotifier<List<Product>> {
   @override
@@ -80,6 +93,10 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
   Future<String> uploadPhoto(int id, XFile file) async {
     final service = ref.read(productServiceProvider);
     final photoPath = await service.uploadPhoto(id, file);
+    ref.read(productPhotoRefreshTickProvider.notifier).bump();
+    ref.read(imageCacheServiceProvider).clearProductPhotos();
+    ref.invalidate(catalogProvider(id));
+    ref.invalidate(catalogBrowseProvider);
     await refresh();
     return photoPath;
   }

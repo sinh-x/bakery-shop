@@ -57,7 +57,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late bool _trungBay;
   late bool _tangKem;
   XFile? _pickedPhoto;
-  final String _photoCacheBuster = '';
   bool _saving = false;
 
   bool get _isEditing => widget.product != null;
@@ -136,7 +135,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Xác nhận xóa mức giá nhanh'),
-          content: const Text('Bạn có chắc muốn xóa mức giá nhanh đã lưu này không?'),
+          content: const Text(
+            'Bạn có chắc muốn xóa mức giá nhanh đã lưu này không?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -183,10 +184,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
       final rowErrors = _PriceChipValidationErrors(
         labelError: label.isEmpty ? VN.priceChipLabelRequired : null,
-        priceError:
-            parsedPrice == null || parsedPrice < 0
-                ? VN.priceChipPriceInvalid
-                : null,
+        priceError: parsedPrice == null || parsedPrice < 0
+            ? VN.priceChipPriceInvalid
+            : null,
       );
 
       if (rowErrors.hasError) {
@@ -199,9 +199,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return errors;
   }
 
-  bool _applyPriceChipRowErrors(
-    Map<int, _PriceChipValidationErrors> errors,
-  ) {
+  bool _applyPriceChipRowErrors(Map<int, _PriceChipValidationErrors> errors) {
     var changed = false;
     for (var index = 0; index < _priceChipRows.length; index++) {
       final row = _priceChipRows[index];
@@ -349,43 +347,43 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                   Expanded(
                     child: TextFormField(
                       controller: row.labelController,
-                        decoration: InputDecoration(
-                          labelText: VN.priceChipLabel,
-                          errorText: row.labelError,
-                        ),
-                        onChanged: (_) {
-                          if (row.labelError != null) {
-                            setState(() {
-                              row.updateErrors(
-                                labelError: null,
-                                priceError: row.priceError,
-                              );
-                            });
-                          }
-                        },
+                      decoration: InputDecoration(
+                        labelText: VN.priceChipLabel,
+                        errorText: row.labelError,
                       ),
+                      onChanged: (_) {
+                        if (row.labelError != null) {
+                          setState(() {
+                            row.updateErrors(
+                              labelError: null,
+                              priceError: row.priceError,
+                            );
+                          });
+                        }
+                      },
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: TextFormField(
                       controller: row.priceController,
-                        decoration: InputDecoration(
-                          labelText: VN.priceChipPrice,
-                          suffixText: VN.currency,
-                          errorText: row.priceError,
-                        ),
-                        keyboardType: TextInputType.number,
-                        onChanged: (_) {
-                          if (row.priceError != null) {
-                            setState(() {
-                              row.updateErrors(
-                                labelError: row.labelError,
-                                priceError: null,
-                              );
-                            });
-                          }
-                        },
+                      decoration: InputDecoration(
+                        labelText: VN.priceChipPrice,
+                        suffixText: VN.currency,
+                        errorText: row.priceError,
                       ),
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) {
+                        if (row.priceError != null) {
+                          setState(() {
+                            row.updateErrors(
+                              labelError: row.labelError,
+                              priceError: null,
+                            );
+                          });
+                        }
+                      },
+                    ),
                   ),
                   IconButton(
                     tooltip: VN.remove,
@@ -424,11 +422,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   void _addEnumOption(_EnumAttributeFormSection section) {
     setState(() {
-      section.rows.add(
-        _EnumOptionFormRow(
-          sortOrder: section.rows.length,
-        ),
-      );
+      section.rows.add(_EnumOptionFormRow(sortOrder: section.rows.length));
     });
   }
 
@@ -489,7 +483,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         }
       }
       if (liveRowCount > 0 && defaultCount != 1) {
-        sectionChanged = section.setError(VN.enumOptionDefaultRequired) || sectionChanged;
+        sectionChanged =
+            section.setError(VN.enumOptionDefaultRequired) || sectionChanged;
         ok = false;
       }
       changed = changed || sectionChanged;
@@ -571,7 +566,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(VN.enumOptionsSection, style: Theme.of(context).textTheme.titleMedium),
+        Text(
+          VN.enumOptionsSection,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
         const SizedBox(height: 4),
         Text(
           VN.enumOptionsHintAttributeWide,
@@ -650,7 +648,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                     ),
                     IconButton(
                       tooltip: row.removed ? VN.enumOptionRestore : VN.remove,
-                      icon: Icon(row.removed ? Icons.restore : Icons.delete_outline),
+                      icon: Icon(
+                        row.removed ? Icons.restore : Icons.delete_outline,
+                      ),
                       onPressed: () => _toggleRemoveEnumOption(section, index),
                     ),
                     ReorderableDragStartListener(
@@ -849,7 +849,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           await productSvc.setProductAttribute(saved.id, 'tang_kem', 'true');
           await notifier.refresh();
         }
-
       }
 
       if (hasPriceChipChanges) {
@@ -863,9 +862,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
       if (_pickedPhoto != null) {
         await notifier.uploadPhoto(saved.id, _pickedPhoto!);
-        // Clear image cache so updated photo shows immediately
-        PaintingBinding.instance.imageCache.clear();
-        PaintingBinding.instance.imageCache.clearLiveImages();
       }
 
       if (mounted) {
@@ -929,6 +925,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   Widget build(BuildContext context) {
     final baseUrl = ref.watch(apiBaseUrlProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
+    final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
 
     // Compute the read-only prefix for the current category.
     final currentPrefix = categoriesAsync.maybeWhen(
@@ -968,9 +965,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               pickedPhoto: _pickedPhoto,
               baseUrl: baseUrl,
               onPickPhoto: _pickPhoto,
-              cacheBuster: _photoCacheBuster.isNotEmpty
-                  ? _photoCacheBuster
-                  : null,
+              cacheBuster: photoRefreshTick.toString(),
               nameController: _nameCtrl,
               codeController: _codeCtrl,
               currentPrefix: currentPrefix,
@@ -982,9 +977,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 pickedPhoto: _pickedPhoto,
                 baseUrl: baseUrl,
                 onPickPhoto: _pickPhoto,
-                cacheBuster: _photoCacheBuster.isNotEmpty
-                    ? _photoCacheBuster
-                    : null,
+                cacheBuster: photoRefreshTick.toString(),
               ),
             ),
             const SizedBox(height: 16),
@@ -1117,18 +1110,18 @@ class _EnumAttributeFormSection {
     required this.attribute,
     required List<EnumOption> originalOptions,
     required this.originalDefaultId,
-  })  : _originalOptions = List<EnumOption>.of(originalOptions),
-        rows = originalOptions
-            .map(
-              (opt) => _EnumOptionFormRow(
-                id: opt.id,
-                valueVi: opt.valueVi,
-                sortOrder: opt.sortOrder,
-                active: opt.active,
-                isDefault: opt.id == originalDefaultId,
-              ),
-            )
-            .toList();
+  }) : _originalOptions = List<EnumOption>.of(originalOptions),
+       rows = originalOptions
+           .map(
+             (opt) => _EnumOptionFormRow(
+               id: opt.id,
+               valueVi: opt.valueVi,
+               sortOrder: opt.sortOrder,
+               active: opt.active,
+               isDefault: opt.id == originalDefaultId,
+             ),
+           )
+           .toList();
 
   factory _EnumAttributeFormSection.fromAttribute(EnumAttribute attribute) {
     return _EnumAttributeFormSection(
@@ -1147,8 +1140,8 @@ class _EnumAttributeFormSection {
   String? get error => _error;
 
   Map<int, EnumOption> get originalById => {
-        for (final opt in _originalOptions) opt.id: opt,
-      };
+    for (final opt in _originalOptions) opt.id: opt,
+  };
 
   bool clearError() {
     if (_error == null) return false;
@@ -1336,6 +1329,7 @@ class _CatalogGallerySection extends ConsumerStatefulWidget {
 class _CatalogGallerySectionState
     extends ConsumerState<_CatalogGallerySection> {
   bool _uploading = false;
+  bool _promoting = false;
   int _uploadTotal = 0;
   int _uploadDone = 0;
 
@@ -1457,6 +1451,26 @@ class _CatalogGallerySectionState
     }
   }
 
+  Future<void> _promotePhoto(CatalogPhoto photo) async {
+    setState(() => _promoting = true);
+    try {
+      await ref
+          .read(catalogProvider(widget.productId).notifier)
+          .promotePhotoToProductMain(photo.id);
+      if (mounted) {
+        showTopSnackBar(context, VN.productPhotoSetFromCatalog);
+      }
+    } on DioException catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, e.message ?? VN.apiError);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _promoting = false);
+      }
+    }
+  }
+
   void _openFullScreen(
     List<CatalogPhoto> photos,
     int initialIndex,
@@ -1489,7 +1503,7 @@ class _CatalogGallerySectionState
           child: Row(
             children: [
               Text(VN.catalogTitle, style: theme.textTheme.titleMedium),
-              if (_uploading) ...[
+              if (_uploading || _promoting) ...[
                 const SizedBox(width: 12),
                 const SizedBox(
                   height: 16,
@@ -1550,6 +1564,8 @@ class _CatalogGallerySectionState
                     url: url,
                     onTap: () => _openFullScreen(photos, index, baseUrl),
                     onDelete: () => _confirmDelete(photo),
+                    onPromote: () => _promotePhoto(photo),
+                    promoting: _promoting,
                   );
                 },
               ),
@@ -1605,6 +1621,8 @@ class _CatalogPhotoCard extends StatelessWidget {
     required this.url,
     required this.onTap,
     required this.onDelete,
+    required this.onPromote,
+    required this.promoting,
   });
 
   final CatalogPhoto photo;
@@ -1612,6 +1630,8 @@ class _CatalogPhotoCard extends StatelessWidget {
   final String url;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final VoidCallback onPromote;
+  final bool promoting;
 
   void _openEditSheet(BuildContext context) {
     showEditCatalogTagsSheet(
@@ -1679,6 +1699,43 @@ class _CatalogPhotoCard extends StatelessWidget {
                           Icons.delete_outline,
                           color: Colors.white,
                           size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 4,
+                    bottom: 4,
+                    child: Material(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(12),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: promoting ? null : onPromote,
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.star_outline,
+                                color: Colors.white,
+                                size: 12,
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                VN.setAsProductPhoto,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

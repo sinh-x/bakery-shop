@@ -445,10 +445,23 @@ def get_photo(product_id: int):
             (product_id,),
         ).fetchone()
 
-    if not row or not row["hash"]:
+        if row and row["hash"]:
+            photo_hash = row["hash"]
+        else:
+            fallback = conn.execute(
+                "SELECT ph.hash FROM product_catalog_photos cp "
+                "JOIN photos ph ON cp.photo_id = ph.id "
+                "WHERE cp.product_id = ? "
+                "ORDER BY cp.created_at DESC, cp.id DESC "
+                "LIMIT 1",
+                (product_id,),
+            ).fetchone()
+            photo_hash = fallback["hash"] if fallback and fallback["hash"] else None
+
+    if not photo_hash:
         raise HTTPException(status_code=404, detail="Chưa có ảnh cho sản phẩm này")
 
-    photo_file = baker.config.DATA_DIR / "photos" / f"{row['hash']}.jpg"
+    photo_file = baker.config.DATA_DIR / "photos" / f"{photo_hash}.jpg"
     if not photo_file.exists():
         raise HTTPException(status_code=404, detail="Chưa có ảnh cho sản phẩm này")
     return FileResponse(str(photo_file), media_type="image/jpeg")

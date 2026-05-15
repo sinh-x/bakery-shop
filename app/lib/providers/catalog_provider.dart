@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
+import 'package:bakery_app/shared/services/image_cache_service.dart';
 
 import '../data/api/catalog_service.dart';
 import '../data/models/catalog_photo.dart';
 import '../data/models/catalog_browse_photo.dart';
 import '../data/models/catalog_tag.dart';
+import 'products_provider.dart';
 
 class CatalogNotifier extends AsyncNotifier<List<CatalogPhoto>> {
   final int productId;
@@ -76,6 +78,16 @@ class CatalogNotifier extends AsyncNotifier<List<CatalogPhoto>> {
       state = AsyncData(photos.where((p) => p.id != photoId).toList());
     });
     ref.invalidate(catalogBrowseProvider);
+  }
+
+  Future<void> promotePhotoToProductMain(int photoId) async {
+    final service = ref.read(catalogServiceProvider);
+    await service.promoteCatalogPhoto(productId, photoId);
+    ref.read(productPhotoRefreshTickProvider.notifier).bump();
+    ref.read(imageCacheServiceProvider).clearProductPhotos();
+    ref.invalidate(catalogProvider(productId));
+    ref.invalidate(catalogBrowseProvider);
+    ref.invalidate(productsProvider);
   }
 }
 
