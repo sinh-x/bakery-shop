@@ -35,7 +35,7 @@ class _EditExtrasSection extends ConsumerWidget {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _SectionHeader(VN.extras),
+                const _SectionHeader(VN.extras),
                 if (extras.isEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),

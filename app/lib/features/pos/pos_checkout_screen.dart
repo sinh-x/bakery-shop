@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -227,7 +226,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(VN.thanhToan),
+        title: const Text(VN.thanhToan),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: VN.backToCart,
@@ -328,7 +327,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
                                 ),
                               )
                             : const Icon(Icons.payment),
-                        label: Text(VN.thanhToan),
+                        label: const Text(VN.thanhToan),
                       ),
                     ),
                   ),

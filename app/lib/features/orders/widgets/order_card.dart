@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_declarations  // DG-138#todo: replace with per-line suppressions after const declaration audit
 import 'dart:math';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -66,7 +65,7 @@ class OrderCard extends ConsumerWidget {
       final name = item.productName;
       final price = formatVND(item.unitPrice);
       // Truncate single product name segment to 40 chars
-      final maxLen = 40;
+      const maxLen = 40;
       final full = '$name $price';
       if (full.length <= maxLen) {
         parts.add(full);

@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -278,11 +277,11 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
                     controller: _tagCtrl,
                     autofocus: true,
                     textInputAction: TextInputAction.done,
-                    decoration: InputDecoration(
+                    decoration: const InputDecoration(
                       hintText: VN.addTag,
                       isDense: true,
-                      border: const OutlineInputBorder(),
-                      contentPadding: const EdgeInsets.symmetric(
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
                         horizontal: 8,
                         vertical: 6,
                       ),

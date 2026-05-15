@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -39,7 +38,7 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(VN.apiError),
+            const Text(VN.apiError),
             const SizedBox(height: 8),
             TextButton(
               onPressed: _onRefresh,
@@ -324,7 +323,7 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: FilterChip(
-            label: Text(VN.includeReadyFilter),
+            label: const Text(VN.includeReadyFilter),
             selected: _includeReady,
             onSelected: (v) => setState(() => _includeReady = v),
           ),
@@ -338,7 +337,7 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(VN.apiError),
+                  const Text(VN.apiError),
                   const SizedBox(height: 8),
                   TextButton(
                     onPressed: _onRefresh,

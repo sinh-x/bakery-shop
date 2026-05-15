@@ -292,7 +292,7 @@ class _CatalogFilterRow extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(right: 6),
               child: FilterChip(
-                label: Text(VN.xoaLoc, style: const TextStyle(fontSize: 12)),
+                label: const Text(VN.xoaLoc, style: TextStyle(fontSize: 12)),
                 onSelected: (_) => onClearAll!(),
                 visualDensity: VisualDensity.compact,
               ),

@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -140,7 +139,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(VN.categoryIcon, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        const Text(VN.categoryIcon, style: TextStyle(fontSize: 12, color: Colors.grey)),
         const SizedBox(height: 8),
         SizedBox(
           height: 120,

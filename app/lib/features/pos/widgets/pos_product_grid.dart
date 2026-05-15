@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -209,8 +208,8 @@ class PosProductGrid extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: Text(VN.sanPhamHetHang),
-        content: Text(VN.banAnyway),
+        title: const Text(VN.sanPhamHetHang),
+        content: const Text(VN.banAnyway),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx),
@@ -236,7 +235,7 @@ class PosProductGrid extends ConsumerWidget {
                 );
               }
             },
-            child: Text(VN.xacNhan),
+            child: const Text(VN.xacNhan),
           ),
         ],
       ),

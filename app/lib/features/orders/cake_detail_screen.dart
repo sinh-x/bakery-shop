@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint, debugPrintStack;
@@ -214,7 +213,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(VN.apiError),
+              const Text(VN.apiError),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => ref
@@ -513,7 +512,7 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
           // ── Notes ─────────────────────────────────────────────────
           if (widget.item.notes.isNotEmpty) ...[
             const SizedBox(height: 12),
-            _SectionLabel('Ghi chú'),
+            const _SectionLabel('Ghi chú'),
             const SizedBox(height: 4),
             Container(
               width: double.infinity,
@@ -544,10 +543,10 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
           TextField(
             controller: _priceCtrl,
             keyboardType: TextInputType.number,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Đơn giá (×1.000đ)',
               hintText: 'VD: 150 → 150.000đ',
-              border: const OutlineInputBorder(),
+              border: OutlineInputBorder(),
               suffixText: '.000đ',
               isDense: true,
             ),
@@ -596,7 +595,7 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
                   }
                 }),
               ),
-              Text(VN.rutTien),
+              const Text(VN.rutTien),
             ],
           ),
 
@@ -606,7 +605,7 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
             // Cash amount stepper: [-] [amount] [+] with 100k step
             Row(
               children: [
-                Text('${VN.soTienRut}: '),
+                const Text('${VN.soTienRut}: '),
                 IconButton.filled(
                   onPressed: () {
                     final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
@@ -681,7 +680,7 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
             const SizedBox(height: 8),
             Row(
               children: [
-                Text('${VN.phiRutTien}: '),
+                const Text('${VN.phiRutTien}: '),
                 IconButton.filled(
                   onPressed: () {
                     final current = int.tryParse(_cashFeeCtrl.text) ?? 0;
@@ -767,7 +766,7 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
 
         // ── Status transitions ────────────────────────────────────────
         const SizedBox(height: 16),
-        _SectionLabel('Chuyển trạng thái'),
+        const _SectionLabel('Chuyển trạng thái'),
         const SizedBox(height: 8),
         if (widget.transitioning)
           const Center(child: CircularProgressIndicator())
@@ -910,7 +909,7 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(VN.printChecklistTitle),
+      title: const Text(VN.printChecklistTitle),
       content: _printing
           ? SizedBox(
               height: 80,
@@ -927,16 +926,16 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
                 ],
               ),
             )
-          : Text(VN.printInternalPrompt),
+          : const Text(VN.printInternalPrompt),
       actions: [
         TextButton(
           onPressed: _printing ? null : () => Navigator.pop(context),
-          child: Text(VN.printSkip),
+          child: const Text(VN.printSkip),
         ),
         if (!_printing)
           FilledButton(
             onPressed: _printInternal,
-            child: Text(VN.print),
+            child: const Text(VN.print),
           ),
       ],
     );

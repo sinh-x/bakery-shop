@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -334,7 +333,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(VN.apiError),
+                              const Text(VN.apiError),
                               const SizedBox(height: 8),
                               TextButton(
                                 onPressed: _onRefresh,

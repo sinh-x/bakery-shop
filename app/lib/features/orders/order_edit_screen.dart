@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -242,7 +241,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
       ),
       body: orderAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(VN.apiError)),
+        error: (e, _) => const Center(child: Text(VN.apiError)),
         data: (order) {
           _initFrom(order);
           return Form(
@@ -251,7 +250,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               children: [
                 // ── Source (F1) ───────────────────────────────────────
-                _SectionHeader(VN.orderSource),
+                const _SectionHeader(VN.orderSource),
                 sourcesAsync.when(
                   data: (sources) => Wrap(
                     spacing: 8,
@@ -284,7 +283,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                 const SizedBox(height: 12),
 
                 // ── Customer info ─────────────────────────────────────
-                _SectionHeader(VN.customer),
+                const _SectionHeader(VN.customer),
                 TextFormField(
                   controller: _nameCtrl,
                   decoration: const InputDecoration(
@@ -308,7 +307,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                 const SizedBox(height: 20),
 
                 // ── Schedule ──────────────────────────────────────────
-                _SectionHeader(VN.dueDate),
+                const _SectionHeader(VN.dueDate),
                 Row(
                   children: [
                     Expanded(
@@ -351,7 +350,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                 const SizedBox(height: 20),
 
                 // ── Delivery ──────────────────────────────────────────
-                _SectionHeader(VN.deliveryType),
+                const _SectionHeader(VN.deliveryType),
                 SegmentedButton<String>(
                   segments: const [
                     ButtonSegment(
@@ -395,7 +394,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
                 // ── Shipping Fee ───────────────────────────────────────────
                 if (_deliveryType == 'bus' || _deliveryType == 'door') ...[
-                  _SectionHeader(VN.shippingFee),
+                  const _SectionHeader(VN.shippingFee),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -436,7 +435,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                 const SizedBox(height: 20),
 
                 // ── Work items ────────────────────────────────────────
-                _SectionHeader(VN.workItemsSection),
+                const _SectionHeader(VN.workItemsSection),
                 _WorkItemsSection(
                   orderRef: widget.orderRef,
                   onAddTap: _openProductPicker,

@@ -440,7 +440,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                           );
                         }
                       },
-                      title: Text(VN.rutTien),
+                      title: const Text(VN.rutTien),
                       controlAffinity: ListTileControlAffinity.leading,
                       contentPadding: EdgeInsets.zero,
                       dense: true,
@@ -448,7 +448,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                     if (_rutTien) ...[
                       Row(
                         children: [
-                          Text('${VN.soTienRut}: '),
+                          const Text('${VN.soTienRut}: '),
                           IconButton.filled(
                             onPressed: () {
                               final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
@@ -527,7 +527,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          Text('${VN.phiRutTien}: '),
+                          const Text('${VN.phiRutTien}: '),
                           IconButton.filled(
                             onPressed: () {
                               final current = int.tryParse(_cashFeeCtrl.text) ?? 0;

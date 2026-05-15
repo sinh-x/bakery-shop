@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -258,7 +257,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(VN.apiError),
+                        const Text(VN.apiError),
                         const SizedBox(height: 8),
                         ElevatedButton(
                           onPressed: _refreshStock,

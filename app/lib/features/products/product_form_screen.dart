@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 // DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines while enum option persistence and photo workflow are preserved in-place; review in Phase 6 (2026-05-29).
 import 'dart:typed_data';
 
@@ -322,7 +321,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           OutlinedButton.icon(
             onPressed: _addPriceChip,
             icon: const Icon(Icons.add),
-            label: Text(VN.addPriceChip),
+            label: const Text(VN.addPriceChip),
           ),
           const SizedBox(height: 16),
         ],
@@ -414,7 +413,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               ? null
               : _addPriceChip,
           icon: const Icon(Icons.add),
-          label: Text(VN.addPriceChip),
+          label: const Text(VN.addPriceChip),
         ),
         const SizedBox(height: 16),
       ],
@@ -675,7 +674,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           child: OutlinedButton.icon(
             onPressed: () => _addEnumOption(section),
             icon: const Icon(Icons.add),
-            label: Text(VN.addEnumOption),
+            label: const Text(VN.addEnumOption),
           ),
         ),
         const SizedBox(height: 8),
@@ -892,8 +891,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(VN.deleteProduct),
-        content: Text(VN.deleteConfirm),
+        title: const Text(VN.deleteProduct),
+        content: const Text(VN.deleteConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -1017,7 +1016,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : Text(VN.save),
+                  : const Text(VN.save),
             ),
 
             ProductFormCatalogIntegrationSection(

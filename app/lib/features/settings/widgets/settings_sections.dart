@@ -147,7 +147,7 @@ class _ExtrasSettingsTabState extends ConsumerState<ExtrasSettingsTab> {
                 },
               ),
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) => Center(child: Text(VN.errorLoading)),
+        error: (_, _) => const Center(child: Text(VN.errorLoading)),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddDialog(context),

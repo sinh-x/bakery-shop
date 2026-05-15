@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 // DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines until technical tab extraction can be isolated from connection side effects; review in Phase 5 (2026-05-29).
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';

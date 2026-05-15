@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -186,7 +185,7 @@ class OrderDetailScreen extends ConsumerWidget {
                 'door')
               ListTile(
                 leading: const Icon(Icons.delivery_dining),
-                title: Text(VN.printDeliveryReceipt),
+                title: const Text(VN.printDeliveryReceipt),
                 onTap: () {
                   Navigator.pop(ctx);
                   context.push(
@@ -266,7 +265,7 @@ class OrderDetailScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(VN.apiError),
+              const Text(VN.apiError),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () =>
@@ -537,7 +536,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Order info ────────────────────────────────────────────────
-        _SectionHeader(VN.customer),
+        const _SectionHeader(VN.customer),
         _InfoRow(
           icon: Icons.person_outline,
           label: VN.customerName,
@@ -625,7 +624,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Items ─────────────────────────────────────────────────────
-        _SectionHeader(VN.products),
+        const _SectionHeader(VN.products),
         ...order.items.where((item) => !item.isExtra).map(
           (item) => Padding(
             padding: const EdgeInsets.only(bottom: 6),
@@ -684,7 +683,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         ),
         if (order.items.any((item) => item.isExtra)) ...[
           const SizedBox(height: 12),
-          _SectionHeader(VN.extras),
+          const _SectionHeader(VN.extras),
           ...order.items.where((item) => item.isExtra).map(
             (item) => Padding(
               padding: const EdgeInsets.only(bottom: 6),
@@ -780,7 +779,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Payment ───────────────────────────────────────────────────
-        _SectionHeader(VN.payment),
+        const _SectionHeader(VN.payment),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -856,7 +855,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Payment history ───────────────────────────────────────────
-        _SectionHeader(VN.paymentHistory),
+        const _SectionHeader(VN.paymentHistory),
         if (txns.isEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -885,7 +884,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         // ── Status actions ────────────────────────────────────────────
         if (transitions.isNotEmpty) ...[
           const SizedBox(height: 20),
-          _SectionHeader(VN.actions),
+          const _SectionHeader(VN.actions),
           if (_transitioning)
             const Center(child: CircularProgressIndicator())
           else
@@ -2113,7 +2112,7 @@ class _PrintStatusRow extends StatelessWidget {
                 backgroundColor: Colors.green.shade700,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
               ),
-              child: Text(VN.markAsPrinted),
+              child: const Text(VN.markAsPrinted),
             ),
         ],
       ),
@@ -2236,7 +2235,7 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
     final hasSelection = _printInternal || _printCustomer;
 
     return AlertDialog(
-      title: Text(VN.printChecklistTitle),
+      title: const Text(VN.printChecklistTitle),
       content: _printing
           ? SizedBox(
               height: 80,
@@ -2261,14 +2260,14 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
                     value: _printInternal,
                     onChanged: (v) =>
                         setState(() => _printInternal = v ?? false),
-                    title: Text(VN.printWorkTicket),
+                    title: const Text(VN.printWorkTicket),
                     controlAffinity: ListTileControlAffinity.leading,
                     contentPadding: EdgeInsets.zero,
                   ),
                 CheckboxListTile(
                   value: _printCustomer,
                   onChanged: (v) => setState(() => _printCustomer = v ?? false),
-                  title: Text(VN.printCustomerReceipt),
+                  title: const Text(VN.printCustomerReceipt),
                   controlAffinity: ListTileControlAffinity.leading,
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -2277,12 +2276,12 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
       actions: [
         TextButton(
           onPressed: _printing ? null : () => Navigator.pop(context),
-          child: Text(VN.printSkip),
+          child: const Text(VN.printSkip),
         ),
         if (!_printing)
           FilledButton(
             onPressed: hasSelection ? _printSelected : null,
-            child: Text(VN.print),
+            child: const Text(VN.print),
           ),
       ],
     );
@@ -2365,7 +2364,7 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(VN.printChecklistTitle),
+      title: const Text(VN.printChecklistTitle),
       content: _printing
           ? SizedBox(
               height: 80,
@@ -2382,16 +2381,16 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
                 ],
               ),
             )
-          : Text(VN.printInternalPrompt),
+          : const Text(VN.printInternalPrompt),
       actions: [
         TextButton(
           onPressed: _printing ? null : () => Navigator.pop(context),
-          child: Text(VN.printSkip),
+          child: const Text(VN.printSkip),
         ),
         if (!_printing)
           FilledButton(
             onPressed: _printInternal,
-            child: Text(VN.print),
+            child: const Text(VN.print),
           ),
       ],
     );
@@ -2435,7 +2434,7 @@ class _RutTienSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionHeader(VN.rutTienSection),
+        const _SectionHeader(VN.rutTienSection),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(

@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -239,7 +238,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
           ),
           title: const Text(VN.selectProducts),
         ),
-        body: Center(child: Text(VN.apiError)),
+        body: const Center(child: Text(VN.apiError)),
       ),
       data: (products) => categoriesAsync.when(
         loading: () => _buildGrid([], products, baseUrl),

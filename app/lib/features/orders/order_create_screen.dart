@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -452,7 +451,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           children: [
             // ── Source (F1) ───────────────────────────────────────────
-            _SectionHeader(VN.orderSource),
+            const _SectionHeader(VN.orderSource),
             sourcesAsync.when(
               data: (sources) => Wrap(
                 spacing: 8,
@@ -504,7 +503,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             }),
 
             // ── Customer ──────────────────────────────────────────────
-            _SectionHeader(VN.customer),
+            const _SectionHeader(VN.customer),
             TextFormField(
               controller: _nameCtrl,
               decoration: const InputDecoration(
@@ -518,7 +517,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             const SizedBox(height: 20),
 
             // ── Products ──────────────────────────────────────────────
-            _SectionHeader(VN.products),
+            const _SectionHeader(VN.products),
             if (_items.where((i) => !i.isExtra).isEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -581,7 +580,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             const SizedBox(height: 20),
 
             // ── Extras (accessories) ──────────────────────────────────
-            _SectionHeader(VN.extras),
+            const _SectionHeader(VN.extras),
             // Show added extras with qty +/-
             ..._items.where((i) => i.isExtra).map((item) => Padding(
               padding: const EdgeInsets.only(bottom: 4),
@@ -637,7 +636,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             const SizedBox(height: 20),
 
             // ── Schedule (F4 + F5) ────────────────────────────────────
-            _SectionHeader(VN.dueDate),
+            const _SectionHeader(VN.dueDate),
             // F4: Date button (always shows date, defaults to today)
             OutlinedButton.icon(
               onPressed: _pickDate,
@@ -698,7 +697,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             const SizedBox(height: 20),
 
             // ── Delivery ──────────────────────────────────────────────
-            _SectionHeader(VN.deliveryType),
+            const _SectionHeader(VN.deliveryType),
             SegmentedButton<String>(
               segments: const [
                 ButtonSegment(
@@ -757,7 +756,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
 
             // ── Shipping Fee ───────────────────────────────────────────
             if (_deliveryType == 'bus' || _deliveryType == 'door') ...[
-              _SectionHeader(VN.shippingFee),
+              const _SectionHeader(VN.shippingFee),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [

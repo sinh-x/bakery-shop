@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -314,7 +313,7 @@ class _ProductEditLoader extends ConsumerWidget {
           const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text(VN.editProduct)),
-        body: Center(child: Text(VN.apiError)),
+        body: const Center(child: Text(VN.apiError)),
       ),
       data: (products) {
         final product = products.where((p) => p.id == productId).firstOrNull;
@@ -353,7 +352,7 @@ class _CatalogViewerLoader extends ConsumerWidget {
       error: (_, stackTrace) {
         return Scaffold(
           appBar: AppBar(title: const Text(VN.catalogTitle)),
-          body: Center(child: Text(VN.apiError)),
+          body: const Center(child: Text(VN.apiError)),
         );
       },
       data: (photos) {
@@ -397,7 +396,7 @@ class _KnowledgeEditLoader extends ConsumerWidget {
       error: (_, stackTrace) {
         return Scaffold(
           appBar: AppBar(title: const Text(VN.editKnowledge)),
-          body: Center(child: Text(VN.apiError)),
+          body: const Center(child: Text(VN.apiError)),
         );
       },
       data: (entry) {

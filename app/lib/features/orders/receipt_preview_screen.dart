@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -165,7 +164,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(VN.apiError),
+            const Text(VN.apiError),
             const SizedBox(height: 8),
             Text(
               _error!,

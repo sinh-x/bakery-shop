@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 // DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines due to in-place bulk action flow wiring; review in Phase 5 (2026-05-29).
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -310,7 +309,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                     children: [
                       const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
                       const SizedBox(height: 16),
-                      Text(VN.apiError),
+                      const Text(VN.apiError),
                       const SizedBox(height: 8),
                       FilledButton(
                         onPressed: () =>
