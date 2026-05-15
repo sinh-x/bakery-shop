@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/product.dart';
 import '../../../data/api/api_client.dart';
 import '../../../providers/pos_provider.dart';
+import '../../../providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 /// 2-column product grid with stock badges for POS screen.
@@ -16,6 +17,7 @@ class PosProductGrid extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cart = ref.watch(posCartProvider);
     final baseUrl = ref.watch(apiBaseUrlProvider);
+    final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
 
     return GridView.builder(
       padding: const EdgeInsets.all(8),
@@ -40,6 +42,7 @@ class PosProductGrid extends ConsumerWidget {
           inCartQty: inCartQty > 0 ? inCartQty : null,
           isOutOfStock: isOutOfStock,
           baseUrl: baseUrl,
+          cacheBuster: photoRefreshTick.toString(),
           onTap: () => _onProductTap(context, ref, product, isOutOfStock),
         );
       },
@@ -264,6 +267,7 @@ class _ProductPosCard extends StatelessWidget {
     required this.inCartQty,
     required this.isOutOfStock,
     required this.baseUrl,
+    required this.cacheBuster,
     required this.onTap,
   });
 
@@ -272,6 +276,7 @@ class _ProductPosCard extends StatelessWidget {
   final int? inCartQty;
   final bool isOutOfStock;
   final String baseUrl;
+  final String cacheBuster;
   final VoidCallback onTap;
 
   String _displayPrice(Product product) {
@@ -308,14 +313,16 @@ class _ProductPosCard extends StatelessWidget {
                   // Product image
                   Expanded(
                     flex: 3,
-                    child: product.photoPath.isNotEmpty
-                        ? Image.network(
-                            '$baseUrl/api/products/${product.id}/photo',
-                            fit: BoxFit.cover,
-                            semanticLabel: 'Ảnh sản phẩm ${product.name}',
-                            errorBuilder: (_, _, _) => _buildPlaceholder(theme),
-                          )
-                        : _buildPlaceholder(theme),
+                    child: Image.network(
+                      posProductPhotoUrl(
+                        baseUrl,
+                        product.id,
+                        cacheBuster: cacheBuster,
+                      ),
+                      fit: BoxFit.cover,
+                      semanticLabel: 'Ảnh sản phẩm ${product.name}',
+                      errorBuilder: (_, _, _) => _buildPlaceholder(theme),
+                    ),
                   ),
 
                   // Product info
@@ -432,4 +439,22 @@ class _ProductPosCard extends StatelessWidget {
       ),
     );
   }
+}
+
+@visibleForTesting
+String posProductPhotoUrl(
+  String baseUrl,
+  int productId, {
+  String? cacheBuster,
+}) {
+  final uri = Uri.parse('$baseUrl/api/products/$productId/photo');
+  final tick = cacheBuster?.trim();
+  if (tick == null || tick.isEmpty) {
+    return uri.toString();
+  }
+  return uri
+      .replace(
+        queryParameters: <String, String>{...uri.queryParameters, 'v': tick},
+      )
+      .toString();
 }

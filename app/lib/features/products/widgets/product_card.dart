@@ -8,6 +8,7 @@ class ProductCard extends StatelessWidget {
     super.key,
     required this.product,
     required this.photoBaseUrl,
+    this.cacheBuster,
     this.onTap,
     this.onLongPress,
     this.showPriceBadge = false,
@@ -15,6 +16,7 @@ class ProductCard extends StatelessWidget {
 
   final Product product;
   final String photoBaseUrl;
+  final String? cacheBuster;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final bool showPriceBadge;
@@ -28,8 +30,9 @@ class ProductCard extends StatelessWidget {
         .map((chip) => chip.price)
         .reduce((a, b) => a < b ? a : b);
     final hasPositiveBasePrice = product.basePrice > 0;
-    final minPrice =
-        hasPositiveBasePrice && product.basePrice < chipMin ? product.basePrice : chipMin;
+    final minPrice = hasPositiveBasePrice && product.basePrice < chipMin
+        ? product.basePrice
+        : chipMin;
 
     return '${VN.priceFrom} ${formatVND(minPrice)}';
   }
@@ -48,15 +51,16 @@ class ProductCard extends StatelessWidget {
           children: [
             // Photo fills the card
             Image.network(
-              '$photoBaseUrl/api/products/${product.id}/photo',
+              productDisplayPhotoUrl(
+                photoBaseUrl,
+                product.id,
+                cacheBuster: cacheBuster,
+              ),
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) => Container(
                 color: Colors.grey[100],
                 child: Center(
-                  child: Text(
-                    emoji,
-                    style: const TextStyle(fontSize: 48),
-                  ),
+                  child: Text(emoji, style: const TextStyle(fontSize: 48)),
                 ),
               ),
             ),
@@ -84,7 +88,9 @@ class ProductCard extends StatelessWidget {
                     ],
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 2),
+                        horizontal: 4,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black54,
                         borderRadius: BorderRadius.circular(4),
@@ -118,8 +124,10 @@ class ProductCard extends StatelessWidget {
                 right: 0,
                 bottom: 0,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
                   color: theme.colorScheme.primaryContainer,
                   child: Text(
                     _displayPrice(product),
@@ -136,6 +144,24 @@ class ProductCard extends StatelessWidget {
       ),
     );
   }
+}
+
+@visibleForTesting
+String productDisplayPhotoUrl(
+  String baseUrl,
+  int productId, {
+  String? cacheBuster,
+}) {
+  final uri = Uri.parse('$baseUrl/api/products/$productId/photo');
+  final tick = cacheBuster?.trim();
+  if (tick == null || tick.isEmpty) {
+    return uri.toString();
+  }
+  return uri
+      .replace(
+        queryParameters: <String, String>{...uri.queryParameters, 'v': tick},
+      )
+      .toString();
 }
 
 class _CodeBadge extends StatelessWidget {

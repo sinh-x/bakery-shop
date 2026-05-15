@@ -135,7 +135,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Xác nhận xóa mức giá nhanh'),
-          content: const Text('Bạn có chắc muốn xóa mức giá nhanh đã lưu này không?'),
+          content: const Text(
+            'Bạn có chắc muốn xóa mức giá nhanh đã lưu này không?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -182,10 +184,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
       final rowErrors = _PriceChipValidationErrors(
         labelError: label.isEmpty ? VN.priceChipLabelRequired : null,
-        priceError:
-            parsedPrice == null || parsedPrice < 0
-                ? VN.priceChipPriceInvalid
-                : null,
+        priceError: parsedPrice == null || parsedPrice < 0
+            ? VN.priceChipPriceInvalid
+            : null,
       );
 
       if (rowErrors.hasError) {
@@ -198,9 +199,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return errors;
   }
 
-  bool _applyPriceChipRowErrors(
-    Map<int, _PriceChipValidationErrors> errors,
-  ) {
+  bool _applyPriceChipRowErrors(Map<int, _PriceChipValidationErrors> errors) {
     var changed = false;
     for (var index = 0; index < _priceChipRows.length; index++) {
       final row = _priceChipRows[index];
@@ -348,43 +347,43 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                   Expanded(
                     child: TextFormField(
                       controller: row.labelController,
-                        decoration: InputDecoration(
-                          labelText: VN.priceChipLabel,
-                          errorText: row.labelError,
-                        ),
-                        onChanged: (_) {
-                          if (row.labelError != null) {
-                            setState(() {
-                              row.updateErrors(
-                                labelError: null,
-                                priceError: row.priceError,
-                              );
-                            });
-                          }
-                        },
+                      decoration: InputDecoration(
+                        labelText: VN.priceChipLabel,
+                        errorText: row.labelError,
                       ),
+                      onChanged: (_) {
+                        if (row.labelError != null) {
+                          setState(() {
+                            row.updateErrors(
+                              labelError: null,
+                              priceError: row.priceError,
+                            );
+                          });
+                        }
+                      },
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: TextFormField(
                       controller: row.priceController,
-                        decoration: InputDecoration(
-                          labelText: VN.priceChipPrice,
-                          suffixText: VN.currency,
-                          errorText: row.priceError,
-                        ),
-                        keyboardType: TextInputType.number,
-                        onChanged: (_) {
-                          if (row.priceError != null) {
-                            setState(() {
-                              row.updateErrors(
-                                labelError: row.labelError,
-                                priceError: null,
-                              );
-                            });
-                          }
-                        },
+                      decoration: InputDecoration(
+                        labelText: VN.priceChipPrice,
+                        suffixText: VN.currency,
+                        errorText: row.priceError,
                       ),
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) {
+                        if (row.priceError != null) {
+                          setState(() {
+                            row.updateErrors(
+                              labelError: row.labelError,
+                              priceError: null,
+                            );
+                          });
+                        }
+                      },
+                    ),
                   ),
                   IconButton(
                     tooltip: VN.remove,
@@ -423,11 +422,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   void _addEnumOption(_EnumAttributeFormSection section) {
     setState(() {
-      section.rows.add(
-        _EnumOptionFormRow(
-          sortOrder: section.rows.length,
-        ),
-      );
+      section.rows.add(_EnumOptionFormRow(sortOrder: section.rows.length));
     });
   }
 
@@ -488,7 +483,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         }
       }
       if (liveRowCount > 0 && defaultCount != 1) {
-        sectionChanged = section.setError(VN.enumOptionDefaultRequired) || sectionChanged;
+        sectionChanged =
+            section.setError(VN.enumOptionDefaultRequired) || sectionChanged;
         ok = false;
       }
       changed = changed || sectionChanged;
@@ -570,7 +566,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(VN.enumOptionsSection, style: Theme.of(context).textTheme.titleMedium),
+        Text(
+          VN.enumOptionsSection,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
         const SizedBox(height: 4),
         Text(
           VN.enumOptionsHintAttributeWide,
@@ -649,7 +648,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                     ),
                     IconButton(
                       tooltip: row.removed ? VN.enumOptionRestore : VN.remove,
-                      icon: Icon(row.removed ? Icons.restore : Icons.delete_outline),
+                      icon: Icon(
+                        row.removed ? Icons.restore : Icons.delete_outline,
+                      ),
                       onPressed: () => _toggleRemoveEnumOption(section, index),
                     ),
                     ReorderableDragStartListener(
@@ -848,7 +849,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           await productSvc.setProductAttribute(saved.id, 'tang_kem', 'true');
           await notifier.refresh();
         }
-
       }
 
       if (hasPriceChipChanges) {
@@ -1110,18 +1110,18 @@ class _EnumAttributeFormSection {
     required this.attribute,
     required List<EnumOption> originalOptions,
     required this.originalDefaultId,
-  })  : _originalOptions = List<EnumOption>.of(originalOptions),
-        rows = originalOptions
-            .map(
-              (opt) => _EnumOptionFormRow(
-                id: opt.id,
-                valueVi: opt.valueVi,
-                sortOrder: opt.sortOrder,
-                active: opt.active,
-                isDefault: opt.id == originalDefaultId,
-              ),
-            )
-            .toList();
+  }) : _originalOptions = List<EnumOption>.of(originalOptions),
+       rows = originalOptions
+           .map(
+             (opt) => _EnumOptionFormRow(
+               id: opt.id,
+               valueVi: opt.valueVi,
+               sortOrder: opt.sortOrder,
+               active: opt.active,
+               isDefault: opt.id == originalDefaultId,
+             ),
+           )
+           .toList();
 
   factory _EnumAttributeFormSection.fromAttribute(EnumAttribute attribute) {
     return _EnumAttributeFormSection(
@@ -1140,8 +1140,8 @@ class _EnumAttributeFormSection {
   String? get error => _error;
 
   Map<int, EnumOption> get originalById => {
-        for (final opt in _originalOptions) opt.id: opt,
-      };
+    for (final opt in _originalOptions) opt.id: opt,
+  };
 
   bool clearError() {
     if (_error == null) return false;
@@ -1712,23 +1712,23 @@ class _CatalogPhotoCard extends StatelessWidget {
                       child: InkWell(
                         borderRadius: BorderRadius.circular(12),
                         onTap: promoting ? null : onPromote,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(
                             horizontal: 8,
                             vertical: 4,
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.star_outline,
                                 color: Colors.white,
                                 size: 12,
                               ),
-                              const SizedBox(width: 4),
+                              SizedBox(width: 4),
                               Text(
                                 VN.setAsProductPhoto,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 10,
                                   fontWeight: FontWeight.w600,

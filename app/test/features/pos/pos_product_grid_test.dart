@@ -18,5 +18,12 @@ void main() {
       expect(posStockStatusLabel(0), 'Hết hàng');
       expect(posStockStatusIcon(0), Icons.remove_circle);
     });
+
+    test('builds cache-busted product photo URL', () {
+      expect(
+        posProductPhotoUrl('http://localhost:8000', 7, cacheBuster: '3'),
+        'http://localhost:8000/api/products/7/photo?v=3',
+      );
+    });
   });
 }

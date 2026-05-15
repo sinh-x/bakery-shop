@@ -18,8 +18,7 @@ class ProductCatalogScreen extends ConsumerStatefulWidget {
       _ProductCatalogScreenState();
 }
 
-class _ProductCatalogScreenState
-    extends ConsumerState<ProductCatalogScreen>
+class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
     with WidgetsBindingObserver {
   bool _wasNavigatedAway = false;
   GoRouter? _goRouter;
@@ -81,13 +80,15 @@ class _ProductCatalogScreenState
         context,
         ref,
         categoryMap.entries
-            .map((e) => Category(
-                  id: 0,
-                  slug: e.key,
-                  name: e.value,
-                  codePrefix: '',
-                  active: 1,
-                ))
+            .map(
+              (e) => Category(
+                id: 0,
+                slug: e.key,
+                name: e.value,
+                codePrefix: '',
+                active: 1,
+              ),
+            )
             .toList(),
       ),
       data: (categories) => _buildWithCategories(
@@ -105,6 +106,7 @@ class _ProductCatalogScreenState
   ) {
     final productsAsync = ref.watch(productsProvider);
     final baseUrl = ref.watch(apiBaseUrlProvider);
+    final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
 
     return DefaultTabController(
       length: categories.length,
@@ -176,6 +178,7 @@ class _ProductCatalogScreenState
               products: products,
               categories: categories,
               baseUrl: baseUrl,
+              cacheBuster: photoRefreshTick.toString(),
             ),
           ),
           floatingActionButton: FloatingActionButton(
@@ -199,17 +202,21 @@ class _ProductTabs extends StatelessWidget {
     required this.products,
     required this.categories,
     required this.baseUrl,
+    required this.cacheBuster,
   });
 
   final List<Product> products;
   final List<Category> categories;
   final String baseUrl;
+  final String cacheBuster;
 
   @override
   Widget build(BuildContext context) {
     final grouped = <String, List<Product>>{};
     for (final cat in categories) {
-      grouped[cat.slug] = products.where((p) => p.category == cat.slug).toList();
+      grouped[cat.slug] = products
+          .where((p) => p.category == cat.slug)
+          .toList();
     }
 
     return TabBarView(
@@ -219,9 +226,9 @@ class _ProductTabs extends StatelessWidget {
           return Center(
             child: Text(
               VN.noProducts,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Colors.grey,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(color: Colors.grey),
             ),
           );
         }
@@ -243,8 +250,8 @@ class _ProductTabs extends StatelessWidget {
               itemBuilder: (context, index) => ProductCard(
                 product: items[index],
                 photoBaseUrl: baseUrl,
-                onTap: () =>
-                    context.push('/products/${items[index].id}/edit'),
+                cacheBuster: cacheBuster,
+                onTap: () => context.push('/products/${items[index].id}/edit'),
               ),
             ),
           ),

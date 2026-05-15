@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/api/api_client.dart';
 import '../../data/api/stock_service.dart';
 import '../../providers/categories_provider.dart';
+import '../../providers/products_provider.dart';
 import '../../shared/utils/category_grouping.dart';
 import '../../shared/widgets/collapsible_category_sections.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -111,6 +112,7 @@ class _StockScreenState extends ConsumerState<StockScreen>
     final stockAsync = ref.watch(stockOverviewProvider);
     final categories = ref.watch(categoriesProvider).asData?.value ?? const [];
     final baseUrl = ref.watch(apiBaseUrlProvider);
+    final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -192,6 +194,7 @@ class _StockScreenState extends ConsumerState<StockScreen>
                   item: item,
                   emoji: emoji,
                   baseUrl: baseUrl,
+                  cacheBuster: photoRefreshTick.toString(),
                   onRestock: () =>
                       _showActionSheet(context, ref, item, ActionType.restock),
                   onWaste: () =>
@@ -234,6 +237,7 @@ class _StockItemCard extends StatelessWidget {
     required this.item,
     required this.emoji,
     required this.baseUrl,
+    required this.cacheBuster,
     required this.onRestock,
     required this.onWaste,
     required this.onAdjust,
@@ -242,6 +246,7 @@ class _StockItemCard extends StatelessWidget {
   final StockOverviewItem item;
   final String emoji;
   final String baseUrl;
+  final String cacheBuster;
   final VoidCallback onRestock;
   final VoidCallback onWaste;
   final VoidCallback onAdjust;
@@ -264,7 +269,11 @@ class _StockItemCard extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: Image.network(
-                    '$baseUrl/api/products/${item.productId}/photo',
+                    stockProductPhotoUrl(
+                      baseUrl,
+                      item.productId,
+                      cacheBuster: cacheBuster,
+                    ),
                     width: 64,
                     height: 64,
                     fit: BoxFit.cover,
@@ -395,4 +404,21 @@ class _StockItemCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String stockProductPhotoUrl(
+  String baseUrl,
+  int productId, {
+  String? cacheBuster,
+}) {
+  final uri = Uri.parse('$baseUrl/api/products/$productId/photo');
+  final tick = cacheBuster?.trim();
+  if (tick == null || tick.isEmpty) {
+    return uri.toString();
+  }
+  return uri
+      .replace(
+        queryParameters: <String, String>{...uri.queryParameters, 'v': tick},
+      )
+      .toString();
 }

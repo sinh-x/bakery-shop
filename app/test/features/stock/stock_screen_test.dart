@@ -32,10 +32,20 @@ class _FakeCategoryService extends CategoryService {
 }
 
 void main() {
+  test('builds cache-busted stock product photo URL', () {
+    expect(
+      stockProductPhotoUrl('http://localhost:8000', 9, cacheBuster: '11'),
+      'http://localhost:8000/api/products/9/photo?v=11',
+    );
+  });
+
   GoRouter buildRouter() {
     return GoRouter(
       routes: [
-        GoRoute(path: '/stock', builder: (context, state) => const StockScreen()),
+        GoRoute(
+          path: '/stock',
+          builder: (context, state) => const StockScreen(),
+        ),
       ],
       initialLocation: '/stock',
     );
