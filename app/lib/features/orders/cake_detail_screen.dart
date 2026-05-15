@@ -13,7 +13,7 @@ import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/utils/vnd_units.dart';
 import '../../shared/widgets/printer_picker_dialog.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/order_photo_section.dart';
 
 const _workItemStatusColors = {

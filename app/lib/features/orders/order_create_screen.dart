@@ -14,7 +14,7 @@ import '../../shared/gift_config.dart';
 import '../../shared/utils/config_parsers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/vnd_units.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/expandable_item_card.dart';
 import 'widgets/hour_picker.dart';
 import 'widgets/product_picker_page.dart';

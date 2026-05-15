@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/events.dart';
 import 'widgets/event_history_list.dart';
 import 'widgets/event_log_form.dart';
 

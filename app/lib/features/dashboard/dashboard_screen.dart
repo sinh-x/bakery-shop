@@ -7,7 +7,7 @@ import '../../features/orders/widgets/order_card.dart';
 import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/theme/bakery_theme.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 // Active (non-terminal) statuses shown in the summary
 const _activeStatuses = [

@@ -8,7 +8,7 @@ import '../../../data/models/product.dart';
 import '../../../providers/categories_provider.dart';
 import '../../../providers/order_providers.dart';
 import '../../../providers/products_provider.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 import '../../products/widgets/product_card.dart';
 
 class ProductPickerPage extends ConsumerStatefulWidget {

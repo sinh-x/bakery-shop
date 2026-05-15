@@ -11,7 +11,7 @@ import '../../providers/events_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/category_grouping.dart';
 import '../../shared/widgets/collapsible_category_sections.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'stock_screen.dart';
 
 class StockReconciliationScreen extends ConsumerStatefulWidget {

@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
 
-import '../widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 enum ApiErrorKind { network, timeout, validation, server, unknown }
 

@@ -3,7 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'shared/router/app_router.dart';
 import 'shared/theme/bakery_theme.dart';
-import 'shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 class BakeryApp extends StatelessWidget {
   const BakeryApp({super.key});

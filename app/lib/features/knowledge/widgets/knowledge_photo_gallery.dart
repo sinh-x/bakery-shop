@@ -11,7 +11,7 @@ import '../../../data/api/api_client.dart';
 import '../../../data/models/knowledge_entry.dart';
 import '../../../shared/services/image_download_metadata.dart';
 import '../../../shared/services/web_share_fallback_helpers.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 /// Horizontal PageView photo gallery with dots indicator and tap-to-fullscreen.
 class KnowledgePhotoGallery extends StatefulWidget {

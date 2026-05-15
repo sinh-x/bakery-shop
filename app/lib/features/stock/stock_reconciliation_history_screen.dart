@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/reconciliation_service.dart';
 import '../../data/providers/reconciliation_provider.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 class StockReconciliationHistoryScreen extends ConsumerWidget {
   const StockReconciliationHistoryScreen({super.key});

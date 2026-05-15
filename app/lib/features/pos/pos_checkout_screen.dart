@@ -9,7 +9,7 @@ import '../../features/stock/stock_screen.dart';
 import '../../providers/pos_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/api_error.dart' as api_error;
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 @visibleForTesting
 String resolvePosCheckoutErrorMessage(Object error) {

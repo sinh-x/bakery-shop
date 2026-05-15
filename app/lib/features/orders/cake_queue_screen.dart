@@ -12,7 +12,7 @@ import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/order_helpers.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Delivery content widget — embedded inside the Orders tab as the third sub-view.
 /// Shows orders matching the Kanban "Giao hàng" logic: ready + bus/door delivery.

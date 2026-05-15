@@ -5,7 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../providers/order_providers.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 class ExpandableItemCard extends StatefulWidget {
   const ExpandableItemCard({

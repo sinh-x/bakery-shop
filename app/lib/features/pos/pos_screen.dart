@@ -9,7 +9,7 @@ import '../../../data/models/category.dart';
 import '../../../data/models/product.dart';
 import '../../../providers/categories_provider.dart';
 import '../../../providers/products_provider.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/pos_cart_bar.dart';
 import 'widgets/pos_product_grid.dart';
 

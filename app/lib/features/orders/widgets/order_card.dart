@@ -9,7 +9,7 @@ import '../../../data/api/api_client.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
 import '../../../shared/utils/order_helpers.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Unified OrderCard widget for use across order list, kanban, and dashboard.
 ///

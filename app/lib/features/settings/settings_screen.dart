@@ -9,7 +9,7 @@ import '../../data/api/config_service.dart';
 import '../../providers/config_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/staff_provider.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});

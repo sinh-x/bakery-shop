@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/checklist_template.dart';
 import '../../data/providers/checklist_provider.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/checklist.dart';
 
 class ChecklistConfigScreen extends ConsumerStatefulWidget {
   const ChecklistConfigScreen({super.key});

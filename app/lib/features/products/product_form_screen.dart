@@ -17,7 +17,7 @@ import '../../data/models/product.dart';
 import '../../providers/catalog_provider.dart';
 import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 import 'widgets/catalog_photo_viewer.dart';
 import 'widgets/catalog_tag_chips.dart';
 import 'widgets/catalog_tag_edit_sheet.dart';

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../utils/category_grouping.dart';
-import 'vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 class CategorySectionExpansionController {
   final Map<String, bool> _expandedByKey = <String, bool>{};

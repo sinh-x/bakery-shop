@@ -4,7 +4,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../data/models/order_photo.dart';
 import '../../../providers/order_providers.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 // ── Predefined tag definitions ─────────────────────────────────────────────────
 

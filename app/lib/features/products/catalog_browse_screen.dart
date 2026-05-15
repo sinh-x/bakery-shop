@@ -9,7 +9,7 @@ import '../../data/models/catalog_tag.dart';
 import '../../providers/catalog_provider.dart';
 import '../../providers/categories_provider.dart';
 import '../../data/models/category.dart' as models;
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 import 'services/bulk_share_service.dart';
 import 'services/bulk_download_android.dart'
     if (kIsWeb) 'services/bulk_download_web.dart'
