@@ -4,6 +4,8 @@ import io
 
 from PIL import Image
 
+from baker.db.connection import get_db
+
 
 # --- Health ---
 
@@ -235,6 +237,54 @@ def test_get_photo_not_found(api_client):
     resp = api_client.get("/api/products/1/photo")
     assert resp.status_code == 404
     assert "Chưa có ảnh" in resp.json()["detail"]
+
+
+def test_get_photo_falls_back_to_latest_catalog_by_created_at_and_id(api_client):
+    first = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("a.jpg", _make_test_image(150, 150), "image/jpeg")},
+    ).json()
+    second = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("b.jpg", _make_test_image(151, 151), "image/jpeg")},
+    ).json()
+
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE product_catalog_photos SET created_at = ? WHERE id IN (?, ?)",
+            ("2026-01-01 00:00:00", first["id"], second["id"]),
+        )
+
+    resp = api_client.get("/api/products/1/photo")
+    assert resp.status_code == 200
+
+    second_bytes = api_client.get(
+        f"/api/products/1/catalog/{second['id']}/photo"
+    ).content
+    assert resp.content == second_bytes
+
+
+def test_get_photo_prefers_main_photo_over_catalog_fallback(api_client):
+    main = api_client.post(
+        "/api/products/1/photo",
+        files={"file": ("main.jpg", _make_test_image(160, 160), "image/jpeg")},
+    )
+    assert main.status_code == 200
+
+    newest_catalog = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("cat.jpg", _make_test_image(170, 170), "image/jpeg")},
+    ).json()
+
+    resp = api_client.get("/api/products/1/photo")
+    assert resp.status_code == 200
+
+    main_bytes = api_client.get(main.json()["url"]).content
+    catalog_bytes = api_client.get(
+        f"/api/products/1/catalog/{newest_catalog['id']}/photo"
+    ).content
+    assert resp.content == main_bytes
+    assert resp.content != catalog_bytes
 
 
 # --- Photo path in product data ---
@@ -579,6 +629,81 @@ def test_upload_catalog_photo_position_increments(api_client):
     )
     assert first.json()["position"] == 0
     assert second.json()["position"] == 1
+
+
+def test_promote_catalog_photo_sets_main_product_photo(api_client):
+    first = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("a.jpg", _make_test_image(100, 100), "image/jpeg")},
+        data={"caption": "Ảnh 1", "tags": "mau-do"},
+    ).json()
+    second = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("b.jpg", _make_test_image(101, 101), "image/jpeg")},
+        data={"caption": "Ảnh 2", "tags": "mau-xanh"},
+    ).json()
+
+    with get_db() as conn:
+        before_photos_count = conn.execute("SELECT COUNT(*) FROM photos").fetchone()[0]
+
+    resp = api_client.post(f"/api/products/1/catalog/{first['id']}/promote")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["photo_id"] == first["photo_id"]
+
+    product = api_client.get("/api/products/1").json()
+    assert product["photo_id"] == first["photo_id"]
+
+    served = api_client.get("/api/products/1/photo")
+    assert served.status_code == 200
+    assert served.headers["content-type"] == "image/jpeg"
+
+    catalog = api_client.get("/api/products/1/catalog").json()
+    cat_by_id = {item["id"]: item for item in catalog}
+    assert cat_by_id[first["id"]]["caption"] == "Ảnh 1"
+    assert cat_by_id[first["id"]]["tags"] == "mau-do"
+    assert cat_by_id[second["id"]]["caption"] == "Ảnh 2"
+    assert cat_by_id[second["id"]]["tags"] == "mau-xanh"
+
+    with get_db() as conn:
+        after_photos_count = conn.execute("SELECT COUNT(*) FROM photos").fetchone()[0]
+    assert after_photos_count == before_photos_count
+
+
+def test_promote_catalog_photo_cross_product_returns_404_and_keeps_main_photo(api_client):
+    target_main = api_client.post(
+        "/api/products/1/photo",
+        files={"file": ("main.jpg", _make_test_image(120, 120), "image/jpeg")},
+    ).json()
+    other_catalog = api_client.post(
+        "/api/products/2/catalog",
+        files={"file": ("other.jpg", _make_test_image(130, 130), "image/jpeg")},
+    ).json()
+
+    before_photo_id = api_client.get("/api/products/1").json()["photo_id"]
+
+    resp = api_client.post(f"/api/products/1/catalog/{other_catalog['id']}/promote")
+    assert resp.status_code == 404
+
+    after_photo_id = api_client.get("/api/products/1").json()["photo_id"]
+    assert after_photo_id == before_photo_id
+
+    assert before_photo_id is not None
+    assert target_main["hash"] in target_main["url"]
+
+
+def test_promote_catalog_photo_not_found_returns_404_and_keeps_main_photo(api_client):
+    api_client.post(
+        "/api/products/1/photo",
+        files={"file": ("main.jpg", _make_test_image(140, 140), "image/jpeg")},
+    )
+    before_photo_id = api_client.get("/api/products/1").json()["photo_id"]
+
+    resp = api_client.post("/api/products/1/catalog/999999/promote")
+    assert resp.status_code == 404
+
+    after_photo_id = api_client.get("/api/products/1").json()["photo_id"]
+    assert after_photo_id == before_photo_id
 
 
 # --- Catalog list ---

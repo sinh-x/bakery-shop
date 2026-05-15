@@ -283,3 +283,31 @@ def delete_catalog_photo(product_id: int, photo_id: int):
         )
 
     return {"message": "Đã xóa ảnh"}
+
+
+@router.post("/{product_id}/catalog/{photo_id}/promote", status_code=200)
+def promote_catalog_photo(product_id: int, photo_id: int):
+    """Đặt ảnh bộ sưu tập thành ảnh chính của sản phẩm."""
+    with get_db() as conn:
+        _get_product_or_404(conn, product_id)
+
+        row = conn.execute(
+            "SELECT cp.photo_id, ph.hash AS photo_hash "
+            "FROM product_catalog_photos cp "
+            "JOIN photos ph ON cp.photo_id = ph.id "
+            "WHERE cp.id = ? AND cp.product_id = ?",
+            (photo_id, product_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy ảnh")
+
+        conn.execute(
+            "UPDATE products SET photo_id = ? WHERE id = ?",
+            (row["photo_id"], product_id),
+        )
+
+    return {
+        "message": "Đã đặt ảnh sản phẩm",
+        "photo_id": row["photo_id"],
+        "url": f"/api/photos/{row['photo_hash']}.jpg",
+    }
