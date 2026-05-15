@@ -185,9 +185,18 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                 ref.invalidate(inactiveProductsProvider);
               },
               onReactivateProduct: (productId) async {
-                await ref
-                    .read(productsProvider.notifier)
-                    .reactivateProduct(productId);
+                try {
+                  await ref
+                      .read(productsProvider.notifier)
+                      .reactivateProduct(productId);
+                  if (context.mounted) {
+                    showTopSnackBar(context, VN.showProduct);
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    showTopSnackBar(context, e.toString());
+                  }
+                }
               },
             ),
           ),

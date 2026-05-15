@@ -52,7 +52,10 @@ class _FakeProductService extends ProductService {
     lastUpdatedId = id;
     lastUpdatedActive = active;
 
-    final product = _inactiveProducts.firstWhere((item) => item.id == id);
+    final product = _inactiveProducts.firstWhere(
+      (item) => item.id == id,
+      orElse: () => throw ArgumentError.value(id, 'id', 'Product not found'),
+    );
     final reactivated = product.copyWith(active: active ?? product.active);
     _inactiveProducts.removeWhere((item) => item.id == id);
     _activeProducts.add(reactivated);
