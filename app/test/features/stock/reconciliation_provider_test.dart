@@ -338,4 +338,66 @@ void main() {
       expect(rows.first.unitPrice, 100000);
     },
   );
+
+  test('normalizeReconciliationOptionKey resolves unique key from product id', () {
+    final state = ReconciliationState(
+      countedQtyByOption: const <String, int>{'1:12000': 2, '2:15000': 1},
+      wasteQtyByOption: const <String, int>{},
+      wasteReasonByOption: const <String, String>{},
+      saleRowsByOption: const <String, List<ReconciliationSaleRowInput>>{},
+    );
+
+    expect(normalizeReconciliationOptionKey(1, state), '1:12000');
+    expect(normalizeReconciliationOptionKey('2:15000', state), '2:15000');
+  });
+
+  test('buildSubmitLines groups active sale rows by option key', () {
+    final state = ReconciliationState(
+      draft: ReconciliationDraft(
+        date: '2026-05-04',
+        products: [
+          ReconciliationDraftProduct(
+            productId: 1,
+            name: 'Bánh',
+            category: 'banh_ngot',
+            expectedQty: 5,
+            basePrice: 100000,
+            priceChips: const <ReconciliationPriceChip>[],
+            options: [
+              ReconciliationDraftOption(
+                productId: 1,
+                normalizedPrice: 100000,
+                chipLabel: 'Gia goc',
+                sourceChipIds: const <int>[],
+                sourceChipLabels: const <String>[],
+                expectedQty: 5,
+              ),
+            ],
+          ),
+        ],
+      ),
+      countedQtyByOption: const <String, int>{'1:100000': 3},
+      wasteQtyByOption: const <String, int>{'1:100000': 0},
+      wasteReasonByOption: const <String, String>{'1:100000': ''},
+      saleRowsByOption: {
+        '1:100000': <ReconciliationSaleRowInput>[
+          ReconciliationSaleRowInput(
+            quantity: 1,
+            unitPrice: 10000,
+            paymentMethod: 'cash',
+          ),
+          ReconciliationSaleRowInput(
+            quantity: 0,
+            unitPrice: 12000,
+            paymentMethod: 'transfer',
+          ),
+        ],
+      },
+    );
+
+    final lines = buildSubmitLines(state);
+    expect(lines.length, 1);
+    expect(lines.first.saleRows.length, 1);
+    expect(lines.first.saleRows.first.paymentMethod, 'cash');
+  });
 }

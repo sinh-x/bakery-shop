@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_declarations  // DG-138#todo: replace with per-line suppressions after const declaration audit
 import 'dart:math';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -9,7 +8,7 @@ import '../../../data/api/api_client.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
 import '../../../shared/utils/order_helpers.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Unified OrderCard widget for use across order list, kanban, and dashboard.
 ///
@@ -66,7 +65,7 @@ class OrderCard extends ConsumerWidget {
       final name = item.productName;
       final price = formatVND(item.unitPrice);
       // Truncate single product name segment to 40 chars
-      final maxLen = 40;
+      const maxLen = 40;
       final full = '$name $price';
       if (full.length <= maxLen) {
         parts.add(full);

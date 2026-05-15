@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -14,7 +13,7 @@ import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
 import '../../shared/services/image_download_metadata.dart';
 import '../../shared/services/web_share_fallback_helpers.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/knowledge_photo_gallery.dart';
 
 class KnowledgeDetailScreen extends ConsumerWidget {
@@ -37,7 +36,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(VN.apiError),
+              const Text(VN.apiError),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () =>

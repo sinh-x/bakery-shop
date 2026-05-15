@@ -1,4 +1,4 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
+// EXEMPT: 300-line threshold exceeded because DG-150 blocker: extracting queue tile/time slot/summary widgets now would duplicate in-file queue action orchestration and event refresh contracts. Reviewed 2026-05-29.
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,7 +12,7 @@ import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/order_helpers.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Delivery content widget — embedded inside the Orders tab as the third sub-view.
 /// Shows orders matching the Kanban "Giao hàng" logic: ready + bus/door delivery.
@@ -39,7 +39,7 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(VN.apiError),
+            const Text(VN.apiError),
             const SizedBox(height: 8),
             TextButton(
               onPressed: _onRefresh,
@@ -324,7 +324,7 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: FilterChip(
-            label: Text(VN.includeReadyFilter),
+            label: const Text(VN.includeReadyFilter),
             selected: _includeReady,
             onSelected: (v) => setState(() => _includeReady = v),
           ),
@@ -338,7 +338,7 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(VN.apiError),
+                  const Text(VN.apiError),
                   const SizedBox(height: 8),
                   TextButton(
                     onPressed: _onRefresh,

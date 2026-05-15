@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -7,7 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 const _kTypeChips = [
   ('recipe', 'Công thức'),
@@ -71,10 +70,10 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: TextField(
               controller: _searchCtrl,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: VN.searchKnowledge,
-                prefixIcon: const Icon(Icons.search),
-                border: const OutlineInputBorder(),
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
                 isDense: true,
               ),
               onChanged: _onSearchChanged,
@@ -118,7 +117,7 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(VN.apiError),
+                    const Text(VN.apiError),
                     const SizedBox(height: 8),
                     TextButton(
                       onPressed: () => ref.invalidate(knowledgeEntriesProvider),
@@ -236,8 +235,8 @@ class _KnowledgeEntryCard extends StatelessWidget {
               Row(
                 children: [
                   if (entry.pinned)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
+                    const Padding(
+                      padding: EdgeInsets.only(right: 6),
                       child: Text('📌', style: TextStyle(fontSize: 14)),
                     ),
                   Expanded(

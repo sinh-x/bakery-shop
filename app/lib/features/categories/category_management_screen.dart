@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/category.dart';
 import '../../providers/categories_provider.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 import 'category_form.dart';
 
 class CategoryManagementScreen extends ConsumerWidget {

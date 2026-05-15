@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,7 +6,7 @@ import '../../features/orders/widgets/order_card.dart';
 import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/theme/bakery_theme.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 // Active (non-terminal) statuses shown in the summary
 const _activeStatuses = [
@@ -182,7 +181,7 @@ class _DashboardContent extends StatelessWidget {
 
           // Overdue section (red)
           if (overdueOrders.isNotEmpty) ...[
-            _SectionHeader(
+            const _SectionHeader(
               title: VN.overdueOrders,
               icon: Icons.warning_amber_rounded,
               color: Colors.red,
@@ -194,7 +193,7 @@ class _DashboardContent extends StatelessWidget {
 
           // Today section — grouped by status
           if (todayOrders.isNotEmpty) ...[
-            _SectionHeader(title: VN.todayOrders),
+            const _SectionHeader(title: VN.todayOrders),
             const SizedBox(height: 8),
             for (final s in _activeStatuses)
               if (todayByStatus.containsKey(s)) ...[
@@ -207,7 +206,7 @@ class _DashboardContent extends StatelessWidget {
 
           // Upcoming next 3 days
           if (upcomingOrders.isNotEmpty) ...[
-            _SectionHeader(title: VN.upcomingDue),
+            const _SectionHeader(title: VN.upcomingDue),
             const SizedBox(height: 8),
             ...upcomingOrders.map((o) => OrderCard(order: o, onTap: () => context.push('/orders/${o.orderRef}'))),
           ],

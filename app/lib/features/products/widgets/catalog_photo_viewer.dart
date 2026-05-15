@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
@@ -12,7 +11,7 @@ import '../../../data/api/api_client.dart';
 import '../../../data/models/catalog_photo.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../providers/catalog_provider.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 import 'catalog_tag_chips.dart';
 import 'catalog_tag_edit_sheet.dart';
 
@@ -412,7 +411,7 @@ class _TagChipSelector extends StatelessWidget {
       runSpacing: 6,
       children: [
         if (audience.isNotEmpty) ...[
-          Text(VN.doiTuong, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          const Text(VN.doiTuong, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
           ...audience.map((t) => FilterChip(
                 label: Text(t.label, style: const TextStyle(fontSize: 12)),
                 selected: selectedTags.contains(t.key),
@@ -421,7 +420,7 @@ class _TagChipSelector extends StatelessWidget {
               )),
         ],
         if (occasion.isNotEmpty) ...[
-          Text(VN.dip, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          const Text(VN.dip, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
           ...occasion.map((t) => FilterChip(
                 label: Text(t.label, style: const TextStyle(fontSize: 12)),
                 selected: selectedTags.contains(t.key),
@@ -430,7 +429,7 @@ class _TagChipSelector extends StatelessWidget {
               )),
         ],
         if (style.isNotEmpty) ...[
-          Text(VN.phongCach, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          const Text(VN.phongCach, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
           ...style.map((t) => FilterChip(
                 label: Text(t.label, style: const TextStyle(fontSize: 12)),
                 selected: selectedTags.contains(t.key),

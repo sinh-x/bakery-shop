@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -9,7 +8,7 @@ import '../../../data/models/category.dart';
 import '../../../data/models/product.dart';
 import '../../../providers/categories_provider.dart';
 import '../../../providers/products_provider.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/pos_cart_bar.dart';
 import 'widgets/pos_product_grid.dart';
 
@@ -258,7 +257,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(VN.apiError),
+                        const Text(VN.apiError),
                         const SizedBox(height: 8),
                         ElevatedButton(
                           onPressed: _refreshStock,

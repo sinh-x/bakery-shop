@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/catalog_photo.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../providers/catalog_provider.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 
 /// Shared bottom sheet for editing a catalog photo's caption and tags.
 ///
@@ -177,8 +176,8 @@ class TagChipSelector extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (audience.isNotEmpty) ...[
-          Text(VN.doiTuong,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          const Text(VN.doiTuong,
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 6,
@@ -195,8 +194,8 @@ class TagChipSelector extends StatelessWidget {
           const SizedBox(height: 12),
         ],
         if (occasion.isNotEmpty) ...[
-          Text(VN.dip,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          const Text(VN.dip,
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 6,
@@ -213,8 +212,8 @@ class TagChipSelector extends StatelessWidget {
           const SizedBox(height: 12),
         ],
         if (style.isNotEmpty) ...[
-          Text(VN.phongCach,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+          const Text(VN.phongCach,
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 6,

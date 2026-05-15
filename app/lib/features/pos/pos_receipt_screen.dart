@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/receipt_service.dart';
 import '../../providers/events_provider.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 
 /// POS receipt screen shown after order creation.

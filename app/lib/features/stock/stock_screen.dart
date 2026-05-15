@@ -9,7 +9,7 @@ import '../../data/api/stock_service.dart';
 import '../../providers/categories_provider.dart';
 import '../../shared/utils/category_grouping.dart';
 import '../../shared/widgets/collapsible_category_sections.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/stock_action_sheet.dart';
 
 /// Provider for stock overview list.

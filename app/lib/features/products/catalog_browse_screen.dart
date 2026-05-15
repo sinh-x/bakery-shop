@@ -1,20 +1,17 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
+// DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines due to in-place bulk action flow wiring; review in Phase 5 (2026-05-29).
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/catalog_browse_photo.dart';
-import '../../data/models/catalog_tag.dart';
 import '../../providers/catalog_provider.dart';
-import '../../providers/categories_provider.dart';
-import '../../data/models/category.dart' as models;
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 import 'services/bulk_share_service.dart';
 import 'services/bulk_download_android.dart'
     if (kIsWeb) 'services/bulk_download_web.dart'
     as download_impl;
-import 'widgets/catalog_photo_browse_card.dart';
+import 'widgets/catalog_browse_sections.dart';
 
 class CatalogBrowseScreen extends ConsumerStatefulWidget {
   const CatalogBrowseScreen({super.key});
@@ -201,7 +198,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                 onPressed: _toggleSelectMode,
                 tooltip: VN.chonAnh,
               ),
-            if (_selectMode) ...[
+            if (_selectMode)
               IconButton(
                 icon: const Icon(Icons.select_all),
                 onPressed: () {
@@ -212,31 +209,31 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                 },
                 tooltip: VN.chon20,
               ),
-              if (_bulkInProgress)
-                const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              else ...[
-                IconButton(
-                  icon: const Icon(Icons.share),
-                  onPressed: _selectedPhotoIds.isEmpty ? null : _onBulkShare,
+            if (_selectMode && _bulkInProgress)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.download),
-                  onPressed: _selectedPhotoIds.isEmpty ? null : _onBulkDownload,
-                ),
-              ],
+              ),
+            if (_selectMode && !_bulkInProgress)
+              IconButton(
+                icon: const Icon(Icons.share),
+                onPressed: _selectedPhotoIds.isEmpty ? null : _onBulkShare,
+              ),
+            if (_selectMode && !_bulkInProgress)
+              IconButton(
+                icon: const Icon(Icons.download),
+                onPressed: _selectedPhotoIds.isEmpty ? null : _onBulkDownload,
+              ),
+            if (_selectMode)
               IconButton(
                 icon: const Icon(Icons.close),
                 onPressed: _clearSelection,
                 tooltip: VN.huy,
               ),
-            ],
           ],
         ),
         body: Column(
@@ -263,7 +260,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                   ),
                 ),
               ),
-              data: (tagDefs) => _TagFilterBar(
+              data: (tagDefs) => CatalogBrowseFilterBar(
                 tagDefs: tagDefs,
                 selectedTags: _selectedTags,
                 selectedCategories: _selectedCategorySlugs,
@@ -312,7 +309,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                     children: [
                       const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
                       const SizedBox(height: 16),
-                      Text(VN.apiError),
+                      const Text(VN.apiError),
                       const SizedBox(height: 8),
                       FilledButton(
                         onPressed: () =>
@@ -336,228 +333,24 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                       ),
                     );
                   }
-                  return RefreshIndicator(
+                  return CatalogBrowsePhotoGrid(
+                    photos: photos,
+                    baseUrl: baseUrl,
+                    selectedPhotoIds: _selectedPhotoIds,
+                    selectMode: _selectMode,
+                    onPhotoToggle: _onPhotoToggle,
                     onRefresh: () => ref
                         .read(catalogBrowseProvider(_filterKey).notifier)
                         .refresh(),
-                    child: GridView.builder(
-                      padding: const EdgeInsets.all(12),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 8,
-                            mainAxisSpacing: 8,
-                            childAspectRatio: 0.75,
-                          ),
-                      itemCount: photos.length,
-                      itemBuilder: (context, index) {
-                        final photo = photos[index];
-                        final isSelected = _selectedPhotoIds.contains(photo.id);
-                        return CatalogPhotoBrowseCard(
-                          photo: photo,
-                          baseUrl: baseUrl,
-                          selected: isSelected,
-                          onSelectToggle: _selectMode
-                              ? (sel) => _onPhotoToggle(photo.id, sel)
-                              : null,
-                        );
-                      },
-                    ),
+                    emptyMessage: _selectedTags.isEmpty
+                        ? VN.noBrowsePhotos
+                        : VN.noBrowsePhotosForFilter,
                   );
                 },
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _TagFilterBar extends ConsumerWidget {
-  const _TagFilterBar({
-    required this.tagDefs,
-    required this.selectedTags,
-    required this.selectedCategories,
-    required this.onTagToggle,
-    required this.onCategoryToggle,
-    required this.onClearAll,
-  });
-
-  final List<CatalogTagDef> tagDefs;
-  final Set<String> selectedTags;
-  final Set<String> selectedCategories;
-  final void Function(String tag) onTagToggle;
-  final void Function(String slug) onCategoryToggle;
-  final VoidCallback onClearAll;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final audience = tagDefs.where((t) => t.category == 'audience').toList();
-    final occasion = tagDefs.where((t) => t.category == 'occasion').toList();
-    final style = tagDefs.where((t) => t.category == 'style').toList();
-    final categoriesAsync = ref.watch(categoriesProvider);
-    final hasSelection =
-        selectedTags.isNotEmpty || selectedCategories.isNotEmpty;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          categoriesAsync.when(
-            loading: () => const SizedBox.shrink(),
-            error: (_, stackTrace) {
-              return const SizedBox.shrink();
-            },
-            data: (categories) {
-              final active = categories.where((c) => c.active != 0).toList()
-                ..sort((a, b) => a.position.compareTo(b.position));
-              if (active.isEmpty) return const SizedBox.shrink();
-              return _FilterRow(
-                label: VN.danhMuc,
-                categories: active,
-                selectedCategories: selectedCategories,
-                onCategoryToggle: onCategoryToggle,
-              );
-            },
-          ),
-          _FilterRow(
-            label: VN.doiTuong,
-            tagDefs: audience,
-            selectedTags: selectedTags,
-            onTagToggle: onTagToggle,
-          ),
-          _FilterRow(
-            label: VN.dip,
-            tagDefs: occasion,
-            selectedTags: selectedTags,
-            onTagToggle: onTagToggle,
-          ),
-          _FilterRow(
-            label: VN.phongCach,
-            tagDefs: style,
-            selectedTags: selectedTags,
-            onTagToggle: onTagToggle,
-            showClear: hasSelection,
-            onClearAll: onClearAll,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FilterRow extends StatelessWidget {
-  const _FilterRow({
-    required this.label,
-    this.tagDefs,
-    this.selectedTags,
-    this.onTagToggle,
-    this.showClear = false,
-    this.onClearAll,
-    this.categories,
-    this.selectedCategories,
-    this.onCategoryToggle,
-  });
-
-  final String label;
-  final List<CatalogTagDef>? tagDefs;
-  final Set<String>? selectedTags;
-  final void Function(String tag)? onTagToggle;
-  final bool showClear;
-  final VoidCallback? onClearAll;
-  final List<models.Category>? categories;
-  final Set<String>? selectedCategories;
-  final void Function(String slug)? onCategoryToggle;
-
-  static const _labelWidth = 80.0;
-
-  @override
-  Widget build(BuildContext context) {
-    // Category row
-    if (categories != null && categories!.isNotEmpty) {
-      return SizedBox(
-        height: 40,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          children: [
-            SizedBox(
-              width: _labelWidth,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 6, top: 6),
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            ...categories!.map(
-              (c) => Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: FilterChip(
-                  label: Text(
-                    '${c.icon.isNotEmpty ? c.icon : '📦'} ${c.name}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  selected: selectedCategories!.contains(c.slug),
-                  onSelected: (_) => onCategoryToggle!(c.slug),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Tag row
-    if (tagDefs == null || tagDefs!.isEmpty) return const SizedBox.shrink();
-
-    return SizedBox(
-      height: 40,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        children: [
-          SizedBox(
-            width: _labelWidth,
-            child: Padding(
-              padding: const EdgeInsets.only(right: 6, top: 6),
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-          ...tagDefs!.map(
-            (t) => Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: FilterChip(
-                label: Text(t.label, style: const TextStyle(fontSize: 12)),
-                selected: selectedTags!.contains(t.key),
-                onSelected: (_) => onTagToggle!(t.key),
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-          ),
-          if (showClear && onClearAll != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: FilterChip(
-                label: Text(VN.xoaLoc, style: const TextStyle(fontSize: 12)),
-                onSelected: (_) => onClearAll!(),
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-        ],
       ),
     );
   }

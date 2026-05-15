@@ -279,6 +279,7 @@ void main() {
     testWidgets('renders section with all 5 option rows + default radio', (tester) async {
       await _pumpForm(tester, product: _testProduct());
 
+      expect(find.text('Giá bán'), findsOneWidget);
       expect(find.text('Tùy chọn thuộc tính'), findsOneWidget);
       expect(find.text('Nhân bánh'), findsOneWidget);
 

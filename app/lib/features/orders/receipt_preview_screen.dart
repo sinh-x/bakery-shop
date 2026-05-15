@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -8,7 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../data/api/receipt_service.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 import 'receipt_preview_print_stub.dart'
     if (dart.library.io) 'receipt_preview_print_native.dart'
@@ -165,7 +164,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(VN.apiError),
+            const Text(VN.apiError),
             const SizedBox(height: 8),
             Text(
               _error!,

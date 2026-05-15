@@ -7,7 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../data/services/printer_service.dart';
 import '../../shared/widgets/printer_picker_dialog.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Native (Android/iOS) Bluetooth print via TSPL.
 Future<void> printNative(BuildContext context, Uint8List imageBytes, dynamic ref) async {

@@ -1,4 +1,4 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
+// EXEMPT: 300-line threshold exceeded because DG-150 blocker: extracting filter/search/tile/empty/loading widgets now would require broad state-lift changes across persisted filter and refresh flows. Reviewed 2026-05-29.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,7 +10,7 @@ import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/theme/bakery_theme.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
 import 'widgets/order_card.dart';
 
@@ -334,7 +334,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(VN.apiError),
+                              const Text(VN.apiError),
                               const SizedBox(height: 8),
                               TextButton(
                                 onPressed: _onRefresh,

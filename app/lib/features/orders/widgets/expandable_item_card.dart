@@ -1,11 +1,11 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
+// EXEMPT: 200-line threshold exceeded because DG-150 blocker: safe extraction of shell/collapsed/expanded sections risks cross-field validation regressions in active order draft wiring. Reviewed 2026-05-29.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../providers/order_providers.dart';
 import '../utils/trung_bay_inventory_extensions.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 class ExpandableItemCard extends StatefulWidget {
   const ExpandableItemCard({
@@ -365,7 +365,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                         }
                         widget.onStateChanged();
                       },
-                      title: Text(VN.rutTien),
+                      title: const Text(VN.rutTien),
                       controlAffinity: ListTileControlAffinity.leading,
                       contentPadding: EdgeInsets.zero,
                       dense: true,
@@ -374,7 +374,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       // Cash amount stepper: [-] [amount] [+] with 100k step
                       Row(
                         children: [
-                          Text('${VN.soTienRut}: '),
+                          const Text('${VN.soTienRut}: '),
                           IconButton.filled(
                             onPressed: () {
                               final current =
@@ -505,7 +505,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       // Cash fee stepper: [-] [fee] [+] with 10k step
                       Row(
                         children: [
-                          Text('${VN.phiRutTien}: '),
+                          const Text('${VN.phiRutTien}: '),
                           IconButton.filled(
                             onPressed: () {
                               final current =

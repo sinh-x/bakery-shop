@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_declarations  // DG-138#todo: replace with per-line suppressions after const declaration audit
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -217,7 +216,7 @@ class PrinterService {
       final resized = img.copyResize(image, width: printWidth);
       final grayscale = img.grayscale(resized);
 
-      final widthBytes = printWidth ~/ 8; // 72
+      const widthBytes = printWidth ~/ 8; // 72
       final height = grayscale.height;
 
       // Convert to 1-bit bitmap — threshold 128 (standard midpoint)

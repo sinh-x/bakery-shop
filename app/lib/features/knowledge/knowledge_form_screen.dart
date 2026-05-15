@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -11,7 +10,7 @@ import '../../data/api/api_client.dart';
 import '../../data/api/knowledge_service.dart';
 import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 // Knowledge types for the form
 const _kTypeChips = [
@@ -278,11 +277,11 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
                     controller: _tagCtrl,
                     autofocus: true,
                     textInputAction: TextInputAction.done,
-                    decoration: InputDecoration(
+                    decoration: const InputDecoration(
                       hintText: VN.addTag,
                       isDense: true,
-                      border: const OutlineInputBorder(),
-                      contentPadding: const EdgeInsets.symmetric(
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
                         horizontal: 8,
                         vertical: 6,
                       ),

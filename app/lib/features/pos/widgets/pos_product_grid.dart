@@ -1,11 +1,10 @@
-// ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/product.dart';
 import '../../../data/api/api_client.dart';
 import '../../../providers/pos_provider.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 /// 2-column product grid with stock badges for POS screen.
 class PosProductGrid extends ConsumerWidget {
@@ -209,8 +208,8 @@ class PosProductGrid extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: Text(VN.sanPhamHetHang),
-        content: Text(VN.banAnyway),
+        title: const Text(VN.sanPhamHetHang),
+        content: const Text(VN.banAnyway),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx),
@@ -236,7 +235,7 @@ class PosProductGrid extends ConsumerWidget {
                 );
               }
             },
-            child: Text(VN.xacNhan),
+            child: const Text(VN.xacNhan),
           ),
         ],
       ),

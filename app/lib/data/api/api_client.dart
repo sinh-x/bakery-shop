@@ -1,4 +1,3 @@
-// ignore_for_file: prefer_const_declarations  // DG-138#todo: replace with per-line suppressions after const declaration audit
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart'
@@ -21,7 +20,7 @@ class ApiBaseUrlNotifier extends Notifier<String> {
     final prefs = ref.watch(sharedPreferencesProvider);
     // On web, default to empty string (relative URL — same origin as the web server).
     // On mobile, default to the configured localhost URL.
-    final defaultUrl = kIsWeb ? '' : kDefaultApiUrl;
+    const defaultUrl = kIsWeb ? '' : kDefaultApiUrl;
     final url = prefs.getString(kApiUrlKey) ?? defaultUrl;
     return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
   }
