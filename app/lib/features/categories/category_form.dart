@@ -8,19 +8,32 @@ import 'package:bakery_app/shared/labels/products.dart';
 
 /// Curated emoji options for category icons.
 const categoryEmojiOptions = [
-  '🎂', '🧁', '🍰', '🍩', '🍪', '🍫',
-  '🍬', '🥐', '🍞', '🥖', '🧇', '🍮',
-  '🥧', '🍡', '🧃', '☕', '🍵', '🥤',
-  '🍽️', '🛒',
+  '🎂',
+  '🧁',
+  '🍰',
+  '🍩',
+  '🍪',
+  '🍫',
+  '🍬',
+  '🥐',
+  '🍞',
+  '🥖',
+  '🧇',
+  '🍮',
+  '🥧',
+  '🍡',
+  '🧃',
+  '☕',
+  '🍵',
+  '🥤',
+  '🍽️',
+  '🛒',
 ];
 
 /// Show the add/edit category bottom sheet.
 ///
 /// Pass [category] for edit mode; omit for add mode.
-Future<void> showCategoryForm(
-  BuildContext context, {
-  Category? category,
-}) {
+Future<void> showCategoryForm(BuildContext context, {Category? category}) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -44,6 +57,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
   late final TextEditingController _codePrefixCtrl;
   late final TextEditingController _slugCtrl;
   late String _selectedIcon;
+  late bool _isActive;
   bool _saving = false;
 
   bool get _isEditing => widget.category != null;
@@ -56,6 +70,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
     _codePrefixCtrl = TextEditingController(text: c?.codePrefix ?? '');
     _slugCtrl = TextEditingController(text: c?.slug ?? '');
     _selectedIcon = c?.icon ?? '';
+    _isActive = (c?.active ?? 1) == 1;
     if (!_isEditing) {
       _nameCtrl.addListener(_onNameChanged);
     }
@@ -67,19 +82,73 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
 
   String _slugify(String text) {
     const viMap = {
-      'á': 'a', 'à': 'a', 'ả': 'a', 'ã': 'a', 'ạ': 'a',
-      'ă': 'a', 'ắ': 'a', 'ặ': 'a', 'ẵ': 'a', 'ằ': 'a', 'ẳ': 'a',
-      'â': 'a', 'ấ': 'a', 'ầ': 'a', 'ẩ': 'a', 'ẫ': 'a', 'ậ': 'a',
+      'á': 'a',
+      'à': 'a',
+      'ả': 'a',
+      'ã': 'a',
+      'ạ': 'a',
+      'ă': 'a',
+      'ắ': 'a',
+      'ặ': 'a',
+      'ẵ': 'a',
+      'ằ': 'a',
+      'ẳ': 'a',
+      'â': 'a',
+      'ấ': 'a',
+      'ầ': 'a',
+      'ẩ': 'a',
+      'ẫ': 'a',
+      'ậ': 'a',
       'đ': 'd',
-      'é': 'e', 'è': 'e', 'ẻ': 'e', 'ẽ': 'e', 'ẹ': 'e',
-      'ê': 'e', 'ế': 'e', 'ề': 'e', 'ể': 'e', 'ễ': 'e', 'ệ': 'e',
-      'í': 'i', 'ì': 'i', 'ỉ': 'i', 'ĩ': 'i', 'ị': 'i',
-      'ó': 'o', 'ò': 'o', 'ỏ': 'o', 'õ': 'o', 'ọ': 'o',
-      'ô': 'o', 'ố': 'o', 'ồ': 'o', 'ổ': 'o', 'ỗ': 'o', 'ộ': 'o',
-      'ơ': 'o', 'ớ': 'o', 'ờ': 'o', 'ở': 'o', 'ỡ': 'o', 'ợ': 'o',
-      'ú': 'u', 'ù': 'u', 'ủ': 'u', 'ũ': 'u', 'ụ': 'u',
-      'ư': 'u', 'ứ': 'u', 'ừ': 'u', 'ử': 'u', 'ữ': 'u', 'ự': 'u',
-      'ý': 'y', 'ỳ': 'y', 'ỷ': 'y', 'ỹ': 'y', 'ỵ': 'y',
+      'é': 'e',
+      'è': 'e',
+      'ẻ': 'e',
+      'ẽ': 'e',
+      'ẹ': 'e',
+      'ê': 'e',
+      'ế': 'e',
+      'ề': 'e',
+      'ể': 'e',
+      'ễ': 'e',
+      'ệ': 'e',
+      'í': 'i',
+      'ì': 'i',
+      'ỉ': 'i',
+      'ĩ': 'i',
+      'ị': 'i',
+      'ó': 'o',
+      'ò': 'o',
+      'ỏ': 'o',
+      'õ': 'o',
+      'ọ': 'o',
+      'ô': 'o',
+      'ố': 'o',
+      'ồ': 'o',
+      'ổ': 'o',
+      'ỗ': 'o',
+      'ộ': 'o',
+      'ơ': 'o',
+      'ớ': 'o',
+      'ờ': 'o',
+      'ở': 'o',
+      'ỡ': 'o',
+      'ợ': 'o',
+      'ú': 'u',
+      'ù': 'u',
+      'ủ': 'u',
+      'ũ': 'u',
+      'ụ': 'u',
+      'ư': 'u',
+      'ứ': 'u',
+      'ừ': 'u',
+      'ử': 'u',
+      'ữ': 'u',
+      'ự': 'u',
+      'ý': 'y',
+      'ỳ': 'y',
+      'ỷ': 'y',
+      'ỹ': 'y',
+      'ỵ': 'y',
     };
 
     var result = text.toLowerCase();
@@ -113,6 +182,7 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
           widget.category!.id,
           name: _nameCtrl.text.trim(),
           codePrefix: _codePrefixCtrl.text.trim().toUpperCase(),
+          active: _isActive ? 1 : 0,
           icon: _selectedIcon,
         );
       } else {
@@ -125,7 +195,10 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
       }
       if (mounted) {
         Navigator.of(context).pop();
-        showTopSnackBar(context, _isEditing ? VN.categoryUpdated : VN.categoryCreated);
+        showTopSnackBar(
+          context,
+          _isEditing ? VN.categoryUpdated : VN.categoryCreated,
+        );
       }
     } catch (e) {
       setState(() => _saving = false);
@@ -139,7 +212,10 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(VN.categoryIcon, style: TextStyle(fontSize: 12, color: Colors.grey)),
+        const Text(
+          VN.categoryIcon,
+          style: TextStyle(fontSize: 12, color: Colors.grey),
+        ),
         const SizedBox(height: 8),
         SizedBox(
           height: 120,
@@ -160,7 +236,9 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
                   child: Icon(
                     Icons.close,
                     size: 20,
-                    color: selected ? colorScheme.onPrimaryContainer : Colors.grey,
+                    color: selected
+                        ? colorScheme.onPrimaryContainer
+                        : Colors.grey,
                   ),
                 );
               }
@@ -191,84 +269,110 @@ class _CategoryFormState extends ConsumerState<_CategoryForm> {
       ),
       child: Form(
         key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              _isEditing ? VN.editCategory : VN.addCategory,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 20),
-            TextFormField(
-              controller: _nameCtrl,
-              autofocus: true,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: VN.categoryName,
-                border: OutlineInputBorder(),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                _isEditing ? VN.editCategory : VN.addCategory,
+                style: Theme.of(context).textTheme.titleLarge,
               ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _codePrefixCtrl,
-              textCapitalization: TextCapitalization.characters,
-              inputFormatters: [
-                _UpperCaseFormatter(),
-                LengthLimitingTextInputFormatter(4),
-              ],
-              decoration: const InputDecoration(
-                labelText: VN.codePrefix,
-                hintText: VN.codePrefixHint,
-                helperText: VN.codePrefixHelp,
-                border: OutlineInputBorder(),
-              ),
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) return VN.noPrefixError;
-                if (!RegExp(r'^[A-Z]{2,4}$').hasMatch(v.trim())) {
-                  return VN.prefixFormatError;
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _slugCtrl,
-              readOnly: _isEditing,
-              decoration: InputDecoration(
-                labelText: VN.categorySlug,
-                border: const OutlineInputBorder(),
-                filled: _isEditing,
-              ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
-            ),
-            const SizedBox(height: 16),
-            _buildIconPicker(colorScheme),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: _saving ? null : () => Navigator.of(context).pop(),
-                  child: const Text(VN.cancel),
+              const SizedBox(height: 20),
+              TextFormField(
+                controller: _nameCtrl,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: VN.categoryName,
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: _saving ? null : _save,
-                  child: _saving
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text(VN.save),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _codePrefixCtrl,
+                textCapitalization: TextCapitalization.characters,
+                inputFormatters: [
+                  _UpperCaseFormatter(),
+                  LengthLimitingTextInputFormatter(4),
+                ],
+                decoration: const InputDecoration(
+                  labelText: VN.codePrefix,
+                  hintText: VN.codePrefixHint,
+                  helperText: VN.codePrefixHelp,
+                  border: OutlineInputBorder(),
                 ),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return VN.noPrefixError;
+                  if (!RegExp(r'^[A-Z]{2,4}$').hasMatch(v.trim())) {
+                    return VN.prefixFormatError;
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _slugCtrl,
+                readOnly: _isEditing,
+                decoration: InputDecoration(
+                  labelText: VN.categorySlug,
+                  border: const OutlineInputBorder(),
+                  filled: _isEditing,
+                ),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
+              ),
+              const SizedBox(height: 16),
+              if (_isEditing) ...[
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: colorScheme.outlineVariant),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: SwitchListTile.adaptive(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    title: const Text(VN.categoryVisibility),
+                    subtitle: Text(
+                      _isActive ? VN.categoryVisible : VN.categoryHiddenState,
+                    ),
+                    value: _isActive,
+                    onChanged: _saving
+                        ? null
+                        : (value) {
+                            setState(() => _isActive = value);
+                          },
+                  ),
+                ),
+                const SizedBox(height: 16),
               ],
-            ),
-          ],
+              _buildIconPicker(colorScheme),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _saving
+                        ? null
+                        : () => Navigator.of(context).pop(),
+                    child: const Text(VN.cancel),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: _saving ? null : _save,
+                    child: _saving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text(VN.save),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -215,6 +215,9 @@ class VN {
   static const noPrefixError = 'Mã viết tắt không được để trống';
   static const prefixFormatError = 'Mã viết tắt phải 2-4 ký tự in hoa';
   static const categoryIcon = 'Biểu tượng';
+  static const categoryVisibility = 'Trạng thái hiển thị';
+  static const categoryVisible = 'Đang hiện';
+  static const categoryHiddenState = 'Đang ẩn';
   static const orderUpdated = 'Đã cập nhật thứ tự';
 
   // Settings
