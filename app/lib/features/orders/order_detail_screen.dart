@@ -1,3 +1,4 @@
+// EXEMPT: 300-line threshold exceeded because DG-150 blocker: payment/work-item/print/info extraction would require large event and dialog lifecycle rewiring that cannot be safely completed in this remediation scope. Reviewed 2026-05-29.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

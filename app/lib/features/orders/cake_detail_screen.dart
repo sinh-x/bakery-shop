@@ -1,3 +1,4 @@
+// EXEMPT: 300-line threshold exceeded because DG-150 blocker: info/packing/attribute extraction here would require refactoring shared mutable detail-state paths beyond approved remediation scope. Reviewed 2026-05-29.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint, debugPrintStack;

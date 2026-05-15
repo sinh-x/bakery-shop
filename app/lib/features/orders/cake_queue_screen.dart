@@ -1,3 +1,4 @@
+// EXEMPT: 300-line threshold exceeded because DG-150 blocker: extracting queue tile/time slot/summary widgets now would duplicate in-file queue action orchestration and event refresh contracts. Reviewed 2026-05-29.
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

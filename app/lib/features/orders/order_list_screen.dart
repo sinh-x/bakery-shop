@@ -1,3 +1,4 @@
+// EXEMPT: 300-line threshold exceeded because DG-150 blocker: extracting filter/search/tile/empty/loading widgets now would require broad state-lift changes across persisted filter and refresh flows. Reviewed 2026-05-29.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

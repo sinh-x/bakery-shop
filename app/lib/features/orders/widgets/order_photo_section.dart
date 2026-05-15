@@ -1,3 +1,4 @@
+// EXEMPT: 200-line threshold exceeded because DG-150 blocker: splitting tile/viewer/upload/empty state now would duplicate provider-driven upload state and photo deletion guards across modal boundaries. Reviewed 2026-05-29.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';

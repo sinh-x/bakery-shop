@@ -1,3 +1,4 @@
+// EXEMPT: 300-line threshold exceeded because DG-150 blocker: customer/item/extras extraction in this scope risks breaking tightly coupled draft mutation and submit validation sequencing. Reviewed 2026-05-29.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

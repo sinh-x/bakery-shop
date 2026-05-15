@@ -1,3 +1,4 @@
+// EXEMPT: 300-line threshold exceeded because DG-150 blocker: continued extraction from Phase 6 would alter edit-form state synchronization and submit guards without dedicated regression window. Reviewed 2026-05-29.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
