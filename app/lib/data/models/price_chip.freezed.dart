@@ -192,7 +192,7 @@ return $default(_that.id,_that.label,_that.price,_that.position,_that.stockQty);
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id,  String label,  double price,  int position, @JsonKey(name: 'stock_qty') int? stockQty)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id,  String label,  double price,  int position, @JsonKey(name: 'stock_qty')  int? stockQty)?  $default,) {final _that = this;
 switch (_that) {
 case _PriceChip() when $default != null:
 return $default(_that.id,_that.label,_that.price,_that.position,_that.stockQty);case _:
