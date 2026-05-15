@@ -1440,3 +1440,77 @@ def test_active_only_performance_500_orders(api_client):
 
     avg_ms = sum(duration_ms_collect) / len(duration_ms_collect)
     assert avg_ms < 500, f"Average response time {avg_ms:.0f}ms exceeds 500ms budget"
+
+
+def test_auto_decrement_stock_is_idempotent(api_client):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "Idempotent", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 5, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[{
+            "productId": "1",
+            "productName": "Bánh kem",
+            "quantity": 1,
+            "unitPrice": 12000,
+            "priceChipId": chip_id,
+        }],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        movements = conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_movements WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchone()
+        assert movements["c"] == 1
+
+        consumed = conn.execute(
+            """SELECT COUNT(*) AS c FROM inventory_items ii
+               JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = 1 AND sl.price_chip_id = ? AND ii.status = 'consumed'""",
+            (chip_id,),
+        ).fetchone()
+        assert consumed["c"] == 1
+
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "cancelled", "reason": "mistake"})
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        sales = conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_movements WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchone()
+        assert sales["c"] == 1
+
+        restored = conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_movements WHERE reference_id = ? AND movement_type = 'restore_sale'",
+            (ref,),
+        ).fetchone()
+        assert restored["c"] == 1
+
+        available = conn.execute(
+            """SELECT COUNT(*) AS c FROM inventory_items ii
+               JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = 1 AND sl.price_chip_id = ? AND ii.status = 'available'""",
+            (chip_id,),
+        ).fetchone()
+        assert available["c"] == 5
+
+    resp2 = api_client.post(f"/api/orders/{ref}/status", json={"status": "cancelled", "reason": "double cancel"})
+
+    with get_db() as conn:
+        restores = conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_movements WHERE reference_id = ? AND movement_type = 'restore_sale'",
+            (ref,),
+        ).fetchone()
+        assert restores["c"] == 1

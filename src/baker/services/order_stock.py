@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from baker.api.inventory_fifo import (
     consume_fifo_items,
+    create_lot_with_items,
     normalize_price_value,
     normalize_price_chip,
     resolve_price_bucket_chip_id,
@@ -13,8 +14,21 @@ from baker.api.inventory_fifo import (
 from baker.models.event import Event
 
 
+def _order_sale_was_deducted(conn, order_ref: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM stock_movements WHERE reference_id = ? AND movement_type = 'sale' LIMIT 1",
+        (order_ref,),
+    ).fetchone()
+    return row is not None
+
+
 def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
-    """Auto-decrement stock for trung bay products when order completes."""
+    """Auto-decrement stock for trung bay products when order is delivered/completed.
+
+    Idempotent: skips deduction if a sale movement already exists for this order."""
+    if _order_sale_was_deducted(conn, order_ref):
+        return
+
     order_items = conn.execute(
         """SELECT oi.product_id, oi.product_name, oi.quantity, oi.price_chip_id, oi.unit_price, oi.attributes
            FROM order_items oi
@@ -107,6 +121,50 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
                 "product_name": item["product_name"],
                 "movement_type": "sale",
                 "quantity": -qty,
+                "reference_id": order_ref,
+                "price_chip_id": chip_id,
+            },
+        ).save(conn)
+
+
+def restore_stock_for_order(conn, order_id: int, order_ref: str) -> None:
+    """Reverse stock deductions for a cancelled order.
+
+    Idempotent: skips if no sale movement exists or a restore already happened."""
+    sale_movements = conn.execute(
+        """SELECT id, product_id, price_chip_id, quantity
+           FROM stock_movements
+           WHERE reference_id = ? AND movement_type = 'sale'""",
+        (order_ref,),
+    ).fetchall()
+
+    for movement in sale_movements:
+        qty = -movement["quantity"]
+        chip_id = movement["price_chip_id"]
+
+        already_restored = conn.execute(
+            "SELECT 1 FROM stock_movements WHERE reference_id = ? AND movement_type = 'restore_sale' AND product_id = ? AND price_chip_id IS NOT DISTINCT FROM ? LIMIT 1",
+            (order_ref, movement["product_id"], chip_id),
+        ).fetchone()
+        if already_restored:
+            continue
+
+        restore_cursor = conn.execute(
+            """INSERT INTO stock_movements
+               (product_id, movement_type, quantity, reason, reference_id, price_chip_id)
+               VALUES (?, 'restore_sale', ?, ?, ?, ?)""",
+            (movement["product_id"], qty, f"Restore order {order_ref}", order_ref, chip_id),
+        )
+        restore_movement_id = restore_cursor.lastrowid
+        create_lot_with_items(conn, movement["product_id"], chip_id, qty)
+
+        Event(
+            summary=f"Hoan hang +{qty} (order {order_ref})",
+            type="inventory",
+            data={
+                "product_id": movement["product_id"],
+                "movement_type": "restore_sale",
+                "quantity": qty,
                 "reference_id": order_ref,
                 "price_chip_id": chip_id,
             },
