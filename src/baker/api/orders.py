@@ -407,9 +407,9 @@ def transition_status(ref: str, body: StatusTransition):
                     detail=f"Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu {remaining:,.0f}đ",
                 )
 
-        # Auto-decrement stock for trưng bày products when order is delivered or completed
+        # Auto-decrement stock for trưng bày products when order is confirmed
         # (POS already handles this in create_order for status=delivered)
-        if body.status in ("delivered", "completed"):
+        if body.status == "confirmed":
             auto_decrement_stock(conn, row["id"], row["order_ref"])
 
         if body.status == "cancelled":

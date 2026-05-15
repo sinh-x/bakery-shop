@@ -986,7 +986,7 @@ def test_non_pos_order_with_chip_persists_price_chip_id(api_client):
         assert saved_item["price_chip_id"] == chip_id
 
 
-def test_non_pos_order_delivered_decrements_stock_with_chip(api_client):
+def test_non_pos_order_confirmed_decrements_stock_with_chip(api_client):
     _ensure_trung_bay(1)
     chip_id = _create_chip(api_client, 1, "Nhỏ", 12000)
 
@@ -1015,23 +1015,6 @@ def test_non_pos_order_delivered_decrements_stock_with_chip(api_client):
         json={"status": "confirmed", "reason": "xác nhận"},
     )
     assert resp.status_code == 200
-    resp = api_client.post(
-        f"/api/orders/{ref}/status",
-        json={"status": "in_progress", "reason": "bắt đầu"},
-    )
-    assert resp.status_code == 200
-    resp = api_client.post(
-        f"/api/orders/{ref}/status",
-        json={"status": "ready", "reason": "xong"},
-    )
-    assert resp.status_code == 200
-
-    resp = api_client.post(
-        f"/api/orders/{ref}/status",
-        json={"status": "delivered", "reason": "đã giao"},
-    )
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "delivered"
 
     with get_db() as conn:
         movement = conn.execute(

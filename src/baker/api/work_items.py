@@ -346,7 +346,7 @@ def transition_work_item_status(ref: str, item_id: int, body: WorkItemStatusTran
                     conn, order_row["order_ref"], derived_order_status, _AUTO_SYNC_REASON
                 )
 
-                if derived_order_status in ("delivered", "completed"):
+                if derived_order_status in ("delivered", "completed", "confirmed"):
                     from baker.services.order_stock import auto_decrement_stock
                     auto_decrement_stock(conn, order_row["id"], order_row["order_ref"])
 
