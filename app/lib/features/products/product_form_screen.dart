@@ -57,7 +57,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late bool _trungBay;
   late bool _tangKem;
   XFile? _pickedPhoto;
-  final String _photoCacheBuster = '';
   bool _saving = false;
 
   bool get _isEditing => widget.product != null;
@@ -863,9 +862,6 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
       if (_pickedPhoto != null) {
         await notifier.uploadPhoto(saved.id, _pickedPhoto!);
-        // Clear image cache so updated photo shows immediately
-        PaintingBinding.instance.imageCache.clear();
-        PaintingBinding.instance.imageCache.clearLiveImages();
       }
 
       if (mounted) {
@@ -929,6 +925,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   Widget build(BuildContext context) {
     final baseUrl = ref.watch(apiBaseUrlProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
+    final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
 
     // Compute the read-only prefix for the current category.
     final currentPrefix = categoriesAsync.maybeWhen(
@@ -968,9 +965,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               pickedPhoto: _pickedPhoto,
               baseUrl: baseUrl,
               onPickPhoto: _pickPhoto,
-              cacheBuster: _photoCacheBuster.isNotEmpty
-                  ? _photoCacheBuster
-                  : null,
+              cacheBuster: photoRefreshTick.toString(),
               nameController: _nameCtrl,
               codeController: _codeCtrl,
               currentPrefix: currentPrefix,
@@ -982,9 +977,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 pickedPhoto: _pickedPhoto,
                 baseUrl: baseUrl,
                 onPickPhoto: _pickPhoto,
-                cacheBuster: _photoCacheBuster.isNotEmpty
-                    ? _photoCacheBuster
-                    : null,
+                cacheBuster: photoRefreshTick.toString(),
               ),
             ),
             const SizedBox(height: 16),
@@ -1336,6 +1329,7 @@ class _CatalogGallerySection extends ConsumerStatefulWidget {
 class _CatalogGallerySectionState
     extends ConsumerState<_CatalogGallerySection> {
   bool _uploading = false;
+  bool _promoting = false;
   int _uploadTotal = 0;
   int _uploadDone = 0;
 
@@ -1457,6 +1451,26 @@ class _CatalogGallerySectionState
     }
   }
 
+  Future<void> _promotePhoto(CatalogPhoto photo) async {
+    setState(() => _promoting = true);
+    try {
+      await ref
+          .read(catalogProvider(widget.productId).notifier)
+          .promotePhotoToProductMain(photo.id);
+      if (mounted) {
+        showTopSnackBar(context, VN.productPhotoSetFromCatalog);
+      }
+    } on DioException catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, e.message ?? VN.apiError);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _promoting = false);
+      }
+    }
+  }
+
   void _openFullScreen(
     List<CatalogPhoto> photos,
     int initialIndex,
@@ -1489,7 +1503,7 @@ class _CatalogGallerySectionState
           child: Row(
             children: [
               Text(VN.catalogTitle, style: theme.textTheme.titleMedium),
-              if (_uploading) ...[
+              if (_uploading || _promoting) ...[
                 const SizedBox(width: 12),
                 const SizedBox(
                   height: 16,
@@ -1550,6 +1564,8 @@ class _CatalogGallerySectionState
                     url: url,
                     onTap: () => _openFullScreen(photos, index, baseUrl),
                     onDelete: () => _confirmDelete(photo),
+                    onPromote: () => _promotePhoto(photo),
+                    promoting: _promoting,
                   );
                 },
               ),
@@ -1605,6 +1621,8 @@ class _CatalogPhotoCard extends StatelessWidget {
     required this.url,
     required this.onTap,
     required this.onDelete,
+    required this.onPromote,
+    required this.promoting,
   });
 
   final CatalogPhoto photo;
@@ -1612,6 +1630,8 @@ class _CatalogPhotoCard extends StatelessWidget {
   final String url;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final VoidCallback onPromote;
+  final bool promoting;
 
   void _openEditSheet(BuildContext context) {
     showEditCatalogTagsSheet(
@@ -1679,6 +1699,43 @@ class _CatalogPhotoCard extends StatelessWidget {
                           Icons.delete_outline,
                           color: Colors.white,
                           size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 4,
+                    bottom: 4,
+                    child: Material(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(12),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: promoting ? null : onPromote,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.star_outline,
+                                color: Colors.white,
+                                size: 12,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                VN.setAsProductPhoto,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

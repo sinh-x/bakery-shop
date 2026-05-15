@@ -60,6 +60,10 @@ class CatalogService {
     await _dio.delete('/api/products/$productId/catalog/$photoId');
   }
 
+  Future<void> promoteCatalogPhoto(int productId, int photoId) async {
+    await _dio.post('/api/products/$productId/catalog/$photoId/promote');
+  }
+
   String getCatalogPhotoUrl(int productId, int photoId) {
     return '${_dio.options.baseUrl}/api/products/$productId/catalog/$photoId/photo';
   }

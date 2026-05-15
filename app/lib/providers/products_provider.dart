@@ -1,11 +1,24 @@
 import 'dart:async';
 
+import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../data/api/product_service.dart';
 import '../data/models/product.dart';
 import 'catalog_provider.dart';
+
+class ProductPhotoRefreshTickNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void bump() => state++;
+}
+
+final productPhotoRefreshTickProvider =
+    NotifierProvider<ProductPhotoRefreshTickNotifier, int>(
+      ProductPhotoRefreshTickNotifier.new,
+    );
 
 class ProductsNotifier extends AsyncNotifier<List<Product>> {
   @override
@@ -80,6 +93,11 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
   Future<String> uploadPhoto(int id, XFile file) async {
     final service = ref.read(productServiceProvider);
     final photoPath = await service.uploadPhoto(id, file);
+    ref.read(productPhotoRefreshTickProvider.notifier).bump();
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+    ref.invalidate(catalogProvider(id));
+    ref.invalidate(catalogBrowseProvider);
     await refresh();
     return photoPath;
   }

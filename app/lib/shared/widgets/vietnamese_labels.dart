@@ -289,6 +289,8 @@ class VN {
   static const catalogPhotoAdded = 'Đã thêm ảnh mẫu';
   static const catalogPhotoUpdated = 'Đã cập nhật ảnh';
   static const catalogPhotoDeleted = 'Đã xóa ảnh';
+  static const setAsProductPhoto = 'Đặt làm ảnh sản phẩm';
+  static const productPhotoSetFromCatalog = 'Đã đặt ảnh sản phẩm từ ảnh mẫu';
 
   // Payment transactions
   static const txnTypeDeposit = 'Đặt cọc';
