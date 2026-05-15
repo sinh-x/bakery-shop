@@ -105,6 +105,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
     List<Category> categories,
   ) {
     final productsAsync = ref.watch(productsProvider);
+    final inactiveProductsAsync = ref.watch(inactiveProductsProvider);
     final baseUrl = ref.watch(apiBaseUrlProvider);
     final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
 
@@ -176,9 +177,15 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
             ),
             data: (products) => _ProductTabs(
               products: products,
+              inactiveProductsAsync: inactiveProductsAsync,
               categories: categories,
               baseUrl: baseUrl,
               cacheBuster: photoRefreshTick.toString(),
+              onReactivateProduct: (productId) async {
+                await ref
+                    .read(productsProvider.notifier)
+                    .reactivateProduct(productId);
+              },
             ),
           ),
           floatingActionButton: FloatingActionButton(
@@ -200,15 +207,19 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
 class _ProductTabs extends StatelessWidget {
   const _ProductTabs({
     required this.products,
+    required this.inactiveProductsAsync,
     required this.categories,
     required this.baseUrl,
     required this.cacheBuster,
+    required this.onReactivateProduct,
   });
 
   final List<Product> products;
+  final AsyncValue<List<Product>> inactiveProductsAsync;
   final List<Category> categories;
   final String baseUrl;
   final String cacheBuster;
+  final Future<void> Function(int productId) onReactivateProduct;
 
   @override
   Widget build(BuildContext context) {
@@ -219,44 +230,131 @@ class _ProductTabs extends StatelessWidget {
           .toList();
     }
 
-    return TabBarView(
-      children: categories.map((cat) {
-        final items = grouped[cat.slug] ?? [];
-        if (items.isEmpty) {
-          return Center(
-            child: Text(
-              VN.noProducts,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyLarge?.copyWith(color: Colors.grey),
-            ),
-          );
+    return Column(
+      children: [
+        Expanded(
+          child: TabBarView(
+            children: categories.map((cat) {
+              final items = grouped[cat.slug] ?? [];
+              if (items.isEmpty) {
+                return Center(
+                  child: Text(
+                    VN.noProducts,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyLarge?.copyWith(color: Colors.grey),
+                  ),
+                );
+              }
+              return Consumer(
+                builder: (context, ref, _) => RefreshIndicator(
+                  onRefresh: () async {
+                    ref.invalidate(productsProvider);
+                    ref.invalidate(categoriesProvider);
+                    ref.invalidate(inactiveProductsProvider);
+                  },
+                  child: GridView.builder(
+                    padding: const EdgeInsets.all(12),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 8,
+                      mainAxisSpacing: 8,
+                      childAspectRatio: 1.0,
+                    ),
+                    itemCount: items.length,
+                    itemBuilder: (context, index) => ProductCard(
+                      product: items[index],
+                      photoBaseUrl: baseUrl,
+                      cacheBuster: cacheBuster,
+                      onTap: () => context.push('/products/${items[index].id}/edit'),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        _InactiveProductsSection(
+          inactiveProductsAsync: inactiveProductsAsync,
+          onReactivateProduct: onReactivateProduct,
+        ),
+      ],
+    );
+  }
+}
+
+class _InactiveProductsSection extends StatelessWidget {
+  const _InactiveProductsSection({
+    required this.inactiveProductsAsync,
+    required this.onReactivateProduct,
+  });
+
+  final AsyncValue<List<Product>> inactiveProductsAsync;
+  final Future<void> Function(int productId) onReactivateProduct;
+
+  @override
+  Widget build(BuildContext context) {
+    return inactiveProductsAsync.when(
+      loading: () => const SizedBox(
+        height: 72,
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (error, _) => const SizedBox.shrink(),
+      data: (inactiveProducts) {
+        if (inactiveProducts.isEmpty) {
+          return const SizedBox.shrink();
         }
-        return Consumer(
-          builder: (context, ref, _) => RefreshIndicator(
-            onRefresh: () async {
-              ref.invalidate(productsProvider);
-              ref.invalidate(categoriesProvider);
-            },
-            child: GridView.builder(
-              padding: const EdgeInsets.all(12),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-                childAspectRatio: 1.0,
-              ),
-              itemCount: items.length,
-              itemBuilder: (context, index) => ProductCard(
-                product: items[index],
-                photoBaseUrl: baseUrl,
-                cacheBuster: cacheBuster,
-                onTap: () => context.push('/products/${items[index].id}/edit'),
+
+        return Material(
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    VN.hiddenProducts,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  ...inactiveProducts.map(
+                    (product) => _InactiveProductTile(
+                      product: product,
+                      onReactivateProduct: onReactivateProduct,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         );
-      }).toList(),
+      },
+    );
+  }
+}
+
+class _InactiveProductTile extends StatelessWidget {
+  const _InactiveProductTile({
+    required this.product,
+    required this.onReactivateProduct,
+  });
+
+  final Product product;
+  final Future<void> Function(int productId) onReactivateProduct;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(product.name),
+      trailing: FilledButton.tonalIcon(
+        onPressed: () => onReactivateProduct(product.id),
+        icon: const Icon(Icons.visibility_outlined),
+        label: const Text(VN.showProduct),
+      ),
     );
   }
 }
