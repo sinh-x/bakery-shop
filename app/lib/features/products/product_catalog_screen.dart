@@ -190,7 +190,7 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                       .read(productsProvider.notifier)
                       .reactivateProduct(productId);
                   if (context.mounted) {
-                    showTopSnackBar(context, VN.showProduct);
+                    showTopSnackBar(context, VN.productUpdated);
                   }
                 } catch (e) {
                   if (context.mounted) {
