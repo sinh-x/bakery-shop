@@ -93,9 +93,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
   }
 
   Future<Product> reactivateProduct(int id) async {
-    final service = ref.read(productServiceProvider);
-    final product = await service.updateProduct(id, active: 1);
-    await refresh();
+    final product = await updateProduct(id, active: 1);
     ref.invalidate(inactiveProductsProvider);
     ref.invalidate(catalogBrowseProvider);
     return product;

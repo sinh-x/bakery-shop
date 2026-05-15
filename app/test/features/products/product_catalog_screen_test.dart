@@ -59,7 +59,14 @@ class _FakeProductService extends ProductService {
     int? active,
     String? productCode,
   }) async {
-    final existing = _inactiveProducts.firstWhere((product) => product.id == id);
+    final existing = _inactiveProducts.firstWhere(
+      (product) => product.id == id,
+      orElse: () => throw ArgumentError.value(
+        id,
+        'id',
+        'Inactive product not found in test fake',
+      ),
+    );
     final updated = existing.copyWith(active: active ?? existing.active);
     _inactiveProducts.removeWhere((product) => product.id == id);
     _activeProducts.add(updated);

@@ -181,6 +181,9 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
               categories: categories,
               baseUrl: baseUrl,
               cacheBuster: photoRefreshTick.toString(),
+              onRetryInactiveProducts: () {
+                ref.invalidate(inactiveProductsProvider);
+              },
               onReactivateProduct: (productId) async {
                 await ref
                     .read(productsProvider.notifier)
@@ -211,6 +214,7 @@ class _ProductTabs extends StatelessWidget {
     required this.categories,
     required this.baseUrl,
     required this.cacheBuster,
+    required this.onRetryInactiveProducts,
     required this.onReactivateProduct,
   });
 
@@ -219,6 +223,7 @@ class _ProductTabs extends StatelessWidget {
   final List<Category> categories;
   final String baseUrl;
   final String cacheBuster;
+  final VoidCallback onRetryInactiveProducts;
   final Future<void> Function(int productId) onReactivateProduct;
 
   @override
@@ -277,6 +282,7 @@ class _ProductTabs extends StatelessWidget {
         _InactiveProductsSection(
           inactiveProductsAsync: inactiveProductsAsync,
           onReactivateProduct: onReactivateProduct,
+          onRetry: onRetryInactiveProducts,
         ),
       ],
     );
@@ -287,10 +293,12 @@ class _InactiveProductsSection extends StatelessWidget {
   const _InactiveProductsSection({
     required this.inactiveProductsAsync,
     required this.onReactivateProduct,
+    required this.onRetry,
   });
 
   final AsyncValue<List<Product>> inactiveProductsAsync;
   final Future<void> Function(int productId) onReactivateProduct;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -299,7 +307,26 @@ class _InactiveProductsSection extends StatelessWidget {
         height: 72,
         child: Center(child: CircularProgressIndicator()),
       ),
-      error: (error, _) => const SizedBox.shrink(),
+      error: (error, _) => Center(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                VN.apiError,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 8),
+              FilledButton.tonalIcon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text(VN.retry),
+              ),
+            ],
+          ),
+        ),
+      ),
       data: (inactiveProducts) {
         if (inactiveProducts.isEmpty) {
           return const SizedBox.shrink();
