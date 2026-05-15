@@ -1,4 +1,5 @@
 // ignore_for_file: prefer_const_constructors  // DG-138#todo: replace with per-method suppressions after const audit
+// DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines while enum option persistence and photo workflow are preserved in-place; review in Phase 6 (2026-05-29).
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -21,6 +22,10 @@ import 'package:bakery_app/shared/labels/products.dart';
 import 'widgets/catalog_photo_viewer.dart';
 import 'widgets/catalog_tag_chips.dart';
 import 'widgets/catalog_tag_edit_sheet.dart';
+import 'product_form/widgets/product_form_attributes_section.dart';
+import 'product_form/widgets/product_form_basic_info_section.dart';
+import 'product_form/widgets/product_form_catalog_integration_section.dart';
+import 'product_form/widgets/product_form_pricing_section.dart';
 
 /// Shared form for creating and editing products.
 class ProductFormScreen extends ConsumerStatefulWidget {
@@ -959,8 +964,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // Photo section
-            _PhotoSection(
+            ProductFormBasicInfoSection(
               productId: widget.product?.id,
               pickedPhoto: _pickedPhoto,
               baseUrl: baseUrl,
@@ -968,176 +972,39 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               cacheBuster: _photoCacheBuster.isNotEmpty
                   ? _photoCacheBuster
                   : null,
-            ),
-            const SizedBox(height: 24),
-
-            // Name
-            TextFormField(
-              controller: _nameCtrl,
-              decoration: const InputDecoration(labelText: VN.productName),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
-            ),
-            const SizedBox(height: 16),
-
-            // Product code — prefix is read-only, user edits suffix only
-            TextFormField(
-              controller: _codeCtrl,
-              decoration: InputDecoration(
-                labelText: VN.productCode,
-                prefixText: currentPrefix.isNotEmpty ? '$currentPrefix-' : null,
-                hintText: currentPrefix.isEmpty ? 'VD: BKS-16' : '16',
-                helperText: 'Tự động tạo nếu để trống',
+              nameController: _nameCtrl,
+              codeController: _codeCtrl,
+              currentPrefix: currentPrefix,
+              categoriesAsync: categoriesAsync,
+              category: _category,
+              onCategoryChanged: (v) => setState(() => _category = v),
+              photoSection: _PhotoSection(
+                productId: widget.product?.id,
+                pickedPhoto: _pickedPhoto,
+                baseUrl: baseUrl,
+                onPickPhoto: _pickPhoto,
+                cacheBuster: _photoCacheBuster.isNotEmpty
+                    ? _photoCacheBuster
+                    : null,
               ),
-              textCapitalization: TextCapitalization.characters,
             ),
             const SizedBox(height: 16),
-
-            // Category dropdown (from API)
-            categoriesAsync.when(
-              loading: () => DropdownButtonFormField<String>(
-                initialValue: _category,
-                decoration: const InputDecoration(
-                  labelText: VN.productCategory,
-                ),
-                items: categoryMap.entries
-                    .map(
-                      (e) => DropdownMenuItem(
-                        value: e.key,
-                        child: Text(
-                          '${categoryEmojiMap[e.key] ?? ''} ${e.value}',
-                        ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null) setState(() => _category = v);
-                },
-              ),
-              error: (err, st) => DropdownButtonFormField<String>(
-                initialValue: categoryMap.containsKey(_category)
-                    ? _category
-                    : categoryMap.keys.first,
-                decoration: const InputDecoration(
-                  labelText: VN.productCategory,
-                ),
-                items: categoryMap.entries
-                    .map(
-                      (e) => DropdownMenuItem(
-                        value: e.key,
-                        child: Text(
-                          '${categoryEmojiMap[e.key] ?? ''} ${e.value}',
-                        ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null) setState(() => _category = v);
-                },
-              ),
-              data: (categories) {
-                final active = categories.where((c) => c.active == 1).toList();
-                // Ensure _category is valid
-                final validSlugs = active.map((c) => c.slug).toList();
-                if (!validSlugs.contains(_category) && validSlugs.isNotEmpty) {
-                  _category = validSlugs.first;
-                }
-                return DropdownButtonFormField<String>(
-                  initialValue: _category,
-                  decoration: const InputDecoration(
-                    labelText: VN.productCategory,
-                  ),
-                  items: active
-                      .map(
-                        (cat) => DropdownMenuItem(
-                          value: cat.slug,
-                          child: Text(
-                            '${categoryEmojiMap[cat.slug] ?? ''} ${cat.name}',
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) {
-                    if (v != null) setState(() => _category = v);
-                  },
-                );
-              },
+            ProductFormPricingSection(
+              priceController: _priceCtrl,
+              costController: _costCtrl,
+              priceChipSection: _buildPriceChipSection(),
             ),
             const SizedBox(height: 16),
-
-            // Price
-            TextFormField(
-              controller: _priceCtrl,
-              decoration: const InputDecoration(
-                labelText: VN.productPrice,
-                suffixText: VN.currency,
-              ),
-              keyboardType: TextInputType.number,
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) return VN.fieldRequired;
-                if (double.tryParse(v) == null) return VN.invalidPrice;
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Cost
-            TextFormField(
-              controller: _costCtrl,
-              decoration: const InputDecoration(
-                labelText: VN.productCost,
-                suffixText: VN.currency,
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 16),
-
-            // Price chips
-            _buildPriceChipSection(),
-            const SizedBox(height: 16),
-
-            // Enum attribute options editor (DG-092)
-            _buildEnumOptionsSection(),
-
-            // Notes
-            TextFormField(
-              controller: _notesCtrl,
-              decoration: const InputDecoration(labelText: VN.productNotes),
-              maxLines: 3,
-            ),
-            const SizedBox(height: 16),
-
-            // Rut tien toggle (all categories, create & edit)
-            SwitchListTile(
-              value: _rutTien,
-              onChanged: (v) => setState(() => _rutTien = v),
-              title: Text(VN.rutTienToggle),
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-            ),
-            const SizedBox(height: 8),
-
-            // Trung bay toggle (edit mode only)
-            SwitchListTile(
-              value: _trungBay,
-              onChanged: _isEditing
-                  ? (v) => setState(() => _trungBay = v)
-                  : null,
-              title: Text(VN.trungBay),
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-            ),
-            const SizedBox(height: 8),
-
-            // Tang kem toggle (edit mode only)
-            SwitchListTile(
-              value: _tangKem,
-              onChanged: _isEditing
-                  ? (v) => setState(() => _tangKem = v)
-                  : null,
-              title: Text(VN.tangKem),
-              contentPadding: EdgeInsets.zero,
-              dense: true,
+            ProductFormAttributesSection(
+              enumOptionsSection: _buildEnumOptionsSection(),
+              notesController: _notesCtrl,
+              rutTien: _rutTien,
+              trungBay: _trungBay,
+              tangKem: _tangKem,
+              isEditing: _isEditing,
+              onRutTienChanged: (v) => setState(() => _rutTien = v),
+              onTrungBayChanged: (v) => setState(() => _trungBay = v),
+              onTangKemChanged: (v) => setState(() => _tangKem = v),
             ),
             const SizedBox(height: 16),
 
@@ -1153,11 +1020,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                   : Text(VN.save),
             ),
 
-            // Catalog gallery (editing only)
-            if (_isEditing) ...[
-              const SizedBox(height: 32),
-              _CatalogGallerySection(productId: widget.product!.id),
-            ],
+            ProductFormCatalogIntegrationSection(
+              isEditing: _isEditing,
+              catalogGallery: _isEditing
+                  ? _CatalogGallerySection(productId: widget.product!.id)
+                  : const SizedBox.shrink(),
+            ),
           ],
         ),
       ),
