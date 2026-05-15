@@ -11,7 +11,7 @@ from baker.logging import log_context
 from baker.models.order import Order, OrderItem, is_backward_transition, validate_transition
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
-from baker.services.order_stock import auto_decrement_stock
+from baker.services.order_stock import auto_decrement_stock, restore_stock_for_order
 
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -407,9 +407,13 @@ def transition_status(ref: str, body: StatusTransition):
                     detail=f"Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu {remaining:,.0f}đ",
                 )
 
-        # Auto-decrement stock for trưng bày products when order completes
-        if body.status == "completed":
+        # Auto-decrement stock for trưng bày products when order is confirmed
+        # (POS already handles this in create_order for status=delivered)
+        if body.status == "confirmed":
             auto_decrement_stock(conn, row["id"], row["order_ref"])
+
+        if body.status == "cancelled":
+            restore_stock_for_order(conn, row["id"], row["order_ref"])
 
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:

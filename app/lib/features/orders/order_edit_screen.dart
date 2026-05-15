@@ -16,6 +16,7 @@ import '../../shared/utils/config_parsers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/widgets/vietnamese_labels.dart';
+import 'utils/trung_bay_inventory_extensions.dart';
 import 'widgets/hour_picker.dart';
 import 'widgets/order_photo_section.dart';
 import 'widgets/product_picker_page.dart';
@@ -164,6 +165,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             quantity: draft.quantity,
             unitPrice: draft.unitPrice,
             notes: draft.notes,
+            attributes: draft.attributes,
+            priceChipId: draft.priceChipId,
           );
     }
   }
@@ -256,8 +259,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                             selected: _source == s,
                             onSelected: (_) => setState(() {
                               final wasSelected = _source == s;
-                                  _source = wasSelected ? '' : s;
-                                  if (!wasSelected &&
+                              _source = wasSelected ? '' : s;
+                              if (!wasSelected &&
                                   s == VN.sourceTaiTiem &&
                                   _nameCtrl.text.isEmpty) {
                                 _nameCtrl.text = VN.walkInCustomer;
@@ -740,8 +743,7 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
   /// merged `attributes` map through the existing PATCH endpoint —
   /// `attributes` is replaced wholesale server-side, so we always send
   /// a copy of the current map with the updated key.
-  List<Widget> _buildEnumChipSections(ThemeData theme) {
-    final product = _findProduct();
+  List<Widget> _buildEnumChipSections(ThemeData theme, Product? product) {
     if (product == null) return const [];
     final result = <Widget>[];
     for (final ea in product.enumAttributes) {
@@ -791,6 +793,9 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
     final theme = Theme.of(context);
     final item = widget.item;
     final workItemId = int.tryParse(item.id);
+    final product = _findProduct();
+    final isTrungBay = product.isTrungBay;
+    final useInventory = item.attributes.useInventory;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -921,8 +926,25 @@ class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
                     keyboardType: TextInputType.number,
                   ),
                   const SizedBox(height: 8),
+                  if (isTrungBay) ...[
+                    SwitchListTile.adaptive(
+                      value: useInventory,
+                      onChanged: (value) {
+                        final next = Map<String, dynamic>.from(
+                          widget.item.attributes,
+                        );
+                        next['useInventory'] = value ? 'true' : 'false';
+                        _editItem(attributes: next);
+                      },
+                      title: const Text(VN.useInventory),
+                      subtitle: useInventory ? Text(product.stockInlineText) : null,
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   // Enum attribute ChoiceChip rows (DG-092 F7 / Q1 — editable on edit)
-                  ..._buildEnumChipSections(theme),
+                  ..._buildEnumChipSections(theme, product),
                   // Notes
                   TextFormField(
                     controller: _notesCtrl,
@@ -1344,7 +1366,7 @@ class _ExtraEditRow extends StatelessWidget {
                   color: item.isGift ? Colors.green : Colors.grey.shade300,
                 ),
               ),
-                child: Text(
+              child: Text(
                 item.isGift ? VN.giftBadge : VN.paymentFee,
                 style: TextStyle(
                   fontSize: 10,

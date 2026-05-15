@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../providers/order_providers.dart';
+import '../utils/trung_bay_inventory_extensions.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 
 class ExpandableItemCard extends StatefulWidget {
@@ -83,11 +84,13 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   }
 
   void _updateManualPrice(String text) {
-    final selectedLabel = widget.item.attributes['price_chip_label']?.toString();
-    widget.item.customUnitPrice = double.tryParse(text.trim()) ??
-        widget.item.product.basePrice;
+    final selectedLabel = widget.item.attributes['price_chip_label']
+        ?.toString();
+    widget.item.customUnitPrice =
+        double.tryParse(text.trim()) ?? widget.item.product.basePrice;
 
-    final manuallyClearPreset = selectedLabel != null &&
+    final manuallyClearPreset =
+        selectedLabel != null &&
         !widget.item.product.priceChips.any(
           (chip) =>
               chip.label == selectedLabel &&
@@ -96,6 +99,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
 
     if (manuallyClearPreset) {
       widget.item.attributes.remove('price_chip_label');
+      widget.item.priceChipId = null;
       if (mounted) {
         showTopSnackBar(context, 'Đã bỏ chọn mức giá nhanh khi chỉnh tay');
       }
@@ -103,6 +107,21 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
 
     setState(() {});
     widget.onStateChanged();
+  }
+
+  bool get _isTrungBay => widget.item.product.isTrungBay;
+
+  bool get _useInventory => widget.item.attributes.useInventory;
+
+  String get _stockInlineText {
+    final selectedChipId = widget.item.priceChipId;
+    if (selectedChipId == null) return widget.item.product.stockInlineText;
+    final selectedChip = widget.item.product.priceChips
+        .where((chip) => chip.id == selectedChipId)
+        .firstOrNull;
+    final chipQty = selectedChip?.stockQty;
+    if (chipQty == null) return VN.stockUnknown;
+    return '${VN.stockRemaining}: $chipQty';
   }
 
   @override
@@ -192,15 +211,19 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                             widget.item.attributes['price_chip_label'] ==
                                 chip.label &&
                             widget.item.customUnitPrice == chip.price;
+                        final stockLabel = chip.stockQty != null
+                            ? ' (${chip.stockQty})'
+                            : '';
                         return ChoiceChip(
                           label: Text(
-                            '${chip.label} · ${formatVND(chip.price)}',
+                            '${chip.label} · ${formatVND(chip.price)}$stockLabel',
                           ),
                           selected: isSelected,
                           onSelected: (_) {
                             setState(() {
                               _priceCtrl.text = chip.price.toInt().toString();
                               widget.item.customUnitPrice = chip.price;
+                              widget.item.priceChipId = chip.id;
                               widget.item.attributes['price_chip_label'] =
                                   chip.label;
                             });
@@ -224,6 +247,26 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     onChanged: _updateManualPrice,
                   ),
                   const SizedBox(height: 8),
+                  if (_isTrungBay) ...[
+                    SwitchListTile.adaptive(
+                      value: _useInventory,
+                      onChanged: (value) {
+                        // Lazy-save pattern: update local draft item state now,
+                        // then persist later when parent save flow runs.
+                        setState(() {
+                          widget.item.attributes['useInventory'] = value
+                              ? 'true'
+                              : 'false';
+                        });
+                        widget.onStateChanged();
+                      },
+                      title: const Text(VN.useInventory),
+                      subtitle: _useInventory ? Text(_stockInlineText) : null,
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   // Enum attribute chip rows (DG-092 §8.4)
                   for (final ea in widget.item.product.enumAttributes)
                     if (ea.options.any((o) => o.active == 1)) ...[
@@ -237,27 +280,26 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       Wrap(
                         spacing: 6,
                         runSpacing: 4,
-                        children: ea.options
-                            .where((o) => o.active == 1)
-                            .map((opt) {
-                              final isSelected =
-                                  widget.item.attributes[ea.attributeType] ==
-                                  opt.valueVi;
-                              return ChoiceChip(
-                                label: Text(opt.valueVi),
-                                selected: isSelected,
-                                onSelected: (selected) {
-                                  if (selected) {
-                                    setState(() {
-                                      widget.item.attributes[ea.attributeType] =
-                                          opt.valueVi;
-                                    });
-                                    widget.onStateChanged();
-                                  }
-                                },
-                              );
-                            })
-                            .toList(),
+                        children: ea.options.where((o) => o.active == 1).map((
+                          opt,
+                        ) {
+                          final isSelected =
+                              widget.item.attributes[ea.attributeType] ==
+                              opt.valueVi;
+                          return ChoiceChip(
+                            label: Text(opt.valueVi),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              if (selected) {
+                                setState(() {
+                                  widget.item.attributes[ea.attributeType] =
+                                      opt.valueVi;
+                                });
+                                widget.onStateChanged();
+                              }
+                            },
+                          );
+                        }).toList(),
                       ),
                       const SizedBox(height: 8),
                     ],

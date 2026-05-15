@@ -29,6 +29,7 @@ class WorkItemService {
     bool isExtra = false,
     bool isGift = false,
     Map<String, dynamic>? attributes,
+    int? priceChipId,
   }) async {
     final response = await _dio.post(
       '/api/orders/$orderRef/items',
@@ -42,6 +43,7 @@ class WorkItemService {
         'isExtra': isExtra,
         'isGift': isGift,
         'attributes': ?attributes,
+        'priceChipId': priceChipId,
       },
     );
     return WorkItem.fromJson(response.data as Map<String, dynamic>);

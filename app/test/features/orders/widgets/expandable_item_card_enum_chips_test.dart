@@ -169,5 +169,30 @@ void main() {
         expect(item.attributes['nhan_banh'], 'Sầu riêng');
       },
     );
+
+    testWidgets(
+      'chip select sets DraftOrderItem.priceChipId and shows stock qty',
+      (tester) async {
+        final priceChips = const [
+          PriceChip(id: 1, label: 'Nhỏ', price: 200000, stockQty: 3),
+          PriceChip(id: 2, label: 'Lớn', price: 400000, stockQty: 7),
+        ];
+        final product = _productWithEnum(priceChips: priceChips);
+        final item = DraftOrderItem(product: product);
+
+        await _pumpCard(tester, item);
+
+        expect(item.priceChipId, isNull);
+
+        expect(find.widgetWithText(ChoiceChip, 'Nhỏ · 200.000đ (3)'), findsOneWidget);
+        expect(find.widgetWithText(ChoiceChip, 'Lớn · 400.000đ (7)'), findsOneWidget);
+
+        await tester.tap(find.widgetWithText(ChoiceChip, 'Lớn · 400.000đ (7)'));
+        await tester.pump();
+
+        expect(item.priceChipId, 2);
+        expect(item.attributes['price_chip_label'], 'Lớn');
+      },
+    );
   });
 }

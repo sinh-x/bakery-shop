@@ -916,6 +916,213 @@ def test_pos_order_without_chip_uses_base_option_and_still_works(api_client):
         assert movement["price_chip_id"] is None
 
 
+def test_pos_order_trung_bay_with_use_inventory_false_skips_fifo(api_client):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "POS-Nhỏ", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 2, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 1,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+                "attributes": {"useInventory": "false"},
+            }
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+
+    with get_db() as conn:
+        movement = conn.execute(
+            """SELECT id, lot_id, price_chip_id
+               FROM stock_movements
+               WHERE movement_type = 'sale' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (order["orderRef"],),
+        ).fetchone()
+        assert movement["price_chip_id"] == chip_id
+        assert movement["lot_id"] is None
+
+        consumed = conn.execute(
+            "SELECT COUNT(*) AS c FROM inventory_items WHERE consumed_by_movement_id = ?",
+            (movement["id"],),
+        ).fetchone()
+        assert consumed["c"] == 0
+
+
+def test_non_pos_order_with_chip_persists_price_chip_id(api_client):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "Nhỏ", 12000)
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 1,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+            }
+        ],
+    )
+
+    with get_db() as conn:
+        saved_item = conn.execute(
+            "SELECT price_chip_id, attributes FROM order_items WHERE order_id = ? ORDER BY id ASC LIMIT 1",
+            (int(order["id"]),),
+        ).fetchone()
+        assert saved_item["price_chip_id"] == chip_id
+
+
+def test_non_pos_order_confirmed_decrements_stock_with_chip(api_client):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "Nhỏ", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 3, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 2,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+            }
+        ],
+    )
+    ref = order["orderRef"]
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "confirmed", "reason": "xác nhận"},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        movement = conn.execute(
+            """SELECT id, lot_id, price_chip_id, quantity
+               FROM stock_movements
+               WHERE movement_type = 'sale' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (ref,),
+        ).fetchone()
+        assert movement["price_chip_id"] == chip_id
+        assert movement["quantity"] == -2
+        assert movement["lot_id"] is not None
+
+        consumed = conn.execute(
+            "SELECT COUNT(*) AS c FROM inventory_items WHERE consumed_by_movement_id = ?",
+            (movement["id"],),
+        ).fetchone()
+        assert consumed["c"] == 2
+
+
+def test_non_pos_order_delivered_skips_stock_when_use_inventory_false(api_client):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "Nhỏ", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 3, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 1,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+                "attributes": {"useInventory": "false"},
+            }
+        ],
+    )
+    ref = order["orderRef"]
+
+    for status, reason in [("confirmed", "ok"), ("in_progress", "ok"), ("ready", "ok")]:
+        resp = api_client.post(
+            f"/api/orders/{ref}/status",
+            json={"status": status, "reason": reason},
+        )
+        assert resp.status_code == 200
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "delivered", "reason": "giao"},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        movement = conn.execute(
+            """SELECT id, lot_id
+               FROM stock_movements
+               WHERE movement_type = 'sale' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (ref,),
+        ).fetchone()
+        assert movement["lot_id"] is None
+        consumed = conn.execute(
+            "SELECT COUNT(*) AS c FROM inventory_items WHERE consumed_by_movement_id = ?",
+            (movement["id"],),
+        ).fetchone()
+        assert consumed["c"] == 0
+
+
+def test_non_pos_order_delivered_skips_non_trung_bay(api_client):
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 1,
+                "unitPrice": 12000,
+            }
+        ],
+    )
+    ref = order["orderRef"]
+
+    for status, reason in [("confirmed", "ok"), ("in_progress", "ok"), ("ready", "ok")]:
+        api_client.post(
+            f"/api/orders/{ref}/status",
+            json={"status": status, "reason": reason},
+        )
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "delivered", "reason": "giao"},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        movements = conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_movements WHERE reference_id = ?",
+            (ref,),
+        ).fetchone()
+        assert movements["c"] == 0
+
+
 @pytest.mark.parametrize("payment_method", ["cash", "transfer"])
 def test_pos_chip_order_with_gift_creates_order_tracks_payment_and_skips_gift_stock(api_client, payment_method):
     _ensure_trung_bay(1)
@@ -1216,3 +1423,77 @@ def test_active_only_performance_500_orders(api_client):
 
     avg_ms = sum(duration_ms_collect) / len(duration_ms_collect)
     assert avg_ms < 500, f"Average response time {avg_ms:.0f}ms exceeds 500ms budget"
+
+
+def test_auto_decrement_stock_is_idempotent(api_client):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "Idempotent", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 5, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[{
+            "productId": "1",
+            "productName": "Bánh kem",
+            "quantity": 1,
+            "unitPrice": 12000,
+            "priceChipId": chip_id,
+        }],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        movements = conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_movements WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchone()
+        assert movements["c"] == 1
+
+        consumed = conn.execute(
+            """SELECT COUNT(*) AS c FROM inventory_items ii
+               JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = 1 AND sl.price_chip_id = ? AND ii.status = 'consumed'""",
+            (chip_id,),
+        ).fetchone()
+        assert consumed["c"] == 1
+
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "cancelled", "reason": "mistake"})
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        sales = conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_movements WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchone()
+        assert sales["c"] == 1
+
+        restored = conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_movements WHERE reference_id = ? AND movement_type = 'restore_sale'",
+            (ref,),
+        ).fetchone()
+        assert restored["c"] == 1
+
+        available = conn.execute(
+            """SELECT COUNT(*) AS c FROM inventory_items ii
+               JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = 1 AND sl.price_chip_id = ? AND ii.status = 'available'""",
+            (chip_id,),
+        ).fetchone()
+        assert available["c"] == 5
+
+    resp2 = api_client.post(f"/api/orders/{ref}/status", json={"status": "cancelled", "reason": "double cancel"})
+
+    with get_db() as conn:
+        restores = conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_movements WHERE reference_id = ? AND movement_type = 'restore_sale'",
+            (ref,),
+        ).fetchone()
+        assert restores["c"] == 1

@@ -1,5 +1,7 @@
 """Tests for product price chip API CRUD and product enrichment."""
 
+from baker.db.connection import get_db
+
 
 def _create_chip(client, product_id: int, label: str, price: float, position: int = 0):
     resp = client.post(
@@ -163,3 +165,33 @@ def test_price_chips_cascade_on_product_delete():
             (product_id,),
         ).fetchone()
         assert remaining[0] == 0
+
+
+def test_product_price_chips_include_per_chip_stock_qty(api_client):
+    chip_id = _create_chip(api_client, 1, "Nhỏ", 150000, position=0)["id"]
+
+    assert chip_id is not None
+
+    product = api_client.get("/api/products/1").json()
+    chips = product["price_chips"]
+    assert len(chips) == 1
+    assert chips[0]["stock_qty"] == 0
+
+    from baker.db.connection import get_db
+    from baker.models.event import Event
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO product_attribute_values (product_id, attribute_type, value) "
+            "VALUES (?, 'trung_bay', 'true')",
+            (1,),
+        )
+
+    api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 5, "price_chip_id": chip_id},
+    )
+
+    product = api_client.get("/api/products/1").json()
+    chips = product["price_chips"]
+    assert len(chips) == 1
+    assert chips[0]["stock_qty"] == 5

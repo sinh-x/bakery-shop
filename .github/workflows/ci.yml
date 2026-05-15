@@ -69,6 +69,7 @@ jobs:
 
       - name: Check code generation freshness
         run: |
+          git checkout -- pubspec.lock
           dart run build_runner build --delete-conflicting-outputs
           git diff --exit-code
         working-directory: app
