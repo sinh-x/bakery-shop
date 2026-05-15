@@ -211,9 +211,12 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                             widget.item.attributes['price_chip_label'] ==
                                 chip.label &&
                             widget.item.customUnitPrice == chip.price;
+                        final stockLabel = chip.stockQty != null
+                            ? ' (${chip.stockQty})'
+                            : '';
                         return ChoiceChip(
                           label: Text(
-                            '${chip.label} · ${formatVND(chip.price)}',
+                            '${chip.label} · ${formatVND(chip.price)}$stockLabel',
                           ),
                           selected: isSelected,
                           onSelected: (_) {
