@@ -79,6 +79,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
       productCode: productCode,
     );
     await refresh();
+    ref.invalidate(inactiveProductsProvider);
     if (category != null) {
       ref.invalidate(catalogBrowseProvider);
     }
@@ -89,6 +90,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
     final service = ref.read(productServiceProvider);
     await service.deleteProduct(id);
     await refresh();
+    ref.invalidate(inactiveProductsProvider);
     ref.invalidate(catalogBrowseProvider);
   }
 
@@ -136,3 +138,11 @@ final inactiveProductsProvider =
     AsyncNotifierProvider<InactiveProductsNotifier, List<Product>>(
       InactiveProductsNotifier.new,
     );
+
+final productByIdProvider = FutureProvider.family<Product, int>((
+  ref,
+  id,
+) async {
+  final service = ref.read(productServiceProvider);
+  return service.getProduct(id);
+});

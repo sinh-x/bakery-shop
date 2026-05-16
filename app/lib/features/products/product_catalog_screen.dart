@@ -21,6 +21,7 @@ class ProductCatalogScreen extends ConsumerStatefulWidget {
 class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
     with WidgetsBindingObserver {
   bool _wasNavigatedAway = false;
+  bool _showInactiveProducts = false;
   GoRouter? _goRouter;
 
   @override
@@ -181,22 +182,12 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
               categories: categories,
               baseUrl: baseUrl,
               cacheBuster: photoRefreshTick.toString(),
+              showInactiveProducts: _showInactiveProducts,
+              onShowInactiveProductsChanged: (value) {
+                setState(() => _showInactiveProducts = value);
+              },
               onRetryInactiveProducts: () {
                 ref.invalidate(inactiveProductsProvider);
-              },
-              onReactivateProduct: (productId) async {
-                try {
-                  await ref
-                      .read(productsProvider.notifier)
-                      .reactivateProduct(productId);
-                  if (context.mounted) {
-                    showTopSnackBar(context, VN.productUpdated);
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    showTopSnackBar(context, e.toString());
-                  }
-                }
               },
             ),
           ),
@@ -223,8 +214,9 @@ class _ProductTabs extends StatelessWidget {
     required this.categories,
     required this.baseUrl,
     required this.cacheBuster,
+    required this.showInactiveProducts,
+    required this.onShowInactiveProductsChanged,
     required this.onRetryInactiveProducts,
-    required this.onReactivateProduct,
   });
 
   final List<Product> products;
@@ -232,8 +224,9 @@ class _ProductTabs extends StatelessWidget {
   final List<Category> categories;
   final String baseUrl;
   final String cacheBuster;
+  final bool showInactiveProducts;
+  final ValueChanged<bool> onShowInactiveProductsChanged;
   final VoidCallback onRetryInactiveProducts;
-  final Future<void> Function(int productId) onReactivateProduct;
 
   @override
   Widget build(BuildContext context) {
@@ -244,12 +237,59 @@ class _ProductTabs extends StatelessWidget {
           .toList();
     }
 
+    final inactiveGrouped = inactiveProductsAsync.maybeWhen(
+      data: (inactiveProducts) {
+        final grouped = <String, List<Product>>{};
+        for (final cat in categories) {
+          grouped[cat.slug] = inactiveProducts
+              .where((p) => p.category == cat.slug)
+              .toList();
+        }
+        return grouped;
+      },
+      orElse: () => <String, List<Product>>{},
+    );
+
     return Column(
       children: [
+        SwitchListTile(
+          dense: true,
+          value: showInactiveProducts,
+          onChanged: onShowInactiveProductsChanged,
+          secondary: Icon(
+            showInactiveProducts
+                ? Icons.visibility_outlined
+                : Icons.visibility_off_outlined,
+          ),
+          title: const Text(VN.hiddenProducts),
+        ),
+        if (showInactiveProducts)
+          inactiveProductsAsync.when(
+            loading: () => const LinearProgressIndicator(),
+            error: (error, _) => Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.cloud_off, size: 18),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Text(VN.apiError)),
+                  TextButton(
+                    onPressed: onRetryInactiveProducts,
+                    child: const Text(VN.retry),
+                  ),
+                ],
+              ),
+            ),
+            data: (_) => const SizedBox.shrink(),
+          ),
         Expanded(
           child: TabBarView(
             children: categories.map((cat) {
-              final items = grouped[cat.slug] ?? [];
+              final items = [
+                ...(grouped[cat.slug] ?? const <Product>[]),
+                if (showInactiveProducts)
+                  ...(inactiveGrouped[cat.slug] ?? const <Product>[]),
+              ];
               if (items.isEmpty) {
                 return Center(
                   child: Text(
@@ -260,136 +300,53 @@ class _ProductTabs extends StatelessWidget {
                   ),
                 );
               }
-              return Consumer(
-                builder: (context, ref, _) => RefreshIndicator(
-                  onRefresh: () async {
-                    ref.invalidate(productsProvider);
-                    ref.invalidate(categoriesProvider);
-                    ref.invalidate(inactiveProductsProvider);
-                  },
-                  child: GridView.builder(
-                    padding: const EdgeInsets.all(12),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 8,
-                      mainAxisSpacing: 8,
-                      childAspectRatio: 1.0,
-                    ),
-                    itemCount: items.length,
-                    itemBuilder: (context, index) => ProductCard(
-                      product: items[index],
-                      photoBaseUrl: baseUrl,
-                      cacheBuster: cacheBuster,
-                      onTap: () => context.push('/products/${items[index].id}/edit'),
-                    ),
-                  ),
-                ),
+              return _ProductGrid(
+                items: items,
+                baseUrl: baseUrl,
+                cacheBuster: cacheBuster,
               );
             }).toList(),
           ),
-        ),
-        _InactiveProductsSection(
-          inactiveProductsAsync: inactiveProductsAsync,
-          onReactivateProduct: onReactivateProduct,
-          onRetry: onRetryInactiveProducts,
         ),
       ],
     );
   }
 }
 
-class _InactiveProductsSection extends StatelessWidget {
-  const _InactiveProductsSection({
-    required this.inactiveProductsAsync,
-    required this.onReactivateProduct,
-    required this.onRetry,
+class _ProductGrid extends ConsumerWidget {
+  const _ProductGrid({
+    required this.items,
+    required this.baseUrl,
+    required this.cacheBuster,
   });
 
-  final AsyncValue<List<Product>> inactiveProductsAsync;
-  final Future<void> Function(int productId) onReactivateProduct;
-  final VoidCallback onRetry;
+  final List<Product> items;
+  final String baseUrl;
+  final String cacheBuster;
 
   @override
-  Widget build(BuildContext context) {
-    return inactiveProductsAsync.when(
-      loading: () => const SizedBox(
-        height: 72,
-        child: Center(child: CircularProgressIndicator()),
-      ),
-      error: (error, _) => Center(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                VN.apiError,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 8),
-              FilledButton.tonalIcon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh),
-                label: const Text(VN.retry),
-              ),
-            ],
-          ),
-        ),
-      ),
-      data: (inactiveProducts) {
-        if (inactiveProducts.isEmpty) {
-          return const SizedBox.shrink();
-        }
-
-        return Material(
-          color: Theme.of(context).colorScheme.surfaceContainerLow,
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    VN.hiddenProducts,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  ...inactiveProducts.map(
-                    (product) => _InactiveProductTile(
-                      product: product,
-                      onReactivateProduct: onReactivateProduct,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
+  Widget build(BuildContext context, WidgetRef ref) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        ref.invalidate(productsProvider);
+        ref.invalidate(categoriesProvider);
+        ref.invalidate(inactiveProductsProvider);
       },
-    );
-  }
-}
-
-class _InactiveProductTile extends StatelessWidget {
-  const _InactiveProductTile({
-    required this.product,
-    required this.onReactivateProduct,
-  });
-
-  final Product product;
-  final Future<void> Function(int productId) onReactivateProduct;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(product.name),
-      trailing: FilledButton.tonalIcon(
-        onPressed: () => onReactivateProduct(product.id),
-        icon: const Icon(Icons.visibility_outlined),
-        label: const Text(VN.showProduct),
+      child: GridView.builder(
+        padding: const EdgeInsets.all(12),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          childAspectRatio: 1.0,
+        ),
+        itemCount: items.length,
+        itemBuilder: (context, index) => ProductCard(
+          product: items[index],
+          photoBaseUrl: baseUrl,
+          cacheBuster: cacheBuster,
+          onTap: () => context.push('/products/${items[index].id}/edit'),
+        ),
       ),
     );
   }

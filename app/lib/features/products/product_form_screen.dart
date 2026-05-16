@@ -921,6 +921,25 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     }
   }
 
+  Future<void> _reactivate() async {
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(productsProvider.notifier)
+          .reactivateProduct(widget.product!.id);
+      if (mounted) {
+        showTopSnackBar(context, VN.productUpdated);
+        context.pop();
+      }
+    } on DioException catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, e.message ?? VN.apiError);
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final baseUrl = ref.watch(apiBaseUrlProvider);
@@ -950,8 +969,19 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         actions: [
           if (_isEditing)
             IconButton(
-              icon: const Icon(Icons.delete_outline),
-              onPressed: _saving ? null : _delete,
+              tooltip: widget.product!.active == 0
+                  ? VN.showProduct
+                  : VN.deleteProduct,
+              icon: Icon(
+                widget.product!.active == 0
+                    ? Icons.visibility_outlined
+                    : Icons.delete_outline,
+              ),
+              onPressed: _saving
+                  ? null
+                  : widget.product!.active == 0
+                  ? _reactivate
+                  : _delete,
             ),
         ],
       ),

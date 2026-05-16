@@ -190,6 +190,7 @@ class VN {
   static const retry = 'Thử lại';
   static const noProducts = 'Không có sản phẩm';
   static const hiddenProducts = 'Sản phẩm đã ẩn';
+  static const productHiddenState = 'Đang ẩn';
   static const showProduct = 'Hiện sản phẩm';
   static const apiError = 'Không thể kết nối máy chủ';
   static const apiTimeout = 'Kết nối máy chủ quá thời gian, vui lòng thử lại';

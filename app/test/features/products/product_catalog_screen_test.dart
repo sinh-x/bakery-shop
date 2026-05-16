@@ -4,6 +4,7 @@ import 'package:bakery_app/data/api/product_service.dart';
 import 'package:bakery_app/data/models/category.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/products/product_catalog_screen.dart';
+import 'package:bakery_app/features/products/widgets/product_card.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -125,42 +126,7 @@ Future<void> _pumpScreen(
 }
 
 void main() {
-  testWidgets('shows inactive section below active content', (tester) async {
-    final productService = _FakeProductService(
-      activeProducts: const [
-        Product(id: 1, name: 'Banh kem dau', category: 'banh_kem', active: 1),
-      ],
-      inactiveProducts: const [
-        Product(id: 2, name: 'Banh kem cu', category: 'banh_kem', active: 0),
-      ],
-    );
-    final categoryService = _FakeCategoryService(const [
-      Category(
-        id: 1,
-        slug: 'banh_kem',
-        name: 'Banh kem',
-        codePrefix: 'BK',
-        active: 1,
-      ),
-    ]);
-
-    await _pumpScreen(
-      tester,
-      productService: productService,
-      categoryService: categoryService,
-    );
-
-    expect(find.text('Banh kem dau'), findsOneWidget);
-    expect(find.text(VN.hiddenProducts), findsOneWidget);
-    expect(find.text('Banh kem cu'), findsOneWidget);
-    expect(find.text(VN.showProduct), findsOneWidget);
-
-    final activeY = tester.getCenter(find.text('Banh kem dau')).dy;
-    final hiddenHeaderY = tester.getCenter(find.text(VN.hiddenProducts)).dy;
-    expect(hiddenHeaderY, greaterThan(activeY));
-  });
-
-  testWidgets('reactivate action moves inactive product to active state', (
+  testWidgets('toggles inactive products as normal product cards', (
     tester,
   ) async {
     final productService = _FakeProductService(
@@ -187,10 +153,57 @@ void main() {
       categoryService: categoryService,
     );
 
-    await tester.tap(find.text(VN.showProduct));
+    expect(find.text('Banh kem dau'), findsOneWidget);
+    expect(find.byType(ProductCard), findsOneWidget);
+    expect(find.text(VN.hiddenProducts), findsOneWidget);
+    expect(find.text('Banh kem cu'), findsNothing);
+    expect(find.text(VN.showProduct), findsNothing);
+
+    await tester.tap(find.byType(Switch));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.hiddenProducts), findsNothing);
     expect(find.text('Banh kem cu'), findsOneWidget);
+    expect(find.text(VN.productHiddenState), findsOneWidget);
+    expect(find.text(VN.showProduct), findsNothing);
+    expect(find.byType(ProductCard), findsNWidgets(2));
+  });
+
+  testWidgets('show disabled toggle can hide inactive products again', (
+    tester,
+  ) async {
+    final productService = _FakeProductService(
+      activeProducts: const [
+        Product(id: 1, name: 'Banh kem dau', category: 'banh_kem', active: 1),
+      ],
+      inactiveProducts: const [
+        Product(id: 2, name: 'Banh kem cu', category: 'banh_kem', active: 0),
+      ],
+    );
+    final categoryService = _FakeCategoryService(const [
+      Category(
+        id: 1,
+        slug: 'banh_kem',
+        name: 'Banh kem',
+        codePrefix: 'BK',
+        active: 1,
+      ),
+    ]);
+
+    await _pumpScreen(
+      tester,
+      productService: productService,
+      categoryService: categoryService,
+    );
+
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Banh kem cu'), findsOneWidget);
+
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Banh kem cu'), findsNothing);
+    expect(find.byType(ProductCard), findsOneWidget);
   });
 }
