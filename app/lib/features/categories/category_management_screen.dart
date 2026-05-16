@@ -14,9 +14,7 @@ class CategoryManagementScreen extends ConsumerWidget {
     final categoriesAsync = ref.watch(categoriesProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(VN.manageCategories),
-      ),
+      appBar: AppBar(title: const Text(VN.manageCategories)),
       body: categoriesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
@@ -99,8 +97,7 @@ class _CategoryListState extends ConsumerState<_CategoryList> {
 
   @override
   Widget build(BuildContext context) {
-    final inactive =
-        widget.categories.where((c) => c.active == 0).toList();
+    final inactive = widget.categories.where((c) => c.active == 0).toList();
 
     return CustomScrollView(
       slivers: [
@@ -122,9 +119,9 @@ class _CategoryListState extends ConsumerState<_CategoryList> {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
               child: Text(
                 VN.hiddenCategories,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: Colors.grey,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(color: Colors.grey),
               ),
             ),
           ),
@@ -147,10 +144,7 @@ Widget _buildCategoryIcon(Category category, {bool muted = false}) {
       : (categoryEmojiMap[category.slug] ?? '🎂');
   return Text(
     emoji,
-    style: TextStyle(
-      fontSize: 24,
-      color: muted ? Colors.grey : null,
-    ),
+    style: TextStyle(fontSize: 24, color: muted ? Colors.grey : null),
   );
 }
 
@@ -170,22 +164,23 @@ class _ActiveCategoryTile extends ConsumerWidget {
       key: ValueKey('dismiss_${category.id}'),
       direction: DismissDirection.endToStart,
       confirmDismiss: (_) async {
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            content: const Text(VN.deactivateConfirm),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text(VN.cancel),
+        final confirmed =
+            await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                content: const Text(VN.deactivateConfirm),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text(VN.cancel),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text(VN.deactivateCategory),
+                  ),
+                ],
               ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text(VN.deactivateCategory),
-              ),
-            ],
-          ),
-        ) ??
+            ) ??
             false;
         if (!confirmed) return false;
         try {
@@ -238,10 +233,7 @@ class _InactiveCategoryTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return ListTile(
       leading: _buildCategoryIcon(category, muted: true),
-      title: Text(
-        category.name,
-        style: const TextStyle(color: Colors.grey),
-      ),
+      title: Text(category.name, style: const TextStyle(color: Colors.grey)),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -267,6 +259,7 @@ class _InactiveCategoryTile extends ConsumerWidget {
           ),
         ],
       ),
+      onTap: () => showCategoryForm(context, category: category),
     );
   }
 }
@@ -283,9 +276,7 @@ class _CodePrefixBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: muted
-            ? Colors.grey.shade200
-            : colorScheme.primaryContainer,
+        color: muted ? Colors.grey.shade200 : colorScheme.primaryContainer,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
@@ -293,9 +284,7 @@ class _CodePrefixBadge extends StatelessWidget {
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.bold,
-          color: muted
-              ? Colors.grey
-              : colorScheme.onPrimaryContainer,
+          color: muted ? Colors.grey : colorScheme.onPrimaryContainer,
         ),
       ),
     );

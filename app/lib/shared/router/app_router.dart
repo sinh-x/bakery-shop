@@ -317,13 +317,20 @@ class _ProductEditLoader extends ConsumerWidget {
       ),
       data: (products) {
         final product = products.where((p) => p.id == productId).firstOrNull;
-        if (product == null) {
-          return Scaffold(
-            appBar: AppBar(title: const Text(VN.editProduct)),
-            body: const Center(child: Text(VN.noProducts)),
-          );
+        if (product != null) {
+          return ProductFormScreen(product: product);
         }
-        return ProductFormScreen(product: product);
+
+        final productAsync = ref.watch(productByIdProvider(productId));
+        return productAsync.when(
+          loading: () =>
+              const Scaffold(body: Center(child: CircularProgressIndicator())),
+          error: (e, _) => Scaffold(
+            appBar: AppBar(title: const Text(VN.editProduct)),
+            body: const Center(child: Text(VN.apiError)),
+          ),
+          data: (product) => ProductFormScreen(product: product),
+        );
       },
     );
   }

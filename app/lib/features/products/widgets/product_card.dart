@@ -140,6 +140,41 @@ class ProductCard extends StatelessWidget {
                   ),
                 ),
               ),
+            if (product.active == 0)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.visibility_off_outlined,
+                          size: 14,
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          VN.productHiddenState,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onErrorContainer,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

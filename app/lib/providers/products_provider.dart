@@ -64,6 +64,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
     double? basePrice,
     double? cost,
     String? recipeNotes,
+    int? active,
     String? productCode,
   }) async {
     final service = ref.read(productServiceProvider);
@@ -74,9 +75,11 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
       basePrice: basePrice,
       cost: cost,
       recipeNotes: recipeNotes,
+      active: active,
       productCode: productCode,
     );
     await refresh();
+    ref.invalidate(inactiveProductsProvider);
     if (category != null) {
       ref.invalidate(catalogBrowseProvider);
     }
@@ -87,7 +90,15 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
     final service = ref.read(productServiceProvider);
     await service.deleteProduct(id);
     await refresh();
+    ref.invalidate(inactiveProductsProvider);
     ref.invalidate(catalogBrowseProvider);
+  }
+
+  Future<Product> reactivateProduct(int id) async {
+    final product = await updateProduct(id, active: 1);
+    ref.invalidate(inactiveProductsProvider);
+    ref.invalidate(catalogBrowseProvider);
+    return product;
   }
 
   Future<String> uploadPhoto(int id, XFile file) async {
@@ -102,6 +113,36 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
   }
 }
 
-final productsProvider =
-    AsyncNotifierProvider<ProductsNotifier, List<Product>>(
-        ProductsNotifier.new);
+final productsProvider = AsyncNotifierProvider<ProductsNotifier, List<Product>>(
+  ProductsNotifier.new,
+);
+
+class InactiveProductsNotifier extends AsyncNotifier<List<Product>> {
+  @override
+  Future<List<Product>> build() async {
+    return _fetchInactiveProducts();
+  }
+
+  Future<List<Product>> _fetchInactiveProducts({String? category}) async {
+    final service = ref.read(productServiceProvider);
+    return service.listProducts(category: category, active: 0);
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(_fetchInactiveProducts);
+  }
+}
+
+final inactiveProductsProvider =
+    AsyncNotifierProvider<InactiveProductsNotifier, List<Product>>(
+      InactiveProductsNotifier.new,
+    );
+
+final productByIdProvider = FutureProvider.family<Product, int>((
+  ref,
+  id,
+) async {
+  final service = ref.read(productServiceProvider);
+  return service.getProduct(id);
+});
