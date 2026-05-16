@@ -1,3 +1,5 @@
+// EXEMPT: This widget remains above local file-size thresholds while DG-138
+// tracks broader low-risk decomposition of the tightly coupled reconciliation UI.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/reconciliation_service.dart';
 import '../../../data/providers/reconciliation_provider.dart';
 import '../../../shared/labels/shared.dart';
+import 'reconciliation_variance_indicator.dart';
 
 class ReconciliationProductCard extends ConsumerStatefulWidget {
   const ReconciliationProductCard({required this.product, super.key});
@@ -295,7 +298,7 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
                 icon: const Icon(Icons.add),
                 label: const Text(VN.themDongBan),
               ),
-              _VarianceIndicator(variance: variance),
+              ReconciliationVarianceIndicator(variance: variance),
             ],
           ),
           for (var rowIndex = 0; rowIndex < saleRows.length; rowIndex += 1)
@@ -354,30 +357,6 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
         ],
       ],
     );
-  }
-}
-
-class _VarianceIndicator extends StatelessWidget {
-  const _VarianceIndicator({required this.variance});
-
-  final int variance;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = variance == 0 ? Colors.green[700]! : Colors.red[700]!;
-    return Text(
-      '${VN.soLuongChenhLech}: ${_formatVariance(variance)}',
-      style: Theme.of(
-        context,
-      ).textTheme.bodyMedium?.copyWith(color: color, fontWeight: FontWeight.w600),
-    );
-  }
-
-  String _formatVariance(int value) {
-    if (value == 0) {
-      return '0';
-    }
-    return value > 0 ? '+$value' : '$value';
   }
 }
 

@@ -573,10 +573,14 @@ void main() {
       expect(unitPriceFields, findsWidgets);
 
       await tester.enterText(unitPriceFields.first, '15500');
+      await tester.ensureVisible(find.text('${VN.dongBan} 1').last);
+      await tester.tap(find.text('${VN.dongBan} 1').last, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      await tester.enterText(unitPriceFieldFinder(), '16500');
       await tester.pumpAndSettle();
 
-      final firstEdited = tester.widget<TextFormField>(unitPriceFields.first);
-      expect(firstEdited.controller?.text, '15500');
+      final secondEdited = tester.widget<TextFormField>(unitPriceFieldFinder());
+      expect(secondEdited.controller?.text, '16500');
     },
   );
 
