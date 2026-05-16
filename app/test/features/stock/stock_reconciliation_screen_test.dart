@@ -570,7 +570,7 @@ void main() {
       final unitPriceFields = find.byKey(
         const Key('reconciliation-unit-price-field'),
       );
-      expect(unitPriceFields, findsWidgets);
+      expect(unitPriceFields, findsAtLeastNWidgets(1));
 
       await tester.enterText(unitPriceFields.first, '15500');
       final firstEdited = tester.widget<TextFormField>(unitPriceFields.first);
