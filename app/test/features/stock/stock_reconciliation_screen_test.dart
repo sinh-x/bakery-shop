@@ -50,6 +50,13 @@ void main() {
   Finder unitPriceFieldFinder() =>
       find.byKey(const Key('reconciliation-unit-price-field')).first;
 
+  Finder textFieldByLabel(String label) {
+    return find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.labelText == label,
+    );
+  }
+
   Future<void> expandFirstCategory(WidgetTester tester) async {
     await tester.tap(find.byIcon(Icons.expand_more).first);
     await tester.pumpAndSettle();
@@ -725,6 +732,78 @@ void main() {
     await tester.tap(find.widgetWithText(SnackBarAction, VN.xemLichSu));
     await tester.pumpAndSettle();
     expect(find.text('Chi tiết #1'), findsOneWidget);
+  });
+
+  testWidgets('variance indicator updates value, sign, color, and wraps at 360', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _FakeService(
+      ReconciliationDraft(
+        date: '2026-05-04',
+        products: [
+          ReconciliationDraftProduct(
+            productId: 1,
+            name: 'Bánh kem dâu',
+            category: 'banh_kem',
+            expectedQty: 5,
+            basePrice: 100000,
+            priceChips: const [],
+          ),
+        ],
+      ),
+    );
+
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reconciliationServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(routerConfig: buildRouter()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await expandFirstCategory(tester);
+    await tester.tap(find.text('Bánh kem dâu'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '4');
+    await tester.pumpAndSettle();
+
+    final positiveVarianceFinder = find.text('${VN.soLuongChenhLech}: +1');
+    expect(positiveVarianceFinder, findsOneWidget);
+    final positiveVarianceText = tester.widget<Text>(positiveVarianceFinder);
+    expect(positiveVarianceText.style?.color, Colors.red[700]);
+
+    await tester.tap(find.text(VN.themDongBan));
+    await tester.pumpAndSettle();
+    await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
+    await tester.pumpAndSettle();
+
+    final zeroVarianceFinder = find.text('${VN.soLuongChenhLech}: 0');
+    expect(zeroVarianceFinder, findsOneWidget);
+    final zeroVarianceText = tester.widget<Text>(zeroVarianceFinder);
+    expect(zeroVarianceText.style?.color, Colors.green[700]);
+
+    await tester.enterText(textFieldByLabel(VN.soLuongHaoHut).first, '1');
+    await tester.pumpAndSettle();
+
+    final negativeVarianceFinder = find.text('${VN.soLuongChenhLech}: -1');
+    expect(negativeVarianceFinder, findsOneWidget);
+    final negativeVarianceText = tester.widget<Text>(negativeVarianceFinder);
+    expect(negativeVarianceText.style?.color, Colors.red[700]);
+
+    await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '3');
+    await tester.pumpAndSettle();
+    expect(find.text('${VN.soLuongChenhLech}: 0'), findsOneWidget);
+
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(

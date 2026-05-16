@@ -253,7 +253,9 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
     final saleRows =
         state.saleRowsByOption[optionKey] ?? const <ReconciliationSaleRowInput>[];
     final waste = state.wasteQtyByOption[optionKey] ?? 0;
+    final saleQty = saleRows.fold<int>(0, (sum, row) => sum + row.quantity);
     final missing = option.expectedQty - counted;
+    final variance = option.expectedQty - counted - saleQty - waste;
     final optionError = state.optionErrors[optionKey];
     final saleRowErrors =
         state.saleRowErrorsByOption[optionKey] ??
@@ -280,14 +282,21 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
         ),
         if (showSaleEditor) ...[
           const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              onPressed: () =>
-                  notifier.addSaleRow(optionKey, defaultUnitPrice: option.normalizedPrice),
-              icon: const Icon(Icons.add),
-              label: const Text(VN.themDongBan),
-            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => notifier.addSaleRow(
+                  optionKey,
+                  defaultUnitPrice: option.normalizedPrice,
+                ),
+                icon: const Icon(Icons.add),
+                label: const Text(VN.themDongBan),
+              ),
+              _VarianceIndicator(variance: variance),
+            ],
           ),
           for (var rowIndex = 0; rowIndex < saleRows.length; rowIndex += 1)
             _SaleRowEditor(
@@ -344,6 +353,30 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
         ],
       ],
     );
+  }
+}
+
+class _VarianceIndicator extends StatelessWidget {
+  const _VarianceIndicator({required this.variance});
+
+  final int variance;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = variance == 0 ? Colors.green[700]! : Colors.red[700]!;
+    return Text(
+      '${VN.soLuongChenhLech}: ${_formatVariance(variance)}',
+      style: Theme.of(
+        context,
+      ).textTheme.bodyMedium?.copyWith(color: color, fontWeight: FontWeight.w600),
+    );
+  }
+
+  String _formatVariance(int value) {
+    if (value == 0) {
+      return '0';
+    }
+    return value > 0 ? '+$value' : '$value';
   }
 }
 

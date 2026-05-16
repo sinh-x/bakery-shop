@@ -612,6 +612,7 @@ class VN {
   static const trangThaiOn = 'Ổn';
   static const trangThaiCoLoi = 'Có lỗi';
   static const themDongBan = 'Thêm dòng bán';
+  static const soLuongChenhLech = 'Số lượng chênh lệch';
   static const dongBan = 'Dòng bán';
   static const nhanChip = 'Nhãn chip';
   static const giam = 'Giảm';
