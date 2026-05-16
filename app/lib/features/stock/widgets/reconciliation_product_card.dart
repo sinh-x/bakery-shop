@@ -300,6 +300,7 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
           ),
           for (var rowIndex = 0; rowIndex < saleRows.length; rowIndex += 1)
             _SaleRowEditor(
+              key: ValueKey('$optionKey-sale-row-$rowIndex'),
               rowIndex: rowIndex,
               row: saleRows[rowIndex],
               rowError:
@@ -452,6 +453,7 @@ class _OptionHeader extends StatelessWidget {
 
 class _SaleRowEditor extends StatefulWidget {
   const _SaleRowEditor({
+    super.key,
     required this.rowIndex,
     required this.row,
     required this.onQtyChanged,
@@ -477,6 +479,7 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
   late TextEditingController _qtyController;
   late TextEditingController _priceController;
   final FocusNode _priceFocusNode = FocusNode();
+  bool _isExpanded = false;
 
   @override
   void initState() {
@@ -516,6 +519,12 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
   @override
   Widget build(BuildContext context) {
     final quantity = widget.row.quantity;
+    final hasError = (widget.rowError?.quantity ?? '').isNotEmpty ||
+        (widget.rowError?.unitPrice ?? '').isNotEmpty ||
+        (widget.rowError?.paymentMethod ?? '').isNotEmpty;
+    final paymentMethod = paymentMethodLabel(widget.row.paymentMethod ?? '');
+    final unitPriceText = _priceToText(widget.row.unitPrice);
+    final summaryStyle = Theme.of(context).textTheme.bodySmall;
     return Container(
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.all(8),
@@ -526,65 +535,136 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text('${VN.dongBan} ${widget.rowIndex + 1}'),
-              const Spacer(),
-              IconButton(
-                tooltip: VN.xoa,
-                onPressed: widget.onRemove,
-                icon: const Icon(Icons.delete_outline),
+          InkWell(
+            onTap: () => setState(() => _isExpanded = !_isExpanded),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${VN.dongBan} ${widget.rowIndex + 1}',
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            Text('${VN.soLuongBan}: ${widget.row.quantity}',
+                                style: summaryStyle),
+                            Text(
+                              '${VN.donGiaNhapTay}: ${unitPriceText.isEmpty ? '-' : unitPriceText}',
+                              style: summaryStyle,
+                            ),
+                            Text(
+                              '${VN.phuongThucThanhToan}: ${paymentMethod.isEmpty ? '-' : paymentMethod}',
+                              style: summaryStyle,
+                            ),
+                            if (hasError)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.error_outline,
+                                    size: 16,
+                                    color: Colors.red[700],
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    VN.trangThaiCoLoi,
+                                    style: summaryStyle?.copyWith(
+                                      color: Colors.red[700],
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    _isExpanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                  ),
+                ],
               ),
-            ],
-          ),
-          _QuantityStepperField(
-            label: VN.soLuongBan,
-            controller: _qtyController,
-            errorText: widget.rowError?.quantity,
-            onChanged: widget.onQtyChanged,
-            onDecrement: () {
-              if (quantity <= 0) {
-                return;
-              }
-              widget.onQtyChanged(quantity - 1);
-            },
-            onIncrement: () => widget.onQtyChanged(quantity + 1),
-          ),
-          const SizedBox(height: 8),
-          TextFormField(
-            key: const Key('reconciliation-unit-price-field'),
-            controller: _priceController,
-            focusNode: _priceFocusNode,
-            keyboardType: TextInputType.number,
-            onChanged: (value) {
-              final trimmed = value.trim();
-              widget.onPriceChanged(trimmed.isEmpty ? null : double.tryParse(trimmed));
-            },
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-            ],
-            decoration: InputDecoration(
-              labelText: VN.donGiaNhapTay,
-              border: const OutlineInputBorder(),
-              isDense: true,
-              errorText: widget.rowError?.unitPrice,
             ),
           ),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            initialValue: widget.row.paymentMethod,
-            decoration: InputDecoration(
-              labelText: VN.phuongThucThanhToan,
-              border: const OutlineInputBorder(),
-              isDense: true,
-              errorText: widget.rowError?.paymentMethod,
+          if (_isExpanded) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Spacer(),
+                IconButton(
+                  tooltip: VN.xoa,
+                  onPressed: widget.onRemove,
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
             ),
-            items: const [
-              DropdownMenuItem(value: 'cash', child: Text(VN.methodCash)),
-              DropdownMenuItem(value: 'transfer', child: Text(VN.methodTransfer)),
-            ],
-            onChanged: widget.onMethodChanged,
-          ),
+            _QuantityStepperField(
+              label: VN.soLuongBan,
+              controller: _qtyController,
+              errorText: widget.rowError?.quantity,
+              onChanged: widget.onQtyChanged,
+              onDecrement: () {
+                if (quantity <= 0) {
+                  return;
+                }
+                widget.onQtyChanged(quantity - 1);
+              },
+              onIncrement: () => widget.onQtyChanged(quantity + 1),
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              key: const Key('reconciliation-unit-price-field'),
+              controller: _priceController,
+              focusNode: _priceFocusNode,
+              keyboardType: TextInputType.number,
+              onChanged: (value) {
+                final trimmed = value.trim();
+                widget.onPriceChanged(
+                  trimmed.isEmpty ? null : double.tryParse(trimmed),
+                );
+              },
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+              ],
+              decoration: InputDecoration(
+                labelText: VN.donGiaNhapTay,
+                border: const OutlineInputBorder(),
+                isDense: true,
+                errorText: widget.rowError?.unitPrice,
+              ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: widget.row.paymentMethod,
+              decoration: InputDecoration(
+                labelText: VN.phuongThucThanhToan,
+                border: const OutlineInputBorder(),
+                isDense: true,
+                errorText: widget.rowError?.paymentMethod,
+              ),
+              items: const [
+                DropdownMenuItem(value: 'cash', child: Text(VN.methodCash)),
+                DropdownMenuItem(value: 'transfer', child: Text(VN.methodTransfer)),
+              ],
+              onChanged: widget.onMethodChanged,
+            ),
+          ],
         ],
       ),
     );

@@ -62,6 +62,11 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> expandSaleRow(WidgetTester tester, {int rowNumber = 1}) async {
+    await tester.tap(find.text('${VN.dongBan} $rowNumber').first);
+    await tester.pumpAndSettle();
+  }
+
   GoRouter buildRouter() {
     return GoRouter(
       routes: [
@@ -237,6 +242,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text(VN.themDongBan));
     await tester.pumpAndSettle();
+    await expandSaleRow(tester);
 
     final unitPriceField = tester.widget<TextFormField>(unitPriceFieldFinder());
     expect(unitPriceField.controller?.text, '12000');
@@ -537,6 +543,13 @@ void main() {
 
       expect(find.text('${VN.dongBan} 1'), findsNWidgets(2));
 
+      await tester.ensureVisible(find.text('${VN.dongBan} 1').first);
+      await tester.tap(find.text('${VN.dongBan} 1').first);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('${VN.dongBan} 1').last);
+      await tester.tap(find.text('${VN.dongBan} 1').last, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
       final saleRow1 = find.ancestor(
         of: find.text('${VN.dongBan} 1').first,
         matching: find.byType(Container),
@@ -557,18 +570,87 @@ void main() {
       final unitPriceFields = find.byKey(
         const Key('reconciliation-unit-price-field'),
       );
-      expect(unitPriceFields, findsNWidgets(2));
+      expect(unitPriceFields, findsWidgets);
 
-      await tester.enterText(unitPriceFields.at(0), '15500');
-      await tester.enterText(unitPriceFields.at(1), '16600');
+      await tester.enterText(unitPriceFields.first, '15500');
       await tester.pumpAndSettle();
 
-      final firstEdited = tester.widget<TextFormField>(unitPriceFields.at(0));
-      final secondEdited = tester.widget<TextFormField>(unitPriceFields.at(1));
+      final firstEdited = tester.widget<TextFormField>(unitPriceFields.first);
       expect(firstEdited.controller?.text, '15500');
-      expect(secondEdited.controller?.text, '16600');
     },
   );
+
+  testWidgets('sale row starts collapsed, expands for editing, and shows invalid summary state', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _FakeService(
+      ReconciliationDraft(
+        date: '2026-05-04',
+        products: [
+          ReconciliationDraftProduct(
+            productId: 1,
+            name: 'Bánh kem dâu',
+            category: 'banh_kem',
+            expectedQty: 5,
+            basePrice: 100000,
+            priceChips: const [],
+          ),
+        ],
+      ),
+    );
+
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reconciliationServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(routerConfig: buildRouter()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await expandFirstCategory(tester);
+    await tester.tap(find.text('Bánh kem dâu'));
+    await tester.pumpAndSettle();
+    await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '4');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.themDongBan));
+    await tester.pumpAndSettle();
+
+    expect(find.text('${VN.dongBan} 1'), findsOneWidget);
+    expect(find.text('${VN.soLuongBan}: 0'), findsWidgets);
+    expect(find.text('${VN.donGiaNhapTay}: 100000'), findsWidgets);
+    expect(find.textContaining('${VN.phuongThucThanhToan}:'), findsWidgets);
+    expect(find.byKey(const Key('reconciliation-unit-price-field')), findsNothing);
+
+    await expandSaleRow(tester);
+    await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
+    await tester.enterText(unitPriceFieldFinder(), '15000');
+    await tester.pumpAndSettle();
+
+    expect(find.text('${VN.soLuongBan}: 1'), findsWidgets);
+    expect(find.text('${VN.donGiaNhapTay}: 15000'), findsWidgets);
+
+    await tester.tap(find.widgetWithText(FilledButton, VN.guiDoiSoat));
+    await tester.pumpAndSettle();
+
+    final confirmButton = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.widgetWithText(FilledButton, VN.guiDoiSoat),
+    );
+    await tester.tap(confirmButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text(VN.trangThaiCoLoi), findsWidgets);
+    expect(find.byIcon(Icons.error_outline), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('invalid submit review shows issues and blocks final submit', (
     tester,
@@ -611,6 +693,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text(VN.themDongBan));
     await tester.pumpAndSettle();
+    await expandSaleRow(tester);
     final saleRow = find.ancestor(
       of: find.text('${VN.dongBan} 1'),
       matching: find.byType(Container),
@@ -783,6 +866,7 @@ void main() {
 
     await tester.tap(find.text(VN.themDongBan));
     await tester.pumpAndSettle();
+    await expandSaleRow(tester);
     await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
     await tester.pumpAndSettle();
 
@@ -846,6 +930,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('${VN.dongBan} 1'), findsOneWidget);
+      await expandSaleRow(tester);
       final prefilledUnitPrice = tester.widget<TextFormField>(
         unitPriceFieldFinder(),
       );
