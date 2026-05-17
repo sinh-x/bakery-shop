@@ -20,6 +20,7 @@ import '../../features/orders/order_create_screen.dart';
 import '../../features/orders/order_detail_screen.dart';
 import '../../features/orders/order_edit_screen.dart';
 import '../../features/orders/order_list_screen.dart';
+import '../../features/orders/order_history_screen.dart';
 import '../../features/orders/receipt_preview_screen.dart';
 import '../../features/knowledge/knowledge_detail_screen.dart';
 import '../../features/knowledge/knowledge_form_screen.dart';
@@ -115,6 +116,11 @@ final appRouter = GoRouter(
       builder: (context, state) => const OrderCreateScreen(),
     ),
     // Order detail — full-screen (outside shell)
+    GoRoute(
+      path: '/orders/history',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const OrderHistoryScreen(),
+    ),
     GoRoute(
       path: '/orders/:id',
       parentNavigatorKey: _rootNavigatorKey,
