@@ -44,6 +44,7 @@ def print_receipt(
     ref: str,
     type: str = Query(..., description="Receipt type: work_ticket or customer"),
     item_id: Optional[int] = Query(None, description="Work item ID (required for work_ticket)"),
+    printed_by: Optional[str] = Query(None, description="Tên nhân viên in phiếu"),
 ):
     """Print a receipt to the Y41BT thermal printer via USB.
 
@@ -65,6 +66,9 @@ def print_receipt(
             detail="item_id is required for work_ticket type",
         )
 
+    normalized_printed_by = printed_by or ""
+    order_id: Optional[int] = None
+
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
@@ -72,6 +76,7 @@ def print_receipt(
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+        order_id = int(row["id"])
 
         detail = _order_detail(conn, row)
         cfg = _shop_config(conn)
@@ -127,7 +132,75 @@ def print_receipt(
             detail=f"Print failed: {e}",
         )
 
-    return {"status": "ok"}
+    printed_at: Optional[str] = None
+    if type == "work_ticket" and order_id is not None:
+        with get_db() as conn:
+            conn.execute(
+                """INSERT INTO print_log (order_id, item_id, receipt_type, printed_by)
+                   VALUES (?, ?, ?, ?)""",
+                (order_id, item_id, type, normalized_printed_by),
+            )
+            inserted = conn.execute(
+                "SELECT printed_at FROM print_log WHERE id = last_insert_rowid()"
+            ).fetchone()
+            if inserted is not None:
+                printed_at = inserted["printed_at"]
+
+            conn.execute(
+                """UPDATE orders
+                   SET work_ticket_printed_at = CASE
+                           WHEN work_ticket_printed_at IS NULL THEN strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+                           ELSE work_ticket_printed_at
+                       END,
+                       work_ticket_printed_by = CASE
+                           WHEN work_ticket_printed_at IS NULL THEN ?
+                           WHEN COALESCE(work_ticket_printed_by, '') = '' AND ? <> '' THEN ?
+                           ELSE work_ticket_printed_by
+                       END
+                   WHERE id = ?""",
+                (
+                    normalized_printed_by,
+                    normalized_printed_by,
+                    normalized_printed_by,
+                    order_id,
+                ),
+            )
+
+    return {
+        "status": "ok",
+        "printedAt": printed_at,
+        "printedBy": normalized_printed_by,
+    }
+
+
+@router.get("/{ref}/print-log")
+def get_print_log(ref: str):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        logs = conn.execute(
+            """SELECT id, item_id, receipt_type, printed_by, printed_at
+               FROM print_log
+               WHERE order_id = ?
+               ORDER BY printed_at ASC, id ASC""",
+            (row["id"],),
+        ).fetchall()
+
+    return [
+        {
+            "id": entry["id"],
+            "itemId": entry["item_id"],
+            "receiptType": entry["receipt_type"],
+            "printedBy": entry["printed_by"],
+            "printedAt": entry["printed_at"],
+        }
+        for entry in logs
+    ]
 
 
 @router.get("/print/status")

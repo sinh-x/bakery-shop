@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../../../data/models/product.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
+import 'package:bakery_app/shared/utils/product_photo_url.dart';
 
 class ProductCard extends StatelessWidget {
   const ProductCard({
     super.key,
     required this.product,
     required this.photoBaseUrl,
+    this.cacheBuster,
     this.onTap,
     this.onLongPress,
     this.showPriceBadge = false,
@@ -15,9 +17,26 @@ class ProductCard extends StatelessWidget {
 
   final Product product;
   final String photoBaseUrl;
+  final String? cacheBuster;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final bool showPriceBadge;
+
+  String _displayPrice(Product product) {
+    if (product.priceChips.isEmpty) {
+      return formatVND(product.basePrice);
+    }
+
+    final chipMin = product.priceChips
+        .map((chip) => chip.price)
+        .reduce((a, b) => a < b ? a : b);
+    final hasPositiveBasePrice = product.basePrice > 0;
+    final minPrice = hasPositiveBasePrice && product.basePrice < chipMin
+        ? product.basePrice
+        : chipMin;
+
+    return '${VN.priceFrom} ${formatVND(minPrice)}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,15 +52,16 @@ class ProductCard extends StatelessWidget {
           children: [
             // Photo fills the card
             Image.network(
-              '$photoBaseUrl/api/products/${product.id}/photo',
+              productPhotoUrl(
+                photoBaseUrl,
+                product.id,
+                cacheBuster: cacheBuster,
+              ),
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) => Container(
                 color: Colors.grey[100],
                 child: Center(
-                  child: Text(
-                    emoji,
-                    style: const TextStyle(fontSize: 48),
-                  ),
+                  child: Text(emoji, style: const TextStyle(fontSize: 48)),
                 ),
               ),
             ),
@@ -69,7 +89,9 @@ class ProductCard extends StatelessWidget {
                     ],
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 2),
+                        horizontal: 4,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black54,
                         borderRadius: BorderRadius.circular(4),
@@ -86,7 +108,7 @@ class ProductCard extends StatelessWidget {
                     ),
                     if (!showPriceBadge)
                       Text(
-                        formatVND(product.basePrice),
+                        _displayPrice(product),
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: Colors.white70,
                         ),
@@ -103,16 +125,53 @@ class ProductCard extends StatelessWidget {
                 right: 0,
                 bottom: 0,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
                   color: theme.colorScheme.primaryContainer,
                   child: Text(
-                    formatVND(product.basePrice),
+                    _displayPrice(product),
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: theme.colorScheme.onPrimaryContainer,
                     ),
                     textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            if (product.active == 0)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.visibility_off_outlined,
+                          size: 14,
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          VN.productHiddenState,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onErrorContainer,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

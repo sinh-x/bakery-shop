@@ -7,7 +7,7 @@ import '../../data/models/category.dart';
 import '../../data/models/product.dart';
 import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/products.dart';
 import 'widgets/product_card.dart';
 
 class ProductCatalogScreen extends ConsumerStatefulWidget {
@@ -18,10 +18,10 @@ class ProductCatalogScreen extends ConsumerStatefulWidget {
       _ProductCatalogScreenState();
 }
 
-class _ProductCatalogScreenState
-    extends ConsumerState<ProductCatalogScreen>
+class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
     with WidgetsBindingObserver {
   bool _wasNavigatedAway = false;
+  bool _showInactiveProducts = false;
   GoRouter? _goRouter;
 
   @override
@@ -81,13 +81,15 @@ class _ProductCatalogScreenState
         context,
         ref,
         categoryMap.entries
-            .map((e) => Category(
-                  id: 0,
-                  slug: e.key,
-                  name: e.value,
-                  codePrefix: '',
-                  active: 1,
-                ))
+            .map(
+              (e) => Category(
+                id: 0,
+                slug: e.key,
+                name: e.value,
+                codePrefix: '',
+                active: 1,
+              ),
+            )
             .toList(),
       ),
       data: (categories) => _buildWithCategories(
@@ -104,7 +106,9 @@ class _ProductCatalogScreenState
     List<Category> categories,
   ) {
     final productsAsync = ref.watch(productsProvider);
+    final inactiveProductsAsync = ref.watch(inactiveProductsProvider);
     final baseUrl = ref.watch(apiBaseUrlProvider);
+    final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
 
     return DefaultTabController(
       length: categories.length,
@@ -130,6 +134,11 @@ class _ProductCatalogScreenState
                 icon: const Icon(Icons.settings),
                 tooltip: VN.settings,
                 onPressed: () => context.push('/settings'),
+              ),
+              IconButton(
+                icon: const Icon(Icons.photo_library_outlined),
+                tooltip: VN.browseScreenTitle,
+                onPressed: () => context.push('/products/browse'),
               ),
             ],
             bottom: TabBar(
@@ -169,8 +178,17 @@ class _ProductCatalogScreenState
             ),
             data: (products) => _ProductTabs(
               products: products,
+              inactiveProductsAsync: inactiveProductsAsync,
               categories: categories,
               baseUrl: baseUrl,
+              cacheBuster: photoRefreshTick.toString(),
+              showInactiveProducts: _showInactiveProducts,
+              onShowInactiveProductsChanged: (value) {
+                setState(() => _showInactiveProducts = value);
+              },
+              onRetryInactiveProducts: () {
+                ref.invalidate(inactiveProductsProvider);
+              },
             ),
           ),
           floatingActionButton: FloatingActionButton(
@@ -192,59 +210,144 @@ class _ProductCatalogScreenState
 class _ProductTabs extends StatelessWidget {
   const _ProductTabs({
     required this.products,
+    required this.inactiveProductsAsync,
     required this.categories,
     required this.baseUrl,
+    required this.cacheBuster,
+    required this.showInactiveProducts,
+    required this.onShowInactiveProductsChanged,
+    required this.onRetryInactiveProducts,
   });
 
   final List<Product> products;
+  final AsyncValue<List<Product>> inactiveProductsAsync;
   final List<Category> categories;
   final String baseUrl;
+  final String cacheBuster;
+  final bool showInactiveProducts;
+  final ValueChanged<bool> onShowInactiveProductsChanged;
+  final VoidCallback onRetryInactiveProducts;
 
   @override
   Widget build(BuildContext context) {
     final grouped = <String, List<Product>>{};
     for (final cat in categories) {
-      grouped[cat.slug] = products.where((p) => p.category == cat.slug).toList();
+      grouped[cat.slug] = products
+          .where((p) => p.category == cat.slug)
+          .toList();
     }
 
-    return TabBarView(
-      children: categories.map((cat) {
-        final items = grouped[cat.slug] ?? [];
-        if (items.isEmpty) {
-          return Center(
-            child: Text(
-              VN.noProducts,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Colors.grey,
-                  ),
-            ),
-          );
+    final inactiveGrouped = inactiveProductsAsync.maybeWhen(
+      data: (inactiveProducts) {
+        final grouped = <String, List<Product>>{};
+        for (final cat in categories) {
+          grouped[cat.slug] = inactiveProducts
+              .where((p) => p.category == cat.slug)
+              .toList();
         }
-        return Consumer(
-          builder: (context, ref, _) => RefreshIndicator(
-            onRefresh: () async {
-              ref.invalidate(productsProvider);
-              ref.invalidate(categoriesProvider);
-            },
-            child: GridView.builder(
-              padding: const EdgeInsets.all(12),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-                childAspectRatio: 1.0,
-              ),
-              itemCount: items.length,
-              itemBuilder: (context, index) => ProductCard(
-                product: items[index],
-                photoBaseUrl: baseUrl,
-                onTap: () =>
-                    context.push('/products/${items[index].id}/edit'),
+        return grouped;
+      },
+      orElse: () => <String, List<Product>>{},
+    );
+
+    return Column(
+      children: [
+        SwitchListTile(
+          dense: true,
+          value: showInactiveProducts,
+          onChanged: onShowInactiveProductsChanged,
+          secondary: Icon(
+            showInactiveProducts
+                ? Icons.visibility_outlined
+                : Icons.visibility_off_outlined,
+          ),
+          title: const Text(VN.hiddenProducts),
+        ),
+        if (showInactiveProducts)
+          inactiveProductsAsync.when(
+            loading: () => const LinearProgressIndicator(),
+            error: (error, _) => Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.cloud_off, size: 18),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Text(VN.apiError)),
+                  TextButton(
+                    onPressed: onRetryInactiveProducts,
+                    child: const Text(VN.retry),
+                  ),
+                ],
               ),
             ),
+            data: (_) => const SizedBox.shrink(),
           ),
-        );
-      }).toList(),
+        Expanded(
+          child: TabBarView(
+            children: categories.map((cat) {
+              final items = [
+                ...(grouped[cat.slug] ?? const <Product>[]),
+                if (showInactiveProducts)
+                  ...(inactiveGrouped[cat.slug] ?? const <Product>[]),
+              ];
+              if (items.isEmpty) {
+                return Center(
+                  child: Text(
+                    VN.noProducts,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyLarge?.copyWith(color: Colors.grey),
+                  ),
+                );
+              }
+              return _ProductGrid(
+                items: items,
+                baseUrl: baseUrl,
+                cacheBuster: cacheBuster,
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProductGrid extends ConsumerWidget {
+  const _ProductGrid({
+    required this.items,
+    required this.baseUrl,
+    required this.cacheBuster,
+  });
+
+  final List<Product> items;
+  final String baseUrl;
+  final String cacheBuster;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        ref.invalidate(productsProvider);
+        ref.invalidate(categoriesProvider);
+        ref.invalidate(inactiveProductsProvider);
+      },
+      child: GridView.builder(
+        padding: const EdgeInsets.all(12),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          childAspectRatio: 1.0,
+        ),
+        itemCount: items.length,
+        itemBuilder: (context, index) => ProductCard(
+          product: items[index],
+          photoBaseUrl: baseUrl,
+          cacheBuster: cacheBuster,
+          onTap: () => context.push('/products/${items[index].id}/edit'),
+        ),
+      ),
     );
   }
 }

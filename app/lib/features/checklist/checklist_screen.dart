@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/models/checklist_entry.dart';
 import '../../data/providers/checklist_provider.dart';
 import '../../providers/events_provider.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/checklist.dart';
 
 class ChecklistScreen extends ConsumerStatefulWidget {
   const ChecklistScreen({super.key});

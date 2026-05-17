@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/api/api_client.dart';
+import '../../data/models/catalog_photo.dart';
 import '../../data/models/event.dart';
 import '../../data/api/receipt_service.dart';
 import '../../data/providers/knowledge_provider.dart';
@@ -21,15 +23,22 @@ import '../../features/orders/order_list_screen.dart';
 import '../../features/orders/receipt_preview_screen.dart';
 import '../../features/knowledge/knowledge_detail_screen.dart';
 import '../../features/knowledge/knowledge_form_screen.dart';
+import '../../features/knowledge/knowledge_list_screen.dart';
+import '../../features/knowledge_base/knowledge_base_screen.dart';
 import '../../features/pos/pos_checkout_screen.dart';
 import '../../features/pos/pos_receipt_screen.dart';
 import '../../features/pos/pos_screen.dart';
 import '../../features/products/product_catalog_screen.dart';
+import '../../features/products/catalog_browse_screen.dart';
+import '../../features/products/widgets/catalog_photo_viewer.dart';
+import '../../providers/catalog_provider.dart';
 import '../../features/stock/stock_screen.dart';
+import '../../features/stock/stock_reconciliation_screen.dart';
+import '../../features/stock/stock_reconciliation_history_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../providers/products_provider.dart';
-import '../widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
@@ -44,39 +53,46 @@ final appRouter = GoRouter(
       routes: [
         GoRoute(
           path: '/dashboard',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: DashboardScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: DashboardScreen()),
         ),
         GoRoute(
           path: '/orders',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: OrderListScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: OrderListScreen()),
         ),
         GoRoute(
           path: '/products',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: ProductCatalogScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: ProductCatalogScreen()),
+        ),
+        GoRoute(
+          path: '/knowledge-base',
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: KnowledgeBaseScreen()),
         ),
         GoRoute(
           path: '/events',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: EventListScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: EventListScreen()),
         ),
         GoRoute(
           path: '/checklist',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: ChecklistScreen(),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: ChecklistScreen()),
+        ),
+        GoRoute(
+          path: '/knowledge',
+          pageBuilder: (context, state) => NoTransitionPage(
+            child: KnowledgeListScreen(
+              initialType: state.uri.queryParameters['type'],
+            ),
           ),
         ),
         GoRoute(
           path: '/pos',
-          pageBuilder: (context, state) => const NoTransitionPage(
-            child: PosScreen(),
-          ),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: PosScreen()),
         ),
       ],
     ),
@@ -154,6 +170,25 @@ final appRouter = GoRouter(
         initialCategory: state.uri.queryParameters['category'],
       ),
     ),
+    // Catalog browse — full-screen (outside shell)
+    GoRoute(
+      path: '/products/browse',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const CatalogBrowseScreen(),
+    ),
+    // Catalog photo viewer (from browse screen) — full-screen (outside shell)
+    GoRoute(
+      path: '/products/:id/catalog',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final id = int.parse(state.pathParameters['id']!);
+        final initialPhotoId = state.extra as int?;
+        return _CatalogViewerLoader(
+          productId: id,
+          initialPhotoId: initialPhotoId,
+        );
+      },
+    ),
     // Product edit — full-screen (outside shell)
     GoRoute(
       path: '/products/:id/edit',
@@ -220,6 +255,24 @@ final appRouter = GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const StockScreen(),
     ),
+    GoRoute(
+      path: '/stock/reconciliation',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const StockReconciliationScreen(),
+    ),
+    GoRoute(
+      path: '/stock/reconciliation/history',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const StockReconciliationHistoryScreen(),
+    ),
+    GoRoute(
+      path: '/stock/reconciliation/history/:id',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final sessionId = int.parse(state.pathParameters['id']!);
+        return StockReconciliationHistoryDetailScreen(sessionId: sessionId);
+      },
+    ),
     // Knowledge — full-screen (outside shell)
     GoRoute(
       path: '/knowledge/new',
@@ -256,24 +309,82 @@ class _ProductEditLoader extends ConsumerWidget {
     final productsAsync = ref.watch(productsProvider);
     // Try to find the product in the already-loaded list.
     return productsAsync.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text(VN.editProduct)),
-        body: Center(child: Text(VN.apiError)),
+        body: const Center(child: Text(VN.apiError)),
       ),
       data: (products) {
         final product = products.where((p) => p.id == productId).firstOrNull;
-        if (product == null) {
-          return Scaffold(
-            appBar: AppBar(title: const Text(VN.editProduct)),
-            body: const Center(child: Text(VN.noProducts)),
-          );
+        if (product != null) {
+          return ProductFormScreen(product: product);
         }
-        return ProductFormScreen(product: product);
+
+        final productAsync = ref.watch(productByIdProvider(productId));
+        return productAsync.when(
+          loading: () =>
+              const Scaffold(body: Center(child: CircularProgressIndicator())),
+          error: (e, _) => Scaffold(
+            appBar: AppBar(title: const Text(VN.editProduct)),
+            body: const Center(child: Text(VN.apiError)),
+          ),
+          data: (product) => ProductFormScreen(product: product),
+        );
       },
     );
+  }
+}
+
+/// Loads a product's catalog photos and opens the viewer at the requested photo.
+class _CatalogViewerLoader extends ConsumerWidget {
+  const _CatalogViewerLoader({
+    required this.productId,
+    required this.initialPhotoId,
+  });
+
+  final int productId;
+  final int? initialPhotoId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final catalogAsync = ref.watch(catalogProvider(productId));
+    final baseUrl = ref.watch(apiBaseUrlProvider);
+
+    return catalogAsync.when(
+      loading: () => const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (_, stackTrace) {
+        return Scaffold(
+          appBar: AppBar(title: const Text(VN.catalogTitle)),
+          body: const Center(child: Text(VN.apiError)),
+        );
+      },
+      data: (photos) {
+        if (photos.isEmpty) {
+          return Scaffold(
+            appBar: AppBar(title: const Text(VN.catalogTitle)),
+            body: const Center(child: Text(VN.noCatalogPhotos)),
+          );
+        }
+        final initialIndex = initialPhotoId == null
+            ? 0
+            : _findIndex(photos, initialPhotoId!);
+        return CatalogPhotoViewer(
+          photos: photos,
+          initialIndex: initialIndex,
+          productId: productId,
+          baseUrl: baseUrl,
+        );
+      },
+    );
+  }
+
+  int _findIndex(List<CatalogPhoto> photos, int photoId) {
+    final idx = photos.indexWhere((p) => p.id == photoId);
+    return idx < 0 ? 0 : idx;
   }
 }
 
@@ -287,13 +398,14 @@ class _KnowledgeEditLoader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final entryAsync = ref.watch(knowledgeEntryDetailProvider(entryId));
     return entryAsync.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
-      error: (e, _) => Scaffold(
-        appBar: AppBar(title: const Text(VN.editKnowledge)),
-        body: Center(child: Text(VN.apiError)),
-      ),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (_, stackTrace) {
+        return Scaffold(
+          appBar: AppBar(title: const Text(VN.editKnowledge)),
+          body: const Center(child: Text(VN.apiError)),
+        );
+      },
       data: (entry) {
         if (entry == null) {
           return Scaffold(
@@ -314,12 +426,24 @@ class _ShellScaffold extends StatelessWidget {
 
   int _selectedIndex(BuildContext context) {
     final location = GoRouterState.of(context).uri.path;
-    if (location.startsWith('/dashboard')) return 0;
-    if (location.startsWith('/orders')) return 1;
-    if (location.startsWith('/products')) return 2;
-    if (location.startsWith('/events')) return 3;
-    if (location.startsWith('/checklist')) return 4;
-    if (location.startsWith('/pos')) return 5;
+    if (location.startsWith('/dashboard')) {
+      return 0;
+    }
+    if (location.startsWith('/orders')) {
+      return 1;
+    }
+    if (location.startsWith('/products')) {
+      return 2;
+    }
+    if (location.startsWith('/knowledge-base') ||
+        location.startsWith('/events') ||
+        location.startsWith('/checklist') ||
+        location.startsWith('/knowledge')) {
+      return 3;
+    }
+    if (location.startsWith('/pos')) {
+      return 4;
+    }
     return 0;
   }
 
@@ -332,10 +456,8 @@ class _ShellScaffold extends StatelessWidget {
       case 2:
         context.go('/products');
       case 3:
-        context.go('/events');
+        context.go('/knowledge-base');
       case 4:
-        context.go('/checklist');
-      case 5:
         context.go('/pos');
     }
   }
@@ -365,14 +487,9 @@ class _ShellScaffold extends StatelessWidget {
             label: VN.tabProducts,
           ),
           NavigationDestination(
-            icon: Icon(Icons.event_note_outlined),
-            selectedIcon: Icon(Icons.event_note),
-            label: VN.tabEvents,
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.checklist_outlined),
-            selectedIcon: Icon(Icons.checklist),
-            label: VN.tabChecklist,
+            icon: Icon(Icons.menu_book_outlined),
+            selectedIcon: Icon(Icons.menu_book),
+            label: VN.tabKnowledgeBase,
           ),
           NavigationDestination(
             icon: Icon(Icons.storefront_outlined),

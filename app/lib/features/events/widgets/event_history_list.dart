@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../data/models/event.dart';
 import '../../../providers/events_provider.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/events.dart';
 
 enum _DateRange { today, week, month, all }
 

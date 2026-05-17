@@ -130,7 +130,7 @@ class PrinterService {
       'star', 'bixolon', 'munbyn', 'peripage', 'phomemo',
       'niimbot', 'zebra', 'brother', 'rongta', 'hprt',
     ];
-    return patterns.any((p) => lower.contains(p));
+    return patterns.any(lower.contains);
   }
 
   /// Connects to a printer by MAC address.
@@ -216,7 +216,7 @@ class PrinterService {
       final resized = img.copyResize(image, width: printWidth);
       final grayscale = img.grayscale(resized);
 
-      final widthBytes = printWidth ~/ 8; // 72
+      const widthBytes = printWidth ~/ 8; // 72
       final height = grayscale.height;
 
       // Convert to 1-bit bitmap — threshold 128 (standard midpoint)

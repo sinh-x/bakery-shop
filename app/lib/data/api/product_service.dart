@@ -2,6 +2,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
 
+import '../models/enum_attribute.dart';
+import '../models/price_chip.dart';
 import '../models/product.dart';
 import 'api_client.dart';
 
@@ -36,6 +38,54 @@ class ProductService {
   Future<Product> getProductByCode(String code) async {
     final response = await _dio.get('/api/products/code/$code');
     return Product.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<List<PriceChip>> getPriceChips(int productId) async {
+    final response = await _dio.get('/api/products/$productId/price-chips');
+    final list = response.data as List;
+    return list
+        .map((json) => PriceChip.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<PriceChip> createPriceChip({
+    required int productId,
+    required String label,
+    required double price,
+    required int position,
+  }) async {
+    final response = await _dio.post(
+      '/api/products/$productId/price-chips',
+      data: {
+        'label': label,
+        'price': price,
+        'position': position,
+      },
+    );
+    return PriceChip.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<PriceChip> updatePriceChip(
+    int productId,
+    int chipId, {
+    String? label,
+    double? price,
+    int? position,
+  }) async {
+    final data = <String, dynamic>{};
+    if (label != null) data['label'] = label;
+    if (price != null) data['price'] = price;
+    if (position != null) data['position'] = position;
+
+    final response = await _dio.patch(
+      '/api/products/$productId/price-chips/$chipId',
+      data: data,
+    );
+    return PriceChip.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<void> deletePriceChip(int productId, int chipId) async {
+    await _dio.delete('/api/products/$productId/price-chips/$chipId');
   }
 
   Future<Product> createProduct({
@@ -108,6 +158,63 @@ class ProductService {
 
   Future<void> deleteProductAttribute(int productId, String attributeType) async {
     await _dio.delete('/api/products/$productId/attributes/$attributeType');
+  }
+
+  // --- Enum attribute options (product-attribute-wide) ---
+
+  Future<EnumOption> createEnumOption({
+    required String attributeType,
+    required String valueVi,
+    int? sortOrder,
+  }) async {
+    final data = <String, dynamic>{'value_vi': valueVi};
+    if (sortOrder != null) data['sort_order'] = sortOrder;
+    final response = await _dio.post(
+      '/api/product-attributes/$attributeType/options',
+      data: data,
+    );
+    return EnumOption.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<EnumOption> updateEnumOption(
+    int optionId, {
+    String? valueVi,
+    int? sortOrder,
+    int? active,
+  }) async {
+    final data = <String, dynamic>{};
+    if (valueVi != null) data['value_vi'] = valueVi;
+    if (sortOrder != null) data['sort_order'] = sortOrder;
+    if (active != null) data['active'] = active;
+    final response = await _dio.patch(
+      '/api/product-attribute-options/$optionId',
+      data: data,
+    );
+    return EnumOption.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<void> deleteEnumOption(int optionId) async {
+    await _dio.delete('/api/product-attribute-options/$optionId');
+  }
+
+  Future<void> reorderEnumOptions(
+    String attributeType,
+    List<int> orderedIds,
+  ) async {
+    await _dio.post(
+      '/api/product-attributes/$attributeType/options/reorder',
+      data: {'ordered_ids': orderedIds},
+    );
+  }
+
+  Future<void> setEnumAttributeDefault(
+    String attributeType,
+    String defaultValue,
+  ) async {
+    await _dio.patch(
+      '/api/product-attributes/$attributeType',
+      data: {'default_value': defaultValue},
+    );
   }
 }
 

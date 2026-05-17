@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.5+58] — 2026-04-22
+- chore(release): bump version to 0.5.5+57
+
+## [0.5.4+54] — 2026-04-21
+- feat(DG-094): phase F9 — category-grouped layout in TagChipSelector (headers on own row)
+- feat(DG-094): label_outline button on browse grid thumbnails (direct tag edit from Duyệt ảnh mẫu)
+- feat(DG-094): fix refetch storm, multi-row filter bar, Xoá lọc, CatalogTagChips, quick-tag overlay
+- feat(DG-094): add traceback logging to catalog photo upload
+
+## [0.5.3+52] — 2026-04-21
+- feat(DG-094): add cross-product catalog photo browse with tag filtering (CatalogBrowseScreen, catalog_photo_tags table, v28 migration)
+
+## [0.5.3+51] — 2026-04-21
+- fix(DG-089): order list shows wrong payment status for fully-paid orders
+
+## [0.5.2+50] — 2026-04-20
+- feat(DG-088): add mark-as-printed and unmark-printed to order detail screen
+
+## [0.5.2+49] — 2026-04-20
+- chore(release): bump version to 0.5.2+48
+
 ## [0.4.0+42] — 2026-04-19
 - feat(deploy): add recover-lily.sh for backup restore and redeploy
 

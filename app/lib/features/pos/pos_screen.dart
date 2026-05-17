@@ -8,7 +8,7 @@ import '../../../data/models/category.dart';
 import '../../../data/models/product.dart';
 import '../../../providers/categories_provider.dart';
 import '../../../providers/products_provider.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/pos_cart_bar.dart';
 import 'widgets/pos_product_grid.dart';
 
@@ -28,6 +28,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
   Timer? _stockPollingTimer;
   bool _wasNavigatedAway = false;
   GoRouter? _goRouter;
+  DateTime _lastStockRefreshAt = DateTime.now();
 
   /// Filtered products based on selected category and search query.
   List<Product> _filteredProducts(List<Product> products) {
@@ -46,10 +47,9 @@ class _PosScreenState extends ConsumerState<PosScreen>
 
     // Category filter
     if (_selectedCategoryIndex != null) {
-      final categories = ref.read(categoriesProvider).maybeWhen(
-        data: (cats) => cats,
-        orElse: () => <Category>[],
-      );
+      final categories = ref
+          .read(categoriesProvider)
+          .maybeWhen(data: (cats) => cats, orElse: () => <Category>[]);
       if (_selectedCategoryIndex! < categories.length) {
         final cat = categories[_selectedCategoryIndex!];
         result = result.where((p) => p.category == cat.slug).toList();
@@ -97,6 +97,16 @@ class _PosScreenState extends ConsumerState<PosScreen>
 
   void _refreshStock() {
     ref.invalidate(productsProvider);
+    if (mounted) {
+      setState(() => _lastStockRefreshAt = DateTime.now());
+    }
+  }
+
+  String _refreshLabel() {
+    final ts = _lastStockRefreshAt;
+    final hh = ts.hour.toString().padLeft(2, '0');
+    final mm = ts.minute.toString().padLeft(2, '0');
+    return VN.stockUpdatedAt('$hh:$mm');
   }
 
   void _onRouteChange() {
@@ -125,6 +135,16 @@ class _PosScreenState extends ConsumerState<PosScreen>
             onPressed: _refreshStock,
           ),
           IconButton(
+            icon: const Icon(Icons.fact_check_outlined),
+            tooltip: VN.doiSoatTonKhoHomNay,
+            onPressed: () => context.push('/stock/reconciliation'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: VN.lichSuDoiSoatTonKho,
+            onPressed: () => context.push('/stock/reconciliation/history'),
+          ),
+          IconButton(
             icon: const Icon(Icons.inventory_2_outlined),
             tooltip: 'Kho hàng',
             onPressed: () => context.push('/stock'),
@@ -148,15 +168,44 @@ class _PosScreenState extends ConsumerState<PosScreen>
               onChanged: (value) => setState(() => _searchQuery = value),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                _refreshLabel(),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
 
           // Category tabs
           categoriesAsync.when(
             loading: () => const SizedBox.shrink(),
-            error: (_, _) => const SizedBox.shrink(),
+            error: (_, _) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline, size: 18),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(VN.categoryLoadError),
+                  ),
+                  TextButton(
+                    onPressed: () => ref.invalidate(categoriesProvider),
+                    child: const Text(VN.taiLai),
+                  ),
+                ],
+              ),
+            ),
             data: (categories) {
               if (categories.isEmpty) return const SizedBox.shrink();
-              final activeCats =
-                  categories.where((c) => c.active == 1).toList();
+              final activeCats = categories
+                  .where((c) => c.active == 1)
+                  .toList();
 
               return SizedBox(
                 height: 48,
@@ -185,8 +234,8 @@ class _PosScreenState extends ConsumerState<PosScreen>
                       child: FilterChip(
                         label: Text('$emoji ${cat.name}'),
                         selected: _selectedCategoryIndex == index - 1,
-                        onSelected: (_) => setState(
-                            () => _selectedCategoryIndex = index - 1),
+                        onSelected: (_) =>
+                            setState(() => _selectedCategoryIndex = index - 1),
                       ),
                     );
                   },
@@ -202,12 +251,13 @@ class _PosScreenState extends ConsumerState<PosScreen>
             child: Stack(
               children: [
                 productsAsync.when(
-                  loading: () => const Center(child: CircularProgressIndicator()),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
                   error: (e, _) => Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(VN.apiError),
+                        const Text(VN.apiError),
                         const SizedBox(height: 8),
                         ElevatedButton(
                           onPressed: _refreshStock,

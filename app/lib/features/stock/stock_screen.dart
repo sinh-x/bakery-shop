@@ -6,14 +6,19 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/api/stock_service.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import '../../providers/categories_provider.dart';
+import '../../providers/products_provider.dart';
+import '../../shared/utils/category_grouping.dart';
+import '../../shared/utils/product_photo_url.dart';
+import '../../shared/widgets/collapsible_category_sections.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/stock_action_sheet.dart';
 
 /// Provider for stock overview list.
 final stockOverviewProvider =
     AsyncNotifierProvider<StockOverviewNotifier, List<StockOverviewItem>>(
-  StockOverviewNotifier.new,
-);
+      StockOverviewNotifier.new,
+    );
 
 class StockOverviewNotifier extends AsyncNotifier<List<StockOverviewItem>> {
   @override
@@ -28,7 +33,7 @@ class StockOverviewNotifier extends AsyncNotifier<List<StockOverviewItem>> {
 
   Future<void> refresh() async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _fetch());
+    state = await AsyncValue.guard(_fetch);
   }
 }
 
@@ -58,6 +63,8 @@ class _StockScreenState extends ConsumerState<StockScreen>
     with WidgetsBindingObserver {
   bool _wasNavigatedAway = false;
   GoRouter? _goRouter;
+  final CategorySectionExpansionController _categoryExpansionController =
+      CategorySectionExpansionController();
 
   @override
   void initState() {
@@ -104,12 +111,24 @@ class _StockScreenState extends ConsumerState<StockScreen>
   @override
   Widget build(BuildContext context) {
     final stockAsync = ref.watch(stockOverviewProvider);
+    final categories = ref.watch(categoriesProvider).asData?.value ?? const [];
     final baseUrl = ref.watch(apiBaseUrlProvider);
+    final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text(VN.quanLyTonKho),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.fact_check_outlined),
+            tooltip: VN.doiSoatTonKhoHomNay,
+            onPressed: () => context.push('/stock/reconciliation'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: VN.lichSuDoiSoatTonKho,
+            onPressed: () => context.push('/stock/reconciliation/history'),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: VN.lamMoi,
@@ -125,10 +144,7 @@ class _StockScreenState extends ConsumerState<StockScreen>
             children: [
               const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
               const SizedBox(height: 16),
-              Text(
-                VN.apiError,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text(VN.apiError, style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               FilledButton.icon(
                 onPressed: () =>
@@ -145,8 +161,11 @@ class _StockScreenState extends ConsumerState<StockScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.inventory_2_outlined,
-                      size: 64, color: Colors.grey),
+                  const Icon(
+                    Icons.inventory_2_outlined,
+                    size: 64,
+                    color: Colors.grey,
+                  ),
                   const SizedBox(height: 16),
                   Text(
                     VN.khongCoSanPhamTonKho,
@@ -157,27 +176,32 @@ class _StockScreenState extends ConsumerState<StockScreen>
             );
           }
 
+          final groupedSections = groupItemsByCategory<StockOverviewItem>(
+            items: items,
+            categories: categories,
+            categoryKeyOf: (item) => item.category,
+            itemLabelOf: (item) => item.productName,
+          );
+
           return RefreshIndicator(
             onRefresh: () => ref.read(stockOverviewProvider.notifier).refresh(),
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final item = items[index];
+            child: CollapsibleCategorySections<StockOverviewItem>(
+              sections: groupedSections,
+              expansionController: _categoryExpansionController,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              itemBuilder: (context, item) {
                 final emoji = categoryEmojiMap[item.category] ?? '🍰';
                 return _StockItemCard(
                   item: item,
                   emoji: emoji,
                   baseUrl: baseUrl,
-                  onRestock: () => _showActionSheet(
-                    context, ref, item, ActionType.restock,
-                  ),
-                  onWaste: () => _showActionSheet(
-                    context, ref, item, ActionType.waste,
-                  ),
-                  onAdjust: () => _showActionSheet(
-                    context, ref, item, ActionType.adjust,
-                  ),
+                  cacheBuster: photoRefreshTick.toString(),
+                  onRestock: () =>
+                      _showActionSheet(context, ref, item, ActionType.restock),
+                  onWaste: () =>
+                      _showActionSheet(context, ref, item, ActionType.waste),
+                  onAdjust: () =>
+                      _showActionSheet(context, ref, item, ActionType.adjust),
                 );
               },
             ),
@@ -214,6 +238,7 @@ class _StockItemCard extends StatelessWidget {
     required this.item,
     required this.emoji,
     required this.baseUrl,
+    required this.cacheBuster,
     required this.onRestock,
     required this.onWaste,
     required this.onAdjust,
@@ -222,128 +247,155 @@ class _StockItemCard extends StatelessWidget {
   final StockOverviewItem item;
   final String emoji;
   final String baseUrl;
+  final String cacheBuster;
   final VoidCallback onRestock;
   final VoidCallback onWaste;
   final VoidCallback onAdjust;
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = stockStatusColor(item.quantity);
-    final statusLabel = stockStatusLabel(item.quantity);
+    final totalQty = item.totalQuantity;
+    final statusColor = stockStatusColor(totalQty);
+    final statusLabel = stockStatusLabel(totalQty);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Product image
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                '$baseUrl/api/products/${item.productId}/photo',
-                width: 64,
-                height: 64,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  width: 64,
-                  height: 64,
-                  color: Colors.grey[100],
-                  child: Center(
-                    child: Text(emoji, style: const TextStyle(fontSize: 32)),
+            Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      productPhotoUrl(
+                        baseUrl,
+                        item.productId,
+                        cacheBuster: cacheBuster,
+                      ),
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      width: 64,
+                      height: 64,
+                      color: Colors.grey[100],
+                      child: Center(
+                        child: Text(
+                          emoji,
+                          style: const TextStyle(fontSize: 32),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Product info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.productName,
-                    style: Theme.of(context).textTheme.titleMedium,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: statusColor.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          statusLabel,
-                          style: TextStyle(
-                            color: statusColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                      Text(
+                        item.productName,
+                        style: Theme.of(context).textTheme.titleMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              statusLabel,
+                              style: TextStyle(
+                                color: statusColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            // Quantity
-            Column(
-              children: [
-                Text(
-                  '${item.quantity}',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: statusColor,
-                      ),
                 ),
-                Text(
-                  VN.tonKho,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey,
-                      ),
+                const SizedBox(width: 8),
+                Column(
+                  children: [
+                    Text(
+                      '$totalQty',
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: statusColor,
+                          ),
+                    ),
+                    Text(
+                      VN.tonKho,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                    ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(width: 8),
-            // Action buttons
-            Column(
-              mainAxisSize: MainAxisSize.min,
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: item.perChip
+                  .map(
+                    (option) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Text(
+                        '${option.displayLabel} (${option.normalizedPrice}): ${option.quantity}',
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 10),
+            Row(
               children: [
-                SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: IconButton.filledTonal(
+                Expanded(
+                  child: FilledButton.tonalIcon(
                     icon: const Icon(Icons.add, size: 18),
-                    tooltip: VN.nhapHang,
+                    label: const Text(VN.nhapHang),
                     onPressed: onRestock,
-                    padding: EdgeInsets.zero,
                   ),
                 ),
-                const SizedBox(height: 4),
-                SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: IconButton.filledTonal(
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.tonalIcon(
                     icon: const Icon(Icons.remove, size: 18),
-                    tooltip: VN.haoHut,
+                    label: const Text(VN.haoHut),
                     onPressed: onWaste,
-                    padding: EdgeInsets.zero,
                   ),
                 ),
-                const SizedBox(height: 4),
-                SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: IconButton.filledTonal(
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.tonalIcon(
                     icon: const Icon(Icons.edit, size: 18),
-                    tooltip: VN.dieuChinh,
+                    label: const Text(VN.dieuChinh),
                     onPressed: onAdjust,
-                    padding: EdgeInsets.zero,
                   ),
                 ),
               ],

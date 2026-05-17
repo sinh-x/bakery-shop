@@ -32,6 +32,7 @@ _Order _$OrderFromJson(Map<String, dynamic> json) => _Order(
           .toList() ??
       const [],
   workTicketPrintedAt: json['workTicketPrintedAt'] as String?,
+  workTicketPrintedBy: json['workTicketPrintedBy'] as String?,
   createdAt: DateTime.parse(json['createdAt'] as String),
   updatedAt: DateTime.parse(json['updatedAt'] as String),
 );
@@ -56,6 +57,7 @@ Map<String, dynamic> _$OrderToJson(_Order instance) => <String, dynamic>{
   'isPaid': instance.isPaid,
   'packingChecklist': instance.packingChecklist,
   'workTicketPrintedAt': instance.workTicketPrintedAt,
+  'workTicketPrintedBy': instance.workTicketPrintedBy,
   'createdAt': instance.createdAt.toIso8601String(),
   'updatedAt': instance.updatedAt.toIso8601String(),
 };

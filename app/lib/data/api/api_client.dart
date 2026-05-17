@@ -1,7 +1,7 @@
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform;
+    show kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint, debugPrintStack;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,7 +20,7 @@ class ApiBaseUrlNotifier extends Notifier<String> {
     final prefs = ref.watch(sharedPreferencesProvider);
     // On web, default to empty string (relative URL — same origin as the web server).
     // On mobile, default to the configured localhost URL.
-    final defaultUrl = kIsWeb ? '' : kDefaultApiUrl;
+    const defaultUrl = kIsWeb ? '' : kDefaultApiUrl;
     final url = prefs.getString(kApiUrlKey) ?? defaultUrl;
     return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
   }
@@ -47,7 +47,10 @@ Future<void> _loadDeviceInfo() async {
   try {
     final packageInfo = await PackageInfo.fromPlatform();
     _appVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
-  } catch (_) {}
+  } catch (error, stackTrace) {
+    debugPrint('api_client: failed to load app version: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
   if (kIsWeb) {
     _deviceModel = 'Web Browser';
     _osVersion = 'Web';
@@ -63,7 +66,10 @@ Future<void> _loadDeviceInfo() async {
         _deviceModel = ios.utsname.machine;
         _osVersion = 'iOS ${ios.systemVersion}';
       }
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      debugPrint('api_client: failed to load device info: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
   _deviceInfoLoaded = true;
 }

@@ -22,10 +22,14 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install -e ".[dev,web]"
+        run: pip install -e ".[dev,web]" ruff
+
+      - name: Lint (Ruff minimal)
+        run: python -m ruff check src tests --select E9,F63,F7,F82
 
       - name: Run tests
-        run: pytest
+        timeout-minutes: 5
+        run: python -m pytest tests -v
 
   flutter-checks:
     # Runs when Flutter app changes
@@ -50,14 +54,24 @@ jobs:
         run: flutter analyze
         working-directory: app
 
-      - name: Test
-        run: flutter test
+      - name: Analyze (Dart)
+        run: dart analyze
         working-directory: app
+
+      - name: Test with coverage
+        run: flutter test --coverage
+        working-directory: app
+
+      - name: Check dependency health
+        run: flutter pub outdated --no-color
+        working-directory: app
+        continue-on-error: true
 
       - name: Check code generation freshness
         run: |
+          git checkout -- pubspec.lock
           dart run build_runner build --delete-conflicting-outputs
-          git diff --exit-code lib/data/models/
+          git diff --exit-code
         working-directory: app
 
   docker-build:

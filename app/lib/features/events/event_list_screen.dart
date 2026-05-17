@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/events.dart';
 import 'widgets/event_history_list.dart';
 
 /// Full-screen events tab: scrollable history with filter bar + FAB to log new event.

@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/product.dart';
 import '../../../data/api/api_client.dart';
 import '../../../providers/pos_provider.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import '../../../providers/products_provider.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/utils/product_photo_url.dart';
 
 /// 2-column product grid with stock badges for POS screen.
 class PosProductGrid extends ConsumerWidget {
@@ -16,6 +18,7 @@ class PosProductGrid extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cart = ref.watch(posCartProvider);
     final baseUrl = ref.watch(apiBaseUrlProvider);
+    final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
 
     return GridView.builder(
       padding: const EdgeInsets.all(8),
@@ -29,15 +32,18 @@ class PosProductGrid extends ConsumerWidget {
       itemBuilder: (context, i) {
         final product = products[i];
         final stockQty = product.stockQty ?? 0;
-        final inCart = cart.items.where((c) => c.product.id == product.id).firstOrNull;
+        final inCartQty = cart.items
+            .where((c) => c.product.id == product.id)
+            .fold<int>(0, (sum, item) => sum + item.quantity);
         final isOutOfStock = stockQty <= 0;
 
         return _ProductPosCard(
           product: product,
           stockQty: stockQty,
-          inCartQty: inCart?.quantity,
+          inCartQty: inCartQty > 0 ? inCartQty : null,
           isOutOfStock: isOutOfStock,
           baseUrl: baseUrl,
+          cacheBuster: photoRefreshTick.toString(),
           onTap: () => _onProductTap(context, ref, product, isOutOfStock),
         );
       },
@@ -50,7 +56,11 @@ class PosProductGrid extends ConsumerWidget {
     Product product,
     bool isOutOfStock,
   ) {
-    if (isOutOfStock) {
+    final hasPriceChips = product.priceChips.isNotEmpty;
+
+    if (hasPriceChips) {
+      _showChipPickerDialog(context, ref, product, isOutOfStock);
+    } else if (isOutOfStock) {
       _showForceSellDialog(context, ref, product);
     } else {
       ref.read(posCartProvider.notifier).addItem(product);
@@ -58,12 +68,152 @@ class PosProductGrid extends ConsumerWidget {
     }
   }
 
-  void _showForceSellDialog(BuildContext context, WidgetRef ref, Product product) {
+  void _showChipPickerDialog(
+    BuildContext context,
+    WidgetRef ref,
+    Product product,
+    bool isOutOfStock,
+  ) {
+    final theme = Theme.of(context);
+    final chips = product.priceChips;
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        final defaultPrice = chips.isNotEmpty
+            ? chips.map((c) => c.price).reduce((a, b) => a < b ? a : b)
+            : product.basePrice;
+
+        int? selectedChipId;
+        String? selectedChipLabel;
+        double selectedPrice = defaultPrice;
+        final priceCtrl = TextEditingController(
+          text: defaultPrice.toInt().toString(),
+        );
+
+        return StatefulBuilder(
+          builder: (ctx, setState) => AlertDialog(
+            title: Text(
+              product.name,
+              style: theme.textTheme.titleMedium,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (chips.isNotEmpty) ...[
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: chips.map((chip) {
+                        final isSelected = selectedChipId == chip.id;
+                        return ChoiceChip(
+                          label: Text(
+                            '${chip.label} · ${formatVND(chip.price)}',
+                          ),
+                          selected: isSelected,
+                          onSelected: (_) {
+                            setState(() {
+                              selectedChipId = chip.id;
+                              selectedChipLabel = chip.label;
+                              selectedPrice = chip.price;
+                              priceCtrl.text = chip.price.toInt().toString();
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  TextFormField(
+                    controller: priceCtrl,
+                    decoration: const InputDecoration(
+                      labelText: VN.itemPrice,
+                      border: OutlineInputBorder(),
+                      suffixText: 'đ',
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (v) {
+                      final parsed = double.tryParse(v.trim());
+                      if (parsed != null) {
+                        setState(() {
+                          selectedPrice = parsed;
+                          final matchesChip = chips.any(
+                            (c) => c.id == selectedChipId && c.price == parsed,
+                          );
+                          if (!matchesChip) {
+                            selectedChipId = null;
+                            selectedChipLabel = null;
+                          }
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx),
+                child: const Text(VN.cancel),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(dialogCtx);
+                  if (isOutOfStock) {
+                    _showForceSellDialog(
+                      context,
+                      ref,
+                      product,
+                      selectedPrice: selectedPrice,
+                      selectedChipId: selectedChipId,
+                      selectedChipLabel: selectedChipLabel,
+                    );
+                  } else {
+                    ref
+                        .read(posCartProvider.notifier)
+                        .addItem(
+                          product,
+                          selectedPrice: selectedPrice,
+                          selectedChipId: selectedChipId,
+                          selectedChipLabel: selectedChipLabel,
+                        );
+                    final labelSuffix = selectedChipLabel != null
+                        ? ' ($selectedChipLabel)'
+                        : '';
+                    showTopSnackBar(
+                      context,
+                      '${product.name}$labelSuffix đã thêm vào giỏ',
+                    );
+                  }
+                },
+                child: const Text('Thêm'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showForceSellDialog(
+    BuildContext context,
+    WidgetRef ref,
+    Product product, {
+    double? selectedPrice,
+    int? selectedChipId,
+    String? selectedChipLabel,
+  }) {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: Text(VN.sanPhamHetHang),
-        content: Text(VN.banAnyway),
+        title: const Text(VN.sanPhamHetHang),
+        content: const Text(VN.banAnyway),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx),
@@ -72,20 +222,43 @@ class PosProductGrid extends ConsumerWidget {
           FilledButton(
             onPressed: () {
               Navigator.pop(dialogCtx);
-              ref.read(posCartProvider.notifier).addItem(product);
+              ref
+                  .read(posCartProvider.notifier)
+                  .addItem(
+                    product,
+                    selectedPrice: selectedPrice,
+                    selectedChipId: selectedChipId,
+                    selectedChipLabel: selectedChipLabel,
+                  );
               if (context.mounted) {
                 showTopSnackBar(
                   context,
-                  '${product.name} đã thêm vào giỏ (force-sell)',
+                  selectedChipLabel != null
+                      ? '${product.name} ($selectedChipLabel) đã thêm vào giỏ (force-sell)'
+                      : '${product.name} đã thêm vào giỏ (force-sell)',
                 );
               }
             },
-            child: Text(VN.xacNhan),
+            child: const Text(VN.xacNhan),
           ),
         ],
       ),
     );
   }
+}
+
+@visibleForTesting
+String posStockStatusLabel(int qty) {
+  if (qty > 3) return VN.availableStock(qty);
+  if (qty >= 1) return VN.lowStock(qty);
+  return VN.outOfStock;
+}
+
+@visibleForTesting
+IconData posStockStatusIcon(int qty) {
+  if (qty > 3) return Icons.check_circle;
+  if (qty >= 1) return Icons.warning_amber;
+  return Icons.remove_circle;
 }
 
 class _ProductPosCard extends StatelessWidget {
@@ -95,6 +268,7 @@ class _ProductPosCard extends StatelessWidget {
     required this.inCartQty,
     required this.isOutOfStock,
     required this.baseUrl,
+    required this.cacheBuster,
     required this.onTap,
   });
 
@@ -103,7 +277,24 @@ class _ProductPosCard extends StatelessWidget {
   final int? inCartQty;
   final bool isOutOfStock;
   final String baseUrl;
+  final String cacheBuster;
   final VoidCallback onTap;
+
+  String _displayPrice(Product product) {
+    if (product.priceChips.isEmpty) {
+      return formatVND(product.basePrice);
+    }
+
+    final chipMin = product.priceChips
+        .map((chip) => chip.price)
+        .reduce((a, b) => a < b ? a : b);
+    final hasPositiveBasePrice = product.basePrice > 0;
+    final minPrice = hasPositiveBasePrice && product.basePrice < chipMin
+        ? product.basePrice
+        : chipMin;
+
+    return '${VN.priceFrom} ${formatVND(minPrice)}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -123,14 +314,16 @@ class _ProductPosCard extends StatelessWidget {
                   // Product image
                   Expanded(
                     flex: 3,
-                    child: product.photoPath.isNotEmpty
-                        ? Image.network(
-                            '$baseUrl/api/products/${product.id}/photo',
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) =>
-                                _buildPlaceholder(theme),
-                          )
-                        : _buildPlaceholder(theme),
+                    child: Image.network(
+                      productPhotoUrl(
+                        baseUrl,
+                        product.id,
+                        cacheBuster: cacheBuster,
+                      ),
+                      fit: BoxFit.cover,
+                      semanticLabel: 'Ảnh sản phẩm ${product.name}',
+                      errorBuilder: (_, _, _) => _buildPlaceholder(theme),
+                    ),
                   ),
 
                   // Product info
@@ -153,7 +346,7 @@ class _ProductPosCard extends StatelessWidget {
                           Row(
                             children: [
                               Text(
-                                formatVND(product.basePrice),
+                                _displayPrice(product),
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   color: theme.colorScheme.primary,
                                   fontWeight: FontWeight.bold,
@@ -176,7 +369,10 @@ class _ProductPosCard extends StatelessWidget {
                   top: 6,
                   right: 6,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.primary,
                       borderRadius: BorderRadius.circular(10),
@@ -201,11 +397,7 @@ class _ProductPosCard extends StatelessWidget {
   Widget _buildPlaceholder(ThemeData theme) {
     return Container(
       color: theme.colorScheme.surfaceContainerHighest,
-      child: Icon(
-        Icons.cake,
-        size: 40,
-        color: theme.colorScheme.outline,
-      ),
+      child: Icon(Icons.cake, size: 40, color: theme.colorScheme.outline),
     );
   }
 
@@ -219,18 +411,31 @@ class _ProductPosCard extends StatelessWidget {
       bg = Colors.red;
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        qty > 0 ? '$qty' : 'Hết',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
+    final label = posStockStatusLabel(qty);
+    final icon = posStockStatusIcon(qty);
+
+    return Semantics(
+      label: 'Tồn kho: $label',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 11, color: Colors.white),
+            const SizedBox(width: 3),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -1,0 +1,1 @@
+export 'package:bakery_app/shared/widgets/vietnamese_labels.dart';

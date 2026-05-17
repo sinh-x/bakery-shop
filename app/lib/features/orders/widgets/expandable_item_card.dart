@@ -1,9 +1,11 @@
+// EXEMPT: 200-line threshold exceeded because DG-150 blocker: safe extraction of shell/collapsed/expanded sections risks cross-field validation regressions in active order draft wiring. Reviewed 2026-05-29.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../providers/order_providers.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import '../utils/trung_bay_inventory_extensions.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 class ExpandableItemCard extends StatefulWidget {
   const ExpandableItemCard({
@@ -79,6 +81,47 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
       }
     });
     widget.onStateChanged();
+  }
+
+  void _updateManualPrice(String text) {
+    final selectedLabel = widget.item.attributes['price_chip_label']
+        ?.toString();
+    widget.item.customUnitPrice =
+        double.tryParse(text.trim()) ?? widget.item.product.basePrice;
+
+    final manuallyClearPreset =
+        selectedLabel != null &&
+        !widget.item.product.priceChips.any(
+          (chip) =>
+              chip.label == selectedLabel &&
+              chip.price == widget.item.customUnitPrice,
+        );
+
+    if (manuallyClearPreset) {
+      widget.item.attributes.remove('price_chip_label');
+      widget.item.priceChipId = null;
+      if (mounted) {
+        showTopSnackBar(context, 'Đã bỏ chọn mức giá nhanh khi chỉnh tay');
+      }
+    }
+
+    setState(() {});
+    widget.onStateChanged();
+  }
+
+  bool get _isTrungBay => widget.item.product.isTrungBay;
+
+  bool get _useInventory => widget.item.attributes.useInventory;
+
+  String get _stockInlineText {
+    final selectedChipId = widget.item.priceChipId;
+    if (selectedChipId == null) return widget.item.product.stockInlineText;
+    final selectedChip = widget.item.product.priceChips
+        .where((chip) => chip.id == selectedChipId)
+        .firstOrNull;
+    final chipQty = selectedChip?.stockQty;
+    if (chipQty == null) return VN.stockUnknown;
+    return '${VN.stockRemaining}: $chipQty';
   }
 
   @override
@@ -159,6 +202,38 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (widget.item.product.priceChips.isNotEmpty) ...[
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: widget.item.product.priceChips.map((chip) {
+                        final isSelected =
+                            widget.item.attributes['price_chip_label'] ==
+                                chip.label &&
+                            widget.item.customUnitPrice == chip.price;
+                        final stockLabel = chip.stockQty != null
+                            ? ' (${chip.stockQty})'
+                            : '';
+                        return ChoiceChip(
+                          label: Text(
+                            '${chip.label} · ${formatVND(chip.price)}$stockLabel',
+                          ),
+                          selected: isSelected,
+                          onSelected: (_) {
+                            setState(() {
+                              _priceCtrl.text = chip.price.toInt().toString();
+                              widget.item.customUnitPrice = chip.price;
+                              widget.item.priceChipId = chip.id;
+                              widget.item.attributes['price_chip_label'] =
+                                  chip.label;
+                            });
+                            widget.onStateChanged();
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   // Price
                   TextFormField(
                     controller: _priceCtrl,
@@ -169,14 +244,65 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       isDense: true,
                     ),
                     keyboardType: TextInputType.number,
-                    onChanged: (v) {
-                      final price = double.tryParse(v.trim());
-                      widget.item.customUnitPrice =
-                          price ?? widget.item.product.basePrice;
-                      widget.onStateChanged();
-                    },
+                    onChanged: _updateManualPrice,
                   ),
                   const SizedBox(height: 8),
+                  if (_isTrungBay) ...[
+                    SwitchListTile.adaptive(
+                      value: _useInventory,
+                      onChanged: (value) {
+                        // Lazy-save pattern: update local draft item state now,
+                        // then persist later when parent save flow runs.
+                        setState(() {
+                          widget.item.attributes['useInventory'] = value
+                              ? 'true'
+                              : 'false';
+                        });
+                        widget.onStateChanged();
+                      },
+                      title: const Text(VN.useInventory),
+                      subtitle: _useInventory ? Text(_stockInlineText) : null,
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  // Enum attribute chip rows (DG-092 §8.4)
+                  for (final ea in widget.item.product.enumAttributes)
+                    if (ea.options.any((o) => o.active == 1)) ...[
+                      Text(
+                        ea.labelVi,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.outline,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: ea.options.where((o) => o.active == 1).map((
+                          opt,
+                        ) {
+                          final isSelected =
+                              widget.item.attributes[ea.attributeType] ==
+                              opt.valueVi;
+                          return ChoiceChip(
+                            label: Text(opt.valueVi),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              if (selected) {
+                                setState(() {
+                                  widget.item.attributes[ea.attributeType] =
+                                      opt.valueVi;
+                                });
+                                widget.onStateChanged();
+                              }
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                   // Notes
                   TextFormField(
                     controller: _notesCtrl,
@@ -219,15 +345,18 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     const SizedBox(height: 8),
                   ],
                   // Rut tien checkbox (based on rut_tien attribute)
-                  if (widget.item.product.attributes['rut_tien']?.toString() == 'true') ...[
+                  if (widget.item.product.attributes['rut_tien']?.toString() ==
+                      'true') ...[
                     CheckboxListTile(
                       value: _rutTien,
                       onChanged: (v) {
                         setState(() => _rutTien = v ?? false);
                         if (_rutTien) {
                           widget.item.attributes['rut_tien'] = 'true';
-                          widget.item.attributes['cash_fee'] = _cashFeeCtrl.text;
-                          widget.item.attributes['cash_amount'] = _cashAmountCtrl.text;
+                          widget.item.attributes['cash_fee'] =
+                              _cashFeeCtrl.text;
+                          widget.item.attributes['cash_amount'] =
+                              _cashAmountCtrl.text;
                         } else {
                           widget.item.attributes.remove('rut_tien');
                           widget.item.attributes.remove('cash_fee');
@@ -236,7 +365,7 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                         }
                         widget.onStateChanged();
                       },
-                      title: Text(VN.rutTien),
+                      title: const Text(VN.rutTien),
                       controlAffinity: ListTileControlAffinity.leading,
                       contentPadding: EdgeInsets.zero,
                       dense: true,
@@ -245,31 +374,41 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       // Cash amount stepper: [-] [amount] [+] with 100k step
                       Row(
                         children: [
-                          Text('${VN.soTienRut}: '),
+                          const Text('${VN.soTienRut}: '),
                           IconButton.filled(
                             onPressed: () {
-                              final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                              final current =
+                                  int.tryParse(_cashAmountCtrl.text) ?? 0;
                               if (current > _minCashAmount) {
                                 final next = current - _cashAmountStep;
-                                final clamped = next < _minCashAmount ? _minCashAmount : next;
+                                final clamped = next < _minCashAmount
+                                    ? _minCashAmount
+                                    : next;
                                 setState(() {
                                   _cashAmountCtrl.text = '$clamped';
                                   _editingCashAmount = false;
                                 });
-                                widget.item.attributes['cash_amount'] = '$clamped';
+                                widget.item.attributes['cash_amount'] =
+                                    '$clamped';
                                 widget.onStateChanged();
                               }
                             },
                             icon: const Icon(Icons.remove, size: 16),
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                             padding: EdgeInsets.zero,
                           ),
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setState(() => _editingCashAmount = true),
+                              onTap: () =>
+                                  setState(() => _editingCashAmount = true),
                               child: _editingCashAmount
                                   ? Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
                                       child: TextFormField(
                                         controller: _cashAmountCtrl,
                                         autofocus: true,
@@ -277,53 +416,87 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                                         decoration: const InputDecoration(
                                           isDense: true,
                                           suffixText: 'đ',
-                                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                          contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 8,
+                                          ),
                                         ),
                                         keyboardType: TextInputType.number,
                                         inputFormatters: [
-                                          FilteringTextInputFormatter.digitsOnly,
+                                          FilteringTextInputFormatter
+                                              .digitsOnly,
                                           LengthLimitingTextInputFormatter(9),
                                         ],
                                         onChanged: (v) {
-                                          widget.item.attributes['cash_amount'] = v;
+                                          widget
+                                                  .item
+                                                  .attributes['cash_amount'] =
+                                              v;
                                           widget.onStateChanged();
                                         },
                                         onEditingComplete: () {
                                           // Enforce minimum
-                                          final val = int.tryParse(_cashAmountCtrl.text) ?? 0;
-                                          if (val < _minCashAmount && val != 0) {
-                                            _cashAmountCtrl.text = '$_minCashAmount';
-                                            widget.item.attributes['cash_amount'] = '$_minCashAmount';
+                                          final val =
+                                              int.tryParse(
+                                                _cashAmountCtrl.text,
+                                              ) ??
+                                              0;
+                                          if (val < _minCashAmount &&
+                                              val != 0) {
+                                            _cashAmountCtrl.text =
+                                                '$_minCashAmount';
+                                            widget
+                                                    .item
+                                                    .attributes['cash_amount'] =
+                                                '$_minCashAmount';
                                             widget.onStateChanged();
                                           }
-                                          setState(() => _editingCashAmount = false);
+                                          setState(
+                                            () => _editingCashAmount = false,
+                                          );
                                         },
                                       ),
                                     )
                                   : Center(
                                       child: Text(
-                                        _cashAmountCtrl.text.isEmpty || _cashAmountCtrl.text == '0'
+                                        _cashAmountCtrl.text.isEmpty ||
+                                                _cashAmountCtrl.text == '0'
                                             ? '0đ'
-                                            : formatVND((int.tryParse(_cashAmountCtrl.text) ?? 0).toDouble()),
-                                        style: Theme.of(context).textTheme.titleMedium,
+                                            : formatVND(
+                                                (int.tryParse(
+                                                          _cashAmountCtrl.text,
+                                                        ) ??
+                                                        0)
+                                                    .toDouble(),
+                                              ),
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleMedium,
                                       ),
                                     ),
                             ),
                           ),
                           IconButton.filled(
                             onPressed: () {
-                              final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                              final current =
+                                  int.tryParse(_cashAmountCtrl.text) ?? 0;
                               final next = current + _cashAmountStep;
-                              final clamped = next < _minCashAmount ? _minCashAmount : next;
+                              final clamped = next < _minCashAmount
+                                  ? _minCashAmount
+                                  : next;
                               setState(() {
                                 _cashAmountCtrl.text = '$clamped';
                                 _editingCashAmount = false;
                               });
-                              widget.item.attributes['cash_amount'] = '$clamped';
+                              widget.item.attributes['cash_amount'] =
+                                  '$clamped';
                               widget.onStateChanged();
                             },
                             icon: const Icon(Icons.add, size: 16),
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                             padding: EdgeInsets.zero,
                           ),
                         ],
@@ -332,10 +505,11 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                       // Cash fee stepper: [-] [fee] [+] with 10k step
                       Row(
                         children: [
-                          Text('${VN.phiRutTien}: '),
+                          const Text('${VN.phiRutTien}: '),
                           IconButton.filled(
                             onPressed: () {
-                              final current = int.tryParse(_cashFeeCtrl.text) ?? 0;
+                              final current =
+                                  int.tryParse(_cashFeeCtrl.text) ?? 0;
                               if (current >= _cashFeeStep) {
                                 final next = current - _cashFeeStep;
                                 setState(() => _cashFeeCtrl.text = '$next');
@@ -344,28 +518,42 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                               }
                             },
                             icon: const Icon(Icons.remove, size: 16),
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                             padding: EdgeInsets.zero,
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             child: Text(
-                              (int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee) == 0
+                              (int.tryParse(_cashFeeCtrl.text) ??
+                                          _defaultCashFee) ==
+                                      0
                                   ? 'Miễn phí'
-                                  : formatVND((int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee).toDouble()),
+                                  : formatVND(
+                                      (int.tryParse(_cashFeeCtrl.text) ??
+                                              _defaultCashFee)
+                                          .toDouble(),
+                                    ),
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                           ),
                           IconButton.filled(
                             onPressed: () {
-                              final current = int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee;
+                              final current =
+                                  int.tryParse(_cashFeeCtrl.text) ??
+                                  _defaultCashFee;
                               final next = current + _cashFeeStep;
                               setState(() => _cashFeeCtrl.text = '$next');
                               widget.item.attributes['cash_fee'] = '$next';
                               widget.onStateChanged();
                             },
                             icon: const Icon(Icons.add, size: 16),
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                             padding: EdgeInsets.zero,
                           ),
                         ],

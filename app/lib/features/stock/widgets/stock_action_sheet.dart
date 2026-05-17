@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/stock_service.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 enum ActionType { restock, waste, adjust }
 
@@ -31,6 +31,7 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
   final _formKey = GlobalKey<FormState>();
 
   bool _isLoading = false;
+  int? _selectedNormalizedPrice;
 
   String get _title {
     switch (widget.actionType) {
@@ -62,6 +63,14 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
     super.dispose();
   }
 
+  @override
+  void initState() {
+    super.initState();
+    _selectedNormalizedPrice = widget.item.perChip.isNotEmpty
+        ? widget.item.perChip.first.normalizedPrice
+        : null;
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -81,18 +90,21 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
             widget.item.productId,
             quantity,
             note: _noteController.text,
+            normalizedPrice: _selectedNormalizedPrice,
           );
         case ActionType.waste:
           await service.waste(
             widget.item.productId,
             quantity,
             _reasonController.text,
+            normalizedPrice: _selectedNormalizedPrice,
           );
         case ActionType.adjust:
           await service.adjust(
             widget.item.productId,
             quantity,
             _reasonController.text,
+            normalizedPrice: _selectedNormalizedPrice,
           );
       }
       widget.onDone();
@@ -163,10 +175,9 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             Text(
-                              '${VN.tonKho} hiện tại: ${widget.item.quantity}',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.grey,
-                                  ),
+                              '${VN.tonKho} hiện tại: ${widget.item.totalQuantity}',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: Colors.grey),
                             ),
                           ],
                         ),
@@ -175,6 +186,34 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                   ),
                 ),
                 const SizedBox(height: 16),
+
+                if (widget.item.perChip.isNotEmpty) ...[
+                  DropdownButtonFormField<int>(
+                    initialValue: _selectedNormalizedPrice,
+                    decoration: const InputDecoration(
+                      labelText: VN.tuyChonGia,
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.sell_outlined),
+                    ),
+                    items: widget.item.perChip
+                        .map(
+                          (option) {
+                            final price = option.normalizedPrice;
+                            final priceText =
+                                '${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}đ';
+                            return DropdownMenuItem<int>(
+                              value: option.normalizedPrice,
+                              child: Text('${option.displayLabel} - $priceText (${option.quantity})'),
+                            );
+                          },
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      setState(() => _selectedNormalizedPrice = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
 
                 // Quantity input
                 TextFormField(

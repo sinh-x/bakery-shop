@@ -4,6 +4,8 @@ import io
 
 from PIL import Image
 
+from baker.db.connection import get_db
+
 
 # --- Health ---
 
@@ -14,17 +16,19 @@ def test_health(api_client):
     data = resp.json()
     assert data["status"] == "ok"
     assert "version" in data
+    assert "fingerprint" in data
+    assert data["fingerprint"]
 
 
 # --- List products ---
 
 
 def test_list_products_returns_seeded(api_client):
-    """Migrations seed 40 products (23 base + 12 cake variants + 5 su kem sets)."""
+    """Migrations seed 40 base products plus migrated order_extra accessories."""
     resp = api_client.get("/api/products")
     assert resp.status_code == 200
     products = resp.json()
-    assert len(products) == 40
+    assert len(products) == 44
 
 
 def test_list_products_filter_by_category(api_client):
@@ -40,6 +44,14 @@ def test_list_products_filter_inactive(api_client):
     resp = api_client.get("/api/products", params={"active": 0})
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+def test_list_products_trung_bay_includes_migrated_accessories(api_client):
+    resp = api_client.get("/api/products", params={"trung_bay": 1})
+    assert resp.status_code == 200
+    products = resp.json()
+    accessory_names = {p["name"] for p in products if p["category"] == "phu_kien"}
+    assert {"Nến", "Đĩa muỗng", "Nón", "Pháo"}.issubset(accessory_names)
 
 
 # --- Get product ---
@@ -229,6 +241,54 @@ def test_get_photo_not_found(api_client):
     assert "Chưa có ảnh" in resp.json()["detail"]
 
 
+def test_get_photo_falls_back_to_latest_catalog_by_created_at_and_id(api_client):
+    first = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("a.jpg", _make_test_image(150, 150), "image/jpeg")},
+    ).json()
+    second = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("b.jpg", _make_test_image(151, 151), "image/jpeg")},
+    ).json()
+
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE product_catalog_photos SET created_at = ? WHERE id IN (?, ?)",
+            ("2026-01-01 00:00:00", first["id"], second["id"]),
+        )
+
+    resp = api_client.get("/api/products/1/photo")
+    assert resp.status_code == 200
+
+    second_bytes = api_client.get(
+        f"/api/products/1/catalog/{second['id']}/photo"
+    ).content
+    assert resp.content == second_bytes
+
+
+def test_get_photo_prefers_main_photo_over_catalog_fallback(api_client):
+    main = api_client.post(
+        "/api/products/1/photo",
+        files={"file": ("main.jpg", _make_test_image(160, 160), "image/jpeg")},
+    )
+    assert main.status_code == 200
+
+    newest_catalog = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("cat.jpg", _make_test_image(170, 170), "image/jpeg")},
+    ).json()
+
+    resp = api_client.get("/api/products/1/photo")
+    assert resp.status_code == 200
+
+    main_bytes = api_client.get(main.json()["url"]).content
+    catalog_bytes = api_client.get(
+        f"/api/products/1/catalog/{newest_catalog['id']}/photo"
+    ).content
+    assert resp.content == main_bytes
+    assert resp.content != catalog_bytes
+
+
 # --- Photo path in product data ---
 
 
@@ -391,13 +451,13 @@ def test_list_categories(api_client):
     resp = api_client.get("/api/categories")
     assert resp.status_code == 200
     categories = resp.json()
-    assert len(categories) == 5
+    assert len(categories) == 6
 
 
 def test_list_categories_has_seeded_slugs(api_client):
     resp = api_client.get("/api/categories")
     slugs = {c["slug"] for c in resp.json()}
-    assert slugs == {"banh_mi", "banh_kem", "banh_ngot", "cookie", "khac"}
+    assert slugs == {"banh_mi", "banh_kem", "banh_ngot", "cookie", "khac", "phu_kien"}
 
 
 def test_list_categories_has_code_prefixes(api_client):
@@ -571,6 +631,81 @@ def test_upload_catalog_photo_position_increments(api_client):
     )
     assert first.json()["position"] == 0
     assert second.json()["position"] == 1
+
+
+def test_promote_catalog_photo_sets_main_product_photo(api_client):
+    first = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("a.jpg", _make_test_image(100, 100), "image/jpeg")},
+        data={"caption": "Ảnh 1", "tags": "mau-do"},
+    ).json()
+    second = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("b.jpg", _make_test_image(101, 101), "image/jpeg")},
+        data={"caption": "Ảnh 2", "tags": "mau-xanh"},
+    ).json()
+
+    with get_db() as conn:
+        before_photos_count = conn.execute("SELECT COUNT(*) FROM photos").fetchone()[0]
+
+    resp = api_client.post(f"/api/products/1/catalog/{first['id']}/promote")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["photo_id"] == first["photo_id"]
+
+    product = api_client.get("/api/products/1").json()
+    assert product["photo_id"] == first["photo_id"]
+
+    served = api_client.get("/api/products/1/photo")
+    assert served.status_code == 200
+    assert served.headers["content-type"] == "image/jpeg"
+
+    catalog = api_client.get("/api/products/1/catalog").json()
+    cat_by_id = {item["id"]: item for item in catalog}
+    assert cat_by_id[first["id"]]["caption"] == "Ảnh 1"
+    assert cat_by_id[first["id"]]["tags"] == "mau-do"
+    assert cat_by_id[second["id"]]["caption"] == "Ảnh 2"
+    assert cat_by_id[second["id"]]["tags"] == "mau-xanh"
+
+    with get_db() as conn:
+        after_photos_count = conn.execute("SELECT COUNT(*) FROM photos").fetchone()[0]
+    assert after_photos_count == before_photos_count
+
+
+def test_promote_catalog_photo_cross_product_returns_404_and_keeps_main_photo(api_client):
+    target_main = api_client.post(
+        "/api/products/1/photo",
+        files={"file": ("main.jpg", _make_test_image(120, 120), "image/jpeg")},
+    ).json()
+    other_catalog = api_client.post(
+        "/api/products/2/catalog",
+        files={"file": ("other.jpg", _make_test_image(130, 130), "image/jpeg")},
+    ).json()
+
+    before_photo_id = api_client.get("/api/products/1").json()["photo_id"]
+
+    resp = api_client.post(f"/api/products/1/catalog/{other_catalog['id']}/promote")
+    assert resp.status_code == 404
+
+    after_photo_id = api_client.get("/api/products/1").json()["photo_id"]
+    assert after_photo_id == before_photo_id
+
+    assert before_photo_id is not None
+    assert target_main["hash"] in target_main["url"]
+
+
+def test_promote_catalog_photo_not_found_returns_404_and_keeps_main_photo(api_client):
+    api_client.post(
+        "/api/products/1/photo",
+        files={"file": ("main.jpg", _make_test_image(140, 140), "image/jpeg")},
+    )
+    before_photo_id = api_client.get("/api/products/1").json()["photo_id"]
+
+    resp = api_client.post("/api/products/1/catalog/999999/promote")
+    assert resp.status_code == 404
+
+    after_photo_id = api_client.get("/api/products/1").json()["photo_id"]
+    assert after_photo_id == before_photo_id
 
 
 # --- Catalog list ---
@@ -785,6 +920,53 @@ def test_upload_photo_empty_file_rejected(api_client):
     )
     assert resp.status_code == 400
     assert "rỗng" in resp.json()["detail"]
+
+
+def test_upload_photo_rejects_over_10mb(api_client):
+    payload = b"x" * (10 * 1024 * 1024 + 1)
+    resp = api_client.post(
+        "/api/photos",
+        files={"file": ("too-large.jpg", payload, "image/jpeg")},
+    )
+    assert resp.status_code == 413
+
+
+def test_get_photo_by_hash_rejects_invalid_hash(api_client):
+    resp = api_client.get("/api/photos/not-a-sha256.jpg")
+    assert resp.status_code == 400
+
+
+def test_product_photo_upload_rejects_over_10mb(api_client):
+    payload = b"x" * (10 * 1024 * 1024 + 1)
+    resp = api_client.post(
+        "/api/products/1/photo",
+        files={"file": ("too-large.jpg", payload, "image/jpeg")},
+    )
+    assert resp.status_code == 413
+
+
+def test_catalog_photo_upload_rejects_over_10mb(api_client):
+    payload = b"x" * (10 * 1024 * 1024 + 1)
+    resp = api_client.post(
+        "/api/products/1/catalog",
+        files={"file": ("too-large.jpg", payload, "image/jpeg")},
+    )
+    assert resp.status_code == 413
+
+
+def test_cors_allow_headers_are_explicit(api_client):
+    resp = api_client.options(
+        "/api/health",
+        headers={
+            "Origin": "https://lily.tail10c2c6.ts.net",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "x-app-version,x-device-model,content-type",
+        },
+    )
+    assert resp.status_code == 200
+    allow_headers = resp.headers.get("access-control-allow-headers", "")
+    assert "*" not in allow_headers
+    assert "content-type" in allow_headers.lower()
 
 
 # --- PATCH /api/categories/reorder ---

@@ -9,7 +9,9 @@ from PIL import Image
 sys.path.insert(0, "src")
 
 from baker.api.receipts import (
+    _enum_attribute_lines,
     _format_vnd,
+    _wrapped_enum_attribute_lines,
     _wrap,
 )
 
@@ -28,6 +30,54 @@ class TestVNDFormatting:
 
     def test_small_number(self):
         assert _format_vnd(5000) == "5"
+
+
+class TestEnumAttributeLines:
+    """Test enum attribute extraction for receipts (DG-092 phase 4.6)."""
+
+    def test_no_attributes(self):
+        item = {"attributes": {}}
+        labels = {"nhan_banh": "Nhân bánh"}
+        assert _enum_attribute_lines(item, labels) == []
+
+    def test_single_enum_attribute(self):
+        item = {"attributes": {"nhan_banh": "Sô-cô-la"}}
+        labels = {"nhan_banh": "Nhân bánh"}
+        assert _enum_attribute_lines(item, labels) == [("Nhân bánh", "Sô-cô-la")]
+
+    def test_multiple_enum_attributes_each_on_own_line(self):
+        # Q3: each attribute renders on its own line.
+        item = {"attributes": {"nhan_banh": "Sầu riêng", "mau_kem": "Hồng"}}
+        labels = {"nhan_banh": "Nhân bánh", "mau_kem": "Màu kem"}
+        result = _enum_attribute_lines(item, labels)
+        assert len(result) == 2
+        assert ("Nhân bánh", "Sầu riêng") in result
+        assert ("Màu kem", "Hồng") in result
+
+    def test_skips_non_enum_keys(self):
+        # Only declared enum labels are surfaced; rut_tien etc. are ignored.
+        item = {"attributes": {"nhan_banh": "Dâu", "rut_tien": "true", "cash_amount": "200000"}}
+        labels = {"nhan_banh": "Nhân bánh"}
+        assert _enum_attribute_lines(item, labels) == [("Nhân bánh", "Dâu")]
+
+    def test_skips_blank_values(self):
+        item = {"attributes": {"nhan_banh": "", "mau_kem": "   "}}
+        labels = {"nhan_banh": "Nhân bánh", "mau_kem": "Màu kem"}
+        assert _enum_attribute_lines(item, labels) == []
+
+    def test_missing_attributes_key(self):
+        assert _enum_attribute_lines({}, {"nhan_banh": "Nhân bánh"}) == []
+
+    def test_wraps_long_enum_attribute_line(self):
+        from PIL import ImageFont
+        font = ImageFont.load_default()
+        item = {"attributes": {"nhan_banh": "Sô-cô-la đắng phủ hạnh nhân"}}
+        labels = {"nhan_banh": "Nhân bánh"}
+
+        lines = _wrapped_enum_attribute_lines(item, labels, font, 100)
+
+        assert len(lines) > 1
+        assert " ".join(lines) == "Nhân bánh: Sô-cô-la đắng phủ hạnh nhân"
 
 
 class TestTextWrapping:
@@ -256,6 +306,38 @@ class TestReceiptAPI:
         assert response.headers["content-type"] == "image/png"
         # Verify PNG header
         assert response.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+    def test_receipt_renders_enum_attribute_line(self, api_client):
+        """All receipt types render an extra line per enum attribute (DG-092 phase 4.6)."""
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "Khách Hàng Nhân Bánh",
+            "customerPhone": "0911-222-333",
+            "items": [
+                {
+                    "productName": "Bánh kem 20cm",
+                    "quantity": 1,
+                    "unitPrice": 350000,
+                    "attributes": {"nhan_banh": "Sô-cô-la"},
+                },
+            ],
+            "dueDate": "2026-04-20",
+            "deliveryType": "pickup",
+        })
+        assert order_resp.status_code == 201
+        data = order_resp.json()
+        order_ref = data["orderRef"]
+        item_id = data["workItems"][0]["id"]
+
+        # Customer + shop + delivery + work_ticket all render successfully.
+        for params in (
+            "type=customer",
+            "type=shop",
+            f"type=work_ticket&item_id={item_id}",
+        ):
+            resp = api_client.get(f"/api/orders/{order_ref}/receipt?{params}")
+            assert resp.status_code == 200, params
+            assert resp.headers["content-type"] == "image/png"
+            assert resp.content[:8] == b"\x89PNG\r\n\x1a\n"
 
     def test_delivery_receipt_width_is_576px(self, api_client):
         """Test delivery receipt image has correct 576px width."""

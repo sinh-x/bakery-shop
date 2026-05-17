@@ -87,7 +87,7 @@ class PrinterNotifier extends AsyncNotifier<PrinterStatus> {
 
     // If not connected, show message that printer needs to be set up
     if (currentState.state == PrinterState.disconnected) {
-      state = AsyncValue.data(
+      state = AsyncValue.data( // ignore: prefer_const_constructors
         const PrinterStatus(
           state: PrinterState.error,
           errorMessage: 'Máy in chưa kết nối. Vui lòng kết nối máy in trong Cài đặt.',

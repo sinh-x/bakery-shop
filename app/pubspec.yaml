@@ -1,7 +1,7 @@
 name: bakery_app
 description: "Bakery management mobile app for Tiệm Bánh Ninh Diêm"
 publish_to: 'none'
-version: 0.5.0+45
+version: 0.6.0+0
 
 environment:
   sdk: ^3.11.0
@@ -58,6 +58,7 @@ dependencies:
   print_bluetooth_thermal: ^1.1.1
   image: ^4.8.0
   web: ^1.1.0
+  gal: ^2.3.2
 
 dev_dependencies:
   flutter_test:

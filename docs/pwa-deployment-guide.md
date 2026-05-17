@@ -48,7 +48,9 @@ This writes cert files to `certs/` and restarts Caddy.
 ```bash
 # First time only: set up .env with your Tailscale domain
 cp config/docker.example .env
-# Edit DOMAIN in .env if the default doesn't match your hostname
+# Edit DOMAIN in .env if the default doesn't match your hostname.
+# On Lily, keep BAKER_PRINTER_DEVICE=/dev/usb/lp0 so backend printing
+# does not silently map /dev/null as the thermal printer.
 
 docker compose --profile prod up -d
 ```
@@ -70,6 +72,7 @@ This starts:
 - [ ] Products/categories screens render
 - [ ] Order creation works end-to-end
 - [ ] Photo upload works (camera + photo library)
+- [ ] Lily thermal printing maps the real printer: `docker inspect bakery-shop-baker-prod-1 --format '{{json .HostConfig.Devices}}'` shows `/dev/usb/lp0`, not `/dev/null`
 - [ ] App launches in standalone mode from home screen icon
 - [ ] Android APK still works on `http://your-hostname:2108` (unchanged)
 

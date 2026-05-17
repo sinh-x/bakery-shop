@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 const _kTypeChips = [
   ('recipe', 'Công thức'),
@@ -18,8 +18,9 @@ const _kTypeChips = [
 ];
 
 class KnowledgeListScreen extends ConsumerStatefulWidget {
-  const KnowledgeListScreen({super.key});
+  const KnowledgeListScreen({super.key, this.initialType});
 
+  final String? initialType;
   @override
   ConsumerState<KnowledgeListScreen> createState() => _KnowledgeListScreenState();
 }
@@ -27,7 +28,13 @@ class KnowledgeListScreen extends ConsumerStatefulWidget {
 class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen> {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
-  String? _selectedType;
+  late String? _selectedType;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedType = widget.initialType;
+  }
 
   @override
   void dispose() {
@@ -63,10 +70,10 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: TextField(
               controller: _searchCtrl,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: VN.searchKnowledge,
-                prefixIcon: const Icon(Icons.search),
-                border: const OutlineInputBorder(),
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
                 isDense: true,
               ),
               onChanged: _onSearchChanged,
@@ -110,7 +117,7 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(VN.apiError),
+                    const Text(VN.apiError),
                     const SizedBox(height: 8),
                     TextButton(
                       onPressed: () => ref.invalidate(knowledgeEntriesProvider),
@@ -138,20 +145,40 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen> {
                   );
                 }
 
+                // Partition pinned vs unpinned
+                final pinned = filtered.where((e) => e.pinned).toList();
+                final unpinned = filtered.where((e) => !e.pinned).toList();
+
                 return RefreshIndicator(
                   onRefresh: () async {
                     ref.invalidate(knowledgeEntriesProvider);
                   },
-                  child: ListView.builder(
+                  child: ListView(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: filtered.length,
-                    itemBuilder: (ctx, index) {
-                      final entry = filtered[index];
-                      return _KnowledgeEntryCard(
+                    children: [
+                      // Pinned section
+                      if (pinned.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8, bottom: 4),
+                          child: Text(
+                            '📌 Đã ghim',
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: Colors.orange.shade700,
+                            ),
+                          ),
+                        ),
+                        ...pinned.map((entry) => _KnowledgeEntryCard(
+                          entry: entry,
+                          onTap: () => context.push('/knowledge/${entry.id}'),
+                        )),
+                        const SizedBox(height: 8),
+                      ],
+                      // Unpinned section
+                      ...unpinned.map((entry) => _KnowledgeEntryCard(
                         entry: entry,
                         onTap: () => context.push('/knowledge/${entry.id}'),
-                      );
-                    },
+                      )),
+                    ],
                   ),
                 );
               },
@@ -207,6 +234,11 @@ class _KnowledgeEntryCard extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  if (entry.pinned)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 6),
+                      child: Text('📌', style: TextStyle(fontSize: 14)),
+                    ),
                   Expanded(
                     child: Text(
                       entry.title,

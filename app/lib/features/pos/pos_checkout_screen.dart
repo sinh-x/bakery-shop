@@ -4,8 +4,21 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/order_service.dart';
+import '../../features/stock/stock_screen.dart';
 import '../../providers/pos_provider.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import '../../providers/products_provider.dart';
+import '../../shared/utils/api_error.dart' as api_error;
+import 'package:bakery_app/shared/labels/shared.dart';
+
+@visibleForTesting
+String resolvePosCheckoutErrorMessage(Object error) {
+  return api_error.normalizeApiError(error).message;
+}
+
+@visibleForTesting
+String? extractBackendDetail(Object? data) {
+  return api_error.extractBackendDetail(data);
+}
 
 /// POS checkout screen — editable cart on checkout, single Thanh toán button.
 class PosCheckoutScreen extends ConsumerStatefulWidget {
@@ -22,24 +35,31 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
   List<Map<String, dynamic>> _buildOrderItems() {
     final cart = ref.read(posCartProvider);
-    final orderItems = cart.items
-        .where((i) => !i.isGift)
-        .map((i) => <String, dynamic>{
-              'productId': i.product.id.toString(),
-              'productName': i.product.name,
-              'quantity': i.quantity,
-              'unitPrice': i.product.basePrice,
-            })
-        .toList();
+    final orderItems = cart.items.where((i) => !i.isGift).map((i) {
+      final hasChipLabel = (i.selectedChipLabel ?? '').trim().isNotEmpty;
+      final productName = hasChipLabel
+          ? '${i.product.name} (${i.selectedChipLabel!.trim()})'
+          : i.product.name;
+
+      return <String, dynamic>{
+        'productId': i.product.id.toString(),
+        'productName': productName,
+        'quantity': i.quantity,
+        'unitPrice': i.unitPrice,
+        'priceChipId': i.selectedChipId,
+      };
+    }).toList();
 
     final giftItems = cart.items
         .where((i) => i.isGift)
-        .map((i) => <String, dynamic>{
-              'productName': i.product.name,
-              'quantity': i.quantity,
-              'unitPrice': i.product.basePrice,
-              'isGift': true,
-            })
+        .map(
+          (i) => <String, dynamic>{
+            'productName': i.product.name,
+            'quantity': i.quantity,
+            'unitPrice': i.product.basePrice,
+            'isGift': true,
+          },
+        )
         .toList();
 
     orderItems.addAll(giftItems);
@@ -74,15 +94,16 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         paymentMethod: paymentMethod,
       );
 
-      ref.read(posCartProvider.notifier).clearCart();
-
       if (!mounted) return;
 
       _navigatingAfterCheckout = true;
       context.pushReplacement('/pos/receipt/${order.orderRef}');
+      ref.read(posCartProvider.notifier).clearCart();
+      ref.invalidate(productsProvider);
+      ref.invalidate(stockOverviewProvider);
     } catch (e) {
       if (!mounted) return;
-      showTopSnackBar(context, 'Lỗi: $e');
+      showTopSnackBar(context, resolvePosCheckoutErrorMessage(e));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -95,12 +116,12 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     final source = await showDialog<Object>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text('Bằng chứng chuyển khoản'),
-        content: const Text('Chọn nguồn ảnh để xác nhận thanh toán.'),
+        title: const Text(VN.transferProofTitle),
+        content: const Text(VN.transferProofPrompt),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, 'skip'),
-            child: const Text('Bỏ qua'),
+            child: const Text(VN.skip),
           ),
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, ImageSource.camera),
@@ -108,7 +129,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogCtx, ImageSource.gallery),
-            child: const Text('🖼️ Thư viện'),
+            child: const Text(VN.photoLibrary),
           ),
         ],
       ),
@@ -153,15 +174,16 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         tags: 'chuyen-khoan',
       );
 
-      ref.read(posCartProvider.notifier).clearCart();
-
       if (!mounted) return;
       _navigatingAfterCheckout = true;
       showTopSnackBar(context, VN.thanhToanThanhCong);
       context.pushReplacement('/pos/receipt/${order.orderRef}');
+      ref.read(posCartProvider.notifier).clearCart();
+      ref.invalidate(productsProvider);
+      ref.invalidate(stockOverviewProvider);
     } catch (e) {
       if (!mounted) return;
-      showTopSnackBar(context, 'Lỗi: $e');
+      showTopSnackBar(context, resolvePosCheckoutErrorMessage(e));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -171,8 +193,8 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text('Xóa giỏ hàng?'),
-        content: const Text('Bạn có chắc muốn xóa tất cả sản phẩm trong giỏ?'),
+        title: const Text(VN.clearCartTitle),
+        content: const Text(VN.clearCartPrompt),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx),
@@ -183,7 +205,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
               ref.read(posCartProvider.notifier).clearCart();
               Navigator.pop(dialogCtx);
             },
-            child: const Text('Xóa'),
+            child: const Text(VN.clear),
           ),
         ],
       ),
@@ -204,16 +226,17 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(VN.thanhToan),
+        title: const Text(VN.thanhToan),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
+          tooltip: VN.backToCart,
           onPressed: () => context.pop(),
         ),
         actions: [
           TextButton.icon(
             onPressed: _confirmClearCart,
             icon: const Icon(Icons.delete_outline, size: 18),
-            label: const Text('Xóa giỏ'),
+            label: const Text(VN.clearCart),
           ),
         ],
       ),
@@ -236,8 +259,9 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: theme.colorScheme.primaryContainer,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
             ),
             child: SafeArea(
               top: false,
@@ -247,10 +271,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        VN.total,
-                        style: theme.textTheme.titleLarge,
-                      ),
+                      Text(VN.total, style: theme.textTheme.titleLarge),
                       Text(
                         formatVND(cart.total),
                         style: theme.textTheme.headlineMedium?.copyWith(
@@ -263,42 +284,51 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
                   const SizedBox(height: 16),
 
                   // Cash / Transfer segmented toggle
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(
-                        value: 'cash',
-                        label: Text(VN.tienMat),
-                        icon: Icon(Icons.money),
-                      ),
-                      ButtonSegment(
-                        value: 'transfer',
-                        label: Text(VN.chuyenKhoan),
-                        icon: Icon(Icons.qr_code),
-                      ),
-                    ],
-                    selected: {_selectedPaymentMethod},
-                    onSelectionChanged: (selection) {
-                      setState(() => _selectedPaymentMethod = selection.first);
-                    },
+                  Semantics(
+                    label: VN.selectPaymentMethod,
+                    child: SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(
+                          value: 'cash',
+                          label: Text(VN.tienMat),
+                          icon: Icon(Icons.money),
+                        ),
+                        ButtonSegment(
+                          value: 'transfer',
+                          label: Text(VN.chuyenKhoan),
+                          icon: Icon(Icons.qr_code),
+                        ),
+                      ],
+                      selected: {_selectedPaymentMethod},
+                      onSelectionChanged: (selection) {
+                        setState(
+                          () => _selectedPaymentMethod = selection.first,
+                        );
+                      },
+                      showSelectedIcon: false,
+                    ),
                   ),
                   const SizedBox(height: 16),
 
                   // Single Thanh toán button
                   SizedBox(
                     width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _isProcessing ? null : _handleThanhToan,
-                      icon: _isProcessing
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.payment),
-                      label: Text(VN.thanhToan),
+                    child: Tooltip(
+                      message: VN.confirmCounterPayment,
+                      child: FilledButton.icon(
+                        onPressed: _isProcessing ? null : _handleThanhToan,
+                        icon: _isProcessing
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.payment),
+                        label: const Text(VN.thanhToan),
+                      ),
                     ),
                   ),
                 ],
@@ -322,10 +352,36 @@ class _CheckoutCartItemTile extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return Dismissible(
-      key: ValueKey('${item.product.id}-${item.isGift}'),
+      key: ValueKey('${item.lineKey}-${item.isGift}'),
       direction: DismissDirection.endToStart,
+      confirmDismiss: (_) async {
+        return await showDialog<bool>(
+              context: context,
+              builder: (dialogCtx) => AlertDialog(
+                title: const Text(VN.removeFromCartTitle),
+                content: Text(
+                  '${VN.clear} "${item.product.name}" ${VN.removedFromCartSuffix}?',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogCtx, false),
+                    child: const Text(VN.huy),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(dialogCtx, true),
+                    child: const Text(VN.xoa),
+                  ),
+                ],
+              ),
+            ) ??
+            false;
+      },
       onDismissed: (_) {
-        ref.read(posCartProvider.notifier).removeItem(item.product.id);
+        ref.read(posCartProvider.notifier).removeItemByLineKey(item.lineKey);
+        showTopSnackBar(
+          context,
+          '${VN.removedFromCartPrefix} ${item.product.name} ${VN.removedFromCartSuffix}',
+        );
       },
       background: Container(
         alignment: Alignment.centerRight,
@@ -355,27 +411,31 @@ class _CheckoutCartItemTile extends ConsumerWidget {
                   ),
                 ),
           title: Text(
-            item.isGift ? '${item.product.name} (Quà tặng)' : item.product.name,
+            item.isGift
+                ? '${item.product.name} (${VN.giftSuffix})'
+                : item.selectedChipLabel != null
+                ? '${item.product.name} (${item.selectedChipLabel})'
+                : item.product.name,
             style: item.isGift
-                ? theme.textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic)
+                ? theme.textTheme.bodyMedium?.copyWith(
+                    fontStyle: FontStyle.italic,
+                  )
                 : null,
           ),
-          subtitle: item.isGift
-              ? null
-              : Text(formatVND(item.product.basePrice)),
+          subtitle: item.isGift ? null : Text(formatVND(item.unitPrice)),
           trailing: item.isGift
-              ? Icon(
-                  Icons.chevron_left,
-                  color: theme.colorScheme.outline,
-                )
+              ? Icon(Icons.chevron_left, color: theme.colorScheme.outline)
               : Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
                       icon: const Icon(Icons.remove_circle_outline, size: 20),
+                      tooltip: VN.decreaseQuantity,
                       onPressed: () {
-                        ref.read(posCartProvider.notifier).updateQuantity(
-                              item.product.id,
+                        ref
+                            .read(posCartProvider.notifier)
+                            .updateQuantityByLineKey(
+                              item.lineKey,
                               item.quantity - 1,
                             );
                       },
@@ -386,9 +446,12 @@ class _CheckoutCartItemTile extends ConsumerWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline, size: 20),
+                      tooltip: VN.increaseQuantity,
                       onPressed: () {
-                        ref.read(posCartProvider.notifier).updateQuantity(
-                              item.product.id,
+                        ref
+                            .read(posCartProvider.notifier)
+                            .updateQuantityByLineKey(
+                              item.lineKey,
                               item.quantity + 1,
                             );
                       },

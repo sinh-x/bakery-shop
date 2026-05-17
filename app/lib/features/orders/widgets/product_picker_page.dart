@@ -7,7 +7,7 @@ import '../../../data/models/product.dart';
 import '../../../providers/categories_provider.dart';
 import '../../../providers/order_providers.dart';
 import '../../../providers/products_provider.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 import '../../products/widgets/product_card.dart';
 
 class ProductPickerPage extends ConsumerStatefulWidget {
@@ -31,8 +31,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
   @override
   void initState() {
     super.initState();
-    _selectedIds =
-        widget.selectedItems.map((i) => i.product.id).toSet();
+    _selectedIds = widget.selectedItems.map((i) => i.product.id).toSet();
   }
 
   void _toggleProduct(Product product) {
@@ -46,8 +45,9 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
   }
 
   void _selectSingleProduct(Product product) {
-    final alreadyAdded =
-        widget.selectedItems.any((i) => i.product.id == product.id);
+    final alreadyAdded = widget.selectedItems.any(
+      (i) => i.product.id == product.id,
+    );
     if (!alreadyAdded) {
       widget.selectedItems.add(DraftOrderItem(product: product));
     }
@@ -64,13 +64,13 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
 
   void _onConfirm(List<Product> allProducts) {
     // Remove items that were deselected
-    widget.selectedItems
-        .removeWhere((i) => !_selectedIds.contains(i.product.id));
+    widget.selectedItems.removeWhere(
+      (i) => !_selectedIds.contains(i.product.id),
+    );
 
     // Add newly selected products (quantity = 1)
     for (final id in _selectedIds) {
-      final alreadyAdded =
-          widget.selectedItems.any((i) => i.product.id == id);
+      final alreadyAdded = widget.selectedItems.any((i) => i.product.id == id);
       if (!alreadyAdded) {
         final product = allProducts.where((p) => p.id == id).firstOrNull;
         if (product != null) {
@@ -87,18 +87,17 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
     List<Category> categories,
     List<Product> allProducts,
     String baseUrl,
+    String cacheBuster,
   ) {
-    final activeCategories =
-        categories.where((c) => c.active == 1).toList();
-    final activeProducts =
-        allProducts.where((p) => p.active == 1).toList();
+    final activeCategories = categories.where((c) => c.active == 1).toList();
+    final activeProducts = allProducts.where((p) => p.active == 1).toList();
 
     final appBar = _buildAppBar(allProducts, activeCategories);
 
     if (activeCategories.isEmpty) {
       return Scaffold(
         appBar: appBar,
-        body: _buildCategoryGrid(activeProducts, baseUrl),
+        body: _buildCategoryGrid(activeProducts, baseUrl, cacheBuster),
       );
     }
 
@@ -116,11 +115,11 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
                     child: Text(
                       VN.noProducts,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context).colorScheme.outline,
-                          ),
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
                     ),
                   )
-                : _buildCategoryGrid(catProducts, baseUrl);
+                : _buildCategoryGrid(catProducts, baseUrl, cacheBuster);
           }).toList(),
         ),
       ),
@@ -164,7 +163,11 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
     );
   }
 
-  Widget _buildCategoryGrid(List<Product> products, String baseUrl) {
+  Widget _buildCategoryGrid(
+    List<Product> products,
+    String baseUrl,
+    String cacheBuster,
+  ) {
     return GridView.builder(
       padding: const EdgeInsets.all(8),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -183,6 +186,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
             ProductCard(
               product: product,
               photoBaseUrl: baseUrl,
+              cacheBuster: cacheBuster,
               showPriceBadge: true,
               onTap: _multiSelectMode
                   ? () => _toggleProduct(product)
@@ -218,6 +222,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
     final categoriesAsync = ref.watch(categoriesProvider);
     final productsAsync = ref.watch(productsProvider);
     final baseUrl = ref.watch(apiBaseUrlProvider);
+    final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
 
     return productsAsync.when(
       loading: () => Scaffold(
@@ -238,12 +243,19 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
           ),
           title: const Text(VN.selectProducts),
         ),
-        body: Center(child: Text(VN.apiError)),
+        body: const Center(child: Text(VN.apiError)),
       ),
       data: (products) => categoriesAsync.when(
-        loading: () => _buildGrid([], products, baseUrl),
-        error: (e, _) => _buildGrid([], products, baseUrl),
-        data: (categories) => _buildGrid(categories, products, baseUrl),
+        loading: () =>
+            _buildGrid([], products, baseUrl, photoRefreshTick.toString()),
+        error: (e, _) =>
+            _buildGrid([], products, baseUrl, photoRefreshTick.toString()),
+        data: (categories) => _buildGrid(
+          categories,
+          products,
+          baseUrl,
+          photoRefreshTick.toString(),
+        ),
       ),
     );
   }

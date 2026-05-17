@@ -1,8 +1,12 @@
 """Tests for server logging system (DG-018)."""
 
+import asyncio
 import json
 
 import pytest
+from starlette.requests import Request
+
+from baker.api.exception_handlers import global_exception_handler
 
 
 class TestLoggingMiddleware:
@@ -237,3 +241,32 @@ class TestTriggerSystem:
         with get_db() as conn:
             row = conn.execute("SELECT last_fired FROM log_triggers WHERE name = 'cooldown-trigger'").fetchone()
             assert row["last_fired"] == first_fired  # Unchanged because of cooldown
+
+
+def test_global_exception_handler_persists_sanitized_detail(api_client):
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/test-crash",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "query_string": b"",
+            "root_path": "",
+            "http_version": "1.1",
+        }
+    )
+
+    response = asyncio.run(global_exception_handler(request, RuntimeError("boom")))
+    assert response.status_code == 500
+
+    from baker.db.connection import get_db
+
+    with get_db() as conn:
+        row = conn.execute("SELECT detail FROM server_logs ORDER BY id DESC LIMIT 1").fetchone()
+        detail = json.loads(row["detail"])
+        assert detail["error_type"] == "RuntimeError"
+        assert detail["error_message"] == "boom"
+        assert "traceback" not in detail

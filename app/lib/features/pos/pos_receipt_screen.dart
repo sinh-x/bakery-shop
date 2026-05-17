@@ -1,18 +1,13 @@
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/receipt_service.dart';
-import '../../shared/widgets/printer_picker_dialog.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import '../../providers/events_provider.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
-import '../orders/receipt_preview_print_stub.dart'
-    if (dart.library.io) '../orders/receipt_preview_print_native.dart'
-    if (dart.library.js_interop) '../orders/receipt_preview_print_web.dart'
-    as platform;
 
 /// POS receipt screen shown after order creation.
 /// Displays receipt image with print and skip actions only.
@@ -64,11 +59,13 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
     setState(() => _printing = true);
     try {
       final receiptService = ref.read(receiptServiceProvider);
+      final printedBy = ref.read(loggedByProvider);
 
       // Always use server-side print API (USB thermal printer)
       await receiptService.printReceipt(
         orderRef: widget.orderRef,
         type: ReceiptType.customer,
+        printedBy: printedBy,
       );
       if (!mounted) return;
       showTopSnackBar(context, VN.printSuccess);
@@ -86,6 +83,7 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
   }
 
   @override
+  // ignore: prefer_const_constructors
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -143,7 +141,7 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(VN.apiError),
+            const Text(VN.apiError),
             const SizedBox(height: 8),
             Text(
               _error!,

@@ -3,12 +3,13 @@
 import json
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from PIL import UnidentifiedImageError
 from pydantic import BaseModel
 
 import baker.config
 from baker.code_gen import generate_code, get_category_prefix
 from baker.db.connection import get_db
-from baker.api.photos import save_photo
+from baker.api.photos import read_image_upload, save_photo
 
 
 router = APIRouter(prefix="/api/products", tags=["products"])
@@ -36,6 +37,34 @@ class ProductUpdate(BaseModel):
 def _row_to_dict(row) -> dict:
     """Convert a sqlite3.Row to a dict."""
     return dict(row)
+
+
+def _product_price_chips(conn, product_id: int) -> list[dict]:
+    """Get ordered price chips for a product."""
+    rows = conn.execute(
+        "SELECT pc.id, pc.label, pc.price, pc.position, COALESCE(ps.quantity, 0) AS stock_qty "
+        "FROM product_price_chips pc "
+        "LEFT JOIN ("
+        "  SELECT sl.price_chip_id, COUNT(ii.id) AS quantity "
+        "  FROM stock_lots sl "
+        "  LEFT JOIN inventory_items ii ON ii.lot_id = sl.id AND ii.status = 'available' "
+        "  WHERE sl.product_id = ? "
+        "  GROUP BY sl.price_chip_id"
+        ") ps ON ps.price_chip_id = pc.id "
+        "WHERE pc.product_id = ? "
+        "ORDER BY pc.position, pc.id",
+        (product_id, product_id),
+    ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "label": row["label"],
+            "price": row["price"],
+            "position": row["position"],
+            "stock_qty": row["stock_qty"],
+        }
+        for row in rows
+    ]
 
 
 def _product_attributes(conn, product_id: int) -> dict:
@@ -78,6 +107,73 @@ def _product_attributes(conn, product_id: int) -> dict:
     return result
 
 
+def _product_enum_attributes(conn, product_id: int, product_category: str) -> list[dict]:
+    """Build the enum_attributes list for a product.
+
+    Returns one entry per enum attribute applicable to the product's category.
+    Each entry embeds the active options ordered by sort_order then id, plus
+    `default_option_id` (parsed from `product_attributes.default_value`) and a
+    per-option `is_default` flag.
+    """
+    enum_attrs = conn.execute(
+        """SELECT id, attribute_type, label_vi, applicable_categories, default_value
+           FROM product_attributes
+           WHERE active = 1 AND value_type = 'enum'
+           ORDER BY sort_order, attribute_type"""
+    ).fetchall()
+
+    result: list[dict] = []
+    for attr in enum_attrs:
+        try:
+            cats = json.loads(attr["applicable_categories"]) if attr["applicable_categories"] else []
+        except (json.JSONDecodeError, TypeError):
+            cats = []
+        if cats and product_category not in cats:
+            continue
+
+        try:
+            default_option_id = int(attr["default_value"]) if attr["default_value"] else None
+        except (ValueError, TypeError):
+            default_option_id = None
+
+        option_rows = conn.execute(
+            "SELECT id, value_vi, sort_order, active FROM product_attribute_options "
+            "WHERE attribute_id = ? AND active = 1 ORDER BY sort_order, id",
+            (attr["id"],),
+        ).fetchall()
+
+        options = [
+            {
+                "id": opt["id"],
+                "value_vi": opt["value_vi"],
+                "sort_order": opt["sort_order"],
+                "active": opt["active"],
+                "is_default": default_option_id is not None and opt["id"] == default_option_id,
+            }
+            for opt in option_rows
+        ]
+
+        result.append({
+            "attribute_type": attr["attribute_type"],
+            "label_vi": attr["label_vi"],
+            "default_option_id": default_option_id,
+            "options": options,
+        })
+
+    return result
+
+
+def _enrich_product(conn, row) -> dict:
+    """Attach computed product fields for API responses."""
+    product = _row_to_dict(row)
+    product["attributes"] = _product_attributes(conn, product["id"])
+    product["price_chips"] = _product_price_chips(conn, product["id"])
+    product["enum_attributes"] = _product_enum_attributes(
+        conn, product["id"], product.get("category") or ""
+    )
+    return product
+
+
 @router.get("")
 def list_products(
     category: str | None = Query(None, description="Lọc theo danh mục"),
@@ -100,7 +196,13 @@ def list_products(
             params.append(f"%{code}%")
 
         joins.append(
-            """LEFT JOIN product_stock ps ON ps.product_id = p.id"""
+            """LEFT JOIN (
+                   SELECT sl.product_id, COUNT(ii.id) AS quantity
+                   FROM stock_lots sl
+                   LEFT JOIN inventory_items ii
+                     ON ii.lot_id = sl.id AND ii.status = 'available'
+                   GROUP BY sl.product_id
+               ) ps ON ps.product_id = p.id"""
         )
         select_cols = "p.*, COALESCE(ps.quantity, 0) AS stock_qty"
         if trung_bay:
@@ -119,8 +221,7 @@ def list_products(
 
         result = []
         for r in rows:
-            prod = _row_to_dict(r)
-            prod["attributes"] = _product_attributes(conn, prod["id"])
+            prod = _enrich_product(conn, r)
             result.append(prod)
         return result
 
@@ -134,8 +235,7 @@ def get_product_by_code(code: str):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
-        prod = _row_to_dict(row)
-        prod["attributes"] = _product_attributes(conn, prod["id"])
+        prod = _enrich_product(conn, row)
         return prod
 
 
@@ -148,8 +248,7 @@ def get_product(product_id: int):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
-        prod = _row_to_dict(row)
-        prod["attributes"] = _product_attributes(conn, prod["id"])
+        prod = _enrich_product(conn, row)
         return prod
 
 
@@ -208,7 +307,7 @@ def create_product(product: ProductCreate):
         row = conn.execute(
             "SELECT * FROM products WHERE id = ?", (new_id,)
         ).fetchone()
-        return _row_to_dict(row)
+        return _enrich_product(conn, row)
 
 
 @router.patch("/{product_id}")
@@ -286,7 +385,7 @@ def update_product(product_id: int, product: ProductUpdate):
         row = conn.execute(
             "SELECT * FROM products WHERE id = ?", (product_id,)
         ).fetchone()
-        return _row_to_dict(row)
+        return _enrich_product(conn, row)
 
 
 @router.delete("/{product_id}")
@@ -315,16 +414,11 @@ async def upload_photo(product_id: int, file: UploadFile):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-    if file.content_type and not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Tệp phải là hình ảnh")
-
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="Tệp rỗng")
+    data = await read_image_upload(file)
 
     try:
         hash_hex = save_photo(data, file.filename or "")
-    except Exception:
+    except (UnidentifiedImageError, OSError, ValueError):
         raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
 
     with get_db() as conn:
@@ -351,10 +445,23 @@ def get_photo(product_id: int):
             (product_id,),
         ).fetchone()
 
-    if not row or not row["hash"]:
+        if row and row["hash"]:
+            photo_hash = row["hash"]
+        else:
+            fallback = conn.execute(
+                "SELECT ph.hash FROM product_catalog_photos cp "
+                "JOIN photos ph ON cp.photo_id = ph.id "
+                "WHERE cp.product_id = ? "
+                "ORDER BY cp.created_at DESC, cp.id DESC "
+                "LIMIT 1",
+                (product_id,),
+            ).fetchone()
+            photo_hash = fallback["hash"] if fallback and fallback["hash"] else None
+
+    if not photo_hash:
         raise HTTPException(status_code=404, detail="Chưa có ảnh cho sản phẩm này")
 
-    photo_file = baker.config.DATA_DIR / "photos" / f"{row['hash']}.jpg"
+    photo_file = baker.config.DATA_DIR / "photos" / f"{photo_hash}.jpg"
     if not photo_file.exists():
         raise HTTPException(status_code=404, detail="Chưa có ảnh cho sản phẩm này")
     return FileResponse(str(photo_file), media_type="image/jpeg")

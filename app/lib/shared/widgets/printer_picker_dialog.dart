@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
 import '../../data/services/printer_service.dart';
-import 'vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 /// Result of the printer picker dialog.
 enum PrinterPickerResult {

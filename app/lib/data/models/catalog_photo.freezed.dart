@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$CatalogPhoto {
 
- int get id;@JsonKey(name: 'product_id') int get productId;@JsonKey(name: 'file_path') String get filePath; String get caption; String get tags; int get position;@JsonKey(name: 'created_at') String? get createdAt;
+ int get id;@JsonKey(name: 'product_id') int get productId;@JsonKey(name: 'file_path') String get filePath; String get caption; String get tags; int get position;@JsonKey(name: 'created_at') String? get createdAt;@JsonKey(name: 'photo_hash') String? get photoHash;
 /// Create a copy of CatalogPhoto
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $CatalogPhotoCopyWith<CatalogPhoto> get copyWith => _$CatalogPhotoCopyWithImpl<C
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is CatalogPhoto&&(identical(other.id, id) || other.id == id)&&(identical(other.productId, productId) || other.productId == productId)&&(identical(other.filePath, filePath) || other.filePath == filePath)&&(identical(other.caption, caption) || other.caption == caption)&&(identical(other.tags, tags) || other.tags == tags)&&(identical(other.position, position) || other.position == position)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is CatalogPhoto&&(identical(other.id, id) || other.id == id)&&(identical(other.productId, productId) || other.productId == productId)&&(identical(other.filePath, filePath) || other.filePath == filePath)&&(identical(other.caption, caption) || other.caption == caption)&&(identical(other.tags, tags) || other.tags == tags)&&(identical(other.position, position) || other.position == position)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.photoHash, photoHash) || other.photoHash == photoHash));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,productId,filePath,caption,tags,position,createdAt);
+int get hashCode => Object.hash(runtimeType,id,productId,filePath,caption,tags,position,createdAt,photoHash);
 
 @override
 String toString() {
-  return 'CatalogPhoto(id: $id, productId: $productId, filePath: $filePath, caption: $caption, tags: $tags, position: $position, createdAt: $createdAt)';
+  return 'CatalogPhoto(id: $id, productId: $productId, filePath: $filePath, caption: $caption, tags: $tags, position: $position, createdAt: $createdAt, photoHash: $photoHash)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $CatalogPhotoCopyWith<$Res>  {
   factory $CatalogPhotoCopyWith(CatalogPhoto value, $Res Function(CatalogPhoto) _then) = _$CatalogPhotoCopyWithImpl;
 @useResult
 $Res call({
- int id,@JsonKey(name: 'product_id') int productId,@JsonKey(name: 'file_path') String filePath, String caption, String tags, int position,@JsonKey(name: 'created_at') String? createdAt
+ int id,@JsonKey(name: 'product_id') int productId,@JsonKey(name: 'file_path') String filePath, String caption, String tags, int position,@JsonKey(name: 'created_at') String? createdAt,@JsonKey(name: 'photo_hash') String? photoHash
 });
 
 
@@ -65,7 +65,7 @@ class _$CatalogPhotoCopyWithImpl<$Res>
 
 /// Create a copy of CatalogPhoto
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? productId = null,Object? filePath = null,Object? caption = null,Object? tags = null,Object? position = null,Object? createdAt = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? productId = null,Object? filePath = null,Object? caption = null,Object? tags = null,Object? position = null,Object? createdAt = freezed,Object? photoHash = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int,productId: null == productId ? _self.productId : productId // ignore: cast_nullable_to_non_nullable
@@ -74,6 +74,7 @@ as String,caption: null == caption ? _self.caption : caption // ignore: cast_nul
 as String,tags: null == tags ? _self.tags : tags // ignore: cast_nullable_to_non_nullable
 as String,position: null == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
 as int,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as String?,photoHash: freezed == photoHash ? _self.photoHash : photoHash // ignore: cast_nullable_to_non_nullable
 as String?,
   ));
 }
@@ -156,10 +157,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'product_id')  int productId, @JsonKey(name: 'file_path')  String filePath,  String caption,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'product_id')  int productId, @JsonKey(name: 'file_path')  String filePath,  String caption,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt, @JsonKey(name: 'photo_hash')  String? photoHash)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _CatalogPhoto() when $default != null:
-return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags,_that.position,_that.createdAt);case _:
+return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags,_that.position,_that.createdAt,_that.photoHash);case _:
   return orElse();
 
 }
@@ -177,10 +178,10 @@ return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'product_id')  int productId, @JsonKey(name: 'file_path')  String filePath,  String caption,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'product_id')  int productId, @JsonKey(name: 'file_path')  String filePath,  String caption,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt, @JsonKey(name: 'photo_hash')  String? photoHash)  $default,) {final _that = this;
 switch (_that) {
 case _CatalogPhoto():
-return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags,_that.position,_that.createdAt);}
+return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags,_that.position,_that.createdAt,_that.photoHash);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -194,10 +195,10 @@ return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id, @JsonKey(name: 'product_id')  int productId, @JsonKey(name: 'file_path')  String filePath,  String caption,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id, @JsonKey(name: 'product_id')  int productId, @JsonKey(name: 'file_path')  String filePath,  String caption,  String tags,  int position, @JsonKey(name: 'created_at')  String? createdAt, @JsonKey(name: 'photo_hash')  String? photoHash)?  $default,) {final _that = this;
 switch (_that) {
 case _CatalogPhoto() when $default != null:
-return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags,_that.position,_that.createdAt);case _:
+return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags,_that.position,_that.createdAt,_that.photoHash);case _:
   return null;
 
 }
@@ -209,7 +210,7 @@ return $default(_that.id,_that.productId,_that.filePath,_that.caption,_that.tags
 @JsonSerializable()
 
 class _CatalogPhoto implements CatalogPhoto {
-  const _CatalogPhoto({required this.id, @JsonKey(name: 'product_id') required this.productId, @JsonKey(name: 'file_path') required this.filePath, this.caption = '', this.tags = '', this.position = 0, @JsonKey(name: 'created_at') this.createdAt});
+  const _CatalogPhoto({required this.id, @JsonKey(name: 'product_id') required this.productId, @JsonKey(name: 'file_path') required this.filePath, this.caption = '', this.tags = '', this.position = 0, @JsonKey(name: 'created_at') this.createdAt, @JsonKey(name: 'photo_hash') this.photoHash});
   factory _CatalogPhoto.fromJson(Map<String, dynamic> json) => _$CatalogPhotoFromJson(json);
 
 @override final  int id;
@@ -219,6 +220,7 @@ class _CatalogPhoto implements CatalogPhoto {
 @override@JsonKey() final  String tags;
 @override@JsonKey() final  int position;
 @override@JsonKey(name: 'created_at') final  String? createdAt;
+@override@JsonKey(name: 'photo_hash') final  String? photoHash;
 
 /// Create a copy of CatalogPhoto
 /// with the given fields replaced by the non-null parameter values.
@@ -233,16 +235,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _CatalogPhoto&&(identical(other.id, id) || other.id == id)&&(identical(other.productId, productId) || other.productId == productId)&&(identical(other.filePath, filePath) || other.filePath == filePath)&&(identical(other.caption, caption) || other.caption == caption)&&(identical(other.tags, tags) || other.tags == tags)&&(identical(other.position, position) || other.position == position)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _CatalogPhoto&&(identical(other.id, id) || other.id == id)&&(identical(other.productId, productId) || other.productId == productId)&&(identical(other.filePath, filePath) || other.filePath == filePath)&&(identical(other.caption, caption) || other.caption == caption)&&(identical(other.tags, tags) || other.tags == tags)&&(identical(other.position, position) || other.position == position)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.photoHash, photoHash) || other.photoHash == photoHash));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,productId,filePath,caption,tags,position,createdAt);
+int get hashCode => Object.hash(runtimeType,id,productId,filePath,caption,tags,position,createdAt,photoHash);
 
 @override
 String toString() {
-  return 'CatalogPhoto(id: $id, productId: $productId, filePath: $filePath, caption: $caption, tags: $tags, position: $position, createdAt: $createdAt)';
+  return 'CatalogPhoto(id: $id, productId: $productId, filePath: $filePath, caption: $caption, tags: $tags, position: $position, createdAt: $createdAt, photoHash: $photoHash)';
 }
 
 
@@ -253,7 +255,7 @@ abstract mixin class _$CatalogPhotoCopyWith<$Res> implements $CatalogPhotoCopyWi
   factory _$CatalogPhotoCopyWith(_CatalogPhoto value, $Res Function(_CatalogPhoto) _then) = __$CatalogPhotoCopyWithImpl;
 @override @useResult
 $Res call({
- int id,@JsonKey(name: 'product_id') int productId,@JsonKey(name: 'file_path') String filePath, String caption, String tags, int position,@JsonKey(name: 'created_at') String? createdAt
+ int id,@JsonKey(name: 'product_id') int productId,@JsonKey(name: 'file_path') String filePath, String caption, String tags, int position,@JsonKey(name: 'created_at') String? createdAt,@JsonKey(name: 'photo_hash') String? photoHash
 });
 
 
@@ -270,7 +272,7 @@ class __$CatalogPhotoCopyWithImpl<$Res>
 
 /// Create a copy of CatalogPhoto
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? productId = null,Object? filePath = null,Object? caption = null,Object? tags = null,Object? position = null,Object? createdAt = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? productId = null,Object? filePath = null,Object? caption = null,Object? tags = null,Object? position = null,Object? createdAt = freezed,Object? photoHash = freezed,}) {
   return _then(_CatalogPhoto(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int,productId: null == productId ? _self.productId : productId // ignore: cast_nullable_to_non_nullable
@@ -279,6 +281,7 @@ as String,caption: null == caption ? _self.caption : caption // ignore: cast_nul
 as String,tags: null == tags ? _self.tags : tags // ignore: cast_nullable_to_non_nullable
 as String,position: null == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
 as int,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as String?,photoHash: freezed == photoHash ? _self.photoHash : photoHash // ignore: cast_nullable_to_non_nullable
 as String?,
   ));
 }

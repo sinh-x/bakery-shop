@@ -23,10 +23,24 @@ load_env() {
 }
 
 # --- Build Flutter web (release) and sync to web-build/ ---
+compute_build_fingerprint() {
+  local git_sha
+  git_sha="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
+
+  if [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]]; then
+    printf '%s-dirty\n' "$git_sha"
+    return
+  fi
+
+  printf '%s\n' "$git_sha"
+}
+
 build_flutter_web() {
+  local fingerprint="${1:-${BAKER_BUILD_FINGERPRINT:-$(compute_build_fingerprint)}}"
+
   echo "--- Building Flutter web (release) ---"
   nix develop "${REPO_ROOT}/.#flutter" --command bash -c \
-    "cd '${REPO_ROOT}/app' && flutter build web --release"
+    "cd '${REPO_ROOT}/app' && flutter build web --release --dart-define=BAKER_BUILD_FINGERPRINT=${fingerprint}"
 
   local build_output="${REPO_ROOT}/app/build/web"
   if [[ ! -d "$build_output" ]]; then

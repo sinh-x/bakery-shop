@@ -63,6 +63,7 @@ class WorkItemCreate(BaseModel):
     isExtra: bool = False
     isGift: bool = False
     attributes: dict = Field(default_factory=dict)
+    priceChipId: int | None = None
 
 
 class WorkItemUpdate(BaseModel):
@@ -153,7 +154,7 @@ def _derive_order_status(conn, order_id: int) -> Optional[str]:
     return _WORK_ITEM_TO_ORDER_STATUS.get(derived_wi_status)
 
 
-def _sync_extras_to_order_status(conn, order_id: int, order_status: str) -> None:
+def sync_extras_to_order_status(conn, order_id: int, order_status: str) -> None:
     """Auto-transition each non-cancelled extra/gift item to match the order status.
 
     Skips extras that are already at target status, cancelled, or ahead of target (F5).
@@ -221,6 +222,7 @@ def create_work_item(ref: str, body: WorkItemCreate):
             is_extra=body.isExtra,
             is_gift=body.isGift,
             attributes=body.attributes,
+            price_chip_id=body.priceChipId,
         )
         item.save(conn)
         row = conn.execute("SELECT * FROM order_items WHERE id = ?", (item.id,)).fetchone()
@@ -343,6 +345,15 @@ def transition_work_item_status(ref: str, item_id: int, body: WorkItemStatusTran
                 Order.update_status(
                     conn, order_row["order_ref"], derived_order_status, _AUTO_SYNC_REASON
                 )
+
+                if derived_order_status in ("delivered", "completed", "confirmed"):
+                    from baker.services.order_stock import auto_decrement_stock
+                    auto_decrement_stock(conn, order_row["id"], order_row["order_ref"])
+
+                if derived_order_status == "cancelled":
+                    from baker.services.order_stock import restore_stock_for_order
+                    restore_stock_for_order(conn, order_row["id"], order_row["order_ref"])
+
                 # Log auto-sync in order_history (F6)
                 conn.execute(
                     """INSERT INTO order_history (order_id, action_type, field_name, old_value, new_value, changed_by)
@@ -350,7 +361,12 @@ def transition_work_item_status(ref: str, item_id: int, body: WorkItemStatusTran
                     (order_row["id"], "auto_sync", "status", order_row["status"], derived_order_status, _AUTO_SYNC_REASON),
                 )
                 # Sync extras/gifts to match the new order status (F4, F5)
-                _sync_extras_to_order_status(conn, order_id, derived_order_status)
+                sync_extras_to_order_status(conn, order_id, derived_order_status)
 
         updated = conn.execute("SELECT * FROM order_items WHERE id = ?", (item_id,)).fetchone()
         return WorkItem.from_row(updated).to_api_dict()
+
+
+def _sync_extras_to_order_status(conn, order_id: int, order_status: str) -> None:
+    """Backward-compatible alias for internal/private callers."""
+    sync_extras_to_order_status(conn, order_id, order_status)

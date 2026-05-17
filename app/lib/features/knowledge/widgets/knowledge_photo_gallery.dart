@@ -1,6 +1,17 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
 
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+
+import '../../../data/api/api_client.dart';
 import '../../../data/models/knowledge_entry.dart';
+import '../../../shared/services/image_download_metadata.dart';
+import '../../../shared/services/web_share_fallback_helpers.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 
 /// Horizontal PageView photo gallery with dots indicator and tap-to-fullscreen.
 class KnowledgePhotoGallery extends StatefulWidget {
@@ -62,7 +73,7 @@ class _KnowledgePhotoGalleryState extends State<KnowledgePhotoGallery> {
             },
             itemBuilder: (ctx, index) {
               final photo = widget.photos[index];
-              final url = '$baseUrl/api/knowledge/photos/${photo.hash}';
+              final url = '$baseUrl${photo.url}';
               return GestureDetector(
                 onTap: () => _openFullScreen(index),
                 child: Image.network(
@@ -71,7 +82,11 @@ class _KnowledgePhotoGalleryState extends State<KnowledgePhotoGallery> {
                   errorBuilder: (_, e, s) => Container(
                     color: Colors.grey.shade200,
                     child: const Center(
-                      child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
+                      child: Icon(
+                        Icons.broken_image,
+                        size: 48,
+                        color: Colors.grey,
+                      ),
                     ),
                   ),
                 ),
@@ -100,13 +115,14 @@ class _KnowledgePhotoGalleryState extends State<KnowledgePhotoGallery> {
             ),
           ),
         // Caption
-        if (widget.photos.isNotEmpty && widget.photos[_currentIndex].caption.isNotEmpty) ...[
+        if (widget.photos.isNotEmpty &&
+            widget.photos[_currentIndex].caption.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
             widget.photos[_currentIndex].caption,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ],
@@ -117,7 +133,7 @@ class _KnowledgePhotoGalleryState extends State<KnowledgePhotoGallery> {
 }
 
 /// Full-screen swipeable viewer with zoom/pan.
-class _FullScreenViewer extends StatefulWidget {
+class _FullScreenViewer extends ConsumerStatefulWidget {
   const _FullScreenViewer({
     required this.photos,
     required this.initialIndex,
@@ -129,12 +145,13 @@ class _FullScreenViewer extends StatefulWidget {
   final String baseUrl;
 
   @override
-  State<_FullScreenViewer> createState() => _FullScreenViewerState();
+  ConsumerState<_FullScreenViewer> createState() => _FullScreenViewerState();
 }
 
-class _FullScreenViewerState extends State<_FullScreenViewer> {
+class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
   late final PageController _pageController;
   late int _currentIndex;
+  bool _sharing = false;
 
   @override
   void initState() {
@@ -149,6 +166,85 @@ class _FullScreenViewerState extends State<_FullScreenViewer> {
     super.dispose();
   }
 
+  Future<void> _shareCurrentPhoto() async {
+    if (_sharing || _currentIndex >= widget.photos.length) return;
+    setState(() => _sharing = true);
+    final photo = widget.photos[_currentIndex];
+    final dio = ref.read(dioProvider);
+    final url = '${widget.baseUrl}${photo.url}';
+    try {
+      final resp = await dio.get<List<int>>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (resp.data == null) throw Exception('No data');
+      final tmpDir = await getTemporaryDirectory();
+      final bytes = Uint8List.fromList(resp.data!);
+      final metadata = imageDownloadMetadata(bytes, sourceName: photo.url);
+      final tmpFile = File(
+        '${tmpDir.path}/${_knowledgePhotoFileName(photo, metadata)}',
+      );
+      await tmpFile.writeAsBytes(bytes);
+      await Share.shareXFiles([
+        XFile(tmpFile.path, mimeType: metadata.mimeType),
+      ], text: photo.caption.isNotEmpty ? photo.caption : null);
+    } catch (_) {
+      if (!mounted) return;
+      if (kIsWeb) {
+        await _downloadPhotoFallback(dio, photo, url);
+      } else {
+        showTopSnackBar(context, VN.khongTheChiaSe);
+      }
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  String _knowledgePhotoFileName(
+    KnowledgePhoto photo,
+    ImageDownloadMetadata metadata,
+  ) {
+    final safeHash = photo.hash
+        .replaceAll(RegExp(r'[\\/]'), '_')
+        .replaceAll(RegExp(r'\s+'), '_')
+        .trim();
+    final baseName = safeHash.isEmpty ? 'knowledge_photo' : safeHash;
+    return imageDownloadFileName(baseName, metadata);
+  }
+
+  Future<void> _downloadPhotoFallback(
+    Dio dio,
+    KnowledgePhoto photo,
+    String url,
+  ) async {
+    try {
+      final resp = await dio.get<List<int>>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (resp.data == null) {
+        if (mounted) showTopSnackBar(context, VN.khongTheTaiAnh);
+        return;
+      }
+      final bytes = Uint8List.fromList(resp.data!);
+      final metadata = imageDownloadMetadata(bytes, sourceName: photo.url);
+      final downloaded = await WebShareFallbackHelpers.downloadBytes(
+        bytes,
+        _knowledgePhotoFileName(photo, metadata),
+        mimeType: metadata.mimeType,
+      );
+      if (mounted) {
+        if (downloaded) {
+          showTopSnackBar(context, VN.taiMotPhanAnh);
+        } else {
+          showTopSnackBar(context, VN.khongTheTaiAnh);
+        }
+      }
+    } catch (e) {
+      if (mounted) showTopSnackBar(context, 'Lỗi: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -160,6 +256,22 @@ class _FullScreenViewerState extends State<_FullScreenViewer> {
           '${_currentIndex + 1} / ${widget.photos.length}',
           style: const TextStyle(color: Colors.white),
         ),
+        actions: [
+          IconButton(
+            icon: _sharing
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.share, color: Colors.white),
+            tooltip: VN.chiaSe,
+            onPressed: _sharing ? null : _shareCurrentPhoto,
+          ),
+        ],
       ),
       body: PageView.builder(
         controller: _pageController,
@@ -169,7 +281,7 @@ class _FullScreenViewerState extends State<_FullScreenViewer> {
         },
         itemBuilder: (ctx, index) {
           final photo = widget.photos[index];
-          final url = '${widget.baseUrl}/api/knowledge/photos/${photo.hash}';
+          final url = '${widget.baseUrl}${photo.url}';
           return Stack(
             fit: StackFit.expand,
             children: [
@@ -178,7 +290,11 @@ class _FullScreenViewerState extends State<_FullScreenViewer> {
                   url,
                   fit: BoxFit.contain,
                   errorBuilder: (_, e, s) => const Center(
-                    child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
+                    child: Icon(
+                      Icons.broken_image,
+                      color: Colors.white54,
+                      size: 64,
+                    ),
                   ),
                 ),
               ),
@@ -188,7 +304,10 @@ class _FullScreenViewerState extends State<_FullScreenViewer> {
                   right: 0,
                   bottom: 0,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.bottomCenter,

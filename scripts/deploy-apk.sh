@@ -6,7 +6,12 @@
 #                If omitted, installs on all connected devices.
 set -euo pipefail
 
-cd "$(dirname "$0")/../app"
+source "$(dirname "$0")/lib.sh"
+load_env
+
+BUILD_FINGERPRINT="$(compute_build_fingerprint)"
+
+cd "$REPO_ROOT/app"
 
 BUILD_MODE="release"
 DEVICE_FILTER=""
@@ -22,7 +27,7 @@ APK_PATH="build/app/outputs/flutter-apk/app-${BUILD_MODE}.apk"
 
 # --- Build ---
 echo "Building ${BUILD_MODE} APK..."
-flutter build apk --"${BUILD_MODE}"
+flutter build apk --"${BUILD_MODE}" --dart-define="BAKER_BUILD_FINGERPRINT=${BUILD_FINGERPRINT}"
 
 if [ ! -f "$APK_PATH" ]; then
   echo "ERROR: APK not found at $APK_PATH"

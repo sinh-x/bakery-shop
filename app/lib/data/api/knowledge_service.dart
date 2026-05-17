@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -81,12 +79,10 @@ class KnowledgeService {
   // POST /api/knowledge/{id}/photos (multipart with file)
   Future<KnowledgePhoto> attachPhoto(
     int id, {
-    required String filePath,
+    required List<int> bytes,
+    required String filename,
     String caption = '',
   }) async {
-    final file = File(filePath);
-    final bytes = await file.readAsBytes();
-    final filename = filePath.split('/').last;
     final formData = FormData.fromMap({
       'file': MultipartFile.fromBytes(bytes, filename: filename),
       'caption': caption,
@@ -110,6 +106,18 @@ class KnowledgeService {
   // DELETE /api/knowledge/{id}/photos/{photoHash}
   Future<void> detachPhoto(int id, String photoHash) async {
     await _dio.delete('/api/knowledge/$id/photos/$photoHash');
+  }
+
+  // POST /api/knowledge/{id}/pin
+  Future<KnowledgeEntry> pinEntry(int id) async {
+    final response = await _dio.post('/api/knowledge/$id/pin');
+    return KnowledgeEntry.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  // DELETE /api/knowledge/{id}/pin
+  Future<KnowledgeEntry> unpinEntry(int id) async {
+    final response = await _dio.delete('/api/knowledge/$id/pin');
+    return KnowledgeEntry.fromJson(response.data as Map<String, dynamic>);
   }
 }
 

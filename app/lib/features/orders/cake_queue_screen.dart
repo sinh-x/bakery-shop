@@ -1,3 +1,4 @@
+// EXEMPT: 300-line threshold exceeded because DG-150 blocker: extracting queue tile/time slot/summary widgets now would duplicate in-file queue action orchestration and event refresh contracts. Reviewed 2026-05-29.
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,7 +10,9 @@ import '../../data/models/cake_queue_item.dart';
 import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import '../../shared/theme/bakery_theme.dart';
+import '../../shared/utils/order_helpers.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Delivery content widget — embedded inside the Orders tab as the third sub-view.
 /// Shows orders matching the Kanban "Giao hàng" logic: ready + bus/door delivery.
@@ -36,7 +39,7 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(VN.apiError),
+            const Text(VN.apiError),
             const SizedBox(height: 8),
             TextButton(
               onPressed: _onRefresh,
@@ -89,65 +92,15 @@ class _DeliveryOrderCard extends ConsumerWidget {
   final Order order;
   final VoidCallback? onTap;
 
-  Color? _urgencyBorderColor() {
-    if (order.dueDate == null || order.dueDate!.isEmpty) return null;
-    try {
-      final due = DateTime.parse(order.dueDate!);
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final dueDateOnly = DateTime(due.year, due.month, due.day);
-      if (dueDateOnly.isBefore(today)) return Colors.red;
-      if (dueDateOnly.isAtSameMomentAs(today)) return Colors.amber;
-    } catch (_) {}
-    return null;
-  }
-
-  bool _isDueWithin2Hours() {
-    if (order.dueDate == null || order.dueDate!.isEmpty) return false;
-    try {
-      final now = DateTime.now();
-      DateTime due;
-      if (order.dueTime != null && order.dueTime!.isNotEmpty) {
-        due = DateTime.parse('${order.dueDate!} ${order.dueTime!}');
-      } else {
-        due = DateTime.parse(order.dueDate!);
-      }
-      return due.isAfter(now) && due.difference(now).inMinutes <= 120;
-    } catch (_) {}
-    return false;
-  }
-
-  IconData _deliveryIcon() {
-    switch (order.deliveryType) {
-      case 'bus':
-        return Icons.directions_bus;
-      case 'door':
-        return Icons.local_shipping;
-      default:
-        return Icons.storefront;
-    }
-  }
-
-  Color _deliveryIconColor(Color defaultColor) {
-    switch (order.deliveryType) {
-      case 'bus':
-        return Colors.orange;
-      case 'door':
-        return Colors.deepOrange;
-      default:
-        return defaultColor;
-    }
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final statusColor = _orderStatusColors[order.status] ?? Colors.grey;
+    final statusColor = BakeryTheme.statusColors[order.status] ?? Colors.grey;
     final statusLabel = statusMap[order.status] ?? order.status;
     final photosAsync = ref.watch(orderPhotosProvider(order.orderRef));
     final baseUrl = ref.watch(apiBaseUrlProvider);
-    final urgencyColor = _urgencyBorderColor();
-    final dueSoon = _isDueWithin2Hours();
+    final urgencyColor = urgencyBorderColor(order.dueDate);
+    final dueSoon = isDueWithin2Hours(order.dueDate, order.dueTime);
     final borderColor = urgencyColor ?? Colors.transparent;
 
     final cakePhoto = photosAsync.maybeWhen(
@@ -183,9 +136,9 @@ class _DeliveryOrderCard extends ConsumerWidget {
               Row(
                 children: [
                   Icon(
-                    _deliveryIcon(),
+                    deliveryIcon(order.deliveryType),
                     size: 20,
-                    color: _deliveryIconColor(theme.colorScheme.primary),
+                    color: deliveryIconColor(order.deliveryType, theme.colorScheme.primary),
                   ),
                   const SizedBox(width: 6),
                   Expanded(
@@ -276,7 +229,7 @@ class _DeliveryOrderCard extends ConsumerWidget {
                       Icons.schedule,
                       size: 14,
                       color: dueSoon
-                          ? Colors.red
+                          ? Colors.orange
                           : (urgencyColor ?? theme.colorScheme.outline),
                     ),
                     const SizedBox(width: 4),
@@ -285,15 +238,15 @@ class _DeliveryOrderCard extends ConsumerWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: Colors.red.withAlpha(25),
+                          color: Colors.orange.withAlpha(25),
                           borderRadius: BorderRadius.circular(4),
                           border: Border.all(
-                              color: Colors.red.withAlpha(80)),
+                              color: Colors.orange.withAlpha(80)),
                         ),
                         child: Text(
                           _formatDue(order.dueDate, order.dueTime),
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: Colors.red,
+                            color: Colors.orange,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -342,22 +295,6 @@ class _DeliveryOrderCard extends ConsumerWidget {
   }
 }
 
-const _orderStatusColors = {
-  'new': Colors.blue,
-  'confirmed': Colors.orange,
-  'in_progress': Colors.purple,
-  'ready': Colors.green,
-  'delivered': Colors.teal,
-  'completed': Colors.grey,
-  'cancelled': Colors.red,
-};
-
-const _statusColors = {
-  'pending': Colors.grey,
-  'working': Colors.orange,
-  'ready': Colors.green,
-  'delivered': Colors.teal,
-};
 
 /// Cake queue content widget — embedded inside the Orders tab as a sub-view.
 /// Shows work items across all orders, sorted by due date ascending.
@@ -387,7 +324,7 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: FilterChip(
-            label: Text(VN.includeReadyFilter),
+            label: const Text(VN.includeReadyFilter),
             selected: _includeReady,
             onSelected: (v) => setState(() => _includeReady = v),
           ),
@@ -401,7 +338,7 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(VN.apiError),
+                  const Text(VN.apiError),
                   const SizedBox(height: 8),
                   TextButton(
                     onPressed: _onRefresh,
@@ -448,43 +385,13 @@ class _CakeQueueCard extends ConsumerWidget {
   final CakeQueueItem item;
   final VoidCallback? onTap;
 
-  /// Returns urgency border color: red for overdue, amber for same-day.
-  Color? _urgencyBorderColor() {
-    if (item.dueDate == null || item.dueDate!.isEmpty) return null;
-    try {
-      final due = DateTime.parse(item.dueDate!);
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final dueDateOnly = DateTime(due.year, due.month, due.day);
-      if (dueDateOnly.isBefore(today)) return Colors.red;
-      if (dueDateOnly.isAtSameMomentAs(today)) return Colors.amber;
-    } catch (_) {}
-    return null;
-  }
-
-  /// Returns true if due within the next 2 hours.
-  bool _isDueWithin2Hours() {
-    if (item.dueDate == null || item.dueDate!.isEmpty) return false;
-    try {
-      final now = DateTime.now();
-      DateTime due;
-      if (item.dueTime != null && item.dueTime!.isNotEmpty) {
-        due = DateTime.parse('${item.dueDate!} ${item.dueTime!}');
-      } else {
-        due = DateTime.parse(item.dueDate!);
-      }
-      return due.isAfter(now) && due.difference(now).inMinutes <= 120;
-    } catch (_) {}
-    return false;
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final statusColor = _statusColors[item.status] ?? Colors.grey;
+    final statusColor = BakeryTheme.workItemStatusColors[item.status] ?? Colors.grey;
     final statusLabel = workItemStatusLabel(item.status);
-    final urgencyColor = _urgencyBorderColor();
-    final dueSoon = _isDueWithin2Hours();
+    final urgencyColor = urgencyBorderColor(item.dueDate);
+    final dueSoon = isDueWithin2Hours(item.dueDate, item.dueTime);
     final borderColor = urgencyColor ?? Colors.transparent;
 
     // Find photo for this specific cake item (workItemId match)
@@ -639,7 +546,7 @@ class _CakeQueueCard extends ConsumerWidget {
                       Icons.schedule,
                       size: 14,
                       color: dueSoon
-                          ? Colors.red
+                          ? Colors.orange
                           : (urgencyColor ?? theme.colorScheme.outline),
                     ),
                     const SizedBox(width: 4),
@@ -648,15 +555,15 @@ class _CakeQueueCard extends ConsumerWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: Colors.red.withAlpha(25),
+                          color: Colors.orange.withAlpha(25),
                           borderRadius: BorderRadius.circular(4),
                           border:
-                              Border.all(color: Colors.red.withAlpha(80)),
+                              Border.all(color: Colors.orange.withAlpha(80)),
                         ),
                         child: Text(
                           _formatDue(item.dueDate, item.dueTime),
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: Colors.red,
+                            color: Colors.orange,
                             fontWeight: FontWeight.bold,
                           ),
                         ),

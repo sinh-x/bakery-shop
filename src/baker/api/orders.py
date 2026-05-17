@@ -11,6 +11,7 @@ from baker.logging import log_context
 from baker.models.order import Order, OrderItem, is_backward_transition, validate_transition
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
+from baker.services.order_stock import auto_decrement_stock, restore_stock_for_order
 
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -26,6 +27,7 @@ class OrderItemIn(BaseModel):
     age: Optional[int] = None
     isExtra: bool = False
     isGift: bool = False
+    priceChipId: int | None = None
     attributes: dict = Field(default_factory=dict)
 
 
@@ -91,78 +93,8 @@ def _log_order_history(conn, order_id, action_type, field_name="", old_value="",
 
 
 def _auto_decrement_stock(conn, order_id: int, order_ref: str):
-    """Auto-decrement stock for trưng bày products when order completes."""
-    from baker.models.event import Event
-
-    order_items = conn.execute(
-        """SELECT oi.product_id, oi.product_name, oi.quantity
-           FROM order_items oi
-           WHERE oi.order_id = ?
-             AND oi.product_id != ''
-             AND oi.is_gift = 0""",
-        (order_id,),
-    ).fetchall()
-
-    for item in order_items:
-        code_or_id = item["product_id"]
-        product_row = conn.execute(
-            "SELECT id FROM products WHERE product_code = ?",
-            (code_or_id,),
-        ).fetchone()
-        if not product_row:
-            try:
-                product_row = conn.execute(
-                    "SELECT id FROM products WHERE id = ?",
-                    (int(code_or_id),),
-                ).fetchone()
-            except (ValueError, TypeError):
-                continue
-        if not product_row:
-            continue
-
-        product_id = product_row["id"]
-        qty = item["quantity"]
-
-        attr_row = conn.execute(
-            """SELECT value FROM product_attribute_values
-               WHERE product_id = ? AND attribute_type = 'trung_bay'""",
-            (product_id,),
-        ).fetchone()
-        if not attr_row or attr_row["value"] != "true":
-            continue
-
-        stock_row = conn.execute(
-            "SELECT quantity FROM product_stock WHERE product_id = ?",
-            (product_id,),
-        ).fetchone()
-        if stock_row:
-            conn.execute(
-                "UPDATE product_stock SET quantity = ? WHERE product_id = ?",
-                (max(0, stock_row["quantity"] - qty), product_id),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO product_stock (product_id, quantity) VALUES (?, 0)",
-                (product_id,),
-            )
-
-        conn.execute(
-            """INSERT INTO stock_movements
-               (product_id, movement_type, quantity, reason, reference_id)
-               VALUES (?, 'sale', ?, ?, ?)""",
-            (product_id, -qty, f"Order {order_ref}", order_ref),
-        )
-        Event(
-            summary=f"Bán hàng -{qty} {item['product_name']}",
-            type="inventory",
-            data={
-                "product_id": product_id,
-                "product_name": item["product_name"],
-                "movement_type": "sale",
-                "quantity": -qty,
-                "reference_id": order_ref,
-            },
-        ).save(conn)
+    """Backward-compatible wrapper for stock decrement service."""
+    auto_decrement_stock(conn, order_id, order_ref)
 
 
 def _item_in_to_model(item: OrderItemIn) -> OrderItem:
@@ -177,6 +109,7 @@ def _item_in_to_model(item: OrderItemIn) -> OrderItem:
         is_extra=item.isExtra,
         is_gift=item.isGift,
         attributes=item.attributes,
+        price_chip_id=item.priceChipId,
     )
 
 
@@ -206,13 +139,19 @@ def list_orders(
     due_date: Optional[str] = Query(None, description="Lọc theo ngày giao (YYYY-MM-DD)"),
     limit: int = Query(50, description="Số lượng tối đa"),
     offset: int = Query(0, description="Bỏ qua N đơn đầu"),
+    active_only: bool = Query(False, description="Chỉ lấy đơn hàng đang hoạt động (không hoàn thành/hủy)"),
 ):
     """Danh sách đơn hàng."""
     with get_db() as conn:
         conditions = []
         params: list = []
 
-        if status:
+        if active_only:
+            active_statuses = ["new", "confirmed", "in_progress", "ready", "delivered"]
+            placeholders = ",".join("?" for _ in active_statuses)
+            conditions.append(f"status IN ({placeholders})")
+            params.extend(active_statuses)
+        elif status:
             conditions.append("status = ?")
             params.append(status)
 
@@ -221,12 +160,40 @@ def list_orders(
             params.append(due_date)
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        if active_only:
+            rows = conn.execute(
+                f"SELECT * FROM orders {where} ORDER BY id DESC",
+                params,
+            ).fetchall()
+            result = []
+            for r in rows:
+                order = Order.from_row(r, conn)
+                if order.status == "delivered" and order.amount_paid >= order.total_price:
+                    continue
+                result.append(order.to_api_dict())
+            return result
+
+        active_statuses = {"new", "confirmed", "in_progress", "ready", "delivered"}
+        if status and status in active_statuses:
+            rows = conn.execute(
+                f"SELECT * FROM orders {where} ORDER BY id DESC",
+                params,
+            ).fetchall()
+            result = []
+            for r in rows:
+                order = Order.from_row(r, conn)
+                if order.status == "delivered" and order.amount_paid >= order.total_price:
+                    continue
+                result.append(order.to_api_dict())
+            return result
+
         rows = conn.execute(
             f"SELECT * FROM orders {where} ORDER BY id DESC LIMIT ? OFFSET ?",
             params + [limit, offset],
         ).fetchall()
 
-        return [Order.from_row(r).to_api_dict() for r in rows]
+        return [Order.from_row(r, conn).to_api_dict() for r in rows]
 
 
 @router.post("", status_code=201)
@@ -266,6 +233,7 @@ def create_order(body: OrderCreate, request: Request):
                 is_extra=item.isExtra,
                 is_gift=item.isGift,
                 attributes=item.attributes,
+                price_chip_id=item.priceChipId,
             )
             work_item.save(conn)
 
@@ -298,7 +266,7 @@ def create_order(body: OrderCreate, request: Request):
             Order.update_status(conn, order.order_ref, "delivered", "")
             _log_order_history(conn, order.id, "status_change", "status",
                                "new", "delivered", body.createdBy)
-            _auto_decrement_stock(conn, order.id, order.order_ref)
+            auto_decrement_stock(conn, order.id, order.order_ref)
 
         log_context(request, ref_type="order", ref_id=order.id)
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
@@ -439,9 +407,13 @@ def transition_status(ref: str, body: StatusTransition):
                     detail=f"Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu {remaining:,.0f}đ",
                 )
 
-        # Auto-decrement stock for trưng bày products when order completes
-        if body.status == "completed":
-            _auto_decrement_stock(conn, row["id"], row["order_ref"])
+        # Auto-decrement stock for trưng bày products when order is confirmed
+        # (POS already handles this in create_order for status=delivered)
+        if body.status == "confirmed":
+            auto_decrement_stock(conn, row["id"], row["order_ref"])
+
+        if body.status == "cancelled":
+            restore_stock_for_order(conn, row["id"], row["order_ref"])
 
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:
@@ -457,8 +429,8 @@ def transition_status(ref: str, body: StatusTransition):
             )
 
         # Auto-sync extras/gifts to match the new order status (F4, F5)
-        from baker.api.work_items import _sync_extras_to_order_status
-        _sync_extras_to_order_status(conn, row["id"], body.status)
+        from baker.api.work_items import sync_extras_to_order_status
+        sync_extras_to_order_status(conn, row["id"], body.status)
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         return _order_detail(conn, updated)

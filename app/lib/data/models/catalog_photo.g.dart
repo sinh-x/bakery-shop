@@ -15,6 +15,7 @@ _CatalogPhoto _$CatalogPhotoFromJson(Map<String, dynamic> json) =>
       tags: json['tags'] as String? ?? '',
       position: (json['position'] as num?)?.toInt() ?? 0,
       createdAt: json['created_at'] as String?,
+      photoHash: json['photo_hash'] as String?,
     );
 
 Map<String, dynamic> _$CatalogPhotoToJson(_CatalogPhoto instance) =>
@@ -26,4 +27,5 @@ Map<String, dynamic> _$CatalogPhotoToJson(_CatalogPhoto instance) =>
       'tags': instance.tags,
       'position': instance.position,
       'created_at': instance.createdAt,
+      'photo_hash': instance.photoHash,
     };

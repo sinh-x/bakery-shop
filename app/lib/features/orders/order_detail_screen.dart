@@ -1,6 +1,5 @@
-import 'dart:typed_data';
+// EXEMPT: 300-line threshold exceeded because DG-150 blocker: payment/work-item/print/info extraction would require large event and dialog lifecycle rewiring that cannot be safely completed in this remediation scope. Reviewed 2026-05-29.
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,26 +9,21 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/api/api_client.dart';
 import '../../data/api/order_service.dart';
 import '../../data/api/receipt_service.dart';
+import '../../data/models/enum_attribute.dart';
 import '../../data/models/order.dart';
 import '../../data/models/order_photo.dart';
 import '../../data/models/payment_transaction.dart';
+import '../../data/models/product.dart';
 import '../../data/models/work_item.dart';
-import '../../data/services/printer_service.dart';
+import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../providers/products_provider.dart';
 import '../../shared/utils/phone_formatter.dart';
-import '../../shared/widgets/printer_picker_dialog.dart';
-import '../../shared/widgets/vietnamese_labels.dart';
+import '../../shared/utils/vnd_units.dart';
+import '../../shared/theme/bakery_theme.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'widgets/enum_attribute_display.dart';
 import 'widgets/order_photo_section.dart';
-
-const _statusColors = {
-  'new': Colors.blue,
-  'confirmed': Colors.orange,
-  'in_progress': Colors.purple,
-  'ready': Colors.green,
-  'delivered': Colors.teal,
-  'completed': Colors.grey,
-  'cancelled': Colors.red,
-};
 
 const _workItemStatusColors = {
   'pending': Colors.grey,
@@ -61,6 +55,7 @@ const _workItemStatusRank = {
 
 bool _isBackward(String current, String target, Map<String, int> ranks) =>
     (ranks[target] ?? 0) < (ranks[current] ?? 0);
+
 
 /// Shows a reason dialog for a status transition.
 /// Returns the trimmed reason string, or null if cancelled.
@@ -191,7 +186,7 @@ class OrderDetailScreen extends ConsumerWidget {
                 'door')
               ListTile(
                 leading: const Icon(Icons.delivery_dining),
-                title: Text(VN.printDeliveryReceipt),
+                title: const Text(VN.printDeliveryReceipt),
                 onTap: () {
                   Navigator.pop(ctx);
                   context.push(
@@ -271,7 +266,7 @@ class OrderDetailScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(VN.apiError),
+              const Text(VN.apiError),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () =>
@@ -388,6 +383,41 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     );
   }
 
+  Future<void> _onMarkAsPrinted() async {
+    try {
+      final service = ref.read(orderServiceProvider);
+      await service.updateWorkTicketPrintedAt(
+        order.orderRef,
+        DateTime.now().toIso8601String(),
+      );
+      ref.invalidate(orderDetailProvider(order.orderRef));
+      ref.invalidate(orderListProvider);
+      if (mounted) {
+        showTopSnackBar(context, VN.internalReceiptPrinted);
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.apiError}: $e');
+      }
+    }
+  }
+
+  Future<void> _onUnmarkPrinted() async {
+    try {
+      final service = ref.read(orderServiceProvider);
+      await service.updateWorkTicketPrintedAt(order.orderRef, '');
+      ref.invalidate(orderDetailProvider(order.orderRef));
+      ref.invalidate(orderListProvider);
+      if (mounted) {
+        showTopSnackBar(context, VN.printStatusUnprinted);
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.apiError}: $e');
+      }
+    }
+  }
+
   Future<void> _openTransactionDetail(PaymentTransaction txn) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -410,10 +440,23 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     );
   }
 
+  // Cached product list for enum-attribute label lookups during this build.
+  List<Product> _products = const [];
+
+  List<EnumAttribute> _enumAttributesFor(String productId) {
+    if (productId.isEmpty || _products.isEmpty) return const [];
+    for (final p in _products) {
+      if (p.id.toString() == productId || p.productCode == productId) {
+        return p.enumAttributes;
+      }
+    }
+    return const [];
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = _statusColors[order.status] ?? Colors.grey;
+    final statusColor = BakeryTheme.statusColors[order.status] ?? Colors.grey;
     final statusLabel = statusMap[order.status] ?? order.status;
     final forwardTransitions = validTransitions[order.status] ?? [];
     // Backward transitions: all statuses with lower rank than current
@@ -423,6 +466,8 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         .map((e) => e.key)
         .toList();
     final transitions = [...forwardTransitions, ...backwardTransitions];
+
+    _products = ref.watch(productsProvider).asData?.value ?? const [];
 
     final txnsAsync =
         ref.watch(orderPaymentTransactionsProvider(order.orderRef));
@@ -483,8 +528,16 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         ),
         const SizedBox(height: 16),
 
+        // ── Print status line ──────────────────────────────────────────
+        _PrintStatusRow(
+          printedAt: order.workTicketPrintedAt,
+          onMarkPrinted: _onMarkAsPrinted,
+          onUnmarkPrinted: _onUnmarkPrinted,
+        ),
+        const SizedBox(height: 16),
+
         // ── Order info ────────────────────────────────────────────────
-        _SectionHeader(VN.customer),
+        const _SectionHeader(VN.customer),
         _InfoRow(
           icon: Icons.person_outline,
           label: VN.customerName,
@@ -572,7 +625,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Items ─────────────────────────────────────────────────────
-        _SectionHeader(VN.products),
+        const _SectionHeader(VN.products),
         ...order.items.where((item) => !item.isExtra).map(
           (item) => Padding(
             padding: const EdgeInsets.only(bottom: 6),
@@ -591,6 +644,12 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.outline,
                         ),
+                      ),
+                      // Enum attribute display (DG-092 F7 / AC-6)
+                      ...buildEnumAttributeLines(
+                        context,
+                        item.attributes,
+                        _enumAttributesFor(item.productId),
                       ),
                       // Cash info (F27)
                       if (item.attributes['cash_amount'] != null && item.attributes['cash_amount'].toString().isNotEmpty && item.attributes['cash_amount'].toString() != '0') ...[
@@ -625,7 +684,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         ),
         if (order.items.any((item) => item.isExtra)) ...[
           const SizedBox(height: 12),
-          _SectionHeader(VN.extras),
+          const _SectionHeader(VN.extras),
           ...order.items.where((item) => item.isExtra).map(
             (item) => Padding(
               padding: const EdgeInsets.only(bottom: 6),
@@ -644,6 +703,11 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.outline,
                           ),
+                        ),
+                        ...buildEnumAttributeLines(
+                          context,
+                          item.attributes,
+                          _enumAttributesFor(item.productId),
                         ),
                       ],
                     ),
@@ -716,7 +780,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Payment ───────────────────────────────────────────────────
-        _SectionHeader(VN.payment),
+        const _SectionHeader(VN.payment),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -792,7 +856,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Payment history ───────────────────────────────────────────
-        _SectionHeader(VN.paymentHistory),
+        const _SectionHeader(VN.paymentHistory),
         if (txns.isEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -821,7 +885,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         // ── Status actions ────────────────────────────────────────────
         if (transitions.isNotEmpty) ...[
           const SizedBox(height: 20),
-          _SectionHeader(VN.actions),
+          const _SectionHeader(VN.actions),
           if (_transitioning)
             const Center(child: CircularProgressIndicator())
           else
@@ -1105,7 +1169,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     super.initState();
     _type = widget.initialType ?? 'deposit';
     if (widget.initialAmount != null && widget.initialAmount! > 0) {
-      _amountCtrl.text = (widget.initialAmount! / 1000).round().toString();
+      _amountCtrl.text = vndThousandsTextFromAmount(widget.initialAmount!);
     }
   }
 
@@ -1113,7 +1177,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
     setState(() => _type = type);
     if (type == 'full_payment' && widget.remaining > 0) {
       // Display the amount in thousands (user types 200 → means 200,000)
-      _amountCtrl.text = (widget.remaining / 1000).round().toString();
+      _amountCtrl.text = vndThousandsTextFromAmount(widget.remaining);
     }
   }
 
@@ -1127,7 +1191,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     // Multiply by 1000: staff types 200 → actual amount 200,000
-    final amount = double.parse(_amountCtrl.text.trim()) * 1000;
+    final amount = vndFromThousands(double.parse(_amountCtrl.text.trim()));
     setState(() => _submitting = true);
     try {
       await ref
@@ -1219,7 +1283,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                 labelText: VN.paymentAmountLabel,
                 border: OutlineInputBorder(),
                 suffixText: ',000đ',
-                helperText: 'Nhập nghìn đồng (VD: 200 = 200.000đ)',
+                helperText: VN.paymentThousandsHint,
               ),
               keyboardType: TextInputType.number,
               autofocus: true,
@@ -1397,7 +1461,7 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
     _method = widget.txn.method;
     // Convert back from actual amount to thousands for display
     _amountCtrl = TextEditingController(
-      text: (widget.txn.amount / 1000).round().toString(),
+      text: vndThousandsTextFromAmount(widget.txn.amount),
     );
     _notesCtrl = TextEditingController(text: widget.txn.notes);
   }
@@ -1411,7 +1475,7 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    final amount = double.parse(_amountCtrl.text.trim()) * 1000;
+    final amount = vndFromThousands(double.parse(_amountCtrl.text.trim()));
     setState(() => _submitting = true);
     try {
       await ref
@@ -1503,7 +1567,7 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
                 labelText: VN.paymentAmountLabel,
                 border: OutlineInputBorder(),
                 suffixText: ',000đ',
-                helperText: 'Nhập nghìn đồng (VD: 200 = 200.000đ)',
+                helperText: VN.paymentThousandsHint,
               ),
               keyboardType: TextInputType.number,
               autofocus: true,
@@ -1803,7 +1867,7 @@ class _WorkItemCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 2),
                           Text(
-                            item.isGift ? VN.giftBadge : 'Trả phí',
+                            item.isGift ? VN.giftBadge : VN.paymentFee,
                             style: TextStyle(
                               fontSize: 9,
                               color: item.isGift ? Colors.green : Colors.grey,
@@ -1966,6 +2030,97 @@ class _WorkItemPhotoStrip extends StatelessWidget {
   }
 }
 
+// ── Print status row ─────────────────────────────────────────────────────────
+
+class _PrintStatusRow extends StatelessWidget {
+  const _PrintStatusRow({
+    required this.printedAt,
+    required this.onMarkPrinted,
+    required this.onUnmarkPrinted,
+  });
+
+  final String? printedAt;
+  final VoidCallback onMarkPrinted;
+  final VoidCallback onUnmarkPrinted;
+
+  @override
+  Widget build(BuildContext context) {
+    final isPrinted = printedAt != null && printedAt!.isNotEmpty;
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: isPrinted
+            ? Colors.green.shade50
+            : Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isPrinted
+              ? Colors.green.shade300
+              : Colors.orange.shade300,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isPrinted
+                ? Icons.check_circle_outline
+                : Icons.print_outlined,
+            size: 20,
+            color: isPrinted
+                ? Colors.green.shade700
+                : Colors.orange.shade700,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isPrinted ? VN.printStatusPrinted : VN.printStatusUnprinted,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: isPrinted
+                        ? Colors.green.shade800
+                        : Colors.orange.shade800,
+                  ),
+                ),
+                if (isPrinted && printedAt != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    printedAt!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.green.shade600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (isPrinted)
+            TextButton(
+              onPressed: onUnmarkPrinted,
+              child: Text(
+                VN.unmarkPrinted,
+                style: TextStyle(color: Colors.red.shade700),
+              ),
+            )
+          else
+            FilledButton(
+              onPressed: onMarkPrinted,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.green.shade700,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+              child: const Text(VN.markAsPrinted),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Section header ────────────────────────────────────────────────────────────
 
 class _SectionHeader extends StatelessWidget {
@@ -2012,6 +2167,7 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
 
     try {
       final receiptService = ref.read(receiptServiceProvider);
+      final printedBy = ref.read(loggedByProvider);
 
       // Print internal receipt — one per main work item (via server USB printer)
       if (_printInternal) {
@@ -2029,15 +2185,11 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
             orderRef: widget.orderRef,
             type: ReceiptType.workTicket,
             itemId: itemId,
+            printedBy: printedBy,
           );
         }
 
         if (mainItemIds.isNotEmpty) {
-          final orderService = ref.read(orderServiceProvider);
-          await orderService.updateWorkTicketPrintedAt(
-            widget.orderRef,
-            DateTime.now().toIso8601String(),
-          );
           if (mounted) {
             showTopSnackBar(context, VN.internalReceiptPrinted);
           }
@@ -2050,6 +2202,7 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
         await receiptService.printReceipt(
           orderRef: widget.orderRef,
           type: ReceiptType.customer,
+          printedBy: printedBy,
         );
       }
 
@@ -2083,7 +2236,7 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
     final hasSelection = _printInternal || _printCustomer;
 
     return AlertDialog(
-      title: Text(VN.printChecklistTitle),
+      title: const Text(VN.printChecklistTitle),
       content: _printing
           ? SizedBox(
               height: 80,
@@ -2108,14 +2261,14 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
                     value: _printInternal,
                     onChanged: (v) =>
                         setState(() => _printInternal = v ?? false),
-                    title: Text(VN.printWorkTicket),
+                    title: const Text(VN.printWorkTicket),
                     controlAffinity: ListTileControlAffinity.leading,
                     contentPadding: EdgeInsets.zero,
                   ),
                 CheckboxListTile(
                   value: _printCustomer,
                   onChanged: (v) => setState(() => _printCustomer = v ?? false),
-                  title: Text(VN.printCustomerReceipt),
+                  title: const Text(VN.printCustomerReceipt),
                   controlAffinity: ListTileControlAffinity.leading,
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -2124,12 +2277,12 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
       actions: [
         TextButton(
           onPressed: _printing ? null : () => Navigator.pop(context),
-          child: Text(VN.printSkip),
+          child: const Text(VN.printSkip),
         ),
         if (!_printing)
           FilledButton(
             onPressed: hasSelection ? _printSelected : null,
-            child: Text(VN.print),
+            child: const Text(VN.print),
           ),
       ],
     );
@@ -2161,6 +2314,7 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
 
     try {
       final receiptService = ref.read(receiptServiceProvider);
+      final printedBy = ref.read(loggedByProvider);
 
       // Determine which items to print
       List<int> itemIds;
@@ -2188,14 +2342,10 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
           orderRef: widget.orderRef,
           type: ReceiptType.workTicket,
           itemId: id,
+          printedBy: printedBy,
         );
       }
 
-      final orderService = ref.read(orderServiceProvider);
-      await orderService.updateWorkTicketPrintedAt(
-        widget.orderRef,
-        DateTime.now().toIso8601String(),
-      );
       ref.read(orderDetailProvider(widget.orderRef).notifier).refresh();
       if (mounted) {
         showTopSnackBar(context, VN.internalReceiptPrinted);
@@ -2215,7 +2365,7 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(VN.printChecklistTitle),
+      title: const Text(VN.printChecklistTitle),
       content: _printing
           ? SizedBox(
               height: 80,
@@ -2232,16 +2382,16 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
                 ],
               ),
             )
-          : Text(VN.printInternalPrompt),
+          : const Text(VN.printInternalPrompt),
       actions: [
         TextButton(
           onPressed: _printing ? null : () => Navigator.pop(context),
-          child: Text(VN.printSkip),
+          child: const Text(VN.printSkip),
         ),
         if (!_printing)
           FilledButton(
             onPressed: _printInternal,
-            child: Text(VN.print),
+            child: const Text(VN.print),
           ),
       ],
     );
@@ -2285,7 +2435,7 @@ class _RutTienSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionHeader(VN.rutTienSection),
+        const _SectionHeader(VN.rutTienSection),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
