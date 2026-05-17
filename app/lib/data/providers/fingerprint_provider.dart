@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/fingerprint_service.dart';
 import '../../shared/build_fingerprint.dart';
 
-enum FingerprintComparisonState { match, mismatch, unknown }
+enum FingerprintComparisonState { match, mismatch, serverUnknown, unknown }
 
 class FingerprintComparison {
   const FingerprintComparison({
@@ -48,14 +48,28 @@ final fingerprintComparisonProvider = FutureProvider<FingerprintComparison>((ref
   final clientFingerprintValue = normalizeBuildFingerprint(
     ref.read(clientFingerprintProvider),
   );
+  final serverFingerprintResult = await ref
+      .read(fingerprintServiceProvider)
+      .fetchServerFingerprint();
   final serverFingerprintValue = normalizeBuildFingerprint(
-    await ref.read(fingerprintServiceProvider).fetchServerFingerprint(),
+    serverFingerprintResult.fingerprint,
+  );
+  final hasUsableClientFingerprint = isUsableBuildFingerprint(
+    clientFingerprintValue,
+  );
+  final hasUsableServerFingerprint = isUsableBuildFingerprint(
+    serverFingerprintValue,
   );
 
-  if (!isUsableBuildFingerprint(clientFingerprintValue) ||
-      !isUsableBuildFingerprint(serverFingerprintValue)) {
+  if (!hasUsableClientFingerprint || !hasUsableServerFingerprint) {
+    final state = serverFingerprintResult.healthReachable &&
+            !hasUsableServerFingerprint &&
+            hasUsableClientFingerprint
+        ? FingerprintComparisonState.serverUnknown
+        : FingerprintComparisonState.unknown;
+
     return FingerprintComparison(
-      state: FingerprintComparisonState.unknown,
+      state: state,
       clientFingerprint: clientFingerprintValue,
       serverFingerprint: serverFingerprintValue,
     );

@@ -5,13 +5,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeFingerprintService extends FingerprintService {
-  _FakeFingerprintService(this._serverFingerprint) : super(Dio());
+  _FakeFingerprintService({
+    required this.serverFingerprint,
+    this.healthReachable = true,
+  }) : super(Dio());
 
-  final String? _serverFingerprint;
+  final String? serverFingerprint;
+  final bool healthReachable;
 
   @override
-  Future<String?> fetchServerFingerprint() async {
-    return _serverFingerprint;
+  Future<ServerFingerprintResult> fetchServerFingerprint() async {
+    return ServerFingerprintResult(
+      healthReachable: healthReachable,
+      fingerprint: serverFingerprint,
+    );
   }
 }
 
@@ -59,7 +66,7 @@ void main() {
         overrides: [
           clientFingerprintProvider.overrideWithValue('abc1234'),
           fingerprintServiceProvider.overrideWithValue(
-            _FakeFingerprintService('abc1234'),
+            _FakeFingerprintService(serverFingerprint: 'abc1234'),
           ),
         ],
       );
@@ -77,7 +84,7 @@ void main() {
         overrides: [
           clientFingerprintProvider.overrideWithValue('abc1234'),
           fingerprintServiceProvider.overrideWithValue(
-            _FakeFingerprintService('def5678'),
+            _FakeFingerprintService(serverFingerprint: 'def5678'),
           ),
         ],
       );
@@ -90,12 +97,33 @@ void main() {
       expect(result.serverFingerprint, 'def5678');
     });
 
-    test('returns unknown when server fingerprint is unavailable', () async {
+    test('returns serverUnknown when health is reachable but fingerprint is unavailable', () async {
       final container = ProviderContainer(
         overrides: [
           clientFingerprintProvider.overrideWithValue('abc1234'),
           fingerprintServiceProvider.overrideWithValue(
-            _FakeFingerprintService(null),
+            _FakeFingerprintService(serverFingerprint: null),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final result = await container.read(fingerprintComparisonProvider.future);
+
+      expect(result.state, FingerprintComparisonState.serverUnknown);
+      expect(result.clientFingerprint, 'abc1234');
+      expect(result.serverFingerprint, 'unknown');
+    });
+
+    test('returns unknown when health is unreachable', () async {
+      final container = ProviderContainer(
+        overrides: [
+          clientFingerprintProvider.overrideWithValue('abc1234'),
+          fingerprintServiceProvider.overrideWithValue(
+            _FakeFingerprintService(
+              serverFingerprint: null,
+              healthReachable: false,
+            ),
           ),
         ],
       );
@@ -105,6 +133,24 @@ void main() {
 
       expect(result.state, FingerprintComparisonState.unknown);
       expect(result.clientFingerprint, 'abc1234');
+      expect(result.serverFingerprint, 'unknown');
+    });
+
+    test('returns unknown when client fingerprint is unavailable', () async {
+      final container = ProviderContainer(
+        overrides: [
+          clientFingerprintProvider.overrideWithValue('unknown'),
+          fingerprintServiceProvider.overrideWithValue(
+            _FakeFingerprintService(serverFingerprint: null),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final result = await container.read(fingerprintComparisonProvider.future);
+
+      expect(result.state, FingerprintComparisonState.unknown);
+      expect(result.clientFingerprint, 'unknown');
       expect(result.serverFingerprint, 'unknown');
     });
   });

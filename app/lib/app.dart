@@ -29,8 +29,9 @@ class BakeryApp extends ConsumerWidget {
       routerConfig: appRouter,
       builder: (context, child) {
         final comparison = comparisonAsync.asData?.value;
-        final showWarning =
-            comparison?.state == FingerprintComparisonState.mismatch;
+        final warningState = comparison?.state;
+        final showWarning = warningState == FingerprintComparisonState.mismatch ||
+            warningState == FingerprintComparisonState.serverUnknown;
 
         if (!showWarning) {
           return child ?? const SizedBox.shrink();
@@ -71,10 +72,12 @@ class _FingerprintWarningStrip extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    VN.fingerprintMismatchStrip(
-                      shortBuildFingerprint(comparison.clientFingerprint),
-                      shortBuildFingerprint(comparison.serverFingerprint),
-                    ),
+                    comparison.state == FingerprintComparisonState.serverUnknown
+                        ? VN.serverFingerprintUnavailableWarning
+                        : VN.fingerprintMismatchStrip(
+                            shortBuildFingerprint(comparison.clientFingerprint),
+                            shortBuildFingerprint(comparison.serverFingerprint),
+                          ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(

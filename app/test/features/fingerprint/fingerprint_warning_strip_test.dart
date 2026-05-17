@@ -46,5 +46,60 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining(VN.fingerprintMismatchWarning), findsNothing);
+    expect(
+      find.textContaining(VN.serverFingerprintUnavailableWarning),
+      findsNothing,
+    );
+  });
+
+  testWidgets('shows top warning strip when server fingerprint is unknown', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          fingerprintComparisonProvider.overrideWith((ref) async {
+            return const FingerprintComparison(
+              state: FingerprintComparisonState.serverUnknown,
+              clientFingerprint: 'abc1234',
+              serverFingerprint: 'unknown',
+            );
+          }),
+        ],
+        child: const BakeryApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining(VN.serverFingerprintUnavailableWarning),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('hides warning strip when fingerprint state is unknown', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          fingerprintComparisonProvider.overrideWith((ref) async {
+            return const FingerprintComparison(
+              state: FingerprintComparisonState.unknown,
+              clientFingerprint: 'abc1234',
+              serverFingerprint: 'unknown',
+            );
+          }),
+        ],
+        child: const BakeryApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining(VN.fingerprintMismatchWarning), findsNothing);
+    expect(
+      find.textContaining(VN.serverFingerprintUnavailableWarning),
+      findsNothing,
+    );
   });
 }

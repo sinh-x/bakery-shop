@@ -247,6 +247,8 @@ class VN {
   static const serverVersionError = 'Không thể kết nối';
   static const fingerprintMismatchWarning =
       'Cảnh báo: mã ứng dụng khác mã máy chủ';
+  static const serverFingerprintUnavailableWarning =
+      'Cảnh báo: máy chủ chưa cung cấp mã phiên bản, có thể đang chạy bản cũ';
   static const createdBy = 'Người tạo';
 
   // Delivery types (detailed)
