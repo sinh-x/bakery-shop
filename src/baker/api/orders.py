@@ -137,6 +137,8 @@ def _order_detail(conn, row) -> dict:
 def list_orders(
     status: Optional[str] = Query(None, description="Lọc theo trạng thái"),
     due_date: Optional[str] = Query(None, description="Lọc theo ngày giao (YYYY-MM-DD)"),
+    due_date_from: Optional[str] = Query(None, description="Lọc theo ngày giao bắt đầu (YYYY-MM-DD)"),
+    due_date_to: Optional[str] = Query(None, description="Lọc theo ngày giao kết thúc (YYYY-MM-DD)"),
     limit: int = Query(50, description="Số lượng tối đa"),
     offset: int = Query(0, description="Bỏ qua N đơn đầu"),
     active_only: bool = Query(False, description="Chỉ lấy đơn hàng đang hoạt động (không hoàn thành/hủy)"),
@@ -156,8 +158,54 @@ def list_orders(
             params.append(status)
 
         if due_date:
-            conditions.append("due_date = ?")
-            params.append(due_date)
+            conditions.append(
+                """(
+                    due_date = ?
+                    OR (
+                        (due_date IS NULL OR due_date = '')
+                        AND source = ?
+                        AND date(created_at) = ?
+                    )
+                )"""
+            )
+            params.extend([due_date, "Tại tiệm - POS", due_date])
+        elif due_date_from and due_date_to:
+            conditions.append(
+                """(
+                    (due_date >= ? AND due_date <= ?)
+                    OR (
+                        (due_date IS NULL OR due_date = '')
+                        AND source = ?
+                        AND date(created_at) >= ?
+                        AND date(created_at) <= ?
+                    )
+                )"""
+            )
+            params.extend([due_date_from, due_date_to, "Tại tiệm - POS", due_date_from, due_date_to])
+        elif due_date_from:
+            conditions.append(
+                """(
+                    due_date >= ?
+                    OR (
+                        (due_date IS NULL OR due_date = '')
+                        AND source = ?
+                        AND date(created_at) >= ?
+                    )
+                )"""
+            )
+            params.extend([due_date_from, "Tại tiệm - POS", due_date_from])
+        elif due_date_to:
+            conditions.append(
+                """(
+                    due_date <= ?
+                    OR (
+                        (due_date IS NULL OR due_date = '')
+                        AND source = ?
+                        AND date(created_at) <= ?
+                    )
+                )"""
+            )
+            params.extend([due_date_to, "Tại tiệm - POS", due_date_to])
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
