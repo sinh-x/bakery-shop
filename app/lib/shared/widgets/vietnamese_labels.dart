@@ -245,6 +245,8 @@ class VN {
   static const serverVersion = 'Phiên bản máy chủ';
   static const serverVersionLoading = 'Đang tải...';
   static const serverVersionError = 'Không thể kết nối';
+  static const fingerprintMismatchWarning =
+      'Cảnh báo: mã ứng dụng khác mã máy chủ';
   static const createdBy = 'Người tạo';
 
   // Delivery types (detailed)
@@ -550,6 +552,9 @@ class VN {
   static String availableStock(int qty) => 'Còn $qty';
   static String lowStock(int qty) => 'Sắp hết ($qty)';
   static String categorySectionCount(int count) => '$count mặt hàng';
+  static String fingerprintMismatchStrip(String client, String server) {
+    return '$fingerprintMismatchWarning ($client/$server)';
+  }
   static const outOfStock = 'Hết hàng';
 
   // Stock management
