@@ -27,7 +27,7 @@ from baker.api.products import router as products_router
 from baker.api.staff import router as staff_router
 from baker.api.stock import router as stock_router
 from baker.api.work_items import router as work_items_router
-from baker.config import VERSION
+from baker.config import BUILD_FINGERPRINT, VERSION
 from baker.logging import setup_logging
 
 
@@ -69,7 +69,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "version": VERSION}
+        return {"status": "ok", "version": VERSION, "fingerprint": BUILD_FINGERPRINT}
 
     app.include_router(photos_router)
     app.include_router(products_router)

@@ -4,6 +4,7 @@ services:
       context: .
       args:
         UID: ${BAKER_UID:-1000}
+        BAKER_BUILD_FINGERPRINT: ${BAKER_BUILD_FINGERPRINT:-unknown}
     image: baker-server
     profiles: [prod]
     ports:
@@ -16,6 +17,7 @@ services:
       - "20"  # host GID 'lp' grants access to /dev/usb/lp0; name may differ in-container
     environment:
       BAKER_DATA_DIR: /var/lib/baker
+      BAKER_BUILD_FINGERPRINT: ${BAKER_BUILD_FINGERPRINT:-unknown}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2108/api/health')"]
@@ -52,6 +54,7 @@ services:
       context: .
       args:
         UID: ${BAKER_UID:-1000}
+        BAKER_BUILD_FINGERPRINT: ${BAKER_BUILD_FINGERPRINT:-unknown}
     image: baker-server
     profiles: [dev]
     ports:
@@ -61,6 +64,7 @@ services:
     environment:
       BAKER_DATA_DIR: /var/lib/baker
       BAKER_PORT: 2312
+      BAKER_BUILD_FINGERPRINT: ${BAKER_BUILD_FINGERPRINT:-unknown}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2312/api/health')"]

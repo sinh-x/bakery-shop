@@ -21,6 +21,7 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 ARG UID=1000
 ARG GID=100
+ARG BAKER_BUILD_FINGERPRINT=unknown
 RUN useradd -u ${UID} -g ${GID} -s /bin/sh -d /var/lib/baker baker \
     && mkdir -p /var/lib/baker \
     && chown ${UID}:${GID} /var/lib/baker
@@ -28,6 +29,7 @@ RUN useradd -u ${UID} -g ${GID} -s /bin/sh -d /var/lib/baker baker \
 ENV BAKER_DATA_DIR=/var/lib/baker
 ENV BAKER_HOST=0.0.0.0
 ENV BAKER_PORT=2108
+ENV BAKER_BUILD_FINGERPRINT=${BAKER_BUILD_FINGERPRINT}
 
 USER baker
 WORKDIR /var/lib/baker
