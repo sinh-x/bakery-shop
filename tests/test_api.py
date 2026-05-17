@@ -16,6 +16,8 @@ def test_health(api_client):
     data = resp.json()
     assert data["status"] == "ok"
     assert "version" in data
+    assert "fingerprint" in data
+    assert data["fingerprint"]
 
 
 # --- List products ---
