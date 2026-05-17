@@ -63,6 +63,35 @@ def _resolve_line_chip_id(conn, line: ReconciliationLineIn) -> int | None:
     return chip_id
 
 
+def _format_price(value: int | float | None) -> str:
+    return f"{normalize_price_value(value):,}".replace(",", ".") + "đ"
+
+
+def _describe_submit_line(conn, line: ReconciliationLineIn, chip_id: int | None) -> str:
+    product = conn.execute(
+        "SELECT name, base_price FROM products WHERE id = ?",
+        (line.product_id,),
+    ).fetchone()
+    product_name = product["name"] if product else "Không tìm thấy sản phẩm"
+
+    parts = [f"{product_name} (ID {line.product_id})"]
+    if chip_id is not None:
+        chip = conn.execute(
+            "SELECT label, price FROM product_price_chips WHERE id = ? AND product_id = ?",
+            (chip_id, line.product_id),
+        ).fetchone()
+        if chip:
+            parts.append(f"chip {chip['label']} - {_format_price(chip['price'])}")
+        else:
+            parts.append(f"chip ID {chip_id}")
+    elif line.normalized_price is not None:
+        parts.append(f"giá {_format_price(line.normalized_price)}")
+    elif product:
+        parts.append(f"giá gốc {_format_price(product['base_price'])}")
+
+    return ", ".join(parts)
+
+
 def _load_display_products(conn) -> list[dict]:
     rows = conn.execute(
         """SELECT p.id, p.name, p.category, p.base_price
@@ -380,11 +409,24 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
 
         for line in payload.lines:
             chip_id = _resolve_line_chip_id(conn, line)
+            line_description = _describe_submit_line(conn, line, chip_id)
             latest = latest_by_key.get((line.product_id, chip_id))
             if latest is None:
-                raise HTTPException(status_code=422, detail="Có sản phẩm không còn trong danh sách trưng bày")
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "Có sản phẩm không còn trong danh sách trưng bày: "
+                        f"{line_description}"
+                    ),
+                )
             if latest["expected_qty"] != line.expected_qty:
-                raise HTTPException(status_code=409, detail="Số tồn đã thay đổi, vui lòng tải lại màn hình để cập nhật")
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Số tồn đã thay đổi, vui lòng tải lại màn hình để cập nhật: "
+                        f"{line_description}"
+                    ),
+                )
 
         session_cursor = conn.execute(
             """INSERT INTO reconciliation_sessions

@@ -339,17 +339,20 @@ void main() {
     },
   );
 
-  test('normalizeReconciliationOptionKey resolves unique key from product id', () {
-    final state = ReconciliationState(
-      countedQtyByOption: const <String, int>{'1:12000': 2, '2:15000': 1},
-      wasteQtyByOption: const <String, int>{},
-      wasteReasonByOption: const <String, String>{},
-      saleRowsByOption: const <String, List<ReconciliationSaleRowInput>>{},
-    );
+  test(
+    'normalizeReconciliationOptionKey resolves unique key from product id',
+    () {
+      final state = ReconciliationState(
+        countedQtyByOption: const <String, int>{'1:12000': 2, '2:15000': 1},
+        wasteQtyByOption: const <String, int>{},
+        wasteReasonByOption: const <String, String>{},
+        saleRowsByOption: const <String, List<ReconciliationSaleRowInput>>{},
+      );
 
-    expect(normalizeReconciliationOptionKey(1, state), '1:12000');
-    expect(normalizeReconciliationOptionKey('2:15000', state), '2:15000');
-  });
+      expect(normalizeReconciliationOptionKey(1, state), '1:12000');
+      expect(normalizeReconciliationOptionKey('2:15000', state), '2:15000');
+    },
+  );
 
   test('buildSubmitLines groups active sale rows by option key', () {
     final state = ReconciliationState(
@@ -371,6 +374,15 @@ void main() {
                 sourceChipIds: const <int>[],
                 sourceChipLabels: const <String>[],
                 expectedQty: 5,
+              ),
+              ReconciliationDraftOption(
+                productId: 1,
+                normalizedPrice: 130000,
+                priceChipId: 15,
+                chipLabel: '130',
+                sourceChipIds: const <int>[15],
+                sourceChipLabels: const <String>['130'],
+                expectedQty: 0,
               ),
             ],
           ),
@@ -397,7 +409,61 @@ void main() {
 
     final lines = buildSubmitLines(state);
     expect(lines.length, 1);
+    expect(lines.first.priceChipId, isNull);
     expect(lines.first.saleRows.length, 1);
     expect(lines.first.saleRows.first.paymentMethod, 'cash');
   });
+
+  test(
+    'buildSubmitLines includes stocked chip id and skips zero-stock options',
+    () {
+      final state = ReconciliationState(
+        draft: ReconciliationDraft(
+          date: '2026-05-04',
+          products: [
+            ReconciliationDraftProduct(
+              productId: 83,
+              name: 'Bánh kem trưng bày',
+              category: 'banh_kem',
+              expectedQty: 6,
+              basePrice: 130000,
+              priceChips: const <ReconciliationPriceChip>[],
+              options: [
+                ReconciliationDraftOption(
+                  productId: 83,
+                  normalizedPrice: 130000,
+                  priceChipId: 15,
+                  chipLabel: '130',
+                  sourceChipIds: const <int>[15],
+                  sourceChipLabels: const <String>['130'],
+                  expectedQty: 0,
+                ),
+                ReconciliationDraftOption(
+                  productId: 83,
+                  normalizedPrice: 200000,
+                  priceChipId: 19,
+                  chipLabel: '200',
+                  sourceChipIds: const <int>[19],
+                  sourceChipLabels: const <String>['200'],
+                  expectedQty: 6,
+                ),
+              ],
+            ),
+          ],
+        ),
+        countedQtyByOption: const <String, int>{'83:130000': 0, '83:200000': 6},
+        wasteQtyByOption: const <String, int>{'83:130000': 0, '83:200000': 0},
+        wasteReasonByOption: const <String, String>{
+          '83:130000': '',
+          '83:200000': '',
+        },
+        saleRowsByOption: const <String, List<ReconciliationSaleRowInput>>{},
+      );
+
+      final lines = buildSubmitLines(state);
+      expect(lines.length, 1);
+      expect(lines.single.normalizedPrice, 200000);
+      expect(lines.single.priceChipId, 19);
+    },
+  );
 }

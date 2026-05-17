@@ -52,9 +52,12 @@ void main() {
 
   Finder textFieldByLabel(String label) {
     return find.byWidgetPredicate(
-      (widget) =>
-          widget is TextField && widget.decoration?.labelText == label,
+      (widget) => widget is TextField && widget.decoration?.labelText == label,
     );
+  }
+
+  Finder optionSummary(String optionKey) {
+    return find.byKey(ValueKey('reconciliation-option-summary-$optionKey'));
   }
 
   Future<void> expandFirstCategory(WidgetTester tester) async {
@@ -62,8 +65,13 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> expandSaleRow(WidgetTester tester, {int rowNumber = 1}) async {
-    await tester.tap(find.text('${VN.dongBan} $rowNumber').first);
+  Future<void> expandOptionInventory(
+    WidgetTester tester, {
+    int index = 0,
+  }) async {
+    final header = find.textContaining('${VN.priceChipPrice} ').at(index);
+    await tester.ensureVisible(header);
+    await tester.tap(header);
     await tester.pumpAndSettle();
   }
 
@@ -129,12 +137,12 @@ void main() {
 
     expect(find.text('Tồn dự kiến: 5'), findsOneWidget);
     expect(find.text('Trạng thái: Ổn'), findsOneWidget);
-    expect(find.text('Tồn đã đếm'), findsNothing);
+    expect(find.text(VN.tonDaDem), findsNothing);
 
     await tester.tap(find.text('Bánh kem dâu'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Tồn đã đếm'), findsOneWidget);
+    expect(find.text(VN.tonDaDem), findsOneWidget);
   });
 
   testWidgets(
@@ -237,12 +245,12 @@ void main() {
 
     await tester.tap(find.text('Bánh kem dâu'));
     await tester.pumpAndSettle();
+    await expandOptionInventory(tester);
 
     await tester.enterText(find.byType(TextField).first, '3');
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.themDongBan));
+    await tester.tap(find.widgetWithText(OutlinedButton, VN.themDongBan));
     await tester.pumpAndSettle();
-    await expandSaleRow(tester);
 
     final unitPriceField = tester.widget<TextFormField>(unitPriceFieldFinder());
     expect(unitPriceField.controller?.text, '12000');
@@ -337,6 +345,10 @@ void main() {
 
     expect(find.text('${VN.nhanChip}: M'), findsOneWidget);
     expect(find.text('${VN.nhanChip}: L'), findsNothing);
+    expect(textFieldByLabel(VN.tonDaDem), findsNothing);
+
+    await expandOptionInventory(tester);
+    expect(textFieldByLabel(VN.tonDaDem), findsOneWidget);
   });
 
   testWidgets('multi-chip option header excludes same-price no-stock chip', (
@@ -452,6 +464,7 @@ void main() {
     await expandFirstCategory(tester);
     await tester.tap(find.text('Bánh kem dâu'));
     await tester.pumpAndSettle();
+    await expandOptionInventory(tester);
 
     await tester.enterText(find.byType(TextField).first, '1');
     await tester.pumpAndSettle();
@@ -535,6 +548,8 @@ void main() {
       await expandFirstCategory(tester);
       await tester.tap(find.text('Bánh kem dâu'));
       await tester.pumpAndSettle();
+      await expandOptionInventory(tester);
+      await expandOptionInventory(tester, index: 1);
 
       final countedFields = find.byType(TextField);
       await tester.enterText(countedFields.at(0), '0');
@@ -542,13 +557,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('${VN.dongBan} 1'), findsNWidgets(2));
-
-      await tester.ensureVisible(find.text('${VN.dongBan} 1').first);
-      await tester.tap(find.text('${VN.dongBan} 1').first);
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('${VN.dongBan} 1').last);
-      await tester.tap(find.text('${VN.dongBan} 1').last, warnIfMissed: false);
-      await tester.pumpAndSettle();
 
       final saleRow1 = find.ancestor(
         of: find.text('${VN.dongBan} 1').first,
@@ -576,87 +584,175 @@ void main() {
       final firstEdited = tester.widget<TextFormField>(unitPriceFields.first);
       expect(firstEdited.controller?.text, '15500');
       await tester.ensureVisible(find.text('${VN.dongBan} 1').last);
-      await tester.tap(find.text('${VN.dongBan} 1').last, warnIfMissed: false);
-      await tester.pumpAndSettle();
-      await tester.enterText(unitPriceFieldFinder(), '16500');
+      await tester.enterText(unitPriceFields.last, '16500');
       await tester.pumpAndSettle();
 
-      final secondEdited = tester.widget<TextFormField>(unitPriceFieldFinder());
+      final secondEdited = tester.widget<TextFormField>(unitPriceFields.last);
       expect(secondEdited.controller?.text, '16500');
     },
   );
 
-  testWidgets('sale row starts collapsed, expands for editing, and shows invalid summary state', (
-    tester,
-  ) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
-    final prefs = await SharedPreferences.getInstance();
-    final service = _FakeService(
-      ReconciliationDraft(
-        date: '2026-05-04',
-        products: [
-          ReconciliationDraftProduct(
-            productId: 1,
-            name: 'Bánh kem dâu',
-            category: 'banh_kem',
-            expectedQty: 5,
-            basePrice: 100000,
-            priceChips: const [],
-          ),
-        ],
-      ),
-    );
+  testWidgets(
+    'no-chip single price inventory renders expanded without option collapse',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+      final prefs = await SharedPreferences.getInstance();
+      final service = _FakeService(
+        ReconciliationDraft(
+          date: '2026-05-04',
+          products: [
+            ReconciliationDraftProduct(
+              productId: 1,
+              name: 'Bánh kem dâu',
+              category: 'banh_kem',
+              expectedQty: 5,
+              basePrice: 100000,
+              priceChips: const [],
+            ),
+          ],
+        ),
+      );
 
-    await tester.binding.setSurfaceSize(const Size(360, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          sharedPreferencesProvider.overrideWithValue(prefs),
-          reconciliationServiceProvider.overrideWithValue(service),
-        ],
-        child: MaterialApp.router(routerConfig: buildRouter()),
-      ),
-    );
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            reconciliationServiceProvider.overrideWithValue(service),
+          ],
+          child: MaterialApp.router(routerConfig: buildRouter()),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    await expandFirstCategory(tester);
-    await tester.tap(find.text('Bánh kem dâu'));
-    await tester.pumpAndSettle();
-    await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '4');
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.themDongBan));
-    await tester.pumpAndSettle();
+      await expandFirstCategory(tester);
+      await tester.tap(find.text('Bánh kem dâu'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('${VN.dongBan} 1'), findsOneWidget);
-    expect(find.text('${VN.soLuongBan}: 0'), findsWidgets);
-    expect(find.text('${VN.donGiaNhapTay}: 100000'), findsWidgets);
-    expect(find.textContaining('${VN.phuongThucThanhToan}:'), findsWidgets);
-    expect(find.byKey(const Key('reconciliation-unit-price-field')), findsNothing);
+      expect(find.textContaining('${VN.priceChipPrice} '), findsOneWidget);
+      final summary = optionSummary('1:100000');
+      expect(summary, findsOneWidget);
+      expect(
+        find.descendant(of: summary, matching: find.text('${VN.tonDaDem}: 5')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: summary,
+          matching: find.text('${VN.soLuongBan}: 0'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: summary,
+          matching: find.text('${VN.soLuongHaoHut}: 0'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: summary,
+          matching: find.text('${VN.soLuongChenhLech}: 0'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: summary,
+          matching: find.text('${VN.trangThai}: ${VN.trangThaiOn}'),
+        ),
+        findsOneWidget,
+      );
+      expect(textFieldByLabel(VN.tonDaDem), findsOneWidget);
+      await tester.tap(find.textContaining('${VN.priceChipPrice} ').first);
+      await tester.pumpAndSettle();
+      expect(textFieldByLabel(VN.tonDaDem), findsOneWidget);
 
-    await expandSaleRow(tester);
-    await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
-    await tester.enterText(unitPriceFieldFinder(), '15000');
-    await tester.pumpAndSettle();
+      await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '4');
+      await tester.pumpAndSettle();
 
-    expect(find.text('${VN.soLuongBan}: 1'), findsWidgets);
-    expect(find.text('${VN.donGiaNhapTay}: 15000'), findsWidgets);
+      expect(
+        find.descendant(
+          of: summary,
+          matching: find.text('${VN.trangThai}: ${VN.trangThaiCoLoi}'),
+        ),
+        findsOneWidget,
+      );
 
-    await tester.tap(find.widgetWithText(FilledButton, VN.guiDoiSoat));
-    await tester.pumpAndSettle();
+      await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '5');
+      await tester.pumpAndSettle();
 
-    final confirmButton = find.descendant(
-      of: find.byType(AlertDialog),
-      matching: find.widgetWithText(FilledButton, VN.guiDoiSoat),
-    );
-    await tester.tap(confirmButton);
-    await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: summary,
+          matching: find.text('${VN.trangThai}: ${VN.trangThaiOn}'),
+        ),
+        findsOneWidget,
+      );
 
-    expect(find.text(VN.trangThaiCoLoi), findsWidgets);
-    expect(find.byIcon(Icons.error_outline), findsWidgets);
-    expect(tester.takeException(), isNull);
-  });
+      await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '4');
+      await tester.pumpAndSettle();
+
+      expect(find.text('${VN.dongBan} 1'), findsOneWidget);
+      expect(
+        find.byKey(const Key('reconciliation-unit-price-field')),
+        findsOneWidget,
+      );
+      await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
+      await tester.enterText(unitPriceFieldFinder(), '15000');
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: summary,
+          matching: find.text('${VN.trangThai}: ${VN.trangThaiCoLoi}'),
+        ),
+        findsOneWidget,
+      );
+
+      expect(
+        find.descendant(of: summary, matching: find.text('${VN.tonDaDem}: 4')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: summary,
+          matching: find.text('${VN.soLuongBan}: 1'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: summary,
+          matching: find.text('${VN.soLuongHaoHut}: 0'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: summary,
+          matching: find.text('${VN.soLuongChenhLech}: 0'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: summary,
+          matching: find.text('${VN.trangThai}: ${VN.trangThaiCoLoi}'),
+        ),
+        findsOneWidget,
+      );
+
+      final unitPriceField = tester.widget<TextFormField>(
+        unitPriceFieldFinder(),
+      );
+      expect(unitPriceField.controller?.text, '15000');
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('invalid submit review shows issues and blocks final submit', (
     tester,
@@ -694,12 +790,12 @@ void main() {
 
     await tester.tap(find.text('Bánh kem dâu'));
     await tester.pumpAndSettle();
+    await expandOptionInventory(tester);
 
     await tester.enterText(find.byType(TextField).first, '4');
     await tester.pumpAndSettle();
-    await tester.tap(find.text(VN.themDongBan));
+    await tester.tap(find.widgetWithText(OutlinedButton, VN.themDongBan));
     await tester.pumpAndSettle();
-    await expandSaleRow(tester);
     final saleRow = find.ancestor(
       of: find.text('${VN.dongBan} 1'),
       matching: find.byType(Container),
@@ -738,9 +834,71 @@ void main() {
     Navigator.of(tester.element(find.byType(AlertDialog))).pop();
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(InkWell).first, warnIfMissed: false);
+    expect(find.text('${VN.trangThai}: ${VN.trangThaiCoLoi}'), findsWidgets);
+  });
+
+  testWidgets('missing sale row payment method blocks submit review', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    final prefs = await SharedPreferences.getInstance();
+    final service = _FakeService(
+      ReconciliationDraft(
+        date: '2026-05-04',
+        products: [
+          ReconciliationDraftProduct(
+            productId: 1,
+            name: 'Bánh kem dâu',
+            category: 'banh_kem',
+            expectedQty: 5,
+            basePrice: 100000,
+            priceChips: const [],
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reconciliationServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(routerConfig: buildRouter()),
+      ),
+    );
     await tester.pumpAndSettle();
-    expect(find.text('Trạng thái: Có lỗi'), findsOneWidget);
+
+    await expandFirstCategory(tester);
+    await tester.tap(find.text('Bánh kem dâu'));
+    await tester.pumpAndSettle();
+    await expandOptionInventory(tester);
+
+    await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '4');
+    await tester.pumpAndSettle();
+    await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: optionSummary('1:100000'),
+        matching: find.text('${VN.trangThai}: ${VN.trangThaiCoLoi}'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, VN.guiDoiSoat));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Chọn phương thức'), findsWidgets);
+    final confirmButton = tester.widget<FilledButton>(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, VN.guiDoiSoat),
+      ),
+    );
+    expect(confirmButton.onPressed, isNull);
+    expect(service.submitCalls, 0);
   });
 
   testWidgets('load failure and empty states show guidance with retry', (
@@ -823,78 +981,83 @@ void main() {
     expect(find.text('Chi tiết #1'), findsOneWidget);
   });
 
-  testWidgets('variance indicator updates value, sign, color, and wraps at 360', (
-    tester,
-  ) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
-    final prefs = await SharedPreferences.getInstance();
-    final service = _FakeService(
-      ReconciliationDraft(
-        date: '2026-05-04',
-        products: [
-          ReconciliationDraftProduct(
-            productId: 1,
-            name: 'Bánh kem dâu',
-            category: 'banh_kem',
-            expectedQty: 5,
-            basePrice: 100000,
-            priceChips: const [],
-          ),
-        ],
-      ),
-    );
+  testWidgets(
+    'variance indicator updates value, sign, color, and wraps at 360',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+      final prefs = await SharedPreferences.getInstance();
+      final service = _FakeService(
+        ReconciliationDraft(
+          date: '2026-05-04',
+          products: [
+            ReconciliationDraftProduct(
+              productId: 1,
+              name: 'Bánh kem dâu',
+              category: 'banh_kem',
+              expectedQty: 5,
+              basePrice: 100000,
+              priceChips: const [],
+            ),
+          ],
+        ),
+      );
 
-    await tester.binding.setSurfaceSize(const Size(360, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          sharedPreferencesProvider.overrideWithValue(prefs),
-          reconciliationServiceProvider.overrideWithValue(service),
-        ],
-        child: MaterialApp.router(routerConfig: buildRouter()),
-      ),
-    );
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            reconciliationServiceProvider.overrideWithValue(service),
+          ],
+          child: MaterialApp.router(routerConfig: buildRouter()),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    await expandFirstCategory(tester);
-    await tester.tap(find.text('Bánh kem dâu'));
-    await tester.pumpAndSettle();
+      await expandFirstCategory(tester);
+      await tester.tap(find.text('Bánh kem dâu'));
+      await tester.pumpAndSettle();
+      await expandOptionInventory(tester);
 
-    await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '4');
-    await tester.pumpAndSettle();
+      await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '4');
+      await tester.pumpAndSettle();
 
-    final positiveVarianceFinder = find.text('${VN.soLuongChenhLech}: +1');
-    expect(positiveVarianceFinder, findsOneWidget);
-    final positiveVarianceText = tester.widget<Text>(positiveVarianceFinder);
-    expect(positiveVarianceText.style?.color, Colors.red[700]);
+      final positiveVarianceFinder = find.text('${VN.soLuongChenhLech}: +1');
+      expect(positiveVarianceFinder, findsWidgets);
+      final positiveVarianceText = tester
+          .widgetList<Text>(positiveVarianceFinder)
+          .first;
+      expect(positiveVarianceText.style?.color, Colors.red[700]);
 
-    await tester.tap(find.text(VN.themDongBan));
-    await tester.pumpAndSettle();
-    await expandSaleRow(tester);
-    await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
-    await tester.pumpAndSettle();
+      await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
+      await tester.pumpAndSettle();
 
-    final zeroVarianceFinder = find.text('${VN.soLuongChenhLech}: 0');
-    expect(zeroVarianceFinder, findsOneWidget);
-    final zeroVarianceText = tester.widget<Text>(zeroVarianceFinder);
-    expect(zeroVarianceText.style?.color, Colors.green[700]);
+      final zeroVarianceFinder = find.text('${VN.soLuongChenhLech}: 0');
+      expect(zeroVarianceFinder, findsWidgets);
+      final zeroVarianceText = tester
+          .widgetList<Text>(zeroVarianceFinder)
+          .first;
+      expect(zeroVarianceText.style?.color, Colors.green[700]);
 
-    await tester.enterText(textFieldByLabel(VN.soLuongHaoHut).first, '1');
-    await tester.pumpAndSettle();
+      await tester.enterText(textFieldByLabel(VN.soLuongHaoHut).first, '1');
+      await tester.pumpAndSettle();
 
-    final negativeVarianceFinder = find.text('${VN.soLuongChenhLech}: -1');
-    expect(negativeVarianceFinder, findsOneWidget);
-    final negativeVarianceText = tester.widget<Text>(negativeVarianceFinder);
-    expect(negativeVarianceText.style?.color, Colors.red[700]);
+      final negativeVarianceFinder = find.text('${VN.soLuongChenhLech}: -1');
+      expect(negativeVarianceFinder, findsWidgets);
+      final negativeVarianceText = tester
+          .widgetList<Text>(negativeVarianceFinder)
+          .first;
+      expect(negativeVarianceText.style?.color, Colors.red[700]);
 
-    await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '3');
-    await tester.pumpAndSettle();
-    expect(find.text('${VN.soLuongChenhLech}: 0'), findsOneWidget);
+      await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '3');
+      await tester.pumpAndSettle();
+      expect(find.text('${VN.soLuongChenhLech}: 0'), findsWidgets);
 
-    expect(tester.takeException(), isNull);
-  });
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'auto sales row supports reorder, manual price, and waste-only path',
@@ -931,12 +1094,12 @@ void main() {
       await expandFirstCategory(tester);
       await tester.tap(find.text('Bánh kem dâu'));
       await tester.pumpAndSettle();
+      await expandOptionInventory(tester);
 
       await tester.enterText(find.byType(TextField).first, '4');
       await tester.pumpAndSettle();
 
       expect(find.text('${VN.dongBan} 1'), findsOneWidget);
-      await expandSaleRow(tester);
       final prefilledUnitPrice = tester.widget<TextFormField>(
         unitPriceFieldFinder(),
       );

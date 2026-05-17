@@ -29,10 +29,12 @@ class ReconciliationDraftOption {
     required this.sourceChipIds,
     required this.sourceChipLabels,
     required this.expectedQty,
+    this.priceChipId,
   });
 
   final int productId;
   final int normalizedPrice;
+  final int? priceChipId;
   final String chipLabel;
   final List<int> sourceChipIds;
   final List<String> sourceChipLabels;
@@ -58,7 +60,9 @@ class ReconciliationDraftOption {
     return ReconciliationDraftOption(
       productId: json['product_id'] as int,
       normalizedPrice:
-          (json['normalized_price'] as num?)?.toInt() ?? fallbackNormalizedPrice,
+          (json['normalized_price'] as num?)?.toInt() ??
+          fallbackNormalizedPrice,
+      priceChipId: (json['price_chip_id'] as num?)?.toInt(),
       chipLabel: (json['chip_label'] as String?) ?? 'Gia goc',
       sourceChipIds: (json['source_chip_ids'] as List<dynamic>? ?? <dynamic>[])
           .map((item) => (item as num).toInt())
@@ -84,6 +88,7 @@ class ReconciliationDraftProduct {
                ReconciliationDraftOption(
                  productId: productId,
                  normalizedPrice: basePrice.round(),
+                 priceChipId: null,
                  chipLabel: 'Gia goc',
                  sourceChipIds: const <int>[],
                  sourceChipLabels: const <String>[],
@@ -103,7 +108,8 @@ class ReconciliationDraftProduct {
   factory ReconciliationDraftProduct.fromJson(Map<String, dynamic> json) {
     final chips = (json['price_chips'] as List<dynamic>? ?? <dynamic>[])
         .map(
-          (item) => ReconciliationPriceChip.fromJson(item as Map<String, dynamic>),
+          (item) =>
+              ReconciliationPriceChip.fromJson(item as Map<String, dynamic>),
         )
         .toList();
     final rawOptions = (json['options'] as List<dynamic>? ?? <dynamic>[])
@@ -154,6 +160,7 @@ List<ReconciliationDraftOption> mergeOptionsByNormalizedPrice(
     merged[option.normalizedPrice] = ReconciliationDraftOption(
       productId: option.productId,
       normalizedPrice: option.normalizedPrice,
+      priceChipId: _mergePriceChipId(existing, option),
       chipLabel: labels.isNotEmpty ? labels.join(', ') : existing.chipLabel,
       sourceChipIds: chipIdSet.toList()..sort(),
       sourceChipLabels: labels,
@@ -161,6 +168,31 @@ List<ReconciliationDraftOption> mergeOptionsByNormalizedPrice(
     );
   }
   return order.map((price) => merged[price]!).toList();
+}
+
+int? _singleChipId(ReconciliationDraftOption option) {
+  if (option.priceChipId != null) {
+    return option.priceChipId;
+  }
+  return option.sourceChipIds.length == 1 ? option.sourceChipIds.single : null;
+}
+
+int? _mergePriceChipId(
+  ReconciliationDraftOption existing,
+  ReconciliationDraftOption option,
+) {
+  if (existing.expectedQty <= 0) {
+    return option.expectedQty > 0 ? _singleChipId(option) : null;
+  }
+  if (option.expectedQty <= 0) {
+    return _singleChipId(existing);
+  }
+
+  final existingChipId = _singleChipId(existing);
+  final optionChipId = _singleChipId(option);
+  return existingChipId != null && existingChipId == optionChipId
+      ? existingChipId
+      : null;
 }
 
 List<String> stockedOptionLabels(ReconciliationDraftOption option) {
@@ -180,10 +212,14 @@ class ReconciliationDraft {
   factory ReconciliationDraft.fromJson(Map<String, dynamic> json) {
     final products = (json['products'] as List<dynamic>? ?? <dynamic>[])
         .map(
-          (item) => ReconciliationDraftProduct.fromJson(item as Map<String, dynamic>),
+          (item) =>
+              ReconciliationDraftProduct.fromJson(item as Map<String, dynamic>),
         )
         .toList();
-    return ReconciliationDraft(date: json['date'] as String, products: products);
+    return ReconciliationDraft(
+      date: json['date'] as String,
+      products: products,
+    );
   }
 }
 
@@ -195,6 +231,7 @@ class ReconciliationSubmitLine {
     required this.countedQty,
     required this.saleQty,
     required this.wasteQty,
+    this.priceChipId,
     this.manualUnitPrice,
     this.wasteReason,
     List<ReconciliationSubmitSaleRow>? saleRows,
@@ -202,6 +239,7 @@ class ReconciliationSubmitLine {
 
   final int productId;
   final int normalizedPrice;
+  final int? priceChipId;
   final int expectedQty;
   final int countedQty;
   final int saleQty;
@@ -214,6 +252,7 @@ class ReconciliationSubmitLine {
     return {
       'product_id': productId,
       'normalized_price': normalizedPrice,
+      'price_chip_id': priceChipId,
       'expected_qty': expectedQty,
       'counted_qty': countedQty,
       'sale_qty': saleQty,
@@ -421,8 +460,8 @@ class ReconciliationHistoryLine {
       wasteReason: json['waste_reason'] as String?,
       manualUnitPrice: (json['manual_unit_price'] as num?)?.toDouble(),
       linkedOrderItemId: (json['linked_order_item_id'] as num?)?.toInt(),
-      linkedStockMovementSaleId:
-          (json['linked_stock_movement_sale_id'] as num?)?.toInt(),
+      linkedStockMovementSaleId: (json['linked_stock_movement_sale_id'] as num?)
+          ?.toInt(),
       linkedStockMovementWasteId:
           (json['linked_stock_movement_waste_id'] as num?)?.toInt(),
       saleRows: saleRows,
@@ -456,7 +495,8 @@ class ReconciliationHistoryDetail {
   factory ReconciliationHistoryDetail.fromJson(Map<String, dynamic> json) {
     final lines = (json['lines'] as List<dynamic>? ?? <dynamic>[])
         .map(
-          (item) => ReconciliationHistoryLine.fromJson(item as Map<String, dynamic>),
+          (item) =>
+              ReconciliationHistoryLine.fromJson(item as Map<String, dynamic>),
         )
         .toList();
     return ReconciliationHistoryDetail(
