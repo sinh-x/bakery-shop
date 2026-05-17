@@ -213,6 +213,38 @@ def test_submit_stale_stock_creates_zero_side_effect_rows(api_client):
         assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
 
 
+def test_submit_stale_display_product_names_product(api_client):
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "false")
+        product = conn.execute(
+            "SELECT name FROM products WHERE id = ?",
+            (1,),
+        ).fetchone()
+        product_name = product["name"]
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 0,
+                    "counted_qty": 0,
+                    "sale_qty": 0,
+                    "waste_qty": 0,
+                }
+            ],
+        },
+    )
+
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert "không còn trong danh sách trưng bày" in detail
+    assert product_name in detail
+    assert "ID 1" in detail
+
+
 def test_submit_invalid_split_no_partial_writes(api_client):
     with get_db() as conn:
         _mark_product_display(conn, 1, "true")
@@ -772,6 +804,41 @@ def test_submit_per_chip_lines_and_history(api_client):
     assert history.status_code == 200
     hist_line = history.json()["lines"][0]
     assert hist_line["price_chip_id"] == chip_id
+
+
+def test_submit_prefers_explicit_chip_when_chip_price_matches_base(api_client):
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 0)
+        conn.execute("UPDATE products SET base_price = ? WHERE id = ?", (130000, 1))
+        chip_id = conn.execute(
+            "INSERT INTO product_price_chips (product_id, label, price, position) VALUES (?, ?, ?, ?)",
+            (1, "130", 130000, 1),
+        ).lastrowid
+        create_lot_with_items(conn, 1, chip_id, 4)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "normalized_price": 130000,
+                    "price_chip_id": chip_id,
+                    "expected_qty": 4,
+                    "counted_qty": 4,
+                    "sale_qty": 0,
+                    "waste_qty": 0,
+                }
+            ],
+        },
+    )
+
+    assert resp.status_code == 201
+    with get_db() as conn:
+        line = conn.execute("SELECT * FROM reconciliation_lines").fetchone()
+        assert line["price_chip_id"] == chip_id
 
 
 def test_submit_returns_409_when_any_chip_expected_is_stale(api_client):

@@ -1,3 +1,5 @@
+// EXEMPT: This widget remains above local file-size thresholds while DG-138
+// tracks broader low-risk decomposition of the tightly coupled reconciliation UI.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/reconciliation_service.dart';
 import '../../../data/providers/reconciliation_provider.dart';
 import '../../../shared/labels/shared.dart';
+import 'reconciliation_variance_indicator.dart';
 
 class ReconciliationProductCard extends ConsumerStatefulWidget {
   const ReconciliationProductCard({required this.product, super.key});
@@ -21,6 +24,7 @@ class _ReconciliationProductCardState
   final Map<String, TextEditingController> _countedControllers = {};
   final Map<String, TextEditingController> _wasteControllers = {};
   final Map<String, TextEditingController> _wasteReasonControllers = {};
+  final Set<String> _expandedOptionKeys = {};
   bool _isExpanded = false;
 
   @override
@@ -37,7 +41,9 @@ class _ReconciliationProductCardState
       final wasteReason = state.wasteReasonByOption[optionKey] ?? '';
       _countedControllers[optionKey] = TextEditingController(text: '$counted');
       _wasteControllers[optionKey] = TextEditingController(text: '$waste');
-      _wasteReasonControllers[optionKey] = TextEditingController(text: wasteReason);
+      _wasteReasonControllers[optionKey] = TextEditingController(
+        text: wasteReason,
+      );
     }
   }
 
@@ -59,6 +65,11 @@ class _ReconciliationProductCardState
   Widget build(BuildContext context) {
     final state = ref.watch(reconciliationProvider);
     final notifier = ref.read(reconciliationProvider.notifier);
+    final visibleOptions = widget.product.options
+        .where((option) => option.expectedQty > 0)
+        .toList();
+    final autoExpandSingleOption =
+        widget.product.priceChips.isEmpty && visibleOptions.length == 1;
     var expectedTotal = 0;
     var countedTotal = 0;
     var missingTotal = 0;
@@ -76,6 +87,7 @@ class _ReconciliationProductCardState
           state.saleRowsByOption[optionKey] ??
           const <ReconciliationSaleRowInput>[];
       final waste = state.wasteQtyByOption[optionKey] ?? 0;
+      final wasteReason = state.wasteReasonByOption[optionKey] ?? '';
       final missing = option.expectedQty - counted;
       expectedTotal += option.expectedQty;
       countedTotal += counted;
@@ -85,7 +97,14 @@ class _ReconciliationProductCardState
       saleTotal += rows.fold<int>(0, (sum, row) => sum + row.quantity);
       wasteTotal += waste;
 
-      if ((state.optionErrors[optionKey] ?? '').isNotEmpty) {
+      if (hasReconciliationOptionIssue(
+            option: option,
+            counted: counted,
+            saleRows: rows,
+            waste: waste,
+            wasteReason: wasteReason,
+          ) ||
+          (state.optionErrors[optionKey] ?? '').isNotEmpty) {
         hasAnyError = true;
       }
       final rowErrors =
@@ -157,21 +176,12 @@ class _ReconciliationProductCardState
             ],
             if (_isExpanded) ...[
               const SizedBox(height: 10),
-              for (final option
-                  in widget.product.options.where((o) => o.expectedQty > 0)) ...[
-                _OptionHeader(
-                  option: option,
-                  visibleChipLabels: _visibleChipLabelsForOption(option),
-                ),
-                _ReconciliationOptionEditor(
-                  product: widget.product,
-                  option: option,
-                  countedController: _countedControllers[_optionKey(option)]!,
-                  wasteController: _wasteControllers[_optionKey(option)]!,
-                  wasteReasonController:
-                      _wasteReasonControllers[_optionKey(option)]!,
-                  syncIntController: _syncIntController,
-                  notifier: notifier,
+              for (final option in visibleOptions) ...[
+                _buildOptionSection(
+                  option,
+                  state,
+                  notifier,
+                  canCollapse: !autoExpandSingleOption,
                 ),
                 const SizedBox(height: 10),
               ],
@@ -183,7 +193,74 @@ class _ReconciliationProductCardState
   }
 
   String _optionKey(ReconciliationDraftOption option) {
-    return reconciliationOptionKey(widget.product.productId, option.normalizedPrice);
+    return reconciliationOptionKey(
+      widget.product.productId,
+      option.normalizedPrice,
+    );
+  }
+
+  void _toggleOption(ReconciliationDraftOption option) {
+    final optionKey = _optionKey(option);
+    setState(() {
+      if (_expandedOptionKeys.contains(optionKey)) {
+        _expandedOptionKeys.remove(optionKey);
+      } else {
+        _expandedOptionKeys.add(optionKey);
+      }
+    });
+  }
+
+  Widget _buildOptionSection(
+    ReconciliationDraftOption option,
+    ReconciliationState state,
+    ReconciliationNotifier notifier, {
+    required bool canCollapse,
+  }) {
+    final optionKey = _optionKey(option);
+    final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
+    final saleRows =
+        state.saleRowsByOption[optionKey] ??
+        const <ReconciliationSaleRowInput>[];
+    final saleQty = saleRows.fold<int>(0, (sum, row) => sum + row.quantity);
+    final waste = state.wasteQtyByOption[optionKey] ?? 0;
+    final wasteReason = state.wasteReasonByOption[optionKey] ?? '';
+    final variance = option.expectedQty - counted - saleQty - waste;
+    final saleRowErrors =
+        state.saleRowErrorsByOption[optionKey] ??
+        const <ReconciliationSaleRowError>[];
+    final hasError =
+        hasReconciliationOptionIssue(
+          option: option,
+          counted: counted,
+          saleRows: saleRows,
+          waste: waste,
+          wasteReason: wasteReason,
+        ) ||
+        (state.optionErrors[optionKey] ?? '').isNotEmpty ||
+        saleRowErrors.any((error) => error.hasError);
+
+    return _OptionInventorySection(
+      optionKey: optionKey,
+      option: option,
+      visibleChipLabels: _visibleChipLabelsForOption(option),
+      countedQty: counted,
+      saleQty: saleQty,
+      wasteQty: waste,
+      variance: variance,
+      hasError: hasError,
+      canCollapse: canCollapse,
+      isExpanded: !canCollapse || _expandedOptionKeys.contains(optionKey),
+      onToggle: () => _toggleOption(option),
+      child: _ReconciliationOptionEditor(
+        product: widget.product,
+        option: option,
+        countedController: _countedControllers[optionKey]!,
+        wasteController: _wasteControllers[optionKey]!,
+        wasteReasonController: _wasteReasonControllers[optionKey]!,
+        syncIntController: _syncIntController,
+        notifier: notifier,
+      ),
+    );
   }
 
   void _syncIntController(TextEditingController controller, int value) {
@@ -242,18 +319,24 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
   final TextEditingController wasteController;
   final TextEditingController wasteReasonController;
   final void Function(TextEditingController controller, int value)
-      syncIntController;
+  syncIntController;
   final ReconciliationNotifier notifier;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(reconciliationProvider);
-    final optionKey = reconciliationOptionKey(product.productId, option.normalizedPrice);
+    final optionKey = reconciliationOptionKey(
+      product.productId,
+      option.normalizedPrice,
+    );
     final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
     final saleRows =
-        state.saleRowsByOption[optionKey] ?? const <ReconciliationSaleRowInput>[];
+        state.saleRowsByOption[optionKey] ??
+        const <ReconciliationSaleRowInput>[];
     final waste = state.wasteQtyByOption[optionKey] ?? 0;
+    final saleQty = saleRows.fold<int>(0, (sum, row) => sum + row.quantity);
     final missing = option.expectedQty - counted;
+    final variance = option.expectedQty - counted - saleQty - waste;
     final optionError = state.optionErrors[optionKey];
     final saleRowErrors =
         state.saleRowErrorsByOption[optionKey] ??
@@ -280,21 +363,30 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
         ),
         if (showSaleEditor) ...[
           const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              onPressed: () =>
-                  notifier.addSaleRow(optionKey, defaultUnitPrice: option.normalizedPrice),
-              icon: const Icon(Icons.add),
-              label: const Text(VN.themDongBan),
-            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => notifier.addSaleRow(
+                  optionKey,
+                  defaultUnitPrice: option.normalizedPrice,
+                ),
+                icon: const Icon(Icons.add),
+                label: const Text(VN.themDongBan),
+              ),
+              ReconciliationVarianceIndicator(variance: variance),
+            ],
           ),
           for (var rowIndex = 0; rowIndex < saleRows.length; rowIndex += 1)
             _SaleRowEditor(
+              key: ValueKey('$optionKey-sale-row-$rowIndex'),
               rowIndex: rowIndex,
               row: saleRows[rowIndex],
-              rowError:
-                  rowIndex < saleRowErrors.length ? saleRowErrors[rowIndex] : null,
+              rowError: rowIndex < saleRowErrors.length
+                  ? saleRowErrors[rowIndex]
+                  : null,
               onQtyChanged: (value) =>
                   notifier.setSaleRowQty(optionKey, rowIndex, value),
               onPriceChanged: (value) =>
@@ -305,11 +397,6 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
             ),
         ],
         if (missing > 0) ...[
-          const SizedBox(height: 8),
-          Text(
-            '${VN.soLuongThieu}: $missing',
-            style: TextStyle(color: Colors.orange[800], fontWeight: FontWeight.w600),
-          ),
           const SizedBox(height: 8),
           _QuantityStepperField(
             label: VN.soLuongHaoHut,
@@ -331,7 +418,8 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
                 border: OutlineInputBorder(),
               ),
               controller: wasteReasonController,
-              onChanged: (value) => notifier.setWasteReasonForOption(optionKey, value),
+              onChanged: (value) =>
+                  notifier.setWasteReasonForOption(optionKey, value),
             ),
           ],
         ],
@@ -339,7 +427,10 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
           const SizedBox(height: 8),
           Text(
             optionError,
-            style: TextStyle(color: Colors.red[700], fontWeight: FontWeight.w600),
+            style: TextStyle(
+              color: Colors.red[700],
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ],
@@ -361,7 +452,10 @@ class _SummaryChip extends StatelessWidget {
         color: Colors.grey.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text('$label: $value', style: Theme.of(context).textTheme.bodySmall),
+      child: Text(
+        '$label: $value',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
     );
   }
 }
@@ -397,14 +491,19 @@ class _OptionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final priceLineStyle = Theme.of(context).textTheme.titleSmall;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Gia ${option.normalizedPrice} - ${VN.tonDuKien}: ${option.expectedQty}',
-            style: Theme.of(context).textTheme.titleSmall,
+            'Giá ${formatVND(option.normalizedPrice.toDouble())} - ${VN.tonDuKien}: ${option.expectedQty}',
+            style: priceLineStyle?.copyWith(
+              fontWeight: FontWeight.bold,
+              fontSize: (priceLineStyle.fontSize ?? 14) + 1,
+            ),
           ),
           if (visibleChipLabels.isNotEmpty)
             Text(
@@ -417,8 +516,144 @@ class _OptionHeader extends StatelessWidget {
   }
 }
 
+class _OptionInventorySection extends StatelessWidget {
+  const _OptionInventorySection({
+    required this.optionKey,
+    required this.option,
+    required this.visibleChipLabels,
+    required this.countedQty,
+    required this.saleQty,
+    required this.wasteQty,
+    required this.variance,
+    required this.hasError,
+    required this.canCollapse,
+    required this.isExpanded,
+    required this.onToggle,
+    required this.child,
+  });
+
+  final String optionKey;
+  final ReconciliationDraftOption option;
+  final String visibleChipLabels;
+  final int countedQty;
+  final int saleQty;
+  final int wasteQty;
+  final int variance;
+  final bool hasError;
+  final bool canCollapse;
+  final bool isExpanded;
+  final VoidCallback onToggle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (canCollapse)
+          InkWell(
+            onTap: onToggle,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: _OptionInventoryHeader(
+                option: option,
+                visibleChipLabels: visibleChipLabels,
+                optionKey: optionKey,
+                countedQty: countedQty,
+                saleQty: saleQty,
+                wasteQty: wasteQty,
+                variance: variance,
+                hasError: hasError,
+                trailing: Icon(
+                  isExpanded
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
+                ),
+              ),
+            ),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: _OptionInventoryHeader(
+              option: option,
+              visibleChipLabels: visibleChipLabels,
+              optionKey: optionKey,
+              countedQty: countedQty,
+              saleQty: saleQty,
+              wasteQty: wasteQty,
+              variance: variance,
+              hasError: hasError,
+            ),
+          ),
+        if (isExpanded) ...[const SizedBox(height: 6), child],
+      ],
+    );
+  }
+}
+
+class _OptionInventoryHeader extends StatelessWidget {
+  const _OptionInventoryHeader({
+    required this.option,
+    required this.visibleChipLabels,
+    required this.optionKey,
+    required this.countedQty,
+    required this.saleQty,
+    required this.wasteQty,
+    required this.variance,
+    required this.hasError,
+    this.trailing,
+  });
+
+  final ReconciliationDraftOption option;
+  final String visibleChipLabels;
+  final String optionKey;
+  final int countedQty;
+  final int saleQty;
+  final int wasteQty;
+  final int variance;
+  final bool hasError;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _OptionHeader(
+                option: option,
+                visibleChipLabels: visibleChipLabels,
+              ),
+              Wrap(
+                key: ValueKey('reconciliation-option-summary-$optionKey'),
+                spacing: 6,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _SummaryChip(label: VN.tonDaDem, value: countedQty),
+                  _SummaryChip(label: VN.soLuongBan, value: saleQty),
+                  _SummaryChip(label: VN.soLuongHaoHut, value: wasteQty),
+                  ReconciliationVarianceIndicator(variance: variance),
+                  _StatusChip(hasError: hasError),
+                ],
+              ),
+            ],
+          ),
+        ),
+        if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+      ],
+    );
+  }
+}
+
 class _SaleRowEditor extends StatefulWidget {
   const _SaleRowEditor({
+    super.key,
     required this.rowIndex,
     required this.row,
     required this.onQtyChanged,
@@ -449,7 +684,9 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
   void initState() {
     super.initState();
     _qtyController = TextEditingController(text: '${widget.row.quantity}');
-    _priceController = TextEditingController(text: _priceToText(widget.row.unitPrice));
+    _priceController = TextEditingController(
+      text: _priceToText(widget.row.unitPrice),
+    );
   }
 
   @override
@@ -494,9 +731,16 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text('${VN.dongBan} ${widget.rowIndex + 1}'),
-              const Spacer(),
+              Expanded(
+                child: Text(
+                  '${VN.dongBan} ${widget.rowIndex + 1}',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
               IconButton(
                 tooltip: VN.xoa,
                 onPressed: widget.onRemove,
@@ -504,6 +748,7 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
               ),
             ],
           ),
+          const SizedBox(height: 8),
           _QuantityStepperField(
             label: VN.soLuongBan,
             controller: _qtyController,
@@ -525,7 +770,9 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
             keyboardType: TextInputType.number,
             onChanged: (value) {
               final trimmed = value.trim();
-              widget.onPriceChanged(trimmed.isEmpty ? null : double.tryParse(trimmed));
+              widget.onPriceChanged(
+                trimmed.isEmpty ? null : double.tryParse(trimmed),
+              );
             },
             inputFormatters: [
               FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
@@ -548,7 +795,10 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
             ),
             items: const [
               DropdownMenuItem(value: 'cash', child: Text(VN.methodCash)),
-              DropdownMenuItem(value: 'transfer', child: Text(VN.methodTransfer)),
+              DropdownMenuItem(
+                value: 'transfer',
+                child: Text(VN.methodTransfer),
+              ),
             ],
             onChanged: widget.onMethodChanged,
           ),

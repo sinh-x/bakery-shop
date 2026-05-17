@@ -69,6 +69,16 @@ def resolve_price_bucket_option(
     normalized_price: int | None,
     price_chip_id: int | None,
 ) -> tuple[int | None, int]:
+    if price_chip_id is not None:
+        resolved_chip_id = normalize_price_chip(conn, product_id, price_chip_id)
+        resolved_price = normalized_price_for_chip(conn, product_id, resolved_chip_id)
+        if (
+            normalized_price is not None
+            and normalize_price_value(normalized_price) != resolved_price
+        ):
+            raise HTTPException(status_code=422, detail="Mức giá không khớp với chip")
+        return resolved_chip_id, resolved_price
+
     if normalized_price is not None:
         resolved_chip_id = resolve_price_bucket_chip_id(conn, product_id, normalized_price)
         return resolved_chip_id, int(normalized_price)

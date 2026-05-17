@@ -21,7 +21,9 @@ List<ReconciliationSubmitLine> buildSubmitLines(ReconciliationState state) {
   }
 
   return draft.products.expand((product) {
-    return product.options.map((option) {
+    return product.options.where((option) => option.expectedQty > 0).map((
+      option,
+    ) {
       final optionKey = reconciliationOptionKey(
         product.productId,
         option.normalizedPrice,
@@ -35,13 +37,15 @@ List<ReconciliationSubmitLine> buildSubmitLines(ReconciliationState state) {
       return ReconciliationSubmitLine(
         productId: product.productId,
         normalizedPrice: option.normalizedPrice,
+        priceChipId: option.priceChipId,
         expectedQty: option.expectedQty,
         countedQty: state.countedQtyByOption[optionKey] ?? 0,
         saleQty: saleQty,
         wasteQty: wasteQty,
         manualUnitPrice: null,
-        wasteReason:
-            wasteQty > 0 ? state.wasteReasonByOption[optionKey]?.trim() : null,
+        wasteReason: wasteQty > 0
+            ? state.wasteReasonByOption[optionKey]?.trim()
+            : null,
         saleRows: activeRows
             .map(
               (row) => ReconciliationSubmitSaleRow(
@@ -54,6 +58,50 @@ List<ReconciliationSubmitLine> buildSubmitLines(ReconciliationState state) {
       );
     });
   }).toList();
+}
+
+bool hasReconciliationOptionIssue({
+  required ReconciliationDraftOption option,
+  required int counted,
+  required List<ReconciliationSaleRowInput> saleRows,
+  required int waste,
+  required String wasteReason,
+}) {
+  final sale = saleRows.fold<int>(0, (sum, row) => sum + row.quantity);
+  if (counted < 0 || sale < 0 || waste < 0) {
+    return true;
+  }
+  if (counted > option.expectedQty) {
+    return true;
+  }
+
+  final missing = option.expectedQty - counted;
+  if (missing < 0) {
+    return true;
+  }
+  if (waste > missing) {
+    return true;
+  }
+  if (missing > 0 && sale + waste != missing) {
+    return true;
+  }
+
+  for (final row in saleRows) {
+    if (row.quantity < 0) {
+      return true;
+    }
+    if (row.quantity > 0) {
+      final price = row.unitPrice;
+      if (price == null || price <= 0) {
+        return true;
+      }
+      if (row.paymentMethod != 'cash' && row.paymentMethod != 'transfer') {
+        return true;
+      }
+    }
+  }
+
+  return waste > 0 && wasteReason.trim().isEmpty;
 }
 
 ReconciliationValidationResult? validateReconciliationState(
@@ -96,7 +144,8 @@ ReconciliationValidationResult? validateReconciliationState(
 
       final missing = option.expectedQty - counted;
       if (missing < 0) {
-        productErrors[optionKey] = 'Số đếm thực tế không được lớn hơn số tồn dự kiến';
+        productErrors[optionKey] =
+            'Số đếm thực tế không được lớn hơn số tồn dự kiến';
         continue;
       }
       if (waste > missing) {
@@ -139,7 +188,8 @@ ReconciliationValidationResult? validateReconciliationState(
       }
 
       if (waste > 0) {
-        final reason = (currentState.wasteReasonByOption[optionKey] ?? '').trim();
+        final reason = (currentState.wasteReasonByOption[optionKey] ?? '')
+            .trim();
         if (reason.isEmpty) {
           productErrors[optionKey] = 'Sản phẩm có hao hụt phải nhập lý do';
         }

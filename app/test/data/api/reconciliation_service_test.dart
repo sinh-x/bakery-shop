@@ -38,9 +38,36 @@ void main() {
       final option = product.options.first;
       expect(option.normalizedPrice, 130000);
       expect(option.expectedQty, 8);
+      expect(option.priceChipId, isNull);
       expect(option.sourceChipIds, [11]);
       expect(option.sourceChipLabels, ['Gia goc', 'chip 130']);
       expect(option.chipLabelMetadata, 'Gia goc, chip 130');
+    });
+
+    test('preserves single chip id for submit disambiguation', () {
+      final product = ReconciliationDraftProduct.fromJson({
+        'product_id': 83,
+        'name': 'Banh kem trung bay',
+        'category': 'banh_kem',
+        'expected_qty': 6,
+        'base_price': 130000,
+        'price_chips': [
+          {'id': 15, 'label': '130', 'price': 130000, 'position': 0},
+        ],
+        'options': [
+          {
+            'product_id': 83,
+            'normalized_price': 130000,
+            'price_chip_id': 15,
+            'chip_label': '130',
+            'source_chip_ids': [15],
+            'source_chip_labels': ['130'],
+            'expected_qty': 6,
+          },
+        ],
+      });
+
+      expect(product.options.single.priceChipId, 15);
     });
 
     test('falls back to base price bucket when options are missing', () {
