@@ -17,6 +17,14 @@ bool isUsableBuildFingerprint(String value) {
   return value.isNotEmpty && value != unknownBuildFingerprint;
 }
 
+String shortBuildFingerprint(String value) {
+  const shortLength = 7;
+  if (value.length <= shortLength) {
+    return value;
+  }
+  return value.substring(0, shortLength);
+}
+
 String get clientBuildFingerprint {
   return normalizeBuildFingerprint(clientBuildFingerprintRaw);
 }

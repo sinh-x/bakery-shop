@@ -16,6 +16,43 @@ class _FakeFingerprintService extends FingerprintService {
 }
 
 void main() {
+  group('FingerprintComparison value semantics', () {
+    test('supports equality and hashCode by value', () {
+      const a = FingerprintComparison(
+        state: FingerprintComparisonState.match,
+        clientFingerprint: 'abc1234',
+        serverFingerprint: 'abc1234',
+      );
+      const b = FingerprintComparison(
+        state: FingerprintComparisonState.match,
+        clientFingerprint: 'abc1234',
+        serverFingerprint: 'abc1234',
+      );
+      const c = FingerprintComparison(
+        state: FingerprintComparisonState.mismatch,
+        clientFingerprint: 'abc1234',
+        serverFingerprint: 'def5678',
+      );
+
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      expect(a == c, isFalse);
+    });
+
+    test('includes fields in toString for debugging', () {
+      const value = FingerprintComparison(
+        state: FingerprintComparisonState.unknown,
+        clientFingerprint: 'abc1234',
+        serverFingerprint: 'unknown',
+      );
+
+      expect(value.toString(), contains('FingerprintComparison('));
+      expect(value.toString(), contains('state: FingerprintComparisonState.unknown'));
+      expect(value.toString(), contains('clientFingerprint: abc1234'));
+      expect(value.toString(), contains('serverFingerprint: unknown'));
+    });
+  });
+
   group('fingerprintComparisonProvider', () {
     test('returns match when client and server fingerprints are equal', () async {
       final container = ProviderContainer(

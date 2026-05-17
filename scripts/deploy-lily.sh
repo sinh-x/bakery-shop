@@ -132,6 +132,9 @@ if [ "$ROLLBACK" -eq 1 ]; then
   remote_cmd "cd $REMOTE_PATH && docker compose --profile prod stop"
   echo "  Restoring previous web-build..."
   remote_cmd "cd $REMOTE_PATH && if [ -d web-build.prev ]; then mv web-build web-build.new && mv web-build.prev web-build && rm -rf web-build.new; fi"
+  # Note: rollback swaps only web-build; backend image is rebuilt with the current
+  # BAKER_BUILD_FINGERPRINT. A temporary client/server fingerprint mismatch can
+  # appear until a subsequent normal deploy aligns both artifacts again.
   echo "  Rebuilding Docker image..."
   remote_cmd "cd $REMOTE_PATH && BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod build baker-prod"
   echo "  Restarting containers..."

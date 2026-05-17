@@ -15,6 +15,29 @@ class FingerprintComparison {
   final FingerprintComparisonState state;
   final String clientFingerprint;
   final String serverFingerprint;
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) {
+      return true;
+    }
+    return other is FingerprintComparison &&
+        other.state == state &&
+        other.clientFingerprint == clientFingerprint &&
+        other.serverFingerprint == serverFingerprint;
+  }
+
+  @override
+  int get hashCode {
+    return Object.hash(state, clientFingerprint, serverFingerprint);
+  }
+
+  @override
+  String toString() {
+    return 'FingerprintComparison(state: $state, '
+        'clientFingerprint: $clientFingerprint, '
+        'serverFingerprint: $serverFingerprint)';
+  }
 }
 
 final clientFingerprintProvider = Provider<String>((ref) {

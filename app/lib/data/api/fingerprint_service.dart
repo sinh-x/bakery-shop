@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api_client.dart';
@@ -20,7 +21,11 @@ class FingerprintService {
         return null;
       }
       return fingerprint;
-    } on DioException {
+    } on DioException catch (error) {
+      debugPrint(
+        'FingerprintService.fetchServerFingerprint DioException: '
+        '${error.message ?? error.type.name}',
+      );
       return null;
     }
   }

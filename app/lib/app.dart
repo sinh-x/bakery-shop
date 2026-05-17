@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'data/providers/fingerprint_provider.dart';
+import 'shared/build_fingerprint.dart';
 import 'shared/router/app_router.dart';
 import 'shared/theme/bakery_theme.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -71,8 +72,8 @@ class _FingerprintWarningStrip extends StatelessWidget {
                 Expanded(
                   child: Text(
                     VN.fingerprintMismatchStrip(
-                      _shortFingerprint(comparison.clientFingerprint),
-                      _shortFingerprint(comparison.serverFingerprint),
+                      shortBuildFingerprint(comparison.clientFingerprint),
+                      shortBuildFingerprint(comparison.serverFingerprint),
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -89,12 +90,4 @@ class _FingerprintWarningStrip extends StatelessWidget {
       ),
     );
   }
-}
-
-String _shortFingerprint(String value) {
-  const shortLength = 7;
-  if (value.length <= shortLength) {
-    return value;
-  }
-  return value.substring(0, shortLength);
 }
