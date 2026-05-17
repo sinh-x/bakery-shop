@@ -4,6 +4,13 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('posCheckoutLocalDueDate', () {
+    test('formats local date as yyyy-mm-dd', () {
+      final value = posCheckoutLocalDueDate(DateTime(2026, 5, 18, 9, 30));
+      expect(value, '2026-05-18');
+    });
+  });
+
   group('extractBackendDetail', () {
     test('returns null for null input', () {
       expect(extractBackendDetail(null), isNull);

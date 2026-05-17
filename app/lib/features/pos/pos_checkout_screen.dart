@@ -11,6 +11,15 @@ import '../../shared/utils/api_error.dart' as api_error;
 import 'package:bakery_app/shared/labels/shared.dart';
 
 @visibleForTesting
+String posCheckoutLocalDueDate(DateTime dateTime) {
+  final local = dateTime.toLocal();
+  final year = local.year.toString().padLeft(4, '0');
+  final month = local.month.toString().padLeft(2, '0');
+  final day = local.day.toString().padLeft(2, '0');
+  return '$year-$month-$day';
+}
+
+@visibleForTesting
 String resolvePosCheckoutErrorMessage(Object error) {
   return api_error.normalizeApiError(error).message;
 }
@@ -83,11 +92,13 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
     try {
       final orderItems = _buildOrderItems();
+      final dueDate = posCheckoutLocalDueDate(DateTime.now());
 
       final orderService = ref.read(orderServiceProvider);
       final order = await orderService.createOrder(
         customerName: VN.khachLe,
         source: VN.taiTiemPOS,
+        dueDate: dueDate,
         deliveryType: 'pickup',
         items: orderItems,
         status: 'delivered',
@@ -157,11 +168,13 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       }
 
       final orderItems = _buildOrderItems();
+      final dueDate = posCheckoutLocalDueDate(DateTime.now());
 
       final orderService = ref.read(orderServiceProvider);
       final order = await orderService.createOrder(
         customerName: VN.khachLe,
         source: VN.taiTiemPOS,
+        dueDate: dueDate,
         deliveryType: 'pickup',
         items: orderItems,
         status: 'delivered',

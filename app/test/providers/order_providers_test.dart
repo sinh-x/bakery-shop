@@ -25,6 +25,22 @@ class _MockInterceptor extends Interceptor {
   }
 }
 
+class _CreateOrderInterceptor extends Interceptor {
+  Object? lastBody;
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    lastBody = options.data;
+    handler.resolve(
+      Response(
+        requestOptions: options,
+        statusCode: 200,
+        data: _makeOrderJson(id: 1, ref: 'ORD-260518-001', dueDate: '2026-05-18'),
+      ),
+    );
+  }
+}
+
 Map<String, dynamic> _makeOrderJson({
   required int id,
   required String ref,
@@ -113,6 +129,23 @@ void main() {
       await service.listActiveOrders();
 
       expect(interceptor.lastQueryParams, containsPair('active_only', true));
+    });
+  });
+
+  group('OrderService createOrder payload', () {
+    test('createOrder sends dueDate when provided', () async {
+      final interceptor = _CreateOrderInterceptor();
+      final dio = Dio()..interceptors.add(interceptor);
+      final service = OrderService(dio);
+
+      await service.createOrder(
+        customerName: 'Khach le',
+        dueDate: '2026-05-18',
+        items: const <Map<String, dynamic>>[],
+      );
+
+      final body = interceptor.lastBody as Map<String, dynamic>;
+      expect(body, containsPair('dueDate', '2026-05-18'));
     });
   });
 
