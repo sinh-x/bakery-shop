@@ -7,6 +7,9 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 load_env
 
+BUILD_FINGERPRINT="$(compute_build_fingerprint)"
+echo "Build fingerprint: $BUILD_FINGERPRINT"
+
 RESTART_CADDY=0
 
 for arg in "$@"; do
@@ -20,7 +23,7 @@ for arg in "$@"; do
   esac
 done
 
-build_flutter_web
+build_flutter_web "$BUILD_FINGERPRINT"
 
 if [ "$RESTART_CADDY" -eq 1 ]; then
   restart_caddy

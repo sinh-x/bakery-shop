@@ -66,8 +66,10 @@ fi
 # Read version from pyproject.toml
 APP_VERSION=$(grep '^version = ' "$REPO_ROOT/pyproject.toml" | sed 's/version = "//;s/"//')
 GIT_COMMIT=$(git -C "$REPO_ROOT" rev-parse --short HEAD)
+BUILD_FINGERPRINT=$(compute_build_fingerprint)
 echo "  Branch: $CURRENT_BRANCH"
 echo "  Commit: $GIT_COMMIT"
+echo "  Fingerprint: $BUILD_FINGERPRINT"
 echo "  Version: $APP_VERSION"
 echo ""
 
@@ -115,9 +117,9 @@ check_remote_printer_device() {
 if [ "$BACKEND_ONLY" -eq 0 ]; then
   echo "=== Building Flutter web ==="
   if [ "$DRY_RUN" -eq 0 ]; then
-    build_flutter_web
+    build_flutter_web "$BUILD_FINGERPRINT"
   else
-    echo "  Would run: build_flutter_web (nix develop .#flutter + flutter build web --release)"
+    echo "  Would run: build_flutter_web with BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT"
   fi
   echo ""
 fi
@@ -131,9 +133,9 @@ if [ "$ROLLBACK" -eq 1 ]; then
   echo "  Restoring previous web-build..."
   remote_cmd "cd $REMOTE_PATH && if [ -d web-build.prev ]; then mv web-build web-build.new && mv web-build.prev web-build && rm -rf web-build.new; fi"
   echo "  Rebuilding Docker image..."
-  remote_cmd "cd $REMOTE_PATH && BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod build baker-prod"
+  remote_cmd "cd $REMOTE_PATH && BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod build baker-prod"
   echo "  Restarting containers..."
-  remote_cmd "cd $REMOTE_PATH && BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod up -d"
+  remote_cmd "cd $REMOTE_PATH && BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod up -d"
   echo "  Running health check..."
   remote_cmd "curl -sf --max-time 10 http://localhost:2108/api/health || echo 'Health check failed'"
   echo "  Logging rollback..."
@@ -216,7 +218,7 @@ if [ "$WEB_ONLY" -eq 0 ]; then
   echo "--- Docker rebuild ---"
   REMOTE_UID=$(ssh "$REMOTE_HOST" "id -u" 2>/dev/null)
   echo "  Remote sinh UID: $REMOTE_UID"
-  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod build baker-prod"
+  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod build baker-prod"
   echo ""
 fi
 
@@ -224,7 +226,7 @@ fi
 echo "--- Restarting containers ---"
 if [ "$WEB_ONLY" -eq 0 ]; then
   REMOTE_UID="${REMOTE_UID:-$(ssh "$REMOTE_HOST" "id -u" 2>/dev/null)}"
-  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod up -d"
+  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod up -d"
 else
   remote_cmd "cd $REMOTE_PATH && docker compose --profile prod restart caddy"
 fi
