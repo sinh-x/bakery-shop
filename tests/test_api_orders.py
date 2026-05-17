@@ -143,6 +143,24 @@ def test_list_orders_due_date_range_includes_terminal_and_legacy_fallback(api_cl
     assert outside_due["orderRef"] not in refs
 
 
+def test_list_orders_due_date_legacy_fallback_uses_timestamp_bounds(api_client):
+    legacy_before = _create_order(api_client, customer="Legacy before day")
+    legacy_on_day_late = _create_order(api_client, customer="Legacy in day late")
+    legacy_next_day = _create_order(api_client, customer="Legacy next day")
+
+    with get_db() as conn:
+        _mark_order_as_legacy_pos(conn, legacy_before["orderRef"], "2026-03-19T23:59:59")
+        _mark_order_as_legacy_pos(conn, legacy_on_day_late["orderRef"], "2026-03-20T23:59:59")
+        _mark_order_as_legacy_pos(conn, legacy_next_day["orderRef"], "2026-03-21T00:00:00")
+
+    resp = api_client.get("/api/orders", params={"due_date": "2026-03-20"})
+    assert resp.status_code == 200
+    refs = {o["orderRef"] for o in resp.json()}
+    assert legacy_before["orderRef"] not in refs
+    assert legacy_on_day_late["orderRef"] in refs
+    assert legacy_next_day["orderRef"] not in refs
+
+
 def test_list_orders_due_date_range_preserves_limit_and_offset(api_client):
     for i in range(5):
         _create_order(api_client, customer=f"Range page {i}", dueDate="2026-03-20")

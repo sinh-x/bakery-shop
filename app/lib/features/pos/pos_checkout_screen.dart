@@ -10,7 +10,6 @@ import '../../providers/products_provider.dart';
 import '../../shared/utils/api_error.dart' as api_error;
 import 'package:bakery_app/shared/labels/shared.dart';
 
-@visibleForTesting
 String posCheckoutLocalDueDate(DateTime dateTime) {
   final local = dateTime.toLocal();
   final year = local.year.toString().padLeft(4, '0');

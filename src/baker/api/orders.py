@@ -1,6 +1,7 @@
 """Order management API routes."""
 
 import json
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -15,6 +16,12 @@ from baker.services.order_stock import auto_decrement_stock, restore_stock_for_o
 
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
+
+
+def _day_bounds(date_str: str) -> tuple[str, str]:
+    day = datetime.strptime(date_str, "%Y-%m-%d")
+    next_day = day + timedelta(days=1)
+    return f"{date_str}T00:00:00", next_day.strftime("%Y-%m-%dT00:00:00")
 
 
 class OrderItemIn(BaseModel):
@@ -158,54 +165,60 @@ def list_orders(
             params.append(status)
 
         if due_date:
+            created_at_from, created_at_to = _day_bounds(due_date)
             conditions.append(
                 """(
                     due_date = ?
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND date(created_at) = ?
+                        AND created_at >= ?
+                        AND created_at < ?
                     )
                 )"""
             )
-            params.extend([due_date, "Tại tiệm - POS", due_date])
+            params.extend([due_date, "Tại tiệm - POS", created_at_from, created_at_to])
         elif due_date_from and due_date_to:
+            created_at_from, _ = _day_bounds(due_date_from)
+            _, created_at_to = _day_bounds(due_date_to)
             conditions.append(
                 """(
                     (due_date >= ? AND due_date <= ?)
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND date(created_at) >= ?
-                        AND date(created_at) <= ?
+                        AND created_at >= ?
+                        AND created_at < ?
                     )
                 )"""
             )
-            params.extend([due_date_from, due_date_to, "Tại tiệm - POS", due_date_from, due_date_to])
+            params.extend([due_date_from, due_date_to, "Tại tiệm - POS", created_at_from, created_at_to])
         elif due_date_from:
+            created_at_from, _ = _day_bounds(due_date_from)
             conditions.append(
                 """(
                     due_date >= ?
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND date(created_at) >= ?
+                        AND created_at >= ?
                     )
                 )"""
             )
-            params.extend([due_date_from, "Tại tiệm - POS", due_date_from])
+            params.extend([due_date_from, "Tại tiệm - POS", created_at_from])
         elif due_date_to:
+            _, created_at_to = _day_bounds(due_date_to)
             conditions.append(
                 """(
                     due_date <= ?
                     OR (
                         (due_date IS NULL OR due_date = '')
                         AND source = ?
-                        AND date(created_at) <= ?
+                        AND created_at < ?
                     )
                 )"""
             )
-            params.extend([due_date_to, "Tại tiệm - POS", due_date_to])
+            params.extend([due_date_to, "Tại tiệm - POS", created_at_to])
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
