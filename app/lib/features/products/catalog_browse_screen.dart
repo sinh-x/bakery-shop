@@ -57,7 +57,6 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
         .toList();
     if (selectedPhotos.isEmpty) return;
 
-    setState(() => _bulkInProgress = true);
     try {
       final dio = ref.read(dioProvider);
       final service = BulkShareService(dio);
@@ -98,7 +97,6 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
         .toList();
     if (selectedPhotos.isEmpty) return;
 
-    setState(() => _bulkInProgress = true);
     try {
       final dio = ref.read(dioProvider);
       final service = download_impl.BulkDownloadService(dio);
@@ -168,16 +166,24 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
     switch (value) {
       case 'bulk_share':
         if (_selectedPhotoIds.isNotEmpty && !_bulkInProgress) {
+          setState(() => _bulkInProgress = true);
           await _onBulkShare();
         }
         return;
       case 'bulk_download':
         if (_selectedPhotoIds.isNotEmpty && !_bulkInProgress) {
+          setState(() => _bulkInProgress = true);
           await _onBulkDownload();
         }
         return;
       case 'cancel_selection':
         _clearSelection();
+        return;
+      default:
+        assert(() {
+          debugPrint('Unknown catalog browse menu action: $value');
+          return true;
+        }());
         return;
     }
   }

@@ -79,6 +79,12 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
       case 'browse_catalog':
         context.push('/products/browse');
         return;
+      default:
+        assert(() {
+          debugPrint('Unknown product catalog app bar menu action: $value');
+          return true;
+        }());
+        return;
     }
   }
 

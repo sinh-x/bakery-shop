@@ -83,6 +83,12 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
       case 'settings':
         context.push('/settings');
         return;
+      default:
+        assert(() {
+          debugPrint('Unknown orders app bar menu action: $value');
+          return true;
+        }());
+        return;
     }
   }
 

@@ -68,14 +68,35 @@ class _PosScreenState extends ConsumerState<PosScreen>
       itemLabelOf: (product) => product.name,
     );
 
-    if (_searchQuery.isEmpty) {
-      return sections;
-    }
+    return sections;
+  }
 
+  void _expandSectionsForSearch(
+    List<GroupedCategorySection<Product>> sections,
+  ) {
+    if (_searchQuery.isEmpty) {
+      return;
+    }
     for (final section in sections) {
       _sectionExpansionController.setExpanded(section.categoryKey, true);
     }
-    return sections;
+  }
+
+  void _onSearchChanged(String value) {
+    final productsValue = ref.read(productsProvider).value;
+    final categoriesValue = ref.read(categoriesProvider).value;
+
+    setState(() => _searchQuery = value);
+
+    if (value.isEmpty || productsValue == null || categoriesValue == null) {
+      return;
+    }
+
+    final sections = _groupedSections(
+      products: productsValue,
+      categories: categoriesValue,
+    );
+    _expandSectionsForSearch(sections);
   }
 
   @override
@@ -153,6 +174,12 @@ class _PosScreenState extends ConsumerState<PosScreen>
       case 'stock':
         context.push('/stock');
         return;
+      default:
+        assert(() {
+          debugPrint('Unknown POS app bar menu action: $value');
+          return true;
+        }());
+        return;
     }
   }
 
@@ -205,7 +232,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
                 ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12),
               ),
-              onChanged: (value) => setState(() => _searchQuery = value),
+              onChanged: _onSearchChanged,
             ),
           ),
           Padding(
@@ -222,6 +249,19 @@ class _PosScreenState extends ConsumerState<PosScreen>
                   value: _showOutOfStockProducts,
                   onChanged: (value) {
                     setState(() => _showOutOfStockProducts = value);
+                    if (_searchQuery.isEmpty) {
+                      return;
+                    }
+                    final productsValue = ref.read(productsProvider).value;
+                    final categoriesValue = ref.read(categoriesProvider).value;
+                    if (productsValue == null || categoriesValue == null) {
+                      return;
+                    }
+                    final sections = _groupedSections(
+                      products: productsValue,
+                      categories: categoriesValue,
+                    );
+                    _expandSectionsForSearch(sections);
                   },
                 ),
               ],
@@ -294,7 +334,6 @@ class _PosScreenState extends ConsumerState<PosScreen>
                       return CollapsibleCategorySections<Product>(
                         sections: sections,
                         expansionController: _sectionExpansionController,
-                        itemBuilder: (context, _) => const SizedBox.shrink(),
                         sectionContentBuilder: (context, section) =>
                             PosProductGrid(
                               products: section.items,

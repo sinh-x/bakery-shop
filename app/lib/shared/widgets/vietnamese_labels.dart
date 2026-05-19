@@ -234,15 +234,15 @@ class VN {
   // Settings
   static const settings = 'Cài đặt';
   static const moreActions = 'Thao tác khác';
-  static const openSettings = 'Mở cài đặt';
-  static const openStock = 'Mở kho hàng';
-  static const openOrderHistory = 'Mở lịch sử đơn hàng';
-  static const openStockReconciliation = 'Mở đối soát tồn kho hôm nay';
-  static const openStockReconciliationHistory = 'Mở lịch sử đối soát tồn kho';
-  static const openCategoryManagement = 'Mở quản lý danh mục';
-  static const openCatalogBrowse = 'Mở duyệt ảnh mẫu';
-  static const switchToKanbanView = 'Chuyển sang dạng Kanban';
-  static const switchToListView = 'Chuyển sang dạng danh sách';
+  static const openSettings = 'Cài đặt';
+  static const openStock = 'Kho hàng';
+  static const openOrderHistory = 'Lịch sử đơn hàng';
+  static const openStockReconciliation = 'Đối soát tồn kho hôm nay';
+  static const openStockReconciliationHistory = 'Lịch sử đối soát tồn kho';
+  static const openCategoryManagement = 'Quản lý danh mục';
+  static const openCatalogBrowse = 'Duyệt ảnh mẫu';
+  static const switchToKanbanView = 'Dạng Kanban';
+  static const switchToListView = 'Dạng danh sách';
   static const apiUrlLabel = 'Địa chỉ máy chủ';
   static const apiUrlHint = 'http://hostname:8000';
   static const apiUrlHelp = 'Nhập địa chỉ Tailscale của máy chủ';

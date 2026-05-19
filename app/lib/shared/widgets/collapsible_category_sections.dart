@@ -17,16 +17,19 @@ class CollapsibleCategorySections<T> extends StatefulWidget {
   const CollapsibleCategorySections({
     super.key,
     required this.sections,
-    required this.itemBuilder,
+    this.itemBuilder,
     this.expansionController,
     this.emptyState,
     this.sectionContentBuilder,
     this.headerPadding = const EdgeInsets.symmetric(horizontal: 12),
     this.contentPadding = const EdgeInsets.symmetric(horizontal: 12),
-  });
+  }) : assert(
+         itemBuilder != null || sectionContentBuilder != null,
+         'Provide itemBuilder or sectionContentBuilder',
+       );
 
   final List<GroupedCategorySection<T>> sections;
-  final Widget Function(BuildContext context, T item) itemBuilder;
+  final Widget Function(BuildContext context, T item)? itemBuilder;
   final CategorySectionExpansionController? expansionController;
   final Widget? emptyState;
   final Widget Function(
@@ -90,7 +93,8 @@ class _CollapsibleCategorySectionsState<T>
                       Column(
                         children: [
                           for (final item in section.items)
-                            widget.itemBuilder(context, item),
+                            if (widget.itemBuilder != null)
+                              widget.itemBuilder!(context, item),
                         ],
                       ),
                 ),
