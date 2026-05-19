@@ -111,6 +111,7 @@ class _CategoryListState extends ConsumerState<_CategoryList> {
               index: index,
             );
           },
+          // ignore: deprecated_member_use
           onReorder: _onReorder,
         ),
         if (inactive.isNotEmpty) ...[

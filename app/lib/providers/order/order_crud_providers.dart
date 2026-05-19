@@ -8,6 +8,7 @@ import '../../data/models/order.dart';
 import '../../data/models/order_photo.dart';
 import '../../data/models/payment_transaction.dart';
 import '../../data/models/work_item.dart';
+import '../../shared/labels/shared.dart';
 import '../events_provider.dart';
 
 class OrderListNotifier extends AsyncNotifier<List<Order>> {
@@ -38,6 +39,74 @@ class OrderListNotifier extends AsyncNotifier<List<Order>> {
 final orderListProvider = AsyncNotifierProvider<OrderListNotifier, List<Order>>(
   OrderListNotifier.new,
 );
+
+class OrderHistoryNotifier extends AsyncNotifier<List<Order>> {
+  DateTime _fromDate = DateTime.now();
+  DateTime _toDate = DateTime.now();
+
+  @override
+  Future<List<Order>> build() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    _toDate = today;
+    _fromDate = today.subtract(const Duration(days: 1));
+    return _fetch();
+  }
+
+  DateTime get fromDate => _fromDate;
+  DateTime get toDate => _toDate;
+
+  String? validateRange(DateTime fromDate, DateTime toDate) {
+    final start = DateTime(fromDate.year, fromDate.month, fromDate.day);
+    final end = DateTime(toDate.year, toDate.month, toDate.day);
+    final dayCount = end.difference(start).inDays + 1;
+    if (dayCount < 1) return VN.lichSuDonHangKhoangNgayKhongHopLe;
+    if (dayCount > 7) return VN.lichSuDonHangToiDa7Ngay;
+    return null;
+  }
+
+  Future<void> setDateRange(DateTime fromDate, DateTime toDate) async {
+    final error = validateRange(fromDate, toDate);
+    if (error != null) {
+      throw ArgumentError(error);
+    }
+    _fromDate = DateTime(fromDate.year, fromDate.month, fromDate.day);
+    _toDate = DateTime(toDate.year, toDate.month, toDate.day);
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(_fetch);
+  }
+
+  Future<void> setSingleDate(DateTime date) {
+    return setDateRange(date, date);
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(_fetch);
+  }
+
+  Future<List<Order>> _fetch() async {
+    final service = ref.read(orderServiceProvider);
+    return service.listOrders(
+      dueDateFrom: _formatDate(_fromDate),
+      dueDateTo: _formatDate(_toDate),
+      activeOnly: false,
+      limit: 200,
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+}
+
+final orderHistoryProvider =
+    AsyncNotifierProvider<OrderHistoryNotifier, List<Order>>(
+      OrderHistoryNotifier.new,
+    );
 
 class OrderDetailNotifier extends AsyncNotifier<Order> {
   final String orderRef;
@@ -153,7 +222,9 @@ class OrderPhotosNotifier extends AsyncNotifier<List<OrderPhoto>> {
     final service = ref.read(orderServiceProvider);
     final updated = await service.updatePhotoTags(orderRef, photoId, tags);
     final current = state.value ?? [];
-    state = AsyncData(current.map((p) => p.id == photoId ? updated : p).toList());
+    state = AsyncData(
+      current.map((p) => p.id == photoId ? updated : p).toList(),
+    );
     return updated;
   }
 
@@ -249,7 +320,9 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
       attributes: attributes,
     );
     final current = state.value ?? [];
-    state = AsyncData(current.map((i) => i.id == itemId ? updated : i).toList());
+    state = AsyncData(
+      current.map((i) => i.id == itemId ? updated : i).toList(),
+    );
     await ref.read(orderDetailProvider(orderRef).notifier).refresh();
     return updated;
   }
@@ -275,15 +348,19 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
       reason: reason,
     );
     final current = state.value ?? [];
-    state = AsyncData(current.map((i) => i.id == itemId ? updated : i).toList());
+    state = AsyncData(
+      current.map((i) => i.id == itemId ? updated : i).toList(),
+    );
     return updated;
   }
 }
 
 final orderWorkItemsProvider =
-    AsyncNotifierProvider.family<OrderWorkItemsNotifier, List<WorkItem>, String>(
-      OrderWorkItemsNotifier.new,
-    );
+    AsyncNotifierProvider.family<
+      OrderWorkItemsNotifier,
+      List<WorkItem>,
+      String
+    >(OrderWorkItemsNotifier.new);
 
 class OrderPaymentTransactionsNotifier
     extends AsyncNotifier<List<PaymentTransaction>> {

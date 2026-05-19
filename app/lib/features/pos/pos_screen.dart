@@ -145,6 +145,11 @@ class _PosScreenState extends ConsumerState<PosScreen>
             onPressed: () => context.push('/stock/reconciliation/history'),
           ),
           IconButton(
+            icon: const Icon(Icons.receipt_long),
+            tooltip: VN.lichSuDonHang,
+            onPressed: () => context.push('/orders/history'),
+          ),
+          IconButton(
             icon: const Icon(Icons.inventory_2_outlined),
             tooltip: 'Kho hàng',
             onPressed: () => context.push('/stock'),
@@ -191,9 +196,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
                 children: [
                   const Icon(Icons.error_outline, size: 18),
                   const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(VN.categoryLoadError),
-                  ),
+                  const Expanded(child: Text(VN.categoryLoadError)),
                   TextButton(
                     onPressed: () => ref.invalidate(categoriesProvider),
                     child: const Text(VN.taiLai),

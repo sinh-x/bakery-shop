@@ -16,10 +16,26 @@ class _MockInterceptor extends Interceptor {
     lastPath = options.path;
     lastQueryParams = options.queryParameters;
     handler.resolve(
+      Response(requestOptions: options, statusCode: 200, data: responseData),
+    );
+  }
+}
+
+class _CreateOrderInterceptor extends Interceptor {
+  Object? lastBody;
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    lastBody = options.data;
+    handler.resolve(
       Response(
         requestOptions: options,
         statusCode: 200,
-        data: responseData,
+        data: _makeOrderJson(
+          id: 1,
+          ref: 'ORD-260518-001',
+          dueDate: '2026-05-18',
+        ),
       ),
     );
   }
@@ -95,15 +111,18 @@ void main() {
       expect(interceptor.lastQueryParams, containsPair('active_only', true));
     });
 
-    test('listOrders does NOT send active_only when activeOnly is false', () async {
-      final interceptor = _MockInterceptor([]);
-      final dio = Dio()..interceptors.add(interceptor);
-      final service = OrderService(dio);
+    test(
+      'listOrders does NOT send active_only when activeOnly is false',
+      () async {
+        final interceptor = _MockInterceptor([]);
+        final dio = Dio()..interceptors.add(interceptor);
+        final service = OrderService(dio);
 
-      await service.listOrders();
+        await service.listOrders();
 
-      expect(interceptor.lastQueryParams?['active_only'], isNull);
-    });
+        expect(interceptor.lastQueryParams?['active_only'], isNull);
+      },
+    );
 
     test('listActiveOrders sends active_only=true', () async {
       final interceptor = _MockInterceptor([]);
@@ -113,6 +132,43 @@ void main() {
       await service.listActiveOrders();
 
       expect(interceptor.lastQueryParams, containsPair('active_only', true));
+    });
+
+    test('listOrders sends due_date_from and due_date_to', () async {
+      final interceptor = _MockInterceptor([]);
+      final dio = Dio()..interceptors.add(interceptor);
+      final service = OrderService(dio);
+
+      await service.listOrders(
+        dueDateFrom: '2026-05-17',
+        dueDateTo: '2026-05-18',
+      );
+
+      expect(
+        interceptor.lastQueryParams,
+        containsPair('due_date_from', '2026-05-17'),
+      );
+      expect(
+        interceptor.lastQueryParams,
+        containsPair('due_date_to', '2026-05-18'),
+      );
+    });
+  });
+
+  group('OrderService createOrder payload', () {
+    test('createOrder sends dueDate when provided', () async {
+      final interceptor = _CreateOrderInterceptor();
+      final dio = Dio()..interceptors.add(interceptor);
+      final service = OrderService(dio);
+
+      await service.createOrder(
+        customerName: 'Khach le',
+        dueDate: '2026-05-18',
+        items: const <Map<String, dynamic>>[],
+      );
+
+      final body = interceptor.lastBody as Map<String, dynamic>;
+      expect(body, containsPair('dueDate', '2026-05-18'));
     });
   });
 
@@ -150,20 +206,23 @@ void main() {
       expect(matches.first.orderRef, 'ORD-260101-900');
     });
 
-    test('search by customer name finds older active order beyond 50-cutoff', () async {
-      final dataset = _olderActiveWithFiller();
-      final interceptor = _MockInterceptor(dataset);
-      final dio = Dio()..interceptors.add(interceptor);
-      final service = OrderService(dio);
+    test(
+      'search by customer name finds older active order beyond 50-cutoff',
+      () async {
+        final dataset = _olderActiveWithFiller();
+        final interceptor = _MockInterceptor(dataset);
+        final dio = Dio()..interceptors.add(interceptor);
+        final service = OrderService(dio);
 
-      final orders = await service.listOrders(activeOnly: true);
+        final orders = await service.listOrders(activeOnly: true);
 
-      final matches = orders
-          .where((o) => o.customerName.toLowerCase().contains('anh ba'))
-          .toList();
-      expect(matches.length, 1);
-      expect(matches.first.orderRef, 'ORD-260101-900');
-    });
+        final matches = orders
+            .where((o) => o.customerName.toLowerCase().contains('anh ba'))
+            .toList();
+        expect(matches.length, 1);
+        expect(matches.first.orderRef, 'ORD-260101-900');
+      },
+    );
 
     test('search by phone finds older active order beyond 50-cutoff', () async {
       final dataset = _olderActiveWithFiller();
@@ -185,14 +244,50 @@ void main() {
     test('_fetch builds with activeOnly=true via listOrders', () async {
       final interceptor = _MockInterceptor([]);
       final dio = Dio()..interceptors.add(interceptor);
-      final container = ProviderContainer(overrides: [
-        orderServiceProvider.overrideWithValue(OrderService(dio)),
-      ]);
+      final container = ProviderContainer(
+        overrides: [orderServiceProvider.overrideWithValue(OrderService(dio))],
+      );
 
       final notifier = container.read(orderListProvider.notifier);
       await notifier.build();
 
       expect(interceptor.lastQueryParams, containsPair('active_only', true));
+    });
+  });
+
+  group('OrderHistoryNotifier uses history range', () {
+    test(
+      'setDateRange queries without active_only and with due_date range',
+      () async {
+        final interceptor = _MockInterceptor([]);
+        final dio = Dio()..interceptors.add(interceptor);
+        final container = ProviderContainer(
+          overrides: [
+            orderServiceProvider.overrideWithValue(OrderService(dio)),
+          ],
+        );
+
+        final notifier = container.read(orderHistoryProvider.notifier);
+        await notifier.build();
+        await notifier.setDateRange(
+          DateTime(2026, 5, 17),
+          DateTime(2026, 5, 18),
+        );
+
+        expect(interceptor.lastQueryParams?['active_only'], isNull);
+        expect(interceptor.lastQueryParams?['due_date_from'], '2026-05-17');
+        expect(interceptor.lastQueryParams?['due_date_to'], '2026-05-18');
+      },
+    );
+
+    test('validateRange blocks selections longer than 7 days', () {
+      final container = ProviderContainer();
+      final notifier = container.read(orderHistoryProvider.notifier);
+      final message = notifier.validateRange(
+        DateTime(2026, 5, 1),
+        DateTime(2026, 5, 8),
+      );
+      expect(message, isNotNull);
     });
   });
 
@@ -204,7 +299,12 @@ void main() {
         _makeOrderJson(id: 95, ref: 'ORD-260508-014', customerName: 'Thôn Nữ'),
       ];
       for (var i = 1; i <= 10; i++) {
-        rows.add(_makeOrderJson(id: i, ref: 'ORD-260501-${i.toString().padLeft(3, '0')}'));
+        rows.add(
+          _makeOrderJson(
+            id: i,
+            ref: 'ORD-260501-${i.toString().padLeft(3, '0')}',
+          ),
+        );
       }
       return rows;
     }
@@ -216,11 +316,13 @@ void main() {
         _makeOrderJson(id: 902, ref: 'ORD-260101-902', customerName: 'Quen A'),
       ];
       for (var i = 1; i <= 60; i++) {
-        rows.add(_makeOrderJson(
-          id: i,
-          ref: 'ORD-260501-${i.toString().padLeft(3, '0')}',
-          customerName: 'Khach $i',
-        ));
+        rows.add(
+          _makeOrderJson(
+            id: i,
+            ref: 'ORD-260501-${i.toString().padLeft(3, '0')}',
+            customerName: 'Khach $i',
+          ),
+        );
       }
       return rows;
     }
@@ -238,41 +340,55 @@ void main() {
 
       expect(matches.length, 3);
       final refs = matches.map((o) => o.orderRef).toSet();
-      expect(refs, containsAll(['ORD-260508-009', 'ORD-260508-010', 'ORD-260508-014']));
+      expect(
+        refs,
+        containsAll(['ORD-260508-009', 'ORD-260508-010', 'ORD-260508-014']),
+      );
     });
 
-    test('search by exact ref finds the single matching order among 3 for same customer', () async {
-      final dataset = customerWith3ActiveOrders();
-      final interceptor = _MockInterceptor(dataset);
-      final dio = Dio()..interceptors.add(interceptor);
-      final service = OrderService(dio);
+    test(
+      'search by exact ref finds the single matching order among 3 for same customer',
+      () async {
+        final dataset = customerWith3ActiveOrders();
+        final interceptor = _MockInterceptor(dataset);
+        final dio = Dio()..interceptors.add(interceptor);
+        final service = OrderService(dio);
 
-      final orders = await service.listOrders(activeOnly: true);
-      const query = 'ORD-260508-010';
-      final matches = orders
-          .where((o) => o.orderRef.toLowerCase().contains(query.toLowerCase()))
-          .toList();
+        final orders = await service.listOrders(activeOnly: true);
+        const query = 'ORD-260508-010';
+        final matches = orders
+            .where(
+              (o) => o.orderRef.toLowerCase().contains(query.toLowerCase()),
+            )
+            .toList();
 
-      expect(matches.length, 1);
-      expect(matches.first.orderRef, 'ORD-260508-010');
-      expect(matches.first.customerName, 'Thôn Nữ');
-    });
+        expect(matches.length, 1);
+        expect(matches.first.orderRef, 'ORD-260508-010');
+        expect(matches.first.customerName, 'Thôn Nữ');
+      },
+    );
 
-    test('customer name search finds all 3 even when 60 filler orders exist', () async {
-      final dataset = customerWith3ActiveAndFillerOrders();
-      final interceptor = _MockInterceptor(dataset);
-      final dio = Dio()..interceptors.add(interceptor);
-      final service = OrderService(dio);
+    test(
+      'customer name search finds all 3 even when 60 filler orders exist',
+      () async {
+        final dataset = customerWith3ActiveAndFillerOrders();
+        final interceptor = _MockInterceptor(dataset);
+        final dio = Dio()..interceptors.add(interceptor);
+        final service = OrderService(dio);
 
-      final orders = await service.listOrders(activeOnly: true);
-      expect(orders.length, 63);
+        final orders = await service.listOrders(activeOnly: true);
+        expect(orders.length, 63);
 
-      final matches = orders
-          .where((o) => o.customerName.toLowerCase().contains('quen a'))
-          .toList();
-      expect(matches.length, 3);
-      final refs = matches.map((o) => o.orderRef).toSet();
-      expect(refs, containsAll(['ORD-260101-900', 'ORD-260101-901', 'ORD-260101-902']));
-    });
+        final matches = orders
+            .where((o) => o.customerName.toLowerCase().contains('quen a'))
+            .toList();
+        expect(matches.length, 3);
+        final refs = matches.map((o) => o.orderRef).toSet();
+        expect(
+          refs,
+          containsAll(['ORD-260101-900', 'ORD-260101-901', 'ORD-260101-902']),
+        );
+      },
+    );
   });
 }

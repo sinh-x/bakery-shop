@@ -147,6 +147,16 @@ class VN {
   // Search
   static const searchOrders = 'Tìm đơn hàng...';
 
+  // Order history
+  static const lichSuDonHang = 'Lịch sử đơn hàng';
+  static const lichSuDonHangLocMotNgay = 'Một ngày';
+  static const lichSuDonHangLocKhoangNgay = 'Khoảng ngày';
+  static const lichSuDonHangTimKiem = 'Tìm theo tên, số điện thoại, mã đơn...';
+  static const lichSuDonHangTrong = 'Không có đơn trong khoảng đã chọn';
+  static const lichSuDonHangKhongTimThay = 'Không tìm thấy đơn phù hợp';
+  static const lichSuDonHangToiDa7Ngay = 'Chỉ được chọn tối đa 7 ngày';
+  static const lichSuDonHangKhoangNgayKhongHopLe = 'Khoảng ngày không hợp lệ';
+
   // Product form
   static const createProduct = 'Thêm sản phẩm';
   static const editProduct = 'Sửa sản phẩm';
@@ -557,6 +567,7 @@ class VN {
   static String fingerprintMismatchStrip(String client, String server) {
     return '$fingerprintMismatchWarning ($client/$server)';
   }
+
   static const outOfStock = 'Hết hàng';
 
   // Stock management

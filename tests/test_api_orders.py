@@ -35,6 +35,15 @@ def _create_chip(client, product_id: int, label: str, price: float) -> int:
     return int(resp.json()["id"])
 
 
+def _mark_order_as_legacy_pos(conn, order_ref: str, created_at: str) -> None:
+    conn.execute(
+        """UPDATE orders
+           SET due_date = '', source = ?, created_at = ?
+           WHERE order_ref = ?""",
+        ("Tại tiệm - POS", created_at, order_ref),
+    )
+
+
 # --- List orders ---
 
 
@@ -74,6 +83,94 @@ def test_list_orders_filter_by_due_date(api_client):
     orders = resp.json()
     assert len(orders) == 1
     assert orders[0]["customerName"] == "Due today"
+
+
+def test_list_orders_due_date_includes_legacy_pos_created_at_fallback(api_client):
+    due_order = _create_order(api_client, customer="Due date exact", dueDate="2026-03-20")
+    legacy_in_range = _create_order(api_client, customer="Legacy POS in range")
+    legacy_out_of_range = _create_order(api_client, customer="Legacy POS out range")
+    non_pos_legacy = _create_order(api_client, customer="Legacy non POS")
+
+    with get_db() as conn:
+        _mark_order_as_legacy_pos(conn, legacy_in_range["orderRef"], "2026-03-20T08:30:00")
+        _mark_order_as_legacy_pos(conn, legacy_out_of_range["orderRef"], "2026-03-22T08:30:00")
+        conn.execute(
+            """UPDATE orders
+               SET due_date = '', source = ?, created_at = ?
+               WHERE order_ref = ?""",
+            ("Facebook-DoanGia", "2026-03-20T09:00:00", non_pos_legacy["orderRef"]),
+        )
+
+    resp = api_client.get("/api/orders", params={"due_date": "2026-03-20"})
+    assert resp.status_code == 200
+    refs = {o["orderRef"] for o in resp.json()}
+    assert due_order["orderRef"] in refs
+    assert legacy_in_range["orderRef"] in refs
+    assert legacy_out_of_range["orderRef"] not in refs
+    assert non_pos_legacy["orderRef"] not in refs
+
+
+def test_list_orders_due_date_range_includes_terminal_and_legacy_fallback(api_client):
+    completed_order = _create_order(api_client, customer="Completed in range", dueDate="2026-03-20")
+    completed_ref = completed_order["orderRef"]
+    for s in ["confirmed", "in_progress", "ready", "delivered"]:
+        api_client.post(f"/api/orders/{completed_ref}/status", json={"status": s})
+    api_client.patch(f"/api/orders/{completed_ref}/payment", json={"amountPaid": completed_order["totalPrice"]})
+    api_client.post(f"/api/orders/{completed_ref}/status", json={"status": "completed"})
+
+    cancelled_order = _create_order(api_client, customer="Cancelled in range", dueDate="2026-03-21")
+    cancelled_ref = cancelled_order["orderRef"]
+    api_client.post(f"/api/orders/{cancelled_ref}/status", json={"status": "cancelled", "reason": "Khách hủy"})
+
+    legacy_in_range = _create_order(api_client, customer="Legacy POS in range")
+    legacy_out_of_range = _create_order(api_client, customer="Legacy POS out range")
+    outside_due = _create_order(api_client, customer="Outside due", dueDate="2026-03-23")
+
+    with get_db() as conn:
+        _mark_order_as_legacy_pos(conn, legacy_in_range["orderRef"], "2026-03-21T10:10:00")
+        _mark_order_as_legacy_pos(conn, legacy_out_of_range["orderRef"], "2026-03-25T10:10:00")
+
+    resp = api_client.get(
+        "/api/orders",
+        params={"due_date_from": "2026-03-20", "due_date_to": "2026-03-21"},
+    )
+    assert resp.status_code == 200
+    refs = {o["orderRef"] for o in resp.json()}
+    assert completed_ref in refs
+    assert cancelled_ref in refs
+    assert legacy_in_range["orderRef"] in refs
+    assert legacy_out_of_range["orderRef"] not in refs
+    assert outside_due["orderRef"] not in refs
+
+
+def test_list_orders_due_date_legacy_fallback_uses_timestamp_bounds(api_client):
+    legacy_before = _create_order(api_client, customer="Legacy before day")
+    legacy_on_day_late = _create_order(api_client, customer="Legacy in day late")
+    legacy_next_day = _create_order(api_client, customer="Legacy next day")
+
+    with get_db() as conn:
+        _mark_order_as_legacy_pos(conn, legacy_before["orderRef"], "2026-03-19T23:59:59")
+        _mark_order_as_legacy_pos(conn, legacy_on_day_late["orderRef"], "2026-03-20T23:59:59")
+        _mark_order_as_legacy_pos(conn, legacy_next_day["orderRef"], "2026-03-21T00:00:00")
+
+    resp = api_client.get("/api/orders", params={"due_date": "2026-03-20"})
+    assert resp.status_code == 200
+    refs = {o["orderRef"] for o in resp.json()}
+    assert legacy_before["orderRef"] not in refs
+    assert legacy_on_day_late["orderRef"] in refs
+    assert legacy_next_day["orderRef"] not in refs
+
+
+def test_list_orders_due_date_range_preserves_limit_and_offset(api_client):
+    for i in range(5):
+        _create_order(api_client, customer=f"Range page {i}", dueDate="2026-03-20")
+
+    resp = api_client.get(
+        "/api/orders",
+        params={"due_date_from": "2026-03-20", "due_date_to": "2026-03-20", "limit": 2, "offset": 1},
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()) == 2
 
 
 def test_list_orders_pagination(api_client):
