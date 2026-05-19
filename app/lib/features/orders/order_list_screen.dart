@@ -75,6 +75,17 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     });
   }
 
+  void _onAppBarMenuSelected(String value) {
+    switch (value) {
+      case 'orders_history':
+        context.push('/orders/history');
+        return;
+      case 'settings':
+        context.push('/settings');
+        return;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -222,21 +233,27 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
             onPressed: () => ref.read(orderListProvider.notifier).refresh(),
           ),
           IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: VN.lichSuDonHang,
-            onPressed: () => context.push('/orders/history'),
-          ),
-          IconButton(
             icon: Icon(
               _viewMode == 'list' ? Icons.view_kanban : Icons.view_list,
             ),
-            tooltip: _viewMode == 'list' ? 'Kanban' : 'Danh sách',
+            tooltip: _viewMode == 'list'
+                ? VN.switchToKanbanView
+                : VN.switchToListView,
             onPressed: _toggleViewMode,
           ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: VN.settings,
-            onPressed: () => context.push('/settings'),
+          PopupMenuButton<String>(
+            tooltip: VN.moreActions,
+            onSelected: _onAppBarMenuSelected,
+            itemBuilder: (context) => const [
+              PopupMenuItem<String>(
+                value: 'orders_history',
+                child: Text(VN.openOrderHistory),
+              ),
+              PopupMenuItem<String>(
+                value: 'settings',
+                child: Text(VN.openSettings),
+              ),
+            ],
           ),
         ],
         bottom: TabBar(

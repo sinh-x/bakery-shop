@@ -164,6 +164,24 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
     });
   }
 
+  Future<void> _onSelectModeMenuSelected(String value) async {
+    switch (value) {
+      case 'bulk_share':
+        if (_selectedPhotoIds.isNotEmpty && !_bulkInProgress) {
+          await _onBulkShare();
+        }
+        return;
+      case 'bulk_download':
+        if (_selectedPhotoIds.isNotEmpty && !_bulkInProgress) {
+          await _onBulkDownload();
+        }
+        return;
+      case 'cancel_selection':
+        _clearSelection();
+        return;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final baseUrl = ref.watch(apiBaseUrlProvider);
@@ -217,21 +235,26 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
-            if (_selectMode && !_bulkInProgress)
-              IconButton(
-                icon: const Icon(Icons.share),
-                onPressed: _selectedPhotoIds.isEmpty ? null : _onBulkShare,
-              ),
-            if (_selectMode && !_bulkInProgress)
-              IconButton(
-                icon: const Icon(Icons.download),
-                onPressed: _selectedPhotoIds.isEmpty ? null : _onBulkDownload,
-              ),
             if (_selectMode)
-              IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: _clearSelection,
-                tooltip: VN.huy,
+              PopupMenuButton<String>(
+                tooltip: VN.moreActions,
+                onSelected: _onSelectModeMenuSelected,
+                itemBuilder: (context) => [
+                  PopupMenuItem<String>(
+                    value: 'bulk_share',
+                    enabled: _selectedPhotoIds.isNotEmpty && !_bulkInProgress,
+                    child: const Text(VN.chiaSe),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'bulk_download',
+                    enabled: _selectedPhotoIds.isNotEmpty && !_bulkInProgress,
+                    child: const Text(VN.taiAnh),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'cancel_selection',
+                    child: Text(VN.huy),
+                  ),
+                ],
               ),
           ],
         ),

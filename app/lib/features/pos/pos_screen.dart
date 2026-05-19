@@ -120,6 +120,23 @@ class _PosScreenState extends ConsumerState<PosScreen>
     }
   }
 
+  void _onPosAppBarMenuSelected(String value) {
+    switch (value) {
+      case 'stock_reconciliation':
+        context.push('/stock/reconciliation');
+        return;
+      case 'stock_reconciliation_history':
+        context.push('/stock/reconciliation/history');
+        return;
+      case 'orders_history':
+        context.push('/orders/history');
+        return;
+      case 'stock':
+        context.push('/stock');
+        return;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(categoriesProvider);
@@ -134,25 +151,27 @@ class _PosScreenState extends ConsumerState<PosScreen>
             tooltip: VN.lamMoi,
             onPressed: _refreshStock,
           ),
-          IconButton(
-            icon: const Icon(Icons.fact_check_outlined),
-            tooltip: VN.doiSoatTonKhoHomNay,
-            onPressed: () => context.push('/stock/reconciliation'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: VN.lichSuDoiSoatTonKho,
-            onPressed: () => context.push('/stock/reconciliation/history'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.receipt_long),
-            tooltip: VN.lichSuDonHang,
-            onPressed: () => context.push('/orders/history'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.inventory_2_outlined),
-            tooltip: VN.openStock,
-            onPressed: () => context.push('/stock'),
+          PopupMenuButton<String>(
+            tooltip: VN.moreActions,
+            onSelected: _onPosAppBarMenuSelected,
+            itemBuilder: (context) => const [
+              PopupMenuItem<String>(
+                value: 'stock_reconciliation',
+                child: Text(VN.openStockReconciliation),
+              ),
+              PopupMenuItem<String>(
+                value: 'stock_reconciliation_history',
+                child: Text(VN.openStockReconciliationHistory),
+              ),
+              PopupMenuItem<String>(
+                value: 'orders_history',
+                child: Text(VN.openOrderHistory),
+              ),
+              PopupMenuItem<String>(
+                value: 'stock',
+                child: Text(VN.openStock),
+              ),
+            ],
           ),
         ],
       ),

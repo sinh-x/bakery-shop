@@ -68,6 +68,20 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
     }
   }
 
+  void _onAppBarMenuSelected(BuildContext context, String value) {
+    switch (value) {
+      case 'manage_categories':
+        context.push('/categories/manage');
+        return;
+      case 'settings':
+        context.push('/settings');
+        return;
+      case 'browse_catalog':
+        context.push('/products/browse');
+        return;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(categoriesProvider);
@@ -125,20 +139,23 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                   ref.invalidate(categoriesProvider);
                 },
               ),
-              IconButton(
-                icon: const Icon(Icons.tune),
-                tooltip: VN.manageCategories,
-                onPressed: () => context.push('/categories/manage'),
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings),
-                tooltip: VN.settings,
-                onPressed: () => context.push('/settings'),
-              ),
-              IconButton(
-                icon: const Icon(Icons.photo_library_outlined),
-                tooltip: VN.browseScreenTitle,
-                onPressed: () => context.push('/products/browse'),
+              PopupMenuButton<String>(
+                tooltip: VN.moreActions,
+                onSelected: (value) => _onAppBarMenuSelected(context, value),
+                itemBuilder: (context) => const [
+                  PopupMenuItem<String>(
+                    value: 'manage_categories',
+                    child: Text(VN.openCategoryManagement),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'settings',
+                    child: Text(VN.openSettings),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'browse_catalog',
+                    child: Text(VN.openCatalogBrowse),
+                  ),
+                ],
               ),
             ],
             bottom: TabBar(
