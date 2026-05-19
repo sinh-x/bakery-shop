@@ -9,6 +9,8 @@ import '../../../data/models/product.dart';
 import '../../../providers/categories_provider.dart';
 import '../../../providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import '../../../shared/utils/category_grouping.dart';
+import '../../../shared/widgets/collapsible_category_sections.dart';
 import 'widgets/pos_cart_bar.dart';
 import 'widgets/pos_product_grid.dart';
 
@@ -23,15 +25,15 @@ class PosScreen extends ConsumerStatefulWidget {
 
 class _PosScreenState extends ConsumerState<PosScreen>
     with WidgetsBindingObserver {
-  int? _selectedCategoryIndex;
   String _searchQuery = '';
   Timer? _stockPollingTimer;
   bool _wasNavigatedAway = false;
   GoRouter? _goRouter;
   DateTime _lastStockRefreshAt = DateTime.now();
+  final CategorySectionExpansionController _sectionExpansionController =
+      CategorySectionExpansionController();
 
-  /// Filtered products based on selected category and search query.
-  List<Product> _filteredProducts(List<Product> products) {
+  List<Product> _visibleProducts(List<Product> products) {
     var result = products.where((p) => p.active == 1).toList();
 
     // Default: trung_bay products only (when no search)
@@ -45,18 +47,30 @@ class _PosScreenState extends ConsumerState<PosScreen>
       result = result.where((p) => p.name.toLowerCase().contains(q)).toList();
     }
 
-    // Category filter
-    if (_selectedCategoryIndex != null) {
-      final categories = ref
-          .read(categoriesProvider)
-          .maybeWhen(data: (cats) => cats, orElse: () => <Category>[]);
-      if (_selectedCategoryIndex! < categories.length) {
-        final cat = categories[_selectedCategoryIndex!];
-        result = result.where((p) => p.category == cat.slug).toList();
-      }
+    return result;
+  }
+
+  List<GroupedCategorySection<Product>> _groupedSections({
+    required List<Product> products,
+    required List<Category> categories,
+  }) {
+    final activeCategories = categories.where((c) => c.active == 1).toList();
+    final visible = _visibleProducts(products);
+    final sections = groupItemsByCategory<Product>(
+      items: visible,
+      categories: activeCategories,
+      categoryKeyOf: (product) => product.category,
+      itemLabelOf: (product) => product.name,
+    );
+
+    if (_searchQuery.isEmpty) {
+      return sections;
     }
 
-    return result;
+    for (final section in sections) {
+      _sectionExpansionController.setExpanded(section.categoryKey, true);
+    }
+    return sections;
   }
 
   @override
@@ -167,10 +181,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
                 value: 'orders_history',
                 child: Text(VN.openOrderHistory),
               ),
-              PopupMenuItem<String>(
-                value: 'stock',
-                child: Text(VN.openStock),
-              ),
+              PopupMenuItem<String>(value: 'stock', child: Text(VN.openStock)),
             ],
           ),
         ],
@@ -206,100 +217,70 @@ class _PosScreenState extends ConsumerState<PosScreen>
           ),
           const SizedBox(height: 6),
 
-          // Category tabs
-          categoriesAsync.when(
-            loading: () => const SizedBox.shrink(),
-            error: (_, _) => Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                children: [
-                  const Icon(Icons.error_outline, size: 18),
-                  const SizedBox(width: 8),
-                  const Expanded(child: Text(VN.categoryLoadError)),
-                  TextButton(
-                    onPressed: () => ref.invalidate(categoriesProvider),
-                    child: const Text(VN.taiLai),
-                  ),
-                ],
-              ),
-            ),
-            data: (categories) {
-              if (categories.isEmpty) return const SizedBox.shrink();
-              final activeCats = categories
-                  .where((c) => c.active == 1)
-                  .toList();
-
-              return SizedBox(
-                height: 48,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  itemCount: activeCats.length + 1, // +1 for "Tất cả"
-                  itemBuilder: (context, index) {
-                    if (index == 0) {
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: FilterChip(
-                          label: const Text('Tất cả'),
-                          selected: _selectedCategoryIndex == null,
-                          onSelected: (_) =>
-                              setState(() => _selectedCategoryIndex = null),
-                        ),
-                      );
-                    }
-                    final cat = activeCats[index - 1];
-                    final emoji = cat.icon.isNotEmpty
-                        ? cat.icon
-                        : _categoryEmoji(cat.slug);
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FilterChip(
-                        label: Text('$emoji ${cat.name}'),
-                        selected: _selectedCategoryIndex == index - 1,
-                        onSelected: (_) =>
-                            setState(() => _selectedCategoryIndex = index - 1),
-                      ),
-                    );
-                  },
-                ),
-              );
-            },
-          ),
-
-          const SizedBox(height: 8),
-
           // Product grid
           Expanded(
             child: Stack(
               children: [
-                productsAsync.when(
+                categoriesAsync.when(
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
-                  error: (e, _) => Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                  error: (_, _) => Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(
                       children: [
-                        const Text(VN.apiError),
-                        const SizedBox(height: 8),
-                        ElevatedButton(
-                          onPressed: _refreshStock,
+                        const Icon(Icons.error_outline, size: 18),
+                        const SizedBox(width: 8),
+                        const Expanded(child: Text(VN.categoryLoadError)),
+                        TextButton(
+                          onPressed: () => ref.invalidate(categoriesProvider),
                           child: const Text(VN.taiLai),
                         ),
                       ],
                     ),
                   ),
-                  data: (products) {
-                    final filtered = _filteredProducts(products);
-                    if (filtered.isEmpty) {
-                      return Center(
-                        child: Text(
-                          VN.khongCoSanPham,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                        ),
+                  data: (categories) => productsAsync.when(
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (e, _) => Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(VN.apiError),
+                          const SizedBox(height: 8),
+                          ElevatedButton(
+                            onPressed: _refreshStock,
+                            child: const Text(VN.taiLai),
+                          ),
+                        ],
+                      ),
+                    ),
+                    data: (products) {
+                      final sections = _groupedSections(
+                        products: products,
+                        categories: categories,
                       );
-                    }
-                    return PosProductGrid(products: filtered);
-                  },
+                      if (sections.isEmpty) {
+                        return Center(
+                          child: Text(
+                            VN.khongCoSanPham,
+                            style: Theme.of(context).textTheme.bodyLarge,
+                          ),
+                        );
+                      }
+                      return CollapsibleCategorySections<Product>(
+                        sections: sections,
+                        expansionController: _sectionExpansionController,
+                        itemBuilder: (context, _) => const SizedBox.shrink(),
+                        sectionContentBuilder: (context, section) =>
+                            PosProductGrid(
+                              products: section.items,
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+                            ),
+                      );
+                    },
+                  ),
                 ),
                 // Floating cart bar at bottom
                 const Positioned(
@@ -314,9 +295,5 @@ class _PosScreenState extends ConsumerState<PosScreen>
         ],
       ),
     );
-  }
-
-  String _categoryEmoji(String slug) {
-    return categoryEmojiMap[slug] ?? '📦';
   }
 }
