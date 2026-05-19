@@ -26,6 +26,7 @@ class PosScreen extends ConsumerStatefulWidget {
 class _PosScreenState extends ConsumerState<PosScreen>
     with WidgetsBindingObserver {
   String _searchQuery = '';
+  bool _showOutOfStockProducts = false;
   Timer? _stockPollingTimer;
   bool _wasNavigatedAway = false;
   GoRouter? _goRouter;
@@ -35,6 +36,10 @@ class _PosScreenState extends ConsumerState<PosScreen>
 
   List<Product> _visibleProducts(List<Product> products) {
     var result = products.where((p) => p.active == 1).toList();
+
+    if (!_showOutOfStockProducts) {
+      result = result.where((p) => (p.stockQty ?? 0) > 0).toList();
+    }
 
     // Default: trung_bay products only (when no search)
     if (_searchQuery.isEmpty) {
@@ -201,6 +206,25 @@ class _PosScreenState extends ConsumerState<PosScreen>
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12),
               ),
               onChanged: (value) => setState(() => _searchQuery = value),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    VN.showOutOfStockProducts,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+                Switch.adaptive(
+                  value: _showOutOfStockProducts,
+                  onChanged: (value) {
+                    setState(() => _showOutOfStockProducts = value);
+                  },
+                ),
+              ],
             ),
           ),
           Padding(

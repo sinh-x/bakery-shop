@@ -4,6 +4,7 @@ import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/pos/pos_screen.dart';
 import 'package:bakery_app/providers/categories_provider.dart';
 import 'package:bakery_app/providers/products_provider.dart';
+import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -63,7 +64,7 @@ void main() {
       category: 'banh_kem',
       active: 1,
       attributes: {'trung_bay': 'true'},
-      stockQty: 2,
+      stockQty: 0,
     ),
     const Product(
       id: 3,
@@ -72,6 +73,14 @@ void main() {
       active: 1,
       attributes: {'trung_bay': 'true'},
       stockQty: 10,
+    ),
+    const Product(
+      id: 4,
+      name: 'Matcha da xay',
+      category: 'nuoc',
+      active: 1,
+      attributes: {'trung_bay': 'true'},
+      stockQty: null,
     ),
   ];
 
@@ -127,6 +136,37 @@ void main() {
     expect(find.text('Kem dau'), findsNothing);
   });
 
+  testWidgets('hides zero and null stock products by default', (tester) async {
+    await tester.pumpWidget(buildScreen());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Banh kem'));
+    await tester.pumpAndSettle();
+    expect(find.text('Kem dau'), findsOneWidget);
+    expect(find.text('Su kem'), findsNothing);
+
+    expect(find.text('Nuoc'), findsNothing);
+    expect(find.text('Matcha da xay'), findsNothing);
+  });
+
+  testWidgets('shows out-of-stock products when switch is enabled', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildScreen());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'su kem');
+    await tester.pumpAndSettle();
+    expect(find.text('Su kem'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'matcha');
+    await tester.pumpAndSettle();
+    expect(find.text('Matcha da xay'), findsOneWidget);
+  });
+
   testWidgets('search expands matching sections and hides non-matching', (
     tester,
   ) async {
@@ -139,5 +179,29 @@ void main() {
     expect(find.text('Nuoc'), findsOneWidget);
     expect(find.text('Banh kem'), findsNothing);
     expect(find.text('Tra dao'), findsOneWidget);
+  });
+
+  testWidgets('search respects stock visibility switch', (tester) async {
+    await tester.pumpWidget(buildScreen());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'su kem');
+    await tester.pumpAndSettle();
+    expect(find.text('Su kem'), findsNothing);
+
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'su kem');
+    await tester.pumpAndSettle();
+    expect(find.text('Su kem'), findsOneWidget);
+  });
+
+  testWidgets('renders stock visibility switch with VN label', (tester) async {
+    await tester.pumpWidget(buildScreen());
+    await tester.pumpAndSettle();
+
+    expect(find.text(VN.showOutOfStockProducts), findsOneWidget);
+    expect(find.byType(Switch), findsOneWidget);
   });
 }
