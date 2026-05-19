@@ -335,6 +335,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           physics: const NeverScrollableScrollPhysics(),
           shrinkWrap: true,
           itemCount: _priceChipRows.length,
+          // ignore: deprecated_member_use
           onReorder: _reorderPriceChips,
           buildDefaultDragHandles: false,
           itemBuilder: (context, index) {
@@ -604,6 +605,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           physics: const NeverScrollableScrollPhysics(),
           shrinkWrap: true,
           itemCount: section.rows.length,
+          // ignore: deprecated_member_use
           onReorder: (oldIndex, newIndex) =>
               _reorderEnumOptions(section, oldIndex, newIndex),
           buildDefaultDragHandles: false,
