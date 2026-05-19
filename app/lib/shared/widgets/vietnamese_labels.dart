@@ -233,6 +233,16 @@ class VN {
 
   // Settings
   static const settings = 'Cài đặt';
+  static const moreActions = 'Thao tác khác';
+  static const openSettings = 'Mở cài đặt';
+  static const openStock = 'Mở kho hàng';
+  static const openOrderHistory = 'Mở lịch sử đơn hàng';
+  static const openStockReconciliation = 'Mở đối soát tồn kho hôm nay';
+  static const openStockReconciliationHistory = 'Mở lịch sử đối soát tồn kho';
+  static const openCategoryManagement = 'Mở quản lý danh mục';
+  static const openCatalogBrowse = 'Mở duyệt ảnh mẫu';
+  static const switchToKanbanView = 'Chuyển sang dạng Kanban';
+  static const switchToListView = 'Chuyển sang dạng danh sách';
   static const apiUrlLabel = 'Địa chỉ máy chủ';
   static const apiUrlHint = 'http://hostname:8000';
   static const apiUrlHelp = 'Nhập địa chỉ Tailscale của máy chủ';
@@ -594,6 +604,7 @@ class VN {
   static const capNhatThanhCong = 'Cập nhật thành công';
   static const loiHeThong = 'Lỗi hệ thống';
   static const doiSoatTonKhoHomNay = 'Đối soát tồn kho hôm nay';
+  static const showOutOfStockProducts = 'Hiển thị sản phẩm hết hàng';
   static const nhanVien = 'Nhân viên';
   static const ngayDoiSoat = 'Ngày đối soát';
   static const tonDuKien = 'Tồn dự kiến';

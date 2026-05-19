@@ -151,7 +151,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
           ),
           IconButton(
             icon: const Icon(Icons.inventory_2_outlined),
-            tooltip: 'Kho hàng',
+            tooltip: VN.openStock,
             onPressed: () => context.push('/stock'),
           ),
         ],
