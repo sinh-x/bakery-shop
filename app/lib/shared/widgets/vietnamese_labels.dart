@@ -482,9 +482,6 @@ class VN {
   static const clearCart = 'Xóa giỏ';
   static const selectPaymentMethod = 'Chọn phương thức thanh toán';
   static const confirmCounterPayment = 'Xác nhận thanh toán đơn tại quầy';
-  static const checkoutReviewTitle = 'Xem lại đơn hàng';
-  static const checkoutReviewHint = 'Kiểm tra thông tin trước khi tạo đơn.';
-  static const xong = 'Xong';
   static const removeFromCartTitle = 'Xóa sản phẩm khỏi giỏ?';
   static const decreaseQuantity = 'Giảm số lượng';
   static const increaseQuantity = 'Tăng số lượng';

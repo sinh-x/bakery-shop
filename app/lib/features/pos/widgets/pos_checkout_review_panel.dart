@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../providers/pos_provider.dart';
-import '../../../shared/labels/shared.dart';
+import '../../../shared/labels/orders.dart';
+import '../utils/pos_cart_item_display.dart';
 
 class PosCheckoutReviewPanel extends StatelessWidget {
   const PosCheckoutReviewPanel({
@@ -32,12 +33,12 @@ class PosCheckoutReviewPanel extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             children: [
               Text(
-                VN.checkoutReviewTitle,
+                OrdersLabels.checkoutReviewTitle,
                 style: theme.textTheme.titleLarge,
               ),
               const SizedBox(height: 4),
               Text(
-                VN.checkoutReviewHint,
+                OrdersLabels.checkoutReviewHint,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -96,7 +97,7 @@ class PosCheckoutReviewPanel extends StatelessWidget {
                             ),
                           )
                         : const Icon(Icons.check_circle_outline),
-                    label: const Text(VN.xong),
+                    label: const Text(OrdersLabels.done),
                   ),
                 ),
               ],
@@ -108,11 +109,6 @@ class PosCheckoutReviewPanel extends StatelessWidget {
   }
 
   Widget _buildLineItem(PosCartItem item) {
-    final hasChipLabel = (item.selectedChipLabel ?? '').trim().isNotEmpty;
-    final displayName = hasChipLabel
-        ? '${item.product.name} (${item.selectedChipLabel!.trim()})'
-        : item.product.name;
-
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
@@ -120,7 +116,7 @@ class PosCheckoutReviewPanel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(displayName),
+            Text(posCartItemDisplayName(item)),
             const SizedBox(height: 4),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
