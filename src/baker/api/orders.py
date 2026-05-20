@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
-from baker.logging import log_context
+from baker.logging import log_context, logger
 from baker.models.order import Order, OrderItem, is_backward_transition, validate_transition
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
@@ -138,6 +138,49 @@ def _order_detail(conn, row) -> dict:
     result["paymentTransactions"] = [PaymentTransaction.from_row(r).to_api_dict() for r in txn_rows]
 
     return result
+
+
+def _log_status_transition_rejection(
+    *,
+    requested_ref: str,
+    order_row,
+    target_status: str,
+    status_code: int,
+    rejection_detail: str,
+) -> None:
+    order_ref = order_row["order_ref"] if order_row else requested_ref
+    order_id = str(order_row["id"]) if order_row else ""
+    logger.warning(
+        "order_status_transition_rejected",
+        extra={
+            "extra_data": {
+                "path": "/api/orders/{ref}/status",
+                "order_ref": order_ref,
+                "order_id": order_id,
+                "target_status": target_status,
+                "status_code": status_code,
+                "rejection_detail": rejection_detail,
+            }
+        },
+    )
+
+
+def _raise_status_transition_rejection(
+    *,
+    requested_ref: str,
+    order_row,
+    target_status: str,
+    status_code: int,
+    rejection_detail: str,
+) -> None:
+    _log_status_transition_rejection(
+        requested_ref=requested_ref,
+        order_row=order_row,
+        target_status=target_status,
+        status_code=status_code,
+        rejection_detail=rejection_detail,
+    )
+    raise HTTPException(status_code=status_code, detail=rejection_detail)
 
 
 @router.get("")
@@ -450,11 +493,21 @@ def transition_status(ref: str, body: StatusTransition):
             (ref, ref),
         ).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+            _raise_status_transition_rejection(
+                requested_ref=ref,
+                order_row=None,
+                target_status=body.status,
+                status_code=404,
+                rejection_detail="Không tìm thấy đơn hàng",
+            )
 
         if is_backward_transition(row["status"], body.status) and not body.reason.strip():
-            raise HTTPException(
-                status_code=422, detail="Lý do là bắt buộc khi lùi trạng thái"
+            _raise_status_transition_rejection(
+                requested_ref=ref,
+                order_row=row,
+                target_status=body.status,
+                status_code=422,
+                rejection_detail="Lý do là bắt buộc khi lùi trạng thái",
             )
 
         # Block completion if not fully paid
@@ -463,9 +516,12 @@ def transition_status(ref: str, body: StatusTransition):
             total_price = float(row["total_price"])
             if total_paid < total_price:
                 remaining = total_price - total_paid
-                raise HTTPException(
+                _raise_status_transition_rejection(
+                    requested_ref=ref,
+                    order_row=row,
+                    target_status=body.status,
                     status_code=422,
-                    detail=f"Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu {remaining:,.0f}đ",
+                    rejection_detail=f"Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu {remaining:,.0f}đ",
                 )
 
         # Auto-decrement stock for trưng bày products when order is confirmed
@@ -478,7 +534,13 @@ def transition_status(ref: str, body: StatusTransition):
 
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:
-            raise HTTPException(status_code=422, detail="Không thể chuyển trạng thái")
+            _raise_status_transition_rejection(
+                requested_ref=ref,
+                order_row=row,
+                target_status=body.status,
+                status_code=422,
+                rejection_detail="Không thể chuyển trạng thái",
+            )
 
         _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, body.changedBy)
 
