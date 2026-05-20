@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../../providers/pos_provider.dart';
 import '../../../shared/labels/shared.dart';
-import '../../stock/stock_screen.dart';
 
 class PosCheckoutReviewPanel extends StatelessWidget {
   const PosCheckoutReviewPanel({
