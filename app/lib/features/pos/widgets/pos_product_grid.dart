@@ -75,7 +75,6 @@ class PosProductGrid extends ConsumerWidget {
       _showForceSellDialog(context, ref, product);
     } else {
       ref.read(posCartProvider.notifier).addItem(product);
-      showTopSnackBar(context, '${product.name} đã thêm vào giỏ');
     }
   }
 
@@ -194,13 +193,6 @@ class PosProductGrid extends ConsumerWidget {
                           selectedChipId: selectedChipId,
                           selectedChipLabel: selectedChipLabel,
                         );
-                    final labelSuffix = selectedChipLabel != null
-                        ? ' ($selectedChipLabel)'
-                        : '';
-                    showTopSnackBar(
-                      context,
-                      '${product.name}$labelSuffix đã thêm vào giỏ',
-                    );
                   }
                 },
                 child: const Text('Thêm'),

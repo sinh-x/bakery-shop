@@ -53,6 +53,7 @@ void main() {
     const Product(
       id: 1,
       name: 'Kem dau',
+      basePrice: 25000,
       category: 'banh_kem',
       active: 1,
       attributes: {'trung_bay': 'true'},
@@ -203,5 +204,23 @@ void main() {
 
     expect(find.text(VN.showOutOfStockProducts), findsOneWidget);
     expect(find.byType(Switch), findsOneWidget);
+  });
+
+  testWidgets('in-stock add updates cart bar and badge without success overlay', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildScreen());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Banh kem'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Kem dau'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SnackBar), findsNothing);
+    expect(find.textContaining('đã thêm vào giỏ'), findsNothing);
+    expect(find.text('x1'), findsOneWidget);
+    expect(find.text(formatVND(25000)), findsWidgets);
   });
 }
