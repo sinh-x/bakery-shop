@@ -15,6 +15,7 @@ import '../../providers/products_provider.dart';
 import '../../shared/utils/config_parsers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/api_error.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'utils/trung_bay_inventory_extensions.dart';
 import 'widgets/hour_picker.dart';
@@ -238,6 +239,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   )
                 : const Text(VN.save),
           ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: orderAsync.when(

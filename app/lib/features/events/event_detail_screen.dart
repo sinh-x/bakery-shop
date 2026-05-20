@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/models/event.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 
 const _kTypeIcons = <String, IconData>{
@@ -86,6 +87,7 @@ class EventDetailScreen extends StatelessWidget {
             onPressed: () =>
                 context.push('/events/${event.id}/edit', extra: event),
           ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: ListView(

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/category.dart';
 import '../../providers/categories_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'category_form.dart';
 
@@ -14,7 +15,10 @@ class CategoryManagementScreen extends ConsumerWidget {
     final categoriesAsync = ref.watch(categoriesProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text(VN.manageCategories)),
+      appBar: AppBar(
+        title: const Text(VN.manageCategories),
+        actions: const [AppBarOverflowMenu()],
+      ),
       body: categoriesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(

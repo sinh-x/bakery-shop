@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:bakery_app/shared/labels/shared.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 
 class _HubTile {
   final IconData icon;
@@ -48,6 +49,7 @@ class KnowledgeBaseScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text(VN.tabKnowledgeBase),
+        actions: const [AppBarOverflowMenu()],
       ),
       body: ListView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -87,10 +89,11 @@ class KnowledgeBaseScreen extends ConsumerWidget {
                           const SizedBox(height: 4),
                           Text(
                             tile.subtitle,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
                           ),
                         ],

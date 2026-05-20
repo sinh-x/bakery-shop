@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../data/api/receipt_service.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 import 'receipt_preview_print_stub.dart'
@@ -76,10 +77,9 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
       // Save to temp file then share
       await platform.saveToFile(_imageBytes!, fileName);
 
-      await Share.shareXFiles(
-        [XFile.fromData(_imageBytes!, mimeType: 'image/png', name: fileName)],
-        text: '${widget.receiptType.label} - ${widget.orderRef}',
-      );
+      await Share.shareXFiles([
+        XFile.fromData(_imageBytes!, mimeType: 'image/png', name: fileName),
+      ], text: '${widget.receiptType.label} - ${widget.orderRef}');
     } catch (e) {
       if (mounted) {
         showTopSnackBar(context, '${VN.apiError}: $e');
@@ -148,6 +148,7 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.receiptType.label),
+        actions: const [AppBarOverflowMenu()],
       ),
       body: _buildBody(),
       bottomNavigationBar: _imageBytes != null ? _buildActions() : null,

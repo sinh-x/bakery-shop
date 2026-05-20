@@ -10,6 +10,7 @@ import '../../../providers/categories_provider.dart';
 import '../../../providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import '../../../shared/utils/category_grouping.dart';
+import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../../shared/widgets/collapsible_category_sections.dart';
 import 'widgets/pos_cart_bar.dart';
 import 'widgets/pos_product_grid.dart';
@@ -197,10 +198,9 @@ class _PosScreenState extends ConsumerState<PosScreen>
             tooltip: VN.lamMoi,
             onPressed: _refreshStock,
           ),
-          PopupMenuButton<String>(
-            tooltip: VN.moreActions,
+          AppBarOverflowMenu(
             onSelected: _onPosAppBarMenuSelected,
-            itemBuilder: (context) => const [
+            items: const [
               PopupMenuItem<String>(
                 value: 'stock_reconciliation',
                 child: Text(VN.openStockReconciliation),

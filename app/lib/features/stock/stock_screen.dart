@@ -10,6 +10,7 @@ import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/category_grouping.dart';
 import '../../shared/utils/product_photo_url.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/collapsible_category_sections.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/stock_action_sheet.dart';
@@ -108,6 +109,23 @@ class _StockScreenState extends ConsumerState<StockScreen>
     }
   }
 
+  void _onAppBarMenuSelected(String value) {
+    switch (value) {
+      case 'stock_reconciliation':
+        context.push('/stock/reconciliation');
+        return;
+      case 'stock_reconciliation_history':
+        context.push('/stock/reconciliation/history');
+        return;
+      default:
+        assert(() {
+          debugPrint('Unknown stock app bar menu action: $value');
+          return true;
+        }());
+        return;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final stockAsync = ref.watch(stockOverviewProvider);
@@ -120,19 +138,22 @@ class _StockScreenState extends ConsumerState<StockScreen>
         title: const Text(VN.quanLyTonKho),
         actions: [
           IconButton(
-            icon: const Icon(Icons.fact_check_outlined),
-            tooltip: VN.doiSoatTonKhoHomNay,
-            onPressed: () => context.push('/stock/reconciliation'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: VN.lichSuDoiSoatTonKho,
-            onPressed: () => context.push('/stock/reconciliation/history'),
-          ),
-          IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: VN.lamMoi,
             onPressed: () => ref.invalidate(stockOverviewProvider),
+          ),
+          AppBarOverflowMenu(
+            onSelected: _onAppBarMenuSelected,
+            items: const [
+              PopupMenuItem<String>(
+                value: 'stock_reconciliation',
+                child: Text(VN.openStockReconciliation),
+              ),
+              PopupMenuItem<String>(
+                value: 'stock_reconciliation_history',
+                child: Text(VN.openStockReconciliationHistory),
+              ),
+            ],
           ),
         ],
       ),
@@ -269,12 +290,12 @@ class _StockItemCard extends StatelessWidget {
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      productPhotoUrl(
-                        baseUrl,
-                        item.productId,
-                        cacheBuster: cacheBuster,
-                      ),
+                  child: Image.network(
+                    productPhotoUrl(
+                      baseUrl,
+                      item.productId,
+                      cacheBuster: cacheBuster,
+                    ),
                     width: 64,
                     height: 64,
                     fit: BoxFit.cover,

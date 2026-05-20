@@ -13,6 +13,7 @@ import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
 import '../../shared/services/image_download_metadata.dart';
 import '../../shared/services/web_share_fallback_helpers.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/knowledge_photo_gallery.dart';
 
@@ -27,11 +28,11 @@ class KnowledgeDetailScreen extends ConsumerWidget {
 
     return entryAsync.when(
       loading: () => Scaffold(
-        appBar: AppBar(),
+        appBar: AppBar(actions: const [AppBarOverflowMenu()]),
         body: const Center(child: CircularProgressIndicator()),
       ),
       error: (e, _) => Scaffold(
-        appBar: AppBar(),
+        appBar: AppBar(actions: const [AppBarOverflowMenu()]),
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -50,7 +51,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
       data: (entry) {
         if (entry == null) {
           return Scaffold(
-            appBar: AppBar(),
+            appBar: AppBar(actions: const [AppBarOverflowMenu()]),
             body: const Center(child: Text(VN.apiError)),
           );
         }
@@ -68,7 +69,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
                 tooltip: VN.editKnowledge,
                 onPressed: () => context.push('/knowledge/${entry.id}/edit'),
               ),
-              PopupMenuButton<String>(
+              AppBarOverflowMenu(
                 onSelected: (value) async {
                   if (value == 'delete') {
                     final confirm = await showDialog<bool>(
@@ -101,7 +102,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
                     }
                   }
                 },
-                itemBuilder: (ctx) => [
+                items: [
                   PopupMenuItem(
                     value: 'delete',
                     child: Row(

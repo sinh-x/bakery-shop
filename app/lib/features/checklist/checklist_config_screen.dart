@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/checklist_template.dart';
 import '../../data/providers/checklist_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/checklist.dart';
 
 class ChecklistConfigScreen extends ConsumerStatefulWidget {
@@ -13,8 +14,7 @@ class ChecklistConfigScreen extends ConsumerStatefulWidget {
       _ChecklistConfigScreenState();
 }
 
-class _ChecklistConfigScreenState
-    extends ConsumerState<ChecklistConfigScreen>
+class _ChecklistConfigScreenState extends ConsumerState<ChecklistConfigScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
@@ -35,7 +35,9 @@ class _ChecklistConfigScreenState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(period == 'opening' ? 'Thêm mục mở cửa' : 'Thêm mục đóng cửa'),
+        title: Text(
+          period == 'opening' ? 'Thêm mục mở cửa' : 'Thêm mục đóng cửa',
+        ),
         content: TextField(
           controller: nameCtrl,
           autofocus: true,
@@ -126,7 +128,9 @@ class _ChecklistConfigScreenState
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Xóa mục checklist'),
-        content: Text('Xóa "${template.name}"? Thao tác này không thể hoàn tác.'),
+        content: Text(
+          'Xóa "${template.name}"? Thao tác này không thể hoàn tác.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -202,6 +206,7 @@ class _ChecklistConfigScreenState
     return Scaffold(
       appBar: AppBar(
         title: const Text('Cấu hình checklist'),
+        actions: const [AppBarOverflowMenu()],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -227,14 +232,12 @@ class _ChecklistConfigScreenState
           ),
         ),
         data: (templates) {
-          final openingItems = templates
-              .where((t) => t.period == 'opening')
-              .toList()
-            ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-          final closingItems = templates
-              .where((t) => t.period == 'closing')
-              .toList()
-            ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+          final openingItems =
+              templates.where((t) => t.period == 'opening').toList()
+                ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+          final closingItems =
+              templates.where((t) => t.period == 'closing').toList()
+                ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
           return TabBarView(
             controller: _tabController,
@@ -295,9 +298,9 @@ class _TemplateList extends StatelessWidget {
                     period == 'opening'
                         ? 'Chưa có mục mở cửa nào'
                         : 'Chưa có mục đóng cửa nào',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
                   ),
                 )
               : ListView.separated(
@@ -308,12 +311,12 @@ class _TemplateList extends StatelessWidget {
                     final item = items[index];
                     return ListTile(
                       leading: CircleAvatar(
-                        backgroundColor: Theme.of(context)
-                            .colorScheme
-                            .primaryContainer,
-                        foregroundColor: Theme.of(context)
-                            .colorScheme
-                            .onPrimaryContainer,
+                        backgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.primaryContainer,
+                        foregroundColor: Theme.of(
+                          context,
+                        ).colorScheme.onPrimaryContainer,
                         radius: 16,
                         child: Text('${index + 1}'),
                       ),
@@ -341,8 +344,11 @@ class _TemplateList extends StatelessWidget {
                             tooltip: 'Sửa',
                           ),
                           IconButton(
-                            icon: Icon(Icons.delete_outline,
-                                size: 18, color: Colors.red.shade400),
+                            icon: Icon(
+                              Icons.delete_outline,
+                              size: 18,
+                              color: Colors.red.shade400,
+                            ),
                             onPressed: () => onDelete(item),
                             tooltip: VN.remove,
                           ),

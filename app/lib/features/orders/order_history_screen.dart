@@ -7,6 +7,7 @@ import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/labels/orders.dart';
 import '../../shared/theme/bakery_theme.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'widgets/order_card.dart';
 
 const _historyStatuses = <String>[
@@ -108,6 +109,7 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
             tooltip: VN.lamMoi,
             onPressed: notifier.refresh,
           ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: Column(

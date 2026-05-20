@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/api/api_client.dart';
 import '../../data/models/catalog_browse_photo.dart';
 import '../../providers/catalog_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'services/bulk_share_service.dart';
 import 'services/bulk_download_android.dart'
@@ -221,6 +222,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                 onPressed: _toggleSelectMode,
                 tooltip: VN.chonAnh,
               ),
+            if (!_selectMode) const AppBarOverflowMenu(),
             if (_selectMode)
               IconButton(
                 icon: const Icon(Icons.select_all),
@@ -242,10 +244,9 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                 ),
               ),
             if (_selectMode)
-              PopupMenuButton<String>(
-                tooltip: VN.moreActions,
+              AppBarOverflowMenu(
                 onSelected: _onSelectModeMenuSelected,
-                itemBuilder: (context) => [
+                items: [
                   PopupMenuItem<String>(
                     value: 'bulk_share',
                     enabled: _selectedPhotoIds.isNotEmpty && !_bulkInProgress,

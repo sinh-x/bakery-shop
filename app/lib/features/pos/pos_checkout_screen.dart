@@ -8,6 +8,7 @@ import '../../features/stock/stock_screen.dart';
 import '../../providers/pos_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/api_error.dart' as api_error;
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 String posCheckoutLocalDueDate(DateTime dateTime) {
@@ -250,6 +251,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
             icon: const Icon(Icons.delete_outline, size: 18),
             label: const Text(VN.clearCart),
           ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: Column(

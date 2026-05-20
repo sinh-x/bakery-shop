@@ -7,6 +7,7 @@ import '../../data/models/category.dart';
 import '../../data/models/product.dart';
 import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'widgets/product_card.dart';
 
@@ -94,7 +95,10 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
 
     return categoriesAsync.when(
       loading: () => Scaffold(
-        appBar: AppBar(title: const Text(VN.tabProducts)),
+        appBar: AppBar(
+          title: const Text(VN.tabProducts),
+          actions: const [AppBarOverflowMenu()],
+        ),
         body: const Center(child: CircularProgressIndicator()),
       ),
       error: (err, st) => _buildWithCategories(
@@ -145,17 +149,12 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                   ref.invalidate(categoriesProvider);
                 },
               ),
-              PopupMenuButton<String>(
-                tooltip: VN.moreActions,
+              AppBarOverflowMenu(
                 onSelected: (value) => _onAppBarMenuSelected(context, value),
-                itemBuilder: (context) => const [
+                items: const [
                   PopupMenuItem<String>(
                     value: 'manage_categories',
                     child: Text(VN.openCategoryManagement),
-                  ),
-                  PopupMenuItem<String>(
-                    value: 'settings',
-                    child: Text(VN.openSettings),
                   ),
                   PopupMenuItem<String>(
                     value: 'browse_catalog',

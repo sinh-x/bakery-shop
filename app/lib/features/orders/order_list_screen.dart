@@ -10,6 +10,7 @@ import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/theme/bakery_theme.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
 import 'widgets/order_card.dart';
@@ -247,17 +248,12 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                 : VN.switchToListView,
             onPressed: _toggleViewMode,
           ),
-          PopupMenuButton<String>(
-            tooltip: VN.moreActions,
+          AppBarOverflowMenu(
             onSelected: _onAppBarMenuSelected,
-            itemBuilder: (context) => const [
+            items: const [
               PopupMenuItem<String>(
                 value: 'orders_history',
                 child: Text(VN.openOrderHistory),
-              ),
-              PopupMenuItem<String>(
-                value: 'settings',
-                child: Text(VN.openSettings),
               ),
             ],
           ),

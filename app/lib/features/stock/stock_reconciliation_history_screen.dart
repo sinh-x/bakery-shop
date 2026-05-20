@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/reconciliation_service.dart';
 import '../../data/providers/reconciliation_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 class StockReconciliationHistoryScreen extends ConsumerWidget {
@@ -21,6 +22,7 @@ class StockReconciliationHistoryScreen extends ConsumerWidget {
             tooltip: VN.lamMoi,
             onPressed: () => ref.invalidate(reconciliationHistoryListProvider),
           ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: historyAsync.when(
@@ -90,7 +92,10 @@ class StockReconciliationHistoryDetailScreen extends ConsumerWidget {
       reconciliationHistoryDetailProvider(sessionId),
     );
     return Scaffold(
-      appBar: AppBar(title: const Text(VN.chiTietDoiSoat)),
+      appBar: AppBar(
+        title: const Text(VN.chiTietDoiSoat),
+        actions: const [AppBarOverflowMenu()],
+      ),
       body: detailAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (_, stackTrace) => Center(

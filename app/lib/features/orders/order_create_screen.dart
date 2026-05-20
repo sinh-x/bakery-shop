@@ -14,6 +14,7 @@ import '../../shared/gift_config.dart';
 import '../../shared/utils/config_parsers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/vnd_units.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/expandable_item_card.dart';
 import 'widgets/hour_picker.dart';
@@ -51,21 +52,18 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   // Track which extras have been auto-added (to avoid duplicates)
   final Set<String> _autoGiftExtras = {};
 
-  bool get _needsAddress =>
-      _deliveryType == 'bus' || _deliveryType == 'door';
+  bool get _needsAddress => _deliveryType == 'bus' || _deliveryType == 'door';
 
   bool get _needsNotes => _deliveryType != 'pickup';
 
   // Total excludes gift items, includes cash fees only when rut_tien is active
-  double get _totalPrice => _items
-      .where((i) => !i.isGift)
-      .fold(0, (sum, i) {
-        final rutTien = i.attributes['rut_tien']?.toString() == 'true';
-        final cashFee = rutTien
-            ? (double.tryParse(i.attributes['cash_fee']?.toString() ?? '') ?? 0)
-            : 0.0;
-        return sum + i.unitPrice * i.quantity + cashFee;
-      });
+  double get _totalPrice => _items.where((i) => !i.isGift).fold(0, (sum, i) {
+    final rutTien = i.attributes['rut_tien']?.toString() == 'true';
+    final cashFee = rutTien
+        ? (double.tryParse(i.attributes['cash_fee']?.toString() ?? '') ?? 0)
+        : 0.0;
+    return sum + i.unitPrice * i.quantity + cashFee;
+  });
 
   // Display total = items (excl gifts) + shipping fee
   double get _displayTotal => _totalPrice + _shippingFee;
@@ -79,7 +77,9 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       _nameCtrl.text = draft.customerName;
       _phoneCtrl.text = draft.customerPhone;
       _items.addAll(draft.items);
-      _dueDate = draft.dueDate ?? DateTime.now(); // F4: preserve draft or default today
+      _dueDate =
+          draft.dueDate ??
+          DateTime.now(); // F4: preserve draft or default today
       _dueTime = draft.dueTime;
       _deliveryType = draft.deliveryType;
       _addressCtrl.text = draft.deliveryAddress;
@@ -174,7 +174,8 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     double qualifiedTotal = 0;
     for (final item in _items) {
       // Check if item has tang_kem attribute (not an extra)
-      if (item.product.attributes['tang_kem']?.toString() == 'true' && !item.isExtra) {
+      if (item.product.attributes['tang_kem']?.toString() == 'true' &&
+          !item.isExtra) {
         qualifiedTotal += item.unitPrice * item.quantity;
       }
     }
@@ -232,9 +233,11 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   void _addExtra(String name, double price, {bool isGift = false}) {
     setState(() {
       // Reuse existing item with same (name, isGift) — increment qty
-      final existing = _items.where(
-        (i) => i.isExtra && i.product.name == name && i.isGift == isGift,
-      ).firstOrNull;
+      final existing = _items
+          .where(
+            (i) => i.isExtra && i.product.name == name && i.isGift == isGift,
+          )
+          .firstOrNull;
       if (existing != null) {
         existing.quantity += 1;
       } else {
@@ -278,7 +281,9 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       context: context,
       builder: (ctx) => HourPickerDialog(initialHour: _dueTime?.hour ?? 8),
     );
-    if (picked != null) setState(() => _dueTime = TimeOfDay(hour: picked, minute: 0));
+    if (picked != null) {
+      setState(() => _dueTime = TimeOfDay(hour: picked, minute: 0));
+    }
   }
 
   Future<void> _openProductPicker() async {
@@ -287,7 +292,9 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         fullscreenDialog: true,
         builder: (_) => ProductPickerPage(
           selectedItems: _items,
-          onChanged: () => setState(() {}), // ignore: unnecessary_lambdas — lambda needed: onChanged expects VoidCallback, setState requires a callback arg
+          onChanged: () => setState(
+            () {},
+          ), // ignore: unnecessary_lambdas — lambda needed: onChanged expects VoidCallback, setState requires a callback arg
         ),
       ),
     );
@@ -369,9 +376,9 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         }
         if (failedPhotos > 0 && mounted) {
           showTopSnackBar(
-          context,
-          'Tải lên ảnh: ${totalPhotos - failedPhotos}/$totalPhotos thành công, $failedPhotos lỗi',
-        );
+            context,
+            'Tải lên ảnh: ${totalPhotos - failedPhotos}/$totalPhotos thành công, $failedPhotos lỗi',
+          );
         }
       }
 
@@ -445,7 +452,10 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     );
 
     return Scaffold(
-      appBar: AppBar(title: const Text(VN.createOrder)),
+      appBar: AppBar(
+        title: const Text(VN.createOrder),
+        actions: const [AppBarOverflowMenu()],
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -458,19 +468,25 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                 spacing: 8,
                 runSpacing: 4,
                 children: sources
-                    .map((s) => ChoiceChip(
-                          label: Text(s),
-                          selected: _source == s,
-                          onSelected: (_) => setState(() {
-                            final wasSelected = _source == s;
-                            _source = wasSelected ? '' : s;
-                            if (!wasSelected && s == VN.sourceTaiTiem && _nameCtrl.text.isEmpty) {
-                              _nameCtrl.text = VN.walkInCustomer;
-                            } else if (wasSelected && s == VN.sourceTaiTiem && _nameCtrl.text == VN.walkInCustomer) {
-                              _nameCtrl.text = '';
-                            }
-                          }),
-                        ))
+                    .map(
+                      (s) => ChoiceChip(
+                        label: Text(s),
+                        selected: _source == s,
+                        onSelected: (_) => setState(() {
+                          final wasSelected = _source == s;
+                          _source = wasSelected ? '' : s;
+                          if (!wasSelected &&
+                              s == VN.sourceTaiTiem &&
+                              _nameCtrl.text.isEmpty) {
+                            _nameCtrl.text = VN.walkInCustomer;
+                          } else if (wasSelected &&
+                              s == VN.sourceTaiTiem &&
+                              _nameCtrl.text == VN.walkInCustomer) {
+                            _nameCtrl.text = '';
+                          }
+                        }),
+                      ),
+                    )
                     .toList(),
               ),
               loading: () => const SizedBox.shrink(),
@@ -479,29 +495,33 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             const SizedBox(height: 12),
 
             // ── Người tạo (auto-filled from settings) ─────────────────
-            Builder(builder: (context) {
-              final staffName = ref.watch(loggedByProvider);
-              if (staffName.isEmpty) return const SizedBox.shrink();
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Row(
-                  children: [
-                    const Icon(Icons.person, size: 16, color: Colors.grey),
-                    const SizedBox(width: 6),
-                    Text('${VN.createdBy}: ',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Colors.grey)),
-                    Text(staffName,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(fontWeight: FontWeight.w500)),
-                  ],
-                ),
-              );
-            }),
+            Builder(
+              builder: (context) {
+                final staffName = ref.watch(loggedByProvider);
+                if (staffName.isEmpty) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.person, size: 16, color: Colors.grey),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${VN.createdBy}: ',
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                      ),
+                      Text(
+                        staffName,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
 
             // ── Customer ──────────────────────────────────────────────
             const _SectionHeader(VN.customer),
@@ -530,18 +550,20 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                 ),
               )
             else
-              ..._items.where((i) => !i.isExtra).map(
-                (item) => ExpandableItemCard(
-                  key: ValueKey(item),
-                  item: item,
-                  onRemove: () => setState(() => _items.remove(item)),
-                  onQtyChanged: (q) => setState(() {
-                    item.quantity = q;
-                    _checkAutoGift();
-                  }),
-                  onStateChanged: () => setState(() {}),
-                ),
-              ),
+              ..._items
+                  .where((i) => !i.isExtra)
+                  .map(
+                    (item) => ExpandableItemCard(
+                      key: ValueKey(item),
+                      item: item,
+                      onRemove: () => setState(() => _items.remove(item)),
+                      onQtyChanged: (q) => setState(() {
+                        item.quantity = q;
+                        _checkAutoGift();
+                      }),
+                      onStateChanged: () => setState(() {}),
+                    ),
+                  ),
             OutlinedButton.icon(
               onPressed: _openProductPicker,
               icon: const Icon(Icons.add),
@@ -583,56 +605,79 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             // ── Extras (accessories) ──────────────────────────────────
             const _SectionHeader(VN.extras),
             // Show added extras with qty +/-
-            ..._items.where((i) => i.isExtra).map((item) => Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: item.isGift
-                          ? Colors.green.withValues(alpha: 0.2)
-                          : Colors.grey.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(4),
+            ..._items
+                .where((i) => i.isExtra)
+                .map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: item.isGift
+                                ? Colors.green.withValues(alpha: 0.2)
+                                : Colors.grey.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            item.isGift ? VN.giftBadge : VN.paymentFee,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: item.isGift ? Colors.green : Colors.grey,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${item.product.name} (${formatVND(item.unitPrice)})',
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.remove, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
+                          onPressed: () => _decrementExtra(item),
+                        ),
+                        Text(
+                          '${item.quantity}',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
+                          onPressed: () => setState(() => item.quantity += 1),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.close,
+                            size: 16,
+                            color: theme.colorScheme.error,
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
+                          onPressed: () => _removeExtraItem(item),
+                        ),
+                      ],
                     ),
-                    child: Text(
-                      item.isGift ? VN.giftBadge : VN.paymentFee,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: item.isGift ? Colors.green : Colors.grey,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${item.product.name} (${formatVND(item.unitPrice)})',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.remove, size: 18),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    onPressed: () => _decrementExtra(item),
-                  ),
-                  Text('${item.quantity}', style: theme.textTheme.bodyMedium),
-                  IconButton(
-                    icon: const Icon(Icons.add, size: 18),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    onPressed: () => setState(() => item.quantity += 1),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close, size: 16, color: theme.colorScheme.error),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                    onPressed: () => _removeExtraItem(item),
-                  ),
-                ],
-              ),
-            )),
+                ),
             _ExtrasSection(onExtraAdded: _addExtra),
             const SizedBox(height: 20),
 
@@ -643,13 +688,9 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               onPressed: _pickDate,
               icon: const Icon(Icons.calendar_today, size: 18),
               label: Text(
-                _dueDate != null
-                    ? _formatDateDisplay(_dueDate!)
-                    : VN.dueDate,
+                _dueDate != null ? _formatDateDisplay(_dueDate!) : VN.dueDate,
               ),
-              style: OutlinedButton.styleFrom(
-                alignment: Alignment.centerLeft,
-              ),
+              style: OutlinedButton.styleFrom(alignment: Alignment.centerLeft),
             ),
             const SizedBox(height: 12),
             // F5: Time preset chips
@@ -748,7 +789,8 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                   labelText: VN.deliveryAddress,
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) => _needsAddress && (v == null || v.trim().isEmpty)
+                validator: (v) =>
+                    _needsAddress && (v == null || v.trim().isEmpty)
                     ? VN.fieldRequired
                     : null,
               ),
@@ -770,7 +812,9 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      _shippingFee == 0 ? VN.shippingFree : formatVND(_shippingFee),
+                      _shippingFee == 0
+                          ? VN.shippingFree
+                          : formatVND(_shippingFee),
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ),
@@ -875,8 +919,8 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }
@@ -911,7 +955,7 @@ class _ExtrasSection extends ConsumerWidget {
         if (extras.isEmpty) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
+            child: Text(
               VN.noConfiguredExtras,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.outline,
