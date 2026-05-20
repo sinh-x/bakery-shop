@@ -26,6 +26,49 @@ String? extractBackendDetail(Object? data) {
   return null;
 }
 
+String orderStatusRecoveryActionFromDetail(String detail) {
+  final normalized = detail.toLowerCase();
+  if (normalized.contains('ton kho') ||
+      normalized.contains('tồn kho') ||
+      normalized.contains('insufficient stock')) {
+    return VN.orderStatusActionCheckStock;
+  }
+  if (normalized.contains('price bucket') ||
+      normalized.contains('muc gia') ||
+      normalized.contains('mức giá')) {
+    return VN.orderStatusActionCheckPriceBucket;
+  }
+  if ((normalized.contains('ly do') || normalized.contains('lý do')) &&
+      (normalized.contains('quay lai') ||
+          normalized.contains('quaylui') ||
+          normalized.contains('trang thai truoc') ||
+          normalized.contains('trạng thái trước') ||
+          normalized.contains('backward') ||
+          normalized.contains('lùi'))) {
+    return VN.orderStatusActionAddBackwardReason;
+  }
+  if (normalized.contains('thanh toan') ||
+      normalized.contains('thanh toán') ||
+      normalized.contains('incomplete payment')) {
+    return VN.orderStatusActionCompletePayment;
+  }
+  return VN.orderStatusActionContactAdmin;
+}
+
+String buildOrderStatusFailureMessage({
+  required String reason,
+  required String action,
+  required String orderRef,
+  required int statusCode,
+}) {
+  final singleLine =
+      '${VN.orderStatusChangeFailedPrefix}: $reason. ${VN.orderStatusRecoveryLabel}: $action. ${VN.orderStatusDebugCodeLabel}: $orderRef · $statusCode';
+  if (singleLine.length <= 280) {
+    return singleLine;
+  }
+  return '${VN.orderStatusChangeFailedPrefix}: $reason.\n${VN.orderStatusRecoveryLabel}: $action.\n${VN.orderStatusDebugCodeLabel}: $orderRef · $statusCode';
+}
+
 ApiError normalizeApiError(Object error) {
   if (error is DioException) {
     if (error.type == DioExceptionType.connectionTimeout ||

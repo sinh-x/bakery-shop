@@ -21,6 +21,7 @@ import '../../providers/products_provider.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/vnd_units.dart';
 import '../../shared/theme/bakery_theme.dart';
+import '../../shared/utils/api_error.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/enum_attribute_display.dart';
@@ -343,8 +344,27 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         await _showPrintChecklistDialog();
       }
     } catch (e) {
+      final normalized = normalizeApiError(e);
+      final statusCode = normalized.statusCode ?? 0;
+      final backendDetail = normalized.message;
+      if (statusCode == 422) {
+        final action = orderStatusRecoveryActionFromDetail(backendDetail);
+        final message = buildOrderStatusFailureMessage(
+          reason: backendDetail,
+          action: action,
+          orderRef: order.orderRef,
+          statusCode: statusCode,
+        );
+        debugPrint(
+          '[order-status-transition-failed] orderRef=${order.orderRef} currentStatus=${order.status} targetStatus=$targetStatus httpStatus=$statusCode backendDetail=$backendDetail',
+        );
+        if (mounted) {
+          showTopSnackBar(context, message);
+        }
+        return;
+      }
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${VN.apiError}: ${normalized.message}');
       }
     } finally {
       if (mounted) setState(() => _transitioning = false);

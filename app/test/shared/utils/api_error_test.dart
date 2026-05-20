@@ -32,4 +32,44 @@ void main() {
       expect(normalized.message, VN.apiTimeout);
     });
   });
+
+  group('order status failure messaging', () {
+    test('maps known stock reason to recovery action', () {
+      final action = orderStatusRecoveryActionFromDetail('Không đủ tồn kho');
+      expect(action, VN.orderStatusActionCheckStock);
+    });
+
+    test('maps known invalid price bucket reason to recovery action', () {
+      final action = orderStatusRecoveryActionFromDetail(
+        'Invalid product price bucket for order item',
+      );
+      expect(action, VN.orderStatusActionCheckPriceBucket);
+    });
+
+    test('maps missing backward transition reason to recovery action', () {
+      final action = orderStatusRecoveryActionFromDetail(
+        'Thiếu lý do khi quay lại trạng thái trước',
+      );
+      expect(action, VN.orderStatusActionAddBackwardReason);
+    });
+
+    test('maps incomplete payment reason to recovery action', () {
+      final action = orderStatusRecoveryActionFromDetail(
+        'Đơn hàng chưa thanh toán đủ',
+      );
+      expect(action, VN.orderStatusActionCompletePayment);
+    });
+
+    test('builds message with order ref and status code', () {
+      final message = buildOrderStatusFailureMessage(
+        reason: 'Không đủ tồn kho',
+        action: VN.orderStatusActionCheckStock,
+        orderRef: 'ORD-260508-010',
+        statusCode: 422,
+      );
+      expect(message, contains('ORD-260508-010'));
+      expect(message, contains('422'));
+      expect(message, contains(VN.orderStatusRecoveryLabel));
+    });
+  });
 }
