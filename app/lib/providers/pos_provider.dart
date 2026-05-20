@@ -9,6 +9,7 @@ class PosCartItem {
     required this.product,
     required this.quantity,
     this.isGift = false,
+    this.useInventory = true,
     this.selectedPrice,
     this.selectedChipId,
     this.selectedChipLabel,
@@ -17,14 +18,15 @@ class PosCartItem {
   final Product product;
   int quantity;
   final bool isGift;
+  final bool useInventory;
   final double? selectedPrice;
   final int? selectedChipId;
   final String? selectedChipLabel;
 
-  String get lineKey =>
-      selectedChipId != null
-          ? '${product.id}:chip:$selectedChipId'
-          : '${product.id}:base';
+  String get lineKey {
+    final option = selectedChipId != null ? 'chip:$selectedChipId' : 'base';
+    return '${product.id}:$option:inventory:${useInventory ? 1 : 0}';
+  }
 
   double get unitPrice => selectedPrice ?? product.basePrice;
 
@@ -51,16 +53,16 @@ class PosCartNotifier extends Notifier<PosCartState> {
     double? selectedPrice,
     int? selectedChipId,
     String? selectedChipLabel,
+    bool useInventory = true,
   }) {
     final items = List<PosCartItem>.from(state.items);
-    final lineKey = selectedChipId != null
-        ? '${product.id}:chip:$selectedChipId'
-        : '${product.id}:base';
+    final option = selectedChipId != null ? 'chip:$selectedChipId' : 'base';
+    final lineKey = '${product.id}:$option:inventory:${useInventory ? 1 : 0}';
 
     // Check if same product + same chip selection is already in cart.
-    final existing = items.where(
-      (i) => i.lineKey == lineKey && !i.isGift,
-    ).firstOrNull;
+    final existing = items
+        .where((i) => i.lineKey == lineKey && !i.isGift)
+        .firstOrNull;
 
     if (existing != null) {
       existing.quantity += 1;
@@ -69,6 +71,7 @@ class PosCartNotifier extends Notifier<PosCartState> {
         PosCartItem(
           product: product,
           quantity: 1,
+          useInventory: useInventory,
           selectedPrice: selectedPrice,
           selectedChipId: selectedChipId,
           selectedChipLabel: selectedChipLabel,
@@ -79,29 +82,33 @@ class PosCartNotifier extends Notifier<PosCartState> {
     // Auto-gift: if tang_kem + total >= threshold, add gift extras
     if (product.attributes['tang_kem']?.toString() == 'true') {
       final qualified = items
-          .where((i) =>
-              i.product.attributes['tang_kem']?.toString() == 'true' &&
-              !i.isGift)
+          .where(
+            (i) =>
+                i.product.attributes['tang_kem']?.toString() == 'true' &&
+                !i.isGift,
+          )
           .fold<double>(0, (sum, i) => sum + i.total);
 
       if (qualified >= GiftConfig.giftThreshold) {
         for (final (name, price) in GiftConfig.giftExtras) {
-          final existingGift = items.where(
-            (i) => i.product.name == name && i.isGift,
-          ).firstOrNull;
+          final existingGift = items
+              .where((i) => i.product.name == name && i.isGift)
+              .firstOrNull;
           if (existingGift != null) {
             existingGift.quantity += 1;
           } else {
-            items.add(PosCartItem(
-              product: Product(
-                id: -1,
-                name: name,
-                basePrice: price,
-                attributes: const {'_gift': 'true'},
+            items.add(
+              PosCartItem(
+                product: Product(
+                  id: -1,
+                  name: name,
+                  basePrice: price,
+                  attributes: const {'_gift': 'true'},
+                ),
+                quantity: 1,
+                isGift: true,
               ),
-              quantity: 1,
-              isGift: true,
-            ));
+            );
           }
         }
       }
