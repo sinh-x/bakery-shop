@@ -337,6 +337,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
                         sectionContentBuilder: (context, section) =>
                             PosProductGrid(
                               products: section.items,
+                              showOutOfStockProducts: _showOutOfStockProducts,
                               shrinkWrap: true,
                               physics: const NeverScrollableScrollPhysics(),
                               padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),

@@ -68,6 +68,24 @@ class PosCheckoutEditPanel extends StatelessWidget {
                 multiSelectionEnabled: false,
                 style: ButtonStyle(
                   visualDensity: VisualDensity.compact,
+                  backgroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return theme.colorScheme.primary;
+                    }
+                    return theme.colorScheme.surface;
+                  }),
+                  foregroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return theme.colorScheme.onPrimary;
+                    }
+                    return theme.colorScheme.onSurface;
+                  }),
+                  iconColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return theme.colorScheme.onPrimary;
+                    }
+                    return theme.colorScheme.onSurfaceVariant;
+                  }),
                   side: WidgetStateProperty.resolveWith((states) {
                     if (states.contains(WidgetState.selected)) {
                       return BorderSide(

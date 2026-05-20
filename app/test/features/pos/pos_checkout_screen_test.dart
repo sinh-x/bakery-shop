@@ -26,6 +26,8 @@ class _FakeOrderService extends OrderService {
   _FakeOrderService({this.createOrderCompleter}) : super(Dio());
 
   final List<String?> paymentMethods = <String?>[];
+  final List<List<Map<String, dynamic>>> createdItems =
+      <List<Map<String, dynamic>>>[];
   final Completer<Order>? createOrderCompleter;
   int createOrderCallCount = 0;
 
@@ -47,6 +49,7 @@ class _FakeOrderService extends OrderService {
   }) async {
     createOrderCallCount += 1;
     paymentMethods.add(paymentMethod);
+    createdItems.add(items);
     if (createOrderCompleter != null) {
       return createOrderCompleter!.future;
     }
@@ -273,6 +276,66 @@ void main() {
       expect(find.text('Receipt ORD-001'), findsOneWidget);
     });
 
+    testWidgets('payment segment selection has visible selected styling', (
+      tester,
+    ) async {
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(
+        _buildCheckoutApp(items: <PosCartItem>[cartItem]),
+      );
+      await tester.pumpAndSettle();
+
+      var segmented = tester.widget<SegmentedButton<String>>(
+        find.byType(SegmentedButton<String>),
+      );
+      expect(segmented.selected, {'cash'});
+
+      final selectedColor = segmented.style?.backgroundColor?.resolve({
+        WidgetState.selected,
+      });
+      final unselectedColor = segmented.style?.backgroundColor?.resolve({});
+      expect(selectedColor, isNotNull);
+      expect(unselectedColor, isNotNull);
+      expect(selectedColor, isNot(unselectedColor));
+
+      await tester.tap(find.text(VN.chuyenKhoan));
+      await tester.pumpAndSettle();
+
+      segmented = tester.widget<SegmentedButton<String>>(
+        find.byType(SegmentedButton<String>),
+      );
+      expect(segmented.selected, {'transfer'});
+    });
+
+    testWidgets('submits useInventory false for force-sold cart lines', (
+      tester,
+    ) async {
+      final fakeOrderService = _FakeOrderService();
+      final cartItem = PosCartItem(
+        product: _product(),
+        quantity: 1,
+        useInventory: false,
+      );
+
+      await tester.pumpWidget(
+        _buildCheckoutApp(
+          items: <PosCartItem>[cartItem],
+          orderService: fakeOrderService,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(FilledButton, VN.thanhToan));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, OrdersLabels.done));
+      await tester.pumpAndSettle();
+
+      expect(fakeOrderService.createdItems.single.single['attributes'], {
+        'useInventory': 'false',
+      });
+    });
+
     testWidgets(
       'opens local review before order creation and keeps cart state',
       (tester) async {
@@ -298,6 +361,33 @@ void main() {
         expect(find.text('Receipt ORD-001'), findsNothing);
       },
     );
+
+    testWidgets('review shows gift line totals as zero', (tester) async {
+      final normalItem = PosCartItem(product: _product(), quantity: 1);
+      final giftItem = PosCartItem(
+        product: const Product(
+          id: -1,
+          name: 'Nen',
+          basePrice: 5000,
+          attributes: {'_gift': 'true'},
+        ),
+        quantity: 1,
+        isGift: true,
+      );
+
+      await tester.pumpWidget(
+        _buildCheckoutApp(items: <PosCartItem>[normalItem, giftItem]),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(FilledButton, VN.thanhToan));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Nen (${VN.giftSuffix})'), findsOneWidget);
+      expect(find.text('${VN.donGia}: ${formatVND(5000)}'), findsOneWidget);
+      expect(find.text('${VN.total}: ${formatVND(0)}'), findsOneWidget);
+      expect(find.text('${VN.total}: ${formatVND(5000)}'), findsNothing);
+    });
 
     testWidgets('edit order from review preserves cart and selected payment', (
       tester,

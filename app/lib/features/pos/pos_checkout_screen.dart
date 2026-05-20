@@ -64,6 +64,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         'quantity': i.quantity,
         'unitPrice': i.unitPrice,
         'priceChipId': i.selectedChipId,
+        if (!i.useInventory) 'attributes': {'useInventory': 'false'},
       };
     }).toList();
 

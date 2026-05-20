@@ -120,6 +120,8 @@ class PosCheckoutReviewPanel extends StatelessWidget {
   }
 
   Widget _buildLineItem(PosCartItem item) {
+    final displayTotal = item.isGift ? 0.0 : item.total;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -139,7 +141,7 @@ class PosCheckoutReviewPanel extends StatelessWidget {
             Align(
               alignment: Alignment.centerRight,
               child: Text(
-                '${VN.total}: ${formatVND(item.total)}',
+                '${VN.total}: ${formatVND(displayTotal)}',
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),

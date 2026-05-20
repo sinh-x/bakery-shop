@@ -1,6 +1,8 @@
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/models/category.dart';
+import 'package:bakery_app/data/models/price_chip.dart';
 import 'package:bakery_app/data/models/product.dart';
+import 'package:bakery_app/features/pos/widgets/pos_product_grid.dart';
 import 'package:bakery_app/features/pos/pos_screen.dart';
 import 'package:bakery_app/providers/categories_provider.dart';
 import 'package:bakery_app/providers/products_provider.dart';
@@ -82,6 +84,32 @@ void main() {
       active: 1,
       attributes: {'trung_bay': 'true'},
       stockQty: null,
+    ),
+    const Product(
+      id: 5,
+      name: 'Banh kem chip',
+      category: 'banh_kem',
+      basePrice: 130000,
+      active: 1,
+      attributes: {'trung_bay': 'true'},
+      stockQty: 10,
+      priceChips: <PriceChip>[
+        PriceChip(id: 15, label: '130', price: 130000, stockQty: 0),
+        PriceChip(id: 16, label: '140', price: 140000, stockQty: 2),
+      ],
+    ),
+    const Product(
+      id: 6,
+      name: 'Banh kem base option',
+      category: 'banh_kem',
+      basePrice: 120000,
+      active: 1,
+      attributes: {'trung_bay': 'true'},
+      stockQty: 3,
+      priceChips: <PriceChip>[
+        PriceChip(id: 17, label: '130', price: 130000, stockQty: 0),
+        PriceChip(id: 18, label: '140', price: 140000, stockQty: 2),
+      ],
     ),
   ];
 
@@ -206,7 +234,57 @@ void main() {
     expect(find.byType(Switch), findsOneWidget);
   });
 
-  testWidgets('in-stock add updates cart bar and badge without success overlay', (
+  testWidgets(
+    'in-stock add updates cart bar and badge without success overlay',
+    (tester) async {
+      await tester.pumpWidget(buildScreen());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Banh kem'));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Kem dau'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Kem dau'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SnackBar), findsNothing);
+      expect(find.textContaining('đã thêm vào giỏ'), findsNothing);
+      expect(find.text('x1'), findsOneWidget);
+      expect(find.text(formatVND(25000)), findsWidgets);
+    },
+  );
+
+  test('same-price chip uses base stock bucket for POS display', () {
+    final product = products.singleWhere((p) => p.id == 5);
+    final chip130 = product.priceChips[0];
+    final chip140 = product.priceChips[1];
+
+    expect(posBaseStockQty(product), 8);
+    expect(posBackendChipIdForSelection(product, chip130), isNull);
+    expect(posChipDisplayStockQty(product, chip130), 8);
+    expect(posBackendChipIdForSelection(product, chip140), 16);
+    expect(posChipDisplayStockQty(product, chip140), 2);
+  });
+
+  testWidgets('chip picker shows per-option stock counts', (tester) async {
+    await tester.pumpWidget(buildScreen());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Banh kem'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Banh kem chip'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Banh kem chip'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('130 · ${formatVND(130000)}'), findsOneWidget);
+    expect(find.text(VN.availableStock(8)), findsOneWidget);
+    expect(find.text('140 · ${formatVND(140000)}'), findsOneWidget);
+    expect(find.text(VN.lowStock(2)), findsOneWidget);
+  });
+
+  testWidgets('chip picker hides out-of-stock chips by default', (
     tester,
   ) async {
     await tester.pumpWidget(buildScreen());
@@ -214,13 +292,39 @@ void main() {
 
     await tester.tap(find.text('Banh kem'));
     await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Kem dau'));
+    await tester.ensureVisible(find.text('Banh kem base option'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Banh kem base option'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(SnackBar), findsNothing);
-    expect(find.textContaining('đã thêm vào giỏ'), findsNothing);
-    expect(find.text('x1'), findsOneWidget);
-    expect(find.text(formatVND(25000)), findsWidgets);
+    expect(find.text('${VN.giaCoSo} · ${formatVND(120000)}'), findsOneWidget);
+    expect(find.text(VN.lowStock(1)), findsOneWidget);
+    expect(find.text('130 · ${formatVND(130000)}'), findsNothing);
+    expect(find.text('140 · ${formatVND(140000)}'), findsOneWidget);
+    expect(find.text(VN.lowStock(2)), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Thêm'));
+    await tester.pumpAndSettle();
+    expect(find.text(formatVND(120000)), findsWidgets);
+    expect(find.text(VN.sanPhamHetHang), findsNothing);
+  });
+
+  testWidgets('chip picker shows out-of-stock chips when switch is enabled', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildScreen());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Banh kem'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Banh kem base option'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Banh kem base option'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('130 · ${formatVND(130000)}'), findsOneWidget);
+    expect(find.text(VN.outOfStock), findsWidgets);
   });
 }
