@@ -16,7 +16,7 @@ Future<Object?> showTransferSourceDialog(BuildContext context) {
         ),
         TextButton(
           onPressed: () => Navigator.pop(dialogCtx, ImageSource.camera),
-          child: const Text('📷 Camera'),
+          child: const Text(VN.takePhoto),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(dialogCtx, ImageSource.gallery),

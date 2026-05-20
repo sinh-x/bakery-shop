@@ -29,30 +29,41 @@ class PosCheckoutReviewPanel extends StatelessWidget {
     return Column(
       children: [
         Expanded(
-          child: ListView(
+          child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            children: [
-              Text(
-                OrdersLabels.checkoutReviewTitle,
-                style: theme.textTheme.titleLarge,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                OrdersLabels.checkoutReviewHint,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ...items.map(_buildLineItem),
-              const SizedBox(height: 12),
-              Card(
-                child: ListTile(
-                  title: const Text(VN.paymentMethod),
-                  trailing: Text(paymentMethodLabel),
-                ),
-              ),
-              Card(
+            itemCount: items.length + 4,
+            separatorBuilder: (context, index) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return Text(
+                  OrdersLabels.checkoutReviewTitle,
+                  style: theme.textTheme.titleLarge,
+                );
+              }
+
+              if (index == 1) {
+                return Text(
+                  OrdersLabels.checkoutReviewHint,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                );
+              }
+
+              if (index <= items.length + 1) {
+                return _buildLineItem(items[index - 2]);
+              }
+
+              if (index == items.length + 2) {
+                return Card(
+                  child: ListTile(
+                    title: const Text(VN.paymentMethod),
+                    trailing: Text(paymentMethodLabel),
+                  ),
+                );
+              }
+
+              return Card(
                 child: ListTile(
                   title: const Text(VN.total),
                   trailing: Text(
@@ -63,8 +74,8 @@ class PosCheckoutReviewPanel extends StatelessWidget {
                     ),
                   ),
                 ),
-              ),
-            ],
+              );
+            },
           ),
         ),
         Container(
@@ -110,7 +121,6 @@ class PosCheckoutReviewPanel extends StatelessWidget {
 
   Widget _buildLineItem(PosCartItem item) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(

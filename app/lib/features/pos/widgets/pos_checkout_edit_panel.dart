@@ -64,7 +64,7 @@ class PosCheckoutEditPanel extends StatelessWidget {
                 selected: {selectedPaymentMethod},
                 onSelectionChanged: (selection) =>
                     onPaymentMethodChanged(selection.first),
-                showSelectedIcon: true,
+                showSelectedIcon: false,
                 multiSelectionEnabled: false,
                 style: ButtonStyle(
                   visualDensity: VisualDensity.compact,
