@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../data/models/order_photo.dart';
 import '../../../providers/order_providers.dart';
+import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 // ── Predefined tag definitions ─────────────────────────────────────────────────
@@ -56,7 +57,11 @@ const kOrderPhotoTags = [
 
 Set<String> _parseTags(String tags) {
   if (tags.isEmpty) return {};
-  return tags.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).toSet();
+  return tags
+      .split(',')
+      .map((t) => t.trim())
+      .where((t) => t.isNotEmpty)
+      .toSet();
 }
 
 // ── Main gallery section ───────────────────────────────────────────────────────
@@ -77,8 +82,10 @@ class OrderPhotoSection extends ConsumerStatefulWidget {
 
   final String orderRef;
   final String baseUrl;
+
   /// When true, only show photos with workItemId == null (order-level photos).
   final bool orderLevelOnly;
+
   /// When set, uploaded photos are linked to this work item ID.
   final int? workItemId;
 
@@ -152,10 +159,7 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (ctx) => _TagEditSheet(
-        orderRef: widget.orderRef,
-        photo: photo,
-      ),
+      builder: (ctx) => _TagEditSheet(orderRef: widget.orderRef, photo: photo),
     );
   }
 
@@ -228,10 +232,10 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
             final photos = widget.orderLevelOnly
                 ? allPhotos.where((p) => p.workItemId == null).toList()
                 : widget.workItemId != null
-                    ? allPhotos
-                        .where((p) => p.workItemId == widget.workItemId)
-                        .toList()
-                    : allPhotos;
+                ? allPhotos
+                      .where((p) => p.workItemId == widget.workItemId)
+                      .toList()
+                : allPhotos;
             if (photos.isEmpty) {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -279,7 +283,9 @@ class _OrderPhotoSectionState extends ConsumerState<OrderPhotoSection> {
                                     width: 90,
                                     height: 90,
                                     decoration: BoxDecoration(
-                                      color: theme.colorScheme.surfaceContainerHighest,
+                                      color: theme
+                                          .colorScheme
+                                          .surfaceContainerHighest,
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: const Icon(Icons.broken_image),
@@ -407,6 +413,7 @@ class _OrderPhotoViewerState extends State<OrderPhotoViewer> {
           '${_currentIndex + 1} / ${widget.photos.length}',
           style: const TextStyle(color: Colors.white),
         ),
+        actions: const [AppBarOverflowMenu()],
       ),
       body: PageView.builder(
         controller: _pageController,
@@ -454,8 +461,9 @@ class _OrderPhotoViewerState extends State<OrderPhotoViewer> {
                       spacing: 6,
                       runSpacing: 4,
                       children: tagKeys.map((key) {
-                        final tagDef =
-                            kOrderPhotoTags.where((t) => t.key == key).firstOrNull;
+                        final tagDef = kOrderPhotoTags
+                            .where((t) => t.key == key)
+                            .firstOrNull;
                         final color = tagDef?.color ?? Colors.grey;
                         final label = tagDef?.label ?? key;
                         return Container(

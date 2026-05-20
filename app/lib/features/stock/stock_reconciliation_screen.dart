@@ -9,6 +9,7 @@ import '../../providers/categories_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/category_grouping.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/collapsible_category_sections.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/reconciliation_product_card.dart';
@@ -58,6 +59,7 @@ class _StockReconciliationScreenState
                 ? null
                 : () => context.push('/stock/reconciliation/history'),
           ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: state.isLoading && state.draft == null

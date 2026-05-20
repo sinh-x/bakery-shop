@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 const _kTypeChips = [
@@ -22,7 +23,8 @@ class KnowledgeListScreen extends ConsumerStatefulWidget {
 
   final String? initialType;
   @override
-  ConsumerState<KnowledgeListScreen> createState() => _KnowledgeListScreenState();
+  ConsumerState<KnowledgeListScreen> createState() =>
+      _KnowledgeListScreenState();
 }
 
 class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen> {
@@ -62,6 +64,7 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(VN.knowledgeTitle),
+        actions: const [AppBarOverflowMenu()],
       ),
       body: Column(
         children: [
@@ -95,14 +98,16 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen> {
                     onSelected: (_) => _setTypeFilter(null),
                   ),
                 ),
-                ..._kTypeChips.map((t) => Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: FilterChip(
-                    label: Text(t.$2),
-                    selected: _selectedType == t.$1,
-                    onSelected: (_) => _setTypeFilter(t.$1),
+                ..._kTypeChips.map(
+                  (t) => Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: FilterChip(
+                      label: Text(t.$2),
+                      selected: _selectedType == t.$1,
+                      onSelected: (_) => _setTypeFilter(t.$1),
+                    ),
                   ),
-                )),
+                ),
               ],
             ),
           ),
@@ -134,7 +139,11 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.menu_book_outlined, size: 48, color: Colors.grey),
+                        const Icon(
+                          Icons.menu_book_outlined,
+                          size: 48,
+                          color: Colors.grey,
+                        ),
                         const SizedBox(height: 12),
                         Text(
                           VN.noKnowledgeEntries,
@@ -162,22 +171,25 @@ class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen> {
                           padding: const EdgeInsets.only(top: 8, bottom: 4),
                           child: Text(
                             '📌 Đã ghim',
-                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              color: Colors.orange.shade700,
-                            ),
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(color: Colors.orange.shade700),
                           ),
                         ),
-                        ...pinned.map((entry) => _KnowledgeEntryCard(
-                          entry: entry,
-                          onTap: () => context.push('/knowledge/${entry.id}'),
-                        )),
+                        ...pinned.map(
+                          (entry) => _KnowledgeEntryCard(
+                            entry: entry,
+                            onTap: () => context.push('/knowledge/${entry.id}'),
+                          ),
+                        ),
                         const SizedBox(height: 8),
                       ],
                       // Unpinned section
-                      ...unpinned.map((entry) => _KnowledgeEntryCard(
-                        entry: entry,
-                        onTap: () => context.push('/knowledge/${entry.id}'),
-                      )),
+                      ...unpinned.map(
+                        (entry) => _KnowledgeEntryCard(
+                          entry: entry,
+                          onTap: () => context.push('/knowledge/${entry.id}'),
+                        ),
+                      ),
                     ],
                   ),
                 );
@@ -249,7 +261,10 @@ class _KnowledgeEntryCard extends StatelessWidget {
                   ),
                   if (entry.photos.isNotEmpty)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.blue.shade100,
                         borderRadius: BorderRadius.circular(10),
@@ -257,11 +272,18 @@ class _KnowledgeEntryCard extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.photo, size: 12, color: Colors.blue.shade700),
+                          Icon(
+                            Icons.photo,
+                            size: 12,
+                            color: Colors.blue.shade700,
+                          ),
                           const SizedBox(width: 2),
                           Text(
                             '${entry.photos.length}',
-                            style: TextStyle(fontSize: 11, color: Colors.blue.shade700),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.blue.shade700,
+                            ),
                           ),
                         ],
                       ),
@@ -272,12 +294,18 @@ class _KnowledgeEntryCard extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.grey.shade200,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Text(typeLabel, style: const TextStyle(fontSize: 12)),
+                    child: Text(
+                      typeLabel,
+                      style: const TextStyle(fontSize: 12),
+                    ),
                   ),
                 ],
               ),
@@ -288,14 +316,25 @@ class _KnowledgeEntryCard extends StatelessWidget {
                   runSpacing: 2,
                   children: entry.tags
                       .take(5)
-                      .map((tag) => Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.shade100,
-                              borderRadius: BorderRadius.circular(8),
+                      .map(
+                        (tag) => Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            tag,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.amber.shade800,
                             ),
-                            child: Text(tag, style: TextStyle(fontSize: 10, color: Colors.amber.shade800)),
-                          ))
+                          ),
+                        ),
+                      )
                       .toList(),
                 ),
               ],

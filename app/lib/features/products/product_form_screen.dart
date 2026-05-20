@@ -17,6 +17,7 @@ import '../../data/models/product.dart';
 import '../../providers/catalog_provider.dart';
 import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'widgets/catalog_photo_viewer.dart';
 import 'widgets/catalog_tag_chips.dart';
@@ -985,6 +986,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                   ? _reactivate
                   : _delete,
             ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: Form(

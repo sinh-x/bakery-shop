@@ -7,6 +7,7 @@ import '../../data/models/category.dart';
 import '../../data/models/product.dart';
 import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'widgets/product_card.dart';
 
@@ -68,13 +69,36 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
     }
   }
 
+  void _onAppBarMenuSelected(BuildContext context, String value) {
+    switch (value) {
+      case 'manage_categories':
+        context.push('/categories/manage');
+        return;
+      case 'settings':
+        context.push('/settings');
+        return;
+      case 'browse_catalog':
+        context.push('/products/browse');
+        return;
+      default:
+        assert(() {
+          debugPrint('Unknown product catalog app bar menu action: $value');
+          return true;
+        }());
+        return;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(categoriesProvider);
 
     return categoriesAsync.when(
       loading: () => Scaffold(
-        appBar: AppBar(title: const Text(VN.tabProducts)),
+        appBar: AppBar(
+          title: const Text(VN.tabProducts),
+          actions: const [AppBarOverflowMenu()],
+        ),
         body: const Center(child: CircularProgressIndicator()),
       ),
       error: (err, st) => _buildWithCategories(
@@ -125,20 +149,18 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
                   ref.invalidate(categoriesProvider);
                 },
               ),
-              IconButton(
-                icon: const Icon(Icons.tune),
-                tooltip: VN.manageCategories,
-                onPressed: () => context.push('/categories/manage'),
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings),
-                tooltip: VN.settings,
-                onPressed: () => context.push('/settings'),
-              ),
-              IconButton(
-                icon: const Icon(Icons.photo_library_outlined),
-                tooltip: VN.browseScreenTitle,
-                onPressed: () => context.push('/products/browse'),
+              AppBarOverflowMenu(
+                onSelected: (value) => _onAppBarMenuSelected(context, value),
+                items: const [
+                  PopupMenuItem<String>(
+                    value: 'manage_categories',
+                    child: Text(VN.openCategoryManagement),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'browse_catalog',
+                    child: Text(VN.openCatalogBrowse),
+                  ),
+                ],
               ),
             ],
             bottom: TabBar(

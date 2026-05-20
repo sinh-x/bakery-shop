@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/event.dart';
 import '../../providers/events_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 
 class _EventType {
@@ -90,7 +91,9 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     try {
       final loggedBy = ref.read(loggedByProvider);
       if (_isEditing) {
-        await ref.read(eventsProvider.notifier).updateEvent(
+        await ref
+            .read(eventsProvider.notifier)
+            .updateEvent(
               id: widget.event!.id,
               summary: summary,
               type: _selectedType,
@@ -102,7 +105,9 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
           context.pop();
         }
       } else {
-        await ref.read(eventsProvider.notifier).logEvent(
+        await ref
+            .read(eventsProvider.notifier)
+            .logEvent(
               summary: summary,
               type: _selectedType,
               tags: _selectedTags.toList(),
@@ -176,6 +181,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEditing ? VN.editEvent : VN.createEvent),
+        actions: const [AppBarOverflowMenu()],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),

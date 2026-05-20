@@ -10,9 +10,18 @@ import 'package:bakery_app/shared/utils/product_photo_url.dart';
 
 /// 2-column product grid with stock badges for POS screen.
 class PosProductGrid extends ConsumerWidget {
-  const PosProductGrid({super.key, required this.products});
+  const PosProductGrid({
+    super.key,
+    required this.products,
+    this.shrinkWrap = false,
+    this.physics,
+    this.padding = const EdgeInsets.all(8),
+  });
 
   final List<Product> products;
+  final bool shrinkWrap;
+  final ScrollPhysics? physics;
+  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -21,7 +30,9 @@ class PosProductGrid extends ConsumerWidget {
     final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
 
     return GridView.builder(
-      padding: const EdgeInsets.all(8),
+      padding: padding,
+      shrinkWrap: shrinkWrap,
+      physics: physics,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         crossAxisSpacing: 8,

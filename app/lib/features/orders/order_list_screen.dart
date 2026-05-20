@@ -10,6 +10,7 @@ import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/theme/bakery_theme.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
 import 'widgets/order_card.dart';
@@ -73,6 +74,23 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     setState(() {
       _viewMode = newMode;
     });
+  }
+
+  void _onAppBarMenuSelected(String value) {
+    switch (value) {
+      case 'orders_history':
+        context.push('/orders/history');
+        return;
+      case 'settings':
+        context.push('/settings');
+        return;
+      default:
+        assert(() {
+          debugPrint('Unknown orders app bar menu action: $value');
+          return true;
+        }());
+        return;
+    }
   }
 
   @override
@@ -222,21 +240,22 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
             onPressed: () => ref.read(orderListProvider.notifier).refresh(),
           ),
           IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: VN.lichSuDonHang,
-            onPressed: () => context.push('/orders/history'),
-          ),
-          IconButton(
             icon: Icon(
               _viewMode == 'list' ? Icons.view_kanban : Icons.view_list,
             ),
-            tooltip: _viewMode == 'list' ? 'Kanban' : 'Danh sách',
+            tooltip: _viewMode == 'list'
+                ? VN.switchToKanbanView
+                : VN.switchToListView,
             onPressed: _toggleViewMode,
           ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: VN.settings,
-            onPressed: () => context.push('/settings'),
+          AppBarOverflowMenu(
+            onSelected: _onAppBarMenuSelected,
+            items: const [
+              PopupMenuItem<String>(
+                value: 'orders_history',
+                child: Text(VN.openOrderHistory),
+              ),
+            ],
           ),
         ],
         bottom: TabBar(
