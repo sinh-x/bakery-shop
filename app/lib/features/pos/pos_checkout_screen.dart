@@ -42,6 +42,13 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   bool _navigatingAfterCheckout = false;
   String _selectedPaymentMethod = 'cash'; // 'cash' or 'transfer'
 
+  void _onPaymentMethodChanged(String paymentMethod) {
+    if (_selectedPaymentMethod == paymentMethod) {
+      return;
+    }
+    setState(() => _selectedPaymentMethod = paymentMethod);
+  }
+
   List<Map<String, dynamic>> _buildOrderItems() {
     final cart = ref.read(posCartProvider);
     final orderItems = cart.items.where((i) => !i.isGift).map((i) {
@@ -314,12 +321,22 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
                         ),
                       ],
                       selected: {_selectedPaymentMethod},
-                      onSelectionChanged: (selection) {
-                        setState(
-                          () => _selectedPaymentMethod = selection.first,
-                        );
-                      },
-                      showSelectedIcon: false,
+                      onSelectionChanged: (selection) =>
+                          _onPaymentMethodChanged(selection.first),
+                      showSelectedIcon: true,
+                      multiSelectionEnabled: false,
+                      style: ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        side: MaterialStateProperty.resolveWith((states) {
+                          if (states.contains(MaterialState.selected)) {
+                            return BorderSide(
+                              color: theme.colorScheme.primary,
+                              width: 2,
+                            );
+                          }
+                          return BorderSide(color: theme.colorScheme.outline);
+                        }),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
