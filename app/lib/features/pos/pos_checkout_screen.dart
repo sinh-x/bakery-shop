@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/order_service.dart';
 import '../../features/stock/stock_screen.dart';
+import '../../features/pos/widgets/pos_checkout_review_panel.dart';
 import '../../providers/pos_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/api_error.dart' as api_error;
@@ -40,6 +41,7 @@ class PosCheckoutScreen extends ConsumerStatefulWidget {
 class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   bool _isProcessing = false;
   bool _navigatingAfterCheckout = false;
+  bool _isReviewStep = false;
   String _selectedPaymentMethod = 'cash'; // 'cash' or 'transfer'
 
   void _onPaymentMethodChanged(String paymentMethod) {
@@ -82,7 +84,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     return orderItems;
   }
 
-  Future<void> _handleThanhToan() async {
+  Future<void> _handleFinalizeOrder() async {
     if (_isProcessing) return;
 
     if (_selectedPaymentMethod == 'transfer') {
@@ -90,6 +92,20 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     } else {
       await _createOrder('cash');
     }
+  }
+
+  void _openReviewStep() {
+    if (_isProcessing) return;
+    setState(() => _isReviewStep = true);
+  }
+
+  void _backToEditStep() {
+    if (_isProcessing) return;
+    setState(() => _isReviewStep = false);
+  }
+
+  String _paymentMethodLabel() {
+    return _selectedPaymentMethod == 'transfer' ? VN.chuyenKhoan : VN.tienMat;
   }
 
   Future<void> _createOrder(String paymentMethod) async {
@@ -246,7 +262,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.thanhToan),
+        title: Text(_isReviewStep ? VN.checkoutReviewTitle : VN.thanhToan),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: VN.backToCart,
@@ -264,108 +280,105 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       body: Column(
         children: [
           // Editable item list
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              itemCount: cart.items.length,
-              itemBuilder: (context, i) {
-                final item = cart.items[i];
-                return _CheckoutCartItemTile(item: item);
-              },
-            ),
-          ),
-
-          // Footer: total + payment toggle + single Thanh toán button
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primaryContainer,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(16),
+          if (_isReviewStep)
+            Expanded(
+              child: PosCheckoutReviewPanel(
+                items: cart.items,
+                total: cart.total,
+                paymentMethodLabel: _paymentMethodLabel(),
+                isProcessing: _isProcessing,
+                onEditOrder: _backToEditStep,
+                onFinalize: _handleFinalizeOrder,
+              ),
+            )
+          else ...[
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                itemCount: cart.items.length,
+                itemBuilder: (context, i) {
+                  final item = cart.items[i];
+                  return _CheckoutCartItemTile(item: item);
+                },
               ),
             ),
-            child: SafeArea(
-              top: false,
-              child: Column(
-                children: [
-                  // Total row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(VN.total, style: theme.textTheme.titleLarge),
-                      Text(
-                        formatVND(cart.total),
-                        style: theme.textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Cash / Transfer segmented toggle
-                  Semantics(
-                    label: VN.selectPaymentMethod,
-                    child: SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(
-                          value: 'cash',
-                          label: Text(VN.tienMat),
-                          icon: Icon(Icons.money),
-                        ),
-                        ButtonSegment(
-                          value: 'transfer',
-                          label: Text(VN.chuyenKhoan),
-                          icon: Icon(Icons.qr_code),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
+                ),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(VN.total, style: theme.textTheme.titleLarge),
+                        Text(
+                          formatVND(cart.total),
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.primary,
+                          ),
                         ),
                       ],
-                      selected: {_selectedPaymentMethod},
-                      onSelectionChanged: (selection) =>
-                          _onPaymentMethodChanged(selection.first),
-                      showSelectedIcon: true,
-                      multiSelectionEnabled: false,
-                      style: ButtonStyle(
-                        visualDensity: VisualDensity.compact,
-                        side: MaterialStateProperty.resolveWith((states) {
-                          if (states.contains(MaterialState.selected)) {
-                            return BorderSide(
-                              color: theme.colorScheme.primary,
-                              width: 2,
-                            );
-                          }
-                          return BorderSide(color: theme.colorScheme.outline);
-                        }),
+                    ),
+                    const SizedBox(height: 16),
+                    Semantics(
+                      label: VN.selectPaymentMethod,
+                      child: SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment(
+                            value: 'cash',
+                            label: Text(VN.tienMat),
+                            icon: Icon(Icons.money),
+                          ),
+                          ButtonSegment(
+                            value: 'transfer',
+                            label: Text(VN.chuyenKhoan),
+                            icon: Icon(Icons.qr_code),
+                          ),
+                        ],
+                        selected: {_selectedPaymentMethod},
+                        onSelectionChanged: (selection) =>
+                            _onPaymentMethodChanged(selection.first),
+                        showSelectedIcon: true,
+                        multiSelectionEnabled: false,
+                        style: ButtonStyle(
+                          visualDensity: VisualDensity.compact,
+                          side: MaterialStateProperty.resolveWith((states) {
+                            if (states.contains(MaterialState.selected)) {
+                              return BorderSide(
+                                color: theme.colorScheme.primary,
+                                width: 2,
+                              );
+                            }
+                            return BorderSide(color: theme.colorScheme.outline);
+                          }),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Single Thanh toán button
-                  SizedBox(
-                    width: double.infinity,
-                    child: Tooltip(
-                      message: VN.confirmCounterPayment,
-                      child: FilledButton.icon(
-                        onPressed: _isProcessing ? null : _handleThanhToan,
-                        icon: _isProcessing
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.payment),
-                        label: const Text(VN.thanhToan),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: Tooltip(
+                        message: VN.confirmCounterPayment,
+                        child: FilledButton.icon(
+                          onPressed: _isProcessing ? null : _openReviewStep,
+                          icon: const Icon(Icons.rate_review_outlined),
+                          label: const Text(VN.thanhToan),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
