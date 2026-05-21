@@ -60,6 +60,19 @@ class VN {
   static const cancelReasonHint = 'Nhập lý do hủy...';
   static const confirmCancelAction = 'Xác nhận hủy';
   static const orderStatusUpdated = 'Đã cập nhật trạng thái';
+  static const orderStatusChangeFailedPrefix = 'Không thể đổi trạng thái';
+  static const orderStatusRecoveryLabel = 'Cách xử lý';
+  static const orderStatusDebugCodeLabel = 'Mã';
+  static const orderStatusActionCheckStock =
+      'Kiểm tra tồn kho hoặc số lượng sản phẩm rồi thử lại.';
+  static const orderStatusActionCheckPriceBucket =
+      'Kiểm tra mức giá sản phẩm trong đơn rồi thử lại.';
+  static const orderStatusActionAddBackwardReason =
+      'Nhập lý do chuyển trạng thái lùi rồi thử lại.';
+  static const orderStatusActionCompletePayment =
+      'Hoàn tất thanh toán còn thiếu trước khi đổi trạng thái.';
+  static const orderStatusActionContactAdmin =
+      'Kiểm tra dữ liệu đơn hàng hoặc liên hệ quản trị để hỗ trợ.';
   static const orderEditSaved = 'Đã lưu thay đổi';
 
   // Refresh
