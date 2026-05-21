@@ -1,12 +1,14 @@
 name: Auto Patch Version
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
     branches: [develop]
+    paths-ignore:
+      - 'app/pubspec.yaml'
+      - 'pyproject.toml'
 
 permissions:
+  actions: read
   contents: write
 
 concurrency:
@@ -15,9 +17,42 @@ concurrency:
 
 jobs:
   bump-patch:
-    if: "${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'develop' && github.event.workflow_run.actor.login != 'github-actions[bot]' && !contains(github.event.workflow_run.display_title, 'chore(release): bump patch version') }}"
+    if: "${{ github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, 'chore(release): bump patch version') }}"
     runs-on: ubuntu-latest
     steps:
+      - name: Wait for CI success
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in $(seq 1 90); do
+            ci_state=$(gh run list \
+              --workflow CI \
+              --branch develop \
+              --commit "$GITHUB_SHA" \
+              --event push \
+              --limit 1 \
+              --json status,conclusion \
+              --jq 'if length == 0 then "missing" else (.[0].status + ":" + (.[0].conclusion // "")) end')
+
+            case "$ci_state" in
+              completed:success)
+                echo "CI succeeded for $GITHUB_SHA."
+                exit 0
+                ;;
+              completed:*)
+                echo "CI did not succeed for $GITHUB_SHA: $ci_state"
+                exit 1
+                ;;
+              *)
+                echo "Waiting for CI for $GITHUB_SHA: $ci_state ($attempt/90)"
+                sleep 10
+                ;;
+            esac
+          done
+
+          echo "Timed out waiting for CI success for $GITHUB_SHA."
+          exit 1
+
       - uses: actions/checkout@v4
         with:
           ref: develop
