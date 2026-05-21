@@ -90,7 +90,7 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
                 attrs = item["attributes"]
 
         use_inventory = attrs.get("useInventory")
-        should_consume_fifo = use_inventory not in (False, "false")
+        should_consume_fifo = use_inventory in (True, "true")
 
         movement_cursor = conn.execute(
             """INSERT INTO stock_movements
