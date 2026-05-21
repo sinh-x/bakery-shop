@@ -1,0 +1,80 @@
+name: Auto Patch Version
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [develop]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-bump-develop
+  cancel-in-progress: false
+
+jobs:
+  bump-patch:
+    if: "${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'develop' && github.event.workflow_run.actor.login != 'github-actions[bot]' && !contains(github.event.workflow_run.display_title, 'chore(release): bump patch version') }}"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          python <<'PY' >> "$GITHUB_OUTPUT"
+          from pathlib import Path
+          import re
+
+          pubspec = Path("app/pubspec.yaml")
+          pyproject = Path("pyproject.toml")
+
+          pubspec_text = pubspec.read_text()
+          match = re.search(r"^version:\s*(\d+)\.(\d+)\.(\d+)(?:\+(\d+))?\s*$", pubspec_text, re.MULTILINE)
+          if not match:
+              raise SystemExit("Could not find app/pubspec.yaml version in MAJOR.MINOR.PATCH+BUILD format")
+
+          major, minor, patch, build = match.groups()
+          next_base = f"{major}.{minor}.{int(patch) + 1}"
+          next_build = int(build or 0) + 1
+          next_flutter = f"{next_base}+{next_build}"
+
+          pubspec_text = re.sub(
+              r"^version:\s*.*$",
+              f"version: {next_flutter}",
+              pubspec_text,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          pubspec.write_text(pubspec_text)
+
+          pyproject_text = pyproject.read_text()
+          pyproject_text = re.sub(
+              r'^version = ".*"$',
+              f'version = "{next_base}"',
+              pyproject_text,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          pyproject.write_text(pyproject_text)
+
+          print(f"base={next_base}")
+          print(f"flutter={next_flutter}")
+          PY
+
+      - name: Commit version bump
+        run: |
+          if git diff --quiet -- app/pubspec.yaml pyproject.toml; then
+            echo "No version changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/pubspec.yaml pyproject.toml
+          git commit -m "chore(release): bump patch version to ${{ steps.bump.outputs.flutter }} [skip ci]"
+          git push origin HEAD:develop
