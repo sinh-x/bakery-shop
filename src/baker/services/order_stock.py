@@ -34,8 +34,8 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
            FROM order_items oi
            JOIN orders o ON o.id = oi.order_id
            WHERE oi.order_id = ?
-                AND oi.product_id != ''
-                 AND oi.is_gift = 0""",
+             AND oi.product_id != ''
+             AND oi.is_gift = 0""",
         (order_id,),
     ).fetchall()
 

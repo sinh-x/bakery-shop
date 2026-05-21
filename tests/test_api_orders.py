@@ -1,5 +1,7 @@
 """Tests for Baker API — orders endpoints."""
 
+import json
+
 import pytest
 
 from baker.db.connection import get_db
@@ -967,6 +969,56 @@ def test_pos_order_with_chip_persists_price_chip_and_fifo_consumes(api_client):
             (order["orderRef"],),
         ).fetchone()
         assert movement["price_chip_id"] == chip_id
+        assert movement["lot_id"] is not None
+
+        consumed = conn.execute(
+            "SELECT COUNT(*) AS c FROM inventory_items WHERE consumed_by_movement_id = ?",
+            (movement["id"],),
+        ).fetchone()
+        assert consumed["c"] == 1
+
+
+def test_pos_order_trung_bay_without_use_inventory_still_consumes_fifo(api_client):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "POS-Nhỏ", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 2, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 1,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+            }
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+
+    with get_db() as conn:
+        saved_item = conn.execute(
+            "SELECT attributes FROM order_items WHERE order_id = ? ORDER BY id ASC LIMIT 1",
+            (int(order["id"]),),
+        ).fetchone()
+        saved_attributes = json.loads(saved_item["attributes"] or "{}")
+        assert "useInventory" not in saved_attributes
+
+        movement = conn.execute(
+            """SELECT id, lot_id
+               FROM stock_movements
+               WHERE movement_type = 'sale' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (order["orderRef"],),
+        ).fetchone()
         assert movement["lot_id"] is not None
 
         consumed = conn.execute(
