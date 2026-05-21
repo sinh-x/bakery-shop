@@ -169,5 +169,17 @@ void main() {
       expect(extra.attributes, isEmpty);
       expect(extra.isExtra, true);
     });
+
+    test('trung bay item defaults useInventory to false', () {
+      final trungBayProduct = Product(
+        id: 101,
+        name: 'Bánh trưng bày',
+        attributes: const {'trung_bay': 'true'},
+      );
+
+      final item = DraftOrderItem(product: trungBayProduct);
+
+      expect(item.attributes['useInventory'], 'false');
+    });
   });
 }
