@@ -34,6 +34,20 @@ void main() {
   });
 
   group('order status failure messaging', () {
+    test('maps known backend transition detail strings to actionable recovery', () {
+      const backendDetails = <String>[
+        'Không đủ tồn kho cho sản phẩm',
+        'Invalid product price bucket for order item',
+        'Lý do là bắt buộc khi lùi trạng thái',
+        'Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu 12,000đ',
+      ];
+
+      for (final detail in backendDetails) {
+        final action = orderStatusRecoveryActionFromDetail(detail);
+        expect(action, isNot(VN.orderStatusActionContactAdmin), reason: detail);
+      }
+    });
+
     test('maps known stock reason to recovery action', () {
       final action = orderStatusRecoveryActionFromDetail('Không đủ tồn kho');
       expect(action, VN.orderStatusActionCheckStock);

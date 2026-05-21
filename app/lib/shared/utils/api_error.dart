@@ -2,6 +2,9 @@ import 'package:dio/dio.dart';
 
 import 'package:bakery_app/shared/labels/shared.dart';
 
+// Keep one-line SnackBar messages readable before forcing wrapped formatting.
+const _orderStatusFailureInlineThreshold = 280;
+
 enum ApiErrorKind { network, timeout, validation, server, unknown }
 
 class ApiError {
@@ -63,7 +66,7 @@ String buildOrderStatusFailureMessage({
 }) {
   final singleLine =
       '${VN.orderStatusChangeFailedPrefix}: $reason. ${VN.orderStatusRecoveryLabel}: $action. ${VN.orderStatusDebugCodeLabel}: $orderRef · $statusCode';
-  if (singleLine.length <= 280) {
+  if (singleLine.length <= _orderStatusFailureInlineThreshold) {
     return singleLine;
   }
   return '${VN.orderStatusChangeFailedPrefix}: $reason.\n${VN.orderStatusRecoveryLabel}: $action.\n${VN.orderStatusDebugCodeLabel}: $orderRef · $statusCode';

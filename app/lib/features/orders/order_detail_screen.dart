@@ -1,6 +1,7 @@
 // EXEMPT: 300-line threshold exceeded because DG-150 blocker: payment/work-item/print/info extraction would require large event and dialog lifecycle rewiring that cannot be safely completed in this remediation scope. Reviewed 2026-05-29.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -355,9 +356,11 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           orderRef: order.orderRef,
           statusCode: statusCode,
         );
-        debugPrint(
-          '[order-status-transition-failed] orderRef=${order.orderRef} currentStatus=${order.status} targetStatus=$targetStatus httpStatus=$statusCode backendDetail=$backendDetail',
-        );
+        if (kDebugMode) {
+          debugPrint(
+            '[order-status-transition-failed] orderRef=${order.orderRef} currentStatus=${order.status} targetStatus=$targetStatus httpStatus=$statusCode backendDetail=$backendDetail',
+          );
+        }
         if (mounted) {
           showTopSnackBar(context, message);
         }
