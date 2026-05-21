@@ -56,7 +56,7 @@ versioning:
 
   version_bump:
     rule: PATCH is auto-bumped after CI succeeds on non-bot pushes to develop; MAJOR/MINOR are manual only
-    automation: .github/workflows/version-bump.yml runs after the CI workflow succeeds, increments PATCH, increments the existing Flutter build number, and syncs pyproject.toml to X.Y.Z
+    automation: .github/workflows/version-bump.yml runs on develop pushes, waits for the matching CI run to succeed, increments PATCH, increments the existing Flutter build number, and syncs pyproject.toml to X.Y.Z
     procedure:
       - Merge a feature PR into develop.
       - "After CI passes, the version-bump workflow creates a follow-up `chore(release): bump patch version ... [skip ci]` commit on develop."
