@@ -19,7 +19,7 @@ def _make_test_image(width=100, height=100) -> bytes:
 
 
 def _create_order(client, customer="Nguyễn Văn A", **kwargs):
-    payload = {"customerName": customer, **kwargs}
+    payload = {"customerName": customer, "dueDate": "2026-03-25", **kwargs}
     resp = client.post("/api/orders", json=payload)
     assert resp.status_code == 201
     return resp.json()
@@ -289,6 +289,7 @@ def _create_order_with_item(client):
     """Create order with 1 item, return (order, work_item_id)."""
     resp = client.post("/api/orders", json={
         "customerName": "Test",
+        "dueDate": "2026-03-25",
         "items": [{"productName": "Bánh kem 16cm", "unitPrice": 200000}],
     })
     assert resp.status_code == 201

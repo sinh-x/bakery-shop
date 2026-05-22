@@ -69,6 +69,7 @@ class TestLogContext:
             json={
                 "customerName": "Test Customer",
                 "customerPhone": "0123456789",
+                "dueDate": "2026-03-25",
                 "items": [
                     {
                         "productName": "Bánh mì",
@@ -277,6 +278,7 @@ def test_status_transition_rejection_logs_backend_diagnostics(api_client, caplog
         "/api/orders",
         json={
             "customerName": "Status log test",
+            "dueDate": "2026-03-25",
             "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000}],
         },
     ).json()

@@ -6,20 +6,16 @@ import pytest
 # --- Helpers ---
 
 
-def _create_order(client, customer="Nguyễn Văn A", due_date=None, **kwargs):
-    payload = {"customerName": customer}
-    if due_date:
-        payload["dueDate"] = due_date
+def _create_order(client, customer="Nguyễn Văn A", due_date="2026-03-25", **kwargs):
+    payload = {"customerName": customer, "dueDate": due_date}
     payload.update(kwargs)
     resp = client.post("/api/orders", json=payload)
     assert resp.status_code == 201
     return resp.json()
 
 
-def _create_order_with_items(client, items, customer="Test", due_date=None):
-    payload = {"customerName": customer, "items": items}
-    if due_date:
-        payload["dueDate"] = due_date
+def _create_order_with_items(client, items, customer="Test", due_date="2026-03-25"):
+    payload = {"customerName": customer, "items": items, "dueDate": due_date}
     resp = client.post("/api/orders", json=payload)
     assert resp.status_code == 201
     return resp.json()
@@ -148,6 +144,7 @@ def test_cake_queue_sorted_by_due_date_ascending(api_client):
 def test_cake_queue_null_due_date_last(api_client):
     _create_order_with_items(
         api_client, [{"productName": "Không hạn", "unitPrice": 100000}],
+        due_date="2026-03-26",
     )
     _create_order_with_items(
         api_client, [{"productName": "Có hạn", "unitPrice": 100000}],
