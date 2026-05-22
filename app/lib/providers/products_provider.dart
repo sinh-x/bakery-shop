@@ -117,6 +117,16 @@ final productsProvider = AsyncNotifierProvider<ProductsNotifier, List<Product>>(
   ProductsNotifier.new,
 );
 
+final activeProductsByCategoryProvider =
+    FutureProvider.family<List<Product>, String>((ref, category) async {
+      final service = ref.read(productServiceProvider);
+      return service.listProducts(category: category, active: 1);
+    });
+
+final phuKienProductsProvider = FutureProvider<List<Product>>((ref) async {
+  return ref.watch(activeProductsByCategoryProvider('phu_kien').future);
+});
+
 class InactiveProductsNotifier extends AsyncNotifier<List<Product>> {
   @override
   Future<List<Product>> build() async {

@@ -13,6 +13,7 @@ class _FakeProductService extends ProductService {
   _FakeProductService() : super(Dio());
 
   int? lastListActive;
+  String? lastListCategory;
   int? lastUpdatedId;
   int? lastUpdatedActive;
 
@@ -32,6 +33,7 @@ class _FakeProductService extends ProductService {
     bool trungBay = false,
   }) async {
     lastListActive = active;
+    lastListCategory = category;
     if (active == 0) {
       return List<Product>.from(_inactiveProducts);
     }
@@ -91,6 +93,19 @@ void main() {
     expect(fakeService.lastListActive, 0);
     expect(products, hasLength(1));
     expect(products.first.active, 0);
+  });
+
+  test('phuKienProductsProvider loads active phu_kien products', () async {
+    final fakeService = _FakeProductService();
+    final container = ProviderContainer(
+      overrides: [productServiceProvider.overrideWithValue(fakeService)],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(phuKienProductsProvider.future);
+
+    expect(fakeService.lastListActive, 1);
+    expect(fakeService.lastListCategory, 'phu_kien');
   });
 
   test(
