@@ -63,7 +63,10 @@ Future<void> _pumpScreen(WidgetTester tester, CategoryService service) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [categoryServiceProvider.overrideWithValue(service)],
-      child: const MaterialApp(home: CategoryManagementScreen()),
+      child: MaterialApp(
+        theme: ThemeData(splashFactory: NoSplash.splashFactory),
+        home: const CategoryManagementScreen(),
+      ),
     ),
   );
   await tester.pumpAndSettle();

@@ -16,6 +16,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData(splashFactory: NoSplash.splashFactory),
         home: Scaffold(
           body: CollapsibleCategorySections<String>(
             sections: sections,
@@ -53,6 +54,7 @@ void main() {
 
     Widget buildHarness() {
       return MaterialApp(
+        theme: ThemeData(splashFactory: NoSplash.splashFactory),
         home: Scaffold(
           body: CollapsibleCategorySections<String>(
             sections: sections,

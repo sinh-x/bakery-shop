@@ -89,7 +89,10 @@ Future<Widget> _buildScreen({
       sharedPreferencesProvider.overrideWithValue(prefs),
       orderServiceProvider.overrideWithValue(OrderService(dio)),
     ],
-    child: const MaterialApp(home: OrderHistoryScreen()),
+    child: MaterialApp(
+      theme: ThemeData(splashFactory: NoSplash.splashFactory),
+      home: const OrderHistoryScreen(),
+    ),
   );
 }
 
