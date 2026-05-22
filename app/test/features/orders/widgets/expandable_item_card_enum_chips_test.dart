@@ -200,10 +200,10 @@ void main() {
       'new trung bay item shows useInventory off and keeps toggle state',
       (tester) async {
         final item = DraftOrderItem(
-          product: Product(
+          product: const Product(
             id: 200,
             name: 'Bánh trưng bày',
-            attributes: const {'trung_bay': 'true'},
+            attributes: {'trung_bay': 'true'},
           ),
         );
 

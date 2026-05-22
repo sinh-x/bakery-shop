@@ -171,10 +171,10 @@ void main() {
     });
 
     test('trung bay item defaults useInventory to false', () {
-      final trungBayProduct = Product(
+      const trungBayProduct = Product(
         id: 101,
         name: 'Bánh trưng bày',
-        attributes: const {'trung_bay': 'true'},
+        attributes: {'trung_bay': 'true'},
       );
 
       final item = DraftOrderItem(product: trungBayProduct);
@@ -183,10 +183,10 @@ void main() {
     });
 
     test('trung bay item preserves explicit useInventory true', () {
-      final trungBayProduct = Product(
+      const trungBayProduct = Product(
         id: 101,
         name: 'Bánh trưng bày',
-        attributes: const {'trung_bay': 'true'},
+        attributes: {'trung_bay': 'true'},
       );
 
       final item = DraftOrderItem(
