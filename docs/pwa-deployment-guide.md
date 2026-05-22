@@ -14,6 +14,7 @@
 
 ```bash
 cd ~/Documents/bakery-shop
+# Uses repo-standard Flutter 3.44.0 / Dart 3.12.0 via nix devshell.
 ./scripts/deploy-web.sh
 ```
 

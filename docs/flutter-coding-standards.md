@@ -329,6 +329,7 @@ These rules are documented for Phase 2. Phase 3 will apply them to `analysis_opt
 
 - Flutter SDK: 3.44.0 (run all Flutter/Dart commands via `nix develop .#flutter`)
 - Dart SDK: 3.12.0 (from the same pinned Flutter toolchain)
+- Do not edit `flake.nix` or repo Flutter pin values directly to change Flutter/Dart versions; file a ticket for requirements or builder review first.
 - Riverpod: ^3.1.0 (as of `pubspec.yaml`)
 - flutter_lints: ^5.0.0 (via `analysis_options.yaml` include)
 - Review cadence: Annual or on major Flutter/Riverpod SDK version bump
