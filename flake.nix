@@ -18,9 +18,11 @@
         };
         python = pkgs.python312;
 
+        flutterRev = "3.44.0";
+
         flutterPinned = pkgs.fetchgit {
           url = "https://github.com/flutter/flutter.git";
-          rev = "3.44.0";
+          rev = flutterRev;
           hash = "sha256-YwQpuQIgulR4dzV9KyEhBF6+GdZvGSKZyweNfUv3wA4=";
           deepClone = true;
           fetchTags = true;
@@ -142,7 +144,7 @@
 
           shellHook = ''
             FLUTTER_SDK_DIR="$PWD/.nix-flutter-sdk"
-            FLUTTER_REV="3.44.0"
+            FLUTTER_REV="${flutterRev}"
 
             if [ ! -f "$FLUTTER_SDK_DIR/.pinned-rev" ] || [ "$(cat "$FLUTTER_SDK_DIR/.pinned-rev" 2>/dev/null)" != "$FLUTTER_REV" ]; then
               mkdir -p "$FLUTTER_SDK_DIR"
