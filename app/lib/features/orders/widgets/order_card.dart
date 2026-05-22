@@ -322,6 +322,24 @@ class OrderCard extends ConsumerWidget {
               // ── Customer name + source badge ──
               Row(
                 children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.tertiaryContainer,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      visualOrderCode(
+                        orderRef: order.orderRef,
+                        publicOrderCode: order.publicOrderCode,
+                      ),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onTertiaryContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                   if (order.source.isNotEmpty) ...[
                     Container(
                       padding: const EdgeInsets.symmetric(

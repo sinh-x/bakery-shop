@@ -174,6 +174,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     return orders
         .where(
           (o) =>
+              o.publicOrderCode.toLowerCase().contains(q) ||
               o.orderRef.toLowerCase().contains(q) ||
               o.customerName.toLowerCase().contains(q) ||
               o.customerPhone.contains(q),

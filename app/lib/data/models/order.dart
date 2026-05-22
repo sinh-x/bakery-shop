@@ -11,6 +11,7 @@ sealed class Order with _$Order {
   const factory Order({
     required String id,
     required String orderRef,
+    @Default('') String publicOrderCode,
     required String customerName,
     @Default('') String customerPhone,
     required List<OrderItem> items,

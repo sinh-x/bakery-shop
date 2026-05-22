@@ -7,7 +7,7 @@ import pytest
 
 def _create_order(client, customer="Nguyễn Văn A"):
     # Create order without items so work_items list starts empty
-    resp = client.post("/api/orders", json={"customerName": customer})
+    resp = client.post("/api/orders", json={"customerName": customer, "dueDate": "2026-03-25"})
     assert resp.status_code == 201
     return resp.json()
 
@@ -415,6 +415,7 @@ def test_order_creation_creates_work_items_with_birthday(api_client):
     """Creating an order with items including birthday fields creates order_items rows."""
     resp = api_client.post("/api/orders", json={
         "customerName": "Khách hàng",
+        "dueDate": "2026-03-25",
         "items": [
             {"productName": "Bánh kem 20cm", "unitPrice": 350000, "isBirthday": True, "age": 5},
             {"productName": "Bánh mì", "unitPrice": 10000},
@@ -494,6 +495,7 @@ def _create_order_with_main_and_extra(api_client, customer="Khách hàng"):
     """Create an order with 1 main item (cake) and 1 extra (candle)."""
     resp = api_client.post("/api/orders", json={
         "customerName": customer,
+        "dueDate": "2026-03-25",
         "items": [
             {"productName": "Bánh kem 16cm", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16", "isExtra": False},
             {"productName": "Nến sinh nhật", "quantity": 1, "unitPrice": 10000, "productId": "CANDLE", "isExtra": True},
@@ -531,6 +533,7 @@ def test_autosync_single_main_item_order(api_client):
     """AC5: Given a single-item order, when the item transitions, then the order still auto-syncs correctly."""
     order = api_client.post("/api/orders", json={
         "customerName": "Khách đơn lẻ",
+        "dueDate": "2026-03-25",
         "items": [{"productName": "Bánh mì", "quantity": 1, "unitPrice": 15000}],
     }).json()
     ref = order["orderRef"]
@@ -549,6 +552,7 @@ def test_autosync_main_cancelled_updates_order_to_cancelled(api_client):
     """AC6: Given all main items are cancelled, when auto-sync runs, then the order transitions to 'cancelled'."""
     order = api_client.post("/api/orders", json={
         "customerName": "Khách hủy",
+        "dueDate": "2026-03-25",
         "items": [
             {"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "isExtra": False},
             {"productName": "Đĩa giấy", "quantity": 1, "unitPrice": 5000, "isExtra": True},
@@ -591,6 +595,7 @@ def test_autosync_does_not_auto_complete_order(api_client):
     """AC8: Order never auto-transitions to 'completed' (requires payment gate)."""
     order = api_client.post("/api/orders", json={
         "customerName": "Khách lớn",
+        "dueDate": "2026-03-25",
         "items": [{"productName": "Bánh gig", "quantity": 1, "unitPrice": 500000}],
     }).json()
     ref = order["orderRef"]
@@ -609,6 +614,7 @@ def test_autosync_extras_skip_already_at_target(api_client):
     """F5: Skip extras that are already at target status or cancelled."""
     order = api_client.post("/api/orders", json={
         "customerName": "Khách test skip",
+        "dueDate": "2026-03-25",
         "items": [
             {"productName": "Bánh chính", "quantity": 1, "unitPrice": 200000, "isExtra": False},
             {"productName": "Nến", "quantity": 1, "unitPrice": 5000, "isExtra": True},
@@ -629,4 +635,3 @@ def test_autosync_extras_skip_already_at_target(api_client):
     candle_state = api_client.get(f"/api/orders/{ref}/items").json()
     candle_item = next(i for i in candle_state if i["productName"] == "Nến")
     assert candle_item["status"] == "ready"
-

@@ -1,4 +1,5 @@
 import json
+import random
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -75,6 +76,33 @@ def generate_order_ref(conn) -> str:
     else:
         next_num = 1
     return f"{prefix}{next_num:03d}"
+
+
+PUBLIC_ORDER_CODE_LETTERS = "ABCDLMNV"
+PUBLIC_ORDER_CODE_DIGITS = "0123456789"
+PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN = 6
+
+
+def delivery_type_to_public_suffix(delivery_type: str) -> str:
+    suffix_map = {
+        "pickup": "T",
+        "bus": "B",
+        "delivery": "S",
+    }
+    return suffix_map.get(delivery_type, "S")
+
+
+def generate_public_order_code_candidate(delivery_type: str, reference_len: int = 3) -> str:
+    if reference_len < 3:
+        reference_len = 3
+    if reference_len > PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN:
+        reference_len = PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN
+
+    randomizer = random.SystemRandom()
+    letter = randomizer.choice(PUBLIC_ORDER_CODE_LETTERS)
+    digits_count = reference_len - 1
+    digits = "".join(randomizer.choice(PUBLIC_ORDER_CODE_DIGITS) for _ in range(digits_count))
+    return f"{letter}{digits}-{delivery_type_to_public_suffix(delivery_type)}"
 
 
 @dataclass
@@ -161,6 +189,7 @@ class Order:
     source: str = ""
     created_by: str = ""
     shipping_fee: float = 0.0
+    public_order_code: str = ""
     id: Optional[int] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -188,12 +217,12 @@ class Order:
         cursor = conn.execute(
             """INSERT INTO orders (order_ref, customer_name, customer_phone, items,
                total_price, status, due_date, due_time, delivery_type,
-               delivery_address, notes, amount_paid, source, created_by, shipping_fee)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               delivery_address, notes, amount_paid, source, created_by, shipping_fee, public_order_code)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (self.order_ref, self.customer_name, self.customer_phone,
-             items_json, self.total_price, self.status, self.due_date,
-             self.due_time, self.delivery_type, self.delivery_address, self.notes,
-             self.amount_paid, self.source, self.created_by, self.shipping_fee),
+              items_json, self.total_price, self.status, self.due_date,
+              self.due_time, self.delivery_type, self.delivery_address, self.notes,
+              self.amount_paid, self.source, self.created_by, self.shipping_fee, self.public_order_code),
         )
         self.id = cursor.lastrowid
 
@@ -264,6 +293,7 @@ class Order:
             source=row["source"] or "",
             created_by=row["created_by"] if "created_by" in row.keys() else "",
             shipping_fee=row["shipping_fee"] if "shipping_fee" in row.keys() else 0.0,
+            public_order_code=row["public_order_code"] if "public_order_code" in row.keys() else "",
             created_at=row["created_at"], updated_at=row["updated_at"],
             work_ticket_printed_at=row["work_ticket_printed_at"] if "work_ticket_printed_at" in row.keys() else None,
             work_ticket_printed_by=row["work_ticket_printed_by"] if "work_ticket_printed_by" in row.keys() else "",
@@ -288,6 +318,7 @@ class Order:
             "createdBy": self.created_by,
             "amountPaid": self.amount_paid,
             "shippingFee": self.shipping_fee,
+            "publicOrderCode": self.public_order_code,
             "isPaid": self.amount_paid > 0 and self.amount_paid >= self.total_price,
             "packingChecklist": [],
             "createdAt": self.created_at,

@@ -284,7 +284,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 38
+        assert _migrated_version(conn) == 39
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -298,7 +298,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 38
+        assert _migrated_version(conn) == 39
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -309,10 +309,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 38
+        assert _migrated_version(conn) == 39
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 38
+        assert _migrated_version(conn) == 39
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -375,9 +375,9 @@ def test_schema_migration_v35_repairs_missing_reconciliation_line_waste_reason()
             "INSERT INTO schema_version (version, description) VALUES (34, 'Grouped reconciliation sale rows table')"
         )
 
-        ensure_schema(conn)
+        _migrate_to_version(conn, 35)
 
-        assert _migrated_version(conn) == 38
+        assert _migrated_version(conn) == 35
         line_columns = _schema_columns(conn, "reconciliation_lines")
         assert "waste_reason" in line_columns
 

@@ -148,6 +148,7 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
     String? deliveryAddress,
     String? deliveryType,
     String? source,
+    String? publicCodeDateChangeDecision,
     String? customerName,
     double? shippingFee,
   }) async {
@@ -162,6 +163,7 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
       deliveryAddress: deliveryAddress,
       deliveryType: deliveryType,
       source: source,
+      publicCodeDateChangeDecision: publicCodeDateChangeDecision,
       customerName: customerName,
       changedBy: changedBy,
       shippingFee: shippingFee,

@@ -9,7 +9,15 @@ from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
 from baker.logging import log_context, logger
-from baker.models.order import Order, OrderItem, is_backward_transition, validate_transition
+from baker.models.order import (
+    PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN,
+    Order,
+    OrderItem,
+    delivery_type_to_public_suffix,
+    generate_public_order_code_candidate,
+    is_backward_transition,
+    validate_transition,
+)
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
 from baker.services.order_stock import auto_decrement_stock, restore_stock_for_order
@@ -73,6 +81,7 @@ class OrderEdit(BaseModel):
     shippingFee: Optional[float] = None
     changedBy: str = ""
     workTicketPrintedAt: Optional[str] = None
+    publicCodeDateChangeDecision: Optional[str] = None
 
 
 class StatusTransition(BaseModel):
@@ -138,6 +147,37 @@ def _order_detail(conn, row) -> dict:
     result["paymentTransactions"] = [PaymentTransaction.from_row(r).to_api_dict() for r in txn_rows]
 
     return result
+
+
+def _generate_unique_public_order_code(conn, due_date: str, delivery_type: str) -> str:
+    for reference_len in range(3, PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN + 1):
+        attempts = 30 if reference_len == 3 else 50
+        for _ in range(attempts):
+            candidate = generate_public_order_code_candidate(delivery_type, reference_len)
+            exists = conn.execute(
+                "SELECT 1 FROM orders WHERE due_date = ? AND public_order_code = ? LIMIT 1",
+                (due_date, candidate),
+            ).fetchone()
+            if not exists:
+                return candidate
+    raise HTTPException(status_code=500, detail="Không thể tạo mã nhận bánh hợp lệ")
+
+
+def _public_code_exists_for_due_date(conn, due_date: str, public_order_code: str, order_id: int) -> bool:
+    existing = conn.execute(
+        """SELECT 1 FROM orders
+           WHERE due_date = ? AND public_order_code = ? AND id != ?
+           LIMIT 1""",
+        (due_date, public_order_code, order_id),
+    ).fetchone()
+    return bool(existing)
+
+
+def _replace_public_code_suffix(public_order_code: str, delivery_type: str) -> str:
+    if not public_order_code or "-" not in public_order_code:
+        return public_order_code
+    reference = public_order_code.split("-", 1)[0]
+    return f"{reference}-{delivery_type_to_public_suffix(delivery_type)}"
 
 
 def _log_status_transition_rejection(
@@ -303,7 +343,11 @@ def list_orders(
 @router.post("", status_code=201)
 def create_order(body: OrderCreate, request: Request):
     """Tạo đơn hàng mới."""
+    if body.dueDate is None or body.dueDate.strip() == "":
+        raise HTTPException(status_code=422, detail="Vui lòng chọn ngày nhận/giao bánh")
+
     with get_db() as conn:
+        public_order_code = _generate_unique_public_order_code(conn, body.dueDate, body.deliveryType)
         order = Order(
             customer_name=body.customerName,
             customer_phone=body.customerPhone,
@@ -316,6 +360,7 @@ def create_order(body: OrderCreate, request: Request):
             source=body.source,
             created_by=body.createdBy,
             shipping_fee=body.shippingFee,
+            public_order_code=public_order_code,
         )
         order.calculate_total()
         order.save(conn)
@@ -407,6 +452,7 @@ def edit_order(ref: str, body: OrderEdit):
 
         updates = []
         params: list = []
+        public_code_update = None
 
         field_map = {
             "customerName": "customer_name",
@@ -420,6 +466,72 @@ def edit_order(ref: str, body: OrderEdit):
             "shippingFee": "shipping_fee",
             "workTicketPrintedAt": "work_ticket_printed_at",
         }
+
+        new_due_date = data.get("dueDate", row["due_date"])
+        new_delivery_type = data.get("deliveryType", row["delivery_type"])
+        due_date_changed = "dueDate" in data and data["dueDate"] != row["due_date"]
+        delivery_type_changed = "deliveryType" in data and data["deliveryType"] != row["delivery_type"]
+        current_public_code = row["public_order_code"] or ""
+
+        if due_date_changed and current_public_code:
+            decision = data.get("publicCodeDateChangeDecision")
+            if decision not in {"keep", "regenerate"}:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Vui lòng chọn giữ mã hoặc tạo mã mới khi đổi ngày nhận/giao",
+                )
+
+            if decision == "regenerate":
+                new_public_code = _generate_unique_public_order_code(conn, new_due_date, new_delivery_type)
+                updates.append("public_order_code = ?")
+                params.append(new_public_code)
+                public_code_update = {
+                    "action": "regenerated",
+                    "reason": "due_date_changed",
+                    "previousCode": current_public_code,
+                    "currentCode": new_public_code,
+                }
+                current_public_code = new_public_code
+            else:
+                if _public_code_exists_for_due_date(conn, new_due_date, current_public_code, row["id"]):
+                    new_public_code = _generate_unique_public_order_code(conn, new_due_date, new_delivery_type)
+                    updates.append("public_order_code = ?")
+                    params.append(new_public_code)
+                    public_code_update = {
+                        "action": "regenerated",
+                        "reason": "due_date_conflict_after_keep",
+                        "previousCode": current_public_code,
+                        "currentCode": new_public_code,
+                    }
+                    current_public_code = new_public_code
+                else:
+                    public_code_update = {
+                        "action": "kept",
+                        "reason": "due_date_changed",
+                        "previousCode": current_public_code,
+                        "currentCode": current_public_code,
+                    }
+
+        if delivery_type_changed and current_public_code:
+            suffix_updated_code = _replace_public_code_suffix(current_public_code, new_delivery_type)
+            if _public_code_exists_for_due_date(conn, new_due_date, suffix_updated_code, row["id"]):
+                suffix_updated_code = _generate_unique_public_order_code(conn, new_due_date, new_delivery_type)
+                action = "suffix_updated_regenerated"
+                reason = "delivery_type_conflict"
+            else:
+                action = "suffix_updated"
+                reason = "delivery_type_changed"
+
+            if suffix_updated_code != current_public_code:
+                updates.append("public_order_code = ?")
+                params.append(suffix_updated_code)
+                public_code_update = {
+                    "action": action,
+                    "reason": reason,
+                    "previousCode": current_public_code,
+                    "currentCode": suffix_updated_code,
+                }
+                current_public_code = suffix_updated_code
 
         for camel, snake in field_map.items():
             if camel in data:
@@ -479,9 +591,26 @@ def edit_order(ref: str, body: OrderEdit):
                 _log_order_history(conn, row["id"], "field_edit", snake, str(row[snake]), str(data[camel]), changed_by)
         if items_changed:
             _log_order_history(conn, row["id"], "field_edit", "items", row["items"], items_json, changed_by)
+        if public_code_update and public_code_update["previousCode"] != public_code_update["currentCode"]:
+            _log_order_history(
+                conn,
+                row["id"],
+                "field_edit",
+                "public_order_code",
+                public_code_update["previousCode"],
+                public_code_update["currentCode"],
+                changed_by,
+            )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return _order_detail(conn, updated)
+        response = _order_detail(conn, updated)
+        response["publicOrderCodeUpdate"] = public_code_update or {
+            "action": "unchanged",
+            "reason": "none",
+            "previousCode": row["public_order_code"] or "",
+            "currentCode": updated["public_order_code"] or "",
+        }
+        return response
 
 
 @router.post("/{ref}/status")
