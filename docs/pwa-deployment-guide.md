@@ -8,12 +8,13 @@
 - Bakery server on Tailnet (Tailscale installed)
 - Target iPhones on Tailnet with Tailscale app
 - Docker running on the server
-- Nix flutter devshell available (`nix develop .#flutter`)
+- Repo-standard Nix Flutter devshell available (`nix develop .#flutter`, Flutter 3.44.0 / Dart 3.12.0)
 
 ## Step 1: Build Flutter Web
 
 ```bash
 cd ~/Documents/bakery-shop
+# Uses repo-standard Flutter 3.44.0 / Dart 3.12.0 via nix devshell.
 ./scripts/deploy-web.sh
 ```
 

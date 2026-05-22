@@ -17,20 +17,20 @@ dependencies:
   riverpod_annotation: ^4.0.0
 
   # Navigation
-  go_router: ^17.1.0
+  go_router: ^17.2.3
 
   # Immutable Data Classes
   freezed_annotation: ^3.1.0
-  json_annotation: ^4.9.0
+  json_annotation: ^4.11.0
 
   # HTTP Client
   dio: ^5.7.0
 
   # Settings storage
-  shared_preferences: ^2.3.0
+  shared_preferences: ^2.5.5
 
   # Image picker
-  image_picker: ^1.1.2
+  image_picker: ^1.2.2
 
   # Cached network images for photo thumbnails
   cached_network_image: ^3.4.1
@@ -55,7 +55,7 @@ dependencies:
   url_launcher: ^6.3.1
 
   # Printing
-  print_bluetooth_thermal: ^1.1.1
+  print_bluetooth_thermal: ^1.2.1
   image: ^4.8.0
   web: ^1.1.0
   gal: ^2.3.2
@@ -68,7 +68,7 @@ dev_dependencies:
   flutter_lints: ^6.0.0
 
   # Code Generation
-  build_runner: ^2.4.13
+  build_runner: ^2.15.0
   freezed: ^3.2.3
   json_serializable: ^6.8.0
   riverpod_generator: ^4.0.0+1

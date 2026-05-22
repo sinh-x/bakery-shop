@@ -160,7 +160,7 @@ On your development machine:
 ```bash
 cd ~/Documents/bakery-shop
 
-# Build web
+# Build web (repo-standard Flutter 3.44.0 / Dart 3.12.0 via nix devshell)
 nix develop .#flutter --command bash -c "cd app && flutter build web --release"
 
 # Copy to USB or transfer via network

@@ -85,10 +85,10 @@ packages:
     dependency: "direct dev"
     description:
       name: build_runner
-      sha256: "7981eb922842c77033026eb4341d5af651562008cdb116bdfa31fc46516b6462"
+      sha256: "1523ce62448ebac2c15a8ba5fbad8acac169788658a7dd2a1c2d9c2a9318b9a6"
       url: "https://pub.dev"
     source: hosted
-    version: "2.12.2"
+    version: "2.15.0"
   built_collection:
     dependency: transitive
     description:
@@ -417,10 +417,10 @@ packages:
     dependency: "direct main"
     description:
       name: go_router
-      sha256: "7974313e217a7771557add6ff2238acb63f635317c35fa590d348fb238f00896"
+      sha256: "92d8cee7c57dff0a6c409c05597b460002434eccf7424a712283225b3962d03f"
       url: "https://pub.dev"
     source: hosted
-    version: "17.1.0"
+    version: "17.2.3"
   graphs:
     dependency: transitive
     description:
@@ -473,10 +473,10 @@ packages:
     dependency: "direct main"
     description:
       name: image_picker
-      sha256: "784210112be18ea55f69d7076e2c656a4e24949fa9e76429fe53af0c0f4fa320"
+      sha256: "91c025426c2881c551100bce834e201c835a170151545f58d17da5180ca7d9ac"
       url: "https://pub.dev"
     source: hosted
-    version: "1.2.1"
+    version: "1.2.2"
   image_picker_android:
     dependency: transitive
     description:
@@ -849,10 +849,10 @@ packages:
     dependency: "direct main"
     description:
       name: print_bluetooth_thermal
-      sha256: "17b204a5340174c02acf5f6caf7279b5000344f1f1e1bcd01dbdbf912bce6e46"
+      sha256: "5d524b9c445779fa46796b84130e63530c81f04864fb2ecbce47a0f5c91d1788"
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.9"
+    version: "1.2.1"
   pub_semver:
     dependency: transitive
     description:
@@ -929,10 +929,10 @@ packages:
     dependency: "direct main"
     description:
       name: shared_preferences
-      sha256: "2939ae520c9024cb197fc20dee269cd8cdbf564c8b5746374ec6cacdc5169e64"
+      sha256: c3025c5534b01739267eb7d76959bbc25a6d10f6988e1c2a3036940133dd10bf
       url: "https://pub.dev"
     source: hosted
-    version: "2.5.4"
+    version: "2.5.5"
   shared_preferences_android:
     dependency: transitive
     description:

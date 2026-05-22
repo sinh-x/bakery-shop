@@ -18,6 +18,17 @@
         };
         python = pkgs.python312;
 
+        flutterRev = "3.44.0";
+
+        flutterPinned = pkgs.fetchgit {
+          url = "https://github.com/flutter/flutter.git";
+          rev = flutterRev;
+          hash = "sha256-YwQpuQIgulR4dzV9KyEhBF6+GdZvGSKZyweNfUv3wA4=";
+          deepClone = true;
+          fetchTags = true;
+          leaveDotGit = true;
+        };
+
         # Baker Python package (CLI + web server)
         baker = python.pkgs.buildPythonApplication {
           pname = "baker";
@@ -105,8 +116,7 @@
         # Flutter app devShell
         devShells.flutter = pkgs.mkShell {
           packages = [
-            pkgs.flutter
-            pkgs.dart
+            flutterPinned
             androidSdk
             pkgs.jdk17
             pkgs.git
@@ -133,6 +143,22 @@
           };
 
           shellHook = ''
+            FLUTTER_SDK_DIR="$PWD/.nix-flutter-sdk"
+            FLUTTER_REV="${flutterRev}"
+
+            if [ ! -f "$FLUTTER_SDK_DIR/.pinned-rev" ] || [ "$(cat "$FLUTTER_SDK_DIR/.pinned-rev" 2>/dev/null)" != "$FLUTTER_REV" ]; then
+              mkdir -p "$FLUTTER_SDK_DIR"
+              cp -aT "${flutterPinned}" "$FLUTTER_SDK_DIR"
+              chmod -R u+w "$FLUTTER_SDK_DIR"
+              printf "%s" "$FLUTTER_REV" > "$FLUTTER_SDK_DIR/.pinned-rev"
+            fi
+
+            if ! git -C "$FLUTTER_SDK_DIR" rev-parse "$FLUTTER_REV" >/dev/null 2>&1; then
+              git -C "$FLUTTER_SDK_DIR" tag "$FLUTTER_REV" HEAD >/dev/null 2>&1 || true
+            fi
+
+            export FLUTTER_ROOT="$FLUTTER_SDK_DIR"
+            export PATH="$FLUTTER_SDK_DIR/bin:$FLUTTER_SDK_DIR/bin/cache/dart-sdk/bin:$PATH"
             echo "Bakery App Development Environment"
             echo ""
             echo "Flutter: $(TERM=dumb flutter --version --machine </dev/null 2>/dev/null | ${pkgs.jq}/bin/jq -r '.frameworkVersion // "unknown"')"
