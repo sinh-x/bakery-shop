@@ -70,8 +70,9 @@ void main() {
             _FakeHistoryDetailService(),
           ),
         ],
-        child: const MaterialApp(
-          home: StockReconciliationHistoryDetailScreen(sessionId: 12),
+        child: MaterialApp(
+          theme: ThemeData(splashFactory: NoSplash.splashFactory),
+          home: const StockReconciliationHistoryDetailScreen(sessionId: 12),
         ),
       ),
     );

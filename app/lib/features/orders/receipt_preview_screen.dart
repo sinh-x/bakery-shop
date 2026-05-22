@@ -77,9 +77,14 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
       // Save to temp file then share
       await platform.saveToFile(_imageBytes!, fileName);
 
-      await Share.shareXFiles([
-        XFile.fromData(_imageBytes!, mimeType: 'image/png', name: fileName),
-      ], text: '${widget.receiptType.label} - ${widget.orderRef}');
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [
+            XFile.fromData(_imageBytes!, mimeType: 'image/png', name: fileName),
+          ],
+          text: '${widget.receiptType.label} - ${widget.orderRef}',
+        ),
+      );
     } catch (e) {
       if (mounted) {
         showTopSnackBar(context, '${VN.apiError}: $e');

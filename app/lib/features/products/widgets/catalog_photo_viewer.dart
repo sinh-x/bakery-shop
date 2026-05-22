@@ -95,9 +95,12 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
       final tmpDir = await getTemporaryDirectory();
       final tmpFile = File('${tmpDir.path}/catalog_photo_${photo.id}.jpg');
       await tmpFile.writeAsBytes(Uint8List.fromList(resp.data!));
-      await Share.shareXFiles([
-        XFile(tmpFile.path),
-      ], text: 'Tiệm Bánh Ninh Diêm');
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(tmpFile.path)],
+          text: 'Tiệm Bánh Ninh Diêm',
+        ),
+      );
     } catch (e) {
       if (mounted) showTopSnackBar(context, VN.khongTheChiaSe);
     } finally {

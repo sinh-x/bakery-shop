@@ -42,6 +42,7 @@ Future<void> _pumpCard(
 }) async {
   await tester.pumpWidget(
     MaterialApp(
+      theme: ThemeData(splashFactory: NoSplash.splashFactory),
       home: Scaffold(
         body: SingleChildScrollView(
           child: ExpandableItemCard(

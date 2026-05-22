@@ -186,9 +186,12 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
         '${tmpDir.path}/${_knowledgePhotoFileName(photo, metadata)}',
       );
       await tmpFile.writeAsBytes(bytes);
-      await Share.shareXFiles([
-        XFile(tmpFile.path, mimeType: metadata.mimeType),
-      ], text: photo.caption.isNotEmpty ? photo.caption : null);
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(tmpFile.path, mimeType: metadata.mimeType)],
+          text: photo.caption.isNotEmpty ? photo.caption : null,
+        ),
+      );
     } catch (_) {
       if (!mounted) return;
       if (kIsWeb) {

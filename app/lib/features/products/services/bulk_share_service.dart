@@ -123,7 +123,9 @@ class BulkShareService {
     }
 
     try {
-      await Share.shareXFiles(allShareFiles, text: 'Tiệm Bánh Ninh Diêm');
+      await SharePlus.instance.share(
+        ShareParams(files: allShareFiles, text: 'Tiệm Bánh Ninh Diêm'),
+      );
       successCount = allShareFiles.length;
     } catch (e) {
       if (kIsWeb) {
