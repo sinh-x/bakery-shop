@@ -1,6 +1,7 @@
 """Tests for Baker API — orders endpoints."""
 
 import json
+import re
 
 import pytest
 
@@ -12,7 +13,7 @@ from baker.db.connection import get_db
 def _create_order(client, customer="Nguyễn Văn A", items=None, **kwargs):
     if items is None:
         items = [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}]
-    payload = {"customerName": customer, "items": items, **kwargs}
+    payload = {"customerName": customer, "items": items, "dueDate": "2026-03-25", **kwargs}
     resp = client.post("/api/orders", json=payload)
     assert resp.status_code == 201
     return resp.json()
@@ -187,7 +188,7 @@ def test_list_orders_pagination(api_client):
 
 
 def test_create_order_minimal(api_client):
-    resp = api_client.post("/api/orders", json={"customerName": "Trần Thị B"})
+    resp = api_client.post("/api/orders", json={"customerName": "Trần Thị B", "dueDate": "2026-03-25"})
     assert resp.status_code == 201
     order = resp.json()
     assert order["customerName"] == "Trần Thị B"
@@ -211,7 +212,7 @@ def test_create_order_calculates_total(api_client):
         {"productName": "Bánh kem", "quantity": 2, "unitPrice": 200000},
         {"productName": "Bánh mì", "quantity": 3, "unitPrice": 10000},
     ]
-    resp = api_client.post("/api/orders", json={"customerName": "Test", "items": items})
+    resp = api_client.post("/api/orders", json={"customerName": "Test", "items": items, "dueDate": "2026-03-25"})
     assert resp.status_code == 201
     assert resp.json()["totalPrice"] == 430000
 
@@ -234,6 +235,44 @@ def test_create_order_returns_camel_case_fields(api_client):
 def test_create_order_generates_order_ref(api_client):
     order = _create_order(api_client)
     assert order["orderRef"].startswith("ORD-")
+
+
+def test_create_order_returns_public_order_code(api_client):
+    order = _create_order(api_client, dueDate="2026-03-26", deliveryType="pickup")
+    assert order["publicOrderCode"]
+    assert re.match(r"^[ABCDLMNV][0-9]{2,5}-T$", order["publicOrderCode"])
+
+
+def test_create_order_requires_due_date(api_client):
+    resp = api_client.post("/api/orders", json={"customerName": "Thiếu ngày"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Vui lòng chọn ngày nhận/giao bánh"
+
+
+def test_create_order_delivery_type_suffix_mapping(api_client):
+    pickup = _create_order(api_client, customer="Pickup", dueDate="2026-03-26", deliveryType="pickup")
+    bus = _create_order(api_client, customer="Bus", dueDate="2026-03-27", deliveryType="bus")
+    delivery = _create_order(api_client, customer="Delivery", dueDate="2026-03-28", deliveryType="delivery")
+    assert pickup["publicOrderCode"].endswith("-T")
+    assert bus["publicOrderCode"].endswith("-B")
+    assert delivery["publicOrderCode"].endswith("-S")
+
+
+def test_create_order_public_code_collision_retries_same_due_date(api_client, monkeypatch):
+    from baker.api import orders as orders_api
+
+    candidates = iter(["A42-T", "A42-T", "A421-T"])
+
+    def _fake_candidate(_delivery_type: str, _reference_len: int = 3) -> str:
+        return next(candidates)
+
+    monkeypatch.setattr(orders_api, "generate_public_order_code_candidate", _fake_candidate)
+
+    first = _create_order(api_client, customer="First", dueDate="2026-03-30", deliveryType="pickup")
+    second = _create_order(api_client, customer="Second", dueDate="2026-03-30", deliveryType="pickup")
+
+    assert first["publicOrderCode"] == "A42-T"
+    assert second["publicOrderCode"] == "A421-T"
 
 
 def test_create_order_id_is_string(api_client):
@@ -264,6 +303,7 @@ def test_create_order_with_deposit(api_client):
     resp = api_client.post("/api/orders", json={
         "customerName": "Test deposit",
         "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 300000}],
+        "dueDate": "2026-03-25",
         "deposit": {"amount": 100000, "method": "transfer"},
     })
     assert resp.status_code == 201
@@ -568,7 +608,7 @@ def test_update_payment_not_found(api_client):
 
 def test_create_order_item_preserves_product_id(api_client):
     items = [{"productName": "Bánh kem 16cm", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}]
-    resp = api_client.post("/api/orders", json={"customerName": "Test", "items": items})
+    resp = api_client.post("/api/orders", json={"customerName": "Test", "items": items, "dueDate": "2026-03-25"})
     assert resp.status_code == 201
     assert resp.json()["items"][0]["productId"] == "BKS-16"
 
@@ -576,6 +616,7 @@ def test_create_order_item_preserves_product_id(api_client):
 def test_create_order_with_created_by(api_client):
     resp = api_client.post("/api/orders", json={
         "customerName": "Test Created By",
+        "dueDate": "2026-03-25",
         "createdBy": "Ngân",
     })
     assert resp.status_code == 201
@@ -584,7 +625,7 @@ def test_create_order_with_created_by(api_client):
 
 
 def test_create_order_created_by_defaults_empty(api_client):
-    resp = api_client.post("/api/orders", json={"customerName": "Test Default"})
+    resp = api_client.post("/api/orders", json={"customerName": "Test Default", "dueDate": "2026-03-25"})
     assert resp.status_code == 201
     order = resp.json()
     assert order["createdBy"] == ""
@@ -750,6 +791,7 @@ def test_autosync_order_status_changes_extra_to_ready(api_client):
     then each non-cancelled extra auto-transitions to 'ready'."""
     resp = api_client.post("/api/orders", json={
         "customerName": "Khách test",
+        "dueDate": "2026-03-25",
         "items": [
             {"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "isExtra": False},
             {"productName": "Nến", "quantity": 1, "unitPrice": 10000, "isExtra": True},
@@ -774,6 +816,7 @@ def test_autosync_extras_follow_order_when_order_transitions(api_client):
     """When order status transitions, extras follow to matching work item status."""
     resp = api_client.post("/api/orders", json={
         "customerName": "Khách theo dõi",
+        "dueDate": "2026-03-25",
         "items": [
             {"productName": "Bánh chính", "quantity": 1, "unitPrice": 200000},
             {"productName": "Đĩa", "quantity": 1, "unitPrice": 5000, "isExtra": True},
@@ -795,6 +838,7 @@ def test_autosync_extras_not_affected_when_order_goes_to_cancelled(api_client):
     """Extras already cancelled are not re-transitioned when order goes to cancelled."""
     resp = api_client.post("/api/orders", json={
         "customerName": "Khách hủy extras",
+        "dueDate": "2026-03-25",
         "items": [
             {"productName": "Bánh", "quantity": 1, "unitPrice": 200000},
             {"productName": "Nến", "quantity": 1, "unitPrice": 10000, "isExtra": True},
@@ -822,6 +866,7 @@ def test_autosync_extras_skip_already_matching(api_client):
     """Extras that are already at target status are not updated unnecessarily."""
     resp = api_client.post("/api/orders", json={
         "customerName": "Khách skip",
+        "dueDate": "2026-03-25",
         "items": [
             {"productName": "Bánh", "quantity": 1, "unitPrice": 200000},
             {"productName": "Nến", "quantity": 1, "unitPrice": 10000, "isExtra": True},

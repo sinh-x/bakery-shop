@@ -728,6 +728,17 @@ CREATE INDEX IF NOT EXISTS idx_inventory_items_lot_status ON inventory_items(lot
 """
 
 
+PUBLIC_ORDER_CODE_SCHEMA = """
+ALTER TABLE orders ADD COLUMN public_order_code TEXT DEFAULT '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_due_date_public_order_code_unique
+ON orders(due_date, public_order_code)
+WHERE public_order_code IS NOT NULL
+  AND public_order_code != ''
+  AND due_date IS NOT NULL
+  AND due_date != '';
+"""
+
+
 def _migrate_v36_chip_aware_inventory(conn):
     """Migrate product_stock rows into stock_lots + inventory_items using lowest-priced option."""
     import uuid
@@ -1513,6 +1524,10 @@ MIGRATIONS = {
         "description": "Migrate order_extra app config rows into product-backed phu_kien accessories",
         "sql": "",
         "callable": _migrate_v38_accessory_products,
+    },
+    39: {
+        "description": "Add public order code column and per-due-date uniqueness index",
+        "sql": PUBLIC_ORDER_CODE_SCHEMA,
     },
 }
 

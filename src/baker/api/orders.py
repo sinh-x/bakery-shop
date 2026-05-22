@@ -9,7 +9,14 @@ from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
 from baker.logging import log_context, logger
-from baker.models.order import Order, OrderItem, is_backward_transition, validate_transition
+from baker.models.order import (
+    PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN,
+    Order,
+    OrderItem,
+    generate_public_order_code_candidate,
+    is_backward_transition,
+    validate_transition,
+)
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
 from baker.services.order_stock import auto_decrement_stock, restore_stock_for_order
@@ -138,6 +145,20 @@ def _order_detail(conn, row) -> dict:
     result["paymentTransactions"] = [PaymentTransaction.from_row(r).to_api_dict() for r in txn_rows]
 
     return result
+
+
+def _generate_unique_public_order_code(conn, due_date: str, delivery_type: str) -> str:
+    for reference_len in range(3, PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN + 1):
+        attempts = 30 if reference_len == 3 else 50
+        for _ in range(attempts):
+            candidate = generate_public_order_code_candidate(delivery_type, reference_len)
+            exists = conn.execute(
+                "SELECT 1 FROM orders WHERE due_date = ? AND public_order_code = ? LIMIT 1",
+                (due_date, candidate),
+            ).fetchone()
+            if not exists:
+                return candidate
+    raise HTTPException(status_code=500, detail="Không thể tạo mã nhận bánh hợp lệ")
 
 
 def _log_status_transition_rejection(
@@ -303,7 +324,11 @@ def list_orders(
 @router.post("", status_code=201)
 def create_order(body: OrderCreate, request: Request):
     """Tạo đơn hàng mới."""
+    if body.dueDate is None or body.dueDate.strip() == "":
+        raise HTTPException(status_code=422, detail="Vui lòng chọn ngày nhận/giao bánh")
+
     with get_db() as conn:
+        public_order_code = _generate_unique_public_order_code(conn, body.dueDate, body.deliveryType)
         order = Order(
             customer_name=body.customerName,
             customer_phone=body.customerPhone,
@@ -316,6 +341,7 @@ def create_order(body: OrderCreate, request: Request):
             source=body.source,
             created_by=body.createdBy,
             shipping_fee=body.shippingFee,
+            public_order_code=public_order_code,
         )
         order.calculate_total()
         order.save(conn)
