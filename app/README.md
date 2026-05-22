@@ -15,7 +15,7 @@ Phase 1A complete: all 11 screens built with mock data. APK built and ready for 
 
 ## Build Requirements
 
-Use the Nix flutter devshell (includes Android SDK):
+Use the repo-standard Nix Flutter devshell (includes Android SDK):
 
 ```bash
 cd ~/Documents/bakery-shop
@@ -25,6 +25,19 @@ nix develop .#flutter
 ## Build Commands
 
 ```bash
+# Refresh dependencies with the pinned toolchain
+cd app && flutter pub get
+
+# Analyze (Flutter + Dart)
+cd app && flutter analyze
+cd app && dart analyze
+
+# Run tests with coverage
+cd app && flutter test --coverage
+
+# Regenerate code before commits when models/providers change
+cd app && dart run build_runner build --delete-conflicting-outputs
+
 # Run on Linux desktop
 bakery-run
 
@@ -68,7 +81,7 @@ To install: copy APK to phone, enable "Install from unknown sources", open the A
 
 ## Tech Stack
 
-- Flutter 3.41.2 / Dart 3.11.0
+- Flutter 3.44.0 / Dart 3.12.0 (repo-standard via `nix develop .#flutter`)
 - Riverpod (state management)
 - GoRouter (navigation)
 - Freezed (data models)
