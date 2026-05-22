@@ -336,6 +336,42 @@ void main() {
       });
     });
 
+    testWidgets('submits gift items with productId and isGift flag', (tester) async {
+      final fakeOrderService = _FakeOrderService();
+      final normalItem = PosCartItem(product: _product(), quantity: 1);
+      final giftItem = PosCartItem(
+        product: const Product(
+          id: 42,
+          name: 'Nen',
+          basePrice: 5000,
+          category: 'phu_kien',
+          active: 1,
+          attributes: {'_gift': 'true'},
+        ),
+        quantity: 1,
+        isGift: true,
+      );
+
+      await tester.pumpWidget(
+        _buildCheckoutApp(
+          items: <PosCartItem>[normalItem, giftItem],
+          orderService: fakeOrderService,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(FilledButton, VN.thanhToan));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, OrdersLabels.done));
+      await tester.pumpAndSettle();
+
+      final giftPayload = fakeOrderService.createdItems.single.firstWhere(
+        (item) => item['isGift'] == true,
+      );
+      expect(giftPayload['productId'], '42');
+      expect(giftPayload['productName'], 'Nen');
+    });
+
     testWidgets(
       'opens local review before order creation and keeps cart state',
       (tester) async {

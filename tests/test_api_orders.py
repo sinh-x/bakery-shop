@@ -1520,6 +1520,7 @@ def test_pos_chip_order_with_gift_creates_order_tracks_payment_and_skips_gift_st
                 "priceChipId": chip_id,
             },
             {
+                "productId": "1",
                 "productName": "Dao nhựa",
                 "quantity": 1,
                 "unitPrice": 1000,
@@ -1567,7 +1568,7 @@ def test_pos_chip_order_with_gift_creates_order_tracks_payment_and_skips_gift_st
             (int(order["id"]),),
         ).fetchone()
         assert gift_row is not None
-        assert gift_row["product_id"] == ""
+        assert gift_row["product_id"] == "1"
         assert gift_row["price_chip_id"] is None
 
 
