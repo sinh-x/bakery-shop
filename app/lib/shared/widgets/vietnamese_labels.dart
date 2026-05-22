@@ -74,6 +74,13 @@ class VN {
   static const orderStatusActionContactAdmin =
       'Kiểm tra dữ liệu đơn hàng hoặc liên hệ quản trị để hỗ trợ.';
   static const orderEditSaved = 'Đã lưu thay đổi';
+  static const publicOrderCode = 'Mã nhận bánh';
+  static const publicCodeKeep = 'Giữ mã hiện tại';
+  static const publicCodeRegenerate = 'Tạo mã mới';
+  static const publicCodeDateChangeTitle = 'Đổi mã nhận bánh?';
+  static const publicCodeDateChangePrompt =
+      'Bạn vừa đổi ngày nhận/giao. Chọn giữ mã hiện tại hoặc tạo mã mới trước khi lưu.';
+  static const publicCodeChangedNotice = 'Mã nhận bánh đã đổi:';
 
   // Refresh
   static const lamMoi = 'Làm mới';

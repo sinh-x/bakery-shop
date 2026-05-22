@@ -19,6 +19,7 @@ import '../../data/models/work_item.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
+import '../../shared/utils/order_helpers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/vnd_units.dart';
 import '../../shared/theme/bakery_theme.dart';
@@ -538,7 +539,10 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
               ),
               const Spacer(),
               Text(
-                order.orderRef,
+                visualOrderCode(
+                  orderRef: order.orderRef,
+                  publicOrderCode: order.publicOrderCode,
+                ),
                 style: theme.textTheme.labelMedium?.copyWith(
                   color: theme.colorScheme.outline,
                 ),
@@ -558,6 +562,14 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
 
         // ── Order info ────────────────────────────────────────────────
         const _SectionHeader(VN.customer),
+        _InfoRow(
+          icon: Icons.badge_outlined,
+          label: VN.publicOrderCode,
+          value: visualOrderCode(
+            orderRef: order.orderRef,
+            publicOrderCode: order.publicOrderCode,
+          ),
+        ),
         _InfoRow(
           icon: Icons.person_outline,
           label: VN.customerName,

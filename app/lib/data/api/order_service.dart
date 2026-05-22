@@ -84,6 +84,7 @@ class OrderService {
     String? deliveryAddress,
     String? notes,
     String? source,
+    String? publicCodeDateChangeDecision,
     String changedBy = '',
     double? shippingFee,
   }) async {
@@ -96,6 +97,9 @@ class OrderService {
     if (deliveryAddress != null) body['deliveryAddress'] = deliveryAddress;
     if (notes != null) body['notes'] = notes;
     if (source != null) body['source'] = source;
+    if (publicCodeDateChangeDecision != null) {
+      body['publicCodeDateChangeDecision'] = publicCodeDateChangeDecision;
+    }
     if (changedBy.isNotEmpty) body['changedBy'] = changedBy;
     if (shippingFee != null) body['shippingFee'] = shippingFee;
 
