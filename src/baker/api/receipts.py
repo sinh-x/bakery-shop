@@ -330,6 +330,35 @@ def _wrapped_enum_attribute_lines(item: dict, labels: dict, font, max_w: int) ->
     return lines
 
 
+def _order_public_code(order: dict) -> str:
+    """Return trimmed public order code or empty string."""
+    public_code = order.get("publicOrderCode", "") or order.get("public_order_code", "") or ""
+    return str(public_code).strip()
+
+
+def _order_ref_value(order: dict) -> str:
+    """Return trimmed internal order ref or empty string."""
+    order_ref = order.get("orderRef", "") or order.get("order_ref", "") or ""
+    return str(order_ref).strip()
+
+
+def _order_visual_ref(order: dict) -> str:
+    """Public code first, fallback to internal order ref for old orders."""
+    public_code = _order_public_code(order)
+    if public_code:
+        return public_code
+    return _order_ref_value(order)
+
+
+def _customer_reference_text(order: dict) -> str:
+    """Customer-facing reference line for receipts."""
+    public_code = _order_public_code(order)
+    if not public_code:
+        return f"Mã đơn: {_order_ref_value(order)}"
+    name = order.get("customerName", "") or order.get("customer_name", "") or "Khách tại tiệm"
+    return f"Mã nhận bánh: {name} - {public_code}"
+
+
 # --- Header (matching physical biên nhận) ---
 
 def _header(draw, y, cfg):
@@ -389,7 +418,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
     # ── Header: title + order ref + date (compact) ──
     y = _center(draw, y, "PHIẾU NỘI BỘ", fnormal)
 
-    ref = order.get("orderRef", "") or order.get("order_ref", "")
+    ref = _order_visual_ref(order)
     created = order.get("createdAt", "") or order.get("created_at", "")
     header_line = f"Mã: {ref}"
     if created:
@@ -686,7 +715,7 @@ def _render_bus_label(order, cfg) -> Image.Image:
     sep_h = 16  # double line separator height
 
     # Order ref and customer name (small, centered) — sit between notes and separator
-    order_ref = order.get("orderRef", "") or order.get("order_ref", "") or ""
+    order_ref = _order_visual_ref(order)
     customer_name = order.get("customerName", "") or order.get("customer_name", "") or ""
     order_line = f"Mã đơn: {order_ref}" if order_ref else ""
     customer_line = customer_name
@@ -898,7 +927,7 @@ def _render_shop_receipt(order, cfg, conn) -> Image.Image:
     y = _center(draw, y, "PHIẾU GIAO HÀNG", fnormal)
 
     # Order ref + date
-    ref = order.get("orderRef", "") or order.get("order_ref", "")
+    ref = _order_visual_ref(order)
     created = order.get("createdAt", "") or order.get("created_at", "")
     date_line = ref
     if created:
@@ -966,7 +995,7 @@ def _render_delivery_receipt(order, cfg, conn) -> Image.Image:
     y = _center(draw, y, "PHIẾU GIAO TẬN NƠI", fnormal)
 
     # Order ref + date
-    ref = order.get("orderRef", "") or order.get("order_ref", "")
+    ref = _order_visual_ref(order)
     created = order.get("createdAt", "") or order.get("created_at", "")
     date_line = ref
     if created:
@@ -1054,8 +1083,7 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
     y = _sep(draw, y)
 
     # Order ref
-    ref = order.get("orderRef", "") or order.get("order_ref", "")
-    y = _center(draw, y, f"Mã đơn: {ref}", _font(_SZ_SUBTITLE, True))
+    y = _center(draw, y, _customer_reference_text(order), _font(_SZ_SUBTITLE, True))
 
     # Date
     created = order.get("createdAt", "") or order.get("created_at", "")

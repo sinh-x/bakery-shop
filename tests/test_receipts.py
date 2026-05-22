@@ -9,8 +9,10 @@ from PIL import Image
 sys.path.insert(0, "src")
 
 from baker.api.receipts import (
+    _customer_reference_text,
     _enum_attribute_lines,
     _format_vnd,
+    _order_visual_ref,
     _wrapped_enum_attribute_lines,
     _wrap,
 )
@@ -94,6 +96,36 @@ class TestTextWrapping:
         font = ImageFont.load_default()
         result = _wrap("This is a very long text that should be wrapped", font, 50)
         assert len(result) > 1
+
+
+class TestPublicOrderCodeReceiptReferences:
+    """Receipt reference text should prioritize public order code."""
+
+    def test_customer_reference_uses_name_plus_public_code(self):
+        order = {
+            "customerName": "Nguyễn Văn An",
+            "orderRef": "ORD-260522-001",
+            "publicOrderCode": "A42-T",
+        }
+        assert _customer_reference_text(order) == "Mã nhận bánh: Nguyễn Văn An - A42-T"
+
+    def test_customer_reference_falls_back_to_order_ref_for_old_orders(self):
+        order = {
+            "customerName": "Khách Cũ",
+            "orderRef": "ORD-260522-010",
+        }
+        assert _customer_reference_text(order) == "Mã đơn: ORD-260522-010"
+
+    def test_internal_visual_ref_uses_public_code_when_present(self):
+        order = {
+            "orderRef": "ORD-260522-002",
+            "publicOrderCode": "B17-B",
+        }
+        assert _order_visual_ref(order) == "B17-B"
+
+    def test_internal_visual_ref_falls_back_to_order_ref(self):
+        order = {"orderRef": "ORD-260522-011"}
+        assert _order_visual_ref(order) == "ORD-260522-011"
 
 
 class TestReceiptAPI:
