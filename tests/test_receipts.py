@@ -143,6 +143,13 @@ class TestPublicOrderCodeReceiptReferences:
         }
         assert _shop_delivery_code_text(order) == "An - A42-T"
 
+    def test_shop_delivery_code_text_uses_code_only_when_name_blank(self):
+        order = {
+            "customerName": "   ",
+            "publicOrderCode": "A42-T",
+        }
+        assert _shop_delivery_code_text(order) == "A42-T"
+
     def test_shop_delivery_code_text_falls_back_to_order_ref(self):
         order = {
             "customerName": "Nguyễn Văn An",

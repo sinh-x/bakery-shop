@@ -393,6 +393,32 @@ def _shop_delivery_code_text(order: dict) -> str:
     return _order_ref_value(order)
 
 
+def _draw_compact_reference_box(draw, y: int, text: str, font) -> int:
+    """Draw a compact bordered box around reference text."""
+    lines = _wrap(text, font, CONTENT_WIDTH - 48) or [text]
+    text_width = 0
+    text_height = 0
+    for line in lines:
+        text_width = max(text_width, _tw(line, font))
+        text_height += _th(line, font) + LINE_GAP
+
+    pad_x = 22
+    pad_y = 14
+    box_w = min(CONTENT_WIDTH, text_width + (pad_x * 2))
+    box_h = text_height + (pad_y * 2)
+    box_x = MARGIN + (CONTENT_WIDTH - box_w) // 2
+
+    draw.rectangle([box_x, y, box_x + box_w, y + box_h], outline=(0, 0, 0), width=3)
+
+    text_y = y + pad_y
+    for line in lines:
+        text_x = box_x + (box_w - _tw(line, font)) // 2
+        draw.text((text_x, text_y), line, font=font, fill=(0, 0, 0))
+        text_y += _th(line, font) + LINE_GAP
+
+    return y + box_h
+
+
 # --- Header (matching physical biên nhận) ---
 
 def _header(draw, y, cfg):
@@ -699,7 +725,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
 
     bottom_ref = _order_public_code(order) or _order_ref_value(order)
     if bottom_ref:
-        y = _left(draw, y, f"Mã nhận bánh: {bottom_ref}", fbig)
+        y = _left(draw, y, bottom_ref, fbig)
 
     y += MARGIN
 
@@ -990,20 +1016,9 @@ def _render_shop_receipt(order, cfg, conn) -> Image.Image:
 
     code_box_text = _shop_delivery_code_text(order)
     if code_box_text:
-        box_side = CONTENT_WIDTH
-        box_x = MARGIN
-        box_y_end = y + box_side
-        draw.rectangle([box_x, y, box_x + box_side, box_y_end], outline=(0, 0, 0), width=3)
-        label_font = _font(_SZ_SUBTITLE, True)
         code_font = _font(_SZ_BIG, True)
-        label = "Mã nhận bánh"
-        label_y = y + 22
-        draw.text((box_x + (box_side - _tw(label, label_font)) // 2, label_y), label, font=label_font, fill=(0, 0, 0))
-        code_y = label_y + _th(label, label_font) + 20
-        for line in _wrap(code_box_text, code_font, box_side - 20) or [code_box_text]:
-            draw.text((box_x + (box_side - _tw(line, code_font)) // 2, code_y), line, font=code_font, fill=(0, 0, 0))
-            code_y += _th(line, code_font) + LINE_GAP
-        y = box_y_end + 12
+        y = _draw_compact_reference_box(draw, y, code_box_text, code_font)
+        y += 12
         y = _sep(draw, y)
 
     # Items table
@@ -1076,20 +1091,9 @@ def _render_delivery_receipt(order, cfg, conn) -> Image.Image:
 
     code_box_text = _shop_delivery_code_text(order)
     if code_box_text:
-        box_side = CONTENT_WIDTH
-        box_x = MARGIN
-        box_y_end = y + box_side
-        draw.rectangle([box_x, y, box_x + box_side, box_y_end], outline=(0, 0, 0), width=3)
-        label_font = _font(_SZ_SUBTITLE, True)
         code_font = _font(_SZ_BIG, True)
-        label = "Mã nhận bánh"
-        label_y = y + 22
-        draw.text((box_x + (box_side - _tw(label, label_font)) // 2, label_y), label, font=label_font, fill=(0, 0, 0))
-        code_y = label_y + _th(label, label_font) + 20
-        for line in _wrap(code_box_text, code_font, box_side - 20) or [code_box_text]:
-            draw.text((box_x + (box_side - _tw(line, code_font)) // 2, code_y), line, font=code_font, fill=(0, 0, 0))
-            code_y += _th(line, code_font) + LINE_GAP
-        y = box_y_end + 12
+        y = _draw_compact_reference_box(draw, y, code_box_text, code_font)
+        y += 12
         y = _sep(draw, y)
 
     # Delivery section
