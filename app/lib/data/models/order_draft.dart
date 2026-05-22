@@ -41,7 +41,7 @@ class DraftOrderItem {
   ) {
     final attrs = <String, dynamic>{...?provided};
     if (product.isTrungBay && !attrs.containsKey('useInventory')) {
-      attrs['useInventory'] = 'true';
+      attrs['useInventory'] = 'false';
     }
     for (final ea in product.enumAttributes) {
       if (ea.options.isEmpty) continue;

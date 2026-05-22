@@ -1,5 +1,7 @@
 """Tests for Baker API — orders endpoints."""
 
+import json
+
 import pytest
 
 from baker.db.connection import get_db
@@ -976,6 +978,56 @@ def test_pos_order_with_chip_persists_price_chip_and_fifo_consumes(api_client):
         assert consumed["c"] == 1
 
 
+def test_pos_order_trung_bay_without_use_inventory_still_consumes_fifo(api_client):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "POS-Nhỏ", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 2, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 1,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+            }
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+
+    with get_db() as conn:
+        saved_item = conn.execute(
+            "SELECT attributes FROM order_items WHERE order_id = ? ORDER BY id ASC LIMIT 1",
+            (int(order["id"]),),
+        ).fetchone()
+        saved_attributes = json.loads(saved_item["attributes"] or "{}")
+        assert "useInventory" not in saved_attributes
+
+        movement = conn.execute(
+            """SELECT id, lot_id
+               FROM stock_movements
+               WHERE movement_type = 'sale' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (order["orderRef"],),
+        ).fetchone()
+        assert movement["lot_id"] is not None
+
+        consumed = conn.execute(
+            "SELECT COUNT(*) AS c FROM inventory_items WHERE consumed_by_movement_id = ?",
+            (movement["id"],),
+        ).fetchone()
+        assert consumed["c"] == 1
+
+
 def test_pos_order_without_chip_uses_base_option_and_still_works(api_client):
     _ensure_trung_bay(1)
     restock = api_client.post(
@@ -1102,6 +1154,7 @@ def test_non_pos_order_confirmed_decrements_stock_with_chip(api_client):
                 "quantity": 2,
                 "unitPrice": 12000,
                 "priceChipId": chip_id,
+                "attributes": {"useInventory": "true"},
             }
         ],
     )
@@ -1130,6 +1183,59 @@ def test_non_pos_order_confirmed_decrements_stock_with_chip(api_client):
             (movement["id"],),
         ).fetchone()
         assert consumed["c"] == 2
+
+
+@pytest.mark.parametrize("use_inventory", [None, False, "false"])
+def test_non_pos_order_delivered_trung_bay_use_inventory_off_skips_fifo(api_client, use_inventory):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "Nhỏ", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 3, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    item = {
+        "productId": "1",
+        "productName": "Bánh kem",
+        "quantity": 1,
+        "unitPrice": 12000,
+        "priceChipId": chip_id,
+    }
+    if use_inventory is not None:
+        item["attributes"] = {"useInventory": use_inventory}
+
+    order = _create_order(api_client, items=[item])
+    ref = order["orderRef"]
+
+    for status, reason in [("confirmed", "ok"), ("in_progress", "ok"), ("ready", "ok")]:
+        resp = api_client.post(
+            f"/api/orders/{ref}/status",
+            json={"status": status, "reason": reason},
+        )
+        assert resp.status_code == 200
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "delivered", "reason": "giao"},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        movement = conn.execute(
+            """SELECT id, lot_id
+               FROM stock_movements
+               WHERE movement_type = 'sale' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (ref,),
+        ).fetchone()
+        assert movement["lot_id"] is None
+        consumed = conn.execute(
+            "SELECT COUNT(*) AS c FROM inventory_items WHERE consumed_by_movement_id = ?",
+            (movement["id"],),
+        ).fetchone()
+        assert consumed["c"] == 0
 
 
 def test_non_pos_order_delivered_skips_stock_when_use_inventory_false(api_client):

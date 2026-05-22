@@ -13,5 +13,9 @@ extension TrungBayProductX on Product? {
 }
 
 extension InventoryChoiceAttributesX on Map<String, dynamic> {
-  bool get useInventory => this['useInventory']?.toString() != 'false';
+  bool get useInventory {
+    final raw = this['useInventory'];
+    if (raw is bool) return raw;
+    return raw?.toString().toLowerCase() == 'true';
+  }
 }
