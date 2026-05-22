@@ -47,6 +47,13 @@ def _mark_order_as_legacy_pos(conn, order_ref: str, created_at: str) -> None:
     )
 
 
+def _set_public_order_code(conn, order_ref: str, public_order_code: str) -> None:
+    conn.execute(
+        "UPDATE orders SET public_order_code = ? WHERE order_ref = ?",
+        (public_order_code, order_ref),
+    )
+
+
 # --- List orders ---
 
 
@@ -381,7 +388,10 @@ def test_edit_order_notes(api_client):
 def test_edit_order_due_date(api_client):
     created = _create_order(api_client)
     ref = created["orderRef"]
-    resp = api_client.patch(f"/api/orders/{ref}", json={"dueDate": "2026-04-01"})
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={"dueDate": "2026-04-01", "publicCodeDateChangeDecision": "keep"},
+    )
     assert resp.status_code == 200
     assert resp.json()["dueDate"] == "2026-04-01"
 
@@ -407,6 +417,123 @@ def test_edit_order_empty_body(api_client):
 def test_edit_order_not_found(api_client):
     resp = api_client.patch("/api/orders/ORD-NOTEXIST", json={"notes": "x"})
     assert resp.status_code == 404
+
+
+def test_edit_order_due_date_requires_public_code_decision(api_client):
+    created = _create_order(api_client, dueDate="2026-04-01", deliveryType="pickup")
+    resp = api_client.patch(f"/api/orders/{created['orderRef']}", json={"dueDate": "2026-04-02"})
+    assert resp.status_code == 422
+    assert "giữ mã" in resp.json()["detail"]
+
+
+def test_edit_order_due_date_regenerate_updates_code(api_client, monkeypatch):
+    from baker.api import orders as orders_api
+
+    created = _create_order(api_client, dueDate="2026-04-01", deliveryType="pickup")
+    old_code = created["publicOrderCode"]
+
+    monkeypatch.setattr(
+        orders_api,
+        "generate_public_order_code_candidate",
+        lambda _delivery_type, _reference_len=3: "B99-T",
+    )
+
+    resp = api_client.patch(
+        f"/api/orders/{created['orderRef']}",
+        json={"dueDate": "2026-04-02", "publicCodeDateChangeDecision": "regenerate"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["publicOrderCode"] == "B99-T"
+    assert data["publicOrderCode"] != old_code
+    assert data["publicOrderCodeUpdate"]["action"] == "regenerated"
+    assert data["publicOrderCodeUpdate"]["reason"] == "due_date_changed"
+
+
+def test_edit_order_due_date_keep_without_conflict_keeps_code(api_client):
+    created = _create_order(api_client, dueDate="2026-04-01", deliveryType="pickup")
+    old_code = created["publicOrderCode"]
+    resp = api_client.patch(
+        f"/api/orders/{created['orderRef']}",
+        json={"dueDate": "2026-04-02", "publicCodeDateChangeDecision": "keep"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["publicOrderCode"] == old_code
+    assert data["publicOrderCodeUpdate"]["action"] == "kept"
+
+
+def test_edit_order_due_date_keep_conflict_regenerates(api_client, monkeypatch):
+    from baker.api import orders as orders_api
+
+    created = _create_order(api_client, dueDate="2026-04-01", deliveryType="pickup")
+    conflict_code = created["publicOrderCode"]
+    conflict_order = _create_order(api_client, dueDate="2026-04-02", deliveryType="pickup")
+    with get_db() as conn:
+        _set_public_order_code(conn, conflict_order["orderRef"], conflict_code)
+
+    monkeypatch.setattr(
+        orders_api,
+        "generate_public_order_code_candidate",
+        lambda _delivery_type, _reference_len=3: "C11-T",
+    )
+
+    resp = api_client.patch(
+        f"/api/orders/{created['orderRef']}",
+        json={"dueDate": "2026-04-02", "publicCodeDateChangeDecision": "keep"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["publicOrderCode"] == "C11-T"
+    assert data["publicOrderCodeUpdate"]["action"] == "regenerated"
+    assert data["publicOrderCodeUpdate"]["reason"] == "due_date_conflict_after_keep"
+
+
+def test_edit_order_delivery_type_updates_suffix(api_client):
+    created = _create_order(api_client, dueDate="2026-04-01", deliveryType="pickup")
+    with get_db() as conn:
+        _set_public_order_code(conn, created["orderRef"], "A42-T")
+    resp = api_client.patch(f"/api/orders/{created['orderRef']}", json={"deliveryType": "bus"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["publicOrderCode"] == "A42-B"
+    assert data["publicOrderCodeUpdate"]["action"] == "suffix_updated"
+
+
+def test_edit_order_delivery_type_suffix_conflict_regenerates(api_client, monkeypatch):
+    from baker.api import orders as orders_api
+
+    created = _create_order(api_client, dueDate="2026-04-01", deliveryType="pickup")
+    conflict_order = _create_order(api_client, dueDate="2026-04-01", deliveryType="bus")
+    with get_db() as conn:
+        _set_public_order_code(conn, created["orderRef"], "A42-T")
+        _set_public_order_code(conn, conflict_order["orderRef"], "A42-B")
+
+    monkeypatch.setattr(
+        orders_api,
+        "generate_public_order_code_candidate",
+        lambda _delivery_type, _reference_len=3: "D88-B",
+    )
+
+    resp = api_client.patch(f"/api/orders/{created['orderRef']}", json={"deliveryType": "bus"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["publicOrderCode"] == "D88-B"
+    assert data["publicOrderCodeUpdate"]["action"] == "suffix_updated_regenerated"
+
+
+def test_edit_order_old_order_without_public_code_keeps_fallback_behavior(api_client):
+    created = _create_order(api_client, dueDate="2026-04-01")
+    ref = created["orderRef"]
+    with get_db() as conn:
+        _set_public_order_code(conn, ref, "")
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={"dueDate": "2026-04-02", "deliveryType": "delivery", "publicCodeDateChangeDecision": "keep"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["publicOrderCode"] == ""
 
 
 # --- Status transition ---
