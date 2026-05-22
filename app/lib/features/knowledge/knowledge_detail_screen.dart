@@ -259,7 +259,7 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
     final baseUrl = dio.options.baseUrl;
     try {
       if (entry.photos.isEmpty) {
-        await Share.share(text);
+        await SharePlus.instance.share(ShareParams(text: text));
         return;
       }
 
@@ -277,11 +277,13 @@ class _ShareEntryButtonState extends ConsumerState<_ShareEntryButton> {
       }
 
       if (files.isEmpty) {
-        await Share.share(text);
+        await SharePlus.instance.share(ShareParams(text: text));
         return;
       }
 
-      await Share.shareXFiles(files, text: text);
+      await SharePlus.instance.share(
+        ShareParams(files: files, text: text),
+      );
     } catch (_) {
       if (!mounted) return;
       if (kIsWeb) {
