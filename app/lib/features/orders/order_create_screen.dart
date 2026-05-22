@@ -7,9 +7,11 @@ import 'package:intl/intl.dart';
 import '../../data/api/order_service.dart';
 import '../../data/api/payment_transaction_service.dart';
 import '../../data/api/work_item_service.dart';
+import '../../data/models/product.dart';
 import '../../providers/config_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../providers/products_provider.dart';
 import '../../shared/gift_config.dart';
 import '../../shared/utils/config_parsers.dart';
 import '../../shared/utils/phone_formatter.dart';
@@ -230,20 +232,36 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     );
   }
 
-  void _addExtra(String name, double price, {bool isGift = false}) {
+  void _addCatalogExtra(
+    Product product, {
+    int? priceChipId,
+    double? customUnitPrice,
+    bool isGift = false,
+  }) {
     setState(() {
-      // Reuse existing item with same (name, isGift) — increment qty
+      final normalizedUnitPrice = customUnitPrice ?? product.basePrice;
       final existing = _items
           .where(
-            (i) => i.isExtra && i.product.name == name && i.isGift == isGift,
+            (i) =>
+                i.isExtra &&
+                i.product.id == product.id &&
+                i.isGift == isGift &&
+                i.unitPrice == normalizedUnitPrice,
           )
           .firstOrNull;
       if (existing != null) {
         existing.quantity += 1;
-      } else {
-        _items.add(createExtraItem(name, price, isGift: isGift));
+        return;
       }
-      if (isGift) _autoGiftExtras.add(name);
+
+      _items.add(
+        createCatalogExtraItem(
+          product: product,
+          isGift: isGift,
+          priceChipId: priceChipId,
+          customUnitPrice: customUnitPrice,
+        ),
+      );
     });
   }
 
@@ -678,7 +696,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                     ),
                   ),
                 ),
-            _ExtrasSection(onExtraAdded: _addExtra),
+            _ExtrasSection(onExtraAdded: _addCatalogExtra),
             const SizedBox(height: 20),
 
             // ── Schedule (F4 + F5) ────────────────────────────────────
@@ -931,28 +949,23 @@ class _SectionHeader extends StatelessWidget {
 class _ExtrasSection extends ConsumerWidget {
   const _ExtrasSection({required this.onExtraAdded});
 
-  final void Function(String name, double price, {bool isGift}) onExtraAdded;
+  final void Function(
+    Product product, {
+    int? priceChipId,
+    double? customUnitPrice,
+    bool isGift,
+  }) onExtraAdded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final extrasAsync = ref.watch(orderExtrasProvider);
+    final extrasAsync = ref.watch(phuKienProductsProvider);
     final theme = Theme.of(context);
 
     return extrasAsync.when(
       loading: () => const SizedBox.shrink(),
       error: (e, st) => const SizedBox.shrink(),
-      data: (extraValues) {
-        final extras = <(String, double)>[];
-        for (final v in extraValues) {
-          final parts = v.split('|');
-          if (parts.length == 2) {
-            final name = parts[0].trim();
-            final price = double.tryParse(parts[1].trim()) ?? 0;
-            extras.add((name, price));
-          }
-        }
-
-        if (extras.isEmpty) {
+      data: (products) {
+        if (products.isEmpty) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
@@ -967,16 +980,141 @@ class _ExtrasSection extends ConsumerWidget {
         return Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: extras.map((extra) {
-            final (name, price) = extra;
+          children: products.map((product) {
             return ActionChip(
               avatar: const Icon(Icons.add, size: 16),
-              label: Text('$name (${formatVND(price)})'),
-              onPressed: () => onExtraAdded(name, price),
+              label: Text('${product.name} (${formatVND(product.basePrice)})'),
+              onPressed: () async {
+                final selection = await showDialog<_CatalogExtraSelection>(
+                  context: context,
+                  builder: (_) => _CatalogExtraPriceDialog(product: product),
+                );
+                if (selection == null) return;
+                onExtraAdded(
+                  product,
+                  priceChipId: selection.priceChipId,
+                  customUnitPrice: selection.customUnitPrice,
+                );
+              },
             );
           }).toList(),
         );
       },
+    );
+  }
+}
+
+class _CatalogExtraSelection {
+  const _CatalogExtraSelection({this.priceChipId, this.customUnitPrice});
+
+  final int? priceChipId;
+  final double? customUnitPrice;
+}
+
+class _CatalogExtraPriceDialog extends StatefulWidget {
+  const _CatalogExtraPriceDialog({required this.product});
+
+  final Product product;
+
+  @override
+  State<_CatalogExtraPriceDialog> createState() => _CatalogExtraPriceDialogState();
+}
+
+class _CatalogExtraPriceDialogState extends State<_CatalogExtraPriceDialog> {
+  static const int _manualOptionId = -999;
+  final TextEditingController _manualCtrl = TextEditingController();
+  late int _selectedOptionId;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedOptionId = 0;
+  }
+
+  @override
+  void dispose() {
+    _manualCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final options = <(int id, String label, double price, int? chipId)>[
+      (0, VN.giaCoSo, widget.product.basePrice, null),
+      ...widget.product.priceChips.map(
+        (chip) => (chip.id, chip.label, chip.price, chip.id),
+      ),
+      (_manualOptionId, VN.donGiaNhapTay, widget.product.basePrice, null),
+    ];
+
+    return AlertDialog(
+      title: Text(widget.product.name),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: options.map((option) {
+              final selected = _selectedOptionId == option.$1;
+              return ChoiceChip(
+                label: Text('${option.$2} (${formatVND(option.$3)})'),
+                selected: selected,
+                onSelected: (_) => setState(() => _selectedOptionId = option.$1),
+              );
+            }).toList(),
+          ),
+          if (_selectedOptionId == _manualOptionId) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _manualCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: VN.itemPrice,
+                suffixText: 'đ',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text(VN.cancel),
+        ),
+        FilledButton(
+          onPressed: () {
+            if (_selectedOptionId == _manualOptionId) {
+              final manualPrice = double.tryParse(_manualCtrl.text.trim());
+              if (manualPrice == null || manualPrice < 0) {
+                showTopSnackBar(context, VN.invalidPrice);
+                return;
+              }
+              Navigator.pop(
+                context,
+                _CatalogExtraSelection(customUnitPrice: manualPrice),
+              );
+              return;
+            }
+
+            final selected = options.firstWhere((o) => o.$1 == _selectedOptionId);
+            if (selected.$4 == null) {
+              Navigator.pop(
+                context,
+                const _CatalogExtraSelection(customUnitPrice: null),
+              );
+            } else {
+              Navigator.pop(
+                context,
+                _CatalogExtraSelection(priceChipId: selected.$4),
+              );
+            }
+          },
+          child: const Text(VN.xacNhan),
+        ),
+      ],
     );
   }
 }
