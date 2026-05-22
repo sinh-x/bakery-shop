@@ -13,6 +13,7 @@ from baker.api.receipts import (
     _enum_attribute_lines,
     _format_vnd,
     _order_visual_ref,
+    _shop_delivery_code_text,
     _wrapped_enum_attribute_lines,
     _wrap,
 )
@@ -101,13 +102,21 @@ class TestTextWrapping:
 class TestPublicOrderCodeReceiptReferences:
     """Receipt reference text should prioritize public order code."""
 
-    def test_customer_reference_uses_name_plus_public_code(self):
+    def test_customer_reference_uses_last_name_plus_public_code(self):
         order = {
             "customerName": "Nguyễn Văn An",
             "orderRef": "ORD-260522-001",
             "publicOrderCode": "A42-T",
         }
-        assert _customer_reference_text(order) == "Mã nhận bánh: Nguyễn Văn An - A42-T"
+        assert _customer_reference_text(order) == "Mã nhận bánh: An - A42-T"
+
+    def test_customer_reference_uses_code_only_when_name_blank(self):
+        order = {
+            "customerName": "   ",
+            "orderRef": "ORD-260522-099",
+            "publicOrderCode": "A42-T",
+        }
+        assert _customer_reference_text(order) == "Mã nhận bánh: A42-T"
 
     def test_customer_reference_falls_back_to_order_ref_for_old_orders(self):
         order = {
@@ -126,6 +135,20 @@ class TestPublicOrderCodeReceiptReferences:
     def test_internal_visual_ref_falls_back_to_order_ref(self):
         order = {"orderRef": "ORD-260522-011"}
         assert _order_visual_ref(order) == "ORD-260522-011"
+
+    def test_shop_delivery_code_text_uses_last_name_plus_public_code(self):
+        order = {
+            "customerName": "Nguyễn Văn An",
+            "publicOrderCode": "A42-T",
+        }
+        assert _shop_delivery_code_text(order) == "An - A42-T"
+
+    def test_shop_delivery_code_text_falls_back_to_order_ref(self):
+        order = {
+            "customerName": "Nguyễn Văn An",
+            "orderRef": "ORD-260522-011",
+        }
+        assert _shop_delivery_code_text(order) == "ORD-260522-011"
 
 
 class TestReceiptAPI:
