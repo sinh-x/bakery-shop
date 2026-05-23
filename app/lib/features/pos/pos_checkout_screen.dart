@@ -72,6 +72,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         .where((i) => i.isGift)
         .map(
           (i) => <String, dynamic>{
+            'productId': i.product.id.toString(),
             'productName': i.product.name,
             'quantity': i.quantity,
             'unitPrice': i.product.basePrice,

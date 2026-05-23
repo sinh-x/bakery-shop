@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../data/models/product.dart';
+import '../providers/products_provider.dart';
 import '../shared/gift_config.dart';
 
 /// A single item in the POS cart.
@@ -90,26 +92,42 @@ class PosCartNotifier extends Notifier<PosCartState> {
           .fold<double>(0, (sum, i) => sum + i.total);
 
       if (qualified >= GiftConfig.giftThreshold) {
-        for (final (name, price) in GiftConfig.giftExtras) {
+        final giftCatalog = _giftCatalogByNormalizedName();
+        for (final (configuredName, configuredPrice) in GiftConfig.giftExtras) {
+          final normalized = _normalizeGiftName(configuredName);
+          final giftProduct = giftCatalog[normalized];
+          if (giftProduct == null) {
+            assert(() {
+              debugPrint(
+                'pos_provider: unmatched gift config "${configuredName.trim()}" '
+                'for active phu_kien products',
+              );
+              return true;
+            }());
+            continue;
+          }
+
           final existingGift = items
-              .where((i) => i.product.name == name && i.isGift)
+              .where((i) => i.product.id == giftProduct.id && i.isGift)
               .firstOrNull;
           if (existingGift != null) {
             existingGift.quantity += 1;
-          } else {
-            items.add(
-              PosCartItem(
-                product: Product(
-                  id: -1,
-                  name: name,
-                  basePrice: price,
-                  attributes: const {'_gift': 'true'},
-                ),
-                quantity: 1,
-                isGift: true,
-              ),
-            );
+            continue;
           }
+
+          items.add(
+            PosCartItem(
+              product: giftProduct.copyWith(
+                basePrice: configuredPrice,
+                attributes: {
+                  ...giftProduct.attributes,
+                  '_gift': 'true',
+                },
+              ),
+              quantity: 1,
+              isGift: true,
+            ),
+          );
         }
       }
     }
@@ -138,6 +156,22 @@ class PosCartNotifier extends Notifier<PosCartState> {
 
   void clearCart() {
     state = PosCartState();
+  }
+
+  Map<String, Product> _giftCatalogByNormalizedName() {
+    final products = ref.read(phuKienProductsProvider).asData?.value ?? const [];
+    final byName = <String, Product>{};
+    for (final product in products) {
+      final normalized = _normalizeGiftName(product.name);
+      if (normalized.isNotEmpty) {
+        byName.putIfAbsent(normalized, () => product);
+      }
+    }
+    return byName;
+  }
+
+  String _normalizeGiftName(String raw) {
+    return raw.trim().toLowerCase();
   }
 }
 

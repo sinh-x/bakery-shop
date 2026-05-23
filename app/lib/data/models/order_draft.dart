@@ -98,6 +98,34 @@ DraftOrderItem createExtraItem(
   );
 }
 
+DraftOrderItem createCatalogExtraItem({
+  required Product product,
+  int quantity = 1,
+  bool isGift = false,
+  int? priceChipId,
+  double? customUnitPrice,
+}) {
+  final selectedChipId = customUnitPrice == null ? priceChipId : null;
+  double? chipPrice;
+  if (selectedChipId != null) {
+    for (final chip in product.priceChips) {
+      if (chip.id == selectedChipId) {
+        chipPrice = chip.price;
+        break;
+      }
+    }
+  }
+
+  return DraftOrderItem(
+    product: product,
+    quantity: quantity,
+    isExtra: true,
+    isGift: isGift,
+    customUnitPrice: customUnitPrice ?? chipPrice,
+    priceChipId: selectedChipId,
+  );
+}
+
 class DraftPendingPhoto {
   final XFile file;
   Set<String> tags;

@@ -575,6 +575,11 @@ class VN {
   static const extraDeleted = 'Đã xóa phụ kiện';
   static const noExtras = 'Chưa có phụ kiện';
   static const deleteExtraConfirm = 'Xóa phụ kiện này?';
+  static const extrasSettingsDeprecatedTitle = 'Đã dừng quản lý phụ kiện tại đây';
+  static const extrasSettingsDeprecatedBody =
+      'Phụ kiện trả phí mới được quản lý từ Danh mục sản phẩm (nhóm phu_kien). Mục này chỉ giữ lại để hướng dẫn và không còn tạo/sửa dữ liệu order_extra.';
+  static const extrasSettingsDeprecatedAction =
+      'Vào Danh mục sản phẩm để thêm/sửa phụ kiện và mức giá.';
 
   // Catalog browse
   static const browseScreenTitle = 'Duyệt ảnh mẫu';

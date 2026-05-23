@@ -867,6 +867,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         await notifier.uploadPhoto(saved.id, _pickedPhoto!);
       }
 
+      ref.invalidate(phuKienProductsProvider);
+
       if (mounted) {
         showTopSnackBar(
           context,
