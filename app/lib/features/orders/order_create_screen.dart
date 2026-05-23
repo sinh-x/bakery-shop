@@ -331,8 +331,11 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       final service = ref.read(orderServiceProvider);
 
       final staffName = ref.read(loggedByProvider);
+      final customerName = _nameCtrl.text.trim().isEmpty
+          ? 'Khách'
+          : _nameCtrl.text.trim();
       final newOrder = await service.createOrder(
-        customerName: _nameCtrl.text.trim(),
+        customerName: customerName,
         customerPhone: _phoneCtrl.text.trim(),
         items: _items.map((i) {
           final m = <String, dynamic>{
@@ -550,8 +553,6 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                 border: OutlineInputBorder(),
               ),
               textCapitalization: TextCapitalization.words,
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
             ),
             const SizedBox(height: 20),
 

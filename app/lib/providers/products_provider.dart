@@ -54,6 +54,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
       productCode: productCode,
     );
     await refresh();
+    ref.invalidate(phuKienProductsProvider);
     return product;
   }
 
@@ -80,6 +81,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
     );
     await refresh();
     ref.invalidate(inactiveProductsProvider);
+    ref.invalidate(phuKienProductsProvider);
     if (category != null) {
       ref.invalidate(catalogBrowseProvider);
     }
@@ -91,6 +93,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
     await service.deleteProduct(id);
     await refresh();
     ref.invalidate(inactiveProductsProvider);
+    ref.invalidate(phuKienProductsProvider);
     ref.invalidate(catalogBrowseProvider);
   }
 
