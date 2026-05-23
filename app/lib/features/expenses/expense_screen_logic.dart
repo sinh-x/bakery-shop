@@ -3,16 +3,17 @@ part of 'expense_screen.dart';
 extension _ExpenseScreenLogic on _ExpenseScreenState {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_category == null || _category!.isEmpty) return;
     final amount = int.parse(_amountCtrl.text.trim());
     final payload = ExpenseEventData(
       amountVnd: amount,
-      category: _category,
+      category: _category!,
       paymentMethod: _paymentMethod,
       vendor: _vendorCtrl.text.trim(),
       note: _noteCtrl.text.trim(),
       staffName: _staffCtrl.text.trim(),
     );
-    setState(() => _loading = true);
+    _setLoading(true);
     try {
       if (_editing && _editingId != null) {
         await _runUpdate(_editingId!, payload);
@@ -21,35 +22,52 @@ extension _ExpenseScreenLogic on _ExpenseScreenState {
         await _runSave(payload);
         if (mounted) showTopSnackBar(context, VN.eventLogged);
       }
+      await ref.read(loggedByProvider.notifier).setName(payload.staffName);
       await _refreshHistory();
       _clearForm();
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(
+          context,
+          e is DioException ? (e.message ?? VN.apiError) : VN.apiError,
+        );
+      }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      _setLoading(false);
     }
   }
 
   Future<void> _refreshHistory() async {
-    final loader = widget.loadHistory;
-    final events = await (loader != null
-        ? loader(
-            since: _since == null ? null : _isoDate(_since!),
-            until: _until == null ? null : _isoDate(_until!),
-            category: _filterCategory,
-            paymentMethod: _filterPaymentMethod,
-            staffName: _filterStaffName,
-            searchText: _searchCtrl.text.trim(),
-          )
-        : ref
-              .read(eventsProvider.notifier)
-              .loadExpenseHistory(
-                since: _since == null ? null : _isoDate(_since!),
-                until: _until == null ? null : _isoDate(_until!),
-                category: _filterCategory,
-                paymentMethod: _filterPaymentMethod,
-                staffName: _filterStaffName,
-                searchText: _searchCtrl.text.trim(),
-              ));
-    if (mounted) setState(() => _history = events);
+    try {
+      final loader = widget.loadHistory;
+      final events = await (loader != null
+          ? loader(
+              since: _since == null ? null : _isoDate(_since!),
+              until: _until == null ? null : _isoDate(_until!),
+              category: _filterCategory,
+              paymentMethod: _filterPaymentMethod,
+              staffName: _filterStaffName,
+              searchText: _searchCtrl.text.trim(),
+            )
+          : ref
+                .read(eventsProvider.notifier)
+                .loadExpenseHistory(
+                  since: _since == null ? null : _isoDate(_since!),
+                  until: _until == null ? null : _isoDate(_until!),
+                  category: _filterCategory,
+                  paymentMethod: _filterPaymentMethod,
+                  staffName: _filterStaffName,
+                  searchText: _searchCtrl.text.trim(),
+                ));
+      _setHistory(events);
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(
+          context,
+          e is DioException ? (e.message ?? VN.apiError) : VN.apiError,
+        );
+      }
+    }
   }
 
   Future<void> _runSave(ExpenseEventData data) async {
@@ -81,16 +99,7 @@ extension _ExpenseScreenLogic on _ExpenseScreenState {
   void _startEdit(BakeryEvent event) {
     final data = ExpenseEventMapper.fromEvent(event);
     if (data == null) return;
-    setState(() {
-      _editing = true;
-      _editingId = event.id;
-      _amountCtrl.text = data.amountVnd.toString();
-      _category = data.category;
-      _paymentMethod = data.paymentMethod;
-      _vendorCtrl.text = data.vendor;
-      _noteCtrl.text = data.note;
-      _staffCtrl.text = data.staffName;
-    });
+    _setEditingFromEvent(event, data);
   }
 
   Future<void> _confirmDelete(int id) async {
@@ -112,38 +121,42 @@ extension _ExpenseScreenLogic on _ExpenseScreenState {
       ),
     );
     if (ok != true) return;
-    final custom = widget.deleteExpense;
-    if (custom != null) {
-      await custom(id);
-    } else {
-      await ref.read(eventsProvider.notifier).deleteEvent(id);
+    _setDeleting(true);
+    try {
+      final custom = widget.deleteExpense;
+      if (custom != null) {
+        await custom(id);
+      } else {
+        await ref.read(eventsProvider.notifier).deleteEvent(id);
+      }
+      await _refreshHistory();
+      if (mounted) showTopSnackBar(context, VN.eventDeleted);
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(
+          context,
+          e is DioException ? (e.message ?? VN.apiError) : VN.apiError,
+        );
+      }
+    } finally {
+      _setDeleting(false);
     }
-    await _refreshHistory();
-    if (mounted) showTopSnackBar(context, VN.eventDeleted);
   }
 
   void _clearForm() {
     _amountCtrl.clear();
     _vendorCtrl.clear();
     _noteCtrl.clear();
-    _editing = false;
-    _editingId = null;
+    _category = null;
+    _resetFormState();
   }
 
   void _cancelEdit() {
-    setState(_clearForm);
+    _clearForm();
   }
 
   void _clearFilters() {
-    setState(() {
-      _since = null;
-      _until = null;
-      _filterCategory = '';
-      _filterPaymentMethod = '';
-      _filterStaffName = '';
-      _filterStaffCtrl.clear();
-      _searchCtrl.clear();
-    });
+    _clearFilterState();
     _refreshHistory();
   }
 
@@ -157,13 +170,7 @@ extension _ExpenseScreenLogic on _ExpenseScreenState {
       initialDate: initial,
     );
     if (picked == null) return;
-    setState(() {
-      if (isSince) {
-        _since = picked;
-      } else {
-        _until = picked;
-      }
-    });
+    _setPickedDate(isSince, picked);
   }
 
   String _isoDate(DateTime input) =>

@@ -29,7 +29,7 @@ class ExpenseFormCard extends StatelessWidget {
   final TextEditingController staffCtrl;
   final List<String> categories;
   final List<String> paymentMethods;
-  final String category;
+  final String? category;
   final String paymentMethod;
   final bool loading;
   final bool editing;
@@ -59,9 +59,10 @@ class ExpenseFormCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                value: category,
+                initialValue: category,
                 decoration: const InputDecoration(
                   labelText: VN.expenseCategoryLabel,
+                  hintText: VN.expenseCategoryHint,
                   border: OutlineInputBorder(),
                 ),
                 items: categories
@@ -71,10 +72,12 @@ class ExpenseFormCard extends StatelessWidget {
                     )
                     .toList(),
                 onChanged: onCategoryChanged,
+                validator: (value) =>
+                    (value == null || value.isEmpty) ? VN.fieldRequired : null,
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                value: paymentMethod,
+                initialValue: paymentMethod,
                 decoration: const InputDecoration(
                   labelText: VN.expensePaymentMethodLabel,
                   border: OutlineInputBorder(),

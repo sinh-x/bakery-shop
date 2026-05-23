@@ -7,6 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeEventService extends EventService {
+  /// Test fake contract:
+  /// - Only [listEvents], [updateEvent], and [deleteEvent] are used by tests.
+  /// - Any other inherited API call is out of scope for this fake.
   _FakeEventService() : super(Dio());
 
   final List<BakeryEvent> _store = <BakeryEvent>[

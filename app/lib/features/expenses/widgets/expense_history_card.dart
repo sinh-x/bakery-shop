@@ -13,8 +13,8 @@ class ExpenseHistoryCard extends StatelessWidget {
   });
 
   final BakeryEvent event;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {

@@ -97,7 +97,9 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
   Future<void> deleteEvent(int id) async {
     final service = ref.read(eventServiceProvider);
     await service.deleteEvent(id);
-    state = state.whenData((events) => events.where((e) => e.id != id).toList());
+    state = state.whenData(
+      (events) => events.where((e) => e.id != id).toList(),
+    );
   }
 
   Future<List<BakeryEvent>> loadExpenseHistory({
@@ -111,6 +113,10 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
   }) async {
     final service = ref.read(eventServiceProvider);
     final safeLimit = limit.clamp(1, expenseMaxHistoryLimit);
+    // MVP note: server-side filtering for expense-specific fields is not
+    // available yet. We fetch up to expenseMaxHistoryLimit and filter locally,
+    // which can miss older matching records when total expense events exceed
+    // the capped fetch size.
     final events = await service.listEvents(
       type: expenseType,
       since: since,
@@ -140,7 +146,13 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
   }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(
-      () => _fetch(type: type, tag: tag, search: search, since: since, until: until),
+      () => _fetch(
+        type: type,
+        tag: tag,
+        search: search,
+        since: since,
+        until: until,
+      ),
     );
   }
 
@@ -152,7 +164,6 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
   }
 }
 
-final eventsProvider =
-    AsyncNotifierProvider<EventsNotifier, List<BakeryEvent>>(
+final eventsProvider = AsyncNotifierProvider<EventsNotifier, List<BakeryEvent>>(
   EventsNotifier.new,
 );

@@ -5,6 +5,7 @@ import 'package:bakery_app/features/expenses/widgets/expense_form_card.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_history_card.dart';
 import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/shared/labels/events.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -46,11 +47,12 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
   final _searchCtrl = TextEditingController();
   final _filterStaffCtrl = TextEditingController();
   bool _loading = false;
+  bool _deleting = false;
   bool _editing = false;
   int? _editingId;
   DateTime? _since;
   DateTime? _until;
-  String _category = VN.expenseCategoryIngredient;
+  String? _category;
   String _paymentMethod = VN.methodCash;
   String _filterCategory = '';
   String _filterPaymentMethod = '';
@@ -78,6 +80,67 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
       _staffCtrl.text = '';
     }
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshHistory());
+  }
+
+  void _setLoading(bool value) {
+    if (!mounted) return;
+    setState(() => _loading = value);
+  }
+
+  void _setDeleting(bool value) {
+    if (!mounted) return;
+    setState(() => _deleting = value);
+  }
+
+  void _setHistory(List<BakeryEvent> events) {
+    if (!mounted) return;
+    setState(() => _history = events);
+  }
+
+  void _setEditingFromEvent(BakeryEvent event, ExpenseEventData data) {
+    if (!mounted) return;
+    setState(() {
+      _editing = true;
+      _editingId = event.id;
+      _amountCtrl.text = data.amountVnd.toString();
+      _category = data.category;
+      _paymentMethod = data.paymentMethod;
+      _vendorCtrl.text = data.vendor;
+      _noteCtrl.text = data.note;
+      _staffCtrl.text = data.staffName;
+    });
+  }
+
+  void _resetFormState() {
+    if (!mounted) return;
+    setState(() {
+      _editing = false;
+      _editingId = null;
+    });
+  }
+
+  void _clearFilterState() {
+    if (!mounted) return;
+    setState(() {
+      _since = null;
+      _until = null;
+      _filterCategory = '';
+      _filterPaymentMethod = '';
+      _filterStaffName = '';
+      _filterStaffCtrl.clear();
+      _searchCtrl.clear();
+    });
+  }
+
+  void _setPickedDate(bool isSince, DateTime picked) {
+    if (!mounted) return;
+    setState(() {
+      if (isSince) {
+        _since = picked;
+      } else {
+        _until = picked;
+      }
+    });
   }
 
   @override
@@ -115,8 +178,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
             paymentMethod: _paymentMethod,
             loading: _loading,
             editing: _editing,
-            onCategoryChanged: (value) =>
-                setState(() => _category = value ?? _category),
+            onCategoryChanged: (value) => setState(() => _category = value),
             onPaymentMethodChanged: (value) =>
                 setState(() => _paymentMethod = value ?? _paymentMethod),
             onCancelEdit: _cancelEdit,
@@ -153,8 +215,10 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
           ..._history.map(
             (e) => ExpenseHistoryCard(
               event: e,
-              onEdit: () => _startEdit(e),
-              onDelete: () => _confirmDelete(e.id),
+              onEdit: _loading || _deleting ? null : () => _startEdit(e),
+              onDelete: _loading || _deleting
+                  ? null
+                  : () => _confirmDelete(e.id),
             ),
           ),
           if (_history.isEmpty)

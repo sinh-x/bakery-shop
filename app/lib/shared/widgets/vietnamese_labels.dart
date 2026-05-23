@@ -560,6 +560,7 @@ class VN {
   static const expenseHistorySection = 'Lịch sử chi phí';
   static const expenseAmountLabel = 'Số tiền (VND)';
   static const expenseCategoryLabel = 'Danh mục chi phí';
+  static const expenseCategoryHint = 'Chọn danh mục chi phí';
   static const expensePaymentMethodLabel = 'Phương thức thanh toán';
   static const expenseVendorLabel = 'Nhà cung cấp';
   static const expenseNoteLabel = 'Ghi chú';
