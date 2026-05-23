@@ -1,21 +1,22 @@
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
 
+enum ExpenseDateFilterMode { single, range }
+
 class ExpenseFilterCard extends StatelessWidget {
   const ExpenseFilterCard({
     super.key,
     required this.searchCtrl,
-    required this.filterStaffCtrl,
     required this.since,
     required this.until,
+    required this.dateFilterMode,
     required this.categories,
-    required this.paymentMethods,
+    required this.staffNames,
     required this.filterCategory,
-    required this.filterPaymentMethod,
-    required this.onPickSince,
-    required this.onPickUntil,
+    required this.filterStaffName,
+    required this.onDateFilterModeChanged,
+    required this.onPickDate,
     required this.onFilterCategoryChanged,
-    required this.onFilterPaymentMethodChanged,
     required this.onFilterStaffChanged,
     required this.onClearFilters,
     required this.onApplyFilters,
@@ -23,17 +24,16 @@ class ExpenseFilterCard extends StatelessWidget {
   });
 
   final TextEditingController searchCtrl;
-  final TextEditingController filterStaffCtrl;
   final DateTime? since;
   final DateTime? until;
+  final ExpenseDateFilterMode dateFilterMode;
   final List<String> categories;
-  final List<String> paymentMethods;
+  final List<String> staffNames;
   final String filterCategory;
-  final String filterPaymentMethod;
-  final VoidCallback onPickSince;
-  final VoidCallback onPickUntil;
-  final ValueChanged<String?> onFilterCategoryChanged;
-  final ValueChanged<String?> onFilterPaymentMethodChanged;
+  final String filterStaffName;
+  final ValueChanged<ExpenseDateFilterMode> onDateFilterModeChanged;
+  final VoidCallback onPickDate;
+  final ValueChanged<String> onFilterCategoryChanged;
   final ValueChanged<String> onFilterStaffChanged;
   final VoidCallback onClearFilters;
   final VoidCallback onApplyFilters;
@@ -41,6 +41,10 @@ class ExpenseFilterCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final rangeLabel = since == null || until == null
+        ? VN.lichSuDonHangLocKhoangNgay
+        : '${formatDate(since!)} - ${formatDate(until!)}';
+    final singleLabel = since == null ? VN.expenseSinceLabel : formatDate(since!);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -54,79 +58,102 @@ class ExpenseFilterCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Row(
+            Wrap(
+              spacing: 8,
               children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: onPickSince,
-                    child: Text(
-                      since == null ? VN.expenseSinceLabel : formatDate(since!),
-                    ),
-                  ),
+                ChoiceChip(
+                  label: const Text(VN.lichSuDonHangLocMotNgay),
+                  selected: dateFilterMode == ExpenseDateFilterMode.single,
+                  onSelected: (_) =>
+                      onDateFilterModeChanged(ExpenseDateFilterMode.single),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: onPickUntil,
-                    child: Text(
-                      until == null ? VN.expenseUntilLabel : formatDate(until!),
-                    ),
-                  ),
+                ChoiceChip(
+                  label: const Text(VN.lichSuDonHangLocKhoangNgay),
+                  selected: dateFilterMode == ExpenseDateFilterMode.range,
+                  onSelected: (_) =>
+                      onDateFilterModeChanged(ExpenseDateFilterMode.range),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            InputDecorator(
-              decoration: const InputDecoration(
-                labelText: VN.expenseCategoryLabel,
-                border: OutlineInputBorder(),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  isExpanded: true,
-                  value: filterCategory,
-                  items: <String>['', ...categories]
-                      .map(
-                        (item) => DropdownMenuItem(
-                          value: item,
-                          child: Text(item.isEmpty ? VN.filterAll : item),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: onFilterCategoryChanged,
-                ),
+            OutlinedButton.icon(
+              onPressed: onPickDate,
+              icon: const Icon(Icons.event),
+              label: Text(
+                dateFilterMode == ExpenseDateFilterMode.single
+                    ? singleLabel
+                    : rangeLabel,
               ),
             ),
             const SizedBox(height: 8),
-            InputDecorator(
-              decoration: const InputDecoration(
-                labelText: VN.expensePaymentMethodLabel,
-                border: OutlineInputBorder(),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                VN.expenseCategoryLabel,
+                style: Theme.of(context).textTheme.labelLarge,
               ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  isExpanded: true,
-                  value: filterPaymentMethod,
-                  items: <String>['', ...paymentMethods]
+            ),
+            const SizedBox(height: 6),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: const Text(VN.filterAll),
+                      selected: filterCategory.isEmpty,
+                      onSelected: (_) => onFilterCategoryChanged(''),
+                    ),
+                  ),
+                  ...categories
                       .map(
-                        (item) => DropdownMenuItem(
-                          value: item,
-                          child: Text(item.isEmpty ? VN.filterAll : item),
+                        (category) => Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            label: Text(category),
+                            selected: filterCategory == category,
+                            onSelected: (_) => onFilterCategoryChanged(category),
+                          ),
                         ),
-                      )
-                      .toList(),
-                  onChanged: onFilterPaymentMethodChanged,
-                ),
+                      ),
+                ],
               ),
             ),
             const SizedBox(height: 8),
-            TextField(
-              controller: filterStaffCtrl,
-              decoration: const InputDecoration(
-                labelText: VN.expenseFilterStaffLabel,
-                border: OutlineInputBorder(),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                VN.expenseFilterStaffLabel,
+                style: Theme.of(context).textTheme.labelLarge,
               ),
-              onChanged: onFilterStaffChanged,
+            ),
+            const SizedBox(height: 6),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: const Text(VN.filterAll),
+                      selected: filterStaffName.isEmpty,
+                      onSelected: (_) => onFilterStaffChanged(''),
+                    ),
+                  ),
+                  ...staffNames
+                      .map(
+                        (staffName) => Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            label: Text(staffName),
+                            selected: filterStaffName == staffName,
+                            onSelected: (_) => onFilterStaffChanged(staffName),
+                          ),
+                        ),
+                      ),
+                ],
+              ),
             ),
             const SizedBox(height: 8),
             Row(

@@ -236,6 +236,55 @@ void main() {
   });
 
   testWidgets('clear filters resets search and staff fields', (tester) async {
+    final events = [
+      _expenseEvent(
+        id: 1,
+        amount: 120000,
+        category: VN.expenseCategoryIngredient,
+        paymentMethod: VN.methodCash,
+        staff: 'Lan',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: ExpenseScreen(
+            loadHistory: ({
+              String? since,
+              String? until,
+              String? category,
+              String? paymentMethod,
+              String? staffName,
+              String? searchText,
+            }) async => events,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'bot');
+    await tester.tap(find.text(VN.expenseCategoryIngredient).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Lan').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.expenseResetFiltersAction));
+    await tester.pumpAndSettle();
+
+    expect(find.text('bot'), findsNothing);
+    final allChips = find.widgetWithText(ChoiceChip, VN.filterAll);
+    expect(
+      tester.widget<ChoiceChip>(allChips.at(1)).selected,
+      isTrue,
+    );
+    expect(
+      tester.widget<ChoiceChip>(allChips.at(2)).selected,
+      isTrue,
+    );
+  });
+
+  testWidgets('filter card uses chips and hides payment method filter', (tester) async {
     await tester.pumpWidget(
       const ProviderScope(
         child: MaterialApp(home: ExpenseScreen(loadHistory: _emptyHistory)),
@@ -243,13 +292,58 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField).first, 'bot');
-    await tester.enterText(find.byType(TextField).at(1), 'Lan');
-    await tester.tap(find.text(VN.expenseResetFiltersAction));
+    expect(find.widgetWithText(ChoiceChip, VN.lichSuDonHangLocMotNgay), findsOneWidget);
+    expect(
+      find.widgetWithText(ChoiceChip, VN.lichSuDonHangLocKhoangNgay),
+      findsOneWidget,
+    );
+    expect(find.text(VN.expensePaymentMethodLabel), findsNothing);
+  });
+
+  testWidgets('apply filters uses category and staff chips', (tester) async {
+    String? capturedCategory;
+    String? capturedStaff;
+    final events = [
+      _expenseEvent(
+        id: 1,
+        amount: 120000,
+        category: VN.expenseCategoryIngredient,
+        paymentMethod: VN.methodCash,
+        staff: 'Lan',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: ExpenseScreen(
+            loadHistory: ({
+              String? since,
+              String? until,
+              String? category,
+              String? paymentMethod,
+              String? staffName,
+              String? searchText,
+            }) async {
+              capturedCategory = category;
+              capturedStaff = staffName;
+              return events;
+            },
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    expect(find.text('bot'), findsNothing);
-    expect(find.text('Lan'), findsNothing);
+    await tester.tap(find.text(VN.expenseCategoryIngredient).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Lan').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.expenseApplyFiltersAction));
+    await tester.pumpAndSettle();
+
+    expect(capturedCategory, VN.expenseCategoryIngredient);
+    expect(capturedStaff, 'Lan');
   });
 
   testWidgets('shows empty history state when no expense item', (tester) async {

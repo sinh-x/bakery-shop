@@ -1,4 +1,5 @@
 import 'package:bakery_app/data/models/event.dart';
+import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/features/expenses/expense_constants.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_filter_card.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_history_card.dart';
@@ -29,13 +30,12 @@ class ExpenseScreen extends ConsumerStatefulWidget {
 
 class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
   final _searchCtrl = TextEditingController();
-  final _filterStaffCtrl = TextEditingController();
   bool _deleting = false;
   bool _initialHistoryLoading = true;
   DateTime? _since;
   DateTime? _until;
+  ExpenseDateFilterMode _dateFilterMode = ExpenseDateFilterMode.range;
   String _filterCategory = '';
-  String _filterPaymentMethod = '';
   String _filterStaffName = '';
   List<BakeryEvent> _history = <BakeryEvent>[];
 
@@ -72,30 +72,32 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
     setState(() {
       _since = null;
       _until = null;
+      _dateFilterMode = ExpenseDateFilterMode.range;
       _filterCategory = '';
-      _filterPaymentMethod = '';
       _filterStaffName = '';
-      _filterStaffCtrl.clear();
       _searchCtrl.clear();
-    });
-  }
-
-  void _setPickedDate(bool isSince, DateTime picked) {
-    if (!mounted) return;
-    setState(() {
-      if (isSince) {
-        _since = picked;
-      } else {
-        _until = picked;
-      }
     });
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
-    _filterStaffCtrl.dispose();
     super.dispose();
+  }
+
+  List<String> _staffFilterOptions() {
+    final names = _history
+        .map(ExpenseEventMapper.fromEvent)
+        .whereType<ExpenseEventData>()
+        .map((event) => event.staffName.trim())
+        .where((name) => name.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    if (_filterStaffName.isNotEmpty && !names.contains(_filterStaffName)) {
+      names.insert(0, _filterStaffName);
+    }
+    return names;
   }
 
   @override
@@ -117,20 +119,22 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
           const SizedBox(height: 8),
           ExpenseFilterCard(
             searchCtrl: _searchCtrl,
-            filterStaffCtrl: _filterStaffCtrl,
             since: _since,
             until: _until,
+            dateFilterMode: _dateFilterMode,
             categories: expenseCategories,
-            paymentMethods: expensePaymentMethods,
+            staffNames: _staffFilterOptions(),
             filterCategory: _filterCategory,
-            filterPaymentMethod: _filterPaymentMethod,
-            onPickSince: () => _pickDate(true),
-            onPickUntil: () => _pickDate(false),
-            onFilterCategoryChanged: (value) =>
-                setState(() => _filterCategory = value ?? ''),
-            onFilterPaymentMethodChanged: (value) =>
-                setState(() => _filterPaymentMethod = value ?? ''),
-            onFilterStaffChanged: (value) => _filterStaffName = value,
+            filterStaffName: _filterStaffName,
+            onDateFilterModeChanged: (value) => setState(() {
+              _dateFilterMode = value;
+              if (value == ExpenseDateFilterMode.single && _since != null) {
+                _until = _since;
+              }
+            }),
+            onPickDate: _pickDate,
+            onFilterCategoryChanged: (value) => setState(() => _filterCategory = value),
+            onFilterStaffChanged: (value) => setState(() => _filterStaffName = value),
             onClearFilters: _clearFilters,
             onApplyFilters: _refreshHistory,
             formatDate: _isoDate,
@@ -185,7 +189,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
               since: _since == null ? null : _isoDate(_since!),
               until: _until == null ? null : _isoDate(_until!),
               category: _filterCategory,
-              paymentMethod: _filterPaymentMethod,
+              paymentMethod: null,
               staffName: _filterStaffName,
               searchText: _searchCtrl.text.trim(),
             )
@@ -193,7 +197,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
                 since: _since == null ? null : _isoDate(_since!),
                 until: _until == null ? null : _isoDate(_until!),
                 category: _filterCategory,
-                paymentMethod: _filterPaymentMethod,
+                paymentMethod: null,
                 staffName: _filterStaffName,
                 searchText: _searchCtrl.text.trim(),
               ));
@@ -257,17 +261,36 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
     _refreshHistory();
   }
 
-  Future<void> _pickDate(bool isSince) async {
+  Future<void> _pickDate() async {
     final now = DateTime.now();
-    final initial = isSince ? (_since ?? now) : (_until ?? now);
-    final picked = await showDatePicker(
+    if (_dateFilterMode == ExpenseDateFilterMode.single) {
+      final picked = await showDatePicker(
+        context: context,
+        firstDate: DateTime(2020),
+        lastDate: DateTime(2100),
+        initialDate: _since ?? _until ?? now,
+      );
+      if (picked == null || !mounted) return;
+      setState(() {
+        _since = picked;
+        _until = picked;
+      });
+      return;
+    }
+
+    final start = _since ?? _until ?? now.subtract(const Duration(days: 6));
+    final end = _until ?? _since ?? now;
+    final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
-      initialDate: initial,
+      initialDateRange: DateTimeRange(start: start, end: end),
     );
-    if (picked == null) return;
-    _setPickedDate(isSince, picked);
+    if (picked == null || !mounted) return;
+    setState(() {
+      _since = picked.start;
+      _until = picked.end;
+    });
   }
 
   String _isoDate(DateTime input) =>
