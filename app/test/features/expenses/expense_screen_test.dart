@@ -43,7 +43,9 @@ Future<List<BakeryEvent>> _emptyHistory({
 }) async => const [];
 
 void main() {
-  testWidgets('default list loads with initial 7-day date range', (tester) async {
+  testWidgets('default list loads with initial 7-day date range', (
+    tester,
+  ) async {
     String? capturedSince;
     String? capturedUntil;
 
@@ -51,18 +53,19 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           home: ExpenseScreen(
-            loadHistory: ({
-              String? since,
-              String? until,
-              String? category,
-              String? paymentMethod,
-              String? staffName,
-              String? searchText,
-            }) async {
-              capturedSince = since;
-              capturedUntil = until;
-              return const [];
-            },
+            loadHistory:
+                ({
+                  String? since,
+                  String? until,
+                  String? category,
+                  String? paymentMethod,
+                  String? staffName,
+                  String? searchText,
+                }) async {
+                  capturedSince = since;
+                  capturedUntil = until;
+                  return const [];
+                },
           ),
         ),
       ),
@@ -88,7 +91,9 @@ void main() {
       initialLocation: '/expenses',
     );
 
-    await tester.pumpWidget(ProviderScope(child: MaterialApp.router(routerConfig: router)));
+    await tester.pumpWidget(
+      ProviderScope(child: MaterialApp.router(routerConfig: router)),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byIcon(Icons.add));
@@ -97,7 +102,9 @@ void main() {
     expect(find.text(VN.expenseAddAction), findsOneWidget);
   });
 
-  testWidgets('edit opens dedicated form route with prepopulated data', (tester) async {
+  testWidgets('edit opens dedicated form route with prepopulated data', (
+    tester,
+  ) async {
     final event = _expenseEvent(
       id: 9,
       amount: 150000,
@@ -113,25 +120,29 @@ void main() {
         GoRoute(
           path: '/expenses',
           builder: (_, __) => ExpenseScreen(
-            loadHistory: ({
-              String? since,
-              String? until,
-              String? category,
-              String? paymentMethod,
-              String? staffName,
-              String? searchText,
-            }) async => [event],
+            loadHistory:
+                ({
+                  String? since,
+                  String? until,
+                  String? category,
+                  String? paymentMethod,
+                  String? staffName,
+                  String? searchText,
+                }) async => [event],
           ),
         ),
         GoRoute(
           path: '/expenses/:id/edit',
-          builder: (_, state) => ExpenseFormScreen(event: state.extra as BakeryEvent),
+          builder: (_, state) =>
+              ExpenseFormScreen(event: state.extra as BakeryEvent),
         ),
       ],
       initialLocation: '/expenses',
     );
 
-    await tester.pumpWidget(ProviderScope(child: MaterialApp.router(routerConfig: router)));
+    await tester.pumpWidget(
+      ProviderScope(child: MaterialApp.router(routerConfig: router)),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text(VN.editEvent));
@@ -195,17 +206,18 @@ void main() {
         GoRoute(
           path: '/expenses',
           builder: (_, __) => ExpenseScreen(
-            loadHistory: ({
-              String? since,
-              String? until,
-              String? category,
-              String? paymentMethod,
-              String? staffName,
-              String? searchText,
-            }) async {
-              loads += 1;
-              return const [];
-            },
+            loadHistory:
+                ({
+                  String? since,
+                  String? until,
+                  String? category,
+                  String? paymentMethod,
+                  String? staffName,
+                  String? searchText,
+                }) async {
+                  loads += 1;
+                  return const [];
+                },
           ),
         ),
         GoRoute(
@@ -223,7 +235,9 @@ void main() {
       initialLocation: '/expenses',
     );
 
-    await tester.pumpWidget(ProviderScope(child: MaterialApp.router(routerConfig: router)));
+    await tester.pumpWidget(
+      ProviderScope(child: MaterialApp.router(routerConfig: router)),
+    );
     await tester.pumpAndSettle();
     final before = loads;
 
@@ -250,14 +264,15 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           home: ExpenseScreen(
-            loadHistory: ({
-              String? since,
-              String? until,
-              String? category,
-              String? paymentMethod,
-              String? staffName,
-              String? searchText,
-            }) async => events,
+            loadHistory:
+                ({
+                  String? since,
+                  String? until,
+                  String? category,
+                  String? paymentMethod,
+                  String? staffName,
+                  String? searchText,
+                }) async => events,
           ),
         ),
       ),
@@ -273,18 +288,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('bot'), findsNothing);
-    final allChips = find.widgetWithText(ChoiceChip, VN.filterAll);
-    expect(
-      tester.widget<ChoiceChip>(allChips.at(1)).selected,
-      isTrue,
-    );
-    expect(
-      tester.widget<ChoiceChip>(allChips.at(2)).selected,
-      isTrue,
-    );
+    final allChips = find.widgetWithText(FilterChip, VN.filterAll);
+    expect(tester.widget<FilterChip>(allChips.at(0)).selected, isTrue);
+    expect(tester.widget<FilterChip>(allChips.at(1)).selected, isTrue);
   });
 
-  testWidgets('filter card uses chips and hides payment method filter', (tester) async {
+  testWidgets('filter card uses chips and hides payment method filter', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       const ProviderScope(
         child: MaterialApp(home: ExpenseScreen(loadHistory: _emptyHistory)),
@@ -292,7 +303,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(ChoiceChip, VN.lichSuDonHangLocMotNgay), findsOneWidget);
+    expect(
+      find.widgetWithText(ChoiceChip, VN.lichSuDonHangLocMotNgay),
+      findsOneWidget,
+    );
     expect(
       find.widgetWithText(ChoiceChip, VN.lichSuDonHangLocKhoangNgay),
       findsOneWidget,
@@ -317,18 +331,19 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           home: ExpenseScreen(
-            loadHistory: ({
-              String? since,
-              String? until,
-              String? category,
-              String? paymentMethod,
-              String? staffName,
-              String? searchText,
-            }) async {
-              capturedCategory = category;
-              capturedStaff = staffName;
-              return events;
-            },
+            loadHistory:
+                ({
+                  String? since,
+                  String? until,
+                  String? category,
+                  String? paymentMethod,
+                  String? staffName,
+                  String? searchText,
+                }) async {
+                  capturedCategory = category;
+                  capturedStaff = staffName;
+                  return events;
+                },
           ),
         ),
       ),

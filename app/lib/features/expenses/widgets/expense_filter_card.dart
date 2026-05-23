@@ -41,14 +41,19 @@ class ExpenseFilterCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final rangeLabel = since == null || until == null
         ? VN.lichSuDonHangLocKhoangNgay
         : '${formatDate(since!)} - ${formatDate(until!)}';
-    final singleLabel = since == null ? VN.expenseSinceLabel : formatDate(since!);
+    final singleLabel = since == null
+        ? VN.expenseSinceLabel
+        : formatDate(since!);
     return Card(
+      clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             TextField(
               controller: searchCtrl,
@@ -57,7 +62,7 @@ class ExpenseFilterCard extends StatelessWidget {
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Wrap(
               spacing: 8,
               children: [
@@ -75,87 +80,81 @@ class ExpenseFilterCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: onPickDate,
-              icon: const Icon(Icons.event),
-              label: Text(
-                dateFilterMode == ExpenseDateFilterMode.single
-                    ? singleLabel
-                    : rangeLabel,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                VN.expenseCategoryLabel,
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-            ),
-            const SizedBox(height: 6),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(
-                      label: const Text(VN.filterAll),
-                      selected: filterCategory.isEmpty,
-                      onSelected: (_) => onFilterCategoryChanged(''),
-                    ),
+            const SizedBox(height: 10),
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onPickDate,
+              child: Ink(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.4,
                   ),
-                  ...categories
-                      .map(
-                        (category) => Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: ChoiceChip(
-                            label: Text(category),
-                            selected: filterCategory == category,
-                            onSelected: (_) => onFilterCategoryChanged(category),
-                          ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: theme.colorScheme.outlineVariant),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.event, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          dateFilterMode == ExpenseDateFilterMode.single
+                              ? singleLabel
+                              : rangeLabel,
                         ),
                       ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                VN.expenseFilterStaffLabel,
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-            ),
-            const SizedBox(height: 6),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(
-                      label: const Text(VN.filterAll),
-                      selected: filterStaffName.isEmpty,
-                      onSelected: (_) => onFilterStaffChanged(''),
-                    ),
+                      const Icon(Icons.chevron_right),
+                    ],
                   ),
-                  ...staffNames
-                      .map(
-                        (staffName) => Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: ChoiceChip(
-                            label: Text(staffName),
-                            selected: filterStaffName == staffName,
-                            onSelected: (_) => onFilterStaffChanged(staffName),
-                          ),
-                        ),
-                      ),
-                ],
+                ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
+            _FilterChipStrip(
+              label: VN.expenseCategoryLabel,
+              chips: [
+                FilterChip(
+                  label: const Text(VN.filterAll),
+                  selected: filterCategory.isEmpty,
+                  onSelected: (_) => onFilterCategoryChanged(''),
+                  visualDensity: VisualDensity.compact,
+                ),
+                ...categories.map(
+                  (category) => FilterChip(
+                    label: Text(category),
+                    selected: filterCategory == category,
+                    onSelected: (_) => onFilterCategoryChanged(category),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            _FilterChipStrip(
+              label: VN.expenseFilterStaffLabel,
+              chips: [
+                FilterChip(
+                  label: const Text(VN.filterAll),
+                  selected: filterStaffName.isEmpty,
+                  onSelected: (_) => onFilterStaffChanged(''),
+                  visualDensity: VisualDensity.compact,
+                ),
+                ...staffNames.map(
+                  (staffName) => FilterChip(
+                    label: Text(staffName),
+                    selected: filterStaffName == staffName,
+                    onSelected: (_) => onFilterStaffChanged(staffName),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
@@ -175,6 +174,43 @@ class ExpenseFilterCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _FilterChipStrip extends StatelessWidget {
+  const _FilterChipStrip({required this.label, required this.chips});
+
+  final String label;
+  final List<Widget> chips;
+
+  static const _labelWidth = 92.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 42,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          SizedBox(
+            width: _labelWidth,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 6, top: 9),
+              child: Text(
+                label,
+                style: Theme.of(
+                  context,
+                ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+          ...chips.map(
+            (chip) =>
+                Padding(padding: const EdgeInsets.only(right: 6), child: chip),
+          ),
+        ],
       ),
     );
   }
