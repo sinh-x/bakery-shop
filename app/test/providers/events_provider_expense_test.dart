@@ -51,11 +51,41 @@ class _FakeEventService extends EventService {
     String? since,
     String? until,
     String? loggedBy,
+    String? expenseCategory,
+    String? expensePaymentMethod,
+    String? expenseStaffName,
+    String? expenseSearch,
     int limit = 50,
   }) async {
-    return List<BakeryEvent>.from(
-      _store.where((item) => type == null || item.type == type).take(limit),
-    );
+    var items = _store.where((item) => type == null || item.type == type);
+    if (expenseCategory != null && expenseCategory.isNotEmpty) {
+      items = items.where((item) => item.data['category'] == expenseCategory);
+    }
+    if (expensePaymentMethod != null && expensePaymentMethod.isNotEmpty) {
+      items = items.where(
+        (item) => item.data['payment_method'] == expensePaymentMethod,
+      );
+    }
+    if (expenseStaffName != null && expenseStaffName.isNotEmpty) {
+      final query = expenseStaffName.toLowerCase();
+      items = items.where(
+        (item) =>
+            '${item.data['staff_name'] ?? ''}'.toLowerCase().contains(query),
+      );
+    }
+    if (expenseSearch != null && expenseSearch.isNotEmpty) {
+      final query = expenseSearch.toLowerCase();
+      items = items.where((item) {
+        final haystack = <String>[
+          item.summary,
+          '${item.data['vendor'] ?? ''}',
+          '${item.data['note'] ?? ''}',
+          '${item.data['staff_name'] ?? ''}',
+        ].join(' ').toLowerCase();
+        return haystack.contains(query);
+      });
+    }
+    return List<BakeryEvent>.from(items.take(limit));
   }
 
   @override

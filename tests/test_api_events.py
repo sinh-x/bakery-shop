@@ -202,6 +202,166 @@ def test_list_events_tags_as_list(api_client):
     assert "b" in ev["tags"]
 
 
+def test_list_events_expense_filter_by_category(api_client):
+    api_client.post("/api/events", json={
+        "summary": "Mua bột mì",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 120000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "vendor": "Chợ Bình Tây",
+            "note": "Bột mì số 8",
+            "staff_name": "Lan",
+        },
+    })
+    api_client.post("/api/events", json={
+        "summary": "Mua ly giấy",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50000,
+            "category": "Bao bì",
+            "payment_method": "Chuyển khoản",
+            "vendor": "Nhà cung cấp A",
+            "note": "Ly 16oz",
+            "staff_name": "Diễm",
+        },
+    })
+
+    resp = api_client.get("/api/events", params={
+        "type": "expense",
+        "expense_category": "Nguyên liệu",
+    })
+    assert resp.status_code == 200
+    events = resp.json()
+    assert len(events) == 1
+    assert events[0]["data"]["category"] == "Nguyên liệu"
+
+
+def test_list_events_expense_filter_by_payment_method(api_client):
+    api_client.post("/api/events", json={
+        "summary": "Mua đường",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 70000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "vendor": "Cửa hàng B",
+            "note": "Đường cát",
+            "staff_name": "Hoa",
+        },
+    })
+    api_client.post("/api/events", json={
+        "summary": "Mua túi",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 40000,
+            "category": "Bao bì",
+            "payment_method": "Chuyển khoản",
+            "vendor": "NCC C",
+            "note": "Túi giấy",
+            "staff_name": "Lan",
+        },
+    })
+
+    resp = api_client.get("/api/events", params={
+        "type": "expense",
+        "expense_payment_method": "Tiền mặt",
+    })
+    assert resp.status_code == 200
+    events = resp.json()
+    assert len(events) == 1
+    assert events[0]["data"]["payment_method"] == "Tiền mặt"
+
+
+def test_list_events_expense_filter_by_staff_name(api_client):
+    api_client.post("/api/events", json={
+        "summary": "Mua trứng",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 90000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "vendor": "NCC Trứng",
+            "note": "30 quả",
+            "staff_name": "Ngọc Lan",
+        },
+    })
+    api_client.post("/api/events", json={
+        "summary": "Mua hộp",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 60000,
+            "category": "Bao bì",
+            "payment_method": "Tiền mặt",
+            "vendor": "NCC Hộp",
+            "note": "Hộp bánh",
+            "staff_name": "Diễm",
+        },
+    })
+
+    resp = api_client.get("/api/events", params={
+        "type": "expense",
+        "expense_staff_name": "lan",
+    })
+    assert resp.status_code == 200
+    events = resp.json()
+    assert len(events) == 1
+    assert events[0]["data"]["staff_name"] == "Ngọc Lan"
+
+
+def test_list_events_expense_search_applies_before_limit(api_client):
+    for idx in range(499):
+        api_client.post("/api/events", json={
+            "summary": f"Chi phí thường {idx}",
+            "type": "expense",
+            "data": {
+                "amount_vnd": 1000 + idx,
+                "category": "Nguyên liệu",
+                "payment_method": "Tiền mặt",
+                "vendor": "NCC thường",
+                "note": "Giao dịch thường",
+                "staff_name": "Lan",
+            },
+        })
+
+    api_client.post("/api/events", json={
+        "summary": "Chi phí mục tiêu",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 88888,
+            "category": "Bao bì",
+            "payment_method": "Tiền mặt",
+            "vendor": "NCC mục tiêu",
+            "note": "hoadon-target",
+            "staff_name": "Hoa",
+        },
+    })
+
+    api_client.post("/api/events", json={
+        "summary": "Chi phí mới hơn",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 77777,
+            "category": "Bao bì",
+            "payment_method": "Tiền mặt",
+            "vendor": "NCC mới",
+            "note": "bản ghi mới",
+            "staff_name": "Diễm",
+        },
+    })
+
+    resp = api_client.get("/api/events", params={
+        "type": "expense",
+        "expense_search": "hoadon-target",
+        "limit": 1,
+    })
+    assert resp.status_code == 200
+    events = resp.json()
+    assert len(events) == 1
+    assert events[0]["data"]["note"] == "hoadon-target"
+
+
 # --- GET /api/events/{id} ---
 
 

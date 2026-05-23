@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/api/api_client.dart';
 import '../data/api/event_service.dart';
-import '../data/mappers/expense_event_mapper.dart';
+import '../data/mappers/expense_event_mapper.dart' show expenseMaxHistoryLimit, expenseType;
 import '../data/models/event.dart';
 
 const kLoggedByKey = 'logged_by_name';
@@ -113,26 +113,17 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
   }) async {
     final service = ref.read(eventServiceProvider);
     final safeLimit = limit.clamp(1, expenseMaxHistoryLimit);
-    // MVP note: server-side filtering for expense-specific fields is not
-    // available yet. We fetch up to expenseMaxHistoryLimit and filter locally,
-    // which can miss older matching records when total expense events exceed
-    // the capped fetch size.
     final events = await service.listEvents(
       type: expenseType,
       since: since,
       until: until,
+      expenseCategory: category,
+      expensePaymentMethod: paymentMethod,
+      expenseStaffName: staffName,
+      expenseSearch: searchText,
       limit: safeLimit,
     );
-    final filtered = events.where(
-      (event) => ExpenseEventMapper.matchesFilters(
-        event,
-        category: category,
-        paymentMethod: paymentMethod,
-        staffName: staffName,
-        searchText: searchText,
-      ),
-    );
-    final sorted = filtered.toList()
+    final sorted = events.toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     return sorted;
   }

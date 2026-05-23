@@ -216,7 +216,7 @@ void main() {
 
   testWidgets('clear filters resets search and staff fields', (tester) async {
     await tester.pumpWidget(
-      ProviderScope(
+      const ProviderScope(
         child: MaterialApp(home: ExpenseScreen(loadHistory: _emptyHistory)),
       ),
     );
@@ -233,7 +233,7 @@ void main() {
 
   testWidgets('shows empty history state when no expense item', (tester) async {
     await tester.pumpWidget(
-      ProviderScope(
+      const ProviderScope(
         child: MaterialApp(home: ExpenseScreen(loadHistory: _emptyHistory)),
       ),
     );

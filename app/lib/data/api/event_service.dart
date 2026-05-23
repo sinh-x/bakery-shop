@@ -36,6 +36,10 @@ class EventService {
     String? since,
     String? until,
     String? loggedBy,
+    String? expenseCategory,
+    String? expensePaymentMethod,
+    String? expenseStaffName,
+    String? expenseSearch,
     int limit = 50,
   }) async {
     final params = <String, dynamic>{'limit': limit};
@@ -45,6 +49,18 @@ class EventService {
     if (since != null) params['since'] = since;
     if (until != null) params['until'] = until;
     if (loggedBy != null) params['logged_by'] = loggedBy;
+    if (expenseCategory != null && expenseCategory.isNotEmpty) {
+      params['expense_category'] = expenseCategory;
+    }
+    if (expensePaymentMethod != null && expensePaymentMethod.isNotEmpty) {
+      params['expense_payment_method'] = expensePaymentMethod;
+    }
+    if (expenseStaffName != null && expenseStaffName.isNotEmpty) {
+      params['expense_staff_name'] = expenseStaffName;
+    }
+    if (expenseSearch != null && expenseSearch.isNotEmpty) {
+      params['expense_search'] = expenseSearch;
+    }
 
     final response = await _dio.get('/api/events', queryParameters: params);
     final list = response.data as List;

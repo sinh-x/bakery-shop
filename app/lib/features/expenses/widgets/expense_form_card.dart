@@ -59,7 +59,6 @@ class ExpenseFormCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                key: ValueKey<String?>('expense-form-category-$category'),
                 initialValue: category,
                 decoration: const InputDecoration(
                   labelText: VN.expenseCategoryLabel,
@@ -78,9 +77,6 @@ class ExpenseFormCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                key: ValueKey<String>(
-                  'expense-form-payment-method-$paymentMethod',
-                ),
                 initialValue: paymentMethod,
                 decoration: const InputDecoration(
                   labelText: VN.expensePaymentMethodLabel,

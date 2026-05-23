@@ -76,42 +76,48 @@ class ExpenseFilterCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              key: ValueKey<String>('filter-category-$filterCategory'),
-              initialValue: filterCategory,
+            InputDecorator(
               decoration: const InputDecoration(
                 labelText: VN.expenseCategoryLabel,
                 border: OutlineInputBorder(),
               ),
-              items: <String>['', ...categories]
-                  .map(
-                    (item) => DropdownMenuItem(
-                      value: item,
-                      child: Text(item.isEmpty ? VN.filterAll : item),
-                    ),
-                  )
-                  .toList(),
-              onChanged: onFilterCategoryChanged,
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  isExpanded: true,
+                  value: filterCategory,
+                  items: <String>['', ...categories]
+                      .map(
+                        (item) => DropdownMenuItem(
+                          value: item,
+                          child: Text(item.isEmpty ? VN.filterAll : item),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: onFilterCategoryChanged,
+                ),
+              ),
             ),
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              key: ValueKey<String>(
-                'filter-payment-method-$filterPaymentMethod',
-              ),
-              initialValue: filterPaymentMethod,
+            InputDecorator(
               decoration: const InputDecoration(
                 labelText: VN.expensePaymentMethodLabel,
                 border: OutlineInputBorder(),
               ),
-              items: <String>['', ...paymentMethods]
-                  .map(
-                    (item) => DropdownMenuItem(
-                      value: item,
-                      child: Text(item.isEmpty ? VN.filterAll : item),
-                    ),
-                  )
-                  .toList(),
-              onChanged: onFilterPaymentMethodChanged,
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  isExpanded: true,
+                  value: filterPaymentMethod,
+                  items: <String>['', ...paymentMethods]
+                      .map(
+                        (item) => DropdownMenuItem(
+                          value: item,
+                          child: Text(item.isEmpty ? VN.filterAll : item),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: onFilterPaymentMethodChanged,
+                ),
+              ),
             ),
             const SizedBox(height: 8),
             TextField(

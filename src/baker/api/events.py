@@ -75,6 +75,10 @@ def list_events(
     since: str | None = Query(None, description="Từ ngày (ISO format)"),
     until: str | None = Query(None, description="Đến ngày (ISO format)"),
     logged_by: str | None = Query(None, description="Lọc theo người ghi"),
+    expense_category: str | None = Query(None, description="Lọc chi phí theo danh mục"),
+    expense_payment_method: str | None = Query(None, description="Lọc chi phí theo phương thức thanh toán"),
+    expense_staff_name: str | None = Query(None, description="Lọc chi phí theo nhân viên"),
+    expense_search: str | None = Query(None, description="Tìm kiếm chi phí trong tóm tắt, NCC, ghi chú, nhân viên"),
     limit: int = Query(50, ge=1, le=500, description="Số kết quả tối đa"),
 ):
     """Danh sách sự kiện với bộ lọc."""
@@ -89,6 +93,10 @@ def list_events(
             until=until,
             search=search,
             logged_by=logged_by,
+            expense_category=expense_category,
+            expense_payment_method=expense_payment_method,
+            expense_staff_name=expense_staff_name,
+            expense_search=expense_search,
             limit=limit,
         )
         return [_row_to_dict(r) for r in rows]
