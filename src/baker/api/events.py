@@ -43,6 +43,8 @@ def create_event(body: EventCreate):
     if not body.summary.strip():
         raise HTTPException(status_code=422, detail="summary không được để trống")
 
+    _validate_expense_data(body.type, body.data)
+
     event = Event(
         summary=body.summary.strip(),
         type=body.type,
@@ -107,11 +109,36 @@ class EventUpdate(BaseModel):
     type: str | None = None
     tags: list[str] | None = None
     logged_by: str | None = None
+    data: dict[str, Any] | None = None
+
+
+def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
+    if event_type != "expense":
+        return
+
+    required_keys = {
+        "amount_vnd",
+        "category",
+        "payment_method",
+        "vendor",
+        "note",
+        "staff_name",
+    }
+    missing_keys = [key for key in required_keys if key not in data]
+    if missing_keys:
+        raise HTTPException(
+            status_code=422,
+            detail=f"expense data thiếu trường bắt buộc: {', '.join(sorted(missing_keys))}",
+        )
+
+    amount_vnd = data.get("amount_vnd")
+    if not isinstance(amount_vnd, int) or amount_vnd <= 0:
+        raise HTTPException(status_code=422, detail="amount_vnd phải là số nguyên lớn hơn 0")
 
 
 @router.patch("/{event_id}")
 def update_event(event_id: int, body: EventUpdate):
-    """Cập nhật sự kiện (summary, type, tags)."""
+    """Cập nhật sự kiện (summary, type, tags, logged_by, data)."""
     with get_db() as conn:
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         if not row:
@@ -142,8 +169,33 @@ def update_event(event_id: int, body: EventUpdate):
             fields.append("logged_by = ?")
             values.append(data["logged_by"])
 
+        next_type = data.get("type", row["type"])
+        next_data = data.get("data")
+        if next_data is None:
+            try:
+                next_data = json.loads(row["data"]) if row["data"] else {}
+            except (json.JSONDecodeError, TypeError):
+                next_data = {}
+
+        _validate_expense_data(next_type, next_data)
+
+        if "data" in data:
+            fields.append("data = ?")
+            values.append(json.dumps(data["data"]))
+
         values.append(event_id)
         conn.execute(f"UPDATE events SET {', '.join(fields)} WHERE id = ?", values)
 
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return _row_to_dict(row)
+
+
+@router.delete("/{event_id}", status_code=204)
+def delete_event(event_id: int):
+    """Xóa sự kiện theo id."""
+    with get_db() as conn:
+        row = conn.execute("SELECT id FROM events WHERE id = ?", (event_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
+
+        conn.execute("DELETE FROM events WHERE id = ?", (event_id,))

@@ -45,6 +45,55 @@ def test_create_event_missing_summary_rejected(api_client):
     assert resp.status_code == 422
 
 
+def test_create_expense_event_with_structured_data(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền mua bột mì",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 125000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "vendor": "Chợ Bình Tây",
+            "note": "Bột mì đa dụng",
+            "staff_name": "Lan",
+        },
+    })
+    assert resp.status_code == 201
+    ev = resp.json()
+    assert ev["type"] == "expense"
+    assert ev["data"]["amount_vnd"] == 125000
+
+
+def test_create_expense_event_rejects_non_integer_amount(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền mua sữa",
+        "type": "expense",
+        "data": {
+            "amount_vnd": "120000",
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "vendor": "Cửa hàng A",
+            "note": "Sữa tươi",
+            "staff_name": "Lan",
+        },
+    })
+    assert resp.status_code == 422
+    assert "amount_vnd" in resp.json()["detail"]
+
+
+def test_create_expense_event_rejects_missing_required_fields(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền mua đường",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 10000,
+            "category": "Nguyên liệu",
+        },
+    })
+    assert resp.status_code == 422
+    assert "thiếu trường bắt buộc" in resp.json()["detail"]
+
+
 # --- GET /api/events ---
 
 
@@ -254,3 +303,85 @@ def test_patch_event_multiple_fields(api_client):
     assert ev["summary"] == "Cập nhật"
     assert ev["type"] == "equipment"
     assert ev["tags"] == ["staff"]
+
+
+def test_patch_expense_event_data(api_client):
+    create_resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền mua ly",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50000,
+            "category": "Bao bì",
+            "payment_method": "Tiền mặt",
+            "vendor": "Nhà cung cấp A",
+            "note": "Ly giấy",
+            "staff_name": "Diễm",
+        },
+    })
+    event_id = create_resp.json()["id"]
+    original_timestamp = create_resp.json()["timestamp"]
+
+    resp = api_client.patch(f"/api/events/{event_id}", json={
+        "summary": "Chi tiền mua ly + nắp",
+        "data": {
+            "amount_vnd": 68000,
+            "category": "Bao bì",
+            "payment_method": "Chuyển khoản",
+            "vendor": "Nhà cung cấp A",
+            "note": "Ly giấy và nắp",
+            "staff_name": "Diễm",
+        },
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["summary"] == "Chi tiền mua ly + nắp"
+    assert body["data"]["amount_vnd"] == 68000
+    assert body["timestamp"] == original_timestamp
+
+
+def test_patch_expense_event_rejects_invalid_amount(api_client):
+    create_resp = api_client.post("/api/events", json={
+        "summary": "Chi điện",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 200000,
+            "category": "Điện/nước",
+            "payment_method": "Chuyển khoản",
+            "vendor": "EVN",
+            "note": "Tiền điện",
+            "staff_name": "Lan",
+        },
+    })
+    event_id = create_resp.json()["id"]
+
+    resp = api_client.patch(f"/api/events/{event_id}", json={
+        "data": {
+            "amount_vnd": 0,
+            "category": "Điện/nước",
+            "payment_method": "Chuyển khoản",
+            "vendor": "EVN",
+            "note": "Tiền điện",
+            "staff_name": "Lan",
+        },
+    })
+    assert resp.status_code == 422
+    assert "amount_vnd" in resp.json()["detail"]
+
+
+# --- DELETE /api/events/{id} ---
+
+
+def test_delete_event(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Sẽ xóa"})
+    event_id = create_resp.json()["id"]
+
+    delete_resp = api_client.delete(f"/api/events/{event_id}")
+    assert delete_resp.status_code == 204
+
+    get_resp = api_client.get(f"/api/events/{event_id}")
+    assert get_resp.status_code == 404
+
+
+def test_delete_event_not_found(api_client):
+    resp = api_client.delete("/api/events/9999")
+    assert resp.status_code == 404

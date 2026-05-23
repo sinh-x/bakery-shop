@@ -572,6 +572,19 @@ class VN {
   static const expenseCategoryRepair = 'Sửa chữa';
   static const expenseCategorySalaryAllowance = 'Lương/phụ cấp';
   static const expenseCategoryOther = 'Khác';
+  static const expenseSaveAction = 'Lưu chi phí';
+  static const expenseUpdateAction = 'Cập nhật chi phí';
+  static const expenseCancelEditAction = 'Hủy sửa';
+  static const expenseApplyFiltersAction = 'Áp dụng lọc';
+  static const expenseResetFiltersAction = 'Xóa lọc';
+  static const expenseSearchLabel =
+      'Tìm theo nội dung, nhà cung cấp, nhân viên';
+  static const expenseSinceLabel = 'Từ ngày';
+  static const expenseUntilLabel = 'Đến ngày';
+  static const expenseFilterStaffLabel = 'Lọc theo nhân viên';
+  static const expenseNoHistory = 'Chưa có chi phí phù hợp bộ lọc';
+  static const expenseAmountValidationMessage =
+      'Số tiền phải là số nguyên VND lớn hơn 0';
 
   // Shipping fee & extras
   static const shippingFee = 'Phí giao hàng';
@@ -596,7 +609,8 @@ class VN {
   static const extraDeleted = 'Đã xóa phụ kiện';
   static const noExtras = 'Chưa có phụ kiện';
   static const deleteExtraConfirm = 'Xóa phụ kiện này?';
-  static const extrasSettingsDeprecatedTitle = 'Đã dừng quản lý phụ kiện tại đây';
+  static const extrasSettingsDeprecatedTitle =
+      'Đã dừng quản lý phụ kiện tại đây';
   static const extrasSettingsDeprecatedBody =
       'Phụ kiện trả phí mới được quản lý từ Danh mục sản phẩm (nhóm phu_kien). Mục này chỉ giữ lại để hướng dẫn và không còn tạo/sửa dữ liệu order_extra.';
   static const extrasSettingsDeprecatedAction =
