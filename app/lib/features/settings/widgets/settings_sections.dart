@@ -102,8 +102,8 @@ class _ExtrasSettingsTabState extends ConsumerState<ExtrasSettingsTab> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: ListView(
-        padding: EdgeInsets.all(16),
-        children: [
+        padding: const EdgeInsets.all(16),
+        children: const [
           Card(
             child: Padding(
               padding: EdgeInsets.all(16),
