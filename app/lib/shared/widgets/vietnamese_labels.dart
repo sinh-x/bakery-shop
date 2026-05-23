@@ -574,6 +574,7 @@ class VN {
   static const expenseCategorySalaryAllowance = 'Lương/phụ cấp';
   static const expenseCategoryOther = 'Khác';
   static const expenseSaveAction = 'Lưu chi phí';
+  static const expenseAddAction = 'Thêm chi phí';
   static const expenseUpdateAction = 'Cập nhật chi phí';
   static const expenseCancelEditAction = 'Hủy sửa';
   static const expenseApplyFiltersAction = 'Áp dụng lọc';

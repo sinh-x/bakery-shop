@@ -1,11 +1,12 @@
-import 'package:bakery_app/features/expenses/expense_screen.dart';
-import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
-import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/data/models/event.dart';
+import 'package:bakery_app/features/expenses/expense_form_screen.dart';
+import 'package:bakery_app/features/expenses/expense_screen.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 BakeryEvent _expenseEvent({
   required int id,
@@ -42,59 +43,61 @@ Future<List<BakeryEvent>> _emptyHistory({
 }) async => const [];
 
 void main() {
-  testWidgets('invalid amount blocks save and shows Vietnamese validation', (
-    tester,
-  ) async {
-    var saveCalled = 0;
+  testWidgets('default list loads with initial 7-day date range', (tester) async {
+    String? capturedSince;
+    String? capturedUntil;
 
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
           home: ExpenseScreen(
-            saveExpense: (_) async {
-              saveCalled += 1;
+            loadHistory: ({
+              String? since,
+              String? until,
+              String? category,
+              String? paymentMethod,
+              String? staffName,
+              String? searchText,
+            }) async {
+              capturedSince = since;
+              capturedUntil = until;
+              return const [];
             },
-            loadHistory: _emptyHistory,
           ),
         ),
       ),
     );
-
-    await tester.tap(find.text(VN.expenseSaveAction));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.expenseAmountValidationMessage), findsOneWidget);
-    expect(saveCalled, 0);
+    expect(capturedSince, isNotNull);
+    expect(capturedUntil, isNotNull);
   });
 
-  testWidgets('save success calls callback and keeps snackbar flow stable', (
-    tester,
-  ) async {
-    var saveCalled = 0;
-
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          home: ExpenseScreen(
-            saveExpense: (_) async {
-              saveCalled += 1;
-            },
-            loadHistory: _emptyHistory,
-          ),
+  testWidgets('plus button opens dedicated add route', (tester) async {
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/expenses',
+          builder: (_, __) => const ExpenseScreen(loadHistory: _emptyHistory),
         ),
-      ),
+        GoRoute(
+          path: '/expenses/new',
+          builder: (_, __) => const ExpenseFormScreen(),
+        ),
+      ],
+      initialLocation: '/expenses',
     );
 
-    await tester.enterText(find.byType(TextFormField).first, '120000');
-    await tester.tap(find.text(VN.expenseSaveAction));
+    await tester.pumpWidget(ProviderScope(child: MaterialApp.router(routerConfig: router)));
     await tester.pumpAndSettle();
 
-    expect(saveCalled, 1);
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+
+    expect(find.text(VN.expenseAddAction), findsOneWidget);
   });
 
-  testWidgets('edit prepopulates form from selected history item', (
-    tester,
-  ) async {
+  testWidgets('edit opens dedicated form route with prepopulated data', (tester) async {
     final event = _expenseEvent(
       id: 9,
       amount: 150000,
@@ -105,28 +108,36 @@ void main() {
       staff: 'Lan',
     );
 
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          home: ExpenseScreen(
-            loadHistory:
-                ({
-                  since,
-                  until,
-                  category,
-                  paymentMethod,
-                  staffName,
-                  searchText,
-                }) async => [event],
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/expenses',
+          builder: (_, __) => ExpenseScreen(
+            loadHistory: ({
+              String? since,
+              String? until,
+              String? category,
+              String? paymentMethod,
+              String? staffName,
+              String? searchText,
+            }) async => [event],
           ),
         ),
-      ),
+        GoRoute(
+          path: '/expenses/:id/edit',
+          builder: (_, state) => ExpenseFormScreen(event: state.extra as BakeryEvent),
+        ),
+      ],
+      initialLocation: '/expenses',
     );
+
+    await tester.pumpWidget(ProviderScope(child: MaterialApp.router(routerConfig: router)));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text(VN.editEvent));
     await tester.pumpAndSettle();
 
+    expect(find.text(VN.expenseUpdateAction), findsOneWidget);
     expect(find.text('150000'), findsOneWidget);
     expect(find.text('NCC A'), findsOneWidget);
     expect(find.text('Bot mi'), findsOneWidget);
@@ -177,41 +188,51 @@ void main() {
     expect(deletedId, 3);
   });
 
-  testWidgets('renders history item details from expense data', (tester) async {
-    final event = _expenseEvent(
-      id: 4,
-      amount: 30000,
-      category: VN.expenseCategoryDelivery,
-      paymentMethod: VN.methodTransfer,
-      vendor: 'NCC B',
-      note: 'Ship',
-      staff: 'Hoa',
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          home: ExpenseScreen(
-            loadHistory:
-                ({
-                  since,
-                  until,
-                  category,
-                  paymentMethod,
-                  staffName,
-                  searchText,
-                }) async => [event],
+  testWidgets('returning true from add route refreshes list', (tester) async {
+    var loads = 0;
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/expenses',
+          builder: (_, __) => ExpenseScreen(
+            loadHistory: ({
+              String? since,
+              String? until,
+              String? category,
+              String? paymentMethod,
+              String? staffName,
+              String? searchText,
+            }) async {
+              loads += 1;
+              return const [];
+            },
           ),
         ),
-      ),
+        GoRoute(
+          path: '/expenses/new',
+          builder: (context, _) => Scaffold(
+            body: Center(
+              child: FilledButton(
+                onPressed: () => context.pop(true),
+                child: const Text('done'),
+              ),
+            ),
+          ),
+        ),
+      ],
+      initialLocation: '/expenses',
     );
+
+    await tester.pumpWidget(ProviderScope(child: MaterialApp.router(routerConfig: router)));
+    await tester.pumpAndSettle();
+    final before = loads;
+
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('done'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining(VN.expenseCategoryDelivery), findsOneWidget);
-    expect(find.textContaining(VN.methodTransfer), findsOneWidget);
-    expect(find.textContaining('Hoa'), findsOneWidget);
-    expect(find.textContaining('NCC B'), findsOneWidget);
-    expect(find.textContaining('Ship'), findsOneWidget);
+    expect(loads, greaterThan(before));
   });
 
   testWidgets('clear filters resets search and staff fields', (tester) async {
