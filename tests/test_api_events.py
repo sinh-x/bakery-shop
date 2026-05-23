@@ -61,7 +61,24 @@ def test_create_expense_event_with_structured_data(api_client):
     assert resp.status_code == 201
     ev = resp.json()
     assert ev["type"] == "expense"
-    assert ev["data"]["amount_vnd"] == 125000
+
+
+def test_create_event_with_custom_timestamp(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Ghi sự kiện có giờ",
+        "type": "expense",
+        "timestamp": "2026-05-23T19:57:00",
+        "data": {
+            "amount_vnd": 75000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "vendor": "NCC A",
+            "note": "Mua đường",
+            "staff_name": "Lan",
+        },
+    })
+    assert resp.status_code == 201
+    assert resp.json()["timestamp"] == "2026-05-23T19:57:00"
 
 
 def test_create_expense_event_rejects_non_integer_amount(api_client):
@@ -302,7 +319,7 @@ def test_list_events_expense_filter_by_staff_name(api_client):
 
     resp = api_client.get("/api/events", params={
         "type": "expense",
-        "expense_staff_name": "lan",
+        "expense_staff_name": "ngọc lan",
     })
     assert resp.status_code == 200
     events = resp.json()
@@ -497,6 +514,29 @@ def test_patch_expense_event_data(api_client):
     assert body["summary"] == "Chi tiền mua ly + nắp"
     assert body["data"]["amount_vnd"] == 68000
     assert body["timestamp"] == original_timestamp
+
+
+def test_patch_expense_event_timestamp(api_client):
+    create_resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền mua ly",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50000,
+            "category": "Bao bì",
+            "payment_method": "Tiền mặt",
+            "vendor": "Nhà cung cấp A",
+            "note": "Ly giấy",
+            "staff_name": "Diễm",
+        },
+    })
+    event_id = create_resp.json()["id"]
+
+    resp = api_client.patch(f"/api/events/{event_id}", json={
+        "timestamp": "2026-05-24T08:15:00",
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["timestamp"] == "2026-05-24T08:15:00"
 
 
 def test_patch_expense_event_rejects_invalid_amount(api_client):

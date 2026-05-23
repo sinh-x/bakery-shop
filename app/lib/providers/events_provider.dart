@@ -4,7 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/api/api_client.dart';
 import '../data/api/event_service.dart';
-import '../data/mappers/expense_event_mapper.dart' show expenseMaxHistoryLimit, expenseType;
+import '../data/mappers/expense_event_mapper.dart'
+    show expenseMaxHistoryLimit, expenseType;
 import '../data/models/event.dart';
 
 const kLoggedByKey = 'logged_by_name';
@@ -58,6 +59,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     List<String> tags = const [],
     String loggedBy = '',
     Map<String, dynamic> data = const {},
+    DateTime? timestamp,
   }) async {
     final service = ref.read(eventServiceProvider);
     final event = await service.createEvent(
@@ -67,6 +69,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
       loggedBy: loggedBy,
       data: data,
       source: 'app',
+      timestamp: timestamp,
     );
     // Prepend to current list immediately for snappy UX
     state = state.whenData((events) => [event, ...events]);
@@ -79,6 +82,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     List<String>? tags,
     String? loggedBy,
     Map<String, dynamic>? data,
+    DateTime? timestamp,
   }) async {
     final service = ref.read(eventServiceProvider);
     final updated = await service.updateEvent(
@@ -88,6 +92,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
       tags: tags,
       loggedBy: loggedBy,
       data: data,
+      timestamp: timestamp,
     );
     state = state.whenData(
       (events) => events.map((e) => e.id == id ? updated : e).toList(),

@@ -42,6 +42,35 @@ class _FakeEventService extends EventService {
       },
     ),
   ];
+  DateTime? capturedCreateTimestamp;
+  DateTime? capturedUpdateTimestamp;
+
+  @override
+  Future<BakeryEvent> createEvent({
+    required String summary,
+    String type = 'note',
+    List<String> tags = const [],
+    String loggedBy = '',
+    Map<String, dynamic> data = const {},
+    String source = 'app',
+    DateTime? timestamp,
+  }) async {
+    capturedCreateTimestamp = timestamp;
+    final nextId =
+        _store.map((e) => e.id).fold<int>(0, (a, b) => a > b ? a : b) + 1;
+    final created = BakeryEvent(
+      id: nextId,
+      timestamp: timestamp ?? DateTime.parse('2026-05-23T12:00:00Z'),
+      type: type,
+      summary: summary,
+      tags: tags,
+      loggedBy: loggedBy,
+      source: source,
+      data: data,
+    );
+    _store.insert(0, created);
+    return created;
+  }
 
   @override
   Future<List<BakeryEvent>> listEvents({
@@ -96,11 +125,14 @@ class _FakeEventService extends EventService {
     List<String>? tags,
     String? loggedBy,
     Map<String, dynamic>? data,
+    DateTime? timestamp,
   }) async {
+    capturedUpdateTimestamp = timestamp;
     final index = _store.indexWhere((item) => item.id == id);
     final updated = _store[index].copyWith(
       summary: summary ?? _store[index].summary,
       data: data ?? _store[index].data,
+      timestamp: timestamp ?? _store[index].timestamp,
     );
     _store[index] = updated;
     return updated;
@@ -163,6 +195,51 @@ void main() {
       await notifier.deleteEvent(1);
       state = container.read(eventsProvider).requireValue;
       expect(state.map((item) => item.id), isNot(contains(1)));
+    },
+  );
+
+  test(
+    'logEvent and updateEvent pass selected timestamp to API layer',
+    () async {
+      final service = _FakeEventService();
+      final container = ProviderContainer(
+        overrides: [eventServiceProvider.overrideWithValue(service)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(eventsProvider.notifier);
+      final createdAt = DateTime(2026, 5, 23, 19, 57);
+      await notifier.logEvent(
+        summary: 'Chi phí mới',
+        type: expenseType,
+        loggedBy: 'Lan',
+        data: const {
+          'amount_vnd': 200000,
+          'category': 'Nguyên liệu',
+          'payment_method': 'Tiền mặt',
+          'vendor': 'NCC A',
+          'note': 'Bơ sữa',
+          'staff_name': 'Lan',
+        },
+        timestamp: createdAt,
+      );
+      expect(service.capturedCreateTimestamp, createdAt);
+
+      final updatedAt = DateTime(2026, 5, 24, 8, 15);
+      await notifier.updateEvent(
+        id: 1,
+        summary: 'Chi phí cập nhật',
+        data: const {
+          'amount_vnd': 150000,
+          'category': 'Nguyên liệu',
+          'payment_method': 'Tiền mặt',
+          'vendor': 'NCC A',
+          'note': 'Bơ',
+          'staff_name': 'Lan',
+        },
+        timestamp: updatedAt,
+      );
+      expect(service.capturedUpdateTimestamp, updatedAt);
     },
   );
 }

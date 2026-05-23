@@ -133,9 +133,9 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
         params.append(expense_payment_method)
     if expense_staff_name:
         conditions.append(
-            "LOWER(COALESCE(json_extract(e.data, '$.staff_name'), '')) LIKE LOWER(?)"
+            "LOWER(COALESCE(json_extract(e.data, '$.staff_name'), '')) = LOWER(?)"
         )
-        params.append(f"%{expense_staff_name}%")
+        params.append(expense_staff_name)
     if expense_search:
         conditions.append(
             "("

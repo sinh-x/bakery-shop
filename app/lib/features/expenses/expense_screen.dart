@@ -66,7 +66,6 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
     setState(() => _initialHistoryLoading = value);
   }
 
-
   void _clearFilterState() {
     if (!mounted) return;
     setState(() {
@@ -86,14 +85,15 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
   }
 
   List<String> _staffFilterOptions() {
-    final names = _history
-        .map(ExpenseEventMapper.fromEvent)
-        .whereType<ExpenseEventData>()
-        .map((event) => event.staffName.trim())
-        .where((name) => name.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
+    final names =
+        _history
+            .map(ExpenseEventMapper.fromEvent)
+            .whereType<ExpenseEventData>()
+            .map((event) => event.staffName.trim())
+            .where((name) => name.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
     if (_filterStaffName.isNotEmpty && !names.contains(_filterStaffName)) {
       names.insert(0, _filterStaffName);
     }
@@ -133,8 +133,14 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
               }
             }),
             onPickDate: _pickDate,
-            onFilterCategoryChanged: (value) => setState(() => _filterCategory = value),
-            onFilterStaffChanged: (value) => setState(() => _filterStaffName = value),
+            onFilterCategoryChanged: (value) {
+              setState(() => _filterCategory = value);
+              _refreshHistory();
+            },
+            onFilterStaffChanged: (value) {
+              setState(() => _filterStaffName = value);
+              _refreshHistory();
+            },
             onClearFilters: _clearFilters,
             onApplyFilters: _refreshHistory,
             formatDate: _isoDate,
@@ -147,13 +153,14 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
                 child: Center(child: CircularProgressIndicator()),
               ),
             )
-          else ..._history.map(
-            (e) => ExpenseHistoryCard(
-              event: e,
-              onEdit: _deleting ? null : () => _openEdit(e),
-              onDelete: _deleting ? null : () => _confirmDelete(e.id),
+          else
+            ..._history.map(
+              (e) => ExpenseHistoryCard(
+                event: e,
+                onEdit: _deleting ? null : () => _openEdit(e),
+                onDelete: _deleting ? null : () => _confirmDelete(e.id),
+              ),
             ),
-          ),
           if (!_initialHistoryLoading && _history.isEmpty)
             const Card(
               child: Padding(
@@ -174,7 +181,10 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
   }
 
   Future<void> _openEdit(BakeryEvent event) async {
-    final updated = await context.push<bool>('/expenses/${event.id}/edit', extra: event);
+    final updated = await context.push<bool>(
+      '/expenses/${event.id}/edit',
+      extra: event,
+    );
     if (updated == true) {
       await _refreshHistory();
     }
@@ -186,21 +196,23 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
       final loader = widget.loadHistory;
       final events = await (loader != null
           ? loader(
-              since: _since == null ? null : _isoDate(_since!),
-              until: _until == null ? null : _isoDate(_until!),
+              since: _since == null ? null : _localDayStartIso(_since!),
+              until: _until == null ? null : _localDayEndIso(_until!),
               category: _filterCategory,
               paymentMethod: null,
               staffName: _filterStaffName,
               searchText: _searchCtrl.text.trim(),
             )
-          : ref.read(eventsProvider.notifier).loadExpenseHistory(
-                since: _since == null ? null : _isoDate(_since!),
-                until: _until == null ? null : _isoDate(_until!),
-                category: _filterCategory,
-                paymentMethod: null,
-                staffName: _filterStaffName,
-                searchText: _searchCtrl.text.trim(),
-              ));
+          : ref
+                .read(eventsProvider.notifier)
+                .loadExpenseHistory(
+                  since: _since == null ? null : _localDayStartIso(_since!),
+                  until: _until == null ? null : _localDayEndIso(_until!),
+                  category: _filterCategory,
+                  paymentMethod: null,
+                  staffName: _filterStaffName,
+                  searchText: _searchCtrl.text.trim(),
+                ));
       _setHistory(events);
     } catch (e) {
       if (shouldToggleInitialLoading) {
@@ -295,4 +307,13 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
 
   String _isoDate(DateTime input) =>
       '${input.year.toString().padLeft(4, '0')}-${input.month.toString().padLeft(2, '0')}-${input.day.toString().padLeft(2, '0')}';
+
+  String _localDayStartIso(DateTime input) {
+    final start = DateTime(input.year, input.month, input.day);
+    return '${_isoDate(start)}T00:00:00';
+  }
+
+  String _localDayEndIso(DateTime input) {
+    return '${_isoDate(input)}T23:59:59.999';
+  }
 }

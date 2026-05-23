@@ -23,6 +23,7 @@ class EventCreate(BaseModel):
     logged_by: str = ""
     data: dict[str, Any] = {}
     source: str = "app"
+    timestamp: str | None = None
 
 
 def _row_to_dict(row) -> dict:
@@ -44,6 +45,7 @@ def create_event(body: EventCreate):
         raise HTTPException(status_code=422, detail="summary không được để trống")
 
     _validate_expense_data(body.type, body.data)
+    timestamp = _normalize_timestamp(body.timestamp)
 
     event = Event(
         summary=body.summary.strip(),
@@ -52,6 +54,7 @@ def create_event(body: EventCreate):
         logged_by=body.logged_by,
         data=body.data,
         source=body.source,
+        timestamp=timestamp,
     )
 
     with get_db() as conn:
@@ -118,6 +121,20 @@ class EventUpdate(BaseModel):
     tags: list[str] | None = None
     logged_by: str | None = None
     data: dict[str, Any] | None = None
+    timestamp: str | None = None
+
+
+def _normalize_timestamp(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    value = raw.strip()
+    if not value:
+        raise HTTPException(status_code=422, detail="timestamp không được để trống")
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="timestamp không đúng định dạng ISO") from exc
+    return value
 
 
 def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
@@ -176,6 +193,10 @@ def update_event(event_id: int, body: EventUpdate):
         if "logged_by" in data:
             fields.append("logged_by = ?")
             values.append(data["logged_by"])
+
+        if "timestamp" in data:
+            fields.append("timestamp = ?")
+            values.append(_normalize_timestamp(data["timestamp"]))
 
         next_type = data.get("type", row["type"])
         next_data = data.get("data")

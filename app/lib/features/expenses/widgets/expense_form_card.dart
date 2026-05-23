@@ -9,6 +9,7 @@ class ExpenseFormCard extends StatelessWidget {
     required this.vendorCtrl,
     required this.noteCtrl,
     required this.staffCtrl,
+    required this.eventDateTime,
     required this.categories,
     required this.paymentMethods,
     required this.category,
@@ -17,6 +18,8 @@ class ExpenseFormCard extends StatelessWidget {
     required this.editing,
     required this.onCategoryChanged,
     required this.onPaymentMethodChanged,
+    required this.onPickDate,
+    required this.onPickTime,
     required this.onCancelEdit,
     required this.onSave,
     required this.amountValidator,
@@ -27,6 +30,7 @@ class ExpenseFormCard extends StatelessWidget {
   final TextEditingController vendorCtrl;
   final TextEditingController noteCtrl;
   final TextEditingController staffCtrl;
+  final DateTime eventDateTime;
   final List<String> categories;
   final List<String> paymentMethods;
   final String? category;
@@ -35,6 +39,8 @@ class ExpenseFormCard extends StatelessWidget {
   final bool editing;
   final ValueChanged<String?> onCategoryChanged;
   final ValueChanged<String?> onPaymentMethodChanged;
+  final VoidCallback onPickDate;
+  final VoidCallback onPickTime;
   final VoidCallback onCancelEdit;
   final VoidCallback onSave;
   final String? Function(String?) amountValidator;
@@ -89,6 +95,35 @@ class ExpenseFormCard extends StatelessWidget {
                     )
                     .toList(),
                 onChanged: onPaymentMethodChanged,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: onPickDate,
+                      icon: const Icon(Icons.event),
+                      label: Text(
+                        '${VN.expenseDateLabel}: '
+                        '${eventDateTime.day.toString().padLeft(2, '0')}/'
+                        '${eventDateTime.month.toString().padLeft(2, '0')}/'
+                        '${eventDateTime.year}',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: onPickTime,
+                      icon: const Icon(Icons.schedule),
+                      label: Text(
+                        '${VN.expenseTimeLabel}: '
+                        '${eventDateTime.hour.toString().padLeft(2, '0')}:'
+                        '${eventDateTime.minute.toString().padLeft(2, '0')}',
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               TextFormField(

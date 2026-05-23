@@ -28,6 +28,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   int? _editingId;
   String? _category;
   String _paymentMethod = VN.methodCash;
+  late DateTime _eventDateTime;
 
   bool get _editing => _editingId != null;
 
@@ -39,6 +40,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     } catch (_) {
       _staffCtrl.text = '';
     }
+    _eventDateTime = DateTime.now();
     final event = widget.event;
     if (event == null) return;
     final data = ExpenseEventMapper.fromEvent(event);
@@ -50,6 +52,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     _vendorCtrl.text = data.vendor;
     _noteCtrl.text = data.note;
     _staffCtrl.text = data.staffName;
+    _eventDateTime = event.timestamp.toLocal();
   }
 
   @override
@@ -80,11 +83,14 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             paymentMethods: expensePaymentMethods,
             category: _category,
             paymentMethod: _paymentMethod,
+            eventDateTime: _eventDateTime,
             loading: _loading,
             editing: _editing,
             onCategoryChanged: (value) => setState(() => _category = value),
             onPaymentMethodChanged: (value) =>
                 setState(() => _paymentMethod = value ?? _paymentMethod),
+            onPickDate: _pickDate,
+            onPickTime: _pickTime,
             onCancelEdit: () => context.pop(false),
             onSave: _save,
             amountValidator: _validateAmount,
@@ -110,19 +116,25 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     setState(() => _loading = true);
     try {
       if (_editing) {
-        await ref.read(eventsProvider.notifier).updateEvent(
+        await ref
+            .read(eventsProvider.notifier)
+            .updateEvent(
               id: _editingId!,
               summary: _summary(payload),
               loggedBy: payload.staffName,
               data: ExpenseEventMapper.toDataMap(payload),
+              timestamp: _eventDateTime,
             );
         if (mounted) showTopSnackBar(context, VN.eventUpdated);
       } else {
-        await ref.read(eventsProvider.notifier).logEvent(
+        await ref
+            .read(eventsProvider.notifier)
+            .logEvent(
               summary: _summary(payload),
               type: expenseType,
               loggedBy: payload.staffName,
               data: ExpenseEventMapper.toDataMap(payload),
+              timestamp: _eventDateTime,
             );
         if (mounted) showTopSnackBar(context, VN.eventLogged);
       }
@@ -153,4 +165,40 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
 
   String _summary(ExpenseEventData data) =>
       '${VN.expenseTitle}: ${formatVND(data.amountVnd.toDouble())} - ${data.category} - ${data.paymentMethod}';
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      initialDate: _eventDateTime,
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _eventDateTime = DateTime(
+        picked.year,
+        picked.month,
+        picked.day,
+        _eventDateTime.hour,
+        _eventDateTime.minute,
+      );
+    });
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_eventDateTime),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _eventDateTime = DateTime(
+        _eventDateTime.year,
+        _eventDateTime.month,
+        _eventDateTime.day,
+        picked.hour,
+        picked.minute,
+      );
+    });
+  }
 }

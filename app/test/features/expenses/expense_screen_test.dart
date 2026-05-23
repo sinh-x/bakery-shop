@@ -74,6 +74,8 @@ void main() {
 
     expect(capturedSince, isNotNull);
     expect(capturedUntil, isNotNull);
+    expect(capturedSince, contains('T00:00:00'));
+    expect(capturedUntil, contains('T23:59:59.999'));
   });
 
   testWidgets('plus button opens dedicated add route', (tester) async {
@@ -359,6 +361,48 @@ void main() {
 
     expect(capturedCategory, VN.expenseCategoryIngredient);
     expect(capturedStaff, 'Lan');
+  });
+
+  testWidgets('selecting category chip reloads with category filter', (
+    tester,
+  ) async {
+    String? capturedCategory;
+    final events = [
+      _expenseEvent(
+        id: 1,
+        amount: 120000,
+        category: VN.expenseCategoryIngredient,
+        paymentMethod: VN.methodCash,
+        staff: 'Lan',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: ExpenseScreen(
+            loadHistory:
+                ({
+                  String? since,
+                  String? until,
+                  String? category,
+                  String? paymentMethod,
+                  String? staffName,
+                  String? searchText,
+                }) async {
+                  capturedCategory = category;
+                  return events;
+                },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(VN.expenseCategoryIngredient).first);
+    await tester.pumpAndSettle();
+
+    expect(capturedCategory, VN.expenseCategoryIngredient);
   });
 
   testWidgets('shows empty history state when no expense item', (tester) async {

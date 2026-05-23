@@ -16,6 +16,7 @@ class EventService {
     String loggedBy = '',
     Map<String, dynamic> data = const {},
     String source = 'app',
+    DateTime? timestamp,
   }) async {
     final body = <String, dynamic>{
       'summary': summary,
@@ -25,6 +26,9 @@ class EventService {
       'data': data,
       'source': source,
     };
+    if (timestamp != null) {
+      body['timestamp'] = timestamp.toIso8601String();
+    }
     final response = await _dio.post('/api/events', data: body);
     return BakeryEvent.fromJson(response.data as Map<String, dynamic>);
   }
@@ -81,6 +85,7 @@ class EventService {
     List<String>? tags,
     String? loggedBy,
     Map<String, dynamic>? data,
+    DateTime? timestamp,
   }) async {
     final body = <String, dynamic>{};
     if (summary != null) body['summary'] = summary;
@@ -88,6 +93,7 @@ class EventService {
     if (tags != null) body['tags'] = tags;
     if (loggedBy != null) body['logged_by'] = loggedBy;
     if (data != null) body['data'] = data;
+    if (timestamp != null) body['timestamp'] = timestamp.toIso8601String();
     final response = await _dio.patch('/api/events/$id', data: body);
     return BakeryEvent.fromJson(response.data as Map<String, dynamic>);
   }

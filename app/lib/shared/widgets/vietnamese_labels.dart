@@ -583,6 +583,8 @@ class VN {
       'Tìm theo nội dung, nhà cung cấp, nhân viên';
   static const expenseSinceLabel = 'Từ ngày';
   static const expenseUntilLabel = 'Đến ngày';
+  static const expenseDateLabel = 'Ngày chi';
+  static const expenseTimeLabel = 'Giờ chi';
   static const expenseFilterStaffLabel = 'Lọc theo nhân viên';
   static const expenseNoHistory = 'Chưa có chi phí phù hợp bộ lọc';
   static const expenseAmountValidationMessage =
