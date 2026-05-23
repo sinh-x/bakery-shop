@@ -32,6 +32,12 @@ class KnowledgeBaseScreen extends ConsumerWidget {
         route: '/events',
       ),
       _HubTile(
+        icon: Icons.payments_outlined,
+        title: VN.expenseTitle,
+        subtitle: VN.knowledgeBaseExpensesSubtitle,
+        route: '/expenses',
+      ),
+      _HubTile(
         icon: Icons.checklist,
         title: 'Checklist hàng ngày',
         subtitle: VN.knowledgeBaseChecklistSubtitle,

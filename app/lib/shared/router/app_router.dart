@@ -12,6 +12,7 @@ import '../../features/checklist/checklist_config_screen.dart';
 import '../../features/checklist/checklist_history_screen.dart';
 import '../../features/checklist/checklist_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
+import '../../features/expenses/expense_screen.dart';
 import '../../features/events/event_detail_screen.dart';
 import '../../features/events/event_form_screen.dart';
 import '../../features/events/event_list_screen.dart';
@@ -209,6 +210,12 @@ final appRouter = GoRouter(
       path: '/events/new',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const EventFormScreen(),
+    ),
+    // Expense screen shell — full-screen (outside shell)
+    GoRoute(
+      path: '/expenses',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const ExpenseScreen(),
     ),
     // Event detail — full-screen (outside shell)
     GoRoute(

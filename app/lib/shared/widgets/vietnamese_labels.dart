@@ -518,6 +518,8 @@ class VN {
   // Knowledge base
   static const knowledgeTitle = 'Sổ tay';
   static const knowledgeBaseEventsSubtitle = 'Ghi nhật ký hoạt động & sự cố';
+  static const knowledgeBaseExpensesSubtitle =
+      'Ghi chi phí vận hành theo khoản mục';
   static const knowledgeBaseChecklistSubtitle = 'Công việc mở / đóng tiệm';
   static const knowledgeBaseDocsSubtitle = 'Công thức, quy trình, nhà cung cấp';
   static const knowledgeBaseNotesSubtitle = 'Ghi chú nội bộ & thông báo';
@@ -551,6 +553,25 @@ class VN {
   static const knowledgeTagsField = 'Nhãn';
   static const knowledgePhotosField = 'Ảnh';
   static const knowledgeNoPhotos = 'Chưa có ảnh';
+
+  // Expenses
+  static const expenseTitle = 'Chi phí';
+  static const expenseFormSection = 'Nhập chi phí';
+  static const expenseHistorySection = 'Lịch sử chi phí';
+  static const expenseAmountLabel = 'Số tiền (VND)';
+  static const expenseCategoryLabel = 'Danh mục chi phí';
+  static const expensePaymentMethodLabel = 'Phương thức thanh toán';
+  static const expenseVendorLabel = 'Nhà cung cấp';
+  static const expenseNoteLabel = 'Ghi chú';
+  static const expenseStaffNameLabel = 'Tên nhân viên';
+  static const expenseCategoryIngredient = 'Nguyên liệu';
+  static const expenseCategoryPackaging = 'Bao bì';
+  static const expenseCategoryDelivery = 'Vận chuyển';
+  static const expenseCategoryUtilities = 'Điện/nước';
+  static const expenseCategoryTools = 'Dụng cụ';
+  static const expenseCategoryRepair = 'Sửa chữa';
+  static const expenseCategorySalaryAllowance = 'Lương/phụ cấp';
+  static const expenseCategoryOther = 'Khác';
 
   // Shipping fee & extras
   static const shippingFee = 'Phí giao hàng';

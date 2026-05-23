@@ -64,14 +64,20 @@ class EventService {
     String? type,
     List<String>? tags,
     String? loggedBy,
+    Map<String, dynamic>? data,
   }) async {
     final body = <String, dynamic>{};
     if (summary != null) body['summary'] = summary;
     if (type != null) body['type'] = type;
     if (tags != null) body['tags'] = tags;
     if (loggedBy != null) body['logged_by'] = loggedBy;
+    if (data != null) body['data'] = data;
     final response = await _dio.patch('/api/events/$id', data: body);
     return BakeryEvent.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<void> deleteEvent(int id) async {
+    await _dio.delete('/api/events/$id');
   }
 }
 
