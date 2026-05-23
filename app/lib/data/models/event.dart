@@ -16,6 +16,21 @@ sealed class BakeryEvent with _$BakeryEvent {
     @Default(<String, dynamic>{}) Map<String, dynamic> data,
   }) = _BakeryEvent;
 
-  factory BakeryEvent.fromJson(Map<String, dynamic> json) =>
-      _$BakeryEventFromJson(json);
+  factory BakeryEvent.fromJson(Map<String, dynamic> json) {
+    final normalized = Map<String, dynamic>.from(json);
+    final rawTimestamp = normalized['timestamp'];
+    if (rawTimestamp is String) {
+      normalized['timestamp'] = _normalizeApiTimestamp(rawTimestamp);
+    }
+    return _$BakeryEventFromJson(normalized);
+  }
+}
+
+String _normalizeApiTimestamp(String value) {
+  final hasTimeZoneSuffix =
+      value.endsWith('Z') || RegExp(r'[+-]\d{2}:\d{2}$').hasMatch(value);
+  if (hasTimeZoneSuffix) {
+    return value;
+  }
+  return '${value}Z';
 }
