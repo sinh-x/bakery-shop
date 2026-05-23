@@ -4,8 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/api/api_client.dart';
 import '../data/api/event_service.dart';
-import '../data/mappers/expense_event_mapper.dart'
-    show expenseMaxHistoryLimit, expenseType;
+import '../data/mappers/expense_event_mapper.dart';
 import '../data/models/event.dart';
 
 const kLoggedByKey = 'logged_by_name';
@@ -128,7 +127,16 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
       expenseSearch: searchText,
       limit: safeLimit,
     );
-    final sorted = events.toList()
+    final filtered = events.where(
+      (event) => ExpenseEventMapper.matchesFilters(
+        event,
+        category: category,
+        paymentMethod: paymentMethod,
+        staffName: staffName,
+        searchText: searchText,
+      ),
+    );
+    final sorted = filtered.toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     return sorted;
   }

@@ -12,6 +12,8 @@ class _FakeEventService extends EventService {
   /// - Any other inherited API call is out of scope for this fake.
   _FakeEventService() : super(Dio());
 
+  bool applyRemoteFilters = true;
+
   final List<BakeryEvent> _store = <BakeryEvent>[
     BakeryEvent(
       id: 1,
@@ -87,22 +89,30 @@ class _FakeEventService extends EventService {
     int limit = 50,
   }) async {
     var items = _store.where((item) => type == null || item.type == type);
-    if (expenseCategory != null && expenseCategory.isNotEmpty) {
+    if (applyRemoteFilters &&
+        expenseCategory != null &&
+        expenseCategory.isNotEmpty) {
       items = items.where((item) => item.data['category'] == expenseCategory);
     }
-    if (expensePaymentMethod != null && expensePaymentMethod.isNotEmpty) {
+    if (applyRemoteFilters &&
+        expensePaymentMethod != null &&
+        expensePaymentMethod.isNotEmpty) {
       items = items.where(
         (item) => item.data['payment_method'] == expensePaymentMethod,
       );
     }
-    if (expenseStaffName != null && expenseStaffName.isNotEmpty) {
+    if (applyRemoteFilters &&
+        expenseStaffName != null &&
+        expenseStaffName.isNotEmpty) {
       final query = expenseStaffName.toLowerCase();
       items = items.where(
         (item) =>
             '${item.data['staff_name'] ?? ''}'.toLowerCase().contains(query),
       );
     }
-    if (expenseSearch != null && expenseSearch.isNotEmpty) {
+    if (applyRemoteFilters &&
+        expenseSearch != null &&
+        expenseSearch.isNotEmpty) {
       final query = expenseSearch.toLowerCase();
       items = items.where((item) {
         final haystack = <String>[
@@ -163,6 +173,40 @@ void main() {
     expect(results, hasLength(1));
     expect(results.first.id, 2);
   });
+
+  test(
+    'loadExpenseHistory applies category filter locally when API ignores it',
+    () async {
+      final service = _FakeEventService()..applyRemoteFilters = false;
+      final container = ProviderContainer(
+        overrides: [eventServiceProvider.overrideWithValue(service)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(eventsProvider.notifier);
+      final results = await notifier.loadExpenseHistory(category: 'Không khớp');
+
+      expect(results, isEmpty);
+    },
+  );
+
+  test(
+    'loadExpenseHistory applies staff filter locally when API ignores it',
+    () async {
+      final service = _FakeEventService()..applyRemoteFilters = false;
+      final container = ProviderContainer(
+        overrides: [eventServiceProvider.overrideWithValue(service)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(eventsProvider.notifier);
+      final results = await notifier.loadExpenseHistory(
+        staffName: 'Không khớp',
+      );
+
+      expect(results, isEmpty);
+    },
+  );
 
   test(
     'updateEvent and deleteEvent mutate local provider state only',
