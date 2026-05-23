@@ -77,6 +77,7 @@ class ExpenseFilterCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
+              key: ValueKey<String>('filter-category-$filterCategory'),
               initialValue: filterCategory,
               decoration: const InputDecoration(
                 labelText: VN.expenseCategoryLabel,
@@ -94,6 +95,9 @@ class ExpenseFilterCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
+              key: ValueKey<String>(
+                'filter-payment-method-$filterPaymentMethod',
+              ),
               initialValue: filterPaymentMethod,
               decoration: const InputDecoration(
                 labelText: VN.expensePaymentMethodLabel,

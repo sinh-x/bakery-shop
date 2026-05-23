@@ -3,6 +3,7 @@ import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 class ExpenseHistoryCard extends StatelessWidget {
   const ExpenseHistoryCard({
@@ -19,6 +20,9 @@ class ExpenseHistoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final data = ExpenseEventMapper.fromEvent(event);
+    final formattedTimestamp = DateFormat(
+      'dd/MM/yyyy HH:mm',
+    ).format(event.timestamp.toLocal());
     if (data == null) return const SizedBox.shrink();
     return Card(
       child: Padding(
@@ -34,7 +38,7 @@ class ExpenseHistoryCard extends StatelessWidget {
             Text(
               '${data.category} • ${data.paymentMethod} • ${data.staffName}',
             ),
-            Text(event.timestamp.toLocal().toString()),
+            Text(formattedTimestamp),
             if (data.vendor.isNotEmpty)
               Text('${VN.expenseVendorLabel}: ${data.vendor}'),
             if (data.note.isNotEmpty)

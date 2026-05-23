@@ -38,6 +38,7 @@ extension _ExpenseScreenLogic on _ExpenseScreenState {
   }
 
   Future<void> _refreshHistory() async {
+    final shouldToggleInitialLoading = _initialHistoryLoading;
     try {
       final loader = widget.loadHistory;
       final events = await (loader != null
@@ -61,6 +62,9 @@ extension _ExpenseScreenLogic on _ExpenseScreenState {
                 ));
       _setHistory(events);
     } catch (e) {
+      if (shouldToggleInitialLoading) {
+        _setInitialHistoryLoading(false);
+      }
       if (mounted) {
         showTopSnackBar(
           context,

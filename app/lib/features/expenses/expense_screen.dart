@@ -49,6 +49,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
   bool _loading = false;
   bool _deleting = false;
   bool _editing = false;
+  bool _initialHistoryLoading = true;
   int? _editingId;
   DateTime? _since;
   DateTime? _until;
@@ -94,7 +95,15 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
 
   void _setHistory(List<BakeryEvent> events) {
     if (!mounted) return;
-    setState(() => _history = events);
+    setState(() {
+      _history = events;
+      _initialHistoryLoading = false;
+    });
+  }
+
+  void _setInitialHistoryLoading(bool value) {
+    if (!mounted) return;
+    setState(() => _initialHistoryLoading = value);
   }
 
   void _setEditingFromEvent(BakeryEvent event, ExpenseEventData data) {
@@ -212,7 +221,14 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
             formatDate: _isoDate,
           ),
           const SizedBox(height: 8),
-          ..._history.map(
+          if (_initialHistoryLoading)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(12),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            )
+          else ..._history.map(
             (e) => ExpenseHistoryCard(
               event: e,
               onEdit: _loading || _deleting ? null : () => _startEdit(e),
@@ -221,7 +237,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
                   : () => _confirmDelete(e.id),
             ),
           ),
-          if (_history.isEmpty)
+          if (!_initialHistoryLoading && _history.isEmpty)
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(12),
