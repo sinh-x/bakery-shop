@@ -27,5 +27,9 @@ sealed class BakeryEvent with _$BakeryEvent {
 }
 
 String _normalizeApiTimestamp(String value) {
+  final hasExplicitTimezone = RegExp(r'(Z|[+-]\d{2}:?\d{2})$').hasMatch(value);
+  if (!hasExplicitTimezone) {
+    return '${value}Z';
+  }
   return value;
 }
