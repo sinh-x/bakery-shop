@@ -107,6 +107,9 @@ void main() {
   testWidgets('edit opens dedicated form route with prepopulated data', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 1920));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     final event = _expenseEvent(
       id: 9,
       amount: 150000,
@@ -147,15 +150,45 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.text(VN.editEvent));
     await tester.tap(find.text(VN.editEvent));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.expenseUpdateAction), findsOneWidget);
+    expect(find.text(VN.expenseUpdateAction), findsWidgets);
     expect(find.text('150000'), findsOneWidget);
     expect(find.text('NCC A'), findsOneWidget);
     expect(find.text('Bot mi'), findsOneWidget);
     expect(find.text('Lan'), findsOneWidget);
   });
+
+  testWidgets(
+    'edit form stays in update mode even when legacy expense payload is partial',
+    (tester) async {
+      final legacyExpense = BakeryEvent(
+        id: 11,
+        timestamp: DateTime.parse('2026-05-23T10:00:00Z'),
+        type: expenseType,
+        summary: 'Chi phi cu',
+        data: const {
+          'category': 'Nguyên liệu',
+          'payment_method': 'Tiền mặt',
+          'vendor': 'NCC C',
+          'note': 'Thiếu amount cũ',
+          'staff_name': 'Lan',
+        },
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(home: ExpenseFormScreen(event: legacyExpense)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(VN.expenseUpdateAction), findsWidgets);
+      expect(find.text(VN.expenseAddAction), findsNothing);
+    },
+  );
 
   testWidgets('delete shows confirmation and calls delete callback', (
     tester,

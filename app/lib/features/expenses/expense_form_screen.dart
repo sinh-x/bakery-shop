@@ -43,16 +43,16 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     _eventDateTime = DateTime.now();
     final event = widget.event;
     if (event == null) return;
+    _editingId = event.id;
+    _eventDateTime = event.timestamp.toLocal();
     final data = ExpenseEventMapper.fromEvent(event);
     if (data == null) return;
-    _editingId = event.id;
     _amountCtrl.text = data.amountVnd.toString();
     _category = data.category;
     _paymentMethod = data.paymentMethod;
     _vendorCtrl.text = data.vendor;
     _noteCtrl.text = data.note;
     _staffCtrl.text = data.staffName;
-    _eventDateTime = event.timestamp.toLocal();
   }
 
   @override

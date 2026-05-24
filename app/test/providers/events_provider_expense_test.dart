@@ -13,11 +13,13 @@ class _FakeEventService extends EventService {
   _FakeEventService() : super(Dio());
 
   bool applyRemoteFilters = true;
+  String? capturedSince;
+  String? capturedUntil;
 
   final List<BakeryEvent> _store = <BakeryEvent>[
     BakeryEvent(
       id: 1,
-      timestamp: DateTime.parse('2026-05-23T09:00:00Z'),
+      timestamp: DateTime(2026, 5, 23, 9, 0),
       type: expenseType,
       summary: 'Chi phi bot',
       data: const {
@@ -31,7 +33,7 @@ class _FakeEventService extends EventService {
     ),
     BakeryEvent(
       id: 2,
-      timestamp: DateTime.parse('2026-05-23T11:00:00Z'),
+      timestamp: DateTime(2026, 5, 23, 11, 0),
       type: expenseType,
       summary: 'Chi phi van chuyen',
       data: const {
@@ -88,6 +90,8 @@ class _FakeEventService extends EventService {
     String? expenseSearch,
     int limit = 50,
   }) async {
+    capturedSince = since;
+    capturedUntil = until;
     var items = _store.where((item) => type == null || item.type == type);
     if (applyRemoteFilters &&
         expenseCategory != null &&
@@ -286,4 +290,41 @@ void main() {
       expect(service.capturedUpdateTimestamp, updatedAt);
     },
   );
+
+  test(
+    'loadExpenseHistory applies local since/until range in provider',
+    () async {
+      final service = _FakeEventService();
+      final container = ProviderContainer(
+        overrides: [eventServiceProvider.overrideWithValue(service)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(eventsProvider.notifier);
+      final results = await notifier.loadExpenseHistory(
+        since: '2026-05-23T08:30:00',
+        until: '2026-05-23T09:30:00',
+      );
+
+      expect(results, hasLength(1));
+      expect(results.first.id, 1);
+    },
+  );
+
+  test('loadExpenseHistory does not send since/until to API query', () async {
+    final service = _FakeEventService();
+    final container = ProviderContainer(
+      overrides: [eventServiceProvider.overrideWithValue(service)],
+    );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(eventsProvider.notifier);
+    await notifier.loadExpenseHistory(
+      since: '2026-05-23T00:00:00',
+      until: '2026-05-23T23:59:59.999',
+    );
+
+    expect(service.capturedSince, isNull);
+    expect(service.capturedUntil, isNull);
+  });
 }

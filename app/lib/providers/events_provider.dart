@@ -119,26 +119,55 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     final safeLimit = limit.clamp(1, expenseMaxHistoryLimit);
     final events = await service.listEvents(
       type: expenseType,
-      since: since,
-      until: until,
       expenseCategory: category,
       expensePaymentMethod: paymentMethod,
       expenseStaffName: staffName,
       expenseSearch: searchText,
       limit: safeLimit,
     );
+    final sinceLocal = _parseLocalDateTimeOrNull(since);
+    final untilLocal = _parseLocalDateTimeOrNull(until);
+
     final filtered = events.where(
-      (event) => ExpenseEventMapper.matchesFilters(
-        event,
-        category: category,
-        paymentMethod: paymentMethod,
-        staffName: staffName,
-        searchText: searchText,
-      ),
+      (event) =>
+          ExpenseEventMapper.matchesFilters(
+            event,
+            category: category,
+            paymentMethod: paymentMethod,
+            staffName: staffName,
+            searchText: searchText,
+          ) &&
+          _matchesLocalDateRange(
+            event.timestamp,
+            since: sinceLocal,
+            until: untilLocal,
+          ),
     );
     final sorted = filtered.toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     return sorted;
+  }
+
+  bool _matchesLocalDateRange(
+    DateTime timestamp, {
+    DateTime? since,
+    DateTime? until,
+  }) {
+    final local = timestamp.toLocal();
+    if (since != null && local.isBefore(since)) {
+      return false;
+    }
+    if (until != null && local.isAfter(until)) {
+      return false;
+    }
+    return true;
+  }
+
+  DateTime? _parseLocalDateTimeOrNull(String? iso) {
+    if (iso == null || iso.trim().isEmpty) {
+      return null;
+    }
+    return DateTime.tryParse(iso)?.toLocal();
   }
 
   Future<void> refresh({
