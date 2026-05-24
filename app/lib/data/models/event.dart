@@ -7,6 +7,7 @@ part 'event.g.dart';
 sealed class BakeryEvent with _$BakeryEvent {
   const factory BakeryEvent({
     required int id,
+    @JsonKey(fromJson: _timestampFromJson)
     required DateTime timestamp,
     @Default('note') String type,
     required String summary,
@@ -16,14 +17,12 @@ sealed class BakeryEvent with _$BakeryEvent {
     @Default(<String, dynamic>{}) Map<String, dynamic> data,
   }) = _BakeryEvent;
 
-  factory BakeryEvent.fromJson(Map<String, dynamic> json) {
-    final normalized = Map<String, dynamic>.from(json);
-    final rawTimestamp = normalized['timestamp'];
-    if (rawTimestamp is String) {
-      normalized['timestamp'] = _normalizeApiTimestamp(rawTimestamp);
-    }
-    return _$BakeryEventFromJson(normalized);
-  }
+  factory BakeryEvent.fromJson(Map<String, dynamic> json) =>
+      _$BakeryEventFromJson(json);
+}
+
+DateTime _timestampFromJson(String value) {
+  return DateTime.parse(_normalizeApiTimestamp(value));
 }
 
 String _normalizeApiTimestamp(String value) {
