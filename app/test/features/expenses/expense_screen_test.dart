@@ -55,12 +55,12 @@ void main() {
           home: ExpenseScreen(
             loadHistory:
                 ({
-                  String? since,
-                  String? until,
-                  String? category,
-                  String? paymentMethod,
-                  String? staffName,
-                  String? searchText,
+                  since,
+                  until,
+                  category,
+                  paymentMethod,
+                  staffName,
+                  searchText,
                 }) async {
                   capturedSince = since;
                   capturedUntil = until;
@@ -83,11 +83,12 @@ void main() {
       routes: [
         GoRoute(
           path: '/expenses',
-          builder: (_, __) => const ExpenseScreen(loadHistory: _emptyHistory),
+          builder: (context, state) =>
+              const ExpenseScreen(loadHistory: _emptyHistory),
         ),
         GoRoute(
           path: '/expenses/new',
-          builder: (_, __) => const ExpenseFormScreen(),
+          builder: (context, state) => const ExpenseFormScreen(),
         ),
       ],
       initialLocation: '/expenses',
@@ -124,15 +125,15 @@ void main() {
       routes: [
         GoRoute(
           path: '/expenses',
-          builder: (_, __) => ExpenseScreen(
+          builder: (context, state) => ExpenseScreen(
             loadHistory:
                 ({
-                  String? since,
-                  String? until,
-                  String? category,
-                  String? paymentMethod,
-                  String? staffName,
-                  String? searchText,
+                  since,
+                  until,
+                  category,
+                  paymentMethod,
+                  staffName,
+                  searchText,
                 }) async => [event],
           ),
         ),
@@ -240,15 +241,15 @@ void main() {
       routes: [
         GoRoute(
           path: '/expenses',
-          builder: (_, __) => ExpenseScreen(
+          builder: (context, state) => ExpenseScreen(
             loadHistory:
                 ({
-                  String? since,
-                  String? until,
-                  String? category,
-                  String? paymentMethod,
-                  String? staffName,
-                  String? searchText,
+                  since,
+                  until,
+                  category,
+                  paymentMethod,
+                  staffName,
+                  searchText,
                 }) async {
                   loads += 1;
                   return const [];
@@ -301,12 +302,12 @@ void main() {
           home: ExpenseScreen(
             loadHistory:
                 ({
-                  String? since,
-                  String? until,
-                  String? category,
-                  String? paymentMethod,
-                  String? staffName,
-                  String? searchText,
+                  since,
+                  until,
+                  category,
+                  paymentMethod,
+                  staffName,
+                  searchText,
                 }) async => events,
           ),
         ),
@@ -368,12 +369,12 @@ void main() {
           home: ExpenseScreen(
             loadHistory:
                 ({
-                  String? since,
-                  String? until,
-                  String? category,
-                  String? paymentMethod,
-                  String? staffName,
-                  String? searchText,
+                  since,
+                  until,
+                  category,
+                  paymentMethod,
+                  staffName,
+                  searchText,
                 }) async {
                   capturedCategory = category;
                   capturedStaff = staffName;
@@ -416,12 +417,12 @@ void main() {
           home: ExpenseScreen(
             loadHistory:
                 ({
-                  String? since,
-                  String? until,
-                  String? category,
-                  String? paymentMethod,
-                  String? staffName,
-                  String? searchText,
+                  since,
+                  until,
+                  category,
+                  paymentMethod,
+                  staffName,
+                  searchText,
                 }) async {
                   capturedCategory = category;
                   return events;
