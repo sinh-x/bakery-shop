@@ -116,6 +116,8 @@
         # Flutter app devShell
         devShells.flutter = pkgs.mkShell {
           packages = [
+            python
+            pkgs.uv
             flutterPinned
             androidSdk
             pkgs.jdk17
@@ -143,7 +145,16 @@
           };
 
           shellHook = ''
-            FLUTTER_SDK_DIR="$PWD/.nix-flutter-sdk"
+            BAKERY_PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+            export BAKERY_PROJECT_ROOT
+
+            if [ ! -d "$BAKERY_PROJECT_ROOT/.venv" ]; then
+              uv venv "$BAKERY_PROJECT_ROOT/.venv"
+            fi
+            source "$BAKERY_PROJECT_ROOT/.venv/bin/activate"
+            uv pip install -e "$BAKERY_PROJECT_ROOT[dev]" --quiet 2>/dev/null
+
+            FLUTTER_SDK_DIR="$BAKERY_PROJECT_ROOT/.nix-flutter-sdk"
             FLUTTER_REV="${flutterRev}"
 
             if [ ! -f "$FLUTTER_SDK_DIR/.pinned-rev" ] || [ "$(cat "$FLUTTER_SDK_DIR/.pinned-rev" 2>/dev/null)" != "$FLUTTER_REV" ]; then

@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$BakeryEvent {
 
- int get id; DateTime get timestamp; String get type; String get summary; List<String> get tags;@JsonKey(name: 'logged_by') String get loggedBy; String get source; Map<String, dynamic> get data;
+ int get id;@JsonKey(fromJson: _timestampFromJson) DateTime get timestamp; String get type; String get summary; List<String> get tags;@JsonKey(name: 'logged_by') String get loggedBy; String get source; Map<String, dynamic> get data;
 /// Create a copy of BakeryEvent
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -48,7 +48,7 @@ abstract mixin class $BakeryEventCopyWith<$Res>  {
   factory $BakeryEventCopyWith(BakeryEvent value, $Res Function(BakeryEvent) _then) = _$BakeryEventCopyWithImpl;
 @useResult
 $Res call({
- int id, DateTime timestamp, String type, String summary, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source, Map<String, dynamic> data
+ int id,@JsonKey(fromJson: _timestampFromJson) DateTime timestamp, String type, String summary, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source, Map<String, dynamic> data
 });
 
 
@@ -157,7 +157,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id,  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  Map<String, dynamic> data)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id, @JsonKey(fromJson: _timestampFromJson)  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  Map<String, dynamic> data)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _BakeryEvent() when $default != null:
 return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_that.loggedBy,_that.source,_that.data);case _:
@@ -178,7 +178,7 @@ return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_th
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id,  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  Map<String, dynamic> data)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id, @JsonKey(fromJson: _timestampFromJson)  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  Map<String, dynamic> data)  $default,) {final _that = this;
 switch (_that) {
 case _BakeryEvent():
 return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_that.loggedBy,_that.source,_that.data);}
@@ -195,7 +195,7 @@ return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_th
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id,  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  Map<String, dynamic> data)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id, @JsonKey(fromJson: _timestampFromJson)  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  Map<String, dynamic> data)?  $default,) {final _that = this;
 switch (_that) {
 case _BakeryEvent() when $default != null:
 return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_that.loggedBy,_that.source,_that.data);case _:
@@ -210,11 +210,11 @@ return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_th
 @JsonSerializable()
 
 class _BakeryEvent implements BakeryEvent {
-  const _BakeryEvent({required this.id, required this.timestamp, this.type = 'note', required this.summary, final  List<String> tags = const <String>[], @JsonKey(name: 'logged_by') this.loggedBy = '', this.source = 'app', final  Map<String, dynamic> data = const <String, dynamic>{}}): _tags = tags,_data = data;
+  const _BakeryEvent({required this.id, @JsonKey(fromJson: _timestampFromJson) required this.timestamp, this.type = 'note', required this.summary, final  List<String> tags = const <String>[], @JsonKey(name: 'logged_by') this.loggedBy = '', this.source = 'app', final  Map<String, dynamic> data = const <String, dynamic>{}}): _tags = tags,_data = data;
   factory _BakeryEvent.fromJson(Map<String, dynamic> json) => _$BakeryEventFromJson(json);
 
 @override final  int id;
-@override final  DateTime timestamp;
+@override@JsonKey(fromJson: _timestampFromJson) final  DateTime timestamp;
 @override@JsonKey() final  String type;
 @override final  String summary;
  final  List<String> _tags;
@@ -267,7 +267,7 @@ abstract mixin class _$BakeryEventCopyWith<$Res> implements $BakeryEventCopyWith
   factory _$BakeryEventCopyWith(_BakeryEvent value, $Res Function(_BakeryEvent) _then) = __$BakeryEventCopyWithImpl;
 @override @useResult
 $Res call({
- int id, DateTime timestamp, String type, String summary, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source, Map<String, dynamic> data
+ int id,@JsonKey(fromJson: _timestampFromJson) DateTime timestamp, String type, String summary, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source, Map<String, dynamic> data
 });
 
 

@@ -23,6 +23,7 @@ class EventCreate(BaseModel):
     logged_by: str = ""
     data: dict[str, Any] = {}
     source: str = "app"
+    timestamp: str | None = None
 
 
 def _row_to_dict(row) -> dict:
@@ -43,6 +44,9 @@ def create_event(body: EventCreate):
     if not body.summary.strip():
         raise HTTPException(status_code=422, detail="summary không được để trống")
 
+    _validate_expense_data(body.type, body.data)
+    timestamp = _normalize_timestamp(body.timestamp)
+
     event = Event(
         summary=body.summary.strip(),
         type=body.type,
@@ -50,6 +54,7 @@ def create_event(body: EventCreate):
         logged_by=body.logged_by,
         data=body.data,
         source=body.source,
+        timestamp=timestamp,
     )
 
     with get_db() as conn:
@@ -73,6 +78,10 @@ def list_events(
     since: str | None = Query(None, description="Từ ngày (ISO format)"),
     until: str | None = Query(None, description="Đến ngày (ISO format)"),
     logged_by: str | None = Query(None, description="Lọc theo người ghi"),
+    expense_category: str | None = Query(None, description="Lọc chi phí theo danh mục"),
+    expense_payment_method: str | None = Query(None, description="Lọc chi phí theo phương thức thanh toán"),
+    expense_staff_name: str | None = Query(None, description="Lọc chi phí theo nhân viên"),
+    expense_search: str | None = Query(None, description="Tìm kiếm chi phí trong tóm tắt, NCC, ghi chú, nhân viên"),
     limit: int = Query(50, ge=1, le=500, description="Số kết quả tối đa"),
 ):
     """Danh sách sự kiện với bộ lọc."""
@@ -87,6 +96,10 @@ def list_events(
             until=until,
             search=search,
             logged_by=logged_by,
+            expense_category=expense_category,
+            expense_payment_method=expense_payment_method,
+            expense_staff_name=expense_staff_name,
+            expense_search=expense_search,
             limit=limit,
         )
         return [_row_to_dict(r) for r in rows]
@@ -107,11 +120,50 @@ class EventUpdate(BaseModel):
     type: str | None = None
     tags: list[str] | None = None
     logged_by: str | None = None
+    data: dict[str, Any] | None = None
+    timestamp: str | None = None
+
+
+def _normalize_timestamp(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    value = raw.strip()
+    if not value:
+        raise HTTPException(status_code=422, detail="timestamp không được để trống")
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="timestamp không đúng định dạng ISO") from exc
+    return value
+
+
+def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
+    if event_type != "expense":
+        return
+
+    required_keys = {
+        "amount_vnd",
+        "category",
+        "payment_method",
+        "vendor",
+        "note",
+        "staff_name",
+    }
+    missing_keys = [key for key in required_keys if key not in data]
+    if missing_keys:
+        raise HTTPException(
+            status_code=422,
+            detail=f"expense data thiếu trường bắt buộc: {', '.join(sorted(missing_keys))}",
+        )
+
+    amount_vnd = data.get("amount_vnd")
+    if not isinstance(amount_vnd, int) or amount_vnd <= 0:
+        raise HTTPException(status_code=422, detail="amount_vnd phải là số nguyên lớn hơn 0")
 
 
 @router.patch("/{event_id}")
 def update_event(event_id: int, body: EventUpdate):
-    """Cập nhật sự kiện (summary, type, tags)."""
+    """Cập nhật sự kiện (summary, type, tags, logged_by, data)."""
     with get_db() as conn:
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         if not row:
@@ -142,8 +194,37 @@ def update_event(event_id: int, body: EventUpdate):
             fields.append("logged_by = ?")
             values.append(data["logged_by"])
 
+        if "timestamp" in data:
+            fields.append("timestamp = ?")
+            values.append(_normalize_timestamp(data["timestamp"]))
+
+        next_type = data.get("type", row["type"])
+        next_data = data.get("data")
+        if next_data is None:
+            try:
+                next_data = json.loads(row["data"]) if row["data"] else {}
+            except (json.JSONDecodeError, TypeError):
+                next_data = {}
+
+        _validate_expense_data(next_type, next_data)
+
+        if "data" in data:
+            fields.append("data = ?")
+            values.append(json.dumps(data["data"]))
+
         values.append(event_id)
         conn.execute(f"UPDATE events SET {', '.join(fields)} WHERE id = ?", values)
 
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return _row_to_dict(row)
+
+
+@router.delete("/{event_id}", status_code=204)
+def delete_event(event_id: int):
+    """Xóa sự kiện theo id."""
+    with get_db() as conn:
+        row = conn.execute("SELECT id FROM events WHERE id = ?", (event_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
+
+        conn.execute("DELETE FROM events WHERE id = ?", (event_id,))

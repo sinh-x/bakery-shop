@@ -8,7 +8,7 @@ part of 'event.dart';
 
 _BakeryEvent _$BakeryEventFromJson(Map<String, dynamic> json) => _BakeryEvent(
   id: (json['id'] as num).toInt(),
-  timestamp: DateTime.parse(json['timestamp'] as String),
+  timestamp: _timestampFromJson(json['timestamp'] as String),
   type: json['type'] as String? ?? 'note',
   summary: json['summary'] as String,
   tags:
