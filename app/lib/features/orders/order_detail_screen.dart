@@ -1141,7 +1141,7 @@ class _TransactionTile extends StatelessWidget {
     String dateStr = '';
     if (txn.createdAt != null) {
       try {
-        final dt = DateTime.parse(txn.createdAt!);
+        final dt = DateTime.parse(txn.createdAt!).toLocal();
         dateStr = DateFormat('dd/MM HH:mm').format(dt);
       } catch (_) {
         dateStr = txn.createdAt!;
@@ -1402,7 +1402,7 @@ class _TransactionDetailSheet extends StatelessWidget {
     String dateStr = '';
     if (txn.createdAt != null) {
       try {
-        final dt = DateTime.parse(txn.createdAt!);
+        final dt = DateTime.parse(txn.createdAt!).toLocal();
         dateStr = DateFormat('dd/MM/yyyy HH:mm').format(dt);
       } catch (_) {
         dateStr = txn.createdAt!;
