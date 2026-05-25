@@ -359,7 +359,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: _selectedPhotos.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
                   itemBuilder: (context, index) {
                     return Stack(
                       clipBehavior: Clip.none,
@@ -398,7 +398,7 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
                 OutlinedButton.icon(
                   onPressed: _uploading ? null : _pickPhotos,
                   icon: const Icon(Icons.add_a_photo, size: 18),
-                  label: Text(VN.addEventPhoto),
+                  label: const Text(VN.addEventPhoto),
                 ),
                 if (_uploading) ...[
                   const SizedBox(width: 12),
