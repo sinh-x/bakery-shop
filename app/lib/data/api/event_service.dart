@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/event.dart';
+import '../models/event_photo.dart';
 import 'api_client.dart';
 
 class EventService {
@@ -108,6 +111,23 @@ class EventService {
     return list
         .map((json) => BakeryEvent.fromJson(json as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<EventPhoto> uploadEventPhoto(
+    int eventId,
+    File file, {
+    String tags = '',
+  }) async {
+    final bytes = await file.readAsBytes();
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: file.path.split('/').last),
+      'tags': tags,
+    });
+    final response = await _dio.post(
+      '/api/events/$eventId/photos',
+      data: formData,
+    );
+    return EventPhoto.fromJson(response.data as Map<String, dynamic>);
   }
 
   Future<void> deleteEvent(int id) async {
