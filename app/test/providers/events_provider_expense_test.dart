@@ -49,6 +49,8 @@ class _FakeEventService extends EventService {
   DateTime? capturedCreateTimestamp;
   DateTime? capturedUpdateTimestamp;
 
+  int? capturedOrderId;
+
   @override
   Future<BakeryEvent> createEvent({
     required String summary,
@@ -58,8 +60,10 @@ class _FakeEventService extends EventService {
     Map<String, dynamic> data = const {},
     String source = 'app',
     DateTime? timestamp,
+    int? orderId,
   }) async {
     capturedCreateTimestamp = timestamp;
+    capturedOrderId = orderId;
     final nextId =
         _store.map((e) => e.id).fold<int>(0, (a, b) => a > b ? a : b) + 1;
     final created = BakeryEvent(
@@ -71,6 +75,7 @@ class _FakeEventService extends EventService {
       loggedBy: loggedBy,
       source: source,
       data: data,
+      orderId: orderId,
     );
     _store.insert(0, created);
     return created;
