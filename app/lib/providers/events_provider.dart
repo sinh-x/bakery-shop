@@ -59,6 +59,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     String loggedBy = '',
     Map<String, dynamic> data = const {},
     DateTime? timestamp,
+    int? orderId,
   }) async {
     final service = ref.read(eventServiceProvider);
     final event = await service.createEvent(
@@ -69,6 +70,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
       data: data,
       source: 'app',
       timestamp: timestamp,
+      orderId: orderId,
     );
     // Prepend to current list immediately for snappy UX
     state = state.whenData((events) => [event, ...events]);

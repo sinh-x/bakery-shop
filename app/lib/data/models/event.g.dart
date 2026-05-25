@@ -17,6 +17,7 @@ _BakeryEvent _$BakeryEventFromJson(Map<String, dynamic> json) => _BakeryEvent(
   loggedBy: json['logged_by'] as String? ?? '',
   source: json['source'] as String? ?? 'app',
   data: json['data'] as Map<String, dynamic>? ?? const <String, dynamic>{},
+  orderId: (json['order_id'] as num?)?.toInt(),
 );
 
 Map<String, dynamic> _$BakeryEventToJson(_BakeryEvent instance) =>
@@ -29,4 +30,5 @@ Map<String, dynamic> _$BakeryEventToJson(_BakeryEvent instance) =>
       'logged_by': instance.loggedBy,
       'source': instance.source,
       'data': instance.data,
+      'order_id': instance.orderId,
     };

@@ -196,6 +196,16 @@ class Order:
     work_ticket_printed_at: Optional[str] = None
     work_ticket_printed_by: str = ""
 
+    @staticmethod
+    def exists(order_id: int, conn=None) -> bool:
+        from baker.db.connection import get_db
+        if conn is None:
+            with get_db() as conn:
+                row = conn.execute("SELECT 1 FROM orders WHERE id = ?", (order_id,)).fetchone()
+                return row is not None
+        row = conn.execute("SELECT 1 FROM orders WHERE id = ?", (order_id,)).fetchone()
+        return row is not None
+
     def calculate_total(self):
         # Sum only non-gift items + cash_fee from attributes + shipping_fee
         subtotal = sum(item.qty * item.price for item in self.items if not item.is_gift)

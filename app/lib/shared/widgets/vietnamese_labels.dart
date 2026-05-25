@@ -150,6 +150,10 @@ class VN {
   static const deleteEventConfirm = 'Bạn có chắc muốn xóa sự kiện này?';
   static const eventDeleted = 'Đã xóa sự kiện';
   static const eventUpdated = 'Đã cập nhật sự kiện';
+  static const addOrderIncident = 'Thêm sự cố';
+  static const orderLabel = 'Đơn hàng';
+  static const eventPhotos = 'Ảnh đính kèm';
+  static const addEventPhoto = 'Thêm ảnh';
 
   // Dashboard
   static const todayOrders = 'Đơn hàng hôm nay';

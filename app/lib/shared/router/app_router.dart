@@ -131,6 +131,16 @@ final appRouter = GoRouter(
         return OrderDetailScreen(orderRef: orderRef);
       },
     ),
+    // Order incident — full-screen (outside shell)
+    GoRoute(
+      path: '/orders/:id/incident/new',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final orderRef = state.pathParameters['id']!;
+        final orderId = state.extra as int?;
+        return EventFormScreen(orderRef: orderRef, orderId: orderId);
+      },
+    ),
     // Order edit — full-screen (outside shell)
     GoRoute(
       path: '/orders/:id/edit',

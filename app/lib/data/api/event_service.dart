@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/event.dart';
+import '../models/event_photo.dart';
 import 'api_client.dart';
 
 class EventService {
@@ -17,6 +20,7 @@ class EventService {
     Map<String, dynamic> data = const {},
     String source = 'app',
     DateTime? timestamp,
+    int? orderId,
   }) async {
     final body = <String, dynamic>{
       'summary': summary,
@@ -28,6 +32,9 @@ class EventService {
     };
     if (timestamp != null) {
       body['timestamp'] = timestamp.toIso8601String();
+    }
+    if (orderId != null) {
+      body['order_id'] = orderId;
     }
     final response = await _dio.post('/api/events', data: body);
     return BakeryEvent.fromJson(response.data as Map<String, dynamic>);
@@ -96,6 +103,31 @@ class EventService {
     if (timestamp != null) body['timestamp'] = timestamp.toIso8601String();
     final response = await _dio.patch('/api/events/$id', data: body);
     return BakeryEvent.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<List<BakeryEvent>> getOrderEvents(String orderRef) async {
+    final response = await _dio.get('/api/orders/$orderRef/events');
+    final list = response.data as List;
+    return list
+        .map((json) => BakeryEvent.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<EventPhoto> uploadEventPhoto(
+    int eventId,
+    File file, {
+    String tags = '',
+  }) async {
+    final bytes = await file.readAsBytes();
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: file.path.split('/').last),
+      'tags': tags,
+    });
+    final response = await _dio.post(
+      '/api/events/$eventId/photos',
+      data: formData,
+    );
+    return EventPhoto.fromJson(response.data as Map<String, dynamic>);
   }
 
   Future<void> deleteEvent(int id) async {

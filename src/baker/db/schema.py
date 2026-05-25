@@ -728,6 +728,24 @@ CREATE INDEX IF NOT EXISTS idx_inventory_items_lot_status ON inventory_items(lot
 """
 
 
+ORDER_INCIDENT_ORDER_ID_SCHEMA = """
+ALTER TABLE events ADD COLUMN order_id INTEGER REFERENCES orders(id);
+CREATE INDEX IF NOT EXISTS idx_events_order_id ON events(order_id);
+"""
+
+EVENT_PHOTOS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS event_photos (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id    INTEGER NOT NULL REFERENCES events(id),
+    photo_id    INTEGER NOT NULL REFERENCES photos(id),
+    tags        TEXT DEFAULT '',
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_photos_event ON event_photos(event_id);
+"""
+
 PUBLIC_ORDER_CODE_SCHEMA = """
 ALTER TABLE orders ADD COLUMN public_order_code TEXT DEFAULT '';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_due_date_public_order_code_unique
@@ -1528,6 +1546,14 @@ MIGRATIONS = {
     39: {
         "description": "Add public order code column and per-due-date uniqueness index",
         "sql": PUBLIC_ORDER_CODE_SCHEMA,
+    },
+    40: {
+        "description": "Add order_id nullable FK to events table for order incident linking",
+        "sql": ORDER_INCIDENT_ORDER_ID_SCHEMA,
+    },
+    41: {
+        "description": "Create event_photos junction table linking events to photo attachments",
+        "sql": EVENT_PHOTOS_SCHEMA,
     },
 }
 

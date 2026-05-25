@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
+import '../../data/api/event_service.dart';
 import '../../data/models/event.dart';
 import '../../providers/events_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
@@ -35,13 +39,17 @@ const _kStandardTags = [
   ('staff', VN.tagStaff),
 ];
 
-/// Full-screen form for creating or editing a bakery event.
-///
-/// Pass [event] to edit an existing event; omit to create a new one.
 class EventFormScreen extends ConsumerStatefulWidget {
-  const EventFormScreen({super.key, this.event});
+  const EventFormScreen({
+    super.key,
+    this.event,
+    this.orderRef,
+    this.orderId,
+  });
 
   final BakeryEvent? event;
+  final String? orderRef;
+  final int? orderId;
 
   @override
   ConsumerState<EventFormScreen> createState() => _EventFormScreenState();
@@ -56,8 +64,13 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
   final _customTags = <String>[];
   bool _showCustomTagField = false;
   bool _saving = false;
+  bool _uploading = false;
+
+  final _picker = ImagePicker();
+  final _selectedPhotos = <XFile>[];
 
   bool get _isEditing => widget.event != null;
+  bool get _isOrderLinked => widget.orderId != null;
 
   @override
   void initState() {
@@ -81,6 +94,13 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     _summaryCtrl.dispose();
     _customTagCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickPhotos() async {
+    final files = await _picker.pickMultiImage(imageQuality: 85);
+    if (files.isNotEmpty) {
+      setState(() => _selectedPhotos.addAll(files));
+    }
   }
 
   Future<void> _submit() async {
@@ -112,7 +132,24 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
               type: _selectedType,
               tags: _selectedTags.toList(),
               loggedBy: loggedBy,
+              orderId: widget.orderId,
             );
+
+        if (_selectedPhotos.isNotEmpty && mounted) {
+          setState(() => _uploading = true);
+          final eventList = ref.read(eventsProvider).value ?? [];
+          if (eventList.isNotEmpty) {
+            final createdEvent = eventList.first;
+            final service = ref.read(eventServiceProvider);
+            for (final xfile in _selectedPhotos) {
+              await service.uploadEventPhoto(
+                createdEvent.id,
+                File(xfile.path),
+              );
+            }
+          }
+        }
+
         if (mounted) {
           showTopSnackBar(context, VN.eventLogged);
           context.pop();
@@ -178,15 +215,37 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
     final colorScheme = theme.colorScheme;
     final loggedBy = ref.watch(loggedByProvider);
 
+    final title = _isEditing
+        ? VN.editEvent
+        : _isOrderLinked
+            ? VN.addOrderIncident
+            : VN.createEvent;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? VN.editEvent : VN.createEvent),
+        title: Text(title),
         actions: const [AppBarOverflowMenu()],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Summary field
+          if (_isOrderLinked)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.receipt_long, size: 18),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${VN.orderLabel}: ${widget.orderRef}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           TextField(
             controller: _summaryCtrl,
             autofocus: !_isEditing,
@@ -200,8 +259,6 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
             ),
           ),
           const SizedBox(height: 24),
-
-          // Section: Event type
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
@@ -224,8 +281,6 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
             }).toList(),
           ),
           const SizedBox(height: 24),
-
-          // Section: Tags (multi-select FilterChip)
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
@@ -289,8 +344,79 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
             ],
           ),
           const SizedBox(height: 24),
-
-          // Logged-by row
+          if (!_isEditing) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                VN.eventPhotos,
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+            if (_selectedPhotos.isNotEmpty)
+              SizedBox(
+                height: 80,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _selectedPhotos.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(
+                            File(_selectedPhotos[index].path),
+                            width: 70,
+                            height: 70,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        Positioned(
+                          top: -8,
+                          right: -8,
+                          child: GestureDetector(
+                            onTap: () => setState(() {
+                              _selectedPhotos.removeAt(index);
+                            }),
+                            child: const CircleAvatar(
+                              radius: 12,
+                              backgroundColor: Colors.black54,
+                              child: Icon(Icons.close, size: 14, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _uploading ? null : _pickPhotos,
+                  icon: const Icon(Icons.add_a_photo, size: 18),
+                  label: const Text(VN.addEventPhoto),
+                ),
+                if (_uploading) ...[
+                  const SizedBox(width: 12),
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    VN.uploadingPhotos,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 24),
+          ],
           Row(
             children: [
               const Icon(Icons.person_outline, size: 18),
@@ -311,8 +437,6 @@ class _EventFormScreenState extends ConsumerState<EventFormScreen> {
             ],
           ),
           const SizedBox(height: 24),
-
-          // Submit button
           FilledButton(
             onPressed: _saving ? null : _submit,
             style: FilledButton.styleFrom(

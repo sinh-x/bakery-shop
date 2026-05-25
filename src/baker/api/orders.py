@@ -422,6 +422,26 @@ def create_order(body: OrderCreate, request: Request):
         return _order_detail(conn, row)
 
 
+@router.get("/{ref}/events")
+def get_order_events(ref: str):
+    """Danh sách sự kiện liên kết với đơn hàng, sắp xếp mới nhất trước."""
+    with get_db() as conn:
+        order_row = conn.execute(
+            "SELECT id FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not order_row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        rows = conn.execute(
+            "SELECT * FROM events WHERE order_id = ? ORDER BY timestamp DESC",
+            (order_row["id"],),
+        ).fetchall()
+
+        from baker.api.events import _row_to_dict
+        return [_row_to_dict(r) for r in rows]
+
+
 @router.get("/{ref}")
 def get_order(ref: str):
     """Chi tiết đơn hàng theo order_ref hoặc id."""
