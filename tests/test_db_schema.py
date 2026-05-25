@@ -252,6 +252,44 @@ def _assert_chip_aware_inventory_schema(conn) -> None:
     assert "price_chip_id" in reconciliation_line_columns
 
 
+def _assert_v40_v41_schema(conn) -> None:
+    event_columns = _schema_columns(conn, "events")
+    assert "order_id" in event_columns
+    assert event_columns["order_id"]["notnull"] == 0
+
+    event_fks = conn.execute("PRAGMA foreign_key_list(events)").fetchall()
+    order_id_fks = [fk for fk in event_fks if fk["from"] == "order_id"]
+    assert len(order_id_fks) == 1
+    assert order_id_fks[0]["table"] == "orders"
+    assert order_id_fks[0]["to"] == "id"
+
+    index_rows = conn.execute("PRAGMA index_list(events)").fetchall()
+    index_names = [row["name"] for row in index_rows]
+    assert "idx_events_order_id" in index_names
+
+    event_photos_columns = _schema_columns(conn, "event_photos")
+    assert set(event_photos_columns) >= {
+        "id",
+        "event_id",
+        "photo_id",
+        "tags",
+        "position",
+        "created_at",
+    }
+    for name in ["event_id", "photo_id", "position"]:
+        assert event_photos_columns[name]["notnull"] == 1
+
+    event_photos_fks = conn.execute("PRAGMA foreign_key_list(event_photos)").fetchall()
+    assert len(event_photos_fks) == 2
+    fk_tables = {(fk["from"], fk["table"]) for fk in event_photos_fks}
+    assert ("event_id", "events") in fk_tables
+    assert ("photo_id", "photos") in fk_tables
+
+    ep_index_rows = conn.execute("PRAGMA index_list(event_photos)").fetchall()
+    ep_index_names = [row["name"] for row in ep_index_rows]
+    assert "idx_event_photos_event" in ep_index_names
+
+
 def _seed_v35_stock(conn) -> tuple[int, int, int]:
     conn.execute(
         """INSERT INTO products (name, category, base_price, cost, recipe_notes)
@@ -284,12 +322,13 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 39
+        assert _migrated_version(conn) == 41
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
         _assert_reconciliation_sale_rows_schema(conn)
         _assert_chip_aware_inventory_schema(conn)
+        _assert_v40_v41_schema(conn)
 
 
 def test_schema_migration_v30_to_v31():
@@ -298,21 +337,22 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 39
+        assert _migrated_version(conn) == 41
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
         _assert_reconciliation_sale_rows_schema(conn)
         _assert_chip_aware_inventory_schema(conn)
+        _assert_v40_v41_schema(conn)
 
 
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 39
+        assert _migrated_version(conn) == 41
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 39
+        assert _migrated_version(conn) == 41
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -330,6 +370,7 @@ def test_schema_migration_v31_idempotent():
         _assert_print_tracking_schema(conn)
         _assert_reconciliation_sale_rows_schema(conn)
         _assert_chip_aware_inventory_schema(conn)
+        _assert_v40_v41_schema(conn)
 
 
 def test_schema_migration_v32_handles_preexisting_printed_by_column():
