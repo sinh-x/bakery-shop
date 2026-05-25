@@ -228,10 +228,11 @@ packages:
   device_info_plus:
     dependency: "direct main"
     description:
-      name: device_info_plus
-      sha256: "6a642e1daa10190af89ba6cb6386c0df7d071a3592080bfe1e44faa63ae1df65"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/device_info_plus/device_info_plus"
+      ref: f82ffe2e85ab7815bbb6f0f92c0b859e53f06df7
+      resolved-ref: f82ffe2e85ab7815bbb6f0f92c0b859e53f06df7
+      url: "https://github.com/sinh-x/plus_plugins.git"
+    source: git
     version: "13.1.0"
   device_info_plus_platform_interface:
     dependency: transitive
@@ -486,12 +487,13 @@ packages:
     source: hosted
     version: "1.2.2"
   image_picker_android:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: image_picker_android
-      sha256: d5b3e1774af29c9ab00103afb0d4614070f924d2e0057ac867ec98800114793f
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/image_picker/image_picker_android"
+      ref: "93cb01705707d5228bb5257f5bffa3ab11ee028d"
+      resolved-ref: "93cb01705707d5228bb5257f5bffa3ab11ee028d"
+      url: "https://github.com/sinh-x/packages.git"
+    source: git
     version: "0.8.13+17"
   image_picker_for_web:
     dependency: transitive
@@ -704,10 +706,11 @@ packages:
   package_info_plus:
     dependency: "direct main"
     description:
-      name: package_info_plus
-      sha256: "4bf625947f6c7713ee242296a682e23e44823c09cf9d79e4f1238923c92db852"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/package_info_plus/package_info_plus"
+      ref: f82ffe2e85ab7815bbb6f0f92c0b859e53f06df7
+      resolved-ref: f82ffe2e85ab7815bbb6f0f92c0b859e53f06df7
+      url: "https://github.com/sinh-x/plus_plugins.git"
+    source: git
     version: "10.1.0"
   package_info_plus_platform_interface:
     dependency: transitive
@@ -864,10 +867,11 @@ packages:
   print_bluetooth_thermal:
     dependency: "direct main"
     description:
-      name: print_bluetooth_thermal
-      sha256: d97e21e2f59cdfab6868e3c2369b7dbb53aa77609064423c8ef9d18007bafc51
-      url: "https://pub.dev"
-    source: hosted
+      path: "."
+      ref: "3afdcc965026a2c60bf86f4506ae039b508edde3"
+      resolved-ref: "3afdcc965026a2c60bf86f4506ae039b508edde3"
+      url: "https://github.com/sinh-x/print_bluetooth_thermal.git"
+    source: git
     version: "1.2.2"
   pub_semver:
     dependency: transitive
@@ -936,10 +940,11 @@ packages:
   share_plus:
     dependency: "direct main"
     description:
-      name: share_plus
-      sha256: a857d8b1479250aff6b57a51b2c02d31ca05848d441817c43f1640c885c286c0
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/share_plus/share_plus"
+      ref: f82ffe2e85ab7815bbb6f0f92c0b859e53f06df7
+      resolved-ref: f82ffe2e85ab7815bbb6f0f92c0b859e53f06df7
+      url: "https://github.com/sinh-x/plus_plugins.git"
+    source: git
     version: "13.1.0"
   share_plus_platform_interface:
     dependency: transitive
@@ -958,12 +963,13 @@ packages:
     source: hosted
     version: "2.5.5"
   shared_preferences_android:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: shared_preferences_android
-      sha256: e8d4762b1e2e8578fc4d0fd548cebf24afd24f49719c08974df92834565e2c53
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/shared_preferences/shared_preferences_android"
+      ref: "3516e5e1211055e39db084327bdfc76d45ca7b7f"
+      resolved-ref: "3516e5e1211055e39db084327bdfc76d45ca7b7f"
+      url: "https://github.com/sinh-x/packages.git"
+    source: git
     version: "2.4.23"
   shared_preferences_foundation:
     dependency: transitive
@@ -1219,12 +1225,13 @@ packages:
     source: hosted
     version: "6.3.2"
   url_launcher_android:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: url_launcher_android
-      sha256: "17bc677f0b301615530dd1d67e0a9828cafa2d0b6b6eae4cd3679b7eac4a273c"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/url_launcher/url_launcher_android"
+      ref: "93cb01705707d5228bb5257f5bffa3ab11ee028d"
+      resolved-ref: "93cb01705707d5228bb5257f5bffa3ab11ee028d"
+      url: "https://github.com/sinh-x/packages.git"
+    source: git
     version: "6.3.30"
   url_launcher_ios:
     dependency: transitive
