@@ -244,23 +244,40 @@ class OrderDetailScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text(VN.orderDetail),
         actions: [
-          orderAsync.whenOrNull(
-                data: (order) => IconButton(
-                  icon: const Icon(Icons.edit_outlined),
-                  tooltip: VN.editOrder,
-                  onPressed: () async {
-                    await context.push('/orders/$orderRef/edit');
-                    ref.read(orderDetailProvider(orderRef).notifier).refresh();
-                  },
-                ),
-              ) ??
-              const SizedBox.shrink(),
+          if (orderAsync.asData != null)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: VN.editOrder,
+              onPressed: () async {
+                await context.push('/orders/$orderRef/edit');
+                ref.read(orderDetailProvider(orderRef).notifier).refresh();
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.print_outlined),
             tooltip: VN.printReceipt,
             onPressed: () => _showReceiptTypeSelector(context, ref),
           ),
-          const AppBarOverflowMenu(),
+          AppBarOverflowMenu(
+            items: orderAsync.asData != null
+                ? [
+                    const PopupMenuItem<String>(
+                      value: 'addIncident',
+                      child: Text(VN.addOrderIncident),
+                    ),
+                  ]
+                : [],
+            onSelected: (value) {
+              if (value == 'addIncident') {
+                final order = orderAsync.asData!.value;
+                final orderId = int.tryParse(order.id);
+                context.push(
+                  '/orders/$orderRef/incident/new',
+                  extra: orderId,
+                );
+              }
+            },
+          ),
         ],
       ),
       body: orderAsync.when(
