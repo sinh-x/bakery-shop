@@ -487,12 +487,13 @@ packages:
     source: hosted
     version: "1.2.2"
   image_picker_android:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: image_picker_android
-      sha256: d5b3e1774af29c9ab00103afb0d4614070f924d2e0057ac867ec98800114793f
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/image_picker/image_picker_android"
+      ref: "fix/built-in-kotlin"
+      resolved-ref: "93cb01705707d5228bb5257f5bffa3ab11ee028d"
+      url: "https://github.com/sinh-x/packages.git"
+    source: git
     version: "0.8.13+17"
   image_picker_for_web:
     dependency: transitive
@@ -1224,12 +1225,13 @@ packages:
     source: hosted
     version: "6.3.2"
   url_launcher_android:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: url_launcher_android
-      sha256: "17bc677f0b301615530dd1d67e0a9828cafa2d0b6b6eae4cd3679b7eac4a273c"
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/url_launcher/url_launcher_android"
+      ref: "fix/built-in-kotlin"
+      resolved-ref: "93cb01705707d5228bb5257f5bffa3ab11ee028d"
+      url: "https://github.com/sinh-x/packages.git"
+    source: git
     version: "6.3.30"
   url_launcher_ios:
     dependency: transitive
