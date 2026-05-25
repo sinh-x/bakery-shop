@@ -1,16 +1,21 @@
 """Events API routes — create, list, and detail."""
 
 import json
+import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
+from PIL import UnidentifiedImageError
 from pydantic import BaseModel
 
+from baker.api.photos import read_image_upload, save_photo
 from baker.db.connection import get_db
 from baker.db.queries import fetch_events, find_staff_by_name, link_event_person
 from baker.models.event import Event
 from baker.models.order import Order
+
+logger = logging.getLogger("baker.server")
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
@@ -240,3 +245,103 @@ def delete_event(event_id: int):
             raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
 
         conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+
+
+def _get_event_or_404(conn, event_id: int):
+    row = conn.execute(
+        "SELECT * FROM events WHERE id = ?", (event_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
+    return row
+
+
+@router.get("/{event_id}/photos")
+def list_event_photos(event_id: int):
+    """Danh sách ảnh đính kèm sự kiện."""
+    with get_db() as conn:
+        _get_event_or_404(conn, event_id)
+        rows = conn.execute(
+            "SELECT ep.*, ph.hash as photo_hash "
+            "FROM event_photos ep "
+            "LEFT JOIN photos ph ON ep.photo_id = ph.id "
+            "WHERE ep.event_id = ? ORDER BY ep.position, ep.id",
+            (event_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+@router.post("/{event_id}/photos", status_code=201)
+async def upload_event_photo(
+    event_id: int,
+    file: UploadFile,
+    tags: str = Form(""),
+):
+    """Tải lên ảnh đính kèm cho sự kiện."""
+    with get_db() as conn:
+        _get_event_or_404(conn, event_id)
+
+    data = await read_image_upload(file)
+
+    try:
+        hash_hex = save_photo(data, file.filename or "")
+    except (UnidentifiedImageError, OSError, ValueError):
+        logger.exception("Event photo upload failed for event %d, file: %s", event_id, file.filename)
+        raise HTTPException(status_code=400, detail="Không thể xử lý hình ảnh")
+
+    with get_db() as conn:
+        photo_row = conn.execute(
+            "SELECT id FROM photos WHERE hash = ?", (hash_hex,)
+        ).fetchone()
+        photo_id = photo_row[0] if photo_row else None
+
+        if photo_id is not None:
+            existing = conn.execute(
+                "SELECT ep.*, ph.hash as photo_hash "
+                "FROM event_photos ep "
+                "LEFT JOIN photos ph ON ep.photo_id = ph.id "
+                "WHERE ep.event_id = ? AND ep.photo_id = ?",
+                (event_id, photo_id),
+            ).fetchone()
+            if existing:
+                return dict(existing)
+
+        result = conn.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM event_photos WHERE event_id = ?",
+            (event_id,),
+        ).fetchone()
+        next_position = result[0]
+
+        cursor = conn.execute(
+            "INSERT INTO event_photos (event_id, photo_id, tags, position) "
+            "VALUES (?, ?, ?, ?)",
+            (event_id, photo_id, tags, next_position),
+        )
+        new_id = cursor.lastrowid
+
+        row = conn.execute(
+            "SELECT ep.*, ph.hash as photo_hash "
+            "FROM event_photos ep "
+            "LEFT JOIN photos ph ON ep.photo_id = ph.id "
+            "WHERE ep.id = ?",
+            (new_id,),
+        ).fetchone()
+        return dict(row)
+
+
+@router.delete("/{event_id}/photos/{photo_id}", status_code=200)
+def delete_event_photo(event_id: int, photo_id: int):
+    """Xóa ảnh khỏi sự kiện (chỉ xóa bản ghi DB, giữ file hash trên đĩa)."""
+    with get_db() as conn:
+        _get_event_or_404(conn, event_id)
+
+        row = conn.execute(
+            "SELECT * FROM event_photos WHERE id = ? AND event_id = ?",
+            (photo_id, event_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy ảnh")
+
+        conn.execute("DELETE FROM event_photos WHERE id = ?", (photo_id,))
+
+    return {"message": "Đã xóa ảnh"}
