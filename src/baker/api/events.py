@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from baker.db.connection import get_db
 from baker.db.queries import fetch_events, find_staff_by_name, link_event_person
 from baker.models.event import Event
+from baker.models.order import Order
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
@@ -24,6 +25,7 @@ class EventCreate(BaseModel):
     data: dict[str, Any] = {}
     source: str = "app"
     timestamp: str | None = None
+    orderId: int | None = None
 
 
 def _row_to_dict(row) -> dict:
@@ -35,6 +37,11 @@ def _row_to_dict(row) -> dict:
         d["data"] = json.loads(d["data"]) if d.get("data") else {}
     except (json.JSONDecodeError, TypeError):
         d["data"] = {}
+    if "order_id" in d:
+        d["orderId"] = d.pop("order_id")
+    else:
+        d["orderId"] = None
+    d.pop("order_id", None)
     return d
 
 
@@ -47,6 +54,10 @@ def create_event(body: EventCreate):
     _validate_expense_data(body.type, body.data)
     timestamp = _normalize_timestamp(body.timestamp)
 
+    if body.orderId is not None:
+        if not Order.exists(body.orderId):
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
     event = Event(
         summary=body.summary.strip(),
         type=body.type,
@@ -55,6 +66,7 @@ def create_event(body: EventCreate):
         data=body.data,
         source=body.source,
         timestamp=timestamp,
+        order_id=body.orderId,
     )
 
     with get_db() as conn:
