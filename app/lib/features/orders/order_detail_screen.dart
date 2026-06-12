@@ -28,6 +28,8 @@ import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/enum_attribute_display.dart';
 import 'widgets/order_photo_section.dart';
+import 'widgets/section_header.dart';
+import 'widgets/rut_tien_section.dart';
 
 const _workItemStatusColors = {
   'pending': Colors.grey,
@@ -578,7 +580,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Order info ────────────────────────────────────────────────
-        const _SectionHeader(VN.customer),
+        const SectionHeader(VN.customer),
         _InfoRow(
           icon: Icons.badge_outlined,
           label: VN.publicOrderCode,
@@ -683,7 +685,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Items ─────────────────────────────────────────────────────
-        const _SectionHeader(VN.products),
+        const SectionHeader(VN.products),
         ...order.items
             .where((item) => !item.isExtra)
             .map(
@@ -753,7 +755,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             ),
         if (order.items.any((item) => item.isExtra)) ...[
           const SizedBox(height: 12),
-          const _SectionHeader(VN.extras),
+          const SectionHeader(VN.extras),
           ...order.items
               .where((item) => item.isExtra)
               .map(
@@ -844,11 +846,14 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Rut tien tracking ───────────────────────────────────────
-        _RutTienSection(orderRef: order.orderRef),
+        RutTienSection(
+          orderRef: order.orderRef,
+          onRecordPayment: _openAddPaymentSheet,
+        ),
         const SizedBox(height: 16),
 
         // ── Payment ───────────────────────────────────────────────────
-        const _SectionHeader(VN.payment),
+        const SectionHeader(VN.payment),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -926,7 +931,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Payment history ───────────────────────────────────────────
-        const _SectionHeader(VN.paymentHistory),
+        const SectionHeader(VN.paymentHistory),
         if (txns.isEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -955,7 +960,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         // ── Status actions ────────────────────────────────────────────
         if (transitions.isNotEmpty) ...[
           const SizedBox(height: 20),
-          const _SectionHeader(VN.actions),
+          const SectionHeader(VN.actions),
           if (_transitioning)
             const Center(child: CircularProgressIndicator())
           else
@@ -1208,14 +1213,10 @@ class _RecordPaymentSheet extends ConsumerStatefulWidget {
   const _RecordPaymentSheet({
     required this.orderRef,
     required this.remaining,
-    this.initialType,
-    this.initialAmount,
   });
 
   final String orderRef;
   final double remaining;
-  final String? initialType;
-  final double? initialAmount;
 
   @override
   ConsumerState<_RecordPaymentSheet> createState() =>
@@ -1233,10 +1234,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   @override
   void initState() {
     super.initState();
-    _type = widget.initialType ?? 'deposit';
-    if (widget.initialAmount != null && widget.initialAmount! > 0) {
-      _amountCtrl.text = vndThousandsTextFromAmount(widget.initialAmount!);
-    }
+    _type = 'deposit';
   }
 
   void _onTypeSelected(String type) {
@@ -2186,27 +2184,6 @@ class _PrintStatusRow extends StatelessWidget {
   }
 }
 
-// ── Section header ────────────────────────────────────────────────────────────
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title);
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
-  }
-}
-
 // ── Print Checklist Dialog (Flow A) ─────────────────────────────────────────
 
 class _PrintChecklistDialog extends ConsumerStatefulWidget {
@@ -2459,166 +2436,3 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Rut tien (cash-in-cake) tracking section — transaction-based
-// ---------------------------------------------------------------------------
-
-class _RutTienSection extends ConsumerWidget {
-  const _RutTienSection({required this.orderRef});
-
-  final String orderRef;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final itemsAsync = ref.watch(orderWorkItemsProvider(orderRef));
-    final txnsAsync = ref.watch(orderPaymentTransactionsProvider(orderRef));
-    final items = itemsAsync.value ?? [];
-    final txns = txnsAsync.value ?? [];
-    final rutTienItems = items
-        .where(
-          (i) =>
-              i.attributes['rut_tien']?.toString() == 'true' ||
-              i.attributes['rut_tien'] == true,
-        )
-        .toList();
-
-    if (rutTienItems.isEmpty) return const SizedBox.shrink();
-
-    final theme = Theme.of(context);
-
-    // Total target from all rut_tien items' cash_amount
-    final totalTarget = rutTienItems.fold<int>(0, (sum, item) {
-      return sum +
-          (int.tryParse(item.attributes['cash_amount']?.toString() ?? '') ?? 0);
-    });
-    // Total received from rut_tien transactions
-    final totalReceived = txns
-        .where((t) => t.type == 'tien_rut')
-        .fold<double>(0, (sum, t) => sum + t.amount);
-    final remaining = totalTarget.toDouble() - totalReceived;
-    final isFullyReceived = totalReceived >= totalTarget;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _SectionHeader(VN.rutTienSection),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.amber.shade50,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.amber.shade200),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Per-item target display
-              for (final item in rutTienItems) ...[_RutTienItemRow(item: item)],
-              const Divider(height: 16),
-              // Overall received vs target summary
-              Row(
-                children: [
-                  Icon(
-                    isFullyReceived ? Icons.check_circle : Icons.pending,
-                    color: isFullyReceived
-                        ? Colors.green.shade700
-                        : Colors.orange.shade700,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Tiền khách đưa: ${formatVND(totalReceived)} / ${formatVND(totalTarget.toDouble())}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: isFullyReceived
-                            ? Colors.green.shade700
-                            : Colors.orange.shade700,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              // Quick-add button
-              if (remaining > 0) ...[
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      showModalBottomSheet<void>(
-                        context: context,
-                        isScrollControlled: true,
-                        builder: (_) => _RecordPaymentSheet(
-                          orderRef: orderRef,
-                          remaining: remaining,
-                          initialType: 'tien_rut',
-                          initialAmount: remaining,
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('+ Khách đưa tiền rút'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.amber.shade800,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _RutTienItemRow extends StatelessWidget {
-  const _RutTienItemRow({required this.item});
-
-  final WorkItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cashAmount =
-        int.tryParse(item.attributes['cash_amount']?.toString() ?? '') ?? 0;
-    final cashFee =
-        int.tryParse(item.attributes['cash_fee']?.toString() ?? '') ?? 0;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            item.productName,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (cashAmount > 0)
-            Padding(
-              padding: const EdgeInsets.only(left: 4, top: 2),
-              child: Text(
-                '${VN.soTienRut}: ${formatVND(cashAmount.toDouble())}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.green.shade700,
-                ),
-              ),
-            ),
-          if (cashFee > 0)
-            Padding(
-              padding: const EdgeInsets.only(left: 4, top: 2),
-              child: Text(
-                '${VN.phiRutTien}: ${formatVND(cashFee.toDouble())}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.green.shade700,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
