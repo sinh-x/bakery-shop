@@ -350,4 +350,39 @@ void main() {
     expect(service.capturedSince, isNull);
     expect(service.capturedUntil, isNull);
   });
+
+  test('loadExpenseHistory applies payment source filter', () async {
+    final service = _FakeEventService();
+    final container = ProviderContainer(
+      overrides: [eventServiceProvider.overrideWithValue(service)],
+    );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(eventsProvider.notifier);
+    final results = await notifier.loadExpenseHistory(
+      paymentSource: 'TK Phượng VCB',
+    );
+
+    expect(results, hasLength(1));
+    expect(results.first.id, 2);
+    expect(results.first.data['payment_source'], 'TK Phượng VCB');
+  });
+
+  test(
+    'loadExpenseHistory applies payment source filter locally when API ignores it',
+    () async {
+      final service = _FakeEventService()..applyRemoteFilters = false;
+      final container = ProviderContainer(
+        overrides: [eventServiceProvider.overrideWithValue(service)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(eventsProvider.notifier);
+      final results = await notifier.loadExpenseHistory(
+        paymentSource: 'Không khớp',
+      );
+
+      expect(results, isEmpty);
+    },
+  );
 }

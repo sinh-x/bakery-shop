@@ -166,6 +166,46 @@ def test_create_expense_event_accepts_nhan_vien_ung_truoc_with_staff_name(api_cl
     assert resp.status_code == 201
 
 
+def test_create_expense_event_persists_reimbursed(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền đã hoàn lại",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 80000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Nhân viên ứng trước",
+            "vendor": "NCC A",
+            "note": "Mua hàng",
+            "staff_name": "Lan",
+            "reimbursed": True,
+        },
+    })
+    assert resp.status_code == 201
+    ev = resp.json()
+    assert ev["data"]["reimbursed"] is True
+    assert ev["data"]["payment_source"] == "Nhân viên ứng trước"
+
+
+def test_create_expense_event_defaults_reimbursed_false(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền chưa hoàn lại",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 60000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Nhân viên ứng trước",
+            "vendor": "NCC A",
+            "note": "Mua hàng",
+            "staff_name": "Lan",
+        },
+    })
+    assert resp.status_code == 201
+    ev = resp.json()
+    assert ev["data"].get("reimbursed", False) is False
+
+
 # --- GET /api/events ---
 
 
@@ -642,6 +682,41 @@ def test_patch_expense_event_timestamp(api_client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["timestamp"] == "2026-05-24T08:15:00"
+
+
+def test_patch_expense_event_preserves_reimbursed(api_client):
+    create_resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền ứng trước",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Nhân viên ứng trước",
+            "vendor": "NCC A",
+            "note": "Mua hàng",
+            "staff_name": "Lan",
+            "reimbursed": True,
+        },
+    })
+    event_id = create_resp.json()["id"]
+
+    resp = api_client.patch(f"/api/events/{event_id}", json={
+        "data": {
+            "amount_vnd": 60000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Nhân viên ứng trước",
+            "vendor": "NCC A",
+            "note": "Mua hàng cập nhật",
+            "staff_name": "Lan",
+            "reimbursed": True,
+        },
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["data"]["reimbursed"] is True
+    assert body["data"]["amount_vnd"] == 60000
 
 
 def test_patch_expense_event_rejects_invalid_amount(api_client):
