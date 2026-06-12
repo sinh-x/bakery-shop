@@ -36,9 +36,29 @@ class ExpenseHistoryCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '${data.category} • ${data.paymentMethod} • ${data.staffName}',
+              '${data.category} • ${data.paymentMethod} • ${data.paymentSource} • ${data.staffName}',
             ),
             Text(formattedTimestamp),
+            if (data.reimbursed)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Chip(
+                  label: const Text(VN.reimbursedYes),
+                  backgroundColor: Colors.green.shade100,
+                  side: BorderSide.none,
+                  visualDensity: VisualDensity.compact,
+                ),
+              )
+            else if (data.paymentSource == VN.paymentSourceStaffAdvance)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Chip(
+                  label: const Text(VN.reimbursedNo),
+                  backgroundColor: Colors.orange.shade100,
+                  side: BorderSide.none,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
             if (data.vendor.isNotEmpty)
               Text('${VN.expenseVendorLabel}: ${data.vendor}'),
             if (data.note.isNotEmpty)

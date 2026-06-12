@@ -593,6 +593,8 @@ class VN {
   static const expenseNoHistory = 'Chưa có chi phí phù hợp bộ lọc';
   static const expenseAmountValidationMessage =
       'Số tiền phải là số nguyên VND lớn hơn 0';
+  static const expenseStaffNameRequiredForAdvance =
+      'Tên nhân viên là bắt buộc khi chọn Nhân viên ứng trước';
 
   // Payment sources
   static const expensePaymentSourceLabel = 'Nguồn tiền chi';

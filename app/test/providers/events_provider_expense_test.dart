@@ -26,9 +26,11 @@ class _FakeEventService extends EventService {
         'amount_vnd': 120000,
         'category': 'Nguyên liệu',
         'payment_method': 'Tiền mặt',
+        'payment_source': 'Shop tiền mặt',
         'vendor': 'NCC A',
         'note': 'Bột mì',
         'staff_name': 'Lan',
+        'reimbursed': false,
       },
     ),
     BakeryEvent(
@@ -40,9 +42,11 @@ class _FakeEventService extends EventService {
         'amount_vnd': 80000,
         'category': 'Vận chuyển',
         'payment_method': 'Chuyển khoản',
+        'payment_source': 'TK Phượng VCB',
         'vendor': 'NCC B',
         'note': 'Xe giao hàng',
         'staff_name': 'Minh',
+        'reimbursed': false,
       },
     ),
   ];
@@ -91,6 +95,7 @@ class _FakeEventService extends EventService {
     String? loggedBy,
     String? expenseCategory,
     String? expensePaymentMethod,
+    String? expensePaymentSource,
     String? expenseStaffName,
     String? expenseSearch,
     int limit = 50,
@@ -108,6 +113,13 @@ class _FakeEventService extends EventService {
         expensePaymentMethod.isNotEmpty) {
       items = items.where(
         (item) => item.data['payment_method'] == expensePaymentMethod,
+      );
+    }
+    if (applyRemoteFilters &&
+        expensePaymentSource != null &&
+        expensePaymentSource.isNotEmpty) {
+      items = items.where(
+        (item) => item.data['payment_source'] == expensePaymentSource,
       );
     }
     if (applyRemoteFilters &&
@@ -236,9 +248,11 @@ void main() {
           'amount_vnd': 140000,
           'category': 'Nguyên liệu',
           'payment_method': 'Tiền mặt',
+          'payment_source': 'Shop tiền mặt',
           'vendor': 'NCC A',
           'note': 'Bột mì mới',
           'staff_name': 'Lan',
+          'reimbursed': false,
         },
       );
 
@@ -270,9 +284,11 @@ void main() {
           'amount_vnd': 200000,
           'category': 'Nguyên liệu',
           'payment_method': 'Tiền mặt',
+          'payment_source': 'Shop tiền mặt',
           'vendor': 'NCC A',
           'note': 'Bơ sữa',
           'staff_name': 'Lan',
+          'reimbursed': false,
         },
         timestamp: createdAt,
       );
@@ -286,9 +302,11 @@ void main() {
           'amount_vnd': 150000,
           'category': 'Nguyên liệu',
           'payment_method': 'Tiền mặt',
+          'payment_source': 'Shop tiền mặt',
           'vendor': 'NCC A',
           'note': 'Bơ',
           'staff_name': 'Lan',
+          'reimbursed': false,
         },
         timestamp: updatedAt,
       );

@@ -28,6 +28,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   int? _editingId;
   String? _category;
   String _paymentMethod = VN.methodCash;
+  String _paymentSource = VN.paymentSourceShopCash;
   late DateTime _eventDateTime;
 
   bool get _editing => _editingId != null;
@@ -50,6 +51,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     _amountCtrl.text = data.amountVnd.toString();
     _category = data.category;
     _paymentMethod = data.paymentMethod;
+    _paymentSource = data.paymentSource;
     _vendorCtrl.text = data.vendor;
     _noteCtrl.text = data.note;
     _staffCtrl.text = data.staffName;
@@ -81,14 +83,18 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             staffCtrl: _staffCtrl,
             categories: expenseCategories,
             paymentMethods: expensePaymentMethods,
+            paymentSources: expensePaymentSources,
             category: _category,
             paymentMethod: _paymentMethod,
+            paymentSource: _paymentSource,
             eventDateTime: _eventDateTime,
             loading: _loading,
             editing: _editing,
             onCategoryChanged: (value) => setState(() => _category = value),
             onPaymentMethodChanged: (value) =>
                 setState(() => _paymentMethod = value ?? _paymentMethod),
+            onPaymentSourceChanged: (value) =>
+                setState(() => _paymentSource = value ?? _paymentSource),
             onPickDate: _pickDate,
             onPickTime: _pickTime,
             onCancelEdit: () => context.pop(false),
@@ -103,11 +109,17 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_category == null || _category!.isEmpty) return;
+    if (_paymentSource == VN.paymentSourceStaffAdvance &&
+        _staffCtrl.text.trim().isEmpty) {
+      showTopSnackBar(context, VN.expenseStaffNameRequiredForAdvance);
+      return;
+    }
     final amount = int.parse(_amountCtrl.text.trim());
     final payload = ExpenseEventData(
       amountVnd: amount,
       category: _category!,
       paymentMethod: _paymentMethod,
+      paymentSource: _paymentSource,
       vendor: _vendorCtrl.text.trim(),
       note: _noteCtrl.text.trim(),
       staffName: _staffCtrl.text.trim(),

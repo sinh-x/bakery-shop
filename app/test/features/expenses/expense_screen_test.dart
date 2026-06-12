@@ -16,6 +16,8 @@ BakeryEvent _expenseEvent({
   required String staff,
   String vendor = '',
   String note = '',
+  String paymentSource = 'Shop tiền mặt',
+  bool reimbursed = false,
 }) {
   return BakeryEvent(
     id: id,
@@ -26,9 +28,11 @@ BakeryEvent _expenseEvent({
       'amount_vnd': amount,
       'category': category,
       'payment_method': paymentMethod,
+      'payment_source': paymentSource,
       'vendor': vendor,
       'note': note,
       'staff_name': staff,
+      'reimbursed': reimbursed,
     },
   );
 }
@@ -38,6 +42,7 @@ Future<List<BakeryEvent>> _emptyHistory({
   String? until,
   String? category,
   String? paymentMethod,
+  String? paymentSource,
   String? staffName,
   String? searchText,
 }) async => const [];
@@ -59,6 +64,7 @@ void main() {
                   until,
                   category,
                   paymentMethod,
+                  paymentSource,
                   staffName,
                   searchText,
                 }) async {
@@ -132,6 +138,7 @@ void main() {
                   until,
                   category,
                   paymentMethod,
+                  paymentSource,
                   staffName,
                   searchText,
                 }) async => [event],
@@ -194,6 +201,9 @@ void main() {
   testWidgets('delete shows confirmation and calls delete callback', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 1920));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     var deletedId = -1;
     final event = _expenseEvent(
       id: 3,
@@ -216,6 +226,7 @@ void main() {
                   until,
                   category,
                   paymentMethod,
+                  paymentSource,
                   staffName,
                   searchText,
                 }) async => [event],
@@ -248,6 +259,7 @@ void main() {
                   until,
                   category,
                   paymentMethod,
+                  paymentSource,
                   staffName,
                   searchText,
                 }) async {
@@ -306,6 +318,7 @@ void main() {
                   until,
                   category,
                   paymentMethod,
+                  paymentSource,
                   staffName,
                   searchText,
                 }) async => events,
@@ -327,6 +340,7 @@ void main() {
     final allChips = find.widgetWithText(FilterChip, VN.filterAll);
     expect(tester.widget<FilterChip>(allChips.at(0)).selected, isTrue);
     expect(tester.widget<FilterChip>(allChips.at(1)).selected, isTrue);
+    expect(tester.widget<FilterChip>(allChips.at(2)).selected, isTrue);
   });
 
   testWidgets('filter card uses chips and hides payment method filter', (
@@ -373,6 +387,7 @@ void main() {
                   until,
                   category,
                   paymentMethod,
+                  paymentSource,
                   staffName,
                   searchText,
                 }) async {
@@ -421,6 +436,7 @@ void main() {
                   until,
                   category,
                   paymentMethod,
+                  paymentSource,
                   staffName,
                   searchText,
                 }) async {

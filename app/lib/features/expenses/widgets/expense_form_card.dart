@@ -12,12 +12,15 @@ class ExpenseFormCard extends StatelessWidget {
     required this.eventDateTime,
     required this.categories,
     required this.paymentMethods,
+    required this.paymentSources,
     required this.category,
     required this.paymentMethod,
+    required this.paymentSource,
     required this.loading,
     required this.editing,
     required this.onCategoryChanged,
     required this.onPaymentMethodChanged,
+    required this.onPaymentSourceChanged,
     required this.onPickDate,
     required this.onPickTime,
     required this.onCancelEdit,
@@ -33,12 +36,15 @@ class ExpenseFormCard extends StatelessWidget {
   final DateTime eventDateTime;
   final List<String> categories;
   final List<String> paymentMethods;
+  final List<String> paymentSources;
   final String? category;
   final String paymentMethod;
+  final String paymentSource;
   final bool loading;
   final bool editing;
   final ValueChanged<String?> onCategoryChanged;
   final ValueChanged<String?> onPaymentMethodChanged;
+  final ValueChanged<String?> onPaymentSourceChanged;
   final VoidCallback onPickDate;
   final VoidCallback onPickTime;
   final VoidCallback onCancelEdit;
@@ -95,6 +101,23 @@ class ExpenseFormCard extends StatelessWidget {
                     )
                     .toList(),
                 onChanged: onPaymentMethodChanged,
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: paymentSource,
+                decoration: const InputDecoration(
+                  labelText: VN.expensePaymentSourceLabel,
+                  border: OutlineInputBorder(),
+                ),
+                items: paymentSources
+                    .map(
+                      (item) =>
+                          DropdownMenuItem(value: item, child: Text(item)),
+                    )
+                    .toList(),
+                onChanged: onPaymentSourceChanged,
+                validator: (value) =>
+                    (value == null || value.isEmpty) ? VN.fieldRequired : null,
               ),
               const SizedBox(height: 8),
               Row(
