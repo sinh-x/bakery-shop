@@ -53,6 +53,7 @@ def test_create_expense_event_with_structured_data(api_client):
             "amount_vnd": 125000,
             "category": "Nguyên liệu",
             "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
             "vendor": "Chợ Bình Tây",
             "note": "Bột mì đa dụng",
             "staff_name": "Lan",
@@ -72,6 +73,7 @@ def test_create_event_with_custom_timestamp(api_client):
             "amount_vnd": 75000,
             "category": "Nguyên liệu",
             "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
             "vendor": "NCC A",
             "note": "Mua đường",
             "staff_name": "Lan",
@@ -89,6 +91,7 @@ def test_create_expense_event_rejects_non_integer_amount(api_client):
             "amount_vnd": "120000",
             "category": "Nguyên liệu",
             "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
             "vendor": "Cửa hàng A",
             "note": "Sữa tươi",
             "staff_name": "Lan",
@@ -109,6 +112,58 @@ def test_create_expense_event_rejects_missing_required_fields(api_client):
     })
     assert resp.status_code == 422
     assert "thiếu trường bắt buộc" in resp.json()["detail"]
+
+
+def test_create_expense_event_rejects_missing_payment_source(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền mua đường",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 10000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "vendor": "NCC A",
+            "note": "Đường",
+            "staff_name": "Lan",
+        },
+    })
+    assert resp.status_code == 422
+    assert "payment_source" in resp.json()["detail"]
+
+
+def test_create_expense_event_rejects_nhan_vien_ung_truoc_without_staff_name(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền ứng trước",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Nhân viên ứng trước",
+            "vendor": "NCC A",
+            "note": "Mua hàng",
+            "staff_name": "",
+        },
+    })
+    assert resp.status_code == 422
+    assert "Nhân viên ứng trước" in resp.json()["detail"]
+
+
+def test_create_expense_event_accepts_nhan_vien_ung_truoc_with_staff_name(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền ứng trước",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Nhân viên ứng trước",
+            "vendor": "NCC A",
+            "note": "Mua hàng",
+            "staff_name": "Lan",
+        },
+    })
+    assert resp.status_code == 201
 
 
 # --- GET /api/events ---
@@ -227,6 +282,7 @@ def test_list_events_expense_filter_by_category(api_client):
             "amount_vnd": 120000,
             "category": "Nguyên liệu",
             "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
             "vendor": "Chợ Bình Tây",
             "note": "Bột mì số 8",
             "staff_name": "Lan",
@@ -239,6 +295,7 @@ def test_list_events_expense_filter_by_category(api_client):
             "amount_vnd": 50000,
             "category": "Bao bì",
             "payment_method": "Chuyển khoản",
+            "payment_source": "TK Phượng VCB",
             "vendor": "Nhà cung cấp A",
             "note": "Ly 16oz",
             "staff_name": "Diễm",
@@ -263,6 +320,7 @@ def test_list_events_expense_filter_by_payment_method(api_client):
             "amount_vnd": 70000,
             "category": "Nguyên liệu",
             "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
             "vendor": "Cửa hàng B",
             "note": "Đường cát",
             "staff_name": "Hoa",
@@ -275,6 +333,7 @@ def test_list_events_expense_filter_by_payment_method(api_client):
             "amount_vnd": 40000,
             "category": "Bao bì",
             "payment_method": "Chuyển khoản",
+            "payment_source": "TK Phượng VCB",
             "vendor": "NCC C",
             "note": "Túi giấy",
             "staff_name": "Lan",
@@ -299,6 +358,7 @@ def test_list_events_expense_filter_by_staff_name(api_client):
             "amount_vnd": 90000,
             "category": "Nguyên liệu",
             "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
             "vendor": "NCC Trứng",
             "note": "30 quả",
             "staff_name": "Ngọc Lan",
@@ -311,6 +371,7 @@ def test_list_events_expense_filter_by_staff_name(api_client):
             "amount_vnd": 60000,
             "category": "Bao bì",
             "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
             "vendor": "NCC Hộp",
             "note": "Hộp bánh",
             "staff_name": "Diễm",
@@ -336,6 +397,7 @@ def test_list_events_expense_search_applies_before_limit(api_client):
                 "amount_vnd": 1000 + idx,
                 "category": "Nguyên liệu",
                 "payment_method": "Tiền mặt",
+                "payment_source": "Shop tiền mặt",
                 "vendor": "NCC thường",
                 "note": "Giao dịch thường",
                 "staff_name": "Lan",
@@ -349,6 +411,7 @@ def test_list_events_expense_search_applies_before_limit(api_client):
             "amount_vnd": 88888,
             "category": "Bao bì",
             "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
             "vendor": "NCC mục tiêu",
             "note": "hoadon-target",
             "staff_name": "Hoa",
@@ -362,6 +425,7 @@ def test_list_events_expense_search_applies_before_limit(api_client):
             "amount_vnd": 77777,
             "category": "Bao bì",
             "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
             "vendor": "NCC mới",
             "note": "bản ghi mới",
             "staff_name": "Diễm",
@@ -377,6 +441,44 @@ def test_list_events_expense_search_applies_before_limit(api_client):
     events = resp.json()
     assert len(events) == 1
     assert events[0]["data"]["note"] == "hoadon-target"
+
+
+def test_list_events_expense_filter_by_payment_source(api_client):
+    api_client.post("/api/events", json={
+        "summary": "Mua bột mì",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 120000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "Chợ Bình Tây",
+            "note": "Bột mì số 8",
+            "staff_name": "Lan",
+        },
+    })
+    api_client.post("/api/events", json={
+        "summary": "Mua ly giấy",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50000,
+            "category": "Bao bì",
+            "payment_method": "Chuyển khoản",
+            "payment_source": "TK Phượng VCB",
+            "vendor": "Nhà cung cấp A",
+            "note": "Ly 16oz",
+            "staff_name": "Diễm",
+        },
+    })
+
+    resp = api_client.get("/api/events", params={
+        "type": "expense",
+        "expense_payment_source": "TK Phượng VCB",
+    })
+    assert resp.status_code == 200
+    events = resp.json()
+    assert len(events) == 1
+    assert events[0]["data"]["payment_source"] == "TK Phượng VCB"
 
 
 # --- GET /api/events/{id} ---
@@ -490,6 +592,7 @@ def test_patch_expense_event_data(api_client):
             "amount_vnd": 50000,
             "category": "Bao bì",
             "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
             "vendor": "Nhà cung cấp A",
             "note": "Ly giấy",
             "staff_name": "Diễm",
@@ -504,6 +607,7 @@ def test_patch_expense_event_data(api_client):
             "amount_vnd": 68000,
             "category": "Bao bì",
             "payment_method": "Chuyển khoản",
+            "payment_source": "TK Phượng VCB",
             "vendor": "Nhà cung cấp A",
             "note": "Ly giấy và nắp",
             "staff_name": "Diễm",
@@ -524,6 +628,7 @@ def test_patch_expense_event_timestamp(api_client):
             "amount_vnd": 50000,
             "category": "Bao bì",
             "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
             "vendor": "Nhà cung cấp A",
             "note": "Ly giấy",
             "staff_name": "Diễm",
@@ -547,6 +652,7 @@ def test_patch_expense_event_rejects_invalid_amount(api_client):
             "amount_vnd": 200000,
             "category": "Điện/nước",
             "payment_method": "Chuyển khoản",
+            "payment_source": "TK Phượng VCB",
             "vendor": "EVN",
             "note": "Tiền điện",
             "staff_name": "Lan",
@@ -559,6 +665,7 @@ def test_patch_expense_event_rejects_invalid_amount(api_client):
             "amount_vnd": 0,
             "category": "Điện/nước",
             "payment_method": "Chuyển khoản",
+            "payment_source": "TK Phượng VCB",
             "vendor": "EVN",
             "note": "Tiền điện",
             "staff_name": "Lan",
