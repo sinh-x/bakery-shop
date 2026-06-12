@@ -21,6 +21,8 @@ router = APIRouter(prefix="/api/events", tags=["events"])
 
 VALID_TYPES = {"note", "equipment", "production", "inventory", "expense", "delivery", "order"}
 
+STAFF_ADVANCE_PAYMENT_SOURCE = "Nhân viên ứng trước"
+
 
 class EventCreate(BaseModel):
     summary: str
@@ -181,7 +183,7 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
         raise HTTPException(status_code=422, detail="amount_vnd phải là số nguyên lớn hơn 0")
 
     payment_source = data.get("payment_source", "")
-    if payment_source == "Nhân viên ứng trước" and not data.get("staff_name", "").strip():
+    if payment_source == STAFF_ADVANCE_PAYMENT_SOURCE and not data.get("staff_name", "").strip():
         raise HTTPException(
             status_code=422,
             detail="Tên nhân viên là bắt buộc khi chọn Nhân viên ứng trước",

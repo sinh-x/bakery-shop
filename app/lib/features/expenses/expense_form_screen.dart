@@ -115,6 +115,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       return;
     }
     final amount = int.parse(_amountCtrl.text.trim());
+    // reimbursed toggle is deferred per requirements (DG-176); reimbursed defaults to false
     final payload = ExpenseEventData(
       amountVnd: amount,
       category: _category!,

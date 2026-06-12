@@ -148,11 +148,12 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
             "LOWER(e.summary) LIKE LOWER(?) OR "
             "LOWER(COALESCE(json_extract(e.data, '$.vendor'), '')) LIKE LOWER(?) OR "
             "LOWER(COALESCE(json_extract(e.data, '$.note'), '')) LIKE LOWER(?) OR "
-            "LOWER(COALESCE(json_extract(e.data, '$.staff_name'), '')) LIKE LOWER(?)"
+            "LOWER(COALESCE(json_extract(e.data, '$.staff_name'), '')) LIKE LOWER(?) OR "
+            "LOWER(COALESCE(json_extract(e.data, '$.payment_source'), '')) LIKE LOWER(?)"
             ")"
         )
         like = f"%{expense_search}%"
-        params.extend([like, like, like, like])
+        params.extend([like, like, like, like, like])
 
     where = " AND ".join(conditions) if conditions else "1=1"
     join_clause = " ".join(joins)
