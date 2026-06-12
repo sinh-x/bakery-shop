@@ -101,7 +101,7 @@ def list_events(
     expense_payment_method: str | None = Query(None, description="Lọc chi phí theo phương thức thanh toán"),
     expense_staff_name: str | None = Query(None, description="Lọc chi phí theo nhân viên"),
     expense_payment_source: str | None = Query(None, description="Lọc chi phí theo nguồn tiền"),
-    expense_search: str | None = Query(None, description="Tìm kiếm chi phí trong tóm tắt, NCC, ghi chú, nhân viên"),
+    expense_search: str | None = Query(None, description="Tìm kiếm chi phí trong tóm tắt, NCC, ghi chú, nhân viên, nguồn tiền"),
     limit: int = Query(50, ge=1, le=500, description="Số kết quả tối đa"),
 ):
     """Danh sách sự kiện với bộ lọc."""
