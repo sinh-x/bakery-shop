@@ -51,6 +51,7 @@ class EventService {
     String? expensePaymentMethod,
     String? expensePaymentSource,
     String? expenseStaffName,
+    String? expensePaidByName,
     String? expenseSearch,
     int limit = 50,
   }) async {
@@ -72,6 +73,9 @@ class EventService {
     }
     if (expenseStaffName != null && expenseStaffName.isNotEmpty) {
       params['expense_staff_name'] = expenseStaffName;
+    }
+    if (expensePaidByName != null && expensePaidByName.isNotEmpty) {
+      params['expense_paid_by_name'] = expensePaidByName;
     }
     if (expenseSearch != null && expenseSearch.isNotEmpty) {
       params['expense_search'] = expenseSearch;
