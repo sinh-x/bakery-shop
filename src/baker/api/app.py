@@ -28,6 +28,7 @@ from baker.api.staff import router as staff_router
 from baker.api.stock import router as stock_router
 from baker.api.work_items import router as work_items_router
 from baker.config import BUILD_FINGERPRINT, VERSION
+from baker.db.connection import checkpoint_wal
 from baker.logging import setup_logging
 
 
@@ -41,6 +42,10 @@ def create_app() -> FastAPI:
 
     # Initialize logging
     setup_logging()
+
+    @app.on_event("shutdown")
+    def _shutdown_wal_checkpoint():
+        checkpoint_wal()
 
     # Register global exception handler
     app.add_exception_handler(Exception, global_exception_handler)
