@@ -60,9 +60,15 @@ class ExpenseEventMapper {
       vendor: '${data['vendor'] ?? ''}',
       note: '${data['note'] ?? ''}',
       staffName: '${data['staff_name'] ?? ''}',
-      paidByName: '${data['paid_by_name'] ?? data['staff_name'] ?? ''}',
+      paidByName: _nonEmpty(data['paid_by_name']) ?? _nonEmpty(data['staff_name']) ?? '',
       reimbursed: data['reimbursed'] == true,
     );
+  }
+
+  static String? _nonEmpty(dynamic value) {
+    if (value == null) return null;
+    final s = '$value';
+    return s.isNotEmpty ? s : null;
   }
 
   static bool matchesFilters(

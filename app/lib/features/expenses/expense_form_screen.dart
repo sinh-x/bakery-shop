@@ -3,6 +3,7 @@ import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/expense_constants.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_form_card.dart';
 import 'package:bakery_app/providers/events_provider.dart';
+import 'package:bakery_app/providers/staff_provider.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -23,12 +24,13 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   final _amountCtrl = TextEditingController();
   final _vendorCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
-  final _staffCtrl = TextEditingController();
   bool _loading = false;
   int? _editingId;
   String? _category;
   String _paymentMethod = VN.methodCash;
   String _paymentSource = VN.paymentSourceShopCash;
+  String? _staffName;
+  String? _paidByName;
   late DateTime _eventDateTime;
 
   bool get _editing => _editingId != null;
@@ -36,11 +38,6 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   @override
   void initState() {
     super.initState();
-    try {
-      _staffCtrl.text = ref.read(loggedByProvider);
-    } catch (_) {
-      _staffCtrl.text = '';
-    }
     _eventDateTime = DateTime.now();
     final event = widget.event;
     if (event == null) return;
@@ -54,7 +51,8 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     _paymentSource = data.paymentSource;
     _vendorCtrl.text = data.vendor;
     _noteCtrl.text = data.note;
-    _staffCtrl.text = data.staffName;
+    _staffName = data.staffName.isNotEmpty ? data.staffName : null;
+    _paidByName = data.paidByName.isNotEmpty ? data.paidByName : null;
   }
 
   @override
@@ -62,12 +60,18 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     _amountCtrl.dispose();
     _vendorCtrl.dispose();
     _noteCtrl.dispose();
-    _staffCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final staffAsync = ref.watch(staffListProvider);
+    final staffList = staffAsync.whenOrNull<List<String>>(
+          data: (members) =>
+              members.where((m) => m.active).map((m) => m.name).toList(),
+        ) ??
+        const <String>[];
+
     return Scaffold(
       appBar: AppBar(
         title: Text(_editing ? VN.expenseUpdateAction : VN.expenseAddAction),
@@ -80,13 +84,15 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             amountCtrl: _amountCtrl,
             vendorCtrl: _vendorCtrl,
             noteCtrl: _noteCtrl,
-            staffCtrl: _staffCtrl,
             categories: expenseCategories,
             paymentMethods: expensePaymentMethods,
             paymentSources: expensePaymentSources,
+            staffList: staffList,
             category: _category,
             paymentMethod: _paymentMethod,
             paymentSource: _paymentSource,
+            selectedStaffName: _staffName,
+            selectedPaidByName: _paidByName,
             eventDateTime: _eventDateTime,
             loading: _loading,
             editing: _editing,
@@ -95,6 +101,10 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                 setState(() => _paymentMethod = value ?? _paymentMethod),
             onPaymentSourceChanged: (value) =>
                 setState(() => _paymentSource = value ?? _paymentSource),
+            onStaffChanged: (value) =>
+                setState(() => _staffName = value),
+            onPaidByNameChanged: (value) =>
+                setState(() => _paidByName = value),
             onPickDate: _pickDate,
             onPickTime: _pickTime,
             onCancelEdit: () => context.pop(false),
@@ -109,13 +119,15 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_category == null || _category!.isEmpty) return;
+    if (_staffName == null || _staffName!.isEmpty) return;
+    if (_paidByName == null || _paidByName!.isEmpty) return;
     if (_paymentSource == VN.paymentSourceStaffAdvance &&
-        _staffCtrl.text.trim().isEmpty) {
+        _paidByName!.isEmpty) {
       showTopSnackBar(context, VN.expenseStaffNameRequiredForAdvance);
       return;
     }
     final amount = int.parse(_amountCtrl.text.trim());
-    // reimbursed toggle is deferred per requirements (DG-176); reimbursed defaults to false
+    final loggedBy = ref.read(loggedByProvider);
     final payload = ExpenseEventData(
       amountVnd: amount,
       category: _category!,
@@ -123,7 +135,8 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       paymentSource: _paymentSource,
       vendor: _vendorCtrl.text.trim(),
       note: _noteCtrl.text.trim(),
-      staffName: _staffCtrl.text.trim(),
+      staffName: _staffName!,
+      paidByName: _paidByName!,
     );
 
     setState(() => _loading = true);
@@ -134,7 +147,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             .updateEvent(
               id: _editingId!,
               summary: _summary(payload),
-              loggedBy: payload.staffName,
+              loggedBy: loggedBy,
               data: ExpenseEventMapper.toDataMap(payload),
               timestamp: _eventDateTime,
             );
@@ -145,13 +158,12 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             .logEvent(
               summary: _summary(payload),
               type: expenseType,
-              loggedBy: payload.staffName,
+              loggedBy: loggedBy,
               data: ExpenseEventMapper.toDataMap(payload),
               timestamp: _eventDateTime,
             );
         if (mounted) showTopSnackBar(context, VN.eventLogged);
       }
-      await ref.read(loggedByProvider.notifier).setName(payload.staffName);
       if (mounted) context.pop(true);
     } catch (e) {
       if (mounted) {

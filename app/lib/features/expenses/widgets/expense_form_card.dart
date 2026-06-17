@@ -8,19 +8,23 @@ class ExpenseFormCard extends StatelessWidget {
     required this.amountCtrl,
     required this.vendorCtrl,
     required this.noteCtrl,
-    required this.staffCtrl,
     required this.eventDateTime,
     required this.categories,
     required this.paymentMethods,
     required this.paymentSources,
+    required this.staffList,
     required this.category,
     required this.paymentMethod,
     required this.paymentSource,
+    required this.selectedStaffName,
+    required this.selectedPaidByName,
     required this.loading,
     required this.editing,
     required this.onCategoryChanged,
     required this.onPaymentMethodChanged,
     required this.onPaymentSourceChanged,
+    required this.onStaffChanged,
+    required this.onPaidByNameChanged,
     required this.onPickDate,
     required this.onPickTime,
     required this.onCancelEdit,
@@ -32,19 +36,23 @@ class ExpenseFormCard extends StatelessWidget {
   final TextEditingController amountCtrl;
   final TextEditingController vendorCtrl;
   final TextEditingController noteCtrl;
-  final TextEditingController staffCtrl;
   final DateTime eventDateTime;
   final List<String> categories;
   final List<String> paymentMethods;
   final List<String> paymentSources;
+  final List<String> staffList;
   final String? category;
   final String paymentMethod;
   final String paymentSource;
+  final String? selectedStaffName;
+  final String? selectedPaidByName;
   final bool loading;
   final bool editing;
   final ValueChanged<String?> onCategoryChanged;
   final ValueChanged<String?> onPaymentMethodChanged;
   final ValueChanged<String?> onPaymentSourceChanged;
+  final ValueChanged<String?> onStaffChanged;
+  final ValueChanged<String?> onPaidByNameChanged;
   final VoidCallback onPickDate;
   final VoidCallback onPickTime;
   final VoidCallback onCancelEdit;
@@ -166,12 +174,42 @@ class ExpenseFormCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              TextFormField(
-                controller: staffCtrl,
+              DropdownButtonFormField<String>(
+                initialValue: staffList.contains(selectedStaffName)
+                    ? selectedStaffName
+                    : null,
                 decoration: const InputDecoration(
                   labelText: VN.expenseStaffNameLabel,
                   border: OutlineInputBorder(),
                 ),
+                items: staffList
+                    .map(
+                      (item) =>
+                          DropdownMenuItem(value: item, child: Text(item)),
+                    )
+                    .toList(),
+                onChanged: onStaffChanged,
+                validator: (value) =>
+                    (value == null || value.isEmpty) ? VN.fieldRequired : null,
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: staffList.contains(selectedPaidByName)
+                    ? selectedPaidByName
+                    : null,
+                decoration: const InputDecoration(
+                  labelText: VN.expensePaidByNameLabel,
+                  border: OutlineInputBorder(),
+                ),
+                items: staffList
+                    .map(
+                      (item) =>
+                          DropdownMenuItem(value: item, child: Text(item)),
+                    )
+                    .toList(),
+                onChanged: onPaidByNameChanged,
+                validator: (value) =>
+                    (value == null || value.isEmpty) ? VN.fieldRequired : null,
               ),
               const SizedBox(height: 12),
               Row(

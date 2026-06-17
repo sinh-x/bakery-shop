@@ -568,7 +568,9 @@ class VN {
   static const expensePaymentMethodLabel = 'Phương thức thanh toán';
   static const expenseVendorLabel = 'Nhà cung cấp';
   static const expenseNoteLabel = 'Ghi chú';
-  static const expenseStaffNameLabel = 'Tên nhân viên';
+  static const expenseStaffNameLabel = 'Nhân viên';
+  static const expensePaidByNameLabel = 'Người chi trả';
+  static const expenseLoggedByLabel = 'Người ghi nhận';
   static const expenseCategoryIngredient = 'Nguyên liệu';
   static const expenseCategoryPackaging = 'Bao bì';
   static const expenseCategoryDelivery = 'Vận chuyển';
@@ -584,12 +586,12 @@ class VN {
   static const expenseApplyFiltersAction = 'Áp dụng lọc';
   static const expenseResetFiltersAction = 'Xóa lọc';
   static const expenseSearchLabel =
-      'Tìm theo nội dung, nhà cung cấp, nhân viên';
+      'Tìm theo nội dung, nhà cung cấp, người ghi, người trả';
   static const expenseSinceLabel = 'Từ ngày';
   static const expenseUntilLabel = 'Đến ngày';
   static const expenseDateLabel = 'Ngày chi';
   static const expenseTimeLabel = 'Giờ chi';
-  static const expenseFilterStaffLabel = 'Lọc theo nhân viên';
+  static const expenseFilterStaffLabel = 'Lọc theo người trả';
   static const expenseNoHistory = 'Chưa có chi phí phù hợp bộ lọc';
   static const expenseAmountValidationMessage =
       'Số tiền phải là số nguyên VND lớn hơn 0';

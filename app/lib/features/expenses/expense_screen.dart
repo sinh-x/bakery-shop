@@ -21,6 +21,7 @@ class ExpenseScreen extends ConsumerStatefulWidget {
     String? paymentMethod,
     String? paymentSource,
     String? staffName,
+    String? paidByName,
     String? searchText,
   })?
   loadHistory;
@@ -37,7 +38,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
   DateTime? _until;
   ExpenseDateFilterMode _dateFilterMode = ExpenseDateFilterMode.range;
   String _filterCategory = '';
-  String _filterStaffName = '';
+  String _filterPaidByName = '';
   String _filterPaymentSource = '';
   List<BakeryEvent> _history = <BakeryEvent>[];
 
@@ -75,7 +76,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
       _until = null;
       _dateFilterMode = ExpenseDateFilterMode.range;
       _filterCategory = '';
-      _filterStaffName = '';
+      _filterPaidByName = '';
       _filterPaymentSource = '';
       _searchCtrl.clear();
     });
@@ -87,18 +88,18 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
     super.dispose();
   }
 
-  List<String> _staffFilterOptions() {
+  List<String> _paidByFilterOptions() {
     final names =
         _history
             .map(ExpenseEventMapper.fromEvent)
             .whereType<ExpenseEventData>()
-            .map((event) => event.staffName.trim())
+            .map((event) => event.paidByName.trim())
             .where((name) => name.isNotEmpty)
             .toSet()
             .toList()
           ..sort();
-    if (_filterStaffName.isNotEmpty && !names.contains(_filterStaffName)) {
-      names.insert(0, _filterStaffName);
+    if (_filterPaidByName.isNotEmpty && !names.contains(_filterPaidByName)) {
+      names.insert(0, _filterPaidByName);
     }
     return names;
   }
@@ -127,10 +128,10 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
             dateFilterMode: _dateFilterMode,
             categories: expenseCategories,
             paymentSources: expensePaymentSources,
-            staffNames: _staffFilterOptions(),
+            paidByNames: _paidByFilterOptions(),
             filterCategory: _filterCategory,
             filterPaymentSource: _filterPaymentSource,
-            filterStaffName: _filterStaffName,
+            filterPaidByName: _filterPaidByName,
             onDateFilterModeChanged: (value) => setState(() {
               _dateFilterMode = value;
               if (value == ExpenseDateFilterMode.single && _since != null) {
@@ -146,8 +147,8 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
               setState(() => _filterPaymentSource = value);
               _refreshHistory();
             },
-            onFilterStaffChanged: (value) {
-              setState(() => _filterStaffName = value);
+            onFilterPaidByNameChanged: (value) {
+              setState(() => _filterPaidByName = value);
               _refreshHistory();
             },
             onClearFilters: _clearFilters,
@@ -210,7 +211,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
               category: _filterCategory,
               paymentMethod: null,
               paymentSource: _filterPaymentSource,
-              staffName: _filterStaffName,
+              paidByName: _filterPaidByName,
               searchText: _searchCtrl.text.trim(),
             )
           : ref
@@ -221,7 +222,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
                   category: _filterCategory,
                   paymentMethod: null,
                   paymentSource: _filterPaymentSource,
-                  staffName: _filterStaffName,
+                  paidByName: _filterPaidByName,
                   searchText: _searchCtrl.text.trim(),
                 ));
       _setHistory(events);
