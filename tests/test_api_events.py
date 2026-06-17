@@ -82,7 +82,7 @@ def test_create_event_with_custom_timestamp(api_client):
         },
     })
     assert resp.status_code == 201
-    assert resp.json()["timestamp"] == "2026-05-23T19:57:00"
+    assert resp.json()["timestamp"] == "2026-05-23T19:57:00+07:00"
 
 
 def test_create_expense_event_rejects_non_integer_amount(api_client):
@@ -841,7 +841,7 @@ def test_patch_expense_event_timestamp(api_client):
     })
     assert resp.status_code == 200
     body = resp.json()
-    assert body["timestamp"] == "2026-05-24T08:15:00"
+    assert body["timestamp"] == "2026-05-24T08:15:00+07:00"
 
 
 def test_patch_expense_event_preserves_reimbursed(api_client):

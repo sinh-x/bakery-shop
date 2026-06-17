@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
@@ -147,6 +148,9 @@ class EventUpdate(BaseModel):
     timestamp: str | None = None
 
 
+_TZ_RE = re.compile(r'(Z|[+-]\d{2}:?\d{2})$')
+
+
 def _normalize_timestamp(raw: str | None) -> str | None:
     if raw is None:
         return None
@@ -157,6 +161,8 @@ def _normalize_timestamp(raw: str | None) -> str | None:
         datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="timestamp không đúng định dạng ISO") from exc
+    if not _TZ_RE.search(value):
+        return f"{value}+07:00"
     return value
 
 
