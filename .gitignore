@@ -1,5 +1,6 @@
 .venv/
 .direnv/
+.nix-flutter-sdk/
 __pycache__/
 *.pyc
 *.egg-info/

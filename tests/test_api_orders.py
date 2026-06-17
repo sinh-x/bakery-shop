@@ -1,5 +1,8 @@
 """Tests for Baker API — orders endpoints."""
 
+import json
+import re
+
 import pytest
 
 from baker.db.connection import get_db
@@ -10,7 +13,7 @@ from baker.db.connection import get_db
 def _create_order(client, customer="Nguyễn Văn A", items=None, **kwargs):
     if items is None:
         items = [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}]
-    payload = {"customerName": customer, "items": items, **kwargs}
+    payload = {"customerName": customer, "items": items, "dueDate": "2026-03-25", **kwargs}
     resp = client.post("/api/orders", json=payload)
     assert resp.status_code == 201
     return resp.json()
@@ -33,6 +36,22 @@ def _create_chip(client, product_id: int, label: str, price: float) -> int:
     )
     assert resp.status_code == 201
     return int(resp.json()["id"])
+
+
+def _mark_order_as_legacy_pos(conn, order_ref: str, created_at: str) -> None:
+    conn.execute(
+        """UPDATE orders
+           SET due_date = '', source = ?, created_at = ?
+           WHERE order_ref = ?""",
+        ("Tại tiệm - POS", created_at, order_ref),
+    )
+
+
+def _set_public_order_code(conn, order_ref: str, public_order_code: str) -> None:
+    conn.execute(
+        "UPDATE orders SET public_order_code = ? WHERE order_ref = ?",
+        (public_order_code, order_ref),
+    )
 
 
 # --- List orders ---
@@ -76,6 +95,94 @@ def test_list_orders_filter_by_due_date(api_client):
     assert orders[0]["customerName"] == "Due today"
 
 
+def test_list_orders_due_date_includes_legacy_pos_created_at_fallback(api_client):
+    due_order = _create_order(api_client, customer="Due date exact", dueDate="2026-03-20")
+    legacy_in_range = _create_order(api_client, customer="Legacy POS in range")
+    legacy_out_of_range = _create_order(api_client, customer="Legacy POS out range")
+    non_pos_legacy = _create_order(api_client, customer="Legacy non POS")
+
+    with get_db() as conn:
+        _mark_order_as_legacy_pos(conn, legacy_in_range["orderRef"], "2026-03-20T08:30:00")
+        _mark_order_as_legacy_pos(conn, legacy_out_of_range["orderRef"], "2026-03-22T08:30:00")
+        conn.execute(
+            """UPDATE orders
+               SET due_date = '', source = ?, created_at = ?
+               WHERE order_ref = ?""",
+            ("Facebook-DoanGia", "2026-03-20T09:00:00", non_pos_legacy["orderRef"]),
+        )
+
+    resp = api_client.get("/api/orders", params={"due_date": "2026-03-20"})
+    assert resp.status_code == 200
+    refs = {o["orderRef"] for o in resp.json()}
+    assert due_order["orderRef"] in refs
+    assert legacy_in_range["orderRef"] in refs
+    assert legacy_out_of_range["orderRef"] not in refs
+    assert non_pos_legacy["orderRef"] not in refs
+
+
+def test_list_orders_due_date_range_includes_terminal_and_legacy_fallback(api_client):
+    completed_order = _create_order(api_client, customer="Completed in range", dueDate="2026-03-20")
+    completed_ref = completed_order["orderRef"]
+    for s in ["confirmed", "in_progress", "ready", "delivered"]:
+        api_client.post(f"/api/orders/{completed_ref}/status", json={"status": s})
+    api_client.patch(f"/api/orders/{completed_ref}/payment", json={"amountPaid": completed_order["totalPrice"]})
+    api_client.post(f"/api/orders/{completed_ref}/status", json={"status": "completed"})
+
+    cancelled_order = _create_order(api_client, customer="Cancelled in range", dueDate="2026-03-21")
+    cancelled_ref = cancelled_order["orderRef"]
+    api_client.post(f"/api/orders/{cancelled_ref}/status", json={"status": "cancelled", "reason": "Khách hủy"})
+
+    legacy_in_range = _create_order(api_client, customer="Legacy POS in range")
+    legacy_out_of_range = _create_order(api_client, customer="Legacy POS out range")
+    outside_due = _create_order(api_client, customer="Outside due", dueDate="2026-03-23")
+
+    with get_db() as conn:
+        _mark_order_as_legacy_pos(conn, legacy_in_range["orderRef"], "2026-03-21T10:10:00")
+        _mark_order_as_legacy_pos(conn, legacy_out_of_range["orderRef"], "2026-03-25T10:10:00")
+
+    resp = api_client.get(
+        "/api/orders",
+        params={"due_date_from": "2026-03-20", "due_date_to": "2026-03-21"},
+    )
+    assert resp.status_code == 200
+    refs = {o["orderRef"] for o in resp.json()}
+    assert completed_ref in refs
+    assert cancelled_ref in refs
+    assert legacy_in_range["orderRef"] in refs
+    assert legacy_out_of_range["orderRef"] not in refs
+    assert outside_due["orderRef"] not in refs
+
+
+def test_list_orders_due_date_legacy_fallback_uses_timestamp_bounds(api_client):
+    legacy_before = _create_order(api_client, customer="Legacy before day")
+    legacy_on_day_late = _create_order(api_client, customer="Legacy in day late")
+    legacy_next_day = _create_order(api_client, customer="Legacy next day")
+
+    with get_db() as conn:
+        _mark_order_as_legacy_pos(conn, legacy_before["orderRef"], "2026-03-19T23:59:59")
+        _mark_order_as_legacy_pos(conn, legacy_on_day_late["orderRef"], "2026-03-20T23:59:59")
+        _mark_order_as_legacy_pos(conn, legacy_next_day["orderRef"], "2026-03-21T00:00:00")
+
+    resp = api_client.get("/api/orders", params={"due_date": "2026-03-20"})
+    assert resp.status_code == 200
+    refs = {o["orderRef"] for o in resp.json()}
+    assert legacy_before["orderRef"] not in refs
+    assert legacy_on_day_late["orderRef"] in refs
+    assert legacy_next_day["orderRef"] not in refs
+
+
+def test_list_orders_due_date_range_preserves_limit_and_offset(api_client):
+    for i in range(5):
+        _create_order(api_client, customer=f"Range page {i}", dueDate="2026-03-20")
+
+    resp = api_client.get(
+        "/api/orders",
+        params={"due_date_from": "2026-03-20", "due_date_to": "2026-03-20", "limit": 2, "offset": 1},
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()) == 2
+
+
 def test_list_orders_pagination(api_client):
     for i in range(5):
         _create_order(api_client, customer=f"Customer {i}")
@@ -88,7 +195,7 @@ def test_list_orders_pagination(api_client):
 
 
 def test_create_order_minimal(api_client):
-    resp = api_client.post("/api/orders", json={"customerName": "Trần Thị B"})
+    resp = api_client.post("/api/orders", json={"customerName": "Trần Thị B", "dueDate": "2026-03-25"})
     assert resp.status_code == 201
     order = resp.json()
     assert order["customerName"] == "Trần Thị B"
@@ -112,7 +219,7 @@ def test_create_order_calculates_total(api_client):
         {"productName": "Bánh kem", "quantity": 2, "unitPrice": 200000},
         {"productName": "Bánh mì", "quantity": 3, "unitPrice": 10000},
     ]
-    resp = api_client.post("/api/orders", json={"customerName": "Test", "items": items})
+    resp = api_client.post("/api/orders", json={"customerName": "Test", "items": items, "dueDate": "2026-03-25"})
     assert resp.status_code == 201
     assert resp.json()["totalPrice"] == 430000
 
@@ -135,6 +242,44 @@ def test_create_order_returns_camel_case_fields(api_client):
 def test_create_order_generates_order_ref(api_client):
     order = _create_order(api_client)
     assert order["orderRef"].startswith("ORD-")
+
+
+def test_create_order_returns_public_order_code(api_client):
+    order = _create_order(api_client, dueDate="2026-03-26", deliveryType="pickup")
+    assert order["publicOrderCode"]
+    assert re.match(r"^[ABCDLMNV][0-9]{2,5}-T$", order["publicOrderCode"])
+
+
+def test_create_order_requires_due_date(api_client):
+    resp = api_client.post("/api/orders", json={"customerName": "Thiếu ngày"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Vui lòng chọn ngày nhận/giao bánh"
+
+
+def test_create_order_delivery_type_suffix_mapping(api_client):
+    pickup = _create_order(api_client, customer="Pickup", dueDate="2026-03-26", deliveryType="pickup")
+    bus = _create_order(api_client, customer="Bus", dueDate="2026-03-27", deliveryType="bus")
+    delivery = _create_order(api_client, customer="Delivery", dueDate="2026-03-28", deliveryType="delivery")
+    assert pickup["publicOrderCode"].endswith("-T")
+    assert bus["publicOrderCode"].endswith("-B")
+    assert delivery["publicOrderCode"].endswith("-S")
+
+
+def test_create_order_public_code_collision_retries_same_due_date(api_client, monkeypatch):
+    from baker.api import orders as orders_api
+
+    candidates = iter(["A42-T", "A42-T", "A421-T"])
+
+    def _fake_candidate(_delivery_type: str, _reference_len: int = 3) -> str:
+        return next(candidates)
+
+    monkeypatch.setattr(orders_api, "generate_public_order_code_candidate", _fake_candidate)
+
+    first = _create_order(api_client, customer="First", dueDate="2026-03-30", deliveryType="pickup")
+    second = _create_order(api_client, customer="Second", dueDate="2026-03-30", deliveryType="pickup")
+
+    assert first["publicOrderCode"] == "A42-T"
+    assert second["publicOrderCode"] == "A421-T"
 
 
 def test_create_order_id_is_string(api_client):
@@ -165,6 +310,7 @@ def test_create_order_with_deposit(api_client):
     resp = api_client.post("/api/orders", json={
         "customerName": "Test deposit",
         "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 300000}],
+        "dueDate": "2026-03-25",
         "deposit": {"amount": 100000, "method": "transfer"},
     })
     assert resp.status_code == 201
@@ -242,7 +388,10 @@ def test_edit_order_notes(api_client):
 def test_edit_order_due_date(api_client):
     created = _create_order(api_client)
     ref = created["orderRef"]
-    resp = api_client.patch(f"/api/orders/{ref}", json={"dueDate": "2026-04-01"})
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={"dueDate": "2026-04-01", "publicCodeDateChangeDecision": "keep"},
+    )
     assert resp.status_code == 200
     assert resp.json()["dueDate"] == "2026-04-01"
 
@@ -268,6 +417,123 @@ def test_edit_order_empty_body(api_client):
 def test_edit_order_not_found(api_client):
     resp = api_client.patch("/api/orders/ORD-NOTEXIST", json={"notes": "x"})
     assert resp.status_code == 404
+
+
+def test_edit_order_due_date_requires_public_code_decision(api_client):
+    created = _create_order(api_client, dueDate="2026-04-01", deliveryType="pickup")
+    resp = api_client.patch(f"/api/orders/{created['orderRef']}", json={"dueDate": "2026-04-02"})
+    assert resp.status_code == 422
+    assert "giữ mã" in resp.json()["detail"]
+
+
+def test_edit_order_due_date_regenerate_updates_code(api_client, monkeypatch):
+    from baker.api import orders as orders_api
+
+    created = _create_order(api_client, dueDate="2026-04-01", deliveryType="pickup")
+    old_code = created["publicOrderCode"]
+
+    monkeypatch.setattr(
+        orders_api,
+        "generate_public_order_code_candidate",
+        lambda _delivery_type, _reference_len=3: "B99-T",
+    )
+
+    resp = api_client.patch(
+        f"/api/orders/{created['orderRef']}",
+        json={"dueDate": "2026-04-02", "publicCodeDateChangeDecision": "regenerate"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["publicOrderCode"] == "B99-T"
+    assert data["publicOrderCode"] != old_code
+    assert data["publicOrderCodeUpdate"]["action"] == "regenerated"
+    assert data["publicOrderCodeUpdate"]["reason"] == "due_date_changed"
+
+
+def test_edit_order_due_date_keep_without_conflict_keeps_code(api_client):
+    created = _create_order(api_client, dueDate="2026-04-01", deliveryType="pickup")
+    old_code = created["publicOrderCode"]
+    resp = api_client.patch(
+        f"/api/orders/{created['orderRef']}",
+        json={"dueDate": "2026-04-02", "publicCodeDateChangeDecision": "keep"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["publicOrderCode"] == old_code
+    assert data["publicOrderCodeUpdate"]["action"] == "kept"
+
+
+def test_edit_order_due_date_keep_conflict_regenerates(api_client, monkeypatch):
+    from baker.api import orders as orders_api
+
+    created = _create_order(api_client, dueDate="2026-04-01", deliveryType="pickup")
+    conflict_code = created["publicOrderCode"]
+    conflict_order = _create_order(api_client, dueDate="2026-04-02", deliveryType="pickup")
+    with get_db() as conn:
+        _set_public_order_code(conn, conflict_order["orderRef"], conflict_code)
+
+    monkeypatch.setattr(
+        orders_api,
+        "generate_public_order_code_candidate",
+        lambda _delivery_type, _reference_len=3: "C11-T",
+    )
+
+    resp = api_client.patch(
+        f"/api/orders/{created['orderRef']}",
+        json={"dueDate": "2026-04-02", "publicCodeDateChangeDecision": "keep"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["publicOrderCode"] == "C11-T"
+    assert data["publicOrderCodeUpdate"]["action"] == "regenerated"
+    assert data["publicOrderCodeUpdate"]["reason"] == "due_date_conflict_after_keep"
+
+
+def test_edit_order_delivery_type_updates_suffix(api_client):
+    created = _create_order(api_client, dueDate="2026-04-01", deliveryType="pickup")
+    with get_db() as conn:
+        _set_public_order_code(conn, created["orderRef"], "A42-T")
+    resp = api_client.patch(f"/api/orders/{created['orderRef']}", json={"deliveryType": "bus"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["publicOrderCode"] == "A42-B"
+    assert data["publicOrderCodeUpdate"]["action"] == "suffix_updated"
+
+
+def test_edit_order_delivery_type_suffix_conflict_regenerates(api_client, monkeypatch):
+    from baker.api import orders as orders_api
+
+    created = _create_order(api_client, dueDate="2026-04-01", deliveryType="pickup")
+    conflict_order = _create_order(api_client, dueDate="2026-04-01", deliveryType="bus")
+    with get_db() as conn:
+        _set_public_order_code(conn, created["orderRef"], "A42-T")
+        _set_public_order_code(conn, conflict_order["orderRef"], "A42-B")
+
+    monkeypatch.setattr(
+        orders_api,
+        "generate_public_order_code_candidate",
+        lambda _delivery_type, _reference_len=3: "D88-B",
+    )
+
+    resp = api_client.patch(f"/api/orders/{created['orderRef']}", json={"deliveryType": "bus"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["publicOrderCode"] == "D88-B"
+    assert data["publicOrderCodeUpdate"]["action"] == "suffix_updated_regenerated"
+
+
+def test_edit_order_old_order_without_public_code_keeps_fallback_behavior(api_client):
+    created = _create_order(api_client, dueDate="2026-04-01")
+    ref = created["orderRef"]
+    with get_db() as conn:
+        _set_public_order_code(conn, ref, "")
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={"dueDate": "2026-04-02", "deliveryType": "delivery", "publicCodeDateChangeDecision": "keep"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["publicOrderCode"] == ""
 
 
 # --- Status transition ---
@@ -469,7 +735,7 @@ def test_update_payment_not_found(api_client):
 
 def test_create_order_item_preserves_product_id(api_client):
     items = [{"productName": "Bánh kem 16cm", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}]
-    resp = api_client.post("/api/orders", json={"customerName": "Test", "items": items})
+    resp = api_client.post("/api/orders", json={"customerName": "Test", "items": items, "dueDate": "2026-03-25"})
     assert resp.status_code == 201
     assert resp.json()["items"][0]["productId"] == "BKS-16"
 
@@ -477,6 +743,7 @@ def test_create_order_item_preserves_product_id(api_client):
 def test_create_order_with_created_by(api_client):
     resp = api_client.post("/api/orders", json={
         "customerName": "Test Created By",
+        "dueDate": "2026-03-25",
         "createdBy": "Ngân",
     })
     assert resp.status_code == 201
@@ -485,7 +752,7 @@ def test_create_order_with_created_by(api_client):
 
 
 def test_create_order_created_by_defaults_empty(api_client):
-    resp = api_client.post("/api/orders", json={"customerName": "Test Default"})
+    resp = api_client.post("/api/orders", json={"customerName": "Test Default", "dueDate": "2026-03-25"})
     assert resp.status_code == 201
     order = resp.json()
     assert order["createdBy"] == ""
@@ -651,6 +918,7 @@ def test_autosync_order_status_changes_extra_to_ready(api_client):
     then each non-cancelled extra auto-transitions to 'ready'."""
     resp = api_client.post("/api/orders", json={
         "customerName": "Khách test",
+        "dueDate": "2026-03-25",
         "items": [
             {"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "isExtra": False},
             {"productName": "Nến", "quantity": 1, "unitPrice": 10000, "isExtra": True},
@@ -675,6 +943,7 @@ def test_autosync_extras_follow_order_when_order_transitions(api_client):
     """When order status transitions, extras follow to matching work item status."""
     resp = api_client.post("/api/orders", json={
         "customerName": "Khách theo dõi",
+        "dueDate": "2026-03-25",
         "items": [
             {"productName": "Bánh chính", "quantity": 1, "unitPrice": 200000},
             {"productName": "Đĩa", "quantity": 1, "unitPrice": 5000, "isExtra": True},
@@ -696,6 +965,7 @@ def test_autosync_extras_not_affected_when_order_goes_to_cancelled(api_client):
     """Extras already cancelled are not re-transitioned when order goes to cancelled."""
     resp = api_client.post("/api/orders", json={
         "customerName": "Khách hủy extras",
+        "dueDate": "2026-03-25",
         "items": [
             {"productName": "Bánh", "quantity": 1, "unitPrice": 200000},
             {"productName": "Nến", "quantity": 1, "unitPrice": 10000, "isExtra": True},
@@ -723,6 +993,7 @@ def test_autosync_extras_skip_already_matching(api_client):
     """Extras that are already at target status are not updated unnecessarily."""
     resp = api_client.post("/api/orders", json={
         "customerName": "Khách skip",
+        "dueDate": "2026-03-25",
         "items": [
             {"productName": "Bánh", "quantity": 1, "unitPrice": 200000},
             {"productName": "Nến", "quantity": 1, "unitPrice": 10000, "isExtra": True},
@@ -879,6 +1150,56 @@ def test_pos_order_with_chip_persists_price_chip_and_fifo_consumes(api_client):
         assert consumed["c"] == 1
 
 
+def test_pos_order_trung_bay_without_use_inventory_still_consumes_fifo(api_client):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "POS-Nhỏ", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 2, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productId": "1",
+                "productName": "Bánh kem",
+                "quantity": 1,
+                "unitPrice": 12000,
+                "priceChipId": chip_id,
+            }
+        ],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+
+    with get_db() as conn:
+        saved_item = conn.execute(
+            "SELECT attributes FROM order_items WHERE order_id = ? ORDER BY id ASC LIMIT 1",
+            (int(order["id"]),),
+        ).fetchone()
+        saved_attributes = json.loads(saved_item["attributes"] or "{}")
+        assert "useInventory" not in saved_attributes
+
+        movement = conn.execute(
+            """SELECT id, lot_id
+               FROM stock_movements
+               WHERE movement_type = 'sale' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (order["orderRef"],),
+        ).fetchone()
+        assert movement["lot_id"] is not None
+
+        consumed = conn.execute(
+            "SELECT COUNT(*) AS c FROM inventory_items WHERE consumed_by_movement_id = ?",
+            (movement["id"],),
+        ).fetchone()
+        assert consumed["c"] == 1
+
+
 def test_pos_order_without_chip_uses_base_option_and_still_works(api_client):
     _ensure_trung_bay(1)
     restock = api_client.post(
@@ -1005,6 +1326,7 @@ def test_non_pos_order_confirmed_decrements_stock_with_chip(api_client):
                 "quantity": 2,
                 "unitPrice": 12000,
                 "priceChipId": chip_id,
+                "attributes": {"useInventory": "true"},
             }
         ],
     )
@@ -1033,6 +1355,59 @@ def test_non_pos_order_confirmed_decrements_stock_with_chip(api_client):
             (movement["id"],),
         ).fetchone()
         assert consumed["c"] == 2
+
+
+@pytest.mark.parametrize("use_inventory", [None, False, "false"])
+def test_non_pos_order_delivered_trung_bay_use_inventory_off_skips_fifo(api_client, use_inventory):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "Nhỏ", 12000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 3, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    item = {
+        "productId": "1",
+        "productName": "Bánh kem",
+        "quantity": 1,
+        "unitPrice": 12000,
+        "priceChipId": chip_id,
+    }
+    if use_inventory is not None:
+        item["attributes"] = {"useInventory": use_inventory}
+
+    order = _create_order(api_client, items=[item])
+    ref = order["orderRef"]
+
+    for status, reason in [("confirmed", "ok"), ("in_progress", "ok"), ("ready", "ok")]:
+        resp = api_client.post(
+            f"/api/orders/{ref}/status",
+            json={"status": status, "reason": reason},
+        )
+        assert resp.status_code == 200
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "delivered", "reason": "giao"},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        movement = conn.execute(
+            """SELECT id, lot_id
+               FROM stock_movements
+               WHERE movement_type = 'sale' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (ref,),
+        ).fetchone()
+        assert movement["lot_id"] is None
+        consumed = conn.execute(
+            "SELECT COUNT(*) AS c FROM inventory_items WHERE consumed_by_movement_id = ?",
+            (movement["id"],),
+        ).fetchone()
+        assert consumed["c"] == 0
 
 
 def test_non_pos_order_delivered_skips_stock_when_use_inventory_false(api_client):
@@ -1145,6 +1520,7 @@ def test_pos_chip_order_with_gift_creates_order_tracks_payment_and_skips_gift_st
                 "priceChipId": chip_id,
             },
             {
+                "productId": "1",
                 "productName": "Dao nhựa",
                 "quantity": 1,
                 "unitPrice": 1000,
@@ -1192,7 +1568,7 @@ def test_pos_chip_order_with_gift_creates_order_tracks_payment_and_skips_gift_st
             (int(order["id"]),),
         ).fetchone()
         assert gift_row is not None
-        assert gift_row["product_id"] == ""
+        assert gift_row["product_id"] == "1"
         assert gift_row["price_chip_id"] is None
 
 

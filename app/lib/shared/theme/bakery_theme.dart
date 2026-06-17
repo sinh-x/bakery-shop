@@ -23,6 +23,7 @@ class BakeryTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
+      splashFactory: InkRipple.splashFactory,
       appBarTheme: AppBarTheme(
         centerTitle: true,
         backgroundColor: colorScheme.surface,

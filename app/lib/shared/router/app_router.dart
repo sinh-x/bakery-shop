@@ -12,6 +12,8 @@ import '../../features/checklist/checklist_config_screen.dart';
 import '../../features/checklist/checklist_history_screen.dart';
 import '../../features/checklist/checklist_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
+import '../../features/expenses/expense_screen.dart';
+import '../../features/expenses/expense_form_screen.dart';
 import '../../features/events/event_detail_screen.dart';
 import '../../features/events/event_form_screen.dart';
 import '../../features/events/event_list_screen.dart';
@@ -20,6 +22,7 @@ import '../../features/orders/order_create_screen.dart';
 import '../../features/orders/order_detail_screen.dart';
 import '../../features/orders/order_edit_screen.dart';
 import '../../features/orders/order_list_screen.dart';
+import '../../features/orders/order_history_screen.dart';
 import '../../features/orders/receipt_preview_screen.dart';
 import '../../features/knowledge/knowledge_detail_screen.dart';
 import '../../features/knowledge/knowledge_form_screen.dart';
@@ -116,11 +119,26 @@ final appRouter = GoRouter(
     ),
     // Order detail — full-screen (outside shell)
     GoRoute(
+      path: '/orders/history',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const OrderHistoryScreen(),
+    ),
+    GoRoute(
       path: '/orders/:id',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) {
         final orderRef = state.pathParameters['id']!;
         return OrderDetailScreen(orderRef: orderRef);
+      },
+    ),
+    // Order incident — full-screen (outside shell)
+    GoRoute(
+      path: '/orders/:id/incident/new',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final orderRef = state.pathParameters['id']!;
+        final orderId = state.extra as int?;
+        return EventFormScreen(orderRef: orderRef, orderId: orderId);
       },
     ),
     // Order edit — full-screen (outside shell)
@@ -203,6 +221,25 @@ final appRouter = GoRouter(
       path: '/events/new',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const EventFormScreen(),
+    ),
+    // Expense screen shell — full-screen (outside shell)
+    GoRoute(
+      path: '/expenses',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const ExpenseScreen(),
+    ),
+    GoRoute(
+      path: '/expenses/new',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const ExpenseFormScreen(),
+    ),
+    GoRoute(
+      path: '/expenses/:id/edit',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final event = state.extra as BakeryEvent;
+        return ExpenseFormScreen(event: event);
+      },
     ),
     // Event detail — full-screen (outside shell)
     GoRoute(

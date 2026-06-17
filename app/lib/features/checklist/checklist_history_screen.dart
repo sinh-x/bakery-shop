@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/providers/checklist_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/checklist.dart';
 
 class ChecklistHistoryScreen extends ConsumerStatefulWidget {
@@ -34,7 +35,9 @@ class _ChecklistHistoryScreenState
     );
     if (picked != null && picked != _fromDate) {
       setState(() => _fromDate = picked);
-      ref.read(checklistHistoryProvider.notifier).fetchRange(_fromDate, _toDate);
+      ref
+          .read(checklistHistoryProvider.notifier)
+          .fetchRange(_fromDate, _toDate);
     }
   }
 
@@ -48,7 +51,9 @@ class _ChecklistHistoryScreenState
     );
     if (picked != null && picked != _toDate) {
       setState(() => _toDate = picked);
-      ref.read(checklistHistoryProvider.notifier).fetchRange(_fromDate, _toDate);
+      ref
+          .read(checklistHistoryProvider.notifier)
+          .fetchRange(_fromDate, _toDate);
     }
   }
 
@@ -67,6 +72,7 @@ class _ChecklistHistoryScreenState
                 .read(checklistHistoryProvider.notifier)
                 .fetchRange(_fromDate, _toDate),
           ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: Column(
@@ -76,7 +82,10 @@ class _ChecklistHistoryScreenState
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                const Text('Từ:', style: TextStyle(fontWeight: FontWeight.w500)),
+                const Text(
+                  'Từ:',
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
@@ -86,7 +95,10 @@ class _ChecklistHistoryScreenState
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Text('Đến:', style: TextStyle(fontWeight: FontWeight.w500)),
+                const Text(
+                  'Đến:',
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
@@ -102,8 +114,7 @@ class _ChecklistHistoryScreenState
           // History list
           Expanded(
             child: historyAsync.when(
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
+              loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -169,18 +180,18 @@ class _DayCardState extends State<_DayCard> {
     final completedCount = entries.where((e) => e['completed'] == true).length;
     final totalCount = entries.length;
 
-    final openingEntries = entries
-        .where((e) => e['template_period'] == 'opening')
-        .toList()
-      ..sort((a, b) =>
-          (a['template_sort_order'] as int? ?? 0)
-              .compareTo(b['template_sort_order'] as int? ?? 0));
-    final closingEntries = entries
-        .where((e) => e['template_period'] == 'closing')
-        .toList()
-      ..sort((a, b) =>
-          (a['template_sort_order'] as int? ?? 0)
-              .compareTo(b['template_sort_order'] as int? ?? 0));
+    final openingEntries =
+        entries.where((e) => e['template_period'] == 'opening').toList()..sort(
+          (a, b) => (a['template_sort_order'] as int? ?? 0).compareTo(
+            b['template_sort_order'] as int? ?? 0,
+          ),
+        );
+    final closingEntries =
+        entries.where((e) => e['template_period'] == 'closing').toList()..sort(
+          (a, b) => (a['template_sort_order'] as int? ?? 0).compareTo(
+            b['template_sort_order'] as int? ?? 0,
+          ),
+        );
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -191,25 +202,24 @@ class _DayCardState extends State<_DayCard> {
             onTap: () => setState(() => _expanded = !_expanded),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
                       _formatDateHeader(dateStr),
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   Text(
                     '$completedCount/$totalCount hoàn thành',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: completedCount == totalCount && totalCount > 0
-                              ? Colors.green
-                              : Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                      color: completedCount == totalCount && totalCount > 0
+                          ? Colors.green
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Icon(
@@ -296,15 +306,18 @@ class _PeriodSection extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
           child: Row(
             children: [
-              Icon(icon, size: 16,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+              Icon(
+                icon,
+                size: 16,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
               const SizedBox(width: 6),
               Text(
                 label,
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -323,8 +336,7 @@ class _HistoryEntryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final completed = entry['completed'] == true;
-    final name =
-        entry['template_name'] as String? ?? 'Mục checklist';
+    final name = entry['template_name'] as String? ?? 'Mục checklist';
     final completedBy = entry['completed_by'] as String?;
     final completedAt = entry['completed_at'] as String?;
 
@@ -345,15 +357,15 @@ class _HistoryEntryTile extends StatelessWidget {
       subtitle: completed && completedBy != null && completedBy.isNotEmpty
           ? Text(
               '$completedBy${_fmtTime(completedAt)}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.green.shade700,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.green.shade700),
             )
           : Text(
               'Chưa hoàn thành',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.grey),
             ),
       tileColor: completed ? Colors.green.withValues(alpha: 0.04) : null,
     );

@@ -10,6 +10,7 @@ import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/theme/bakery_theme.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
 import 'widgets/order_card.dart';
@@ -29,7 +30,6 @@ const _statusFilterLabels = {
   'to_deliver': 'Giao hàng',
   'awaiting_payment': 'Xác nhận thanh toán',
 };
-
 
 class OrderListScreen extends ConsumerStatefulWidget {
   const OrderListScreen({super.key});
@@ -74,6 +74,23 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     setState(() {
       _viewMode = newMode;
     });
+  }
+
+  void _onAppBarMenuSelected(String value) {
+    switch (value) {
+      case 'orders_history':
+        context.push('/orders/history');
+        return;
+      case 'settings':
+        context.push('/settings');
+        return;
+      default:
+        assert(() {
+          debugPrint('Unknown orders app bar menu action: $value');
+          return true;
+        }());
+        return;
+    }
   }
 
   @override
@@ -125,17 +142,21 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
       case 'ready':
         // Pickup-only ready orders (same as Kanban "Sẵn sàng" column)
         return orders
-            .where((o) =>
-                o.status == 'ready' &&
-                o.deliveryType != 'bus' &&
-                o.deliveryType != 'door')
+            .where(
+              (o) =>
+                  o.status == 'ready' &&
+                  o.deliveryType != 'bus' &&
+                  o.deliveryType != 'door',
+            )
             .toList();
       case 'to_deliver':
         // Ready orders needing delivery (same as Kanban "Giao hàng" column)
         return orders
-            .where((o) =>
-                o.status == 'ready' &&
-                (o.deliveryType == 'bus' || o.deliveryType == 'door'))
+            .where(
+              (o) =>
+                  o.status == 'ready' &&
+                  (o.deliveryType == 'bus' || o.deliveryType == 'door'),
+            )
             .toList();
       case 'awaiting_payment':
         // Delivered but unpaid (same as Kanban "Xác nhận thanh toán" column)
@@ -153,6 +174,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     return orders
         .where(
           (o) =>
+              o.publicOrderCode.toLowerCase().contains(q) ||
               o.orderRef.toLowerCase().contains(q) ||
               o.customerName.toLowerCase().contains(q) ||
               o.customerPhone.contains(q),
@@ -222,13 +244,19 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
             icon: Icon(
               _viewMode == 'list' ? Icons.view_kanban : Icons.view_list,
             ),
-            tooltip: _viewMode == 'list' ? 'Kanban' : 'Danh sách',
+            tooltip: _viewMode == 'list'
+                ? VN.switchToKanbanView
+                : VN.switchToListView,
             onPressed: _toggleViewMode,
           ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: VN.settings,
-            onPressed: () => context.push('/settings'),
+          AppBarOverflowMenu(
+            onSelected: _onAppBarMenuSelected,
+            items: const [
+              PopupMenuItem<String>(
+                value: 'orders_history',
+                child: Text(VN.openOrderHistory),
+              ),
+            ],
           ),
         ],
         bottom: TabBar(
@@ -287,34 +315,31 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 4),
-                    children: _statusFilters
-                        .map(
-                          (s) {
-                            final color = BakeryTheme.statusColors[s] ?? Colors.grey;
-                            final label = _statusFilterLabels[s] ?? statusMap[s] ?? s;
-                            final selected = _statusFilter == s;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: FilterChip(
-                                avatar: Container(
-                                  width: 10,
-                                  height: 10,
-                                  decoration: BoxDecoration(
-                                    color: color,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                label: Text(label),
-                                selected: selected,
-                                selectedColor: color.withAlpha(30),
-                                onSelected: (_) =>
-                                    setState(() => _statusFilter = s),
-                              ),
-                            );
-                          },
-                        )
-                        .toList(),
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
+                    children: _statusFilters.map((s) {
+                      final color = BakeryTheme.statusColors[s] ?? Colors.grey;
+                      final label = _statusFilterLabels[s] ?? statusMap[s] ?? s;
+                      final selected = _statusFilter == s;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          avatar: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          label: Text(label),
+                          selected: selected,
+                          selectedColor: color.withAlpha(30),
+                          onSelected: (_) => setState(() => _statusFilter = s),
+                        ),
+                      );
+                    }).toList(),
                   ),
                 ),
 
@@ -369,8 +394,8 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                                 final order = item as Order;
                                 return OrderCard(
                                   order: order,
-                                  onTap: () => context
-                                      .push('/orders/${order.orderRef}'),
+                                  onTap: () =>
+                                      context.push('/orders/${order.orderRef}'),
                                 );
                               },
                             ),
@@ -404,9 +429,9 @@ class _DateHeader extends StatelessWidget {
       child: Text(
         label,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          fontWeight: FontWeight.bold,
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }
@@ -415,7 +440,14 @@ class _DateHeader extends StatelessWidget {
 /// Active Kanban columns in order workflow
 /// 'to_deliver' is a virtual status for ready orders with bus/door delivery
 /// 'awaiting_payment' is a virtual status for delivered+unpaid orders
-const _kanbanStatuses = ['new', 'confirmed', 'in_progress', 'ready', 'to_deliver', 'awaiting_payment'];
+const _kanbanStatuses = [
+  'new',
+  'confirmed',
+  'in_progress',
+  'ready',
+  'to_deliver',
+  'awaiting_payment',
+];
 
 /// Groups active orders into Kanban columns.
 ///
@@ -431,25 +463,28 @@ Map<String, List<Order>> groupOrdersByKanbanStatus(List<Order> orders) {
     if (status == 'to_deliver') {
       // Ready orders that need delivery (bus/door-to-door)
       result[status] = orders
-          .where((o) =>
-              o.status == 'ready' &&
-              (o.deliveryType == 'bus' || o.deliveryType == 'door'))
+          .where(
+            (o) =>
+                o.status == 'ready' &&
+                (o.deliveryType == 'bus' || o.deliveryType == 'door'),
+          )
           .toList();
     } else if (status == 'ready') {
       // Ready orders excluding delivery ones (pickup only)
       result[status] = orders
-          .where((o) =>
-              o.status == 'ready' &&
-              o.deliveryType != 'bus' &&
-              o.deliveryType != 'door')
+          .where(
+            (o) =>
+                o.status == 'ready' &&
+                o.deliveryType != 'bus' &&
+                o.deliveryType != 'door',
+          )
           .toList();
     } else if (status == 'awaiting_payment') {
       result[status] = orders
           .where((o) => o.status == 'delivered' && !o.isPaid)
           .toList();
     } else {
-      result[status] =
-          orders.where((o) => o.status == status).toList();
+      result[status] = orders.where((o) => o.status == status).toList();
     }
   }
   return result;
@@ -471,10 +506,7 @@ class _KanbanBoard extends ConsumerWidget {
       itemBuilder: (context, index) {
         final status = _kanbanStatuses[index];
         final orders = ordersByStatus[status] ?? [];
-        return _KanbanColumn(
-          status: status,
-          orders: orders,
-        );
+        return _KanbanColumn(status: status, orders: orders);
       },
     );
   }
@@ -492,8 +524,8 @@ class _KanbanColumn extends ConsumerWidget {
     final statusLabel = status == 'awaiting_payment'
         ? 'Xác nhận thanh toán'
         : status == 'to_deliver'
-            ? 'Giao hàng'
-            : (statusMap[status] ?? status);
+        ? 'Giao hàng'
+        : (statusMap[status] ?? status);
     final targetIndex = _kanbanStatuses.indexOf(status);
 
     return Container(
@@ -526,15 +558,17 @@ class _KanbanColumn extends ConsumerWidget {
                   child: Text(
                     statusLabel,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: statusColor,
-                        ),
+                      fontWeight: FontWeight.bold,
+                      color: statusColor,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: statusColor.withAlpha(50),
                     borderRadius: BorderRadius.circular(10),
@@ -542,9 +576,9 @@ class _KanbanColumn extends ConsumerWidget {
                   child: Text(
                     '${orders.length}',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: statusColor,
-                        ),
+                      fontWeight: FontWeight.bold,
+                      color: statusColor,
+                    ),
                   ),
                 ),
               ],
@@ -556,9 +590,13 @@ class _KanbanColumn extends ConsumerWidget {
             child: DragTarget<Order>(
               onWillAcceptWithDetails: (details) {
                 // Don't accept drops on virtual columns
-                if (status == 'awaiting_payment' || status == 'to_deliver') return false;
+                if (status == 'awaiting_payment' || status == 'to_deliver') {
+                  return false;
+                }
                 // Only accept forward transitions
-                final sourceIndex = _kanbanStatuses.indexOf(details.data.status);
+                final sourceIndex = _kanbanStatuses.indexOf(
+                  details.data.status,
+                );
                 return targetIndex > sourceIndex;
               },
               onAcceptWithDetails: (details) async {
@@ -613,13 +651,11 @@ class _KanbanColumn extends ConsumerWidget {
                             padding: const EdgeInsets.all(16),
                             child: Text(
                               'Không có đơn',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
+                              style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .outline,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outline,
                                   ),
                             ),
                           ),

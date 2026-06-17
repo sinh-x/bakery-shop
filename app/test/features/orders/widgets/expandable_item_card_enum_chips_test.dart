@@ -4,6 +4,7 @@ import 'package:bakery_app/data/models/price_chip.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/orders/widgets/expandable_item_card.dart';
 import 'package:bakery_app/providers/order_providers.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -41,6 +42,7 @@ Future<void> _pumpCard(
 }) async {
   await tester.pumpWidget(
     MaterialApp(
+      theme: ThemeData(splashFactory: NoSplash.splashFactory),
       home: Scaffold(
         body: SingleChildScrollView(
           child: ExpandableItemCard(
@@ -192,6 +194,33 @@ void main() {
 
         expect(item.priceChipId, 2);
         expect(item.attributes['price_chip_label'], 'Lớn');
+      },
+    );
+
+    testWidgets(
+      'new trung bay item shows useInventory off and keeps toggle state',
+      (tester) async {
+        final item = DraftOrderItem(
+          product: const Product(
+            id: 200,
+            name: 'Bánh trưng bày',
+            attributes: {'trung_bay': 'true'},
+          ),
+        );
+
+        await _pumpCard(tester, item);
+
+        final switchFinder = find.byType(Switch);
+        expect(find.text(VN.useInventory), findsOneWidget);
+        expect(switchFinder, findsOneWidget);
+        expect(tester.widget<Switch>(switchFinder).value, isFalse);
+        expect(item.attributes['useInventory'], 'false');
+
+        await tester.tap(find.text(VN.useInventory));
+        await tester.pump();
+
+        expect(tester.widget<Switch>(switchFinder).value, isTrue);
+        expect(item.attributes['useInventory'], 'true');
       },
     );
   });

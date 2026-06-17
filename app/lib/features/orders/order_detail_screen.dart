@@ -1,6 +1,7 @@
 // EXEMPT: 300-line threshold exceeded because DG-150 blocker: payment/work-item/print/info extraction would require large event and dialog lifecycle rewiring that cannot be safely completed in this remediation scope. Reviewed 2026-05-29.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -18,12 +19,17 @@ import '../../data/models/work_item.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
+import '../../shared/utils/order_helpers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/vnd_units.dart';
 import '../../shared/theme/bakery_theme.dart';
+import '../../shared/utils/api_error.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/enum_attribute_display.dart';
 import 'widgets/order_photo_section.dart';
+import 'widgets/section_header.dart';
+import 'widgets/rut_tien_section.dart';
 
 const _workItemStatusColors = {
   'pending': Colors.grey,
@@ -55,7 +61,6 @@ const _workItemStatusRank = {
 
 bool _isBackward(String current, String target, Map<String, int> ranks) =>
     (ranks[target] ?? 0) < (ranks[current] ?? 0);
-
 
 /// Shows a reason dialog for a status transition.
 /// Returns the trimmed reason string, or null if cancelled.
@@ -116,8 +121,7 @@ class OrderDetailScreen extends ConsumerWidget {
   final String orderRef;
 
   void _showReceiptTypeSelector(BuildContext context, WidgetRef ref) {
-    final allItems =
-        ref.read(orderWorkItemsProvider(orderRef)).value ?? [];
+    final allItems = ref.read(orderWorkItemsProvider(orderRef)).value ?? [];
     final mainItems = allItems.where((i) => !i.isExtra).toList();
 
     showModalBottomSheet(
@@ -242,21 +246,39 @@ class OrderDetailScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text(VN.orderDetail),
         actions: [
-          orderAsync.whenOrNull(
-                data: (order) => IconButton(
-                  icon: const Icon(Icons.edit_outlined),
-                  tooltip: VN.editOrder,
-                  onPressed: () async {
-                    await context.push('/orders/$orderRef/edit');
-                    ref.read(orderDetailProvider(orderRef).notifier).refresh();
-                  },
-                ),
-              ) ??
-              const SizedBox.shrink(),
+          if (orderAsync.asData != null)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: VN.editOrder,
+              onPressed: () async {
+                await context.push('/orders/$orderRef/edit');
+                ref.read(orderDetailProvider(orderRef).notifier).refresh();
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.print_outlined),
             tooltip: VN.printReceipt,
             onPressed: () => _showReceiptTypeSelector(context, ref),
+          ),
+          AppBarOverflowMenu(
+            items: orderAsync.asData != null
+                ? [
+                    const PopupMenuItem<String>(
+                      value: 'addIncident',
+                      child: Text(VN.addOrderIncident),
+                    ),
+                  ]
+                : [],
+            onSelected: (value) {
+              if (value == 'addIncident') {
+                final order = orderAsync.asData!.value;
+                final orderId = int.tryParse(order.id);
+                context.push(
+                  '/orders/$orderRef/incident/new',
+                  extra: orderId,
+                );
+              }
+            },
           ),
         ],
       ),
@@ -343,8 +365,29 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         await _showPrintChecklistDialog();
       }
     } catch (e) {
+      final normalized = normalizeApiError(e);
+      final statusCode = normalized.statusCode ?? 0;
+      final backendDetail = normalized.message;
+      if (statusCode == 422) {
+        final action = orderStatusRecoveryActionFromDetail(backendDetail);
+        final message = buildOrderStatusFailureMessage(
+          reason: backendDetail,
+          action: action,
+          orderRef: order.orderRef,
+          statusCode: statusCode,
+        );
+        if (kDebugMode) {
+          debugPrint(
+            '[order-status-transition-failed] orderRef=${order.orderRef} currentStatus=${order.status} targetStatus=$targetStatus httpStatus=$statusCode backendDetail=$backendDetail',
+          );
+        }
+        if (mounted) {
+          showTopSnackBar(context, message);
+        }
+        return;
+      }
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, '${VN.apiError}: ${normalized.message}');
       }
     } finally {
       if (mounted) setState(() => _transitioning = false);
@@ -376,10 +419,8 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _RecordPaymentSheet(
-        orderRef: order.orderRef,
-        remaining: remaining,
-      ),
+      builder: (_) =>
+          _RecordPaymentSheet(orderRef: order.orderRef, remaining: remaining),
     );
   }
 
@@ -433,10 +474,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _EditPaymentSheet(
-        orderRef: order.orderRef,
-        txn: txn,
-      ),
+      builder: (_) => _EditPaymentSheet(orderRef: order.orderRef, txn: txn),
     );
   }
 
@@ -469,22 +507,24 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
 
     _products = ref.watch(productsProvider).asData?.value ?? const [];
 
-    final txnsAsync =
-        ref.watch(orderPaymentTransactionsProvider(order.orderRef));
+    final txnsAsync = ref.watch(
+      orderPaymentTransactionsProvider(order.orderRef),
+    );
     final txns = txnsAsync.value ?? [];
-    final amountPaid =
-        txnsAsync.hasValue ? _computePaid(txns) : order.amountPaid;
+    final amountPaid = txnsAsync.hasValue
+        ? _computePaid(txns)
+        : order.amountPaid;
     final remaining = order.totalPrice - amountPaid;
     final paymentColor = amountPaid >= order.totalPrice
         ? Colors.green
         : amountPaid > 0
-            ? Colors.orange
-            : theme.colorScheme.error;
+        ? Colors.orange
+        : theme.colorScheme.error;
     final paymentLabel = amountPaid >= order.totalPrice
         ? VN.paid
         : amountPaid > 0
-            ? VN.partialPaid
-            : VN.unpaid;
+        ? VN.partialPaid
+        : VN.unpaid;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -518,7 +558,10 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
               ),
               const Spacer(),
               Text(
-                order.orderRef,
+                visualOrderCode(
+                  orderRef: order.orderRef,
+                  publicOrderCode: order.publicOrderCode,
+                ),
                 style: theme.textTheme.labelMedium?.copyWith(
                   color: theme.colorScheme.outline,
                 ),
@@ -537,7 +580,15 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Order info ────────────────────────────────────────────────
-        const _SectionHeader(VN.customer),
+        const SectionHeader(VN.customer),
+        _InfoRow(
+          icon: Icons.badge_outlined,
+          label: VN.publicOrderCode,
+          value: visualOrderCode(
+            orderRef: order.orderRef,
+            publicOrderCode: order.publicOrderCode,
+          ),
+        ),
         _InfoRow(
           icon: Icons.person_outline,
           label: VN.customerName,
@@ -555,23 +606,28 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.phone_outlined, size: 16,
-                    color: Theme.of(context).colorScheme.outline),
+                Icon(
+                  Icons.phone_outlined,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
                 const SizedBox(width: 8),
                 SizedBox(
                   width: 96,
                   child: Text(
                     VN.customerPhone,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
                   ),
                 ),
                 Expanded(
                   child: GestureDetector(
                     onTap: () {
-                      final digits =
-                          order.customerPhone.replaceAll(RegExp(r'\D'), '');
+                      final digits = order.customerPhone.replaceAll(
+                        RegExp(r'\D'),
+                        '',
+                      );
                       launchUrl(Uri.parse('tel:$digits'));
                     },
                     child: Row(
@@ -579,13 +635,17 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                       children: [
                         Text(
                           formatPhone(order.customerPhone),
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
                                 color: Theme.of(context).colorScheme.primary,
                               ),
                         ),
                         const SizedBox(width: 4),
-                        Icon(Icons.phone, size: 16,
-                            color: Theme.of(context).colorScheme.primary),
+                        Icon(
+                          Icons.phone,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
                       ],
                     ),
                   ),
@@ -625,121 +685,131 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Items ─────────────────────────────────────────────────────
-        const _SectionHeader(VN.products),
-        ...order.items.where((item) => !item.isExtra).map(
-          (item) => Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.productName,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                      Text(
-                        '${item.quantity} × ${formatVND(item.unitPrice)}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.outline,
-                        ),
-                      ),
-                      // Enum attribute display (DG-092 F7 / AC-6)
-                      ...buildEnumAttributeLines(
-                        context,
-                        item.attributes,
-                        _enumAttributesFor(item.productId),
-                      ),
-                      // Cash info (F27)
-                      if (item.attributes['cash_amount'] != null && item.attributes['cash_amount'].toString().isNotEmpty && item.attributes['cash_amount'].toString() != '0') ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          '${VN.rutTien}: ${formatVND((int.tryParse(item.attributes['cash_amount'].toString()) ?? 0).toDouble())}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: Colors.green.shade700,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        if (item.attributes['cash_fee'] != null && item.attributes['cash_fee'].toString().isNotEmpty && item.attributes['cash_fee'].toString() != '0')
+        const SectionHeader(VN.products),
+        ...order.items
+            .where((item) => !item.isExtra)
+            .map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            '${VN.phiRutTien}: ${formatVND((int.tryParse(item.attributes['cash_fee'].toString()) ?? 0).toDouble())}',
+                            item.productName,
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                          Text(
+                            '${item.quantity} × ${formatVND(item.unitPrice)}',
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: Colors.green.shade700,
+                              color: theme.colorScheme.outline,
                             ),
                           ),
-                      ],
-                    ],
-                  ),
-                ),
-                Text(
-                  formatVND(item.quantity * item.unitPrice),
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (order.items.any((item) => item.isExtra)) ...[
-          const SizedBox(height: 12),
-          const _SectionHeader(VN.extras),
-          ...order.items.where((item) => item.isExtra).map(
-            (item) => Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.productName,
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                        Text(
-                          '${item.quantity} × ${formatVND(item.unitPrice)}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.outline,
+                          // Enum attribute display (DG-092 F7 / AC-6)
+                          ...buildEnumAttributeLines(
+                            context,
+                            item.attributes,
+                            _enumAttributesFor(item.productId),
                           ),
-                        ),
-                        ...buildEnumAttributeLines(
-                          context,
-                          item.attributes,
-                          _enumAttributesFor(item.productId),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (item.isGift)
-                    Text(
-                      VN.giftBadge,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.green,
-                        fontWeight: FontWeight.w600,
+                          // Cash info (F27)
+                          if (item.attributes['cash_amount'] != null &&
+                              item.attributes['cash_amount']
+                                  .toString()
+                                  .isNotEmpty &&
+                              item.attributes['cash_amount'].toString() !=
+                                  '0') ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              '${VN.rutTien}: ${formatVND((int.tryParse(item.attributes['cash_amount'].toString()) ?? 0).toDouble())}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            if (item.attributes['cash_fee'] != null &&
+                                item.attributes['cash_fee']
+                                    .toString()
+                                    .isNotEmpty &&
+                                item.attributes['cash_fee'].toString() != '0')
+                              Text(
+                                '${VN.phiRutTien}: ${formatVND((int.tryParse(item.attributes['cash_fee'].toString()) ?? 0).toDouble())}',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: Colors.green.shade700,
+                                ),
+                              ),
+                          ],
+                        ],
                       ),
-                    )
-                  else
+                    ),
                     Text(
                       formatVND(item.quantity * item.unitPrice),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
+        if (order.items.any((item) => item.isExtra)) ...[
+          const SizedBox(height: 12),
+          const SectionHeader(VN.extras),
+          ...order.items
+              .where((item) => item.isExtra)
+              .map(
+                (item) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.productName,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                            Text(
+                              '${item.quantity} × ${formatVND(item.unitPrice)}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.outline,
+                              ),
+                            ),
+                            ...buildEnumAttributeLines(
+                              context,
+                              item.attributes,
+                              _enumAttributesFor(item.productId),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (item.isGift)
+                        Text(
+                          VN.giftBadge,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: Colors.green,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        )
+                      else
+                        Text(
+                          formatVND(item.quantity * item.unitPrice),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
         ],
         const Divider(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              VN.total,
-              style: theme.textTheme.titleSmall,
-            ),
+            Text(VN.total, style: theme.textTheme.titleSmall),
             Text(
               formatVND(order.totalPrice),
               style: theme.textTheme.titleMedium?.copyWith(
@@ -776,11 +846,14 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Rut tien tracking ───────────────────────────────────────
-        _RutTienSection(orderRef: order.orderRef),
+        RutTienSection(
+          orderRef: order.orderRef,
+          onRecordPayment: _openAddPaymentSheet,
+        ),
         const SizedBox(height: 16),
 
         // ── Payment ───────────────────────────────────────────────────
-        const _SectionHeader(VN.payment),
+        const SectionHeader(VN.payment),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -827,8 +900,10 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
               Align(
                 alignment: Alignment.centerRight,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: paymentColor.withAlpha(30),
                     borderRadius: BorderRadius.circular(20),
@@ -856,7 +931,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         const SizedBox(height: 16),
 
         // ── Payment history ───────────────────────────────────────────
-        const _SectionHeader(VN.paymentHistory),
+        const SectionHeader(VN.paymentHistory),
         if (txns.isEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -885,7 +960,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         // ── Status actions ────────────────────────────────────────────
         if (transitions.isNotEmpty) ...[
           const SizedBox(height: 20),
-          const _SectionHeader(VN.actions),
+          const SectionHeader(VN.actions),
           if (_transitioning)
             const Center(child: CircularProgressIndicator())
           else
@@ -895,8 +970,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
               children: transitions.map((t) {
                 final isCancel = t == 'cancelled';
                 final isBackwardBtn = backwardTransitions.contains(t);
-                final isCompletedBlocked =
-                    t == 'completed' && remaining > 0;
+                final isCompletedBlocked = t == 'completed' && remaining > 0;
                 if (isCancel) {
                   return OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
@@ -931,7 +1005,9 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                                 ),
                                 behavior: SnackBarBehavior.floating,
                                 margin: const EdgeInsets.only(
-                                  bottom: 16, left: 16, right: 16,
+                                  bottom: 16,
+                                  left: 16,
+                                  right: 16,
                                 ),
                               ),
                             );
@@ -1002,12 +1078,7 @@ class _InfoRow extends StatelessWidget {
               ),
             ),
           ),
-          Expanded(
-            child: Text(
-              value,
-              style: theme.textTheme.bodyMedium,
-            ),
-          ),
+          Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
         ],
       ),
     );
@@ -1075,7 +1146,7 @@ class _TransactionTile extends StatelessWidget {
     String dateStr = '';
     if (txn.createdAt != null) {
       try {
-        final dt = DateTime.parse(txn.createdAt!);
+        final dt = DateTime.parse(txn.createdAt!).toLocal();
         dateStr = DateFormat('dd/MM HH:mm').format(dt);
       } catch (_) {
         dateStr = txn.createdAt!;
@@ -1086,51 +1157,51 @@ class _TransactionTile extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: color.withAlpha(30),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: color.withAlpha(100)),
-            ),
-            child: Text(
-              typeLabel,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: color,
-                fontWeight: FontWeight.bold,
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: color.withAlpha(30),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: color.withAlpha(100)),
+              ),
+              child: Text(
+                typeLabel,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(methodLabel, style: theme.textTheme.bodySmall),
-                if (dateStr.isNotEmpty)
-                  Text(
-                    dateStr,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.outline,
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(methodLabel, style: theme.textTheme.bodySmall),
+                  if (dateStr.isNotEmpty)
+                    Text(
+                      dateStr,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-          Text(
-            txn.type == 'refund'
-                ? '-${formatVND(txn.amount)}'
-                : formatVND(txn.amount),
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: txn.type == 'refund' ? Colors.orange : Colors.green,
+            Text(
+              txn.type == 'refund'
+                  ? '-${formatVND(txn.amount)}'
+                  : formatVND(txn.amount),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: txn.type == 'refund' ? Colors.orange : Colors.green,
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -1142,14 +1213,10 @@ class _RecordPaymentSheet extends ConsumerStatefulWidget {
   const _RecordPaymentSheet({
     required this.orderRef,
     required this.remaining,
-    this.initialType,
-    this.initialAmount,
   });
 
   final String orderRef;
   final double remaining;
-  final String? initialType;
-  final double? initialAmount;
 
   @override
   ConsumerState<_RecordPaymentSheet> createState() =>
@@ -1167,10 +1234,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   @override
   void initState() {
     super.initState();
-    _type = widget.initialType ?? 'deposit';
-    if (widget.initialAmount != null && widget.initialAmount! > 0) {
-      _amountCtrl.text = vndThousandsTextFromAmount(widget.initialAmount!);
-    }
+    _type = 'deposit';
   }
 
   void _onTypeSelected(String type) {
@@ -1226,10 +1290,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
       ('tien_rut', VN.txnTypeRutTien),
       ('refund', VN.txnTypeRefund),
     ];
-    const methods = [
-      ('cash', VN.methodCash),
-      ('transfer', VN.methodTransfer),
-    ];
+    const methods = [('cash', VN.methodCash), ('transfer', VN.methodTransfer)];
 
     return Padding(
       padding: EdgeInsets.only(
@@ -1339,7 +1400,7 @@ class _TransactionDetailSheet extends StatelessWidget {
     String dateStr = '';
     if (txn.createdAt != null) {
       try {
-        final dt = DateTime.parse(txn.createdAt!);
+        final dt = DateTime.parse(txn.createdAt!).toLocal();
         dateStr = DateFormat('dd/MM/yyyy HH:mm').format(dt);
       } catch (_) {
         dateStr = txn.createdAt!;
@@ -1355,8 +1416,10 @@ class _TransactionDetailSheet extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: color.withAlpha(30),
                   borderRadius: BorderRadius.circular(12),
@@ -1384,8 +1447,7 @@ class _TransactionDetailSheet extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           _DetailRow(label: VN.paymentMethod, value: methodLabel),
-          if (dateStr.isNotEmpty)
-            _DetailRow(label: VN.txnType, value: dateStr),
+          if (dateStr.isNotEmpty) _DetailRow(label: VN.txnType, value: dateStr),
           if (txn.notes.isNotEmpty)
             _DetailRow(label: VN.txnNoteLabel, value: txn.notes),
           const SizedBox(height: 20),
@@ -1425,9 +1487,7 @@ class _DetailRow extends StatelessWidget {
               ),
             ),
           ),
-          Expanded(
-            child: Text(value, style: theme.textTheme.bodyMedium),
-          ),
+          Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
         ],
       ),
     );
@@ -1510,10 +1570,7 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
       ('full_payment', VN.txnTypeFullPayment),
       ('refund', VN.txnTypeRefund),
     ];
-    const methods = [
-      ('cash', VN.methodCash),
-      ('transfer', VN.methodTransfer),
-    ];
+    const methods = [('cash', VN.methodCash), ('transfer', VN.methodTransfer)];
 
     return Padding(
       padding: EdgeInsets.only(
@@ -1660,10 +1717,8 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => _InternalPrintDialog(
-        orderRef: widget.orderRef,
-        itemId: itemId,
-      ),
+      builder: (ctx) =>
+          _InternalPrintDialog(orderRef: widget.orderRef, itemId: itemId),
     );
   }
 
@@ -1728,7 +1783,8 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
               }
               final regularItems = items.where((i) => !i.isExtra).toList();
               final extraItems = items.where((i) => i.isExtra).toList();
-              final allPhotos = ref.watch(orderPhotosProvider(widget.orderRef)).value ?? [];
+              final allPhotos =
+                  ref.watch(orderPhotosProvider(widget.orderRef)).value ?? [];
               final baseUrl = ref.watch(apiBaseUrlProvider);
               return Column(
                 children: [
@@ -1772,10 +1828,14 @@ class _WorkItemSectionState extends ConsumerState<_WorkItemSection> {
                           avatar: Icon(
                             item.isGift ? Icons.card_giftcard : Icons.sell,
                             size: 14,
-                            color: item.isGift ? Colors.green : theme.colorScheme.outline,
+                            color: item.isGift
+                                ? Colors.green
+                                : theme.colorScheme.outline,
                           ),
                           label: Text(
-                            item.quantity > 1 ? '$label ×${item.quantity}' : label,
+                            item.quantity > 1
+                                ? '$label ×${item.quantity}'
+                                : label,
                             style: theme.textTheme.bodySmall,
                           ),
                           backgroundColor: item.isGift
@@ -1815,7 +1875,14 @@ class _WorkItemCard extends StatelessWidget {
     final theme = Theme.of(context);
     final statusColor = _workItemStatusColors[item.status] ?? Colors.grey;
     final statusLabel = workItemStatusLabel(item.status);
-    const allStatuses = ['pending', 'confirmed', 'working', 'ready', 'delivered', 'cancelled'];
+    const allStatuses = [
+      'pending',
+      'confirmed',
+      'working',
+      'ready',
+      'delivered',
+      'cancelled',
+    ];
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1831,8 +1898,10 @@ class _WorkItemCard extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: statusColor.withAlpha(30),
                       borderRadius: BorderRadius.circular(12),
@@ -1849,8 +1918,10 @@ class _WorkItemCard extends StatelessWidget {
                   if (item.isExtra) ...[
                     const SizedBox(width: 6),
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: item.isGift
                             ? Colors.green.withValues(alpha: 0.2)
@@ -2051,26 +2122,18 @@ class _PrintStatusRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: isPrinted
-            ? Colors.green.shade50
-            : Colors.orange.shade50,
+        color: isPrinted ? Colors.green.shade50 : Colors.orange.shade50,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: isPrinted
-              ? Colors.green.shade300
-              : Colors.orange.shade300,
+          color: isPrinted ? Colors.green.shade300 : Colors.orange.shade300,
         ),
       ),
       child: Row(
         children: [
           Icon(
-            isPrinted
-                ? Icons.check_circle_outline
-                : Icons.print_outlined,
+            isPrinted ? Icons.check_circle_outline : Icons.print_outlined,
             size: 20,
-            color: isPrinted
-                ? Colors.green.shade700
-                : Colors.orange.shade700,
+            color: isPrinted ? Colors.green.shade700 : Colors.orange.shade700,
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -2116,27 +2179,6 @@ class _PrintStatusRow extends StatelessWidget {
               child: const Text(VN.markAsPrinted),
             ),
         ],
-      ),
-    );
-  }
-}
-
-// ── Section header ────────────────────────────────────────────────────────────
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title);
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
       ),
     );
   }
@@ -2225,8 +2267,7 @@ class _PrintChecklistDialogState extends ConsumerState<_PrintChecklistDialog> {
   Widget build(BuildContext context) {
     final items =
         ref.watch(orderWorkItemsProvider(widget.orderRef)).value ?? [];
-    final hasMainItems =
-        items.any((i) => !i.isExtra && !i.isGift);
+    final hasMainItems = items.any((i) => !i.isExtra && !i.isGift);
 
     // If no main items, auto-disable internal receipt
     if (!hasMainItems && _printInternal) {
@@ -2389,170 +2430,9 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
           child: const Text(VN.printSkip),
         ),
         if (!_printing)
-          FilledButton(
-            onPressed: _printInternal,
-            child: const Text(VN.print),
-          ),
+          FilledButton(onPressed: _printInternal, child: const Text(VN.print)),
       ],
     );
   }
 }
 
-// ---------------------------------------------------------------------------
-// Rut tien (cash-in-cake) tracking section — transaction-based
-// ---------------------------------------------------------------------------
-
-class _RutTienSection extends ConsumerWidget {
-  const _RutTienSection({required this.orderRef});
-
-  final String orderRef;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final itemsAsync = ref.watch(orderWorkItemsProvider(orderRef));
-    final txnsAsync = ref.watch(orderPaymentTransactionsProvider(orderRef));
-    final items = itemsAsync.value ?? [];
-    final txns = txnsAsync.value ?? [];
-    final rutTienItems = items.where(
-      (i) => i.attributes['rut_tien']?.toString() == 'true' || i.attributes['rut_tien'] == true,
-    ).toList();
-
-    if (rutTienItems.isEmpty) return const SizedBox.shrink();
-
-    final theme = Theme.of(context);
-
-    // Total target from all rut_tien items' cash_amount
-    final totalTarget = rutTienItems.fold<int>(0, (sum, item) {
-      return sum + (int.tryParse(item.attributes['cash_amount']?.toString() ?? '') ?? 0);
-    });
-    // Total received from rut_tien transactions
-    final totalReceived = txns
-        .where((t) => t.type == 'tien_rut')
-        .fold<double>(0, (sum, t) => sum + t.amount);
-    final remaining = totalTarget.toDouble() - totalReceived;
-    final isFullyReceived = totalReceived >= totalTarget;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _SectionHeader(VN.rutTienSection),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.amber.shade50,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.amber.shade200),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Per-item target display
-              for (final item in rutTienItems) ...[
-                _RutTienItemRow(item: item),
-              ],
-              const Divider(height: 16),
-              // Overall received vs target summary
-              Row(
-                children: [
-                  Icon(
-                    isFullyReceived ? Icons.check_circle : Icons.pending,
-                    color: isFullyReceived ? Colors.green.shade700 : Colors.orange.shade700,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Tiền khách đưa: ${formatVND(totalReceived)} / ${formatVND(totalTarget.toDouble())}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: isFullyReceived ? Colors.green.shade700 : Colors.orange.shade700,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              // Quick-add button
-              if (remaining > 0) ...[
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      showModalBottomSheet<void>(
-                        context: context,
-                        isScrollControlled: true,
-                        builder: (_) => _RecordPaymentSheet(
-                          orderRef: orderRef,
-                          remaining: remaining,
-                          initialType: 'tien_rut',
-                          initialAmount: remaining,
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('+ Khách đưa tiền rút'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.amber.shade800,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _RutTienItemRow extends StatelessWidget {
-  const _RutTienItemRow({required this.item});
-
-  final WorkItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cashAmount = int.tryParse(
-            item.attributes['cash_amount']?.toString() ?? '') ??
-        0;
-    final cashFee = int.tryParse(
-            item.attributes['cash_fee']?.toString() ?? '') ??
-        0;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            item.productName,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (cashAmount > 0)
-            Padding(
-              padding: const EdgeInsets.only(left: 4, top: 2),
-              child: Text(
-                '${VN.soTienRut}: ${formatVND(cashAmount.toDouble())}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.green.shade700,
-                ),
-              ),
-            ),
-          if (cashFee > 0)
-            Padding(
-              padding: const EdgeInsets.only(left: 4, top: 2),
-              child: Text(
-                '${VN.phiRutTien}: ${formatVND(cashFee.toDouble())}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.green.shade700,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}

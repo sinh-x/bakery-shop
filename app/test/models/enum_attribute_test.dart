@@ -1,4 +1,5 @@
 import 'package:bakery_app/data/models/enum_attribute.dart';
+import 'package:bakery_app/data/models/price_chip.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/providers/order_providers.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -168,6 +169,89 @@ void main() {
       final extra = createExtraItem('Phí giao hàng', 30000);
       expect(extra.attributes, isEmpty);
       expect(extra.isExtra, true);
+    });
+
+    test('createCatalogExtraItem preserves product id with base price', () {
+      const product = Product(
+        id: 200,
+        name: 'PK 1',
+        category: 'phu_kien',
+        basePrice: 25000,
+      );
+
+      final item = createCatalogExtraItem(product: product);
+
+      expect(item.product.id, 200);
+      expect(item.unitPrice, 25000);
+      expect(item.priceChipId, isNull);
+      expect(item.isExtra, true);
+    });
+
+    test('createCatalogExtraItem applies selected price chip', () {
+      const product = Product(
+        id: 201,
+        name: 'PK 2',
+        category: 'phu_kien',
+        basePrice: 25000,
+        priceChips: [
+          PriceChip(id: 11, label: 'VIP', price: 30000, position: 0),
+        ],
+      );
+
+      final item = createCatalogExtraItem(product: product, priceChipId: 11);
+
+      expect(item.product.id, 201);
+      expect(item.unitPrice, 30000);
+      expect(item.priceChipId, 11);
+    });
+
+    test('createCatalogExtraItem keeps manual price and clears chip id', () {
+      const product = Product(
+        id: 202,
+        name: 'PK 3',
+        category: 'phu_kien',
+        basePrice: 25000,
+        priceChips: [
+          PriceChip(id: 22, label: 'Lẻ', price: 28000, position: 0),
+        ],
+      );
+
+      final item = createCatalogExtraItem(
+        product: product,
+        priceChipId: 22,
+        customUnitPrice: 31500,
+      );
+
+      expect(item.product.id, 202);
+      expect(item.unitPrice, 31500);
+      expect(item.priceChipId, isNull);
+    });
+
+    test('trung bay item defaults useInventory to false', () {
+      const trungBayProduct = Product(
+        id: 101,
+        name: 'Bánh trưng bày',
+        attributes: {'trung_bay': 'true'},
+      );
+
+      final item = DraftOrderItem(product: trungBayProduct);
+
+      expect(item.attributes['useInventory'], 'false');
+    });
+
+    test('trung bay item preserves explicit useInventory true', () {
+      const trungBayProduct = Product(
+        id: 101,
+        name: 'Bánh trưng bày',
+        attributes: {'trung_bay': 'true'},
+      );
+
+      final item = DraftOrderItem(
+        product: trungBayProduct,
+        attributes: {'useInventory': 'true'},
+      );
+
+      expect(item.attributes['useInventory'], 'true');
     });
   });
 }

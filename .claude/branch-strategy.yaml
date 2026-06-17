@@ -49,20 +49,22 @@ versioning:
   pyproject_sync: pyproject.toml     # synced to X.Y.Z (no build number, Python PEP 440)
 
   build_number:
-    rule: every commit or merge onto develop bumps BUILD by 1
+    rule: local commits made directly on develop bump BUILD by 1
     scope: develop branch only (hook is a no-op on all other branches)
     automation: .githooks/pre-commit (activated via git config core.hooksPath .githooks)
-    reset: set pubspec.yaml build to 0 before committing a version bump → hook writes +1
+    note: GitHub PR merges do not run local hooks; CI patch bumps keep BUILD monotonic by incrementing the existing build number.
 
   version_bump:
-    rule: MAJOR.MINOR.PATCH are bumped manually only
+    rule: PATCH is auto-bumped after CI succeeds on non-bot pushes to develop; MAJOR/MINOR are manual only
+    automation: .github/workflows/version-bump.yml runs on develop pushes, waits for the matching CI run to succeed, increments PATCH, increments the existing Flutter build number, and syncs pyproject.toml to X.Y.Z
     procedure:
-      1. Edit app/pubspec.yaml — set new X.Y.Z+0  (reset build to 0)
-      2. Commit on develop — hook auto-bumps to X.Y.Z+1
+      - Merge a feature PR into develop.
+      - "After CI passes, the version-bump workflow creates a follow-up `chore(release): bump patch version ... [skip ci]` commit on develop."
+      - Deploy after the version-bump commit lands when the backend /api/health version must show the new PATCH.
     examples:
-      patch: 0.2.0+7 → edit to 0.2.1+0 → commit → 0.2.1+1
-      minor: 0.2.0+7 → edit to 0.3.0+0 → commit → 0.3.0+1
-      major: 0.2.0+7 → edit to 1.0.0+0 → commit → 1.0.0+1
+      patch: "merge at 0.6.0+62 → CI commit writes 0.6.1+63 and pyproject 0.6.1"
+      minor: "manually edit app/pubspec.yaml to 0.7.0+63 or higher and pyproject.toml to 0.7.0"
+      major: "manually edit app/pubspec.yaml to 1.0.0+63 or higher and pyproject.toml to 1.0.0"
 
   release_tagging:
     branch: main only

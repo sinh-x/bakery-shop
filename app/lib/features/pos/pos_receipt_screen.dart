@@ -6,8 +6,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/receipt_service.dart';
 import '../../providers/events_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-
 
 /// POS receipt screen shown after order creation.
 /// Displays receipt image with print and skip actions only.
@@ -88,10 +88,8 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Biên nhận'),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: _skip,
-        ),
+        leading: IconButton(icon: const Icon(Icons.close), onPressed: _skip),
+        actions: const [AppBarOverflowMenu()],
       ),
       body: _buildBody(),
       bottomNavigationBar: SafeArea(
@@ -109,8 +107,9 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton.icon(
-                  onPressed:
-                      _printing || _imageBytes == null ? null : _printReceipt,
+                  onPressed: _printing || _imageBytes == null
+                      ? null
+                      : _printReceipt,
                   icon: _printing
                       ? const SizedBox(
                           width: 16,

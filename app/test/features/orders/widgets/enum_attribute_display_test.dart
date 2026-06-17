@@ -29,6 +29,7 @@ Future<List<Widget>> _capture(
   late List<Widget> result;
   await tester.pumpWidget(
     MaterialApp(
+      theme: ThemeData(splashFactory: NoSplash.splashFactory),
       home: Scaffold(
         body: Builder(
           builder: (context) {

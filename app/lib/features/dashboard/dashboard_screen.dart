@@ -6,6 +6,7 @@ import '../../features/orders/widgets/order_card.dart';
 import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/theme/bakery_theme.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 // Active (non-terminal) statuses shown in the summary
@@ -73,11 +74,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             tooltip: VN.lamMoi,
             onPressed: () => ref.invalidate(dashboardOrdersProvider),
           ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: VN.settings,
-            onPressed: () => context.push('/settings'),
-          ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: ordersAsync.when(
@@ -116,10 +113,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 }
 
 class _DashboardContent extends StatelessWidget {
-  const _DashboardContent({
-    required this.orders,
-    required this.onRefresh,
-  });
+  const _DashboardContent({required this.orders, required this.onRefresh});
 
   final List<Order> orders;
   final Future<void> Function() onRefresh;
@@ -139,20 +133,17 @@ class _DashboardContent extends StatelessWidget {
       if (o.dueDate == null) return false;
       return o.dueDate!.compareTo(todayStr) < 0 &&
           !['completed', 'cancelled', 'delivered'].contains(o.status);
-    }).toList()
-      ..sort((a, b) => (a.dueDate ?? '').compareTo(b.dueDate ?? ''));
+    }).toList()..sort((a, b) => (a.dueDate ?? '').compareTo(b.dueDate ?? ''));
 
     // Today: dueDate == today
-    final todayOrders =
-        orders.where((o) => o.dueDate == todayStr).toList();
+    final todayOrders = orders.where((o) => o.dueDate == todayStr).toList();
 
     // Upcoming: dueDate in (today, today+3 days]
     final upcomingOrders = orders.where((o) {
       if (o.dueDate == null) return false;
       return o.dueDate!.compareTo(todayStr) > 0 &&
           o.dueDate!.compareTo(in3DaysStr) <= 0;
-    }).toList()
-      ..sort((a, b) => (a.dueDate ?? '').compareTo(b.dueDate ?? ''));
+    }).toList()..sort((a, b) => (a.dueDate ?? '').compareTo(b.dueDate ?? ''));
 
     // Status counts for summary
     final statusCounts = {
@@ -166,7 +157,8 @@ class _DashboardContent extends StatelessWidget {
       todayByStatus.putIfAbsent(o.status, () => []).add(o);
     }
 
-    final hasOrders = overdueOrders.isNotEmpty ||
+    final hasOrders =
+        overdueOrders.isNotEmpty ||
         todayOrders.isNotEmpty ||
         upcomingOrders.isNotEmpty;
 
@@ -187,7 +179,12 @@ class _DashboardContent extends StatelessWidget {
               color: Colors.red,
             ),
             const SizedBox(height: 8),
-            ...overdueOrders.map((o) => OrderCard(order: o, onTap: () => context.push('/orders/${o.orderRef}'))),
+            ...overdueOrders.map(
+              (o) => OrderCard(
+                order: o,
+                onTap: () => context.push('/orders/${o.orderRef}'),
+              ),
+            ),
             const SizedBox(height: 16),
           ],
 
@@ -197,9 +194,13 @@ class _DashboardContent extends StatelessWidget {
             const SizedBox(height: 8),
             for (final s in _activeStatuses)
               if (todayByStatus.containsKey(s)) ...[
-                _StatusGroupHeader(
-                    status: s, count: todayByStatus[s]!.length),
-                ...todayByStatus[s]!.map((o) => OrderCard(order: o, onTap: () => context.push('/orders/${o.orderRef}'))),
+                _StatusGroupHeader(status: s, count: todayByStatus[s]!.length),
+                ...todayByStatus[s]!.map(
+                  (o) => OrderCard(
+                    order: o,
+                    onTap: () => context.push('/orders/${o.orderRef}'),
+                  ),
+                ),
               ],
             const SizedBox(height: 16),
           ],
@@ -208,7 +209,12 @@ class _DashboardContent extends StatelessWidget {
           if (upcomingOrders.isNotEmpty) ...[
             const _SectionHeader(title: VN.upcomingDue),
             const SizedBox(height: 8),
-            ...upcomingOrders.map((o) => OrderCard(order: o, onTap: () => context.push('/orders/${o.orderRef}'))),
+            ...upcomingOrders.map(
+              (o) => OrderCard(
+                order: o,
+                onTap: () => context.push('/orders/${o.orderRef}'),
+              ),
+            ),
           ],
 
           if (!hasOrders)
@@ -246,8 +252,11 @@ class _SummaryCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.assignment_outlined,
-                    size: 16, color: theme.colorScheme.primary),
+                Icon(
+                  Icons.assignment_outlined,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   'Tổng: $total đơn đang xử lý',

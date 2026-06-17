@@ -11,6 +11,7 @@ import '../../../data/api/api_client.dart';
 import '../../../data/models/catalog_photo.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../providers/catalog_provider.dart';
+import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'catalog_tag_chips.dart';
 import 'catalog_tag_edit_sheet.dart';
@@ -34,8 +35,7 @@ class CatalogPhotoViewer extends ConsumerStatefulWidget {
   final String baseUrl;
 
   @override
-  ConsumerState<CatalogPhotoViewer> createState() =>
-      _CatalogPhotoViewerState();
+  ConsumerState<CatalogPhotoViewer> createState() => _CatalogPhotoViewerState();
 }
 
 class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
@@ -95,9 +95,11 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
       final tmpDir = await getTemporaryDirectory();
       final tmpFile = File('${tmpDir.path}/catalog_photo_${photo.id}.jpg');
       await tmpFile.writeAsBytes(Uint8List.fromList(resp.data!));
-      await Share.shareXFiles(
-        [XFile(tmpFile.path)],
-        text: 'Tiệm Bánh Ninh Diêm',
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(tmpFile.path)],
+          text: 'Tiệm Bánh Ninh Diêm',
+        ),
       );
     } catch (e) {
       if (mounted) showTopSnackBar(context, VN.khongTheChiaSe);
@@ -160,16 +162,22 @@ class _CatalogPhotoViewerState extends ConsumerState<CatalogPhotoViewer> {
               tooltip: VN.chiaSe,
               onPressed: _sharing ? null : () => _sharePhoto(photos),
             ),
-            IconButton(
-              icon: const Icon(Icons.edit_outlined, color: Colors.white),
-              tooltip: VN.editCatalogPhoto,
-              onPressed: () {
-                if (_currentIndex < photos.length) {
-                  _openEditSheet(photos[_currentIndex]);
-                }
-              },
-            ),
           ],
+          AppBarOverflowMenu(
+            onSelected: (value) {
+              if (value == 'edit_photo' && _currentIndex < photos.length) {
+                _openEditSheet(photos[_currentIndex]);
+              }
+            },
+            items: photos.isEmpty
+                ? const []
+                : const [
+                    PopupMenuItem<String>(
+                      value: 'edit_photo',
+                      child: Text(VN.editCatalogPhoto),
+                    ),
+                  ],
+          ),
         ],
       ),
       body: photos.isEmpty
@@ -276,7 +284,10 @@ class _EditCaptionSheetState extends ConsumerState<_EditCaptionSheet> {
     _captionCtrl = TextEditingController(text: widget.photo.caption);
     if (widget.photo.tags.isNotEmpty) {
       _selectedTags.addAll(
-        widget.photo.tags.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty),
+        widget.photo.tags
+            .split(',')
+            .map((t) => t.trim())
+            .where((t) => t.isNotEmpty),
       );
     }
   }
@@ -411,31 +422,46 @@ class _TagChipSelector extends StatelessWidget {
       runSpacing: 6,
       children: [
         if (audience.isNotEmpty) ...[
-          const Text(VN.doiTuong, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-          ...audience.map((t) => FilterChip(
-                label: Text(t.label, style: const TextStyle(fontSize: 12)),
-                selected: selectedTags.contains(t.key),
-                onSelected: (_) => onToggle(t.key),
-                visualDensity: VisualDensity.compact,
-              )),
+          const Text(
+            VN.doiTuong,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+          ),
+          ...audience.map(
+            (t) => FilterChip(
+              label: Text(t.label, style: const TextStyle(fontSize: 12)),
+              selected: selectedTags.contains(t.key),
+              onSelected: (_) => onToggle(t.key),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
         ],
         if (occasion.isNotEmpty) ...[
-          const Text(VN.dip, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-          ...occasion.map((t) => FilterChip(
-                label: Text(t.label, style: const TextStyle(fontSize: 12)),
-                selected: selectedTags.contains(t.key),
-                onSelected: (_) => onToggle(t.key),
-                visualDensity: VisualDensity.compact,
-              )),
+          const Text(
+            VN.dip,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+          ),
+          ...occasion.map(
+            (t) => FilterChip(
+              label: Text(t.label, style: const TextStyle(fontSize: 12)),
+              selected: selectedTags.contains(t.key),
+              onSelected: (_) => onToggle(t.key),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
         ],
         if (style.isNotEmpty) ...[
-          const Text(VN.phongCach, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-          ...style.map((t) => FilterChip(
-                label: Text(t.label, style: const TextStyle(fontSize: 12)),
-                selected: selectedTags.contains(t.key),
-                onSelected: (_) => onToggle(t.key),
-                visualDensity: VisualDensity.compact,
-              )),
+          const Text(
+            VN.phongCach,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+          ),
+          ...style.map(
+            (t) => FilterChip(
+              label: Text(t.label, style: const TextStyle(fontSize: 12)),
+              selected: selectedTags.contains(t.key),
+              onSelected: (_) => onToggle(t.key),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
         ],
       ],
     );

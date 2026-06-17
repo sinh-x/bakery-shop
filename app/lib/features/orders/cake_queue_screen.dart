@@ -142,8 +142,11 @@ class _DeliveryOrderCard extends ConsumerWidget {
                   ),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
-                      order.orderRef,
+                child: Text(
+                      visualOrderCode(
+                        orderRef: order.orderRef,
+                        publicOrderCode: order.publicOrderCode,
+                      ),
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -411,6 +414,17 @@ class _CakeQueueCard extends ConsumerWidget {
     final photoUrl = itemPhoto != null
         ? '$baseUrl/api/photos/${itemPhoto.photoHash}.jpg'
         : null;
+    final orderPublicCode = ref.watch(orderListProvider).maybeWhen(
+          data: (orders) {
+            for (final order in orders) {
+              if (order.orderRef == item.orderRef) {
+                return order.publicOrderCode;
+              }
+            }
+            return '';
+          },
+          orElse: () => '',
+        );
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -514,7 +528,10 @@ class _CakeQueueCard extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      item.orderRef,
+                      visualOrderCode(
+                        orderRef: item.orderRef,
+                        publicOrderCode: orderPublicCode,
+                      ),
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: theme.colorScheme.onSecondaryContainer,
                       ),

@@ -13,8 +13,10 @@ import '../../providers/config_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/config_parsers.dart';
+import '../../shared/utils/order_helpers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/api_error.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'utils/trung_bay_inventory_extensions.dart';
 import 'widgets/hour_picker.dart';
@@ -177,13 +179,24 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    final originalOrder = ref.read(orderDetailProvider(widget.orderRef)).value;
+    final newDueDate = _dueDate != null ? _formatDateApi(_dueDate!) : null;
+    final dueDateChanged = originalOrder != null && newDueDate != originalOrder.dueDate;
+    final shouldAskDateDecision =
+        dueDateChanged && (originalOrder.publicOrderCode.trim().isNotEmpty);
+    String? publicCodeDateChangeDecision;
+    if (shouldAskDateDecision) {
+      publicCodeDateChangeDecision = await _promptPublicCodeDateDecision();
+      if (publicCodeDateChangeDecision == null) return;
+    }
+
     setState(() => _saving = true);
     try {
-      await ref
+      final updatedOrder = await ref
           .read(orderDetailProvider(widget.orderRef).notifier)
           .save(
             notes: _notesCtrl.text.trim(),
-            dueDate: _dueDate != null ? _formatDateApi(_dueDate!) : null,
+            dueDate: newDueDate,
             dueTime: _dueTime != null ? _formatTime(_dueTime!) : null,
             customerPhone: _phoneCtrl.text.trim(),
             deliveryAddress: _needsAddress ? _addressCtrl.text.trim() : '',
@@ -191,8 +204,20 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             source: _source.isEmpty ? null : _source,
             customerName: _nameCtrl.text.trim(),
             shippingFee: _shippingFee,
+            publicCodeDateChangeDecision: publicCodeDateChangeDecision,
           );
+      final oldVisualCode = visualOrderCode(
+        orderRef: originalOrder?.orderRef ?? widget.orderRef,
+        publicOrderCode: originalOrder?.publicOrderCode,
+      );
+      final newVisualCode = visualOrderCode(
+        orderRef: updatedOrder.orderRef,
+        publicOrderCode: updatedOrder.publicOrderCode,
+      );
       if (mounted) {
+        if (oldVisualCode != newVisualCode) {
+          showTopSnackBar(context, '${VN.publicCodeChangedNotice} $newVisualCode');
+        }
         showTopSnackBar(context, VN.orderEditSaved);
         context.pop();
       }
@@ -205,6 +230,30 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<String?> _promptPublicCodeDateDecision() {
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(VN.publicCodeDateChangeTitle),
+        content: const Text(VN.publicCodeDateChangePrompt),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text(VN.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('keep'),
+            child: const Text(VN.publicCodeKeep),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop('regenerate'),
+            child: const Text(VN.publicCodeRegenerate),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -238,6 +287,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   )
                 : const Text(VN.save),
           ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: orderAsync.when(

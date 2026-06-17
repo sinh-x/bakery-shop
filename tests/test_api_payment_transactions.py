@@ -8,6 +8,7 @@ import pytest
 def _create_order(client, customer="Nguyễn Văn A", total=300000):
     resp = client.post("/api/orders", json={
         "customerName": customer,
+        "dueDate": "2026-03-25",
         "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": total}],
     })
     assert resp.status_code == 201
@@ -341,6 +342,7 @@ def _create_order_with_tien_rut_item(client, cash_amount=200000):
     """Create order with a tien_rut item."""
     resp = client.post("/api/orders", json={
         "customerName": "Test Khách Rút Tiền",
+        "dueDate": "2026-03-25",
         "items": [{
             "productName": "Bánh Sinh Nhật",
             "quantity": 1,

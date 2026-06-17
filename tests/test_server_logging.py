@@ -69,6 +69,7 @@ class TestLogContext:
             json={
                 "customerName": "Test Customer",
                 "customerPhone": "0123456789",
+                "dueDate": "2026-03-25",
                 "items": [
                     {
                         "productName": "Bánh mì",
@@ -270,3 +271,37 @@ def test_global_exception_handler_persists_sanitized_detail(api_client):
         assert detail["error_type"] == "RuntimeError"
         assert detail["error_message"] == "boom"
         assert "traceback" not in detail
+
+
+def test_status_transition_rejection_logs_backend_diagnostics(api_client, caplog):
+    order = api_client.post(
+        "/api/orders",
+        json={
+            "customerName": "Status log test",
+            "dueDate": "2026-03-25",
+            "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000}],
+        },
+    ).json()
+    ref = order["orderRef"]
+    api_client.post(f"/api/orders/{ref}/status", json={"status": "confirmed"})
+    api_client.post(f"/api/orders/{ref}/status", json={"status": "in_progress"})
+
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="baker.server"):
+        resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "confirmed", "reason": ""})
+
+    assert resp.status_code == 422
+
+    matching = [
+        record
+        for record in caplog.records
+        if record.name == "baker.server" and record.getMessage() == "order_status_transition_rejected"
+    ]
+    assert len(matching) == 1
+    extra_data = matching[0].extra_data
+    assert extra_data["path"] == "/api/orders/{ref}/status"
+    assert extra_data["order_ref"] == ref
+    assert extra_data["order_id"] == order["id"]
+    assert extra_data["target_status"] == "confirmed"
+    assert extra_data["status_code"] == 422
+    assert extra_data["rejection_detail"] == "Lý do là bắt buộc khi lùi trạng thái"

@@ -14,6 +14,8 @@ class OrderService {
   Future<List<Order>> listOrders({
     String? status,
     String? dueDate,
+    String? dueDateFrom,
+    String? dueDateTo,
     int limit = 50,
     int offset = 0,
     bool activeOnly = false,
@@ -21,6 +23,8 @@ class OrderService {
     final params = <String, dynamic>{'limit': limit, 'offset': offset};
     if (status != null) params['status'] = status;
     if (dueDate != null) params['due_date'] = dueDate;
+    if (dueDateFrom != null) params['due_date_from'] = dueDateFrom;
+    if (dueDateTo != null) params['due_date_to'] = dueDateTo;
     if (activeOnly) params['active_only'] = true;
 
     final response = await _dio.get('/api/orders', queryParameters: params);
@@ -80,6 +84,7 @@ class OrderService {
     String? deliveryAddress,
     String? notes,
     String? source,
+    String? publicCodeDateChangeDecision,
     String changedBy = '',
     double? shippingFee,
   }) async {
@@ -92,6 +97,9 @@ class OrderService {
     if (deliveryAddress != null) body['deliveryAddress'] = deliveryAddress;
     if (notes != null) body['notes'] = notes;
     if (source != null) body['source'] = source;
+    if (publicCodeDateChangeDecision != null) {
+      body['publicCodeDateChangeDecision'] = publicCodeDateChangeDecision;
+    }
     if (changedBy.isNotEmpty) body['changedBy'] = changedBy;
     if (shippingFee != null) body['shippingFee'] = shippingFee;
 
@@ -105,25 +113,20 @@ class OrderService {
     String reason = '',
     String changedBy = '',
   }) async {
-    final body = <String, dynamic>{
-      'status': status,
-      'reason': reason,
-    };
+    final body = <String, dynamic>{'status': status, 'reason': reason};
     if (changedBy.isNotEmpty) body['changedBy'] = changedBy;
-    final response = await _dio.post(
-      '/api/orders/$ref/status',
-      data: body,
-    );
+    final response = await _dio.post('/api/orders/$ref/status', data: body);
     return Order.fromJson(response.data as Map<String, dynamic>);
   }
 
-  Future<Order> updatePayment(String ref, double amountPaid, {String changedBy = ''}) async {
+  Future<Order> updatePayment(
+    String ref,
+    double amountPaid, {
+    String changedBy = '',
+  }) async {
     final body = <String, dynamic>{'amountPaid': amountPaid};
     if (changedBy.isNotEmpty) body['changedBy'] = changedBy;
-    final response = await _dio.patch(
-      '/api/orders/$ref/payment',
-      data: body,
-    );
+    final response = await _dio.patch('/api/orders/$ref/payment', data: body);
     return Order.fromJson(response.data as Map<String, dynamic>);
   }
 

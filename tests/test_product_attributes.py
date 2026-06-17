@@ -8,7 +8,7 @@ import json
 def _create_order(client, customer="Nguyễn Văn A", items=None, **kwargs):
     if items is None:
         items = [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}]
-    payload = {"customerName": customer, "items": items, **kwargs}
+    payload = {"customerName": customer, "items": items, "dueDate": "2026-03-25", **kwargs}
     resp = client.post("/api/orders", json=payload)
     assert resp.status_code == 201
     return resp.json()

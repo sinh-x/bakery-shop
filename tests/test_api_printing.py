@@ -6,6 +6,7 @@ def _create_order(client):
         "/api/orders",
         json={
             "customerName": "In phiếu test",
+            "dueDate": "2026-03-25",
             "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 120000, "productId": "BKS-16"}],
         },
     )

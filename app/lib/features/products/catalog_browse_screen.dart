@@ -1,11 +1,11 @@
 // DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines due to in-place bulk action flow wiring; review in Phase 5 (2026-05-29).
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/catalog_browse_photo.dart';
 import '../../providers/catalog_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'services/bulk_share_service.dart';
 import 'services/bulk_download_android.dart'
@@ -58,7 +58,6 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
         .toList();
     if (selectedPhotos.isEmpty) return;
 
-    setState(() => _bulkInProgress = true);
     try {
       final dio = ref.read(dioProvider);
       final service = BulkShareService(dio);
@@ -99,7 +98,6 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
         .toList();
     if (selectedPhotos.isEmpty) return;
 
-    setState(() => _bulkInProgress = true);
     try {
       final dio = ref.read(dioProvider);
       final service = download_impl.BulkDownloadService(dio);
@@ -165,6 +163,32 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
     });
   }
 
+  Future<void> _onSelectModeMenuSelected(String value) async {
+    switch (value) {
+      case 'bulk_share':
+        if (_selectedPhotoIds.isNotEmpty && !_bulkInProgress) {
+          setState(() => _bulkInProgress = true);
+          await _onBulkShare();
+        }
+        return;
+      case 'bulk_download':
+        if (_selectedPhotoIds.isNotEmpty && !_bulkInProgress) {
+          setState(() => _bulkInProgress = true);
+          await _onBulkDownload();
+        }
+        return;
+      case 'cancel_selection':
+        _clearSelection();
+        return;
+      default:
+        assert(() {
+          debugPrint('Unknown catalog browse menu action: $value');
+          return true;
+        }());
+        return;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final baseUrl = ref.watch(apiBaseUrlProvider);
@@ -198,6 +222,7 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                 onPressed: _toggleSelectMode,
                 tooltip: VN.chonAnh,
               ),
+            if (!_selectMode) const AppBarOverflowMenu(),
             if (_selectMode)
               IconButton(
                 icon: const Icon(Icons.select_all),
@@ -218,21 +243,25 @@ class _CatalogBrowseScreenState extends ConsumerState<CatalogBrowseScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
-            if (_selectMode && !_bulkInProgress)
-              IconButton(
-                icon: const Icon(Icons.share),
-                onPressed: _selectedPhotoIds.isEmpty ? null : _onBulkShare,
-              ),
-            if (_selectMode && !_bulkInProgress)
-              IconButton(
-                icon: const Icon(Icons.download),
-                onPressed: _selectedPhotoIds.isEmpty ? null : _onBulkDownload,
-              ),
             if (_selectMode)
-              IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: _clearSelection,
-                tooltip: VN.huy,
+              AppBarOverflowMenu(
+                onSelected: _onSelectModeMenuSelected,
+                items: [
+                  PopupMenuItem<String>(
+                    value: 'bulk_share',
+                    enabled: _selectedPhotoIds.isNotEmpty && !_bulkInProgress,
+                    child: const Text(VN.chiaSe),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'bulk_download',
+                    enabled: _selectedPhotoIds.isNotEmpty && !_bulkInProgress,
+                    child: const Text(VN.taiAnh),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'cancel_selection',
+                    child: Text(VN.huy),
+                  ),
+                ],
               ),
           ],
         ),

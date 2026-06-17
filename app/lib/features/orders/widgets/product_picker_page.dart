@@ -7,6 +7,7 @@ import '../../../data/models/product.dart';
 import '../../../providers/categories_provider.dart';
 import '../../../providers/order_providers.dart';
 import '../../../providers/products_provider.dart';
+import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import '../../products/widgets/product_card.dart';
 
@@ -147,6 +148,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
             tooltip: 'Xác nhận',
             onPressed: () => _onConfirm(allProducts),
           ),
+        const AppBarOverflowMenu(),
       ],
       bottom: activeCategories.isNotEmpty
           ? TabBar(
@@ -232,6 +234,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
             onPressed: () => Navigator.of(context).pop(),
           ),
           title: const Text(VN.selectProducts),
+          actions: const [AppBarOverflowMenu()],
         ),
         body: const Center(child: CircularProgressIndicator()),
       ),
@@ -242,6 +245,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
             onPressed: () => Navigator.of(context).pop(),
           ),
           title: const Text(VN.selectProducts),
+          actions: const [AppBarOverflowMenu()],
         ),
         body: const Center(child: Text(VN.apiError)),
       ),

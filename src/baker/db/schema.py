@@ -728,6 +728,35 @@ CREATE INDEX IF NOT EXISTS idx_inventory_items_lot_status ON inventory_items(lot
 """
 
 
+ORDER_INCIDENT_ORDER_ID_SCHEMA = """
+ALTER TABLE events ADD COLUMN order_id INTEGER REFERENCES orders(id);
+CREATE INDEX IF NOT EXISTS idx_events_order_id ON events(order_id);
+"""
+
+EVENT_PHOTOS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS event_photos (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id    INTEGER NOT NULL REFERENCES events(id),
+    photo_id    INTEGER NOT NULL REFERENCES photos(id),
+    tags        TEXT DEFAULT '',
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_photos_event ON event_photos(event_id);
+"""
+
+PUBLIC_ORDER_CODE_SCHEMA = """
+ALTER TABLE orders ADD COLUMN public_order_code TEXT DEFAULT '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_due_date_public_order_code_unique
+ON orders(due_date, public_order_code)
+WHERE public_order_code IS NOT NULL
+  AND public_order_code != ''
+  AND due_date IS NOT NULL
+  AND due_date != '';
+"""
+
+
 def _migrate_v36_chip_aware_inventory(conn):
     """Migrate product_stock rows into stock_lots + inventory_items using lowest-priced option."""
     import uuid
@@ -1336,6 +1365,28 @@ def _migrate_v26_trung_bay_and_stock(conn):
     )
 
 
+def _migrate_v42_backfill_payment_source(conn):
+    """Backfill payment_source: 'Shop tiền mặt' for all existing expense events."""
+    import json
+
+    rows = conn.execute(
+        "SELECT id, data FROM events WHERE type = 'expense'"
+    ).fetchall()
+
+    for row in rows:
+        try:
+            data = json.loads(row["data"]) if row["data"] else {}
+        except (json.JSONDecodeError, TypeError):
+            data = {}
+
+        if "payment_source" not in data:
+            data["payment_source"] = "Shop tiền mặt"
+            conn.execute(
+                "UPDATE events SET data = ? WHERE id = ?",
+                (json.dumps(data), row["id"]),
+            )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -1513,6 +1564,23 @@ MIGRATIONS = {
         "description": "Migrate order_extra app config rows into product-backed phu_kien accessories",
         "sql": "",
         "callable": _migrate_v38_accessory_products,
+    },
+    39: {
+        "description": "Add public order code column and per-due-date uniqueness index",
+        "sql": PUBLIC_ORDER_CODE_SCHEMA,
+    },
+    40: {
+        "description": "Add order_id nullable FK to events table for order incident linking",
+        "sql": ORDER_INCIDENT_ORDER_ID_SCHEMA,
+    },
+    41: {
+        "description": "Create event_photos junction table linking events to photo attachments",
+        "sql": EVENT_PHOTOS_SCHEMA,
+    },
+    42: {
+        "description": "Backfill payment_source for existing expense events",
+        "sql": "",
+        "callable": _migrate_v42_backfill_payment_source,
     },
 }
 

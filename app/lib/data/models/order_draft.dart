@@ -41,7 +41,7 @@ class DraftOrderItem {
   ) {
     final attrs = <String, dynamic>{...?provided};
     if (product.isTrungBay && !attrs.containsKey('useInventory')) {
-      attrs['useInventory'] = 'true';
+      attrs['useInventory'] = 'false';
     }
     for (final ea in product.enumAttributes) {
       if (ea.options.isEmpty) continue;
@@ -95,6 +95,34 @@ DraftOrderItem createExtraItem(
     isExtra: true,
     isGift: isGift,
     customUnitPrice: extraPrice,
+  );
+}
+
+DraftOrderItem createCatalogExtraItem({
+  required Product product,
+  int quantity = 1,
+  bool isGift = false,
+  int? priceChipId,
+  double? customUnitPrice,
+}) {
+  final selectedChipId = customUnitPrice == null ? priceChipId : null;
+  double? chipPrice;
+  if (selectedChipId != null) {
+    for (final chip in product.priceChips) {
+      if (chip.id == selectedChipId) {
+        chipPrice = chip.price;
+        break;
+      }
+    }
+  }
+
+  return DraftOrderItem(
+    product: product,
+    quantity: quantity,
+    isExtra: true,
+    isGift: isGift,
+    customUnitPrice: customUnitPrice ?? chipPrice,
+    priceChipId: selectedChipId,
   );
 }
 

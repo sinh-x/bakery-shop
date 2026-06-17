@@ -60,7 +60,27 @@ class VN {
   static const cancelReasonHint = 'Nhập lý do hủy...';
   static const confirmCancelAction = 'Xác nhận hủy';
   static const orderStatusUpdated = 'Đã cập nhật trạng thái';
+  static const orderStatusChangeFailedPrefix = 'Không thể đổi trạng thái';
+  static const orderStatusRecoveryLabel = 'Cách xử lý';
+  static const orderStatusDebugCodeLabel = 'Mã';
+  static const orderStatusActionCheckStock =
+      'Kiểm tra tồn kho hoặc số lượng sản phẩm rồi thử lại.';
+  static const orderStatusActionCheckPriceBucket =
+      'Kiểm tra mức giá sản phẩm trong đơn rồi thử lại.';
+  static const orderStatusActionAddBackwardReason =
+      'Nhập lý do chuyển trạng thái lùi rồi thử lại.';
+  static const orderStatusActionCompletePayment =
+      'Hoàn tất thanh toán còn thiếu trước khi đổi trạng thái.';
+  static const orderStatusActionContactAdmin =
+      'Kiểm tra dữ liệu đơn hàng hoặc liên hệ quản trị để hỗ trợ.';
   static const orderEditSaved = 'Đã lưu thay đổi';
+  static const publicOrderCode = 'Mã nhận bánh';
+  static const publicCodeKeep = 'Giữ mã hiện tại';
+  static const publicCodeRegenerate = 'Tạo mã mới';
+  static const publicCodeDateChangeTitle = 'Đổi mã nhận bánh?';
+  static const publicCodeDateChangePrompt =
+      'Bạn vừa đổi ngày nhận/giao. Chọn giữ mã hiện tại hoặc tạo mã mới trước khi lưu.';
+  static const publicCodeChangedNotice = 'Mã nhận bánh đã đổi:';
 
   // Refresh
   static const lamMoi = 'Làm mới';
@@ -130,6 +150,10 @@ class VN {
   static const deleteEventConfirm = 'Bạn có chắc muốn xóa sự kiện này?';
   static const eventDeleted = 'Đã xóa sự kiện';
   static const eventUpdated = 'Đã cập nhật sự kiện';
+  static const addOrderIncident = 'Thêm sự cố';
+  static const orderLabel = 'Đơn hàng';
+  static const eventPhotos = 'Ảnh đính kèm';
+  static const addEventPhoto = 'Thêm ảnh';
 
   // Dashboard
   static const todayOrders = 'Đơn hàng hôm nay';
@@ -146,6 +170,16 @@ class VN {
 
   // Search
   static const searchOrders = 'Tìm đơn hàng...';
+
+  // Order history
+  static const lichSuDonHang = 'Lịch sử đơn hàng';
+  static const lichSuDonHangLocMotNgay = 'Một ngày';
+  static const lichSuDonHangLocKhoangNgay = 'Khoảng ngày';
+  static const lichSuDonHangTimKiem = 'Tìm theo tên, số điện thoại, mã đơn...';
+  static const lichSuDonHangTrong = 'Không có đơn trong khoảng đã chọn';
+  static const lichSuDonHangKhongTimThay = 'Không tìm thấy đơn phù hợp';
+  static const lichSuDonHangToiDa7Ngay = 'Chỉ được chọn tối đa 7 ngày';
+  static const lichSuDonHangKhoangNgayKhongHopLe = 'Khoảng ngày không hợp lệ';
 
   // Product form
   static const createProduct = 'Thêm sản phẩm';
@@ -223,6 +257,16 @@ class VN {
 
   // Settings
   static const settings = 'Cài đặt';
+  static const moreActions = 'Thao tác khác';
+  static const openSettings = 'Cài đặt';
+  static const openStock = 'Kho hàng';
+  static const openOrderHistory = 'Lịch sử đơn hàng';
+  static const openStockReconciliation = 'Đối soát tồn kho hôm nay';
+  static const openStockReconciliationHistory = 'Lịch sử đối soát tồn kho';
+  static const openCategoryManagement = 'Quản lý danh mục';
+  static const openCatalogBrowse = 'Duyệt ảnh mẫu';
+  static const switchToKanbanView = 'Dạng Kanban';
+  static const switchToListView = 'Dạng danh sách';
   static const apiUrlLabel = 'Địa chỉ máy chủ';
   static const apiUrlHint = 'http://hostname:8000';
   static const apiUrlHelp = 'Nhập địa chỉ Tailscale của máy chủ';
@@ -478,6 +522,8 @@ class VN {
   // Knowledge base
   static const knowledgeTitle = 'Sổ tay';
   static const knowledgeBaseEventsSubtitle = 'Ghi nhật ký hoạt động & sự cố';
+  static const knowledgeBaseExpensesSubtitle =
+      'Ghi chi phí vận hành theo khoản mục';
   static const knowledgeBaseChecklistSubtitle = 'Công việc mở / đóng tiệm';
   static const knowledgeBaseDocsSubtitle = 'Công thức, quy trình, nhà cung cấp';
   static const knowledgeBaseNotesSubtitle = 'Ghi chú nội bộ & thông báo';
@@ -512,6 +558,55 @@ class VN {
   static const knowledgePhotosField = 'Ảnh';
   static const knowledgeNoPhotos = 'Chưa có ảnh';
 
+  // Expenses
+  static const expenseTitle = 'Chi phí';
+  static const expenseFormSection = 'Nhập chi phí';
+  static const expenseHistorySection = 'Lịch sử chi phí';
+  static const expenseAmountLabel = 'Số tiền (VND)';
+  static const expenseCategoryLabel = 'Danh mục chi phí';
+  static const expenseCategoryHint = 'Chọn danh mục chi phí';
+  static const expensePaymentMethodLabel = 'Phương thức thanh toán';
+  static const expenseVendorLabel = 'Nhà cung cấp';
+  static const expenseNoteLabel = 'Ghi chú';
+  static const expenseStaffNameLabel = 'Tên nhân viên';
+  static const expenseCategoryIngredient = 'Nguyên liệu';
+  static const expenseCategoryPackaging = 'Bao bì';
+  static const expenseCategoryDelivery = 'Vận chuyển';
+  static const expenseCategoryUtilities = 'Điện/nước';
+  static const expenseCategoryTools = 'Dụng cụ';
+  static const expenseCategoryRepair = 'Sửa chữa';
+  static const expenseCategorySalaryAllowance = 'Lương/phụ cấp';
+  static const expenseCategoryOther = 'Khác';
+  static const expenseSaveAction = 'Lưu chi phí';
+  static const expenseAddAction = 'Thêm chi phí';
+  static const expenseUpdateAction = 'Cập nhật chi phí';
+  static const expenseCancelEditAction = 'Hủy sửa';
+  static const expenseApplyFiltersAction = 'Áp dụng lọc';
+  static const expenseResetFiltersAction = 'Xóa lọc';
+  static const expenseSearchLabel =
+      'Tìm theo nội dung, nhà cung cấp, nhân viên';
+  static const expenseSinceLabel = 'Từ ngày';
+  static const expenseUntilLabel = 'Đến ngày';
+  static const expenseDateLabel = 'Ngày chi';
+  static const expenseTimeLabel = 'Giờ chi';
+  static const expenseFilterStaffLabel = 'Lọc theo nhân viên';
+  static const expenseNoHistory = 'Chưa có chi phí phù hợp bộ lọc';
+  static const expenseAmountValidationMessage =
+      'Số tiền phải là số nguyên VND lớn hơn 0';
+  static const expenseStaffNameRequiredForAdvance =
+      'Tên nhân viên là bắt buộc khi chọn Nhân viên ứng trước';
+
+  // Payment sources
+  static const expensePaymentSourceLabel = 'Nguồn tiền chi';
+  static const paymentSourceShopCash = 'Shop tiền mặt';
+  static const paymentSourcePhuongVCB = 'TK Phượng VCB';
+  static const paymentSourceAnVCB = 'TK Ân VCB';
+  static const paymentSourceStaffAdvance = 'Nhân viên ứng trước';
+
+  // Reimbursed
+  static const reimbursedYes = 'Đã hoàn lại';
+  static const reimbursedNo = 'Chưa hoàn lại';
+
   // Shipping fee & extras
   static const shippingFee = 'Phí giao hàng';
   static const shippingFree = 'Miễn phí';
@@ -535,6 +630,12 @@ class VN {
   static const extraDeleted = 'Đã xóa phụ kiện';
   static const noExtras = 'Chưa có phụ kiện';
   static const deleteExtraConfirm = 'Xóa phụ kiện này?';
+  static const extrasSettingsDeprecatedTitle =
+      'Đã dừng quản lý phụ kiện tại đây';
+  static const extrasSettingsDeprecatedBody =
+      'Phụ kiện trả phí mới được quản lý từ Danh mục sản phẩm (nhóm phu_kien). Mục này chỉ giữ lại để hướng dẫn và không còn tạo/sửa dữ liệu order_extra.';
+  static const extrasSettingsDeprecatedAction =
+      'Vào Danh mục sản phẩm để thêm/sửa phụ kiện và mức giá.';
 
   // Catalog browse
   static const browseScreenTitle = 'Duyệt ảnh mẫu';
@@ -557,6 +658,7 @@ class VN {
   static String fingerprintMismatchStrip(String client, String server) {
     return '$fingerprintMismatchWarning ($client/$server)';
   }
+
   static const outOfStock = 'Hết hàng';
 
   // Stock management
@@ -583,6 +685,7 @@ class VN {
   static const capNhatThanhCong = 'Cập nhật thành công';
   static const loiHeThong = 'Lỗi hệ thống';
   static const doiSoatTonKhoHomNay = 'Đối soát tồn kho hôm nay';
+  static const showOutOfStockProducts = 'Hiển thị sản phẩm hết hàng';
   static const nhanVien = 'Nhân viên';
   static const ngayDoiSoat = 'Ngày đối soát';
   static const tonDuKien = 'Tồn dự kiến';

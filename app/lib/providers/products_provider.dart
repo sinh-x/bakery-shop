@@ -54,6 +54,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
       productCode: productCode,
     );
     await refresh();
+    ref.invalidate(phuKienProductsProvider);
     return product;
   }
 
@@ -80,6 +81,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
     );
     await refresh();
     ref.invalidate(inactiveProductsProvider);
+    ref.invalidate(phuKienProductsProvider);
     if (category != null) {
       ref.invalidate(catalogBrowseProvider);
     }
@@ -91,6 +93,7 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
     await service.deleteProduct(id);
     await refresh();
     ref.invalidate(inactiveProductsProvider);
+    ref.invalidate(phuKienProductsProvider);
     ref.invalidate(catalogBrowseProvider);
   }
 
@@ -116,6 +119,16 @@ class ProductsNotifier extends AsyncNotifier<List<Product>> {
 final productsProvider = AsyncNotifierProvider<ProductsNotifier, List<Product>>(
   ProductsNotifier.new,
 );
+
+final activeProductsByCategoryProvider =
+    FutureProvider.family<List<Product>, String>((ref, category) async {
+      final service = ref.read(productServiceProvider);
+      return service.listProducts(category: category, active: 1);
+    });
+
+final phuKienProductsProvider = FutureProvider<List<Product>>((ref) async {
+  return ref.watch(activeProductsByCategoryProvider('phu_kien').future);
+});
 
 class InactiveProductsNotifier extends AsyncNotifier<List<Product>> {
   @override

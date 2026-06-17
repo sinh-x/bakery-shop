@@ -330,6 +330,95 @@ def _wrapped_enum_attribute_lines(item: dict, labels: dict, font, max_w: int) ->
     return lines
 
 
+def _order_public_code(order: dict) -> str:
+    """Return trimmed public order code or empty string."""
+    public_code = order.get("publicOrderCode", "") or order.get("public_order_code", "") or ""
+    return str(public_code).strip()
+
+
+def _order_ref_value(order: dict) -> str:
+    """Return trimmed internal order ref or empty string."""
+    order_ref = order.get("orderRef", "") or order.get("order_ref", "") or ""
+    return str(order_ref).strip()
+
+
+def _order_visual_ref(order: dict) -> str:
+    """Public code first, fallback to internal order ref for old orders."""
+    public_code = _order_public_code(order)
+    if public_code:
+        return public_code
+    return _order_ref_value(order)
+
+
+def _customer_name_value(order: dict) -> str:
+    """Return trimmed customer name or empty string."""
+    raw_name = order.get("customerName", "") or order.get("customer_name", "") or ""
+    return str(raw_name).strip()
+
+
+def _customer_last_word(order: dict) -> str:
+    """Return the last word from customer name, or empty if unavailable."""
+    name = _customer_name_value(order)
+    if not name:
+        return ""
+    parts = name.split()
+    return parts[-1] if parts else ""
+
+
+def _customer_reference_text(order: dict) -> str:
+    """Customer-facing reference line for receipts."""
+    public_code = _order_public_code(order)
+    if not public_code:
+        return f"Mã đơn: {_order_ref_value(order)}"
+    last_word = _customer_last_word(order)
+    if last_word:
+        return f"Mã nhận bánh: {last_word} - {public_code}"
+    return f"Mã nhận bánh: {public_code}"
+
+
+def _customer_heading_text(order: dict) -> str:
+    """Customer heading line for customer receipts."""
+    name = _customer_name_value(order)
+    return name or "KHÁCH HÀNG"
+
+
+def _shop_delivery_code_text(order: dict) -> str:
+    """Prominent pickup code content for shop/delivery receipts."""
+    public_code = _order_public_code(order)
+    if public_code:
+        last_word = _customer_last_word(order)
+        if last_word:
+            return f"{last_word} - {public_code}"
+        return public_code
+    return _order_ref_value(order)
+
+
+def _draw_compact_reference_box(draw, y: int, text: str, font) -> int:
+    """Draw a compact bordered box around reference text."""
+    lines = _wrap(text, font, CONTENT_WIDTH - 48) or [text]
+    text_width = 0
+    text_height = 0
+    for line in lines:
+        text_width = max(text_width, _tw(line, font))
+        text_height += _th(line, font) + LINE_GAP
+
+    pad_x = 22
+    pad_y = 14
+    box_w = min(CONTENT_WIDTH, text_width + (pad_x * 2))
+    box_h = text_height + (pad_y * 2)
+    box_x = MARGIN + (CONTENT_WIDTH - box_w) // 2
+
+    draw.rectangle([box_x, y, box_x + box_w, y + box_h], outline=(0, 0, 0), width=3)
+
+    text_y = y + pad_y
+    for line in lines:
+        text_x = box_x + (box_w - _tw(line, font)) // 2
+        draw.text((text_x, text_y), line, font=font, fill=(0, 0, 0))
+        text_y += _th(line, font) + LINE_GAP
+
+    return y + box_h
+
+
 # --- Header (matching physical biên nhận) ---
 
 def _header(draw, y, cfg):
@@ -389,7 +478,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
     # ── Header: title + order ref + date (compact) ──
     y = _center(draw, y, "PHIẾU NỘI BỘ", fnormal)
 
-    ref = order.get("orderRef", "") or order.get("order_ref", "")
+    ref = _order_visual_ref(order)
     created = order.get("createdAt", "") or order.get("created_at", "")
     header_line = f"Mã: {ref}"
     if created:
@@ -632,7 +721,13 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
         tw = _tw(due_time, time_font)
         draw.text((box_right_x + (half_w - tw) // 2, ty), due_time, font=time_font, fill=(0, 0, 0))
 
-    y += box_h + MARGIN
+    y += box_h + 10
+
+    bottom_ref = _order_public_code(order) or _order_ref_value(order)
+    if bottom_ref:
+        y = _left(draw, y, bottom_ref, fbig)
+
+    y += MARGIN
 
     return img.crop((0, 0, RECEIPT_WIDTH, y))
 
@@ -686,7 +781,7 @@ def _render_bus_label(order, cfg) -> Image.Image:
     sep_h = 16  # double line separator height
 
     # Order ref and customer name (small, centered) — sit between notes and separator
-    order_ref = order.get("orderRef", "") or order.get("order_ref", "") or ""
+    order_ref = _order_visual_ref(order)
     customer_name = order.get("customerName", "") or order.get("customer_name", "") or ""
     order_line = f"Mã đơn: {order_ref}" if order_ref else ""
     customer_line = customer_name
@@ -898,7 +993,7 @@ def _render_shop_receipt(order, cfg, conn) -> Image.Image:
     y = _center(draw, y, "PHIẾU GIAO HÀNG", fnormal)
 
     # Order ref + date
-    ref = order.get("orderRef", "") or order.get("order_ref", "")
+    ref = _order_visual_ref(order)
     created = order.get("createdAt", "") or order.get("created_at", "")
     date_line = ref
     if created:
@@ -918,6 +1013,13 @@ def _render_shop_receipt(order, cfg, conn) -> Image.Image:
         y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
 
     y = _sep(draw, y)
+
+    code_box_text = _shop_delivery_code_text(order)
+    if code_box_text:
+        code_font = _font(_SZ_BIG, True)
+        y = _draw_compact_reference_box(draw, y, code_box_text, code_font)
+        y += 12
+        y = _sep(draw, y)
 
     # Items table
     y = _render_items_table(draw, y, work_items, fb, fbb, fs, conn)
@@ -966,7 +1068,7 @@ def _render_delivery_receipt(order, cfg, conn) -> Image.Image:
     y = _center(draw, y, "PHIẾU GIAO TẬN NƠI", fnormal)
 
     # Order ref + date
-    ref = order.get("orderRef", "") or order.get("order_ref", "")
+    ref = _order_visual_ref(order)
     created = order.get("createdAt", "") or order.get("created_at", "")
     date_line = ref
     if created:
@@ -986,6 +1088,13 @@ def _render_delivery_receipt(order, cfg, conn) -> Image.Image:
         y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
 
     y = _sep(draw, y)
+
+    code_box_text = _shop_delivery_code_text(order)
+    if code_box_text:
+        code_font = _font(_SZ_BIG, True)
+        y = _draw_compact_reference_box(draw, y, code_box_text, code_font)
+        y += 12
+        y = _sep(draw, y)
 
     # Delivery section
     y = _left(draw, y, "Giao tận nơi", fbb)
@@ -1054,8 +1163,7 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
     y = _sep(draw, y)
 
     # Order ref
-    ref = order.get("orderRef", "") or order.get("order_ref", "")
-    y = _center(draw, y, f"Mã đơn: {ref}", _font(_SZ_SUBTITLE, True))
+    y = _center(draw, y, _customer_reference_text(order), _font(_SZ_SUBTITLE, True))
 
     # Date
     created = order.get("createdAt", "") or order.get("created_at", "")
@@ -1063,12 +1171,9 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
         y = _left(draw, y, f"Ngày: {created[:10]}", fb)
 
     # --- Section 1: Customer Info ---
-    y = _left(draw, y, "KHÁCH HÀNG", _font(_SZ_SUBTITLE, True))
+    y = _left(draw, y, _customer_heading_text(order), _font(_SZ_SUBTITLE, True))
     y = _sep(draw, y)
 
-    name = order.get("customerName", "") or order.get("customer_name", "")
-    if name:
-        y = _left(draw, y, f"Tên: {name}", fb)
     y += 4
     y = _double(draw, y)
 

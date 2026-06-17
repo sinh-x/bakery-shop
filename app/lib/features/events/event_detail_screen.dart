@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/models/event.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 
 const _kTypeIcons = <String, IconData>{
@@ -86,6 +87,7 @@ class EventDetailScreen extends StatelessWidget {
             onPressed: () =>
                 context.push('/events/${event.id}/edit', extra: event),
           ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: ListView(
@@ -180,10 +182,11 @@ class EventDetailScreen extends StatelessWidget {
   }
 
   String _formatDateTime(DateTime dt) {
-    final day = dt.day.toString().padLeft(2, '0');
-    final month = dt.month.toString().padLeft(2, '0');
-    final hour = dt.hour.toString().padLeft(2, '0');
-    final minute = dt.minute.toString().padLeft(2, '0');
-    return '$day/$month/${dt.year} $hour:$minute';
+    final local = dt.toLocal();
+    final day = local.day.toString().padLeft(2, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$day/$month/${local.year} $hour:$minute';
   }
 }

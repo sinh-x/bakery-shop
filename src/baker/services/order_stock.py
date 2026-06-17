@@ -30,11 +30,12 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
         return
 
     order_items = conn.execute(
-        """SELECT oi.product_id, oi.product_name, oi.quantity, oi.price_chip_id, oi.unit_price, oi.attributes
+        """SELECT oi.product_id, oi.product_name, oi.quantity, oi.price_chip_id, oi.unit_price, oi.attributes, o.source
            FROM order_items oi
+           JOIN orders o ON o.id = oi.order_id
            WHERE oi.order_id = ?
-               AND oi.product_id != ''
-                AND oi.is_gift = 0""",
+             AND oi.product_id != ''
+             AND oi.is_gift = 0""",
         (order_id,),
     ).fetchall()
 
@@ -89,8 +90,17 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
             elif isinstance(item["attributes"], dict):
                 attrs = item["attributes"]
 
+        has_use_inventory = "useInventory" in attrs
         use_inventory = attrs.get("useInventory")
-        should_consume_fifo = use_inventory not in (False, "false")
+        if isinstance(use_inventory, str):
+            use_inventory_enabled = use_inventory.lower() == "true"
+        else:
+            use_inventory_enabled = use_inventory is True
+
+        is_pos_order = item["source"] == "Tại tiệm - POS"
+        is_reconciliation_order = item["source"] == "reconciliation"
+        default_consume_sources = is_pos_order or is_reconciliation_order
+        should_consume_fifo = use_inventory_enabled if has_use_inventory else default_consume_sources
 
         movement_cursor = conn.execute(
             """INSERT INTO stock_movements

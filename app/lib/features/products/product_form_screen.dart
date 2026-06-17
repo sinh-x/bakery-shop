@@ -17,6 +17,7 @@ import '../../data/models/product.dart';
 import '../../providers/catalog_provider.dart';
 import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/products.dart';
 import 'widgets/catalog_photo_viewer.dart';
 import 'widgets/catalog_tag_chips.dart';
@@ -335,6 +336,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           physics: const NeverScrollableScrollPhysics(),
           shrinkWrap: true,
           itemCount: _priceChipRows.length,
+          // ignore: deprecated_member_use
           onReorder: _reorderPriceChips,
           buildDefaultDragHandles: false,
           itemBuilder: (context, index) {
@@ -604,6 +606,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           physics: const NeverScrollableScrollPhysics(),
           shrinkWrap: true,
           itemCount: section.rows.length,
+          // ignore: deprecated_member_use
           onReorder: (oldIndex, newIndex) =>
               _reorderEnumOptions(section, oldIndex, newIndex),
           buildDefaultDragHandles: false,
@@ -864,6 +867,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         await notifier.uploadPhoto(saved.id, _pickedPhoto!);
       }
 
+      ref.invalidate(phuKienProductsProvider);
+
       if (mounted) {
         showTopSnackBar(
           context,
@@ -983,6 +988,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                   ? _reactivate
                   : _delete,
             ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: Form(

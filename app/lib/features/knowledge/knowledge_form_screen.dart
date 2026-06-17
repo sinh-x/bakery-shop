@@ -10,6 +10,7 @@ import '../../data/api/api_client.dart';
 import '../../data/api/knowledge_service.dart';
 import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 // Knowledge types for the form
@@ -198,6 +199,7 @@ class _KnowledgeFormScreenState extends ConsumerState<KnowledgeFormScreen> {
             tooltip: VN.save,
             onPressed: _saving ? null : _submit,
           ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: ListView(

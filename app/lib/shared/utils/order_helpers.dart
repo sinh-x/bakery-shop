@@ -69,3 +69,9 @@ Color deliveryIconColor(String? deliveryType, Color defaultColor) {
 /// Whether delivery type is bus or door (requires delivery).
 bool isDeliveryType(String? deliveryType) =>
     deliveryType == 'bus' || deliveryType == 'door';
+
+String visualOrderCode({required String orderRef, String? publicOrderCode}) {
+  final code = (publicOrderCode ?? '').trim();
+  if (code.isNotEmpty) return code;
+  return orderRef;
+}

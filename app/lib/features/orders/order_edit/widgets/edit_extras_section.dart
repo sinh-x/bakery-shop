@@ -8,7 +8,7 @@ class _EditExtrasSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final workItemsAsync = ref.watch(orderWorkItemsProvider(orderRef));
-    final extrasAsync = ref.watch(orderExtrasProvider);
+    final extrasAsync = ref.watch(phuKienProductsProvider);
     final theme = Theme.of(context);
     final notifier = ref.read(orderWorkItemsProvider(orderRef).notifier);
 
@@ -21,17 +21,7 @@ class _EditExtrasSection extends ConsumerWidget {
         return extrasAsync.when(
           loading: () => const SizedBox.shrink(),
           error: (e, st) => const SizedBox.shrink(),
-          data: (extraValues) {
-            final presets = <(String, double)>[];
-            for (final v in extraValues) {
-              final parts = v.split('|');
-              if (parts.length == 2) {
-                final name = parts[0].trim();
-                final price = double.tryParse(parts[1].trim()) ?? 0;
-                presets.add((name, price));
-              }
-            }
-
+          data: (products) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -75,18 +65,35 @@ class _EditExtrasSection extends ConsumerWidget {
                     ),
                   ),
                 const SizedBox(height: 8),
-                if (presets.isNotEmpty)
+                if (products.isNotEmpty)
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: presets.map((preset) {
-                      final (name, price) = preset;
+                    children: products.map((product) {
                       return ActionChip(
                         avatar: const Icon(Icons.add, size: 16),
-                        label: Text('$name (${formatVND(price)})'),
+                        label: Text(
+                          '${product.name} (${formatVND(product.basePrice)})',
+                        ),
                         onPressed: () async {
+                          final selection = await showDialog<
+                            _EditCatalogExtraSelection
+                          >(
+                            context: context,
+                            builder: (_) =>
+                                _EditCatalogExtraPriceDialog(product: product),
+                          );
+                          if (selection == null) return;
+
+                          final unitPrice =
+                              selection.customUnitPrice ?? product.basePrice;
                           final existing = extras
-                              .where((e) => e.productName == name && !e.isGift)
+                              .where(
+                                (e) =>
+                                    e.productId == product.id.toString() &&
+                                    !e.isGift &&
+                                    e.unitPrice == unitPrice,
+                              )
                               .firstOrNull;
                           if (existing != null) {
                             await notifier.edit(
@@ -95,10 +102,12 @@ class _EditExtrasSection extends ConsumerWidget {
                             );
                           } else {
                             await notifier.add(
-                              productName: name,
-                              unitPrice: price,
+                              productName: product.name,
+                              productId: product.id.toString(),
+                              unitPrice: unitPrice,
                               isExtra: true,
                               isGift: false,
+                              priceChipId: selection.priceChipId,
                             );
                           }
                         },
@@ -110,6 +119,123 @@ class _EditExtrasSection extends ConsumerWidget {
           },
         );
       },
+    );
+  }
+}
+
+class _EditCatalogExtraSelection {
+  const _EditCatalogExtraSelection({this.priceChipId, this.customUnitPrice});
+
+  final int? priceChipId;
+  final double? customUnitPrice;
+}
+
+class _EditCatalogExtraPriceDialog extends StatefulWidget {
+  const _EditCatalogExtraPriceDialog({required this.product});
+
+  final Product product;
+
+  @override
+  State<_EditCatalogExtraPriceDialog> createState() =>
+      _EditCatalogExtraPriceDialogState();
+}
+
+class _EditCatalogExtraPriceDialogState
+    extends State<_EditCatalogExtraPriceDialog> {
+  static const int _manualOptionId = -999;
+  final TextEditingController _manualCtrl = TextEditingController();
+  late int _selectedOptionId;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedOptionId = 0;
+  }
+
+  @override
+  void dispose() {
+    _manualCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final options = <(int id, String label, double price, int? chipId)>[
+      (0, VN.giaCoSo, widget.product.basePrice, null),
+      ...widget.product.priceChips.map(
+        (chip) => (chip.id, chip.label, chip.price, chip.id),
+      ),
+      (_manualOptionId, VN.donGiaNhapTay, widget.product.basePrice, null),
+    ];
+
+    return AlertDialog(
+      title: Text(widget.product.name),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: options.map((option) {
+              final selected = _selectedOptionId == option.$1;
+              return ChoiceChip(
+                label: Text('${option.$2} (${formatVND(option.$3)})'),
+                selected: selected,
+                onSelected: (_) => setState(() => _selectedOptionId = option.$1),
+              );
+            }).toList(),
+          ),
+          if (_selectedOptionId == _manualOptionId) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _manualCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: VN.itemPrice,
+                suffixText: 'đ',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text(VN.cancel),
+        ),
+        FilledButton(
+          onPressed: () {
+            if (_selectedOptionId == _manualOptionId) {
+              final manualPrice = double.tryParse(_manualCtrl.text.trim());
+              if (manualPrice == null || manualPrice < 0) {
+                showTopSnackBar(context, VN.invalidPrice);
+                return;
+              }
+              Navigator.pop(
+                context,
+                _EditCatalogExtraSelection(customUnitPrice: manualPrice),
+              );
+              return;
+            }
+
+            final selected = options.firstWhere((o) => o.$1 == _selectedOptionId);
+            if (selected.$4 == null) {
+              Navigator.pop(
+                context,
+                const _EditCatalogExtraSelection(customUnitPrice: null),
+              );
+            } else {
+              Navigator.pop(
+                context,
+                _EditCatalogExtraSelection(priceChipId: selected.$4),
+              );
+            }
+          },
+          child: const Text(VN.xacNhan),
+        ),
+      ],
     );
   }
 }

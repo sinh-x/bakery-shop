@@ -11,6 +11,7 @@ import '../../../data/api/api_client.dart';
 import '../../../data/models/knowledge_entry.dart';
 import '../../../shared/services/image_download_metadata.dart';
 import '../../../shared/services/web_share_fallback_helpers.dart';
+import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 /// Horizontal PageView photo gallery with dots indicator and tap-to-fullscreen.
@@ -185,9 +186,12 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
         '${tmpDir.path}/${_knowledgePhotoFileName(photo, metadata)}',
       );
       await tmpFile.writeAsBytes(bytes);
-      await Share.shareXFiles([
-        XFile(tmpFile.path, mimeType: metadata.mimeType),
-      ], text: photo.caption.isNotEmpty ? photo.caption : null);
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(tmpFile.path, mimeType: metadata.mimeType)],
+          text: photo.caption.isNotEmpty ? photo.caption : null,
+        ),
+      );
     } catch (_) {
       if (!mounted) return;
       if (kIsWeb) {
@@ -271,6 +275,7 @@ class _FullScreenViewerState extends ConsumerState<_FullScreenViewer> {
             tooltip: VN.chiaSe,
             onPressed: _sharing ? null : _shareCurrentPhoto,
           ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: PageView.builder(

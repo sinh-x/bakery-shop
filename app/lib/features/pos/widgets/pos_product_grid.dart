@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/models/price_chip.dart';
 import '../../../data/models/product.dart';
 import '../../../data/api/api_client.dart';
 import '../../../providers/pos_provider.dart';
@@ -10,9 +11,20 @@ import 'package:bakery_app/shared/utils/product_photo_url.dart';
 
 /// 2-column product grid with stock badges for POS screen.
 class PosProductGrid extends ConsumerWidget {
-  const PosProductGrid({super.key, required this.products});
+  const PosProductGrid({
+    super.key,
+    required this.products,
+    this.showOutOfStockProducts = false,
+    this.shrinkWrap = false,
+    this.physics,
+    this.padding = const EdgeInsets.all(8),
+  });
 
   final List<Product> products;
+  final bool showOutOfStockProducts;
+  final bool shrinkWrap;
+  final ScrollPhysics? physics;
+  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -21,7 +33,9 @@ class PosProductGrid extends ConsumerWidget {
     final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
 
     return GridView.builder(
-      padding: const EdgeInsets.all(8),
+      padding: padding,
+      shrinkWrap: shrinkWrap,
+      physics: physics,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         crossAxisSpacing: 8,
@@ -64,7 +78,6 @@ class PosProductGrid extends ConsumerWidget {
       _showForceSellDialog(context, ref, product);
     } else {
       ref.read(posCartProvider.notifier).addItem(product);
-      showTopSnackBar(context, '${product.name} đã thêm vào giỏ');
     }
   }
 
@@ -75,17 +88,22 @@ class PosProductGrid extends ConsumerWidget {
     bool isOutOfStock,
   ) {
     final theme = Theme.of(context);
-    final chips = product.priceChips;
+    final options = _posChipOptions(
+      product,
+      showOutOfStockProducts: showOutOfStockProducts,
+    );
 
     showDialog(
       context: context,
       builder: (dialogCtx) {
-        final defaultPrice = chips.isNotEmpty
-            ? chips.map((c) => c.price).reduce((a, b) => a < b ? a : b)
-            : product.basePrice;
+        final defaultOption = options.isNotEmpty
+            ? options.reduce((a, b) => a.price <= b.price ? a : b)
+            : null;
+        final defaultPrice = defaultOption?.price ?? product.basePrice;
 
-        int? selectedChipId;
-        String? selectedChipLabel;
+        int? selectedChipId = defaultOption?.backendChipId;
+        int? selectedChipUiId = defaultOption?.uiId;
+        String? selectedChipLabel = defaultOption?.cartLabel;
         double selectedPrice = defaultPrice;
         final priceCtrl = TextEditingController(
           text: defaultPrice.toInt().toString(),
@@ -105,23 +123,38 @@ class PosProductGrid extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (chips.isNotEmpty) ...[
+                  if (options.isNotEmpty) ...[
                     Wrap(
                       spacing: 6,
                       runSpacing: 4,
-                      children: chips.map((chip) {
-                        final isSelected = selectedChipId == chip.id;
+                      children: options.map((option) {
+                        final isSelected = selectedChipUiId == option.uiId;
                         return ChoiceChip(
-                          label: Text(
-                            '${chip.label} · ${formatVND(chip.price)}',
+                          label: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${option.label} · ${formatVND(option.price)}',
+                              ),
+                              Text(
+                                posStockStatusLabel(option.stockQty),
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: option.stockQty > 0
+                                      ? theme.colorScheme.primary
+                                      : theme.colorScheme.error,
+                                ),
+                              ),
+                            ],
                           ),
                           selected: isSelected,
                           onSelected: (_) {
                             setState(() {
-                              selectedChipId = chip.id;
-                              selectedChipLabel = chip.label;
-                              selectedPrice = chip.price;
-                              priceCtrl.text = chip.price.toInt().toString();
+                              selectedChipUiId = option.uiId;
+                              selectedChipId = option.backendChipId;
+                              selectedChipLabel = option.cartLabel;
+                              selectedPrice = option.price;
+                              priceCtrl.text = option.price.toInt().toString();
                             });
                           },
                         );
@@ -143,10 +176,13 @@ class PosProductGrid extends ConsumerWidget {
                       if (parsed != null) {
                         setState(() {
                           selectedPrice = parsed;
-                          final matchesChip = chips.any(
-                            (c) => c.id == selectedChipId && c.price == parsed,
+                          final matchesOption = options.any(
+                            (option) =>
+                                option.uiId == selectedChipUiId &&
+                                option.price == parsed,
                           );
-                          if (!matchesChip) {
+                          if (!matchesOption) {
+                            selectedChipUiId = null;
                             selectedChipId = null;
                             selectedChipLabel = null;
                           }
@@ -165,7 +201,19 @@ class PosProductGrid extends ConsumerWidget {
               FilledButton(
                 onPressed: () {
                   Navigator.pop(dialogCtx);
-                  if (isOutOfStock) {
+                  final selectedOption = selectedChipUiId == null
+                      ? null
+                      : options
+                            .where((option) => option.uiId == selectedChipUiId)
+                            .firstOrNull;
+                  final selectedStockQty = selectedOption?.stockQty;
+                  final isSelectedOptionOutOfStock =
+                      selectedStockQty != null && selectedStockQty <= 0;
+                  final isManualBaseOutOfStock =
+                      selectedOption == null && posBaseStockQty(product) <= 0;
+                  if (isOutOfStock ||
+                      isSelectedOptionOutOfStock ||
+                      isManualBaseOutOfStock) {
                     _showForceSellDialog(
                       context,
                       ref,
@@ -183,13 +231,6 @@ class PosProductGrid extends ConsumerWidget {
                           selectedChipId: selectedChipId,
                           selectedChipLabel: selectedChipLabel,
                         );
-                    final labelSuffix = selectedChipLabel != null
-                        ? ' ($selectedChipLabel)'
-                        : '';
-                    showTopSnackBar(
-                      context,
-                      '${product.name}$labelSuffix đã thêm vào giỏ',
-                    );
                   }
                 },
                 child: const Text('Thêm'),
@@ -229,6 +270,7 @@ class PosProductGrid extends ConsumerWidget {
                     selectedPrice: selectedPrice,
                     selectedChipId: selectedChipId,
                     selectedChipLabel: selectedChipLabel,
+                    useInventory: false,
                   );
               if (context.mounted) {
                 showTopSnackBar(
@@ -247,11 +289,102 @@ class PosProductGrid extends ConsumerWidget {
   }
 }
 
+const _basePriceOptionUiId = -1;
+
+class _PosChipOption {
+  const _PosChipOption({
+    required this.uiId,
+    required this.label,
+    required this.cartLabel,
+    required this.price,
+    required this.stockQty,
+    required this.backendChipId,
+  });
+
+  final int uiId;
+  final String label;
+  final String? cartLabel;
+  final double price;
+  final int stockQty;
+  final int? backendChipId;
+}
+
+List<_PosChipOption> _posChipOptions(
+  Product product, {
+  required bool showOutOfStockProducts,
+}) {
+  final options = <_PosChipOption>[];
+  final hasBasePriceChip = product.priceChips.any(
+    (chip) => chip.price == product.basePrice,
+  );
+
+  if (!hasBasePriceChip && product.basePrice > 0) {
+    final baseStock = posBaseStockQty(product);
+    if (showOutOfStockProducts || baseStock > 0) {
+      options.add(
+        _PosChipOption(
+          uiId: _basePriceOptionUiId,
+          label: VN.giaCoSo,
+          cartLabel: null,
+          price: product.basePrice,
+          stockQty: baseStock,
+          backendChipId: null,
+        ),
+      );
+    }
+  }
+
+  for (final chip in product.priceChips) {
+    final displayStock = posChipDisplayStockQty(product, chip);
+    if (!showOutOfStockProducts && displayStock <= 0) {
+      continue;
+    }
+    options.add(
+      _PosChipOption(
+        uiId: chip.id,
+        label: chip.label,
+        cartLabel: chip.label,
+        price: chip.price,
+        stockQty: displayStock,
+        backendChipId: posBackendChipIdForSelection(product, chip),
+      ),
+    );
+  }
+
+  return options;
+}
+
 @visibleForTesting
 String posStockStatusLabel(int qty) {
   if (qty > 3) return VN.availableStock(qty);
   if (qty >= 1) return VN.lowStock(qty);
   return VN.outOfStock;
+}
+
+@visibleForTesting
+int posBaseStockQty(Product product) {
+  final totalStock = product.stockQty ?? 0;
+  final chipStock = product.priceChips.fold<int>(
+    0,
+    (sum, chip) => sum + (chip.stockQty ?? 0),
+  );
+  final baseStock = totalStock - chipStock;
+  return baseStock > 0 ? baseStock : 0;
+}
+
+@visibleForTesting
+int? posBackendChipIdForSelection(Product product, PriceChip chip) {
+  if (chip.price == product.basePrice) return null;
+  return chip.id;
+}
+
+@visibleForTesting
+int posChipDisplayStockQty(Product product, PriceChip chip) {
+  final chipStock = chip.stockQty ?? 0;
+  if (posBackendChipIdForSelection(product, chip) == null) {
+    return chipStock + posBaseStockQty(product);
+  }
+  return chipStock;
 }
 
 @visibleForTesting

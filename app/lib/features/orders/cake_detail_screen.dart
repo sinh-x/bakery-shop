@@ -1,7 +1,8 @@
 // EXEMPT: 300-line threshold exceeded because DG-150 blocker: info/packing/attribute extraction here would require refactoring shared mutable detail-state paths beyond approved remediation scope. Reviewed 2026-05-29.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint, debugPrintStack;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, debugPrint, debugPrintStack;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -12,6 +13,7 @@ import '../../data/services/printer_service.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/utils/vnd_units.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/printer_picker_dialog.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/order_photo_section.dart';
@@ -109,7 +111,8 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
   Future<void> _onTransition(WorkItem item, String targetStatus) async {
     if (_transitioning) return;
     String reason = '';
-    if (_isBackwardItem(item.status, targetStatus) || targetStatus == 'cancelled') {
+    if (_isBackwardItem(item.status, targetStatus) ||
+        targetStatus == 'cancelled') {
       final r = await _showItemReasonDialog(context, targetStatus);
       if (r == null || !mounted) return;
       reason = r;
@@ -145,10 +148,8 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => _InternalPrintDialog(
-        orderRef: widget.orderRef,
-        itemId: itemId,
-      ),
+      builder: (ctx) =>
+          _InternalPrintDialog(orderRef: widget.orderRef, itemId: itemId),
     );
   }
 
@@ -206,6 +207,7 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
               '/orders/${widget.orderRef}/receipt?type=${ReceiptType.workTicket.value}&item_id=${widget.workItemId}',
             ),
           ),
+          const AppBarOverflowMenu(),
         ],
       ),
       body: itemsAsync.when(
@@ -244,14 +246,15 @@ class _CakeDetailScreenState extends ConsumerState<CakeDetailScreen> {
             transitioning: _transitioning,
             saving: _saving,
             onTransition: (t) => _onTransition(item, t),
-            onSave: (notes, isBirthday, age, unitPrice, {attributes}) => _onSave(
-              item,
-              notes: notes,
-              isBirthday: isBirthday,
-              age: age,
-              unitPrice: unitPrice,
-              attributes: attributes,
-            ),
+            onSave: (notes, isBirthday, age, unitPrice, {attributes}) =>
+                _onSave(
+                  item,
+                  notes: notes,
+                  isBirthday: isBirthday,
+                  age: age,
+                  unitPrice: unitPrice,
+                  attributes: attributes,
+                ),
           );
         },
       ),
@@ -282,7 +285,8 @@ class _CakeDetailBody extends ConsumerStatefulWidget {
     int? age,
     double unitPrice, {
     Map<String, dynamic>? attributes,
-  }) onSave;
+  })
+  onSave;
 
   @override
   ConsumerState<_CakeDetailBody> createState() => _CakeDetailBodyState();
@@ -349,14 +353,18 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
 
   Future<void> _submit() async {
     final rawPrice = double.tryParse(_priceCtrl.text.trim());
-    final unitPrice = rawPrice != null ? vndFromThousands(rawPrice) : widget.item.unitPrice;
+    final unitPrice = rawPrice != null
+        ? vndFromThousands(rawPrice)
+        : widget.item.unitPrice;
     final age = _isBirthday ? int.tryParse(_ageCtrl.text.trim()) : null;
     Map<String, dynamic>? attributes;
     if (_rutTien) {
       attributes = {
         'rut_tien': 'true',
         'cash_amount': _cashAmountCtrl.text.trim(),
-        'cash_fee': _cashFeeCtrl.text.trim().isNotEmpty ? _cashFeeCtrl.text.trim() : '$_defaultCashFee',
+        'cash_fee': _cashFeeCtrl.text.trim().isNotEmpty
+            ? _cashFeeCtrl.text.trim()
+            : '$_defaultCashFee',
       };
     } else if (widget.item.attributes.containsKey('rut_tien')) {
       // F17: Toggle-off removes keys entirely
@@ -382,9 +390,17 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = _workItemStatusColors[widget.item.status] ?? Colors.grey;
+    final statusColor =
+        _workItemStatusColors[widget.item.status] ?? Colors.grey;
     final statusLabel = workItemStatusLabel(widget.item.status);
-    const allStatuses = ['pending', 'confirmed', 'working', 'ready', 'delivered', 'cancelled'];
+    const allStatuses = [
+      'pending',
+      'confirmed',
+      'working',
+      'ready',
+      'delivered',
+      'cancelled',
+    ];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -489,25 +505,35 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
                 ),
               ),
             // Rut tien transaction summary (F9)
-            Builder(builder: (_) {
-              final txnsAsync = ref.watch(orderPaymentTransactionsProvider(widget.orderRef));
-              final txns = txnsAsync.value ?? [];
-              final target = int.tryParse(widget.item.attributes['cash_amount'].toString()) ?? 0;
-              final received = txns
-                  .where((t) => t.type == 'tien_rut')
-                  .fold<double>(0, (sum, t) => sum + t.amount);
-              final isFullyReceived = received >= target;
-              return Padding(
-                padding: const EdgeInsets.only(left: 28, top: 4),
-                child: Text(
-                  'Tiền rút đã nhận: ${formatVND(received)} / ${formatVND(target.toDouble())}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: isFullyReceived ? Colors.green.shade700 : Colors.orange.shade700,
-                    fontWeight: FontWeight.w600,
+            Builder(
+              builder: (_) {
+                final txnsAsync = ref.watch(
+                  orderPaymentTransactionsProvider(widget.orderRef),
+                );
+                final txns = txnsAsync.value ?? [];
+                final target =
+                    int.tryParse(
+                      widget.item.attributes['cash_amount'].toString(),
+                    ) ??
+                    0;
+                final received = txns
+                    .where((t) => t.type == 'tien_rut')
+                    .fold<double>(0, (sum, t) => sum + t.amount);
+                final isFullyReceived = received >= target;
+                return Padding(
+                  padding: const EdgeInsets.only(left: 28, top: 4),
+                  child: Text(
+                    'Tiền rút đã nhận: ${formatVND(received)} / ${formatVND(target.toDouble())}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: isFullyReceived
+                          ? Colors.green.shade700
+                          : Colors.orange.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              );
-            }),
+                );
+              },
+            ),
           ],
 
           // ── Notes ─────────────────────────────────────────────────
@@ -522,10 +548,7 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
                 color: theme.colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text(
-                widget.item.notes,
-                style: theme.textTheme.bodyMedium,
-              ),
+              child: Text(widget.item.notes, style: theme.textTheme.bodyMedium),
             ),
           ],
 
@@ -612,7 +635,9 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
                     final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
                     if (current > _minCashAmount) {
                       final next = current - _cashAmountStep;
-                      final clamped = next < _minCashAmount ? _minCashAmount : next;
+                      final clamped = next < _minCashAmount
+                          ? _minCashAmount
+                          : next;
                       setState(() {
                         _cashAmountCtrl.text = '$clamped';
                         _editingCashAmount = false;
@@ -620,7 +645,10 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
                     }
                   },
                   icon: const Icon(Icons.remove, size: 16),
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                   padding: EdgeInsets.zero,
                 ),
                 Expanded(
@@ -636,7 +664,10 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
                               decoration: const InputDecoration(
                                 isDense: true,
                                 suffixText: 'đ',
-                                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 8,
+                                ),
                               ),
                               keyboardType: TextInputType.number,
                               inputFormatters: [
@@ -644,7 +675,8 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
                                 LengthLimitingTextInputFormatter(9),
                               ],
                               onEditingComplete: () {
-                                final val = int.tryParse(_cashAmountCtrl.text) ?? 0;
+                                final val =
+                                    int.tryParse(_cashAmountCtrl.text) ?? 0;
                                 if (val < _minCashAmount && val != 0) {
                                   _cashAmountCtrl.text = '$_minCashAmount';
                                 }
@@ -654,9 +686,13 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
                           )
                         : Center(
                             child: Text(
-                              _cashAmountCtrl.text.isEmpty || _cashAmountCtrl.text == '0'
+                              _cashAmountCtrl.text.isEmpty ||
+                                      _cashAmountCtrl.text == '0'
                                   ? '0đ'
-                                  : formatVND((int.tryParse(_cashAmountCtrl.text) ?? 0).toDouble()),
+                                  : formatVND(
+                                      (int.tryParse(_cashAmountCtrl.text) ?? 0)
+                                          .toDouble(),
+                                    ),
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                           ),
@@ -666,14 +702,19 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
                   onPressed: () {
                     final current = int.tryParse(_cashAmountCtrl.text) ?? 0;
                     final next = current + _cashAmountStep;
-                    final clamped = next < _minCashAmount ? _minCashAmount : next;
+                    final clamped = next < _minCashAmount
+                        ? _minCashAmount
+                        : next;
                     setState(() {
                       _cashAmountCtrl.text = '$clamped';
                       _editingCashAmount = false;
                     });
                   },
                   icon: const Icon(Icons.add, size: 16),
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                   padding: EdgeInsets.zero,
                 ),
               ],
@@ -692,25 +733,35 @@ class _CakeDetailBodyState extends ConsumerState<_CakeDetailBody> {
                     }
                   },
                   icon: const Icon(Icons.remove, size: 16),
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                   padding: EdgeInsets.zero,
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Text(
-                    formatVND((int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee).toDouble()),
+                    formatVND(
+                      (int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee)
+                          .toDouble(),
+                    ),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
                 IconButton.filled(
                   onPressed: () {
-                    final current = int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee;
+                    final current =
+                        int.tryParse(_cashFeeCtrl.text) ?? _defaultCashFee;
                     setState(() {
                       _cashFeeCtrl.text = '${current + _cashFeeStep}';
                     });
                   },
                   icon: const Icon(Icons.add, size: 16),
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                   padding: EdgeInsets.zero,
                 ),
               ],
@@ -810,8 +861,8 @@ class _SectionLabel extends StatelessWidget {
     return Text(
       title,
       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: Theme.of(context).colorScheme.primary,
-          ),
+        color: Theme.of(context).colorScheme.primary,
+      ),
     );
   }
 }
@@ -934,10 +985,7 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
           child: const Text(VN.printSkip),
         ),
         if (!_printing)
-          FilledButton(
-            onPressed: _printInternal,
-            child: const Text(VN.print),
-          ),
+          FilledButton(onPressed: _printInternal, child: const Text(VN.print)),
       ],
     );
   }

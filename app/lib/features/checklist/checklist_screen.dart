@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/models/checklist_entry.dart';
 import '../../data/providers/checklist_provider.dart';
 import '../../providers/events_provider.dart';
+import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/checklist.dart';
 
 class ChecklistScreen extends ConsumerStatefulWidget {
@@ -51,6 +52,23 @@ class _ChecklistScreenState extends ConsumerState<ChecklistScreen>
     }
   }
 
+  void _onAppBarMenuSelected(String value) {
+    switch (value) {
+      case 'history':
+        context.push('/checklist/history');
+        return;
+      case 'config':
+        context.push('/checklist/config');
+        return;
+      default:
+        assert(() {
+          debugPrint('Unknown checklist app bar menu action: $value');
+          return true;
+        }());
+        return;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final checklistAsync = ref.watch(dailyChecklistProvider);
@@ -60,20 +78,17 @@ class _ChecklistScreenState extends ConsumerState<ChecklistScreen>
         title: const Text('Checklist hàng ngày'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: 'Lịch sử',
-            onPressed: () => context.push('/checklist/history'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Cấu hình',
-            onPressed: () => context.push('/checklist/config'),
-          ),
-          IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Làm mới',
             onPressed: () =>
                 ref.read(dailyChecklistProvider.notifier).refresh(),
+          ),
+          AppBarOverflowMenu(
+            onSelected: _onAppBarMenuSelected,
+            items: const [
+              PopupMenuItem<String>(value: 'history', child: Text('Lịch sử')),
+              PopupMenuItem<String>(value: 'config', child: Text('Cấu hình')),
+            ],
           ),
         ],
         bottom: TabBar(
@@ -108,14 +123,16 @@ class _ChecklistScreenState extends ConsumerState<ChecklistScreen>
               // Date header
               Container(
                 width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 child: Text(
                   dateLabel,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -147,7 +164,13 @@ class _ChecklistScreenState extends ConsumerState<ChecklistScreen>
     try {
       final dt = DateTime.parse(isoDate);
       final weekdays = [
-        'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'
+        'Thứ 2',
+        'Thứ 3',
+        'Thứ 4',
+        'Thứ 5',
+        'Thứ 6',
+        'Thứ 7',
+        'Chủ nhật',
       ];
       final weekday = weekdays[dt.weekday - 1];
       return '$weekday, ${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
@@ -174,10 +197,9 @@ class _ChecklistTab extends StatelessWidget {
       return Center(
         child: Text(
           emptyMessage,
-          style: Theme.of(context)
-              .textTheme
-              .bodyMedium
-              ?.copyWith(color: Colors.grey),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
         ),
       );
     }
@@ -188,15 +210,12 @@ class _ChecklistTab extends StatelessWidget {
       children: [
         // Progress bar
         Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: [
               Expanded(
                 child: LinearProgressIndicator(
-                  value: entries.isEmpty
-                      ? 0
-                      : completedCount / entries.length,
+                  value: entries.isEmpty ? 0 : completedCount / entries.length,
                   borderRadius: BorderRadius.circular(4),
                   minHeight: 8,
                 ),
@@ -216,10 +235,7 @@ class _ChecklistTab extends StatelessWidget {
             separatorBuilder: (_, _) => const Divider(height: 1),
             itemBuilder: (context, index) {
               final entry = entries[index];
-              return _ChecklistEntryTile(
-                entry: entry,
-                onToggle: onToggle,
-              );
+              return _ChecklistEntryTile(entry: entry, onToggle: onToggle);
             },
           ),
         ),
@@ -229,10 +245,7 @@ class _ChecklistTab extends StatelessWidget {
 }
 
 class _ChecklistEntryTile extends StatefulWidget {
-  const _ChecklistEntryTile({
-    required this.entry,
-    required this.onToggle,
-  });
+  const _ChecklistEntryTile({required this.entry, required this.onToggle});
 
   final ChecklistEntry entry;
   final Future<void> Function(ChecklistEntry) onToggle;
@@ -272,9 +285,9 @@ class _ChecklistEntryTileState extends State<_ChecklistEntryTile> {
       subtitle: completed && entry.completedBy.isNotEmpty
           ? Text(
               '${entry.completedBy}${_formatCompletedAt(entry.completedAt)}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.green.shade700,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.green.shade700),
             )
           : null,
       onTap: _loading ? null : _handleToggle,
