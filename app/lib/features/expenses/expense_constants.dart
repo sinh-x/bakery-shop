@@ -12,3 +12,10 @@ const expenseCategories = <String>[
 ];
 
 const expensePaymentMethods = <String>[VN.methodCash, VN.methodTransfer];
+
+const expensePaymentSources = <String>[
+  VN.paymentSourceShopCash,
+  VN.paymentSourcePhuongVCB,
+  VN.paymentSourceAnVCB,
+  VN.paymentSourceStaffAdvance,
+];

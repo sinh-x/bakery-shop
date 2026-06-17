@@ -21,6 +21,8 @@ router = APIRouter(prefix="/api/events", tags=["events"])
 
 VALID_TYPES = {"note", "equipment", "production", "inventory", "expense", "delivery", "order"}
 
+STAFF_ADVANCE_PAYMENT_SOURCE = "Nhân viên ứng trước"
+
 
 class EventCreate(BaseModel):
     summary: str
@@ -98,7 +100,8 @@ def list_events(
     expense_category: str | None = Query(None, description="Lọc chi phí theo danh mục"),
     expense_payment_method: str | None = Query(None, description="Lọc chi phí theo phương thức thanh toán"),
     expense_staff_name: str | None = Query(None, description="Lọc chi phí theo nhân viên"),
-    expense_search: str | None = Query(None, description="Tìm kiếm chi phí trong tóm tắt, NCC, ghi chú, nhân viên"),
+    expense_payment_source: str | None = Query(None, description="Lọc chi phí theo nguồn tiền"),
+    expense_search: str | None = Query(None, description="Tìm kiếm chi phí trong tóm tắt, NCC, ghi chú, nhân viên, nguồn tiền"),
     limit: int = Query(50, ge=1, le=500, description="Số kết quả tối đa"),
 ):
     """Danh sách sự kiện với bộ lọc."""
@@ -116,6 +119,7 @@ def list_events(
             expense_category=expense_category,
             expense_payment_method=expense_payment_method,
             expense_staff_name=expense_staff_name,
+            expense_payment_source=expense_payment_source,
             expense_search=expense_search,
             limit=limit,
         )
@@ -162,6 +166,7 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
         "amount_vnd",
         "category",
         "payment_method",
+        "payment_source",
         "vendor",
         "note",
         "staff_name",
@@ -176,6 +181,13 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
     amount_vnd = data.get("amount_vnd")
     if not isinstance(amount_vnd, int) or amount_vnd <= 0:
         raise HTTPException(status_code=422, detail="amount_vnd phải là số nguyên lớn hơn 0")
+
+    payment_source = data.get("payment_source", "")
+    if payment_source == STAFF_ADVANCE_PAYMENT_SOURCE and not data.get("staff_name", "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Tên nhân viên là bắt buộc khi chọn Nhân viên ứng trước",
+        )
 
 
 @router.patch("/{event_id}")

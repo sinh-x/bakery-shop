@@ -11,12 +11,15 @@ class ExpenseFilterCard extends StatelessWidget {
     required this.until,
     required this.dateFilterMode,
     required this.categories,
+    required this.paymentSources,
     required this.staffNames,
     required this.filterCategory,
+    required this.filterPaymentSource,
     required this.filterStaffName,
     required this.onDateFilterModeChanged,
     required this.onPickDate,
     required this.onFilterCategoryChanged,
+    required this.onFilterPaymentSourceChanged,
     required this.onFilterStaffChanged,
     required this.onClearFilters,
     required this.onApplyFilters,
@@ -28,12 +31,15 @@ class ExpenseFilterCard extends StatelessWidget {
   final DateTime? until;
   final ExpenseDateFilterMode dateFilterMode;
   final List<String> categories;
+  final List<String> paymentSources;
   final List<String> staffNames;
   final String filterCategory;
+  final String filterPaymentSource;
   final String filterStaffName;
   final ValueChanged<ExpenseDateFilterMode> onDateFilterModeChanged;
   final VoidCallback onPickDate;
   final ValueChanged<String> onFilterCategoryChanged;
+  final ValueChanged<String> onFilterPaymentSourceChanged;
   final ValueChanged<String> onFilterStaffChanged;
   final VoidCallback onClearFilters;
   final VoidCallback onApplyFilters;
@@ -129,6 +135,26 @@ class ExpenseFilterCard extends StatelessWidget {
                     label: Text(category),
                     selected: filterCategory == category,
                     onSelected: (_) => onFilterCategoryChanged(category),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            _FilterChipStrip(
+              label: VN.expensePaymentSourceLabel,
+              chips: [
+                FilterChip(
+                  label: const Text(VN.filterAll),
+                  selected: filterPaymentSource.isEmpty,
+                  onSelected: (_) => onFilterPaymentSourceChanged(''),
+                  visualDensity: VisualDensity.compact,
+                ),
+                ...paymentSources.map(
+                  (source) => FilterChip(
+                    label: Text(source),
+                    selected: filterPaymentSource == source,
+                    onSelected: (_) => onFilterPaymentSourceChanged(source),
                     visualDensity: VisualDensity.compact,
                   ),
                 ),

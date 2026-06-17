@@ -87,7 +87,8 @@ def count_events_by_logger(conn, since=None, until=None):
 def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
                  search=None, untagged=False, logged_by=None, involving=None,
                  expense_category=None, expense_payment_method=None,
-                 expense_staff_name=None, expense_search=None, limit=50):
+                 expense_staff_name=None, expense_payment_source=None,
+                 expense_search=None, limit=50):
     """Fetch events with optional filters."""
     joins = []
     conditions = []
@@ -136,17 +137,23 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
             "LOWER(COALESCE(json_extract(e.data, '$.staff_name'), '')) = LOWER(?)"
         )
         params.append(expense_staff_name)
+    if expense_payment_source:
+        conditions.append(
+            "LOWER(COALESCE(json_extract(e.data, '$.payment_source'), '')) = LOWER(?)"
+        )
+        params.append(expense_payment_source)
     if expense_search:
         conditions.append(
             "("
             "LOWER(e.summary) LIKE LOWER(?) OR "
             "LOWER(COALESCE(json_extract(e.data, '$.vendor'), '')) LIKE LOWER(?) OR "
             "LOWER(COALESCE(json_extract(e.data, '$.note'), '')) LIKE LOWER(?) OR "
-            "LOWER(COALESCE(json_extract(e.data, '$.staff_name'), '')) LIKE LOWER(?)"
+            "LOWER(COALESCE(json_extract(e.data, '$.staff_name'), '')) LIKE LOWER(?) OR "
+            "LOWER(COALESCE(json_extract(e.data, '$.payment_source'), '')) LIKE LOWER(?)"
             ")"
         )
         like = f"%{expense_search}%"
-        params.extend([like, like, like, like])
+        params.extend([like, like, like, like, like])
 
     where = " AND ".join(conditions) if conditions else "1=1"
     join_clause = " ".join(joins)

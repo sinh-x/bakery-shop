@@ -113,6 +113,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     String? until,
     String? category,
     String? paymentMethod,
+    String? paymentSource,
     String? staffName,
     String? searchText,
     int limit = expenseMaxHistoryLimit,
@@ -123,6 +124,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
       type: expenseType,
       expenseCategory: category,
       expensePaymentMethod: paymentMethod,
+      expensePaymentSource: paymentSource,
       expenseStaffName: staffName,
       expenseSearch: searchText,
       limit: safeLimit,
@@ -136,6 +138,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
             event,
             category: category,
             paymentMethod: paymentMethod,
+            paymentSource: paymentSource,
             staffName: staffName,
             searchText: searchText,
           ) &&

@@ -593,6 +593,19 @@ class VN {
   static const expenseNoHistory = 'Chưa có chi phí phù hợp bộ lọc';
   static const expenseAmountValidationMessage =
       'Số tiền phải là số nguyên VND lớn hơn 0';
+  static const expenseStaffNameRequiredForAdvance =
+      'Tên nhân viên là bắt buộc khi chọn Nhân viên ứng trước';
+
+  // Payment sources
+  static const expensePaymentSourceLabel = 'Nguồn tiền chi';
+  static const paymentSourceShopCash = 'Shop tiền mặt';
+  static const paymentSourcePhuongVCB = 'TK Phượng VCB';
+  static const paymentSourceAnVCB = 'TK Ân VCB';
+  static const paymentSourceStaffAdvance = 'Nhân viên ứng trước';
+
+  // Reimbursed
+  static const reimbursedYes = 'Đã hoàn lại';
+  static const reimbursedNo = 'Chưa hoàn lại';
 
   // Shipping fee & extras
   static const shippingFee = 'Phí giao hàng';

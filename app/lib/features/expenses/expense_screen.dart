@@ -19,6 +19,7 @@ class ExpenseScreen extends ConsumerStatefulWidget {
     String? until,
     String? category,
     String? paymentMethod,
+    String? paymentSource,
     String? staffName,
     String? searchText,
   })?
@@ -37,6 +38,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
   ExpenseDateFilterMode _dateFilterMode = ExpenseDateFilterMode.range;
   String _filterCategory = '';
   String _filterStaffName = '';
+  String _filterPaymentSource = '';
   List<BakeryEvent> _history = <BakeryEvent>[];
 
   @override
@@ -74,6 +76,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
       _dateFilterMode = ExpenseDateFilterMode.range;
       _filterCategory = '';
       _filterStaffName = '';
+      _filterPaymentSource = '';
       _searchCtrl.clear();
     });
   }
@@ -123,8 +126,10 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
             until: _until,
             dateFilterMode: _dateFilterMode,
             categories: expenseCategories,
+            paymentSources: expensePaymentSources,
             staffNames: _staffFilterOptions(),
             filterCategory: _filterCategory,
+            filterPaymentSource: _filterPaymentSource,
             filterStaffName: _filterStaffName,
             onDateFilterModeChanged: (value) => setState(() {
               _dateFilterMode = value;
@@ -135,6 +140,10 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
             onPickDate: _pickDate,
             onFilterCategoryChanged: (value) {
               setState(() => _filterCategory = value);
+              _refreshHistory();
+            },
+            onFilterPaymentSourceChanged: (value) {
+              setState(() => _filterPaymentSource = value);
               _refreshHistory();
             },
             onFilterStaffChanged: (value) {
@@ -200,6 +209,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
               until: _until == null ? null : _localDayEndIso(_until!),
               category: _filterCategory,
               paymentMethod: null,
+              paymentSource: _filterPaymentSource,
               staffName: _filterStaffName,
               searchText: _searchCtrl.text.trim(),
             )
@@ -210,6 +220,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
                   until: _until == null ? null : _localDayEndIso(_until!),
                   category: _filterCategory,
                   paymentMethod: null,
+                  paymentSource: _filterPaymentSource,
                   staffName: _filterStaffName,
                   searchText: _searchCtrl.text.trim(),
                 ));

@@ -49,6 +49,7 @@ class EventService {
     String? loggedBy,
     String? expenseCategory,
     String? expensePaymentMethod,
+    String? expensePaymentSource,
     String? expenseStaffName,
     String? expenseSearch,
     int limit = 50,
@@ -65,6 +66,9 @@ class EventService {
     }
     if (expensePaymentMethod != null && expensePaymentMethod.isNotEmpty) {
       params['expense_payment_method'] = expensePaymentMethod;
+    }
+    if (expensePaymentSource != null && expensePaymentSource.isNotEmpty) {
+      params['expense_payment_source'] = expensePaymentSource;
     }
     if (expenseStaffName != null && expenseStaffName.isNotEmpty) {
       params['expense_staff_name'] = expenseStaffName;
