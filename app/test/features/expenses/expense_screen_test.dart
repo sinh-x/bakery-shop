@@ -18,6 +18,7 @@ BakeryEvent _expenseEvent({
   String vendor = '',
   String note = '',
   String paymentSource = 'Shop tiền mặt',
+  String paidByName = '',
   bool reimbursed = false,
 }) {
   return BakeryEvent(
@@ -33,6 +34,7 @@ BakeryEvent _expenseEvent({
       'vendor': vendor,
       'note': note,
       'staff_name': staff,
+      'paid_by_name': paidByName,
       'reimbursed': reimbursed,
     },
   );
@@ -45,6 +47,7 @@ Future<List<BakeryEvent>> _emptyHistory({
   String? paymentMethod,
   String? paymentSource,
   String? staffName,
+  String? paidByName,
   String? searchText,
 }) async => const [];
 
@@ -67,6 +70,7 @@ void main() {
                   paymentMethod,
                   paymentSource,
                   staffName,
+                  paidByName,
                   searchText,
                 }) async {
                   capturedSince = since;
@@ -126,6 +130,7 @@ void main() {
       vendor: 'NCC A',
       note: 'Bot mi',
       staff: 'Lan',
+      paidByName: 'Lan',
     );
 
     final router = GoRouter(
@@ -141,6 +146,7 @@ void main() {
                   paymentMethod,
                   paymentSource,
                   staffName,
+                  paidByName,
                   searchText,
                 }) async => [event],
           ),
@@ -167,7 +173,6 @@ void main() {
     expect(find.text('150000'), findsOneWidget);
     expect(find.text('NCC A'), findsOneWidget);
     expect(find.text('Bot mi'), findsOneWidget);
-    expect(find.text('Lan'), findsOneWidget);
   });
 
   testWidgets(
@@ -229,6 +234,7 @@ void main() {
                   paymentMethod,
                   paymentSource,
                   staffName,
+                  paidByName,
                   searchText,
                 }) async => [event],
           ),
@@ -262,6 +268,7 @@ void main() {
                   paymentMethod,
                   paymentSource,
                   staffName,
+                  paidByName,
                   searchText,
                 }) async {
                   loads += 1;
@@ -306,6 +313,7 @@ void main() {
         category: VN.expenseCategoryIngredient,
         paymentMethod: VN.methodCash,
         staff: 'Lan',
+        paidByName: 'Lan',
       ),
     ];
 
@@ -321,6 +329,7 @@ void main() {
                   paymentMethod,
                   paymentSource,
                   staffName,
+                  paidByName,
                   searchText,
                 }) async => events,
           ),
@@ -365,9 +374,9 @@ void main() {
     expect(find.text(VN.expensePaymentMethodLabel), findsNothing);
   });
 
-  testWidgets('apply filters uses category and staff chips', (tester) async {
+  testWidgets('apply filters uses category and paid_by chips', (tester) async {
     String? capturedCategory;
-    String? capturedStaff;
+    String? capturedPaidByName;
     final events = [
       _expenseEvent(
         id: 1,
@@ -375,6 +384,7 @@ void main() {
         category: VN.expenseCategoryIngredient,
         paymentMethod: VN.methodCash,
         staff: 'Lan',
+        paidByName: 'Lan',
       ),
     ];
 
@@ -390,10 +400,11 @@ void main() {
                   paymentMethod,
                   paymentSource,
                   staffName,
+                  paidByName,
                   searchText,
                 }) async {
                   capturedCategory = category;
-                  capturedStaff = staffName;
+                  capturedPaidByName = paidByName;
                   return events;
                 },
           ),
@@ -410,7 +421,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(capturedCategory, VN.expenseCategoryIngredient);
-    expect(capturedStaff, 'Lan');
+    expect(capturedPaidByName, 'Lan');
   });
 
   testWidgets('selecting category chip reloads with category filter', (
@@ -439,6 +450,7 @@ void main() {
                   paymentMethod,
                   paymentSource,
                   staffName,
+                  paidByName,
                   searchText,
                 }) async {
                   capturedCategory = category;
@@ -492,6 +504,7 @@ void main() {
                   paymentMethod,
                   paymentSource,
                   staffName,
+                  paidByName,
                   searchText,
                 }) async => [event],
           ),
@@ -532,6 +545,7 @@ void main() {
                     paymentMethod,
                     paymentSource,
                     staffName,
+                    paidByName,
                     searchText,
                   }) async => [event],
             ),
@@ -573,6 +587,7 @@ void main() {
                     paymentMethod,
                     paymentSource,
                     staffName,
+                    paidByName,
                     searchText,
                   }) async => [event],
             ),
@@ -613,6 +628,7 @@ void main() {
                   paymentMethod,
                   paymentSource,
                   staffName,
+                  paidByName,
                   searchText,
                 }) async => [event],
           ),
@@ -678,6 +694,7 @@ void main() {
                   paymentMethod,
                   paymentSource,
                   staffName,
+                  paidByName,
                   searchText,
                 }) async {
                   capturedPaymentSource = paymentSource;
@@ -730,6 +747,7 @@ void main() {
                   paymentMethod,
                   paymentSource,
                   staffName,
+                  paidByName,
                   searchText,
                 }) async => events,
           ),
@@ -768,5 +786,93 @@ void main() {
 
     expect(find.text(VN.expensePaymentSourceLabel), findsOneWidget);
     expect(find.text(VN.paymentSourceShopCash), findsOneWidget);
+  });
+
+  testWidgets('history card shows logged_by and paid_by roles', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 1920));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final event = BakeryEvent(
+      id: 1,
+      timestamp: DateTime.parse('2026-05-23T10:00:00Z'),
+      type: expenseType,
+      summary: 'Chi phi test',
+      loggedBy: 'Sinh',
+      data: {
+        'amount_vnd': 120000,
+        'category': VN.expenseCategoryIngredient,
+        'payment_method': VN.methodCash,
+        'payment_source': VN.paymentSourceShopCash,
+        'vendor': '',
+        'note': '',
+        'staff_name': 'Lan',
+        'paid_by_name': 'Minh',
+        'reimbursed': false,
+      },
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: ExpenseScreen(
+            loadHistory:
+                ({
+                  since,
+                  until,
+                  category,
+                  paymentMethod,
+                  paymentSource,
+                  staffName,
+                  paidByName,
+                  searchText,
+                }) async => [event],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('${VN.expenseLoggedByLabel}: Sinh'), findsOneWidget);
+    expect(find.textContaining('${VN.expensePaidByNameLabel}: Minh'), findsOneWidget);
+  });
+
+  testWidgets('history card shows fallback for missing paid_by_name', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 1920));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final event = _expenseEvent(
+      id: 1,
+      amount: 120000,
+      category: VN.expenseCategoryIngredient,
+      paymentMethod: VN.methodCash,
+      staff: 'Lan',
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: ExpenseScreen(
+            loadHistory:
+                ({
+                  since,
+                  until,
+                  category,
+                  paymentMethod,
+                  paymentSource,
+                  staffName,
+                  paidByName,
+                  searchText,
+                }) async => [event],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('${VN.expensePaidByNameLabel}: Lan'), findsOneWidget);
   });
 }

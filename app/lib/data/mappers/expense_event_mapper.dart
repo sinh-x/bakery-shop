@@ -12,6 +12,7 @@ class ExpenseEventData {
     required this.vendor,
     required this.note,
     required this.staffName,
+    this.paidByName = '',
     this.reimbursed = false,
   });
 
@@ -22,6 +23,7 @@ class ExpenseEventData {
   final String vendor;
   final String note;
   final String staffName;
+  final String paidByName;
   final bool reimbursed;
 }
 
@@ -35,6 +37,7 @@ class ExpenseEventMapper {
       'vendor': input.vendor,
       'note': input.note,
       'staff_name': input.staffName,
+      'paid_by_name': input.paidByName,
       'reimbursed': input.reimbursed,
     };
   }
@@ -57,8 +60,15 @@ class ExpenseEventMapper {
       vendor: '${data['vendor'] ?? ''}',
       note: '${data['note'] ?? ''}',
       staffName: '${data['staff_name'] ?? ''}',
+      paidByName: _nonEmpty(data['paid_by_name']) ?? _nonEmpty(data['staff_name']) ?? '',
       reimbursed: data['reimbursed'] == true,
     );
+  }
+
+  static String? _nonEmpty(dynamic value) {
+    if (value == null) return null;
+    final s = '$value';
+    return s.isNotEmpty ? s : null;
   }
 
   static bool matchesFilters(
@@ -67,6 +77,7 @@ class ExpenseEventMapper {
     String? paymentMethod,
     String? paymentSource,
     String? staffName,
+    String? paidByName,
     String? searchText,
   }) {
     final expense = fromEvent(event);
@@ -89,6 +100,9 @@ class ExpenseEventMapper {
     if (staffName != null && staffName.isNotEmpty && expense.staffName != staffName) {
       return false;
     }
+    if (paidByName != null && paidByName.isNotEmpty && expense.paidByName != paidByName) {
+      return false;
+    }
     if (searchText == null || searchText.trim().isEmpty) {
       return true;
     }
@@ -98,6 +112,7 @@ class ExpenseEventMapper {
       expense.vendor,
       expense.note,
       expense.staffName,
+      expense.paidByName,
       expense.category,
       expense.paymentMethod,
       expense.paymentSource,

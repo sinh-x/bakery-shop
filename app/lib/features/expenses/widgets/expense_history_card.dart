@@ -36,7 +36,10 @@ class ExpenseHistoryCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '${data.category} • ${data.paymentMethod} • ${data.paymentSource} • ${data.staffName}',
+              '${data.category} • ${data.paymentMethod} • ${data.paymentSource}',
+            ),
+            Text(
+              '${VN.expenseLoggedByLabel}: ${event.loggedBy.isNotEmpty ? event.loggedBy : '—'} • ${VN.expensePaidByNameLabel}: ${data.paidByName.isNotEmpty ? data.paidByName : '—'}',
             ),
             Text(formattedTimestamp),
             if (data.reimbursed)

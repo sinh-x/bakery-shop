@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
@@ -100,8 +101,9 @@ def list_events(
     expense_category: str | None = Query(None, description="Lọc chi phí theo danh mục"),
     expense_payment_method: str | None = Query(None, description="Lọc chi phí theo phương thức thanh toán"),
     expense_staff_name: str | None = Query(None, description="Lọc chi phí theo nhân viên"),
+    expense_paid_by_name: str | None = Query(None, description="Lọc chi phí theo người trả"),
     expense_payment_source: str | None = Query(None, description="Lọc chi phí theo nguồn tiền"),
-    expense_search: str | None = Query(None, description="Tìm kiếm chi phí trong tóm tắt, NCC, ghi chú, nhân viên, nguồn tiền"),
+    expense_search: str | None = Query(None, description="Tìm kiếm chi phí trong tóm tắt, NCC, ghi chú, nhân viên, người trả, nguồn tiền"),
     limit: int = Query(50, ge=1, le=500, description="Số kết quả tối đa"),
 ):
     """Danh sách sự kiện với bộ lọc."""
@@ -119,6 +121,7 @@ def list_events(
             expense_category=expense_category,
             expense_payment_method=expense_payment_method,
             expense_staff_name=expense_staff_name,
+            expense_paid_by_name=expense_paid_by_name,
             expense_payment_source=expense_payment_source,
             expense_search=expense_search,
             limit=limit,
@@ -145,6 +148,9 @@ class EventUpdate(BaseModel):
     timestamp: str | None = None
 
 
+_TZ_RE = re.compile(r'(Z|[+-]\d{2}:?\d{2})$')
+
+
 def _normalize_timestamp(raw: str | None) -> str | None:
     if raw is None:
         return None
@@ -155,6 +161,8 @@ def _normalize_timestamp(raw: str | None) -> str | None:
         datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="timestamp không đúng định dạng ISO") from exc
+    if not _TZ_RE.search(value):
+        return f"{value}+07:00"
     return value
 
 
@@ -170,6 +178,7 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
         "vendor",
         "note",
         "staff_name",
+        "paid_by_name",
     }
     missing_keys = [key for key in required_keys if key not in data]
     if missing_keys:
@@ -188,6 +197,16 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
             status_code=422,
             detail="Tên nhân viên là bắt buộc khi chọn Nhân viên ứng trước",
         )
+
+    paid_by_name = data.get("paid_by_name", "")
+    if paid_by_name.strip():
+        with get_db() as conn:
+            staff = find_staff_by_name(conn, paid_by_name.strip())
+            if not staff:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"paid_by_name '{paid_by_name}' không khớp với nhân viên nào trong hệ thống",
+                )
 
 
 @router.patch("/{event_id}")

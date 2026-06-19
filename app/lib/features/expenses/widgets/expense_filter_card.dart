@@ -12,15 +12,15 @@ class ExpenseFilterCard extends StatelessWidget {
     required this.dateFilterMode,
     required this.categories,
     required this.paymentSources,
-    required this.staffNames,
+    required this.paidByNames,
     required this.filterCategory,
     required this.filterPaymentSource,
-    required this.filterStaffName,
+    required this.filterPaidByName,
     required this.onDateFilterModeChanged,
     required this.onPickDate,
     required this.onFilterCategoryChanged,
     required this.onFilterPaymentSourceChanged,
-    required this.onFilterStaffChanged,
+    required this.onFilterPaidByNameChanged,
     required this.onClearFilters,
     required this.onApplyFilters,
     required this.formatDate,
@@ -32,15 +32,15 @@ class ExpenseFilterCard extends StatelessWidget {
   final ExpenseDateFilterMode dateFilterMode;
   final List<String> categories;
   final List<String> paymentSources;
-  final List<String> staffNames;
+  final List<String> paidByNames;
   final String filterCategory;
   final String filterPaymentSource;
-  final String filterStaffName;
+  final String filterPaidByName;
   final ValueChanged<ExpenseDateFilterMode> onDateFilterModeChanged;
   final VoidCallback onPickDate;
   final ValueChanged<String> onFilterCategoryChanged;
   final ValueChanged<String> onFilterPaymentSourceChanged;
-  final ValueChanged<String> onFilterStaffChanged;
+  final ValueChanged<String> onFilterPaidByNameChanged;
   final VoidCallback onClearFilters;
   final VoidCallback onApplyFilters;
   final String Function(DateTime) formatDate;
@@ -166,15 +166,15 @@ class ExpenseFilterCard extends StatelessWidget {
               chips: [
                 FilterChip(
                   label: const Text(VN.filterAll),
-                  selected: filterStaffName.isEmpty,
-                  onSelected: (_) => onFilterStaffChanged(''),
+                  selected: filterPaidByName.isEmpty,
+                  onSelected: (_) => onFilterPaidByNameChanged(''),
                   visualDensity: VisualDensity.compact,
                 ),
-                ...staffNames.map(
-                  (staffName) => FilterChip(
-                    label: Text(staffName),
-                    selected: filterStaffName == staffName,
-                    onSelected: (_) => onFilterStaffChanged(staffName),
+                ...paidByNames.map(
+                  (name) => FilterChip(
+                    label: Text(name),
+                    selected: filterPaidByName == name,
+                    onSelected: (_) => onFilterPaidByNameChanged(name),
                     visualDensity: VisualDensity.compact,
                   ),
                 ),
