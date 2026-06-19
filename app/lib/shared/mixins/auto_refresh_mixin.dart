@@ -99,11 +99,16 @@ mixin AutoRefreshMixin<T extends ConsumerStatefulWidget>
   /// invoke directly.
   @mustCallSuper
   void setupAutoRefreshRouteListener() {
-    final router = GoRouter.of(context);
-    if (_goRouter != router) {
-      _goRouter?.routerDelegate.removeListener(_handleRouteChange);
-      _goRouter = router;
-      _goRouter?.routerDelegate.addListener(_handleRouteChange);
+    try {
+      final router = GoRouter.of(context);
+      if (_goRouter != router) {
+        _goRouter?.routerDelegate.removeListener(_handleRouteChange);
+        _goRouter = router;
+        _goRouter?.routerDelegate.addListener(_handleRouteChange);
+      }
+    } catch (_) {
+      // No GoRouter in context (e.g. test environment) — skip route listener.
+      // Timer and lifecycle observer still function.
     }
   }
 
