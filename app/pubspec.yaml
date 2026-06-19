@@ -1,7 +1,7 @@
 name: bakery_app
 description: "Bakery management mobile app for Tiệm Bánh Ninh Diêm"
 publish_to: 'none'
-version: 0.6.10+72
+version: 0.6.11+74
 
 environment:
   sdk: ^3.12.0
