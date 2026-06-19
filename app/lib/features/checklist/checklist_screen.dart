@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/models/checklist_entry.dart';
 import '../../data/providers/checklist_provider.dart';
 import '../../providers/events_provider.dart';
+import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/checklist.dart';
 
@@ -16,17 +17,33 @@ class ChecklistScreen extends ConsumerStatefulWidget {
 }
 
 class _ChecklistScreenState extends ConsumerState<ChecklistScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver, AutoRefreshMixin {
   late TabController _tabController;
+
+  @override
+  String screenRoutePath() => '/checklist';
+
+  @override
+  void invalidateProviders() {
+    ref.invalidate(dailyChecklistProvider);
+  }
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    initAutoRefresh();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    setupAutoRefreshRouteListener();
   }
 
   @override
   void dispose() {
+    disposeAutoRefresh();
     _tabController.dispose();
     super.dispose();
   }
