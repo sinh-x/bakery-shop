@@ -94,13 +94,20 @@ def open_printer(device_path: Optional[str] = None) -> int:
     return fd
 
 
-def png_to_tspl(png_bytes: bytes) -> bytes:
+def png_to_tspl(png_bytes: bytes, paper_mode: str = DEFAULT_PAPER_MODE) -> bytes:
     """Convert a receipt PNG image to TSPL BITMAP command bytes.
 
     Ported from Dart printer_service.dart printImage() method.
 
+    GAP is conditional on paper mode (DG-183): 3 mm for label paper
+    (backward compatible) and 0 mm for roll paper (eliminates wasted
+    paper after each print on continuous roll stock).
+
     Args:
         png_bytes: PNG image data (Pillow/Rendered receipt PNG).
+        paper_mode: Effective paper mode ("label" or "roll"). Controls the
+            TSPL GAP command. Defaults to DEFAULT_PAPER_MODE ("label") for
+            backward compatibility when callers do not pass a mode.
 
     Returns:
         Complete TSPL command bytes ready to send to printer.
@@ -108,6 +115,11 @@ def png_to_tspl(png_bytes: bytes) -> bytes:
     Raises:
         ValueError: If image cannot be decoded or is invalid.
     """
+    # Normalize paper mode; treat unknown values as the safe default (label)
+    # so a corrupt runtime value never produces a malformed TSPL sequence.
+    if paper_mode not in PAPER_MODES:
+        paper_mode = DEFAULT_PAPER_MODE
+
     # Decode PNG
     img = Image.open(io.BytesIO(png_bytes))
     if img is None:
@@ -150,7 +162,11 @@ def png_to_tspl(png_bytes: bytes) -> bytes:
         commands.extend(b"\r\n")
 
     tspl_cmd(f"SIZE 76 mm,{height_mm:.1f} mm")
-    tspl_cmd("GAP 3 mm,0 mm")
+    # GAP is conditional on paper mode (DG-183):
+    #   label paper — 3 mm gap between labels (backward compatible)
+    #   roll paper  — 0 mm gap (continuous roll, no wasted paper)
+    gap_mm = 3 if paper_mode == "label" else 0
+    tspl_cmd(f"GAP {gap_mm} mm,0 mm")
     tspl_cmd("SPEED 3")
     tspl_cmd("DENSITY 8")
     tspl_cmd("DIRECTION 0,0")
@@ -170,6 +186,7 @@ def png_to_tspl(png_bytes: bytes) -> bytes:
 def print_receipt(
     device_path: Optional[str] = None,
     png_bytes: Optional[bytes] = None,
+    paper_mode: str = DEFAULT_PAPER_MODE,
 ) -> None:
     """Full print flow: convert PNG to TSPL and send to USB printer.
 
@@ -178,6 +195,9 @@ def print_receipt(
     Args:
         device_path: USB device path (default: /dev/usb/lp0).
         png_bytes: PNG image data to print.
+        paper_mode: Effective paper mode ("label" or "roll"). Controls the
+            TSPL GAP command via png_to_tspl. Defaults to DEFAULT_PAPER_MODE
+            for backward compatibility.
 
     Raises:
         FileNotFoundError: USB device not found.
@@ -188,7 +208,7 @@ def print_receipt(
     if png_bytes is None:
         raise ValueError("png_bytes is required")
 
-    tspl_data = png_to_tspl(png_bytes)
+    tspl_data = png_to_tspl(png_bytes, paper_mode=paper_mode)
 
     with _print_lock:
         fd = None

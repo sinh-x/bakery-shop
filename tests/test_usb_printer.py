@@ -155,6 +155,94 @@ class TestPngToTspl:
             usb_printer.png_to_tspl(b"not a valid png")
 
 
+class TestPaperModeGapConditional:
+    """Test TSPL GAP is conditional on paper_mode (DG-183)."""
+
+    def _make_png(self, height=10):
+        img = Image.new("L", (576, height), 0)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    def test_label_mode_uses_3mm_gap(self):
+        """label mode produces GAP 3 mm,0 mm (backward compatible)."""
+        tspl = usb_printer.png_to_tspl(self._make_png(), paper_mode="label")
+        tspl_str = tspl.decode("latin-1")
+        assert "GAP 3 mm,0 mm" in tspl_str
+        assert "GAP 0 mm,0 mm" not in tspl_str
+
+    def test_roll_mode_uses_0mm_gap(self):
+        """roll mode produces GAP 0 mm,0 mm (no wasted paper)."""
+        tspl = usb_printer.png_to_tspl(self._make_png(), paper_mode="roll")
+        tspl_str = tspl.decode("latin-1")
+        assert "GAP 0 mm,0 mm" in tspl_str
+        assert "GAP 3 mm" not in tspl_str
+
+    def test_default_paper_mode_is_label(self):
+        """Omitting paper_mode defaults to label (GAP 3 mm)."""
+        tspl = usb_printer.png_to_tspl(self._make_png())
+        tspl_str = tspl.decode("latin-1")
+        assert "GAP 3 mm,0 mm" in tspl_str
+
+    def test_invalid_paper_mode_falls_back_to_label(self):
+        """Unknown paper_mode falls back to label (safe default, GAP 3 mm)."""
+        tspl = usb_printer.png_to_tspl(self._make_png(), paper_mode="corrupt")
+        tspl_str = tspl.decode("latin-1")
+        assert "GAP 3 mm,0 mm" in tspl_str
+
+    def test_roll_mode_preserves_other_commands(self):
+        """roll mode only changes GAP; all other TSPL commands unchanged."""
+        tspl = usb_printer.png_to_tspl(self._make_png(height=80), paper_mode="roll")
+        tspl_str = tspl.decode("latin-1")
+        assert "SIZE 76 mm,10.0 mm" in tspl_str
+        assert "GAP 0 mm,0 mm" in tspl_str
+        assert "SPEED 3" in tspl_str
+        assert "DENSITY 8" in tspl_str
+        assert "DIRECTION 0,0" in tspl_str
+        assert "CLS" in tspl_str
+        assert "BITMAP 0,0,72,80,0," in tspl_str
+        assert "PRINT 1,1" in tspl_str
+
+    def test_label_and_roll_produce_different_gap(self):
+        """Same image with different modes yields different GAP commands."""
+        png = self._make_png()
+        label_tspl = usb_printer.png_to_tspl(png, paper_mode="label").decode("latin-1")
+        roll_tspl = usb_printer.png_to_tspl(png, paper_mode="roll").decode("latin-1")
+        assert "GAP 3 mm,0 mm" in label_tspl
+        assert "GAP 0 mm,0 mm" in roll_tspl
+        assert label_tspl != roll_tspl
+
+    @patch("baker.usb_printer.open_printer")
+    @patch("os.write")
+    @patch("os.close")
+    def test_print_receipt_threads_paper_mode(self, mock_close, mock_write, mock_open_printer):
+        """print_receipt forwards paper_mode to png_to_tspl."""
+        mock_open_printer.return_value = 7
+        png_bytes = self._make_png()
+        usb_printer.print_receipt(
+            device_path="/dev/usb/lp0",
+            png_bytes=png_bytes,
+            paper_mode="roll",
+        )
+        written = mock_write.call_args.args[1].decode("latin-1")
+        assert "GAP 0 mm,0 mm" in written
+        assert "GAP 3 mm" not in written
+
+    @patch("baker.usb_printer.open_printer")
+    @patch("os.write")
+    @patch("os.close")
+    def test_print_receipt_defaults_to_label_gap(self, mock_close, mock_write, mock_open_printer):
+        """print_receipt without paper_mode defaults to label (GAP 3 mm)."""
+        mock_open_printer.return_value = 7
+        png_bytes = self._make_png()
+        usb_printer.print_receipt(
+            device_path="/dev/usb/lp0",
+            png_bytes=png_bytes,
+        )
+        written = mock_write.call_args.args[1].decode("latin-1")
+        assert "GAP 3 mm,0 mm" in written
+
+
 class TestOpenPrinter:
     """Test USB printer device opening."""
 

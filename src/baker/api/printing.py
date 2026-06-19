@@ -156,12 +156,16 @@ def print_receipt(
             )
 
         png_bytes = _render_to_png(img)
+        # Resolve effective paper mode (DB override > env default) so the
+        # TSPL GAP command reflects the configured paper type (DG-183).
+        paper_mode = usb_printer.get_paper_mode(conn)
 
     # Send to USB printer
     try:
         usb_printer.print_receipt(
             device_path=USB_PRINTER_DEVICE,
             png_bytes=png_bytes,
+            paper_mode=paper_mode,
         )
     except FileNotFoundError:
         raise HTTPException(
