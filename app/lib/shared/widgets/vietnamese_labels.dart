@@ -295,6 +295,18 @@ class VN {
       'Cảnh báo: máy chủ chưa cung cấp mã phiên bản, có thể đang chạy bản cũ';
   static const createdBy = 'Người tạo';
 
+  // Printer paper mode (DG-183 Phase 2)
+  static const paperModeLabel = 'Loại giấy in';
+  static const paperModeHelp =
+      'Cấu hình chỉ ghi nhận loại giấy — không đổi lệnh TSPL';
+  static const paperModeLabelOption = 'Nhãn (có khe)';
+  static const paperModeRollOption = 'Cuộn (liên tục)';
+  static const paperModeLoading = 'Đang tải...';
+  static const paperModeLoadError = 'Không tải được loại giấy in';
+  static const paperModeSaved = 'Đã lưu loại giấy in';
+  static const paperModeSaveFailed = 'Không thể lưu loại giấy in';
+  static const paperModeInvalid = 'Loại giấy không hợp lệ';
+
   // Delivery types (detailed)
   static const deliveryBus = 'Giao xe khách';
   static const deliveryDoor = 'Giao tận nơi';

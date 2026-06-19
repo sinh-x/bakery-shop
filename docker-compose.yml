@@ -18,6 +18,9 @@ services:
     environment:
       BAKER_DATA_DIR: /var/lib/baker
       BAKER_BUILD_FINGERPRINT: ${BAKER_BUILD_FINGERPRINT:-unknown}
+      # Printer paper type server default ("label" | "roll"); runtime override via Settings screen.
+      # Unset defaults to "label" (backward compatible); invalid values fail fast at startup.
+      PAPER_MODE: ${PAPER_MODE:-label}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2108/api/health')"]

@@ -15,3 +15,10 @@ RUSTIC_PROFILE=baker-prod
 # Host thermal printer device mounted into baker-prod at /dev/usb/lp0.
 # Do not set this to /dev/null: writes can appear successful while no receipt prints.
 BAKER_PRINTER_DEVICE=/dev/usb/lp0
+
+# Printer paper type server default ("label" | "roll").
+# "label" = pre-cut label stock with gaps (default, backward compatible).
+# "roll"  = continuous roll paper (no fixed length, tear anywhere).
+# Unset defaults to "label". Invalid values cause server startup to fail fast.
+# Runtime override available via Settings → Technical tab (DB value takes precedence).
+PAPER_MODE=label

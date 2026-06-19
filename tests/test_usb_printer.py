@@ -1,5 +1,6 @@
 """Tests for USB thermal printer module."""
 
+import importlib
 import io
 import os
 import sys
@@ -152,6 +153,94 @@ class TestPngToTspl:
         from PIL import UnidentifiedImageError
         with pytest.raises(UnidentifiedImageError):
             usb_printer.png_to_tspl(b"not a valid png")
+
+
+class TestPaperModeGapConditional:
+    """Test TSPL GAP is conditional on paper_mode (DG-183)."""
+
+    def _make_png(self, height=10):
+        img = Image.new("L", (576, height), 0)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    def test_label_mode_uses_3mm_gap(self):
+        """label mode produces GAP 3 mm,0 mm (backward compatible)."""
+        tspl = usb_printer.png_to_tspl(self._make_png(), paper_mode="label")
+        tspl_str = tspl.decode("latin-1")
+        assert "GAP 3 mm,0 mm" in tspl_str
+        assert "GAP 0 mm,0 mm" not in tspl_str
+
+    def test_roll_mode_uses_0mm_gap(self):
+        """roll mode produces GAP 0 mm,0 mm (no wasted paper)."""
+        tspl = usb_printer.png_to_tspl(self._make_png(), paper_mode="roll")
+        tspl_str = tspl.decode("latin-1")
+        assert "GAP 0 mm,0 mm" in tspl_str
+        assert "GAP 3 mm" not in tspl_str
+
+    def test_default_paper_mode_is_label(self):
+        """Omitting paper_mode defaults to label (GAP 3 mm)."""
+        tspl = usb_printer.png_to_tspl(self._make_png())
+        tspl_str = tspl.decode("latin-1")
+        assert "GAP 3 mm,0 mm" in tspl_str
+
+    def test_invalid_paper_mode_falls_back_to_label(self):
+        """Unknown paper_mode falls back to label (safe default, GAP 3 mm)."""
+        tspl = usb_printer.png_to_tspl(self._make_png(), paper_mode="corrupt")
+        tspl_str = tspl.decode("latin-1")
+        assert "GAP 3 mm,0 mm" in tspl_str
+
+    def test_roll_mode_preserves_other_commands(self):
+        """roll mode only changes GAP; all other TSPL commands unchanged."""
+        tspl = usb_printer.png_to_tspl(self._make_png(height=80), paper_mode="roll")
+        tspl_str = tspl.decode("latin-1")
+        assert "SIZE 76 mm,10.0 mm" in tspl_str
+        assert "GAP 0 mm,0 mm" in tspl_str
+        assert "SPEED 3" in tspl_str
+        assert "DENSITY 8" in tspl_str
+        assert "DIRECTION 0,0" in tspl_str
+        assert "CLS" in tspl_str
+        assert "BITMAP 0,0,72,80,0," in tspl_str
+        assert "PRINT 1,1" in tspl_str
+
+    def test_label_and_roll_produce_different_gap(self):
+        """Same image with different modes yields different GAP commands."""
+        png = self._make_png()
+        label_tspl = usb_printer.png_to_tspl(png, paper_mode="label").decode("latin-1")
+        roll_tspl = usb_printer.png_to_tspl(png, paper_mode="roll").decode("latin-1")
+        assert "GAP 3 mm,0 mm" in label_tspl
+        assert "GAP 0 mm,0 mm" in roll_tspl
+        assert label_tspl != roll_tspl
+
+    @patch("baker.usb_printer.open_printer")
+    @patch("os.write")
+    @patch("os.close")
+    def test_print_receipt_threads_paper_mode(self, mock_close, mock_write, mock_open_printer):
+        """print_receipt forwards paper_mode to png_to_tspl."""
+        mock_open_printer.return_value = 7
+        png_bytes = self._make_png()
+        usb_printer.print_receipt(
+            device_path="/dev/usb/lp0",
+            png_bytes=png_bytes,
+            paper_mode="roll",
+        )
+        written = mock_write.call_args.args[1].decode("latin-1")
+        assert "GAP 0 mm,0 mm" in written
+        assert "GAP 3 mm" not in written
+
+    @patch("baker.usb_printer.open_printer")
+    @patch("os.write")
+    @patch("os.close")
+    def test_print_receipt_defaults_to_label_gap(self, mock_close, mock_write, mock_open_printer):
+        """print_receipt without paper_mode defaults to label (GAP 3 mm)."""
+        mock_open_printer.return_value = 7
+        png_bytes = self._make_png()
+        usb_printer.print_receipt(
+            device_path="/dev/usb/lp0",
+            png_bytes=png_bytes,
+        )
+        written = mock_write.call_args.args[1].decode("latin-1")
+        assert "GAP 3 mm,0 mm" in written
 
 
 class TestOpenPrinter:
@@ -336,3 +425,108 @@ class TestTsplFormatCompliance:
         unexpected = ["SET", "HOME", "INIT", "OFFSET"]
         for cmd in unexpected:
             assert cmd not in tspl_str
+
+
+class TestPaperModeEnvValidation:
+    """Test PAPER_MODE env var reading and validation (FR1, FR2, NFR1, NFR3)."""
+
+    def test_default_is_label_when_unset(self, monkeypatch):
+        """PAPER_MODE defaults to 'label' when env var is unset (FR1/NFR1)."""
+        monkeypatch.delenv("PAPER_MODE", raising=False)
+        mode = usb_printer._validate_paper_mode_env()
+        assert mode == "label"
+        assert usb_printer.DEFAULT_PAPER_MODE == "label"
+
+    def test_label_value_accepted(self, monkeypatch):
+        """Explicit PAPER_MODE=label is accepted."""
+        monkeypatch.setenv("PAPER_MODE", "label")
+        assert usb_printer._validate_paper_mode_env() == "label"
+
+    def test_roll_value_accepted(self, monkeypatch):
+        """PAPER_MODE=roll is accepted."""
+        monkeypatch.setenv("PAPER_MODE", "roll")
+        assert usb_printer._validate_paper_mode_env() == "roll"
+
+    def test_whitespace_trimmed(self, monkeypatch):
+        """Surrounding whitespace is trimmed before validation."""
+        monkeypatch.setenv("PAPER_MODE", "  roll  ")
+        assert usb_printer._validate_paper_mode_env() == "roll"
+
+    def test_invalid_value_raises(self, monkeypatch):
+        """Invalid PAPER_MODE raises ValueError (FR2/NFR3)."""
+        monkeypatch.setenv("PAPER_MODE", "invalid_value")
+        with pytest.raises(ValueError, match="Invalid PAPER_MODE"):
+            usb_printer._validate_paper_mode_env()
+
+    def test_empty_string_raises(self, monkeypatch):
+        """Empty PAPER_MODE string raises (not silently defaulted)."""
+        monkeypatch.setenv("PAPER_MODE", "   ")
+        with pytest.raises(ValueError, match="Invalid PAPER_MODE"):
+            usb_printer._validate_paper_mode_env()
+
+    def test_case_sensitive(self, monkeypatch):
+        """PAPER_MODE is case-sensitive — 'Label' is invalid."""
+        monkeypatch.setenv("PAPER_MODE", "Label")
+        with pytest.raises(ValueError, match="Invalid PAPER_MODE"):
+            usb_printer._validate_paper_mode_env()
+
+    def test_module_load_fails_fast_on_invalid_env(self, monkeypatch):
+        """Importing usb_printer with invalid PAPER_MODE fails fast (NFR3)."""
+        monkeypatch.setenv("PAPER_MODE", "garbage")
+        with pytest.raises(ValueError, match="Invalid PAPER_MODE"):
+            importlib.reload(usb_printer)
+        # Restore valid state for subsequent tests
+        monkeypatch.delenv("PAPER_MODE", raising=False)
+        importlib.reload(usb_printer)
+
+
+class TestGetPaperMode:
+    """Test get_paper_mode() DB-override precedence (AC6, FR3, NFR2)."""
+
+    def _conn_with_config(self, key=None, value=None, active=1):
+        """Build a mock connection row for app_config."""
+        conn = MagicMock()
+        if key is None:
+            conn.execute.return_value.fetchone.return_value = None
+        else:
+            row = MagicMock()
+            row.__getitem__ = lambda self, k: value if k == "config_value" else None
+            conn.execute.return_value.fetchone.return_value = row
+        return conn
+
+    def test_returns_default_when_no_db_row(self):
+        """No DB override → returns env var default."""
+        conn = self._conn_with_config()
+        assert usb_printer.get_paper_mode(conn) == usb_printer.PAPER_MODE_DEFAULT
+
+    def test_db_roll_overrides_env_default(self):
+        """DB override 'roll' takes precedence over env default 'label' (AC6)."""
+        conn = self._conn_with_config("paper_mode", "roll")
+        assert usb_printer.get_paper_mode(conn) == "roll"
+
+    def test_db_label_overrides_env_roll(self, monkeypatch):
+        """DB 'label' overrides even when env default is 'roll'."""
+        monkeypatch.setenv("PAPER_MODE", "roll")
+        importlib.reload(usb_printer)
+        try:
+            conn = self._conn_with_config("paper_mode", "label")
+            assert usb_printer.get_paper_mode(conn) == "label"
+        finally:
+            monkeypatch.delenv("PAPER_MODE", raising=False)
+            importlib.reload(usb_printer)
+
+    def test_inactive_db_row_ignored(self):
+        """Inactive app_config row is ignored → falls back to env default."""
+        conn = MagicMock()
+        row = MagicMock()
+        conn.execute.return_value.fetchone.return_value = row
+        # Simulate the query filtering active=1 already handled at SQL level;
+        # here we ensure that when fetchone returns None (active=0 filtered out),
+        # default is used.
+        conn.execute.return_value.fetchone.return_value = None
+        assert usb_printer.get_paper_mode(conn) == usb_printer.PAPER_MODE_DEFAULT
+
+    def test_invalid_db_value_falls_back_to_default(self):
+        """Corrupt DB value falls back to env default rather than crashing."""
+        conn = self._conn_with_config("paper_mode", "corrupt")
+        assert usb_printer.get_paper_mode(conn) == usb_printer.PAPER_MODE_DEFAULT

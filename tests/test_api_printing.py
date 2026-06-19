@@ -151,3 +151,137 @@ def test_print_with_empty_staff_name_succeeds_and_records_empty_string(mock_prin
 def test_print_log_returns_404_when_order_missing(api_client):
     resp = api_client.get("/api/orders/ORD-NOT-FOUND/print-log")
     assert resp.status_code == 404
+
+
+class TestPrintStatusPaperMode:
+    """Test GET /api/orders/print/status includes paperMode (FR3, AC4)."""
+
+    def test_status_includes_paper_mode_field(self, api_client):
+        """print/status response includes paperMode with effective value."""
+        resp = api_client.get("/api/orders/print/status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "paperMode" in body
+        assert body["paperMode"] in ("label", "roll")
+        # Default when no env/DB override is "label" (AC1/AC8 backward compat)
+        assert body["paperMode"] == "label"
+
+    def test_status_preserves_printer_and_device_fields(self, api_client):
+        """Existing printer/device fields remain present (no regression)."""
+        resp = api_client.get("/api/orders/print/status")
+        body = resp.json()
+        assert "status" in body
+        assert "printer" in body
+        assert "device" in body
+
+    def test_status_reflects_db_override(self, api_client):
+        """DB override for paper_mode is reflected in status (AC6)."""
+        set_resp = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": "roll"}
+        )
+        assert set_resp.status_code == 200
+
+        resp = api_client.get("/api/orders/print/status")
+        assert resp.json()["paperMode"] == "roll"
+
+
+class TestPaperModeGetSet:
+    """Test GET/PUT /api/orders/print/paper-mode (FR3, AC5 backend, AC6)."""
+
+    def test_get_returns_default_label_when_unset(self, api_client):
+        """GET returns label by default (backward compat, AC1)."""
+        resp = api_client.get("/api/orders/print/paper-mode")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["paperMode"] == "label"
+        assert body["default"] == "label"
+
+    def test_set_roll_persists_and_reads_back(self, api_client):
+        """PUT roll persists to app_config and subsequent GET reads it (AC6)."""
+        set_resp = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": "roll"}
+        )
+        assert set_resp.status_code == 200
+        assert set_resp.json()["paperMode"] == "roll"
+
+        get_resp = api_client.get("/api/orders/print/paper-mode")
+        assert get_resp.status_code == 200
+        assert get_resp.json()["paperMode"] == "roll"
+
+    def test_set_label_overrides_prior_roll(self, api_client):
+        """Setting label after roll overrides the prior DB value."""
+        api_client.put("/api/orders/print/paper-mode", json={"paperMode": "roll"})
+        set_resp = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": "label"}
+        )
+        assert set_resp.status_code == 200
+        assert set_resp.json()["paperMode"] == "label"
+
+        get_resp = api_client.get("/api/orders/print/paper-mode")
+        assert get_resp.json()["paperMode"] == "label"
+
+    def test_set_invalid_value_rejected_400(self, api_client):
+        """Invalid paperMode value is rejected with 400 (FR2)."""
+        resp = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": "garbage"}
+        )
+        assert resp.status_code == 400
+
+    def test_set_empty_string_rejected_400(self, api_client):
+        """Empty paperMode is rejected."""
+        resp = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": ""}
+        )
+        assert resp.status_code == 400
+
+    def test_set_whitespace_value_rejected_400(self, api_client):
+        """Whitespace-only paperMode is rejected after trim."""
+        resp = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": "   "}
+        )
+        assert resp.status_code == 400
+
+    def test_set_trims_surrounding_whitespace(self, api_client):
+        """Surrounding whitespace is trimmed before validation/persistence."""
+        resp = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": "  roll  "}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["paperMode"] == "roll"
+
+    def test_set_is_idempotent(self, api_client):
+        """Setting the same value twice does not duplicate the row."""
+        api_client.put("/api/orders/print/paper-mode", json={"paperMode": "roll"})
+        second = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": "roll"}
+        )
+        assert second.status_code == 200
+        assert second.json()["paperMode"] == "roll"
+
+        # Verify only one active row exists for paper_mode
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT config_value FROM app_config WHERE config_key = 'paper_mode'"
+            ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["config_value"] == "roll"
+
+
+class TestPaperModeBackwardCompat:
+    """Test backward compatibility with existing printer tests (AC8)."""
+
+    def test_existing_print_flow_unaffected_by_paper_mode(self, api_client):
+        """Print request succeeds regardless of paper mode setting (AC8)."""
+        with patch("baker.api.printing.usb_printer.print_receipt") as mock_print:
+            mock_print.return_value = None
+            order = _create_order(api_client)
+            order_ref = order["orderRef"]
+            item_id = _first_work_item_id(api_client, order_ref)
+
+            # Set roll mode, then print — should still succeed
+            api_client.put("/api/orders/print/paper-mode", json={"paperMode": "roll"})
+            resp = _print_work_ticket(api_client, order_ref, item_id, printed_by="An")
+            assert resp.status_code == 200
+            assert resp.json()["status"] == "ok"
+            mock_print.assert_called_once()

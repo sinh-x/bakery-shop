@@ -19,6 +19,9 @@ source "$(dirname "$0")/lib.sh"
 load_env
 
 REMOTE_PRINTER_DEVICE="${BAKER_PRINTER_DEVICE:-/dev/usb/lp0}"
+# Printer paper type server default ("label" | "roll"); passed to baker-prod container.
+# Unset defaults to "label" (backward compatible); invalid values fail fast at startup.
+REMOTE_PAPER_MODE="${PAPER_MODE:-label}"
 
 DRY_RUN=0
 ROLLBACK=0
@@ -136,9 +139,9 @@ if [ "$ROLLBACK" -eq 1 ]; then
   # BAKER_BUILD_FINGERPRINT. A temporary client/server fingerprint mismatch can
   # appear until a subsequent normal deploy aligns both artifacts again.
   echo "  Rebuilding Docker image..."
-  remote_cmd "cd $REMOTE_PATH && BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod build baker-prod"
+  remote_cmd "cd $REMOTE_PATH && BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE PAPER_MODE=$REMOTE_PAPER_MODE docker compose --profile prod build baker-prod"
   echo "  Restarting containers..."
-  remote_cmd "cd $REMOTE_PATH && BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod up -d"
+  remote_cmd "cd $REMOTE_PATH && BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE PAPER_MODE=$REMOTE_PAPER_MODE docker compose --profile prod up -d"
   echo "  Running health check..."
   remote_cmd "curl -sf --max-time 10 http://localhost:2108/api/health || echo 'Health check failed'"
   echo "  Logging rollback..."
@@ -221,7 +224,7 @@ if [ "$WEB_ONLY" -eq 0 ]; then
   echo "--- Docker rebuild ---"
   REMOTE_UID=$(ssh "$REMOTE_HOST" "id -u" 2>/dev/null)
   echo "  Remote sinh UID: $REMOTE_UID"
-  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod build baker-prod"
+  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE PAPER_MODE=$REMOTE_PAPER_MODE docker compose --profile prod build baker-prod"
   echo ""
 fi
 
@@ -229,7 +232,7 @@ fi
 echo "--- Restarting containers ---"
 if [ "$WEB_ONLY" -eq 0 ]; then
   REMOTE_UID="${REMOTE_UID:-$(ssh "$REMOTE_HOST" "id -u" 2>/dev/null)}"
-  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE docker compose --profile prod up -d"
+  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE PAPER_MODE=$REMOTE_PAPER_MODE docker compose --profile prod up -d"
 else
   remote_cmd "cd $REMOTE_PATH && docker compose --profile prod restart caddy"
 fi

@@ -11,6 +11,7 @@ import os
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 from PIL import Image
 
 from baker.api.receipts import (
@@ -29,6 +30,53 @@ router = APIRouter(prefix="/api/orders", tags=["printing"])
 
 # USB printer device path from env (default: /dev/usb/lp0)
 USB_PRINTER_DEVICE = os.environ.get("USB_PRINTER_DEVICE", "/dev/usb/lp0")
+
+
+class PaperModeIn(BaseModel):
+    paperMode: str
+
+
+@router.get("/print/paper-mode")
+def get_paper_mode():
+    """Return the effective printer paper mode.
+
+    DB override (app_config.paper_mode) takes precedence over the PAPER_MODE
+    env var default. Returns "label" or "roll".
+    """
+    with get_db() as conn:
+        mode = usb_printer.get_paper_mode(conn)
+    return {"paperMode": mode, "default": usb_printer.PAPER_MODE_DEFAULT}
+
+
+@router.put("/print/paper-mode")
+def set_paper_mode(body: PaperModeIn):
+    """Set the printer paper mode runtime override (persists to app_config).
+
+    Selection takes effect on the next print/status call (no restart required).
+    """
+    value = body.paperMode.strip()
+    if value not in usb_printer.PAPER_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid paperMode: must be one of {list(usb_printer.PAPER_MODES)}",
+        )
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM app_config WHERE config_key = ?",
+            (usb_printer.PAPER_MODE_CONFIG_KEY,),
+        ).fetchone()
+        if existing is not None:
+            conn.execute(
+                "UPDATE app_config SET config_value = ?, active = 1 WHERE config_key = ?",
+                (value, usb_printer.PAPER_MODE_CONFIG_KEY),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO app_config (config_key, config_value, sort_order, active)"
+                " VALUES (?, ?, 0, 1)",
+                (usb_printer.PAPER_MODE_CONFIG_KEY, value),
+            )
+    return {"paperMode": value}
 
 
 def _render_to_png(img: Image.Image) -> bytes:
@@ -108,12 +156,16 @@ def print_receipt(
             )
 
         png_bytes = _render_to_png(img)
+        # Resolve effective paper mode (DB override > env default) so the
+        # TSPL GAP command reflects the configured paper type (DG-183).
+        paper_mode = usb_printer.get_paper_mode(conn)
 
     # Send to USB printer
     try:
         usb_printer.print_receipt(
             device_path=USB_PRINTER_DEVICE,
             png_bytes=png_bytes,
+            paper_mode=paper_mode,
         )
     except FileNotFoundError:
         raise HTTPException(
@@ -205,14 +257,20 @@ def get_print_log(ref: str):
 
 @router.get("/print/status")
 def print_status():
-    """Check if the USB printer is accessible."""
+    """Check if the USB printer is accessible and return effective paper mode."""
     available = usb_printer.check_printer_status(USB_PRINTER_DEVICE)
+    with get_db() as conn:
+        paper_mode = usb_printer.get_paper_mode(conn)
+    base = {
+        "printer": "available" if available else "unavailable",
+        "device": USB_PRINTER_DEVICE,
+        "paperMode": paper_mode,
+    }
     if available:
-        return {"status": "ok", "printer": "available", "device": USB_PRINTER_DEVICE}
+        return {"status": "ok", **base}
     else:
         return {
             "status": "error",
-            "printer": "unavailable",
-            "device": USB_PRINTER_DEVICE,
+            **base,
             "detail": "Printer device not found or not accessible",
         }
