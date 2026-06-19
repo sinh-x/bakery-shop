@@ -5,6 +5,7 @@ import 'package:bakery_app/features/expenses/widgets/expense_filter_card.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_history_card.dart';
 import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/mixins/auto_refresh_mixin.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,7 +31,8 @@ class ExpenseScreen extends ConsumerStatefulWidget {
   ConsumerState<ExpenseScreen> createState() => _ExpenseScreenState();
 }
 
-class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
+class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
+    with WidgetsBindingObserver, AutoRefreshMixin {
   final _searchCtrl = TextEditingController();
   bool _deleting = false;
   bool _initialHistoryLoading = true;
@@ -43,12 +45,26 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
   List<BakeryEvent> _history = <BakeryEvent>[];
 
   @override
+  String screenRoutePath() => '/expenses';
+
+  @override
+  void invalidateProviders() {}
+
+  @override
   void initState() {
     super.initState();
+    onAutoRefresh = _refreshHistory;
     final today = DateTime.now();
     _until = DateTime(today.year, today.month, today.day);
     _since = _until!.subtract(const Duration(days: 6));
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshHistory());
+    initAutoRefresh();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    setupAutoRefreshRouteListener();
   }
 
   void _setDeleting(bool value) {
@@ -84,6 +100,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
 
   @override
   void dispose() {
+    disposeAutoRefresh();
     _searchCtrl.dispose();
     super.dispose();
   }
