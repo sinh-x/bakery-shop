@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
+import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
@@ -27,19 +28,36 @@ class KnowledgeListScreen extends ConsumerStatefulWidget {
       _KnowledgeListScreenState();
 }
 
-class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen> {
+class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen>
+    with WidgetsBindingObserver, AutoRefreshMixin {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
   late String? _selectedType;
 
   @override
+  String screenRoutePath() => '/knowledge';
+
+  @override
+  void invalidateProviders() {
+    ref.invalidate(knowledgeEntriesProvider);
+  }
+
+  @override
   void initState() {
     super.initState();
     _selectedType = widget.initialType;
+    initAutoRefresh();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    setupAutoRefreshRouteListener();
   }
 
   @override
   void dispose() {
+    disposeAutoRefresh();
     _searchCtrl.dispose();
     _debounce?.cancel();
     super.dispose();

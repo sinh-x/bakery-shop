@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/orders/widgets/order_card.dart';
 import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
+import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -26,39 +27,31 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen>
-    with WidgetsBindingObserver {
-  bool _wasNavigatedAway = false;
-  GoRouter? _goRouter;
+    with WidgetsBindingObserver, AutoRefreshMixin {
+  @override
+  String screenRoutePath() => '/dashboard';
+
+  @override
+  void invalidateProviders() {
+    ref.invalidate(dashboardOrdersProvider);
+  }
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
+    initAutoRefresh();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final router = GoRouter.of(context);
-    if (_goRouter != router) {
-      _goRouter?.routerDelegate.removeListener(_onRouteChange);
-      _goRouter = router;
-      _goRouter?.routerDelegate.addListener(_onRouteChange);
-    }
+    setupAutoRefreshRouteListener();
   }
 
   @override
   void dispose() {
-    _goRouter?.routerDelegate.removeListener(_onRouteChange);
-    WidgetsBinding.instance.removeObserver(this);
+    disposeAutoRefresh();
     super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      ref.invalidate(dashboardOrdersProvider);
-    }
   }
 
   @override
@@ -96,19 +89,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           orders: orders,
           onRefresh: () async => ref.invalidate(dashboardOrdersProvider),
         ),
-      ),
+          ),
     );
-  }
-
-  void _onRouteChange() {
-    if (!mounted) return;
-    final path = GoRouterState.of(context).uri.path;
-    if (path == '/dashboard' && _wasNavigatedAway) {
-      _wasNavigatedAway = false;
-      ref.invalidate(dashboardOrdersProvider);
-    } else if (path != '/dashboard') {
-      _wasNavigatedAway = true;
-    }
   }
 }
 

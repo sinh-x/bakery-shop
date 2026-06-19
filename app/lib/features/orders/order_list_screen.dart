@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
@@ -39,7 +40,7 @@ class OrderListScreen extends ConsumerStatefulWidget {
 }
 
 class _OrderListScreenState extends ConsumerState<OrderListScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver, AutoRefreshMixin {
   late final TabController _tabController;
   String _statusFilter = 'new';
   String _searchQuery = '';
@@ -48,16 +49,14 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   // View mode: 'list' or 'kanban'
   String _viewMode = 'list';
 
-  // Auto-refresh: detect when user navigates back to this screen
-  GoRouter? _goRouter;
-  bool _wasNavigatedAway = false;
+  @override
+  String screenRoutePath() => '/orders';
 
-  void _addRouterListener() {
-    _goRouter?.routerDelegate.addListener(_handleRouteChange);
-  }
-
-  void _removeRouterListener() {
-    _goRouter?.routerDelegate.removeListener(_handleRouteChange);
+  @override
+  void invalidateProviders() {
+    ref.invalidate(orderListProvider);
+    ref.invalidate(cakeQueueProvider);
+    ref.invalidate(deliveryQueueProvider);
   }
 
   Future<void> _loadViewMode() async {
@@ -99,38 +98,21 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() => setState(() {}));
     _loadViewMode();
+    initAutoRefresh();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final router = GoRouter.of(context);
-    if (_goRouter != router) {
-      _removeRouterListener();
-      _goRouter = router;
-      _addRouterListener();
-    }
+    setupAutoRefreshRouteListener();
   }
 
   @override
   void dispose() {
-    _removeRouterListener();
+    disposeAutoRefresh();
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
-  }
-
-  void _handleRouteChange() {
-    if (!mounted) return;
-    final path = _goRouter!.state.uri.path;
-    if (path == '/orders' && _wasNavigatedAway) {
-      _wasNavigatedAway = false;
-      ref.invalidate(orderListProvider);
-      ref.invalidate(cakeQueueProvider);
-      ref.invalidate(deliveryQueueProvider);
-    } else if (path != '/orders') {
-      _wasNavigatedAway = true;
-    }
   }
 
   Future<void> _onRefresh() async {
