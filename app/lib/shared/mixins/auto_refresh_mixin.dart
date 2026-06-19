@@ -25,8 +25,8 @@ import 'package:go_router/go_router.dart';
 ///
 /// The timer is cancelled on navigate-away, on app background, and in
 /// [dispose], guaranteeing no timer leaks (NFR3).
-mixin AutoRefreshMixin<T extends ConsumerStatefulWidget> on ConsumerState<T>
-    implements WidgetsBindingObserver {
+mixin AutoRefreshMixin<T extends ConsumerStatefulWidget>
+    on ConsumerState<T>, WidgetsBindingObserver {
   static const Duration refreshInterval = Duration(seconds: 15);
 
   Timer? _autoRefreshTimer;
