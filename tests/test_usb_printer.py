@@ -1,5 +1,6 @@
 """Tests for USB thermal printer module."""
 
+import importlib
 import io
 import os
 import sys
@@ -336,3 +337,108 @@ class TestTsplFormatCompliance:
         unexpected = ["SET", "HOME", "INIT", "OFFSET"]
         for cmd in unexpected:
             assert cmd not in tspl_str
+
+
+class TestPaperModeEnvValidation:
+    """Test PAPER_MODE env var reading and validation (FR1, FR2, NFR1, NFR3)."""
+
+    def test_default_is_label_when_unset(self, monkeypatch):
+        """PAPER_MODE defaults to 'label' when env var is unset (FR1/NFR1)."""
+        monkeypatch.delenv("PAPER_MODE", raising=False)
+        mode = usb_printer._validate_paper_mode_env()
+        assert mode == "label"
+        assert usb_printer.DEFAULT_PAPER_MODE == "label"
+
+    def test_label_value_accepted(self, monkeypatch):
+        """Explicit PAPER_MODE=label is accepted."""
+        monkeypatch.setenv("PAPER_MODE", "label")
+        assert usb_printer._validate_paper_mode_env() == "label"
+
+    def test_roll_value_accepted(self, monkeypatch):
+        """PAPER_MODE=roll is accepted."""
+        monkeypatch.setenv("PAPER_MODE", "roll")
+        assert usb_printer._validate_paper_mode_env() == "roll"
+
+    def test_whitespace_trimmed(self, monkeypatch):
+        """Surrounding whitespace is trimmed before validation."""
+        monkeypatch.setenv("PAPER_MODE", "  roll  ")
+        assert usb_printer._validate_paper_mode_env() == "roll"
+
+    def test_invalid_value_raises(self, monkeypatch):
+        """Invalid PAPER_MODE raises ValueError (FR2/NFR3)."""
+        monkeypatch.setenv("PAPER_MODE", "invalid_value")
+        with pytest.raises(ValueError, match="Invalid PAPER_MODE"):
+            usb_printer._validate_paper_mode_env()
+
+    def test_empty_string_raises(self, monkeypatch):
+        """Empty PAPER_MODE string raises (not silently defaulted)."""
+        monkeypatch.setenv("PAPER_MODE", "   ")
+        with pytest.raises(ValueError, match="Invalid PAPER_MODE"):
+            usb_printer._validate_paper_mode_env()
+
+    def test_case_sensitive(self, monkeypatch):
+        """PAPER_MODE is case-sensitive — 'Label' is invalid."""
+        monkeypatch.setenv("PAPER_MODE", "Label")
+        with pytest.raises(ValueError, match="Invalid PAPER_MODE"):
+            usb_printer._validate_paper_mode_env()
+
+    def test_module_load_fails_fast_on_invalid_env(self, monkeypatch):
+        """Importing usb_printer with invalid PAPER_MODE fails fast (NFR3)."""
+        monkeypatch.setenv("PAPER_MODE", "garbage")
+        with pytest.raises(ValueError, match="Invalid PAPER_MODE"):
+            importlib.reload(usb_printer)
+        # Restore valid state for subsequent tests
+        monkeypatch.delenv("PAPER_MODE", raising=False)
+        importlib.reload(usb_printer)
+
+
+class TestGetPaperMode:
+    """Test get_paper_mode() DB-override precedence (AC6, FR3, NFR2)."""
+
+    def _conn_with_config(self, key=None, value=None, active=1):
+        """Build a mock connection row for app_config."""
+        conn = MagicMock()
+        if key is None:
+            conn.execute.return_value.fetchone.return_value = None
+        else:
+            row = MagicMock()
+            row.__getitem__ = lambda self, k: value if k == "config_value" else None
+            conn.execute.return_value.fetchone.return_value = row
+        return conn
+
+    def test_returns_default_when_no_db_row(self):
+        """No DB override → returns env var default."""
+        conn = self._conn_with_config()
+        assert usb_printer.get_paper_mode(conn) == usb_printer.PAPER_MODE_DEFAULT
+
+    def test_db_roll_overrides_env_default(self):
+        """DB override 'roll' takes precedence over env default 'label' (AC6)."""
+        conn = self._conn_with_config("paper_mode", "roll")
+        assert usb_printer.get_paper_mode(conn) == "roll"
+
+    def test_db_label_overrides_env_roll(self, monkeypatch):
+        """DB 'label' overrides even when env default is 'roll'."""
+        monkeypatch.setenv("PAPER_MODE", "roll")
+        importlib.reload(usb_printer)
+        try:
+            conn = self._conn_with_config("paper_mode", "label")
+            assert usb_printer.get_paper_mode(conn) == "label"
+        finally:
+            monkeypatch.delenv("PAPER_MODE", raising=False)
+            importlib.reload(usb_printer)
+
+    def test_inactive_db_row_ignored(self):
+        """Inactive app_config row is ignored → falls back to env default."""
+        conn = MagicMock()
+        row = MagicMock()
+        conn.execute.return_value.fetchone.return_value = row
+        # Simulate the query filtering active=1 already handled at SQL level;
+        # here we ensure that when fetchone returns None (active=0 filtered out),
+        # default is used.
+        conn.execute.return_value.fetchone.return_value = None
+        assert usb_printer.get_paper_mode(conn) == usb_printer.PAPER_MODE_DEFAULT
+
+    def test_invalid_db_value_falls_back_to_default(self):
+        """Corrupt DB value falls back to env default rather than crashing."""
+        conn = self._conn_with_config("paper_mode", "corrupt")
+        assert usb_printer.get_paper_mode(conn) == usb_printer.PAPER_MODE_DEFAULT

@@ -22,6 +22,59 @@ THRESHOLD = 128  # 1-bit bitmap threshold
 # Thread lock for serializing print requests
 _print_lock = threading.Lock()
 
+# Paper mode configuration
+# PAPER_MODE env var: server default for printer paper type.
+#   "label" — label paper with gaps (default, backward compatible)
+#   "roll"  — continuous roll paper (no fixed length)
+# This is a configuration label only — no TSPL command changes.
+PAPER_MODES = ("label", "roll")
+DEFAULT_PAPER_MODE = "label"
+# app_config key for runtime override (DB value takes precedence over env var)
+PAPER_MODE_CONFIG_KEY = "paper_mode"
+
+
+def _validate_paper_mode_env() -> str:
+    """Read and validate PAPER_MODE env var at module load (fail fast).
+
+    Defaults to "label" when unset (backward compatible, FR1/NFR1).
+    Raises ValueError on invalid value (FR2/NFR3) within 1 second of config load.
+    """
+    raw = os.environ.get("PAPER_MODE", DEFAULT_PAPER_MODE).strip()
+    if raw not in PAPER_MODES:
+        raise ValueError(
+            f"Invalid PAPER_MODE={raw!r}: must be one of {PAPER_MODES}. "
+            f"Valid values: 'label' (default) or 'roll'."
+        )
+    return raw
+
+
+# Server default paper mode from env var — validated at import time (fail fast)
+PAPER_MODE_DEFAULT = _validate_paper_mode_env()
+
+
+def get_paper_mode(conn) -> str:
+    """Return the effective paper mode for the current print/status call.
+
+    DB override (app_config.paper_mode) takes precedence over the env var
+    default (AC6). Read on each call so Settings-screen changes take effect
+    on the next print without a server restart (NFR2).
+
+    Args:
+        conn: SQLite connection (from get_db() context manager).
+
+    Returns:
+        Effective paper mode: "label" or "roll".
+    """
+    row = conn.execute(
+        "SELECT config_value FROM app_config WHERE config_key = ? AND active = 1",
+        (PAPER_MODE_CONFIG_KEY,),
+    ).fetchone()
+    if row is not None:
+        value = (row["config_value"] or "").strip()
+        if value in PAPER_MODES:
+            return value
+    return PAPER_MODE_DEFAULT
+
 
 def open_printer(device_path: Optional[str] = None) -> int:
     """Open USB printer device and return file descriptor.
