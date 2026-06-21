@@ -14,14 +14,16 @@ class PaperModeService {
 
   PaperModeService(this._dio);
 
-  /// Returns the effective paper mode (`label` or `roll`) and the server
-  /// default. The effective value reflects DB override precedence over env.
+  /// Returns the effective paper mode (`label` or `roll`), trail length,
+  /// and the server default. The effective values reflect DB override
+  /// precedence over env.
   Future<PaperModeStatus> getStatus() async {
     final response = await _dio.get('/api/orders/print/paper-mode');
     final data = response.data as Map<String, dynamic>;
     return PaperModeStatus(
       paperMode: data['paperMode'] as String,
       defaultMode: (data['default'] as String?) ?? paperModeDefault,
+      trailMm: (data['trailMm'] as int?) ?? 20,
     );
   }
 
@@ -36,10 +38,15 @@ class PaperModeService {
 }
 
 class PaperModeStatus {
-  const PaperModeStatus({required this.paperMode, required this.defaultMode});
+  const PaperModeStatus({
+    required this.paperMode,
+    required this.defaultMode,
+    this.trailMm = 20,
+  });
 
   final String paperMode;
   final String defaultMode;
+  final int trailMm;
 }
 
 final paperModeServiceProvider = Provider<PaperModeService>((ref) {
