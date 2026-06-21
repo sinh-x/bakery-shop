@@ -925,8 +925,9 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
       if (printerService.lastPrinterMac != null) {
         try {
           await printerService.connect(printerService.lastPrinterMac!);
-          final paperMode = ref.read(paperModeProvider).asData?.value ?? 'label';
-          final trailMm = ref.read(trailMmProvider).asData?.value ?? 20;
+          final settings = ref.read(paperSettingsProvider).asData?.value ?? const PaperSettings();
+          final paperMode = settings.paperMode;
+          final trailMm = settings.trailMm;
           await printerService.printImage(internalBytes,
               paperMode: paperMode, trailMm: trailMm);
           result = PrinterPickerResult.success;

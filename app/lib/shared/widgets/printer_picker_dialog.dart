@@ -122,8 +122,9 @@ class _PrinterPickerBottomSheetState
         // Send plain text test to verify TSPL protocol
         await widget.printerService.printTest();
       } else {
-        final paperMode = ref.read(paperModeProvider).asData?.value ?? 'label';
-        final trailMm = ref.read(trailMmProvider).asData?.value ?? 20;
+        final settings = ref.read(paperSettingsProvider).asData?.value ?? const PaperSettings();
+        final paperMode = settings.paperMode;
+        final trailMm = settings.trailMm;
         await widget.printerService.printImage(widget.imageBytes,
             paperMode: paperMode, trailMm: trailMm);
       }

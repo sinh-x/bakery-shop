@@ -134,6 +134,11 @@ def print_receipt(
         detail = _order_detail(conn, row)
         cfg = _shop_config(conn)
 
+        # Resolve paper mode and trail BEFORE renderers so the tear
+        # indicator visual appears in the USB print path (CQ-1).
+        paper_mode = usb_printer.get_paper_mode(conn)
+        trail_mm = usb_printer.get_trail_mm(conn)
+
         if type == "work_ticket":
             # Single-item work ticket (Phiếu Nội Bộ) — no photo for thermal print
             work_item = None
@@ -144,16 +149,19 @@ def print_receipt(
             if not work_item:
                 raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-            img = _render_work_ticket(detail, work_item, cfg, None, conn)
+            img = _render_work_ticket(detail, work_item, cfg, None, conn,
+                                      paper_mode=paper_mode)
 
         elif type == "customer":
-            img = _render_customer_receipt(detail, cfg, conn, show_photos=False)
+            img = _render_customer_receipt(detail, cfg, conn,
+                                           show_photos=False,
+                                           paper_mode=paper_mode)
         elif type == "bus_label":
-            img = _render_bus_label(detail, cfg)
+            img = _render_bus_label(detail, cfg, paper_mode=paper_mode)
         elif type == "shop":
-            img = _render_shop_receipt(detail, cfg, conn)
+            img = _render_shop_receipt(detail, cfg, conn, paper_mode=paper_mode)
         elif type == "delivery":
-            img = _render_delivery_receipt(detail, cfg, conn)
+            img = _render_delivery_receipt(detail, cfg, conn, paper_mode=paper_mode)
         else:
             raise HTTPException(
                 status_code=400,
@@ -161,11 +169,6 @@ def print_receipt(
             )
 
         png_bytes = _render_to_png(img)
-        # Resolve effective paper mode (DB override > env default) so the
-        # TSPL GAP command reflects the configured paper type (DG-183).
-        paper_mode = usb_printer.get_paper_mode(conn)
-        # Resolve trail length for FEED command in roll mode (DG-184).
-        trail_mm = usb_printer.get_trail_mm(conn)
 
     # Send to USB printer
     try:

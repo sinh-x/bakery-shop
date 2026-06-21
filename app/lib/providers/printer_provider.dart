@@ -110,8 +110,9 @@ class PrinterNotifier extends AsyncNotifier<PrinterStatus> {
     state = const AsyncValue.data(PrinterStatus.printing);
 
     try {
-      final paperMode = ref.read(paperModeProvider).asData?.value ?? 'label';
-      final trailMm = ref.read(trailMmProvider).asData?.value ?? 20;
+      final settings = ref.read(paperSettingsProvider).asData?.value ?? const PaperSettings();
+      final paperMode = settings.paperMode;
+      final trailMm = settings.trailMm;
       await _printerService.printImage(imageBytes,
           paperMode: paperMode, trailMm: trailMm);
       state = const AsyncValue.data(PrinterStatus.connected);

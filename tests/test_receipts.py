@@ -594,7 +594,7 @@ class TestTearIndicator:
         response = api_client.get(f"/api/orders/{order_ref}/receipt?type=customer")
         assert response.status_code == 200
         img = Image.open(io.BytesIO(response.content))
-        pixels = list(img.getdata())
+        pixels = list(img.get_flattened_data())
         tear_color = (100, 100, 100)
         assert tear_color in pixels, "Tear indicator color NOT found in roll mode image"
 
@@ -635,7 +635,7 @@ class TestTearIndicator:
             resp = api_client.get(f"/api/orders/{order_ref}/receipt?{params}")
             assert resp.status_code == 200, f"Failed for {params}"
             img = Image.open(io.BytesIO(resp.content))
-            pixels = list(img.getdata())
+            pixels = list(img.get_flattened_data())
             assert tear_color in pixels, f"Tear indicator missing in {params}"
 
     def test_gap_is_64_dots(self):

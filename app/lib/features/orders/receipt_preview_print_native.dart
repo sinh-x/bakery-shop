@@ -20,8 +20,9 @@ Future<void> printNative(BuildContext context, Uint8List imageBytes, dynamic ref
   if (printerService.lastPrinterMac != null) {
     try {
       await printerService.connect(printerService.lastPrinterMac!);
-      final paperMode = widgetRef.read(paperModeProvider).asData?.value ?? 'label';
-      final trailMm = widgetRef.read(trailMmProvider).asData?.value ?? 20;
+      final settings = widgetRef.read(paperSettingsProvider).asData?.value ?? const PaperSettings();
+      final paperMode = settings.paperMode;
+      final trailMm = settings.trailMm;
       await printerService.printImage(imageBytes,
           paperMode: paperMode, trailMm: trailMm);
       if (context.mounted) {
@@ -60,8 +61,9 @@ Future<PrinterPickerResult> tryPrintNative(
   if (printerService.lastPrinterMac != null) {
     try {
       await printerService.connect(printerService.lastPrinterMac!);
-      final paperMode = widgetRef.read(paperModeProvider).asData?.value ?? 'label';
-      final trailMm = widgetRef.read(trailMmProvider).asData?.value ?? 20;
+      final settings = widgetRef.read(paperSettingsProvider).asData?.value ?? const PaperSettings();
+      final paperMode = settings.paperMode;
+      final trailMm = settings.trailMm;
       await printerService.printImage(imageBytes,
           paperMode: paperMode, trailMm: trailMm);
       return PrinterPickerResult.success;
