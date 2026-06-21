@@ -308,7 +308,8 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
       if (custom != null) {
         await custom(id);
       } else {
-        await ref.read(eventsProvider.notifier).deleteEvent(id);
+        final deletedBy = ref.read(loggedByProvider);
+        await ref.read(eventsProvider.notifier).deleteEvent(id, deletedBy: deletedBy);
       }
       await _refreshHistory();
       if (mounted) showTopSnackBar(context, VN.eventDeleted);

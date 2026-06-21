@@ -328,6 +328,18 @@ def delete_event(event_id: int, deleted_by: str = Query("", description="Ngườ
         _log_event_history(conn, event_id, "delete", actor=deleted_by)
 
 
+@router.get("/{event_id}/history")
+def get_event_history(event_id: int):
+    """Lịch sử thay đổi của sự kiện (audit trail)."""
+    with get_db() as conn:
+        _get_event_or_404(conn, event_id)
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? ORDER BY timestamp DESC, id DESC",
+            (event_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def _get_event_or_404(conn, event_id: int):
     row = conn.execute(
         "SELECT * FROM events WHERE id = ? AND deleted_at IS NULL", (event_id,)

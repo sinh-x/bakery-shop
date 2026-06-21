@@ -198,7 +198,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text(VN.expensePayerConfirmTitle),
         content: Text(staffName != null && staffName.isNotEmpty
-            ? '${VN.expensePayerConfirmPrompt}\n\n${VN.loggedBy}: $staffName'
+            ? '${VN.expensePayerConfirmPrompt}\n\n$staffName'
             : VN.expensePayerConfirmPrompt),
         actions: [
           TextButton(

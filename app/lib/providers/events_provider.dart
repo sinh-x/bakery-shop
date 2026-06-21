@@ -100,9 +100,9 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     );
   }
 
-  Future<void> deleteEvent(int id) async {
+  Future<void> deleteEvent(int id, {String deletedBy = ''}) async {
     final service = ref.read(eventServiceProvider);
-    await service.deleteEvent(id);
+    await service.deleteEvent(id, deletedBy: deletedBy);
     state = state.whenData(
       (events) => events.where((e) => e.id != id).toList(),
     );

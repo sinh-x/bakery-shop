@@ -1396,7 +1396,7 @@ CREATE TABLE IF NOT EXISTS event_history (
     field_name  TEXT DEFAULT '',
     old_value   TEXT DEFAULT '',
     new_value   TEXT DEFAULT '',
-    timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') || '+07:00')
 );
 
 CREATE INDEX IF NOT EXISTS idx_event_history_event ON event_history(event_id);

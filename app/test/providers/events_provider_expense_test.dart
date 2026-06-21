@@ -202,7 +202,7 @@ class _FakeEventService extends EventService {
   }
 
   @override
-  Future<void> deleteEvent(int id) async {
+  Future<void> deleteEvent(int id, {String deletedBy = ''}) async {
     _store.removeWhere((item) => item.id == id);
   }
 }
