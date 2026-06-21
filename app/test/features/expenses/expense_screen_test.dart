@@ -906,4 +906,152 @@ void main() {
 
     expect(find.textContaining('${VN.expensePaidByNameLabel}: Lan'), findsOneWidget);
   });
+
+  testWidgets('form screen hides nhan vien label and shows payer dropdown', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+    final prefs = await SharedPreferences.getInstance();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: const MaterialApp(home: ExpenseFormScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(VN.expenseStaffNameLabel), findsNothing);
+    expect(find.text(VN.expensePaidByNameLabel), findsOneWidget);
+  });
+
+  testWidgets(
+    'form screen edit mode preserves loggedBy from event',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({kLoggedByKey: 'SomeoneElse'});
+      final prefs = await SharedPreferences.getInstance();
+
+      final event = _expenseEvent(
+        id: 15,
+        amount: 150000,
+        category: VN.expenseCategoryIngredient,
+        paymentMethod: VN.methodCash,
+        vendor: 'NCC A',
+        note: 'Bot mi',
+        staff: 'Lan',
+        paidByName: 'Lan',
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+          child: MaterialApp(home: ExpenseFormScreen(event: event)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(VN.expenseStaffNameLabel), findsNothing);
+      expect(find.text(VN.expenseUpdateAction), findsWidgets);
+      expect(find.text('150000'), findsOneWidget);
+      expect(find.text('NCC A'), findsOneWidget);
+      expect(find.text('Bot mi'), findsOneWidget);
+    },
+  );
+
+  testWidgets('form screen shows confirmation dialog when payer is empty', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 1920));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+    final prefs = await SharedPreferences.getInstance();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: const MaterialApp(home: ExpenseFormScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).first, '50000');
+
+    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.expenseCategoryIngredient).last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(VN.expenseSaveAction));
+    await tester.pumpAndSettle();
+
+    expect(find.text(VN.expensePayerConfirmTitle), findsOneWidget);
+    expect(find.textContaining('${VN.expensePayerUseStaff}:'), findsOneWidget);
+    expect(find.text(VN.expensePayerEnterCustom), findsOneWidget);
+  });
+
+  testWidgets(
+    'form screen confirmation dialog cancel returns to form',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 1920));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+      final prefs = await SharedPreferences.getInstance();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+          child: const MaterialApp(home: ExpenseFormScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextFormField).first, '50000');
+
+      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(VN.expenseCategoryIngredient).last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(VN.expenseSaveAction));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(VN.cancel));
+      await tester.pumpAndSettle();
+
+      expect(find.text(VN.expensePayerConfirmTitle), findsNothing);
+      expect(find.text(VN.expenseSaveAction), findsOneWidget);
+    },
+  );
+
+  testWidgets('form screen blocks save when logged by is empty', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 1920));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: const MaterialApp(home: ExpenseFormScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).first, '50000');
+
+    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.expenseCategoryIngredient).last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(VN.expenseSaveAction));
+    await tester.pumpAndSettle();
+
+    expect(find.text(VN.expenseEmptyStaffWarning), findsOneWidget);
+  });
 }

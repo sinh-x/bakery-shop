@@ -135,7 +135,7 @@ def test_create_expense_event_rejects_missing_payment_source(api_client):
     assert "payment_source" in resp.json()["detail"]
 
 
-def test_create_expense_event_rejects_nhan_vien_ung_truoc_without_staff_name(api_client):
+def test_create_expense_event_rejects_nhan_vien_ung_truoc_without_paid_by_name(api_client):
     resp = api_client.post("/api/events", json={
         "summary": "Chi tiền ứng trước",
         "type": "expense",
@@ -146,15 +146,14 @@ def test_create_expense_event_rejects_nhan_vien_ung_truoc_without_staff_name(api
             "payment_source": "Nhân viên ứng trước",
             "vendor": "NCC A",
             "note": "Mua hàng",
-            "staff_name": "",
-            "paid_by_name": "Phượng",
+            "paid_by_name": "",
         },
     })
     assert resp.status_code == 422
     assert "Nhân viên ứng trước" in resp.json()["detail"]
 
 
-def test_create_expense_event_accepts_nhan_vien_ung_truoc_with_staff_name(api_client):
+def test_create_expense_event_accepts_nhan_vien_ung_truoc_with_paid_by_name(api_client):
     resp = api_client.post("/api/events", json={
         "summary": "Chi tiền ứng trước",
         "type": "expense",
@@ -165,11 +164,32 @@ def test_create_expense_event_accepts_nhan_vien_ung_truoc_with_staff_name(api_cl
             "payment_source": "Nhân viên ứng trước",
             "vendor": "NCC A",
             "note": "Mua hàng",
-            "staff_name": "Lan",
             "paid_by_name": "Phượng",
         },
     })
     assert resp.status_code == 201
+
+
+def test_create_expense_event_success_without_staff_name(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền mua bột mì",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 125000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "Chợ Bình Tây",
+            "note": "Bột mì đa dụng",
+            "paid_by_name": "",
+        },
+        "logged_by": "Lan",
+    })
+    assert resp.status_code == 201
+    ev = resp.json()
+    assert ev["type"] == "expense"
+    assert ev["logged_by"] == "Lan"
+    assert "staff_name" not in ev["data"]
 
 
 def test_create_expense_event_persists_reimbursed(api_client):
