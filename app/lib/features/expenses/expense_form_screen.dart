@@ -40,7 +40,10 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     super.initState();
     _eventDateTime = DateTime.now();
     final event = widget.event;
-    if (event == null) return;
+    if (event == null) {
+      _staffName = ref.read(loggedByProvider);
+      return;
+    }
     _editingId = event.id;
     _eventDateTime = event.timestamp.toLocal();
     final data = ExpenseEventMapper.fromEvent(event);
@@ -51,7 +54,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     _paymentSource = data.paymentSource;
     _vendorCtrl.text = data.vendor;
     _noteCtrl.text = data.note;
-    _staffName = data.staffName.isNotEmpty ? data.staffName : null;
+    _staffName = data.loggedBy.isNotEmpty ? data.loggedBy : null;
     _paidByName = data.paidByName.isNotEmpty ? data.paidByName : null;
   }
 
@@ -91,7 +94,6 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             category: _category,
             paymentMethod: _paymentMethod,
             paymentSource: _paymentSource,
-            selectedStaffName: _staffName,
             selectedPaidByName: _paidByName,
             eventDateTime: _eventDateTime,
             loading: _loading,
@@ -101,8 +103,6 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                 setState(() => _paymentMethod = value ?? _paymentMethod),
             onPaymentSourceChanged: (value) =>
                 setState(() => _paymentSource = value ?? _paymentSource),
-            onStaffChanged: (value) =>
-                setState(() => _staffName = value),
             onPaidByNameChanged: (value) =>
                 setState(() => _paidByName = value),
             onPickDate: _pickDate,
@@ -119,15 +119,27 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_category == null || _category!.isEmpty) return;
-    if (_staffName == null || _staffName!.isEmpty) return;
-    if (_paidByName == null || _paidByName!.isEmpty) return;
+
+    final loggedBy = ref.read(loggedByProvider);
+    if (loggedBy.isEmpty) {
+      showTopSnackBar(context, VN.expenseEmptyStaffWarning);
+      return;
+    }
+
+    if (_paidByName == null || _paidByName!.isEmpty) {
+      final resolved = await _showPayerConfirmDialog();
+      if (resolved == null) return;
+      setState(() => _paidByName = resolved);
+    }
+
+    if (!mounted) return;
     if (_paymentSource == VN.paymentSourceStaffAdvance &&
-        _paidByName!.isEmpty) {
+        (_paidByName == null || _paidByName!.isEmpty)) {
       showTopSnackBar(context, VN.expenseStaffNameRequiredForAdvance);
       return;
     }
+
     final amount = int.parse(_amountCtrl.text.trim());
-    final loggedBy = ref.read(loggedByProvider);
     final payload = ExpenseEventData(
       amountVnd: amount,
       category: _category!,
@@ -135,7 +147,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       paymentSource: _paymentSource,
       vendor: _vendorCtrl.text.trim(),
       note: _noteCtrl.text.trim(),
-      staffName: _staffName!,
+      loggedBy: loggedBy,
       paidByName: _paidByName!,
     );
 
@@ -177,6 +189,81 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
         setState(() => _loading = false);
       }
     }
+  }
+
+  Future<String?> _showPayerConfirmDialog() async {
+    final staffName = _staffName;
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(VN.expensePayerConfirmTitle),
+        content: Text(staffName != null && staffName.isNotEmpty
+            ? '${VN.expensePayerConfirmPrompt}\n\n${VN.loggedBy}: $staffName'
+            : VN.expensePayerConfirmPrompt),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text(VN.cancel),
+          ),
+          TextButton(
+            onPressed: () async {
+              final custom = await _showCustomPayerDialog(ctx);
+              if (ctx.mounted) {
+                Navigator.of(ctx).pop(custom);
+              }
+            },
+            child: const Text(VN.expensePayerEnterCustom),
+          ),
+          if (staffName != null && staffName.isNotEmpty)
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(staffName),
+              child: Text(
+                '${VN.expensePayerUseStaff}: $staffName',
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _showCustomPayerDialog(BuildContext ctx) async {
+    final ctrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final result = await showDialog<String>(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text(VN.expensePayerEnterCustom),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: VN.expensePayerCustomHint,
+              border: OutlineInputBorder(),
+            ),
+            validator: (v) =>
+                (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(null),
+            child: const Text(VN.cancel),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.of(dialogCtx).pop(ctrl.text.trim());
+              }
+            },
+            child: const Text(VN.save),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    return result;
   }
 
   String? _validateAmount(String? value) {

@@ -609,6 +609,14 @@ class VN {
       'Số tiền phải là số nguyên VND lớn hơn 0';
   static const expenseStaffNameRequiredForAdvance =
       'Tên nhân viên là bắt buộc khi chọn Nhân viên ứng trước';
+  static const expensePayerConfirmTitle = 'Xác nhận người chi trả';
+  static const expensePayerConfirmPrompt =
+      'Bạn chưa chọn Người chi trả. Dùng tên nhân viên làm người chi trả?';
+  static const expensePayerUseStaff = 'Dùng tên nhân viên';
+  static const expensePayerEnterCustom = 'Nhập tên khác';
+  static const expensePayerCustomHint = 'Nhập tên người chi trả';
+  static const expenseEmptyStaffWarning =
+      'Vui lòng cài đặt tên nhân viên trong Cài đặt trước khi nhập chi phí.';
 
   // Payment sources
   static const expensePaymentSourceLabel = 'Nguồn tiền chi';

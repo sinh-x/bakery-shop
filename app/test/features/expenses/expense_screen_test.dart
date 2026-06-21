@@ -1,13 +1,16 @@
+import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/expense_form_screen.dart';
 import 'package:bakery_app/features/expenses/expense_screen.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_history_card.dart';
+import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 BakeryEvent _expenseEvent({
   required int id,
@@ -90,6 +93,9 @@ void main() {
   });
 
   testWidgets('plus button opens dedicated add route', (tester) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+    final prefs = await SharedPreferences.getInstance();
+
     final router = GoRouter(
       routes: [
         GoRoute(
@@ -106,7 +112,10 @@ void main() {
     );
 
     await tester.pumpWidget(
-      ProviderScope(child: MaterialApp.router(routerConfig: router)),
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: MaterialApp.router(routerConfig: router),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -777,9 +786,13 @@ void main() {
   });
 
   testWidgets('form screen shows payment source dropdown', (tester) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+    final prefs = await SharedPreferences.getInstance();
+
     await tester.pumpWidget(
-      const ProviderScope(
-        child: MaterialApp(home: ExpenseFormScreen()),
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: const MaterialApp(home: ExpenseFormScreen()),
       ),
     );
     await tester.pumpAndSettle();
