@@ -138,8 +138,8 @@ class EventService {
     return EventPhoto.fromJson(response.data as Map<String, dynamic>);
   }
 
-  Future<void> deleteEvent(int id) async {
-    await _dio.delete('/api/events/$id');
+  Future<void> deleteEvent(int id, {String deletedBy = ''}) async {
+    await _dio.delete('/api/events/$id', queryParameters: {'deleted_by': deletedBy});
   }
 }
 

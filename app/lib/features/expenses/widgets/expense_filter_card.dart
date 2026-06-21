@@ -13,14 +13,17 @@ class ExpenseFilterCard extends StatelessWidget {
     required this.categories,
     required this.paymentSources,
     required this.paidByNames,
+    required this.loggedByNames,
     required this.filterCategory,
     required this.filterPaymentSource,
     required this.filterPaidByName,
+    required this.filterLoggedByName,
     required this.onDateFilterModeChanged,
     required this.onPickDate,
     required this.onFilterCategoryChanged,
     required this.onFilterPaymentSourceChanged,
     required this.onFilterPaidByNameChanged,
+    required this.onFilterLoggedByNameChanged,
     required this.onClearFilters,
     required this.onApplyFilters,
     required this.formatDate,
@@ -33,14 +36,17 @@ class ExpenseFilterCard extends StatelessWidget {
   final List<String> categories;
   final List<String> paymentSources;
   final List<String> paidByNames;
+  final List<String> loggedByNames;
   final String filterCategory;
   final String filterPaymentSource;
   final String filterPaidByName;
+  final String filterLoggedByName;
   final ValueChanged<ExpenseDateFilterMode> onDateFilterModeChanged;
   final VoidCallback onPickDate;
   final ValueChanged<String> onFilterCategoryChanged;
   final ValueChanged<String> onFilterPaymentSourceChanged;
   final ValueChanged<String> onFilterPaidByNameChanged;
+  final ValueChanged<String> onFilterLoggedByNameChanged;
   final VoidCallback onClearFilters;
   final VoidCallback onApplyFilters;
   final String Function(DateTime) formatDate;
@@ -162,7 +168,7 @@ class ExpenseFilterCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             _FilterChipStrip(
-              label: VN.expenseFilterStaffLabel,
+              label: VN.expensePaidByNameLabel,
               chips: [
                 FilterChip(
                   label: const Text(VN.filterAll),
@@ -175,6 +181,26 @@ class ExpenseFilterCard extends StatelessWidget {
                     label: Text(name),
                     selected: filterPaidByName == name,
                     onSelected: (_) => onFilterPaidByNameChanged(name),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            _FilterChipStrip(
+              label: VN.expenseLoggedByLabel,
+              chips: [
+                FilterChip(
+                  label: const Text(VN.filterAll),
+                  selected: filterLoggedByName.isEmpty,
+                  onSelected: (_) => onFilterLoggedByNameChanged(''),
+                  visualDensity: VisualDensity.compact,
+                ),
+                ...loggedByNames.map(
+                  (name) => FilterChip(
+                    label: Text(name),
+                    selected: filterLoggedByName == name,
+                    onSelected: (_) => onFilterLoggedByNameChanged(name),
                     visualDensity: VisualDensity.compact,
                   ),
                 ),

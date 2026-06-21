@@ -1,13 +1,16 @@
+import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/expense_form_screen.dart';
 import 'package:bakery_app/features/expenses/expense_screen.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_history_card.dart';
+import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 BakeryEvent _expenseEvent({
   required int id,
@@ -19,6 +22,7 @@ BakeryEvent _expenseEvent({
   String note = '',
   String paymentSource = 'Shop tiền mặt',
   String paidByName = '',
+  String loggedBy = '',
   bool reimbursed = false,
 }) {
   return BakeryEvent(
@@ -26,6 +30,7 @@ BakeryEvent _expenseEvent({
     timestamp: DateTime.parse('2026-05-23T10:00:00Z'),
     type: expenseType,
     summary: 'Chi phi test',
+    loggedBy: loggedBy.isNotEmpty ? loggedBy : staff,
     data: {
       'amount_vnd': amount,
       'category': category,
@@ -48,6 +53,7 @@ Future<List<BakeryEvent>> _emptyHistory({
   String? paymentSource,
   String? staffName,
   String? paidByName,
+  String? loggedBy,
   String? searchText,
 }) async => const [];
 
@@ -69,11 +75,12 @@ void main() {
                   category,
                   paymentMethod,
                   paymentSource,
-                  staffName,
-                  paidByName,
-                  searchText,
-                }) async {
-                  capturedSince = since;
+              staffName,
+              paidByName,
+              loggedBy,
+              searchText,
+            }) async {
+              capturedSince = since;
                   capturedUntil = until;
                   return const [];
                 },
@@ -90,6 +97,9 @@ void main() {
   });
 
   testWidgets('plus button opens dedicated add route', (tester) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+    final prefs = await SharedPreferences.getInstance();
+
     final router = GoRouter(
       routes: [
         GoRoute(
@@ -106,7 +116,10 @@ void main() {
     );
 
     await tester.pumpWidget(
-      ProviderScope(child: MaterialApp.router(routerConfig: router)),
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: MaterialApp.router(routerConfig: router),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -147,6 +160,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => [event],
           ),
@@ -235,6 +249,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => [event],
           ),
@@ -269,6 +284,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async {
                   loads += 1;
@@ -330,6 +346,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => events,
           ),
@@ -401,6 +418,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async {
                   capturedCategory = category;
@@ -451,6 +469,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async {
                   capturedCategory = category;
@@ -505,6 +524,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => [event],
           ),
@@ -546,6 +566,7 @@ void main() {
                     paymentSource,
                     staffName,
                     paidByName,
+                    loggedBy,
                     searchText,
                   }) async => [event],
             ),
@@ -588,6 +609,7 @@ void main() {
                     paymentSource,
                     staffName,
                     paidByName,
+                    loggedBy,
                     searchText,
                   }) async => [event],
             ),
@@ -629,6 +651,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => [event],
           ),
@@ -695,6 +718,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async {
                   capturedPaymentSource = paymentSource;
@@ -748,6 +772,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => events,
           ),
@@ -777,9 +802,13 @@ void main() {
   });
 
   testWidgets('form screen shows payment source dropdown', (tester) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+    final prefs = await SharedPreferences.getInstance();
+
     await tester.pumpWidget(
-      const ProviderScope(
-        child: MaterialApp(home: ExpenseFormScreen()),
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: const MaterialApp(home: ExpenseFormScreen()),
       ),
     );
     await tester.pumpAndSettle();
@@ -826,6 +855,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => [event],
           ),
@@ -865,6 +895,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => [event],
           ),
@@ -874,5 +905,153 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('${VN.expensePaidByNameLabel}: Lan'), findsOneWidget);
+  });
+
+  testWidgets('form screen hides nhan vien label and shows payer dropdown', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+    final prefs = await SharedPreferences.getInstance();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: const MaterialApp(home: ExpenseFormScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(VN.expenseStaffNameLabel), findsNothing);
+    expect(find.text(VN.expensePaidByNameLabel), findsOneWidget);
+  });
+
+  testWidgets(
+    'form screen edit mode preserves loggedBy from event',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({kLoggedByKey: 'SomeoneElse'});
+      final prefs = await SharedPreferences.getInstance();
+
+      final event = _expenseEvent(
+        id: 15,
+        amount: 150000,
+        category: VN.expenseCategoryIngredient,
+        paymentMethod: VN.methodCash,
+        vendor: 'NCC A',
+        note: 'Bot mi',
+        staff: 'Lan',
+        paidByName: 'Lan',
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+          child: MaterialApp(home: ExpenseFormScreen(event: event)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(VN.expenseStaffNameLabel), findsNothing);
+      expect(find.text(VN.expenseUpdateAction), findsWidgets);
+      expect(find.text('150000'), findsOneWidget);
+      expect(find.text('NCC A'), findsOneWidget);
+      expect(find.text('Bot mi'), findsOneWidget);
+    },
+  );
+
+  testWidgets('form screen shows confirmation dialog when payer is empty', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 1920));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+    final prefs = await SharedPreferences.getInstance();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: const MaterialApp(home: ExpenseFormScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).first, '50000');
+
+    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.expenseCategoryIngredient).last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(VN.expenseSaveAction));
+    await tester.pumpAndSettle();
+
+    expect(find.text(VN.expensePayerConfirmTitle), findsOneWidget);
+    expect(find.textContaining('${VN.expensePayerUseStaff}:'), findsOneWidget);
+    expect(find.text(VN.expensePayerEnterCustom), findsOneWidget);
+  });
+
+  testWidgets(
+    'form screen confirmation dialog cancel returns to form',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 1920));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+      final prefs = await SharedPreferences.getInstance();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+          child: const MaterialApp(home: ExpenseFormScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextFormField).first, '50000');
+
+      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(VN.expenseCategoryIngredient).last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(VN.expenseSaveAction));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(VN.cancel));
+      await tester.pumpAndSettle();
+
+      expect(find.text(VN.expensePayerConfirmTitle), findsNothing);
+      expect(find.text(VN.expenseSaveAction), findsOneWidget);
+    },
+  );
+
+  testWidgets('form screen blocks save when logged by is empty', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 1920));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: const MaterialApp(home: ExpenseFormScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).first, '50000');
+
+    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.expenseCategoryIngredient).last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(VN.expenseSaveAction));
+    await tester.pumpAndSettle();
+
+    expect(find.text(VN.expenseEmptyStaffWarning), findsOneWidget);
   });
 }

@@ -100,9 +100,9 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     );
   }
 
-  Future<void> deleteEvent(int id) async {
+  Future<void> deleteEvent(int id, {String deletedBy = ''}) async {
     final service = ref.read(eventServiceProvider);
-    await service.deleteEvent(id);
+    await service.deleteEvent(id, deletedBy: deletedBy);
     state = state.whenData(
       (events) => events.where((e) => e.id != id).toList(),
     );
@@ -116,6 +116,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     String? paymentSource,
     String? staffName,
     String? paidByName,
+    String? loggedBy,
     String? searchText,
     int limit = expenseMaxHistoryLimit,
   }) async {
@@ -126,7 +127,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
       expenseCategory: category,
       expensePaymentMethod: paymentMethod,
       expensePaymentSource: paymentSource,
-      expenseStaffName: staffName,
+      loggedBy: loggedBy ?? staffName,
       expensePaidByName: paidByName,
       expenseSearch: searchText,
       limit: safeLimit,
@@ -143,6 +144,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
             paymentSource: paymentSource,
             staffName: staffName,
             paidByName: paidByName,
+            loggedBy: loggedBy,
             searchText: searchText,
           ) &&
           _matchesLocalDateRange(

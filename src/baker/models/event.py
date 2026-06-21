@@ -22,6 +22,8 @@ class Event:
     id: Optional[int] = None
     timestamp: Optional[str] = None
     order_id: Optional[int] = None
+    deleted_at: Optional[str] = None
+    deleted_by: str = ""
 
     def __post_init__(self):
         self.type = TYPE_ALIASES.get(self.type, self.type)
@@ -55,4 +57,6 @@ class Event:
             source=row["source"],
             logged_by=row["logged_by"] if "logged_by" in row.keys() else "",
             order_id=row["order_id"] if "order_id" in row.keys() else None,
+            deleted_at=row["deleted_at"] if "deleted_at" in row.keys() else None,
+            deleted_by=row["deleted_by"] if "deleted_by" in row.keys() else "",
         )

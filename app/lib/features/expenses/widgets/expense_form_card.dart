@@ -16,14 +16,12 @@ class ExpenseFormCard extends StatelessWidget {
     required this.category,
     required this.paymentMethod,
     required this.paymentSource,
-    required this.selectedStaffName,
     required this.selectedPaidByName,
     required this.loading,
     required this.editing,
     required this.onCategoryChanged,
     required this.onPaymentMethodChanged,
     required this.onPaymentSourceChanged,
-    required this.onStaffChanged,
     required this.onPaidByNameChanged,
     required this.onPickDate,
     required this.onPickTime,
@@ -44,14 +42,12 @@ class ExpenseFormCard extends StatelessWidget {
   final String? category;
   final String paymentMethod;
   final String paymentSource;
-  final String? selectedStaffName;
   final String? selectedPaidByName;
   final bool loading;
   final bool editing;
   final ValueChanged<String?> onCategoryChanged;
   final ValueChanged<String?> onPaymentMethodChanged;
   final ValueChanged<String?> onPaymentSourceChanged;
-  final ValueChanged<String?> onStaffChanged;
   final ValueChanged<String?> onPaidByNameChanged;
   final VoidCallback onPickDate;
   final VoidCallback onPickTime;
@@ -175,25 +171,6 @@ class ExpenseFormCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                initialValue: staffList.contains(selectedStaffName)
-                    ? selectedStaffName
-                    : null,
-                decoration: const InputDecoration(
-                  labelText: VN.expenseStaffNameLabel,
-                  border: OutlineInputBorder(),
-                ),
-                items: staffList
-                    .map(
-                      (item) =>
-                          DropdownMenuItem(value: item, child: Text(item)),
-                    )
-                    .toList(),
-                onChanged: onStaffChanged,
-                validator: (value) =>
-                    (value == null || value.isEmpty) ? VN.fieldRequired : null,
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
                 initialValue: staffList.contains(selectedPaidByName)
                     ? selectedPaidByName
                     : null,
@@ -208,8 +185,6 @@ class ExpenseFormCard extends StatelessWidget {
                     )
                     .toList(),
                 onChanged: onPaidByNameChanged,
-                validator: (value) =>
-                    (value == null || value.isEmpty) ? VN.fieldRequired : null,
               ),
               const SizedBox(height: 12),
               Row(

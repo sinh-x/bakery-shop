@@ -50,6 +50,8 @@ def _row_to_dict(row) -> dict:
     else:
         d["orderId"] = None
     d.pop("order_id", None)
+    d.pop("deleted_at", None)
+    d.pop("deleted_by", None)
     return d
 
 
@@ -79,6 +81,9 @@ def create_event(body: EventCreate):
 
     with get_db() as conn:
         event_id = event.save(conn)
+
+        actor = body.logged_by if body.logged_by else ("CLI" if body.source == "cli" else "")
+        _log_event_history(conn, event_id, "create", actor=actor)
 
         # Link logger to event_people if they exist in staff table
         if body.logged_by:
@@ -133,7 +138,9 @@ def list_events(
 def get_event(event_id: int):
     """Chi tiết một sự kiện."""
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM events WHERE id = ? AND deleted_at IS NULL", (event_id,)
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
         return _row_to_dict(row)
@@ -146,6 +153,14 @@ class EventUpdate(BaseModel):
     logged_by: str | None = None
     data: dict[str, Any] | None = None
     timestamp: str | None = None
+
+
+def _log_event_history(conn, event_id, action_type, actor="", field_name="", old_value="", new_value=""):
+    conn.execute(
+        """INSERT INTO event_history (event_id, action_type, actor, field_name, old_value, new_value)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (event_id, action_type, actor, field_name, old_value, new_value),
+    )
 
 
 _TZ_RE = re.compile(r'(Z|[+-]\d{2}:?\d{2})$')
@@ -177,7 +192,6 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
         "payment_source",
         "vendor",
         "note",
-        "staff_name",
         "paid_by_name",
     }
     missing_keys = [key for key in required_keys if key not in data]
@@ -192,10 +206,10 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
         raise HTTPException(status_code=422, detail="amount_vnd phải là số nguyên lớn hơn 0")
 
     payment_source = data.get("payment_source", "")
-    if payment_source == STAFF_ADVANCE_PAYMENT_SOURCE and not data.get("staff_name", "").strip():
+    if payment_source == STAFF_ADVANCE_PAYMENT_SOURCE and not data.get("paid_by_name", "").strip():
         raise HTTPException(
             status_code=422,
-            detail="Tên nhân viên là bắt buộc khi chọn Nhân viên ứng trước",
+            detail="Tên người nhận là bắt buộc khi chọn Nhân viên ứng trước",
         )
 
     paid_by_name = data.get("paid_by_name", "")
@@ -213,7 +227,9 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
 def update_event(event_id: int, body: EventUpdate):
     """Cập nhật sự kiện (summary, type, tags, logged_by, data)."""
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM events WHERE id = ? AND deleted_at IS NULL", (event_id,)
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
 
@@ -260,6 +276,34 @@ def update_event(event_id: int, body: EventUpdate):
             fields.append("data = ?")
             values.append(json.dumps(data["data"]))
 
+        # Log edit entries for each changed field before executing the update
+        actor = data.get("logged_by", "")
+        for field_name, new_val in data.items():
+            if field_name == "data":
+                old_json = row["data"] or ""
+                new_json = json.dumps(data["data"])
+                if old_json != new_json:
+                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
+                                       old_value=old_json, new_value=new_json)
+            elif field_name == "tags":
+                old_tags = row["tags"] or ""
+                new_tags = ",".join(data["tags"])
+                if old_tags != new_tags:
+                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
+                                       old_value=old_tags, new_value=new_tags)
+            elif field_name == "timestamp":
+                old_ts = row["timestamp"] or ""
+                new_ts = _normalize_timestamp(data["timestamp"]) or ""
+                if old_ts != new_ts:
+                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
+                                       old_value=old_ts, new_value=new_ts)
+            else:
+                old_val = str(row[field_name]) if row[field_name] is not None else ""
+                new_val = str(new_val) if new_val is not None else ""
+                if old_val != new_val:
+                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
+                                       old_value=old_val, new_value=new_val)
+
         values.append(event_id)
         conn.execute(f"UPDATE events SET {', '.join(fields)} WHERE id = ?", values)
 
@@ -268,19 +312,38 @@ def update_event(event_id: int, body: EventUpdate):
 
 
 @router.delete("/{event_id}", status_code=204)
-def delete_event(event_id: int):
-    """Xóa sự kiện theo id."""
+def delete_event(event_id: int, deleted_by: str = Query("", description="Người thực hiện xóa")):
+    """Xóa mềm sự kiện theo id."""
     with get_db() as conn:
-        row = conn.execute("SELECT id FROM events WHERE id = ?", (event_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM events WHERE id = ? AND deleted_at IS NULL", (event_id,)
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
 
-        conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S") + "+07:00"
+        conn.execute(
+            "UPDATE events SET deleted_at = ?, deleted_by = ? WHERE id = ?",
+            (now, deleted_by, event_id),
+        )
+        _log_event_history(conn, event_id, "delete", actor=deleted_by)
+
+
+@router.get("/{event_id}/history")
+def get_event_history(event_id: int):
+    """Lịch sử thay đổi của sự kiện (audit trail)."""
+    with get_db() as conn:
+        _get_event_or_404(conn, event_id)
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? ORDER BY timestamp DESC, id DESC",
+            (event_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def _get_event_or_404(conn, event_id: int):
     row = conn.execute(
-        "SELECT * FROM events WHERE id = ?", (event_id,)
+        "SELECT * FROM events WHERE id = ? AND deleted_at IS NULL", (event_id,)
     ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
