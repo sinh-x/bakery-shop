@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../data/services/printer_service.dart';
+import '../../providers/paper_mode_provider.dart';
 import '../../shared/widgets/printer_picker_dialog.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
@@ -19,7 +20,10 @@ Future<void> printNative(BuildContext context, Uint8List imageBytes, dynamic ref
   if (printerService.lastPrinterMac != null) {
     try {
       await printerService.connect(printerService.lastPrinterMac!);
-      await printerService.printImage(imageBytes);
+      final paperMode = widgetRef.read(paperModeProvider).asData?.value ?? 'label';
+      final trailMm = widgetRef.read(trailMmProvider).asData?.value ?? 20;
+      await printerService.printImage(imageBytes,
+          paperMode: paperMode, trailMm: trailMm);
       if (context.mounted) {
         showTopSnackBar(context, VN.printSuccess);
       }
@@ -56,7 +60,10 @@ Future<PrinterPickerResult> tryPrintNative(
   if (printerService.lastPrinterMac != null) {
     try {
       await printerService.connect(printerService.lastPrinterMac!);
-      await printerService.printImage(imageBytes);
+      final paperMode = widgetRef.read(paperModeProvider).asData?.value ?? 'label';
+      final trailMm = widgetRef.read(trailMmProvider).asData?.value ?? 20;
+      await printerService.printImage(imageBytes,
+          paperMode: paperMode, trailMm: trailMm);
       return PrinterPickerResult.success;
     } catch (_) {
       // Fall through to picker

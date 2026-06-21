@@ -191,8 +191,14 @@ class PrinterService {
   /// The Y41BT is a TSPL label printer. We convert the image to a 1-bit
   /// bitmap and send it via TSPL BITMAP command.
   ///
+  /// [paperMode] controls GAP spacing: `label` = 3 mm, `roll` = 0 mm (DG-183).
+  /// [trailMm] controls trailing FEED after PRINT in roll mode (DG-184).
+  ///
   /// Throws [PrinterException] if not connected or printing fails.
-  Future<void> printImage(Uint8List imageBytes) async {
+  Future<void> printImage(Uint8List imageBytes, {
+    String paperMode = 'label',
+    int trailMm = 20,
+  }) async {
     if (_connectedMac == null) {
       throw PrinterException(PrinterError.connectionLost);
     }
@@ -249,9 +255,10 @@ class PrinterService {
 
       // Build complete TSPL command as one List<int>
       // Plugin handles 16KB chunking internally via outputStream
+      final gapMm = paperMode == 'label' ? 3 : 0;
       final commands = <int>[];
       tspl(commands, 'SIZE 76 mm,$heightMm mm');
-      tspl(commands, 'GAP 3 mm,0 mm');
+      tspl(commands, 'GAP $gapMm mm,0 mm');
       tspl(commands, 'SPEED 3');
       tspl(commands, 'DENSITY 8');
       tspl(commands, 'DIRECTION 0,0');
@@ -261,6 +268,9 @@ class PrinterService {
       commands.addAll(List<int>.from(bitmapData));
       commands.addAll([0x0D, 0x0A]);
       tspl(commands, 'PRINT 1,1');
+      if (paperMode == 'roll' && trailMm > 0) {
+        tspl(commands, 'FEED $trailMm mm');
+      }
 
       final result = await PrintBluetoothThermal.writeBytes(commands);
       if (!result) {

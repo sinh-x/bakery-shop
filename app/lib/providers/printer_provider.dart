@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/services/printer_service.dart';
+import 'paper_mode_provider.dart';
 
 /// Printer connection state.
 enum PrinterState {
@@ -109,7 +110,10 @@ class PrinterNotifier extends AsyncNotifier<PrinterStatus> {
     state = const AsyncValue.data(PrinterStatus.printing);
 
     try {
-      await _printerService.printImage(imageBytes);
+      final paperMode = ref.read(paperModeProvider).asData?.value ?? 'label';
+      final trailMm = ref.read(trailMmProvider).asData?.value ?? 20;
+      await _printerService.printImage(imageBytes,
+          paperMode: paperMode, trailMm: trailMm);
       state = const AsyncValue.data(PrinterStatus.connected);
       return true;
     } on PrinterException catch (e) {

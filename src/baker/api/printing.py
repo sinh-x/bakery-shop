@@ -45,7 +45,12 @@ def get_paper_mode():
     """
     with get_db() as conn:
         mode = usb_printer.get_paper_mode(conn)
-    return {"paperMode": mode, "default": usb_printer.PAPER_MODE_DEFAULT}
+        trail_mm = usb_printer.get_trail_mm(conn)
+    return {
+        "paperMode": mode,
+        "default": usb_printer.PAPER_MODE_DEFAULT,
+        "trailMm": trail_mm,
+    }
 
 
 @router.put("/print/paper-mode")

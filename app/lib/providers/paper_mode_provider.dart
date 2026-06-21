@@ -32,3 +32,13 @@ class PaperModeNotifier extends AsyncNotifier<String> {
 /// Provider for the effective printer paper mode.
 final paperModeProvider =
     AsyncNotifierProvider<PaperModeNotifier, String>(PaperModeNotifier.new);
+
+/// Provider for the configured trail length in mm (DG-184).
+///
+/// Defaults to 20 mm. Reads from the server paper-mode status endpoint
+/// which returns the effective trail_mm (DB override > TRAIL_MM env var).
+final trailMmProvider = FutureProvider<int>((ref) async {
+  final service = ref.read(paperModeServiceProvider);
+  final status = await service.getStatus();
+  return status.trailMm;
+});

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
 import '../../data/services/printer_service.dart';
+import '../../providers/paper_mode_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 /// Result of the printer picker dialog.
@@ -121,7 +122,10 @@ class _PrinterPickerBottomSheetState
         // Send plain text test to verify TSPL protocol
         await widget.printerService.printTest();
       } else {
-        await widget.printerService.printImage(widget.imageBytes);
+        final paperMode = ref.read(paperModeProvider).asData?.value ?? 'label';
+        final trailMm = ref.read(trailMmProvider).asData?.value ?? 20;
+        await widget.printerService.printImage(widget.imageBytes,
+            paperMode: paperMode, trailMm: trailMm);
       }
 
       if (mounted) {
