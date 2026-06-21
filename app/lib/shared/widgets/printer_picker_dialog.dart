@@ -119,10 +119,19 @@ class _PrinterPickerBottomSheetState
       setState(() => _state = _PickerState.printing);
 
       if (testOnly) {
-        // Send plain text test to verify TSPL protocol
         await widget.printerService.printTest();
       } else {
-        await ref.read(printerProvider.notifier).printImage(widget.imageBytes);
+        final success = await ref.read(printerProvider.notifier).printImage(widget.imageBytes);
+        if (!mounted) return;
+
+        if (!success) {
+          final printerStatus = ref.read(printerProvider).asData?.value;
+          setState(() {
+            _state = _PickerState.error;
+            _errorMessage = printerStatus?.errorMessage ?? VN.printerConnectionFailed;
+          });
+          return;
+        }
       }
 
       if (mounted) {
