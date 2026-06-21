@@ -12,7 +12,7 @@ import '../../data/models/work_item.dart';
 import '../../data/services/printer_service.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
-import '../../providers/paper_mode_provider.dart';
+import '../../providers/printer_provider.dart';
 import '../../shared/utils/vnd_units.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/printer_picker_dialog.dart';
@@ -925,12 +925,10 @@ class _InternalPrintDialogState extends ConsumerState<_InternalPrintDialog> {
       if (printerService.lastPrinterMac != null) {
         try {
           await printerService.connect(printerService.lastPrinterMac!);
-          final settings = ref.read(paperSettingsProvider).asData?.value ?? const PaperSettings();
-          final paperMode = settings.paperMode;
-          final trailMm = settings.trailMm;
-          await printerService.printImage(internalBytes,
-              paperMode: paperMode, trailMm: trailMm);
-          result = PrinterPickerResult.success;
+          final success = await ref.read(printerProvider.notifier).printImage(internalBytes);
+          if (success) {
+            result = PrinterPickerResult.success;
+          }
         } catch (_) {
           // Fall through to picker
         }

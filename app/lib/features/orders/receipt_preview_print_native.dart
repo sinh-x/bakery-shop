@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../data/services/printer_service.dart';
-import '../../providers/paper_mode_provider.dart';
+import '../../providers/printer_provider.dart';
 import '../../shared/widgets/printer_picker_dialog.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
@@ -20,15 +20,13 @@ Future<void> printNative(BuildContext context, Uint8List imageBytes, dynamic ref
   if (printerService.lastPrinterMac != null) {
     try {
       await printerService.connect(printerService.lastPrinterMac!);
-      final settings = widgetRef.read(paperSettingsProvider).asData?.value ?? const PaperSettings();
-      final paperMode = settings.paperMode;
-      final trailMm = settings.trailMm;
-      await printerService.printImage(imageBytes,
-          paperMode: paperMode, trailMm: trailMm);
-      if (context.mounted) {
-        showTopSnackBar(context, VN.printSuccess);
+      final success = await widgetRef.read(printerProvider.notifier).printImage(imageBytes);
+      if (success) {
+        if (context.mounted) {
+          showTopSnackBar(context, VN.printSuccess);
+        }
+        return;
       }
-      return;
     } catch (_) {
       // Fall through to picker
     }
@@ -61,12 +59,10 @@ Future<PrinterPickerResult> tryPrintNative(
   if (printerService.lastPrinterMac != null) {
     try {
       await printerService.connect(printerService.lastPrinterMac!);
-      final settings = widgetRef.read(paperSettingsProvider).asData?.value ?? const PaperSettings();
-      final paperMode = settings.paperMode;
-      final trailMm = settings.trailMm;
-      await printerService.printImage(imageBytes,
-          paperMode: paperMode, trailMm: trailMm);
-      return PrinterPickerResult.success;
+      final success = await widgetRef.read(printerProvider.notifier).printImage(imageBytes);
+      if (success) {
+        return PrinterPickerResult.success;
+      }
     } catch (_) {
       // Fall through to picker
     }

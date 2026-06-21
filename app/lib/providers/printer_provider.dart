@@ -86,18 +86,22 @@ class PrinterNotifier extends AsyncNotifier<PrinterStatus> {
     final currentState = state.value;
     if (currentState == null) return false;
 
-    // If not connected, show message that printer needs to be set up
+    // If not connected, check actual service state (may have been connected externally)
     if (currentState.state == PrinterState.disconnected) {
-      state = AsyncValue.data( // ignore: prefer_const_constructors
-        const PrinterStatus(
-          state: PrinterState.error,
-          errorMessage: 'Máy in chưa kết nối. Vui lòng kết nối máy in trong Cài đặt.',
-        ),
-      );
-      // Reset to disconnected after showing error
-      await Future.delayed(const Duration(seconds: 3));
-      state = const AsyncValue.data(PrinterStatus.disconnected);
-      return false;
+      if (_printerService.isConnected) {
+        state = const AsyncValue.data(PrinterStatus.connected);
+      } else {
+        state = AsyncValue.data( // ignore: prefer_const_constructors
+          const PrinterStatus(
+            state: PrinterState.error,
+            errorMessage: 'Máy in chưa kết nối. Vui lòng kết nối máy in trong Cài đặt.',
+          ),
+        );
+        // Reset to disconnected after showing error
+        await Future.delayed(const Duration(seconds: 3));
+        state = const AsyncValue.data(PrinterStatus.disconnected);
+        return false;
+      }
     }
 
     // If already printing, don't start another print
