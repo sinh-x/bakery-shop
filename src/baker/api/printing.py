@@ -159,6 +159,8 @@ def print_receipt(
         # Resolve effective paper mode (DB override > env default) so the
         # TSPL GAP command reflects the configured paper type (DG-183).
         paper_mode = usb_printer.get_paper_mode(conn)
+        # Resolve trail length for FEED command in roll mode (DG-184).
+        trail_mm = usb_printer.get_trail_mm(conn)
 
     # Send to USB printer
     try:
@@ -166,6 +168,7 @@ def print_receipt(
             device_path=USB_PRINTER_DEVICE,
             png_bytes=png_bytes,
             paper_mode=paper_mode,
+            trail_mm=trail_mm,
         )
     except FileNotFoundError:
         raise HTTPException(

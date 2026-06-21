@@ -191,7 +191,7 @@ class TestPaperModeGapConditional:
         assert "GAP 3 mm,0 mm" in tspl_str
 
     def test_roll_mode_preserves_other_commands(self):
-        """roll mode only changes GAP; all other TSPL commands unchanged."""
+        """roll mode changes GAP and adds FEED; all other TSPL commands unchanged."""
         tspl = usb_printer.png_to_tspl(self._make_png(height=80), paper_mode="roll")
         tspl_str = tspl.decode("latin-1")
         assert "SIZE 76 mm,10.0 mm" in tspl_str
@@ -530,3 +530,205 @@ class TestGetPaperMode:
         """Corrupt DB value falls back to env default rather than crashing."""
         conn = self._conn_with_config("paper_mode", "corrupt")
         assert usb_printer.get_paper_mode(conn) == usb_printer.PAPER_MODE_DEFAULT
+
+
+class TestTrailMmEnvValidation:
+    """Test TRAIL_MM env var reading and validation (NFR5, AC6)."""
+
+    def test_default_is_20_when_unset(self, monkeypatch):
+        """TRAIL_MM defaults to 20 when env var is unset."""
+        monkeypatch.delenv("TRAIL_MM", raising=False)
+        assert usb_printer._validate_trail_mm_env() == 20
+        assert usb_printer.DEFAULT_TRAIL_MM == 20
+
+    def test_zero_accepted(self, monkeypatch):
+        """TRAIL_MM=0 is accepted (disable trailing feed)."""
+        monkeypatch.setenv("TRAIL_MM", "0")
+        assert usb_printer._validate_trail_mm_env() == 0
+
+    def test_mid_range_accepted(self, monkeypatch):
+        """TRAIL_MM=100 is accepted."""
+        monkeypatch.setenv("TRAIL_MM", "100")
+        assert usb_printer._validate_trail_mm_env() == 100
+
+    def test_max_accepted(self, monkeypatch):
+        """TRAIL_MM=200 is accepted (max value)."""
+        monkeypatch.setenv("TRAIL_MM", "200")
+        assert usb_printer._validate_trail_mm_env() == 200
+
+    def test_whitespace_trimmed(self, monkeypatch):
+        """Surrounding whitespace is trimmed before validation."""
+        monkeypatch.setenv("TRAIL_MM", "  50  ")
+        assert usb_printer._validate_trail_mm_env() == 50
+
+    def test_negative_raises(self, monkeypatch):
+        """Negative TRAIL_MM raises ValueError (AC6)."""
+        monkeypatch.setenv("TRAIL_MM", "-1")
+        with pytest.raises(ValueError, match="Invalid TRAIL_MM"):
+            usb_printer._validate_trail_mm_env()
+
+    def test_over_200_raises(self, monkeypatch):
+        """TRAIL_MM > 200 raises ValueError (AC6)."""
+        monkeypatch.setenv("TRAIL_MM", "201")
+        with pytest.raises(ValueError, match="Invalid TRAIL_MM"):
+            usb_printer._validate_trail_mm_env()
+
+    def test_non_numeric_raises(self, monkeypatch):
+        """Non-numeric TRAIL_MM raises ValueError (AC6)."""
+        monkeypatch.setenv("TRAIL_MM", "abc")
+        with pytest.raises(ValueError, match="Invalid TRAIL_MM"):
+            usb_printer._validate_trail_mm_env()
+
+    def test_empty_string_raises(self, monkeypatch):
+        """Empty TRAIL_MM string raises ValueError."""
+        monkeypatch.setenv("TRAIL_MM", "   ")
+        with pytest.raises(ValueError, match="Invalid TRAIL_MM"):
+            usb_printer._validate_trail_mm_env()
+
+    def test_module_load_fails_fast_on_invalid_env(self, monkeypatch):
+        """Importing usb_printer with invalid TRAIL_MM fails fast (NFR5)."""
+        monkeypatch.setenv("TRAIL_MM", "999")
+        with pytest.raises(ValueError, match="Invalid TRAIL_MM"):
+            importlib.reload(usb_printer)
+        monkeypatch.delenv("TRAIL_MM", raising=False)
+        importlib.reload(usb_printer)
+
+
+class TestGetTrailMm:
+    """Test get_trail_mm() DB-override precedence (FR8)."""
+
+    def _conn_with_config(self, key=None, value=None, active=1):
+        """Build a mock connection row for app_config."""
+        conn = MagicMock()
+        if key is None:
+            conn.execute.return_value.fetchone.return_value = None
+        else:
+            row = MagicMock()
+            row.__getitem__ = lambda self, k: value if k == "config_value" else None
+            conn.execute.return_value.fetchone.return_value = row
+        return conn
+
+    def test_returns_default_when_no_db_row(self):
+        """No DB override → returns env var default."""
+        conn = self._conn_with_config()
+        assert usb_printer.get_trail_mm(conn) == usb_printer.DEFAULT_TRAIL_MM
+
+    def test_db_override_takes_precedence(self, monkeypatch):
+        """DB override 50 takes precedence over env default 20."""
+        monkeypatch.setenv("TRAIL_MM", "20")
+        importlib.reload(usb_printer)
+        try:
+            conn = self._conn_with_config("trail_mm", "50")
+            assert usb_printer.get_trail_mm(conn) == 50
+        finally:
+            monkeypatch.delenv("TRAIL_MM", raising=False)
+            importlib.reload(usb_printer)
+
+    def test_db_zero_overrides_env_default(self):
+        """DB '0' disables trailing feed even when env default is 20."""
+        conn = self._conn_with_config("trail_mm", "0")
+        assert usb_printer.get_trail_mm(conn) == 0
+
+    def test_inactive_db_row_ignored(self):
+        """Inactive app_config row is ignored → falls back to env default."""
+        conn = MagicMock()
+        conn.execute.return_value.fetchone.return_value = None
+        assert usb_printer.get_trail_mm(conn) == usb_printer.DEFAULT_TRAIL_MM
+
+    def test_invalid_db_value_falls_back_to_default(self):
+        """Corrupt DB value falls back to env default rather than crashing."""
+        conn = self._conn_with_config("trail_mm", "not_a_number")
+        assert usb_printer.get_trail_mm(conn) == usb_printer.DEFAULT_TRAIL_MM
+
+    def test_db_out_of_range_falls_back_to_default(self):
+        """DB value > 200 falls back to env default."""
+        conn = self._conn_with_config("trail_mm", "999")
+        assert usb_printer.get_trail_mm(conn) == usb_printer.DEFAULT_TRAIL_MM
+
+    def test_db_negative_falls_back_to_default(self):
+        """DB negative value falls back to env default."""
+        conn = self._conn_with_config("trail_mm", "-5")
+        assert usb_printer.get_trail_mm(conn) == usb_printer.DEFAULT_TRAIL_MM
+
+
+class TestTrailFeedCommand:
+    """Test FEED command presence/absence based on paper_mode and trail_mm (DG-184)."""
+
+    def _make_png(self, height=10):
+        img = Image.new("L", (576, height), 0)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    def test_roll_mode_includes_feed_with_default_trail(self):
+        """roll mode produces FEED command with default trail (20 mm)."""
+        tspl = usb_printer.png_to_tspl(self._make_png(), paper_mode="roll")
+        tspl_str = tspl.decode("latin-1")
+        assert "FEED 20 mm" in tspl_str
+
+    def test_roll_mode_includes_feed_with_custom_trail(self):
+        """roll mode produces FEED command with custom trail (50 mm)."""
+        tspl = usb_printer.png_to_tspl(
+            self._make_png(), paper_mode="roll", trail_mm=50,
+        )
+        tspl_str = tspl.decode("latin-1")
+        assert "FEED 50 mm" in tspl_str
+
+    def test_roll_mode_no_feed_when_trail_zero(self):
+        """roll mode with trail_mm=0 produces no FEED command."""
+        tspl = usb_printer.png_to_tspl(
+            self._make_png(), paper_mode="roll", trail_mm=0,
+        )
+        tspl_str = tspl.decode("latin-1")
+        assert "FEED" not in tspl_str
+
+    def test_label_mode_no_feed(self):
+        """label mode produces no FEED command (FR6 — bit-identical)."""
+        tspl = usb_printer.png_to_tspl(self._make_png(), paper_mode="label")
+        tspl_str = tspl.decode("latin-1")
+        assert "FEED" not in tspl_str
+
+    def test_label_mode_no_feed_even_with_trail(self):
+        """label mode ignores trail_mm — no FEED even with trail > 0 (FR6)."""
+        tspl = usb_printer.png_to_tspl(
+            self._make_png(), paper_mode="label", trail_mm=50,
+        )
+        tspl_str = tspl.decode("latin-1")
+        assert "FEED" not in tspl_str
+
+    def test_feed_after_print(self):
+        """FEED command appears after PRINT 1,1 in roll mode."""
+        tspl = usb_printer.png_to_tspl(
+            self._make_png(), paper_mode="roll", trail_mm=30,
+        )
+        tspl_str = tspl.decode("latin-1")
+        lines = tspl_str.split("\r\n")
+        lines = [l for l in lines if l]
+        print_idx = next(i for i, l in enumerate(lines) if l.startswith("PRINT"))
+        feed_idx = next(i for i, l in enumerate(lines) if l.startswith("FEED"))
+        assert feed_idx == print_idx + 1, (
+            f"FEED should immediately follow PRINT, got PRINT at {print_idx}, "
+            f"FEED at {feed_idx}"
+        )
+
+    def test_roll_mode_preserves_all_commands_plus_feed(self):
+        """roll mode preserves all commands + adds FEED."""
+        tspl = usb_printer.png_to_tspl(
+            self._make_png(height=80), paper_mode="roll", trail_mm=20,
+        )
+        tspl_str = tspl.decode("latin-1")
+        assert "SIZE 76 mm,10.0 mm" in tspl_str
+        assert "GAP 0 mm,0 mm" in tspl_str
+        assert "SPEED 3" in tspl_str
+        assert "DENSITY 8" in tspl_str
+        assert "DIRECTION 0,0" in tspl_str
+        assert "CLS" in tspl_str
+        assert "BITMAP 0,0,72,80,0," in tspl_str
+        assert "PRINT 1,1" in tspl_str
+        assert "FEED 20 mm" in tspl_str
+
+    def test_trail_mm_defaults_to_20_for_roll(self):
+        """Omitting trail_mm in roll mode defaults to FEED 20 mm."""
+        tspl = usb_printer.png_to_tspl(self._make_png(), paper_mode="roll")
+        tspl_str = tspl.decode("latin-1")
+        assert "FEED 20 mm" in tspl_str
