@@ -11,7 +11,7 @@ class ExpenseEventData {
     this.paymentSource = 'Shop tiền mặt',
     required this.vendor,
     required this.note,
-    required this.staffName,
+    this.loggedBy = '',
     this.paidByName = '',
     this.reimbursed = false,
   });
@@ -22,7 +22,7 @@ class ExpenseEventData {
   final String paymentSource;
   final String vendor;
   final String note;
-  final String staffName;
+  final String loggedBy;
   final String paidByName;
   final bool reimbursed;
 }
@@ -36,7 +36,6 @@ class ExpenseEventMapper {
       'payment_source': input.paymentSource,
       'vendor': input.vendor,
       'note': input.note,
-      'staff_name': input.staffName,
       'paid_by_name': input.paidByName,
       'reimbursed': input.reimbursed,
     };
@@ -59,8 +58,8 @@ class ExpenseEventMapper {
       paymentSource: '${data['payment_source'] ?? 'Shop tiền mặt'}',
       vendor: '${data['vendor'] ?? ''}',
       note: '${data['note'] ?? ''}',
-      staffName: '${data['staff_name'] ?? ''}',
-      paidByName: _nonEmpty(data['paid_by_name']) ?? _nonEmpty(data['staff_name']) ?? '',
+      loggedBy: event.loggedBy,
+      paidByName: _nonEmpty(data['paid_by_name']) ?? event.loggedBy,
       reimbursed: data['reimbursed'] == true,
     );
   }
@@ -97,7 +96,7 @@ class ExpenseEventMapper {
         expense.paymentSource != paymentSource) {
       return false;
     }
-    if (staffName != null && staffName.isNotEmpty && expense.staffName != staffName) {
+    if (staffName != null && staffName.isNotEmpty && event.loggedBy != staffName) {
       return false;
     }
     if (paidByName != null && paidByName.isNotEmpty && expense.paidByName != paidByName) {
@@ -111,7 +110,7 @@ class ExpenseEventMapper {
       event.summary,
       expense.vendor,
       expense.note,
-      expense.staffName,
+      event.loggedBy,
       expense.paidByName,
       expense.category,
       expense.paymentMethod,
