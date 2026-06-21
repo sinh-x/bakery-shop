@@ -193,5 +193,6 @@
       }) // {
         # NixOS module (system-independent — exported outside eachDefaultSystem)
         nixosModules.default = import ./nix/module.nix { inherit self; };
+        nixosModules.cups = import ./nix/cups.nix { inherit self; };
       };
 }
