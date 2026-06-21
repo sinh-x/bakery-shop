@@ -9,8 +9,12 @@ from PIL import Image
 sys.path.insert(0, "src")
 
 from baker.api.receipts import (
+    RECEIPT_WIDTH,
+    MARGIN,
+    _add_tear_indicator,
     _customer_reference_text,
     _enum_attribute_lines,
+    _find_content_bottom,
     _format_vnd,
     _order_visual_ref,
     _shop_delivery_code_text,
@@ -489,3 +493,176 @@ class TestReceiptAPI:
         response = api_client.get(f"/api/orders/{order_ref}/receipt?type=bus_label")
         assert response.status_code == 200
         assert response.headers["content-type"] == "image/png"
+
+
+class TestTearIndicator:
+    """Tests for tear indicator line in receipt PNGs (DG-184 Phase 2)."""
+
+    def test_label_mode_y_unchanged(self):
+        """Y position unchanged when paper_mode is not 'roll'."""
+        from PIL import Image, ImageDraw
+        img = Image.new("RGB", (RECEIPT_WIDTH, 200), "white")
+        draw = ImageDraw.Draw(img)
+        y = _add_tear_indicator(img, draw, 100, "label")
+        assert y == 100
+
+    def test_roll_mode_adds_gap(self):
+        """Gap between last content and tear line >= 64 dots (8mm)."""
+        from PIL import Image, ImageDraw
+        img = Image.new("RGB", (RECEIPT_WIDTH, 300), "white")
+        draw = ImageDraw.Draw(img)
+        y = _add_tear_indicator(img, draw, 100, "roll")
+        assert y >= 100 + 64, f"Expected y >= 164, got {y}"
+
+    def test_draws_dashed_line(self):
+        """Dashed line is drawn in roll mode across content width."""
+        from PIL import Image, ImageDraw
+        img = Image.new("RGB", (RECEIPT_WIDTH, 300), "white")
+        draw = ImageDraw.Draw(img)
+        y_before = 100
+        _add_tear_indicator(img, draw, y_before, "roll")
+        tear_line_y = y_before + 64
+        pixels = [img.getpixel((x, tear_line_y)) for x in range(MARGIN, RECEIPT_WIDTH - MARGIN, 2)]
+        non_white = [p for p in pixels if p != (255, 255, 255)]
+        assert len(non_white) > 0, "Expected dashed line pixels, found none"
+
+    def test_line_has_gaps(self):
+        """Dashed line alternates between dash and gap segments."""
+        from PIL import Image, ImageDraw
+        img = Image.new("RGB", (RECEIPT_WIDTH, 300), "white")
+        draw = ImageDraw.Draw(img)
+        _add_tear_indicator(img, draw, 100, "roll")
+        tear_line_y = 164
+        pixels = [img.getpixel((x, tear_line_y)) for x in range(MARGIN, RECEIPT_WIDTH - MARGIN)]
+        white = [p for p in pixels if p == (255, 255, 255)]
+        non_white = [p for p in pixels if p != (255, 255, 255)]
+        assert len(white) > 0, "Expected white gaps in dashed line, found none"
+        assert len(non_white) > 0, "Expected dash segments, found none"
+
+    def test_absent_in_label_mode_api(self, api_client):
+        """Receipt in label mode has no dashed tear line pattern near the bottom."""
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "No Tear Test",
+            "items": [{"productName": "Test Product", "quantity": 1, "unitPrice": 50000}],
+            "dueDate": "2026-06-21",
+            "deliveryType": "pickup",
+        })
+        assert order_resp.status_code == 201
+        order_ref = order_resp.json()["orderRef"]
+
+        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=customer")
+        assert response.status_code == 200
+        img = Image.open(io.BytesIO(response.content))
+        h = img.height
+        # Tear indicator area would be in last ~80px (64 gap + line width)
+        # Check bottom 80px: should not contain alternating dash/gap pattern
+        tear_region = img.crop((MARGIN, max(0, h - 80), RECEIPT_WIDTH - MARGIN, h))
+        # Scan mid-line of tear region for alternating (100,100,100) and white
+        mid_y = tear_region.height // 2
+        row = [tear_region.getpixel((x, mid_y)) for x in range(tear_region.width)]
+        tear_color = (100, 100, 100)
+        white = (255, 255, 255)
+        # Count transitions between tear_color and white
+        transitions = 0
+        prev = row[0]
+        for p in row[1:]:
+            if prev != p and (p == tear_color or p == white) and (prev == tear_color or prev == white):
+                transitions += 1
+            prev = p
+        # A dashed line would have many transitions (dash/gap/dash/gap...)
+        # Label mode should have few or no transitions of these specific colors
+        assert transitions < 10, f"Found {transitions} color transitions in bottom region, expected < 10"
+
+    def test_present_in_roll_mode_api(self, api_client):
+        """Receipt in roll mode includes tear indicator color pixels."""
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO app_config (config_key, config_value, sort_order, active)"
+                " VALUES ('paper_mode', 'roll', 0, 1)"
+            )
+
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "Roll Mode Test",
+            "items": [{"productName": "Test Cake", "quantity": 1, "unitPrice": 100000}],
+            "dueDate": "2026-06-21",
+            "deliveryType": "pickup",
+        })
+        assert order_resp.status_code == 201
+        order_ref = order_resp.json()["orderRef"]
+
+        response = api_client.get(f"/api/orders/{order_ref}/receipt?type=customer")
+        assert response.status_code == 200
+        img = Image.open(io.BytesIO(response.content))
+        pixels = list(img.getdata())
+        tear_color = (100, 100, 100)
+        assert tear_color in pixels, "Tear indicator color NOT found in roll mode image"
+
+    def test_all_5_types_in_roll_mode(self, api_client):
+        """All 5 receipt types include tear indicator in roll mode."""
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO app_config (config_key, config_value, sort_order, active)"
+                " VALUES ('paper_mode', 'roll', 0, 1)"
+            )
+
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "Five Type Test",
+            "customerPhone": "0900123456",
+            "items": [
+                {"productName": "Banh kem", "quantity": 1, "unitPrice": 300000},
+            ],
+            "dueDate": "2026-06-21",
+            "deliveryType": "bus",
+            "deliveryAddress": "Ben xe Test",
+            "notes": "Test order notes",
+        })
+        assert order_resp.status_code == 201
+        data = order_resp.json()
+        order_ref = data["orderRef"]
+        item_id = data["workItems"][0]["id"]
+
+        tear_color = (100, 100, 100)
+        receipt_types = [
+            f"type=customer",
+            f"type=work_ticket&item_id={item_id}",
+            "type=bus_label",
+            "type=shop",
+            "type=delivery",
+        ]
+        for params in receipt_types:
+            resp = api_client.get(f"/api/orders/{order_ref}/receipt?{params}")
+            assert resp.status_code == 200, f"Failed for {params}"
+            img = Image.open(io.BytesIO(resp.content))
+            pixels = list(img.getdata())
+            assert tear_color in pixels, f"Tear indicator missing in {params}"
+
+    def test_gap_is_64_dots(self):
+        """Gap from last content to tear line is exactly 64 dots (8mm)."""
+        from PIL import Image, ImageDraw
+        img = Image.new("RGB", (RECEIPT_WIDTH, 300), "white")
+        draw = ImageDraw.Draw(img)
+        draw.text((MARGIN, 100), "Content", fill=(0, 0, 0))
+        y_content = 120
+        y_after = _add_tear_indicator(img, draw, y_content, "roll")
+        assert y_after >= y_content + 64
+        tear_line_y = y_content + 64
+        pixels_at_line = [img.getpixel((x, tear_line_y)) for x in range(MARGIN, RECEIPT_WIDTH - MARGIN)]
+        non_white = [p for p in pixels_at_line if p != (255, 255, 255)]
+        assert len(non_white) > 0, "Tear line not found at expected y position"
+
+    def test_find_content_bottom_white_image(self):
+        """_find_content_bottom returns 0 for entirely white image."""
+        from PIL import Image
+        img = Image.new("RGB", (100, 100), "white")
+        assert _find_content_bottom(img) == 0
+
+    def test_find_content_bottom_with_content(self):
+        """_find_content_bottom finds last non-white pixel."""
+        from PIL import Image, ImageDraw
+        img = Image.new("RGB", (100, 100), "white")
+        draw = ImageDraw.Draw(img)
+        draw.text((10, 50), "X", fill=(0, 0, 0))
+        bottom = _find_content_bottom(img)
+        assert bottom > 50
