@@ -8,6 +8,7 @@ POST /api/orders/{ref}/print triggers server-side thermal printing:
 
 import io
 import os
+import socket
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -177,7 +178,7 @@ def print_receipt(
     if PRINT_IPP_URL:
         # IPP transport: send pre-rendered TSPL to CUPS endpoint
         try:
-            with usb_printer._print_lock:
+            with usb_printer.print_lock:
                 ipp_client.send_tspl_to_ipp(tspl_data, PRINT_IPP_URL)
         except ipp_client.IppConnectionError as e:
             raise HTTPException(
@@ -197,7 +198,7 @@ def print_receipt(
     else:
         # USB transport: write TSPL directly to /dev/usb/lp0 (backward compatible)
         try:
-            with usb_printer._print_lock:
+            with usb_printer.print_lock:
                 fd = None
                 try:
                     fd = usb_printer.open_printer(USB_PRINTER_DEVICE)
@@ -295,7 +296,11 @@ def get_print_log(ref: str):
 
 @router.get("/print/status")
 def print_status():
-    """Check if the USB printer is accessible and return effective paper mode."""
+    """Check if the USB printer is accessible and return effective paper mode.
+
+    When PRINT_IPP_URL is configured, also probes the IPP endpoint via
+    TCP connectivity check.
+    """
     available = usb_printer.check_printer_status(USB_PRINTER_DEVICE)
     with get_db() as conn:
         paper_mode = usb_printer.get_paper_mode(conn)
@@ -304,11 +309,29 @@ def print_status():
         "device": USB_PRINTER_DEVICE,
         "paperMode": paper_mode,
     }
-    if available:
+    if PRINT_IPP_URL:
+        ipp_available = False
+        ipp_host = None
+        ipp_port = None
+        try:
+            parsed = ipp_client._parse_url(PRINT_IPP_URL)
+            ipp_host, ipp_port = parsed[0], parsed[1]
+            sock = socket.create_connection((ipp_host, ipp_port), timeout=3.0)
+            sock.close()
+            ipp_available = True
+        except (ValueError, OSError):
+            pass
+        base["ippPrinter"] = "available" if ipp_available else "unavailable"
+        if ipp_host:
+            base["ippUrl"] = PRINT_IPP_URL
+    if available or (PRINT_IPP_URL and base.get("ippPrinter") == "available"):
         return {"status": "ok", **base}
     else:
+        detail = "Printer device not found or not accessible"
+        if PRINT_IPP_URL and base.get("ippPrinter") == "unavailable":
+            detail += f"; IPP endpoint unreachable at {PRINT_IPP_URL}"
         return {
             "status": "error",
             **base,
-            "detail": "Printer device not found or not accessible",
+            "detail": detail,
         }

@@ -225,6 +225,14 @@ class TestParseUrl:
         assert port == 8631
         assert path == "/printers/Y41BT"
 
+    def test_malformed_url_no_hostname_raises_value_error(self):
+        with pytest.raises(ValueError, match="cannot extract hostname"):
+            _parse_url("not-a-valid-url")
+
+    def test_empty_string_raises_value_error(self):
+        with pytest.raises(ValueError, match="cannot extract hostname"):
+            _parse_url("")
+
 
 class TestSendSingleRequest:
 

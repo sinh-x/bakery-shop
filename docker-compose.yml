@@ -24,6 +24,12 @@ services:
       # Unset defaults to "label" (backward compatible); invalid values fail fast at startup.
       PAPER_MODE: ${PAPER_MODE:-label}
       BAKER_PRINT_IPP_URL: ${BAKER_PRINT_IPP_URL:-}
+      # IPP transport uses plain HTTP to the CUPS endpoint (no TLS).
+      # When the endpoint is on the Tailscale tailnet (default deployment),
+      # WireGuard provides transport encryption between baker-prod and Lily.
+      # Non-Tailscale deployments MUST use a VPN tunnel or reverse proxy with TLS
+      # termination — plain HTTP over untrusted networks exposes print jobs in
+      # cleartext.
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2108/api/health')"]
@@ -81,6 +87,12 @@ services:
       # Unset defaults to "label" (backward compatible); invalid values fail fast at startup.
       PAPER_MODE: ${PAPER_MODE:-label}
       BAKER_PRINT_IPP_URL: ${BAKER_PRINT_IPP_URL:-}
+      # IPP transport uses plain HTTP to the CUPS endpoint (no TLS).
+      # When the endpoint is on the Tailscale tailnet (default deployment),
+      # WireGuard provides transport encryption between baker-dev and Lily.
+      # Non-Tailscale deployments MUST use a VPN tunnel or reverse proxy with TLS
+      # termination — plain HTTP over untrusted networks exposes print jobs in
+      # cleartext.
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2312/api/health')"]

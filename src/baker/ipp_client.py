@@ -11,10 +11,11 @@ Usage:
 """
 
 import http.client
+import itertools
 import struct
 import time
 import urllib.parse
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 IPP_VERSION = b"\x02\x00"
 OP_PRINT_JOB = b"\x00\x02"
@@ -30,6 +31,8 @@ VTAG_NATURAL_LANGUAGE = 0x48
 VTAG_MIME_MEDIA_TYPE = 0x49
 
 IPP_STATUS_SUCCESSFUL_OK = 0x0000
+
+_request_id_counter = itertools.count(1)
 
 
 class IppError(Exception):
@@ -79,7 +82,8 @@ def _build_ipp_print_job_request(tspl_bytes: bytes, ipp_url: str) -> bytes:
     Returns:
         Complete IPP Print-Job request bytes.
     """
-    request_id = 1
+    global _request_id_counter
+    request_id = next(_request_id_counter)
 
     buf = bytearray()
 
@@ -134,7 +138,9 @@ def _parse_url(ipp_url: str) -> Tuple[str, int, str]:
         Tuple of (host, port, path).
     """
     parsed = urllib.parse.urlparse(ipp_url)
-    host = parsed.hostname or "localhost"
+    host = parsed.hostname
+    if not host:
+        raise ValueError(f"Invalid IPP URL: cannot extract hostname from {ipp_url!r}")
     port = parsed.port or 631
     path = parsed.path or "/"
     if parsed.query:
