@@ -128,7 +128,6 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
       expensePaymentMethod: paymentMethod,
       expensePaymentSource: paymentSource,
       loggedBy: loggedBy ?? staffName,
-      expenseStaffName: staffName,
       expensePaidByName: paidByName,
       expenseSearch: searchText,
       limit: safeLimit,

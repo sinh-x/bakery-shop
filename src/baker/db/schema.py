@@ -1413,6 +1413,9 @@ def _migrate_v43_event_history_and_soft_delete(conn):
 
     _guard_add_column(conn, "events", "deleted_at", "deleted_at TEXT")
     _guard_add_column(conn, "events", "deleted_by", "deleted_by TEXT DEFAULT ''")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_events_deleted_at ON events(deleted_at)"
+    )
 
     rows = conn.execute(
         "SELECT id, data, logged_by, timestamp FROM events WHERE type = 'expense'"

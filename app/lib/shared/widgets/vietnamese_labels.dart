@@ -603,7 +603,6 @@ class VN {
   static const expenseUntilLabel = 'Đến ngày';
   static const expenseDateLabel = 'Ngày chi';
   static const expenseTimeLabel = 'Giờ chi';
-  static const expenseFilterStaffLabel = 'Lọc theo người trả';
   static const expenseNoHistory = 'Chưa có chi phí phù hợp bộ lọc';
   static const expenseAmountValidationMessage =
       'Số tiền phải là số nguyên VND lớn hơn 0';
