@@ -122,7 +122,7 @@ def _parse_ipp_status(response_body: bytes) -> Tuple[int, int]:
         IppError: If the response body is too short to contain a valid header.
     """
     if len(response_body) < 8:
-        raise IppError(0, "Response too short for IPP header")
+        raise IppError(0xFFFF, "Response too short for IPP header")
     status_code = struct.unpack("!H", response_body[2:4])[0]
     request_id = struct.unpack("!I", response_body[4:8])[0]
     return status_code, request_id

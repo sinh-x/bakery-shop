@@ -30,6 +30,7 @@ services:
       # Non-Tailscale deployments MUST use a VPN tunnel or reverse proxy with TLS
       # termination — plain HTTP over untrusted networks exposes print jobs in
       # cleartext.
+      TRAIL_MM: ${TRAIL_MM:-20}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2108/api/health')"]
@@ -93,6 +94,7 @@ services:
       # Non-Tailscale deployments MUST use a VPN tunnel or reverse proxy with TLS
       # termination — plain HTTP over untrusted networks exposes print jobs in
       # cleartext.
+      TRAIL_MM: ${TRAIL_MM:-20}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2312/api/health')"]
