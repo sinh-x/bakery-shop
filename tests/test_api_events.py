@@ -426,6 +426,7 @@ def test_list_events_expense_filter_by_staff_name(api_client):
     api_client.post("/api/events", json={
         "summary": "Mua trứng",
         "type": "expense",
+        "logged_by": "Ngọc Lan",
         "data": {
             "amount_vnd": 90000,
             "category": "Nguyên liệu",
@@ -433,13 +434,13 @@ def test_list_events_expense_filter_by_staff_name(api_client):
             "payment_source": "Shop tiền mặt",
             "vendor": "NCC Trứng",
             "note": "30 quả",
-            "staff_name": "Ngọc Lan",
             "paid_by_name": "Phượng",
         },
     })
     api_client.post("/api/events", json={
         "summary": "Mua hộp",
         "type": "expense",
+        "logged_by": "Diễm",
         "data": {
             "amount_vnd": 60000,
             "category": "Bao bì",
@@ -447,7 +448,6 @@ def test_list_events_expense_filter_by_staff_name(api_client):
             "payment_source": "Shop tiền mặt",
             "vendor": "NCC Hộp",
             "note": "Hộp bánh",
-            "staff_name": "Diễm",
             "paid_by_name": "Ngân",
         },
     })
@@ -459,7 +459,7 @@ def test_list_events_expense_filter_by_staff_name(api_client):
     assert resp.status_code == 200
     events = resp.json()
     assert len(events) == 1
-    assert events[0]["data"]["staff_name"] == "Ngọc Lan"
+    assert events[0]["logged_by"] == "Ngọc Lan"
 
 
 def test_list_events_expense_search_applies_before_limit(api_client):

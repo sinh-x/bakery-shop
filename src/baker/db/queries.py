@@ -136,7 +136,7 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
         params.append(expense_payment_method)
     if expense_staff_name:
         conditions.append(
-            "LOWER(COALESCE(json_extract(e.data, '$.staff_name'), '')) = LOWER(?)"
+            "LOWER(COALESCE(e.logged_by, '')) = LOWER(?)"
         )
         params.append(expense_staff_name)
     if expense_paid_by_name:

@@ -277,30 +277,31 @@ def update_event(event_id: int, body: EventUpdate):
             values.append(json.dumps(data["data"]))
 
         # Log edit entries for each changed field before executing the update
+        actor = data.get("logged_by", "")
         for field_name, new_val in data.items():
             if field_name == "data":
                 old_json = row["data"] or ""
                 new_json = json.dumps(data["data"])
                 if old_json != new_json:
-                    _log_event_history(conn, event_id, "edit", field_name=field_name,
+                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
                                        old_value=old_json, new_value=new_json)
             elif field_name == "tags":
                 old_tags = row["tags"] or ""
                 new_tags = ",".join(data["tags"])
                 if old_tags != new_tags:
-                    _log_event_history(conn, event_id, "edit", field_name=field_name,
+                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
                                        old_value=old_tags, new_value=new_tags)
             elif field_name == "timestamp":
                 old_ts = row["timestamp"] or ""
                 new_ts = _normalize_timestamp(data["timestamp"]) or ""
                 if old_ts != new_ts:
-                    _log_event_history(conn, event_id, "edit", field_name=field_name,
+                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
                                        old_value=old_ts, new_value=new_ts)
             else:
                 old_val = str(row[field_name]) if row[field_name] is not None else ""
                 new_val = str(new_val) if new_val is not None else ""
                 if old_val != new_val:
-                    _log_event_history(conn, event_id, "edit", field_name=field_name,
+                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
                                        old_value=old_val, new_value=new_val)
 
         values.append(event_id)
@@ -320,7 +321,7 @@ def delete_event(event_id: int, deleted_by: str = Query("", description="Ngườ
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
 
-        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S") + "+07:00"
         conn.execute(
             "UPDATE events SET deleted_at = ?, deleted_by = ? WHERE id = ?",
             (now, deleted_by, event_id),
