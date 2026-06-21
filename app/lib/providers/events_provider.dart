@@ -116,6 +116,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     String? paymentSource,
     String? staffName,
     String? paidByName,
+    String? loggedBy,
     String? searchText,
     int limit = expenseMaxHistoryLimit,
   }) async {
@@ -126,6 +127,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
       expenseCategory: category,
       expensePaymentMethod: paymentMethod,
       expensePaymentSource: paymentSource,
+      loggedBy: loggedBy ?? staffName,
       expenseStaffName: staffName,
       expensePaidByName: paidByName,
       expenseSearch: searchText,
@@ -143,6 +145,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
             paymentSource: paymentSource,
             staffName: staffName,
             paidByName: paidByName,
+            loggedBy: loggedBy,
             searchText: searchText,
           ) &&
           _matchesLocalDateRange(

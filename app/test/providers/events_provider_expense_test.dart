@@ -22,6 +22,7 @@ class _FakeEventService extends EventService {
       timestamp: DateTime(2026, 5, 23, 9, 0),
       type: expenseType,
       summary: 'Chi phi bot',
+      loggedBy: 'Lan',
       data: const {
         'amount_vnd': 120000,
         'category': 'Nguyên liệu',
@@ -39,6 +40,7 @@ class _FakeEventService extends EventService {
       timestamp: DateTime(2026, 5, 23, 11, 0),
       type: expenseType,
       summary: 'Chi phi van chuyen',
+      loggedBy: 'Minh',
       data: const {
         'amount_vnd': 80000,
         'category': 'Vận chuyển',
@@ -56,6 +58,7 @@ class _FakeEventService extends EventService {
       timestamp: DateTime(2026, 5, 23, 14, 0),
       type: expenseType,
       summary: 'Chi phi sua chua',
+      loggedBy: 'Lan',
       data: const {
         'amount_vnd': 50000,
         'category': 'Bảo trì',
@@ -216,7 +219,7 @@ void main() {
     final results = await notifier.loadExpenseHistory(
       category: 'Vận chuyển',
       paymentMethod: 'Chuyển khoản',
-      staffName: 'Minh',
+      loggedBy: 'Minh',
       searchText: 'xe',
     );
 
@@ -241,7 +244,7 @@ void main() {
   );
 
   test(
-    'loadExpenseHistory applies staff filter locally when API ignores it',
+    'loadExpenseHistory applies loggedBy filter locally when API ignores it',
     () async {
       final service = _FakeEventService()..applyRemoteFilters = false;
       final container = ProviderContainer(
@@ -251,7 +254,7 @@ void main() {
 
       final notifier = container.read(eventsProvider.notifier);
       final results = await notifier.loadExpenseHistory(
-        staffName: 'Không khớp',
+        loggedBy: 'Không khớp',
       );
 
       expect(results, isEmpty);

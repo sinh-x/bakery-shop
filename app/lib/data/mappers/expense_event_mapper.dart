@@ -77,6 +77,7 @@ class ExpenseEventMapper {
     String? paymentSource,
     String? staffName,
     String? paidByName,
+    String? loggedBy,
     String? searchText,
   }) {
     final expense = fromEvent(event);
@@ -96,7 +97,8 @@ class ExpenseEventMapper {
         expense.paymentSource != paymentSource) {
       return false;
     }
-    if (staffName != null && staffName.isNotEmpty && event.loggedBy != staffName) {
+    final logFilter = loggedBy ?? staffName;
+    if (logFilter != null && logFilter.isNotEmpty && event.loggedBy != logFilter) {
       return false;
     }
     if (paidByName != null && paidByName.isNotEmpty && expense.paidByName != paidByName) {

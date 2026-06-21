@@ -22,6 +22,7 @@ BakeryEvent _expenseEvent({
   String note = '',
   String paymentSource = 'Shop tiền mặt',
   String paidByName = '',
+  String loggedBy = '',
   bool reimbursed = false,
 }) {
   return BakeryEvent(
@@ -29,6 +30,7 @@ BakeryEvent _expenseEvent({
     timestamp: DateTime.parse('2026-05-23T10:00:00Z'),
     type: expenseType,
     summary: 'Chi phi test',
+    loggedBy: loggedBy.isNotEmpty ? loggedBy : staff,
     data: {
       'amount_vnd': amount,
       'category': category,
@@ -51,6 +53,7 @@ Future<List<BakeryEvent>> _emptyHistory({
   String? paymentSource,
   String? staffName,
   String? paidByName,
+  String? loggedBy,
   String? searchText,
 }) async => const [];
 
@@ -72,11 +75,12 @@ void main() {
                   category,
                   paymentMethod,
                   paymentSource,
-                  staffName,
-                  paidByName,
-                  searchText,
-                }) async {
-                  capturedSince = since;
+              staffName,
+              paidByName,
+              loggedBy,
+              searchText,
+            }) async {
+              capturedSince = since;
                   capturedUntil = until;
                   return const [];
                 },
@@ -156,6 +160,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => [event],
           ),
@@ -244,6 +249,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => [event],
           ),
@@ -278,6 +284,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async {
                   loads += 1;
@@ -339,6 +346,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => events,
           ),
@@ -410,6 +418,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async {
                   capturedCategory = category;
@@ -460,6 +469,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async {
                   capturedCategory = category;
@@ -514,6 +524,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => [event],
           ),
@@ -555,6 +566,7 @@ void main() {
                     paymentSource,
                     staffName,
                     paidByName,
+                    loggedBy,
                     searchText,
                   }) async => [event],
             ),
@@ -597,6 +609,7 @@ void main() {
                     paymentSource,
                     staffName,
                     paidByName,
+                    loggedBy,
                     searchText,
                   }) async => [event],
             ),
@@ -638,6 +651,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => [event],
           ),
@@ -704,6 +718,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async {
                   capturedPaymentSource = paymentSource;
@@ -757,6 +772,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => events,
           ),
@@ -839,6 +855,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => [event],
           ),
@@ -878,6 +895,7 @@ void main() {
                   paymentSource,
                   staffName,
                   paidByName,
+                  loggedBy,
                   searchText,
                 }) async => [event],
           ),
