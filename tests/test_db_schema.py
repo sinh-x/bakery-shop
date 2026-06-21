@@ -1,3 +1,5 @@
+import json
+
 from baker.db.connection import get_db
 from baker.db.schema import MIGRATIONS, PRINT_LOG_AND_PRINTED_BY_SCHEMA, ensure_schema
 
@@ -290,6 +292,42 @@ def _assert_v40_v41_schema(conn) -> None:
     assert "idx_event_photos_event" in ep_index_names
 
 
+def _assert_event_history_schema(conn) -> None:
+    columns = _schema_columns(conn, "event_history")
+    assert set(columns) >= {
+        "id",
+        "event_id",
+        "action_type",
+        "actor",
+        "field_name",
+        "old_value",
+        "new_value",
+        "timestamp",
+    }
+    for name in ["event_id", "action_type", "timestamp"]:
+        assert columns[name]["notnull"] == 1
+
+    fk_rows = conn.execute("PRAGMA foreign_key_list(event_history)").fetchall()
+    assert len(fk_rows) == 1
+    fk = fk_rows[0]
+    assert fk["table"] == "events"
+    assert fk["from"] == "event_id"
+    assert fk["to"] == "id"
+
+    index_rows = conn.execute("PRAGMA index_list(event_history)").fetchall()
+    index_names = [row["name"] for row in index_rows]
+    assert "idx_event_history_event" in index_names
+    assert "idx_event_history_timestamp" in index_names
+
+
+def _assert_soft_delete_columns(conn) -> None:
+    event_columns = _schema_columns(conn, "events")
+    assert "deleted_at" in event_columns
+    assert "deleted_by" in event_columns
+    assert event_columns["deleted_at"]["notnull"] == 0
+    assert event_columns["deleted_by"]["notnull"] == 0
+
+
 def _seed_v35_stock(conn) -> tuple[int, int, int]:
     conn.execute(
         """INSERT INTO products (name, category, base_price, cost, recipe_notes)
@@ -322,13 +360,15 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 42
+        assert _migrated_version(conn) == 43
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
         _assert_reconciliation_sale_rows_schema(conn)
         _assert_chip_aware_inventory_schema(conn)
         _assert_v40_v41_schema(conn)
+        _assert_event_history_schema(conn)
+        _assert_soft_delete_columns(conn)
 
 
 def test_schema_migration_v30_to_v31():
@@ -337,22 +377,24 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 42
+        assert _migrated_version(conn) == 43
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
         _assert_reconciliation_sale_rows_schema(conn)
         _assert_chip_aware_inventory_schema(conn)
         _assert_v40_v41_schema(conn)
+        _assert_event_history_schema(conn)
+        _assert_soft_delete_columns(conn)
 
 
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 42
+        assert _migrated_version(conn) == 43
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 42
+        assert _migrated_version(conn) == 43
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -577,3 +619,116 @@ def test_schema_migration_v38_is_idempotent_for_normalized_accessory_names():
         assert len(rows) == 1
         assert rows[0]["normalized_name"] == "hộp"
         assert rows[0]["c"] == 1
+
+
+def test_schema_migration_v43_creates_event_history_table_and_soft_delete_columns():
+    with get_db() as conn:
+        _migrate_to_version(conn, 42)
+        assert _migrated_version(conn) == 42
+
+        _migrate_to_version(conn, 43)
+        assert _migrated_version(conn) == 43
+
+        _assert_event_history_schema(conn)
+        _assert_soft_delete_columns(conn)
+
+
+def test_schema_migration_v43_idempotent():
+    with get_db() as conn:
+        _migrate_to_version(conn, 42)
+        _migrate_to_version(conn, 43)
+        assert _migrated_version(conn) == 43
+
+        _migrate_to_version(conn, 43)
+        assert _migrated_version(conn) == 43
+
+        _assert_event_history_schema(conn)
+        _assert_soft_delete_columns(conn)
+
+
+def test_schema_migration_v43_backfills_staff_name_audit_entries():
+    with get_db() as conn:
+        _migrate_to_version(conn, 42)
+
+        conn.execute(
+            """INSERT INTO events (type, summary, data, logged_by, timestamp)
+               VALUES ('expense', 'Test expense', ?, '', '2026-06-21T10:00:00+07:00')""",
+            (json.dumps({"amount_vnd": 50000, "category": "NL", "payment_method": "TM",
+                         "payment_source": "Shop tiền mặt", "vendor": "NCC A", "note": "",
+                         "staff_name": "Ân", "paid_by_name": ""}),),
+        )
+
+        _migrate_to_version(conn, 43)
+        assert _migrated_version(conn) == 43
+
+        audit_rows = conn.execute(
+            "SELECT * FROM event_history WHERE action_type = 'create' AND field_name = 'staff_name'"
+        ).fetchall()
+        assert len(audit_rows) == 1
+        assert audit_rows[0]["actor"] == "Ân"
+        assert audit_rows[0]["new_value"] == "Ân"
+        assert audit_rows[0]["old_value"] is None
+
+        event_row = conn.execute("SELECT logged_by, data FROM events WHERE type = 'expense'").fetchone()
+        assert event_row is not None
+        assert event_row["logged_by"] == "Ân"
+
+        data = json.loads(event_row["data"])
+        assert "staff_name" not in data
+
+
+def test_schema_migration_v43_preserves_existing_logged_by():
+    with get_db() as conn:
+        _migrate_to_version(conn, 42)
+
+        conn.execute(
+            """INSERT INTO events (type, summary, data, logged_by, timestamp)
+               VALUES ('expense', 'Test expense', ?, 'Sinh', '2026-06-21T10:00:00+07:00')""",
+            (json.dumps({"amount_vnd": 50000, "category": "NL", "payment_method": "TM",
+                         "payment_source": "Shop tiền mặt", "vendor": "NCC A", "note": "",
+                         "staff_name": "Ân", "paid_by_name": ""}),),
+        )
+
+        _migrate_to_version(conn, 43)
+
+        event_row = conn.execute("SELECT logged_by, data FROM events WHERE type = 'expense'").fetchone()
+        assert event_row["logged_by"] == "Sinh"
+
+        data = json.loads(event_row["data"])
+        assert "staff_name" not in data
+
+
+def test_schema_migration_v43_skips_non_expense_events():
+    with get_db() as conn:
+        _migrate_to_version(conn, 42)
+
+        conn.execute(
+            """INSERT INTO events (type, summary, data, logged_by, timestamp)
+               VALUES ('note', 'Test note', ?, 'Sinh', '2026-06-21T10:00:00+07:00')""",
+            (json.dumps({"staff_name": "Ân"}),),
+        )
+
+        _migrate_to_version(conn, 43)
+
+        audit_count = conn.execute(
+            "SELECT COUNT(*) FROM event_history WHERE action_type = 'create' AND field_name = 'staff_name'"
+        ).fetchone()[0]
+        assert audit_count == 0
+
+        event_row = conn.execute("SELECT data FROM events WHERE type = 'note'").fetchone()
+        data = json.loads(event_row["data"])
+        assert "staff_name" in data
+
+
+def test_schema_migration_v43_no_expense_events_is_noop():
+    with get_db() as conn:
+        _migrate_to_version(conn, 42)
+
+        _migrate_to_version(conn, 43)
+        assert _migrated_version(conn) == 43
+
+        _assert_event_history_schema(conn)
+        _assert_soft_delete_columns(conn)
+
+        audit_count = conn.execute("SELECT COUNT(*) FROM event_history").fetchone()[0]
+        assert audit_count == 0
