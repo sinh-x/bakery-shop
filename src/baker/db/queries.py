@@ -59,8 +59,9 @@ def fetch_events_by_person(conn, staff_name, *, limit=50):
         """SELECT DISTINCT e.* FROM events e
            LEFT JOIN event_people ep ON e.id = ep.event_id
            LEFT JOIN staff s ON ep.staff_id = s.id
-           WHERE LOWER(e.logged_by) = LOWER(?)
-              OR LOWER(s.name) = LOWER(?)
+           WHERE (LOWER(e.logged_by) = LOWER(?)
+              OR LOWER(s.name) = LOWER(?))
+             AND e.deleted_at IS NULL
            ORDER BY e.timestamp DESC LIMIT ?""",
         (staff_name, staff_name, limit),
     ).fetchall()
@@ -68,7 +69,7 @@ def fetch_events_by_person(conn, staff_name, *, limit=50):
 
 def count_events_by_logger(conn, since=None, until=None):
     """Count events grouped by logged_by within a time range."""
-    conditions = ["logged_by != ''"]
+    conditions = ["logged_by != ''", "deleted_at IS NULL"]
     params = []
     if since:
         conditions.append("timestamp >= ?")
@@ -92,7 +93,7 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
                  expense_search=None, limit=50):
     """Fetch events with optional filters."""
     joins = []
-    conditions = []
+    conditions = ["e.deleted_at IS NULL"]
     params = []
 
     if involving:
@@ -172,7 +173,7 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
 
 def count_events_by_type(conn, since=None, until=None):
     """Count events grouped by type within a time range."""
-    conditions = []
+    conditions = ["deleted_at IS NULL"]
     params = []
     if since:
         conditions.append("timestamp >= ?")
@@ -188,7 +189,7 @@ def count_events_by_type(conn, since=None, until=None):
 
 def sum_sales(conn, since=None, until=None):
     """Sum up sale amounts from event data JSON."""
-    conditions = ["type = 'sale'"]
+    conditions = ["type = 'sale'", "deleted_at IS NULL"]
     params = []
     if since:
         conditions.append("timestamp >= ?")

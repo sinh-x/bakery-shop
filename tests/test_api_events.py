@@ -931,3 +931,246 @@ def test_delete_event(api_client):
 def test_delete_event_not_found(api_client):
     resp = api_client.delete("/api/events/9999")
     assert resp.status_code == 404
+
+
+# --- Audit log: POST /api/events ---
+
+
+def test_create_event_audit_log_with_logged_by(api_client):
+    from baker.db.connection import get_db
+
+    resp = api_client.post("/api/events", json={
+        "summary": "Audit test", "type": "note", "logged_by": "Lan",
+    })
+    assert resp.status_code == 201
+    event_id = resp.json()["id"]
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'create'",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["actor"] == "Lan"
+    assert rows[0]["field_name"] == ""
+    assert rows[0]["old_value"] == ""
+    assert rows[0]["new_value"] == ""
+
+
+def test_create_event_audit_log_with_cli_source(api_client):
+    from baker.db.connection import get_db
+
+    resp = api_client.post("/api/events", json={
+        "summary": "CLI event", "source": "cli",
+    })
+    assert resp.status_code == 201
+    event_id = resp.json()["id"]
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'create'",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["actor"] == "CLI"
+
+
+def test_create_event_audit_log_no_logged_by_app_source(api_client):
+    from baker.db.connection import get_db
+
+    resp = api_client.post("/api/events", json={
+        "summary": "App event", "source": "app",
+    })
+    assert resp.status_code == 201
+    event_id = resp.json()["id"]
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'create'",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["actor"] == ""
+
+
+# --- Audit log: PATCH /api/events ---
+
+
+def test_patch_event_audit_log_field_edit(api_client):
+    from baker.db.connection import get_db
+
+    create_resp = api_client.post("/api/events", json={
+        "summary": "Original", "type": "note",
+    })
+    event_id = create_resp.json()["id"]
+
+    resp = api_client.patch(f"/api/events/{event_id}", json={
+        "summary": "Updated", "type": "equipment",
+    })
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'edit' ORDER BY id",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 2
+
+    summaries = {(r["field_name"], r["old_value"], r["new_value"]) for r in rows}
+    assert ("summary", "Original", "Updated") in summaries
+    assert ("type", "note", "equipment") in summaries
+
+
+def test_patch_event_audit_log_no_change_no_entry(api_client):
+    from baker.db.connection import get_db
+
+    create_resp = api_client.post("/api/events", json={
+        "summary": "Same", "type": "note",
+    })
+    event_id = create_resp.json()["id"]
+
+    resp = api_client.patch(f"/api/events/{event_id}", json={
+        "summary": "Same",
+    })
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'edit'",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 0
+
+
+def test_patch_event_audit_log_tags_change(api_client):
+    from baker.db.connection import get_db
+
+    create_resp = api_client.post("/api/events", json={
+        "summary": "Tag test", "tags": ["a"],
+    })
+    event_id = create_resp.json()["id"]
+
+    resp = api_client.patch(f"/api/events/{event_id}", json={
+        "tags": ["b", "c"],
+    })
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'edit'",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["field_name"] == "tags"
+    assert rows[0]["old_value"] == "a"
+    assert rows[0]["new_value"] == "b,c"
+
+
+def test_patch_event_audit_log_data_change(api_client):
+    from baker.db.connection import get_db
+
+    create_resp = api_client.post("/api/events", json={
+        "summary": "Data test",
+        "data": {"key": "old"},
+    })
+    event_id = create_resp.json()["id"]
+
+    resp = api_client.patch(f"/api/events/{event_id}", json={
+        "data": {"key": "new"},
+    })
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'edit'",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["field_name"] == "data"
+    import json
+    assert json.loads(rows[0]["old_value"]) == {"key": "old"}
+    assert json.loads(rows[0]["new_value"]) == {"key": "new"}
+
+
+# --- Audit log / Soft-delete: DELETE /api/events ---
+
+
+def test_delete_event_audit_log(api_client):
+    from baker.db.connection import get_db
+
+    create_resp = api_client.post("/api/events", json={"summary": "Delete me"})
+    event_id = create_resp.json()["id"]
+
+    delete_resp = api_client.delete(f"/api/events/{event_id}?deleted_by=Sin")
+    assert delete_resp.status_code == 204
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'delete'",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["actor"] == "Sin"
+
+
+def test_delete_event_soft_delete_preserves_row(api_client):
+    from baker.db.connection import get_db
+
+    create_resp = api_client.post("/api/events", json={"summary": "Soft delete test"})
+    event_id = create_resp.json()["id"]
+
+    api_client.delete(f"/api/events/{event_id}?deleted_by=Sin")
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM events WHERE id = ?", (event_id,),
+        ).fetchone()
+    assert row is not None
+    assert row["deleted_at"] is not None
+    assert row["deleted_by"] == "Sin"
+
+
+def test_delete_event_returns_404_after_soft_delete(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Gone"})
+    event_id = create_resp.json()["id"]
+
+    api_client.delete(f"/api/events/{event_id}?deleted_by=Sin")
+
+    get_resp = api_client.get(f"/api/events/{event_id}")
+    assert get_resp.status_code == 404
+
+
+# --- GET /api/events excludes soft-deleted ---
+
+
+def test_list_events_excludes_soft_deleted(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Keep"})
+    keep_id = create_resp.json()["id"]
+
+    del_resp = api_client.post("/api/events", json={"summary": "Remove"})
+    del_id = del_resp.json()["id"]
+    api_client.delete(f"/api/events/{del_id}?deleted_by=Sin")
+
+    resp = api_client.get("/api/events")
+    assert resp.status_code == 200
+    events = resp.json()
+    assert len(events) == 1
+    assert events[0]["id"] == keep_id
+
+
+def test_delete_already_deleted_event_returns_404(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Once"})
+    event_id = create_resp.json()["id"]
+
+    api_client.delete(f"/api/events/{event_id}?deleted_by=Sin")
+    resp = api_client.delete(f"/api/events/{event_id}?deleted_by=Sin")
+    assert resp.status_code == 404
+
+
+def test_patch_deleted_event_returns_404(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Patch me"})
+    event_id = create_resp.json()["id"]
+
+    api_client.delete(f"/api/events/{event_id}?deleted_by=Sin")
+    resp = api_client.patch(f"/api/events/{event_id}", json={"summary": "Nope"})
+    assert resp.status_code == 404
