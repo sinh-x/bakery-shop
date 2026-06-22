@@ -16,12 +16,10 @@ RUSTIC_PROFILE=baker-prod
 # Set to /dev/null when BAKER_PRINT_IPP_URL is set (no local printer needed).
 BAKER_PRINTER_DEVICE=/dev/usb/lp0
 
-# IPP printer endpoint for network printing via CUPS.
-# When set, baker sends pre-rendered TSPL bytes to this CUPS/IPP endpoint
-# instead of writing directly to /dev/usb/lp0. Unset or empty = USB mode.
-# Example (Lily CUPS over Tailscale):
-#   BAKER_PRINT_IPP_URL=ipp://lily.tail10c2c6.ts.net:631/printers/Y41BT
-# Then set BAKER_PRINTER_DEVICE=/dev/null (no local USB device needed).
+# IPP printer endpoint for network printing via CUPS over Tailscale.
+# Uncomment to send print jobs to Lily's CUPS server instead of local USB.
+# Then also set BAKER_PRINTER_DEVICE=/dev/null (no local printer needed).
+# BAKER_PRINT_IPP_URL=ipp://lily.tail10c2c6.ts.net:631/printers/Y41BT
 
 # Printer paper type server default ("label" | "roll").
 # "label" = pre-cut label stock with gaps (default, backward compatible).
