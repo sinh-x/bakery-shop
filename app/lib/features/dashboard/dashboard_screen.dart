@@ -67,7 +67,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             tooltip: VN.lamMoi,
             onPressed: () => ref.invalidate(dashboardOrdersProvider),
           ),
-          const AppBarOverflowMenu(),
+          AppBarOverflowMenu(
+            onSelected: (value) {
+              if (value == 'accounting') {
+                context.push('/accounting');
+              }
+            },
+            items: const [
+              PopupMenuItem<String>(
+                value: 'accounting',
+                child: Text(VN.accountingTitle),
+              ),
+            ],
+          ),
         ],
       ),
       body: ordersAsync.when(

@@ -775,6 +775,33 @@ class VN {
   static const khongTheTaiAnh = 'Không thể tải ảnh';
   static const khongTheChiaSe = 'Không thể chia sẻ';
 
+  // Accounting
+  static const accountingTitle = 'Kế toán';
+  static const accountingTabAccounts = 'Tài khoản';
+  static const accountingTabJournal = 'Sổ nhật ký';
+  static const accountingTabBalances = 'Số dư';
+  static const accountingLockJournal = 'Khóa sổ';
+  static const accountingLockConfirm = 'Khóa tất cả bút toán trong khoảng này?';
+  static const accountingLockSuccess = 'Đã khóa sổ';
+  static const accountingFilterSince = 'Từ ngày';
+  static const accountingFilterUntil = 'Đến ngày';
+  static const accountingFilterAccount = 'Tài khoản';
+  static const accountingFilterSourceType = 'Loại giao dịch';
+  static const accountingNoEntries = 'Không có bút toán nào';
+  static const accountingDebit = 'Nợ';
+  static const accountingCredit = 'Có';
+  static const accountingBalance = 'Số dư';
+  static const accountingOwnerCapital = 'Vốn chủ sở hữu vào';
+  static const accountingOwnerDraw = 'Rút vốn';
+  static const accountingStaffReimburse = 'Hoàn ứng';
+  static const accountingLocked = 'Đã khóa';
+  static const accountingUnlocked = 'Chưa khóa';
+  static const accountingLoadMore = 'Tải thêm';
+  static const accountingNoAccounts = 'Không có tài khoản';
+  static const accountingNoBalances = 'Không có số dư';
+  static String accountingLockResult(int count) =>
+      'Đã khóa $count bút toán';
+
   // Bulk selection
   static const chonAnh = 'Chọn';
   static const huy = 'Hủy';

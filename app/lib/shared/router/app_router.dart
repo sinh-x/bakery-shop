@@ -23,6 +23,7 @@ import '../../features/orders/order_detail_screen.dart';
 import '../../features/orders/order_edit_screen.dart';
 import '../../features/orders/order_list_screen.dart';
 import '../../features/orders/order_history_screen.dart';
+import '../../features/accounting/accounting_screen.dart';
 import '../../features/orders/receipt_preview_screen.dart';
 import '../../features/knowledge/knowledge_detail_screen.dart';
 import '../../features/knowledge/knowledge_form_screen.dart';
@@ -309,6 +310,12 @@ final appRouter = GoRouter(
         final sessionId = int.parse(state.pathParameters['id']!);
         return StockReconciliationHistoryDetailScreen(sessionId: sessionId);
       },
+    ),
+    // Accounting — full-screen (outside shell)
+    GoRoute(
+      path: '/accounting',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const AccountingScreen(),
     ),
     // Knowledge — full-screen (outside shell)
     GoRoute(
