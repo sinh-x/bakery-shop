@@ -19,6 +19,7 @@ source "$(dirname "$0")/lib.sh"
 load_env
 
 REMOTE_PRINTER_DEVICE="${BAKER_PRINTER_DEVICE:-/dev/usb/lp0}"
+REMOTE_PRINT_IPP_URL="${BAKER_PRINT_IPP_URL:-}"
 # Printer paper type server default ("label" | "roll"); passed to baker-prod container.
 # Unset defaults to "label" (backward compatible); invalid values fail fast at startup.
 REMOTE_PAPER_MODE="${PAPER_MODE:-label}"
@@ -95,8 +96,13 @@ check_remote_printer_device() {
   fi
 
   echo "--- Printer device check ---"
+  if [ "$REMOTE_PRINTER_DEVICE" = "/dev/null" ] && [ -n "$REMOTE_PRINT_IPP_URL" ]; then
+    echo "  IPP mode: BAKER_PRINTER_DEVICE=/dev/null, printing via $REMOTE_PRINT_IPP_URL"
+    return 0
+  fi
+
   if [ "$REMOTE_PRINTER_DEVICE" = "/dev/null" ]; then
-    echo "ERROR: BAKER_PRINTER_DEVICE is /dev/null. This discards print jobs while the API can still return success."
+    echo "ERROR: BAKER_PRINTER_DEVICE is /dev/null but BAKER_PRINT_IPP_URL is not set. Print jobs will be silently discarded."
     exit 1
   fi
 
@@ -139,9 +145,9 @@ if [ "$ROLLBACK" -eq 1 ]; then
   # BAKER_BUILD_FINGERPRINT. A temporary client/server fingerprint mismatch can
   # appear until a subsequent normal deploy aligns both artifacts again.
   echo "  Rebuilding Docker image..."
-  remote_cmd "cd $REMOTE_PATH && BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE PAPER_MODE=$REMOTE_PAPER_MODE docker compose --profile prod build baker-prod"
+  remote_cmd "cd $REMOTE_PATH && BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE PAPER_MODE=$REMOTE_PAPER_MODE BAKER_PRINT_IPP_URL=$REMOTE_PRINT_IPP_URL docker compose --profile prod build baker-prod"
   echo "  Restarting containers..."
-  remote_cmd "cd $REMOTE_PATH && BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE PAPER_MODE=$REMOTE_PAPER_MODE docker compose --profile prod up -d"
+  remote_cmd "cd $REMOTE_PATH && BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE PAPER_MODE=$REMOTE_PAPER_MODE BAKER_PRINT_IPP_URL=$REMOTE_PRINT_IPP_URL docker compose --profile prod up -d"
   echo "  Running health check..."
   remote_cmd "curl -sf --max-time 10 http://localhost:2108/api/health || echo 'Health check failed'"
   echo "  Logging rollback..."
@@ -224,7 +230,7 @@ if [ "$WEB_ONLY" -eq 0 ]; then
   echo "--- Docker rebuild ---"
   REMOTE_UID=$(ssh "$REMOTE_HOST" "id -u" 2>/dev/null)
   echo "  Remote sinh UID: $REMOTE_UID"
-  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE PAPER_MODE=$REMOTE_PAPER_MODE docker compose --profile prod build baker-prod"
+  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE PAPER_MODE=$REMOTE_PAPER_MODE BAKER_PRINT_IPP_URL=$REMOTE_PRINT_IPP_URL docker compose --profile prod build baker-prod"
   echo ""
 fi
 
@@ -232,7 +238,7 @@ fi
 echo "--- Restarting containers ---"
 if [ "$WEB_ONLY" -eq 0 ]; then
   REMOTE_UID="${REMOTE_UID:-$(ssh "$REMOTE_HOST" "id -u" 2>/dev/null)}"
-  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE PAPER_MODE=$REMOTE_PAPER_MODE docker compose --profile prod up -d"
+  remote_cmd "cd $REMOTE_PATH && BAKER_UID=$REMOTE_UID BAKER_BUILD_FINGERPRINT=$BUILD_FINGERPRINT BAKER_PRINTER_DEVICE=$REMOTE_PRINTER_DEVICE PAPER_MODE=$REMOTE_PAPER_MODE BAKER_PRINT_IPP_URL=$REMOTE_PRINT_IPP_URL docker compose --profile prod up -d"
 else
   remote_cmd "cd $REMOTE_PATH && docker compose --profile prod restart caddy"
 fi
@@ -268,7 +274,11 @@ echo ""
 if [ "$WEB_ONLY" -eq 0 ]; then
   echo "--- Printer mount verification ---"
   if [ "$DRY_RUN" -eq 0 ]; then
-    remote_exec "$REMOTE_HOST" "cd $REMOTE_PATH && docker compose --profile prod exec -T baker-prod ls -l /dev/usb/lp0 && curl -sf --max-time 5 http://localhost:2108/api/orders/print/status"
+    if [ -n "$REMOTE_PRINT_IPP_URL" ]; then
+      remote_exec "$REMOTE_HOST" "cd $REMOTE_PATH && docker compose --profile prod exec -T baker-prod curl -sf --max-time 5 http://localhost:2108/api/orders/print/status"
+    else
+      remote_exec "$REMOTE_HOST" "cd $REMOTE_PATH && docker compose --profile prod exec -T baker-prod ls -l /dev/usb/lp0 && curl -sf --max-time 5 http://localhost:2108/api/orders/print/status"
+    fi
   else
     echo "  Would verify baker-prod /dev/usb/lp0 and /api/orders/print/status"
   fi
