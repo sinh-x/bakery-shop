@@ -97,7 +97,10 @@ def _build_ipp_print_job_request(tspl_bytes: bytes, ipp_url: str) -> bytes:
 
     buf.extend(_attr_value_pair(VTAG_CHARSET, "attributes-charset", b"utf-8"))
     buf.extend(_attr_value_pair(VTAG_NATURAL_LANGUAGE, "attributes-natural-language", b"en-us"))
-    buf.extend(_attr_value_pair(VTAG_URI, "printer-uri", ipp_url.encode("ascii")))
+    # Use localhost as printer-uri hostname — CUPS requires the host part
+    # to match its ServerName (or localhost) to recognize the printer.
+    printer_uri = f"ipp://localhost{urllib.parse.urlparse(ipp_url).path}".encode("ascii")
+    buf.extend(_attr_value_pair(VTAG_URI, "printer-uri", printer_uri))
     buf.extend(_attr_value_pair(VTAG_NAME_WITHOUT_LANGUAGE, "requesting-user-name", b"baker"))
     buf.extend(_attr_value_pair(VTAG_NAME_WITHOUT_LANGUAGE, "job-name", b"Bakery Receipt"))
     buf.extend(_attr_value_pair(VTAG_MIME_MEDIA_TYPE, "document-format", b"application/octet-stream"))
