@@ -360,7 +360,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 43
+        assert _migrated_version(conn) == 44
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -377,7 +377,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 43
+        assert _migrated_version(conn) == 44
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -391,10 +391,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 43
+        assert _migrated_version(conn) == 44
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 43
+        assert _migrated_version(conn) == 44
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -732,3 +732,542 @@ def test_schema_migration_v43_no_expense_events_is_noop():
 
         audit_count = conn.execute("SELECT COUNT(*) FROM event_history").fetchone()[0]
         assert audit_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Migration v44 — Double-entry accounting
+# ---------------------------------------------------------------------------
+
+
+def _assert_accounts_table(conn) -> None:
+    columns = _schema_columns(conn, "accounts")
+    assert set(columns) >= {
+        "id",
+        "code",
+        "name",
+        "type",
+        "parent_id",
+        "is_active",
+        "created_at",
+    }
+    assert columns["code"]["notnull"] == 1
+    assert columns["name"]["notnull"] == 1
+    assert columns["type"]["notnull"] == 1
+    # code must be unique
+    index_rows = conn.execute("PRAGMA index_list(accounts)").fetchall()
+    index_names = [row["name"] for row in index_rows]
+    assert "sqlite_autoindex_accounts_1" in index_names or any(
+        "unique" in str(row).lower() for row in index_rows
+    )
+    # parent_id self-reference
+    fk_rows = conn.execute("PRAGMA foreign_key_list(accounts)").fetchall()
+    parent_fks = [fk for fk in fk_rows if fk["from"] == "parent_id"]
+    assert len(parent_fks) == 1
+    assert parent_fks[0]["table"] == "accounts"
+
+
+def _assert_journal_entries_table(conn) -> None:
+    columns = _schema_columns(conn, "journal_entries")
+    assert set(columns) >= {
+        "id",
+        "description",
+        "created_at",
+        "source_type",
+        "source_id",
+        "locked_at",
+        "locked_by",
+    }
+    assert columns["description"]["notnull"] == 1
+    assert columns["source_type"]["notnull"] == 1
+    # source_id is nullable
+    assert columns["source_id"]["notnull"] == 0
+    assert columns["locked_at"]["notnull"] == 0
+
+    index_rows = conn.execute("PRAGMA index_list(journal_entries)").fetchall()
+    index_names = [row["name"] for row in index_rows]
+    assert "idx_journal_entries_created" in index_names
+    assert "idx_journal_entries_source" in index_names
+
+
+def _assert_journal_lines_table(conn) -> None:
+    columns = _schema_columns(conn, "journal_lines")
+    assert set(columns) >= {
+        "id",
+        "journal_entry_id",
+        "account_id",
+        "debit",
+        "credit",
+        "description",
+    }
+    for name in ("journal_entry_id", "account_id", "debit", "credit"):
+        assert columns[name]["notnull"] == 1
+
+    fk_rows = conn.execute("PRAGMA foreign_key_list(journal_lines)").fetchall()
+    fk_tables = {(fk["from"], fk["table"], fk["on_delete"]) for fk in fk_rows}
+    assert ("journal_entry_id", "journal_entries", "CASCADE") in fk_tables
+    assert ("account_id", "accounts", "NO ACTION") in fk_tables
+
+    index_rows = conn.execute("PRAGMA index_list(journal_lines)").fetchall()
+    index_names = [row["name"] for row in index_rows]
+    assert "idx_journal_lines_entry" in index_names
+    assert "idx_journal_lines_account" in index_names
+
+
+# Expected chart of accounts seeded by v44.
+_EXPECTED_COA = {
+    "1000": ("Tài sản", "asset", None),
+    "1100": ("Tiền mặt (Cash on Hand)", "asset", "1000"),
+    "1200": ("Tài khoản ngân hàng (Bank Account)", "asset", "1000"),
+    "1300": ("Hàng tồn kho (Inventory)", "asset", "1000"),
+    "1400": ("Nhân viên ứng trước (Staff Advances)", "asset", "1000"),
+    "2000": ("Nợ phải trả", "liability", None),
+    "2100": ("Tiền khách đặt cọc (Customer Deposits)", "liability", "2000"),
+    "3000": ("Vốn chủ sở hữu", "equity", None),
+    "3100": ("Vốn chủ sở hữu (Owner's Equity)", "equity", "3000"),
+    "4000": ("Doanh thu", "income", None),
+    "4100": ("Doanh thu bán hàng (Order Revenue)", "income", "4000"),
+    "5000": ("Chi phí", "expense", None),
+    "5100": ("Nguyên liệu (Ingredients)", "expense", "5000"),
+    "5200": ("Bao bì (Packaging)", "expense", "5000"),
+    "5300": ("Vận chuyển (Delivery/Shipping)", "expense", "5000"),
+    "5400": ("Điện/nước (Utilities)", "expense", "5000"),
+    "5500": ("Dụng cụ (Tools)", "expense", "5000"),
+    "5600": ("Sửa chữa (Equipment Maintenance)", "expense", "5000"),
+    "5700": ("Lương/phụ cấp (Staff Salary)", "expense", "5000"),
+    "5800": ("Khác (Other Expenses)", "expense", "5000"),
+    "5900": ("Giá vốn hàng bán (COGS)", "expense", "5000"),
+}
+
+
+def _assert_seed_coa(conn) -> None:
+    rows = conn.execute("SELECT * FROM accounts ORDER BY code").fetchall()
+    by_code = {row["code"]: row for row in rows}
+    for code, (name, acc_type, parent_code) in _EXPECTED_COA.items():
+        assert code in by_code, f"Missing account code {code}"
+        row = by_code[code]
+        assert row["name"] == name, f"{code}: name {row['name']!r} != {name!r}"
+        assert row["type"] == acc_type, f"{code}: type {row['type']!r} != {acc_type!r}"
+        if parent_code:
+            assert parent_code in by_code, f"Parent {parent_code} missing"
+            assert row["parent_id"] == by_code[parent_code]["id"]
+        else:
+            assert row["parent_id"] is None
+        assert row["is_active"] == 1
+    # At least the required minimum accounts per AC8
+    assert len(rows) >= 21
+
+
+def _seed_expense_event(
+    conn,
+    *,
+    amount_vnd=50000,
+    category="Nguyên liệu",
+    payment_source="Shop tiền mặt",
+    paid_by_name="",
+    summary="Test expense",
+):
+    data = json.dumps(
+        {
+            "amount_vnd": amount_vnd,
+            "category": category,
+            "payment_method": "TM",
+            "payment_source": payment_source,
+            "vendor": "NCC A",
+            "note": "",
+            "paid_by_name": paid_by_name,
+        }
+    )
+    cursor = conn.execute(
+        "INSERT INTO events (type, summary, data, logged_by, timestamp) "
+        "VALUES ('expense', ?, ?, '', '2026-06-22T10:00:00+07:00')",
+        (summary, data),
+    )
+    return int(cursor.lastrowid)
+
+
+def _seed_payment_transaction(
+    conn, order_id, amount=200000, type_="deposit", method="cash"
+):
+    cursor = conn.execute(
+        "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+        "VALUES (?, ?, ?, ?, '')",
+        (order_id, amount, type_, method),
+    )
+    return int(cursor.lastrowid)
+
+
+def _seed_order_with_items(conn, *, product_cost=5000, qty=2, status="delivered"):
+    # Order
+    cursor = conn.execute(
+        "INSERT INTO orders (order_ref, customer_name, items, total_price, status) "
+        "VALUES ('ORD-TEST-001', 'Khách test', '[]', 100000, ?)",
+        (status,),
+    )
+    order_id = int(cursor.lastrowid)
+    # Product
+    cursor = conn.execute(
+        "INSERT INTO products (name, category, base_price, cost, recipe_notes) "
+        "VALUES ('Bánh test', 'banh_mi', 10000, ?, '')",
+        (product_cost,),
+    )
+    product_id = int(cursor.lastrowid)
+    # Order item with product_id as string (matches app convention)
+    conn.execute(
+        "INSERT INTO order_items "
+        "(order_id, product_id, product_name, quantity, unit_price, position) "
+        "VALUES (?, ?, 'Bánh test', ?, 50000, 0)",
+        (order_id, str(product_id), qty),
+    )
+    return order_id, product_id
+
+
+def _assert_double_entry_integrity(conn) -> None:
+    """Every journal entry has total debit == total credit."""
+    rows = conn.execute(
+        """
+        SELECT je.id, SUM(jl.debit) AS total_debit, SUM(jl.credit) AS total_credit
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        GROUP BY je.id
+        """
+    ).fetchall()
+    assert len(rows) > 0, "No journal entries to verify"
+    for row in rows:
+        delta = abs(float(row["total_debit"]) - float(row["total_credit"]))
+        assert delta < 0.005, (
+            f"Entry {row['id']}: debit {row['total_debit']} != credit {row['total_credit']}"
+        )
+
+
+def test_v44_accounts_table():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        _migrate_to_version(conn, 44)
+        assert _migrated_version(conn) == 44
+        _assert_accounts_table(conn)
+
+
+def test_v44_journal_entries_table():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _assert_journal_entries_table(conn)
+
+
+def test_v44_journal_lines_table():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _assert_journal_lines_table(conn)
+
+
+def test_v44_seed_coa():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _assert_seed_coa(conn)
+
+
+def test_v44_seed_coa_idempotent():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        account_count = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+        # Re-run callable (simulates re-migration safety)
+        from baker.db.schema import _migrate_v44_double_entry_accounting
+
+        _migrate_v44_double_entry_accounting(conn)
+        account_count_after = conn.execute(
+            "SELECT COUNT(*) FROM accounts"
+        ).fetchone()[0]
+        assert account_count == account_count_after
+
+
+def test_v44_backfill_expenses():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        event_id = _seed_expense_event(
+            conn,
+            amount_vnd=50000,
+            category="Nguyên liệu",
+            payment_source="Shop tiền mặt",
+            summary="Expense cash",
+        )
+        event_id_bank = _seed_expense_event(
+            conn,
+            amount_vnd=30000,
+            category="Điện/nước",
+            payment_source="TK Phượng VCB",
+            summary="Expense bank",
+        )
+
+        _migrate_to_version(conn, 44)
+        assert _migrated_version(conn) == 44
+
+        # Two expense journal entries
+        entries = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type = 'expense' ORDER BY id"
+        ).fetchall()
+        assert len(entries) == 2
+
+        # Cash expense: debit 5100 (Nguyên liệu), credit 1100 (Cash)
+        cash_entry = next(e for e in entries if e["source_id"] == event_id)
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id = ? ORDER BY id",
+            (cash_entry["id"],),
+        ).fetchall()
+        assert len(lines) == 2
+        debit_line = next(l for l in lines if float(l["debit"]) > 0)
+        credit_line = next(l for l in lines if float(l["credit"]) > 0)
+        assert float(debit_line["debit"]) == 50000
+        assert float(credit_line["credit"]) == 50000
+        # account codes
+        debit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id = ?", (debit_line["account_id"],)
+        ).fetchone()["code"]
+        credit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id = ?", (credit_line["account_id"],)
+        ).fetchone()["code"]
+        assert debit_acc == "5100"
+        assert credit_acc == "1100"
+
+        # Bank expense: credit 1200 (Bank Account)
+        bank_entry = next(e for e in entries if e["source_id"] == event_id_bank)
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id = ?",
+            (bank_entry["id"],),
+        ).fetchall()
+        credit_line = next(l for l in lines if float(l["credit"]) > 0)
+        credit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id = ?", (credit_line["account_id"],)
+        ).fetchone()["code"]
+        assert credit_acc == "1200"
+
+        _assert_double_entry_integrity(conn)
+
+
+def test_v44_backfill_expense_staff_advance_creates_sub_account():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        # Seed staff
+        conn.execute("INSERT OR IGNORE INTO staff (name, role) VALUES ('Ân', 'staff')")
+        event_id = _seed_expense_event(
+            conn,
+            amount_vnd=40000,
+            category="Lương/phụ cấp",
+            payment_source="Nhân viên ứng trước",
+            paid_by_name="Ân",
+            summary="Staff advance Ân",
+        )
+
+        _migrate_to_version(conn, 44)
+
+        # Sub-account created under 1400
+        parent = conn.execute(
+            "SELECT id FROM accounts WHERE code = '1400'"
+        ).fetchone()
+        subs = conn.execute(
+            "SELECT * FROM accounts WHERE parent_id = ? ORDER BY id",
+            (parent["id"],),
+        ).fetchall()
+        assert len(subs) == 1
+        assert subs[0]["name"] == "Ân"
+
+        # Journal entry credit goes to the staff sub-account
+        entry = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type='expense' AND source_id=?",
+            (event_id,),
+        ).fetchone()
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id = ?", (entry["id"],)
+        ).fetchall()
+        credit_line = next(l for l in lines if float(l["credit"]) > 0)
+        assert credit_line["account_id"] == subs[0]["id"]
+        _assert_double_entry_integrity(conn)
+
+
+def test_v44_backfill_payments():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        # Need an order for FK
+        cursor = conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, items, total_price, status) "
+            "VALUES ('ORD-P-001', 'Khách p', '[]', 200000, 'new')"
+        )
+        order_id = int(cursor.lastrowid)
+
+        pt_cash = _seed_payment_transaction(
+            conn, order_id, amount=200000, type_="deposit", method="cash"
+        )
+        pt_transfer = _seed_payment_transaction(
+            conn, order_id, amount=50000, type_="payment", method="transfer"
+        )
+        pt_refund = _seed_payment_transaction(
+            conn, order_id, amount=10000, type_="refund", method="cash"
+        )
+
+        _migrate_to_version(conn, 44)
+
+        entries = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type='payment_transaction' "
+            "ORDER BY id"
+        ).fetchall()
+        assert len(entries) == 3
+
+        # deposit cash: debit 1100, credit 2100
+        dep_entry = next(e for e in entries if e["source_id"] == pt_cash)
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id=?",
+            (dep_entry["id"],),
+        ).fetchall()
+        debit_line = next(l for l in lines if float(l["debit"]) > 0)
+        credit_line = next(l for l in lines if float(l["credit"]) > 0)
+        debit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (debit_line["account_id"],)
+        ).fetchone()["code"]
+        credit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (credit_line["account_id"],)
+        ).fetchone()["code"]
+        assert debit_acc == "1100"
+        assert credit_acc == "2100"
+        assert float(debit_line["debit"]) == 200000
+
+        # transfer payment: debit 1200
+        tr_entry = next(e for e in entries if e["source_id"] == pt_transfer)
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id=?",
+            (tr_entry["id"],),
+        ).fetchall()
+        debit_line = next(l for l in lines if float(l["debit"]) > 0)
+        debit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (debit_line["account_id"],)
+        ).fetchone()["code"]
+        assert debit_acc == "1200"
+
+        # refund: debit 2100, credit 1100 (reversed)
+        rf_entry = next(e for e in entries if e["source_id"] == pt_refund)
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id=?",
+            (rf_entry["id"],),
+        ).fetchall()
+        debit_line = next(l for l in lines if float(l["debit"]) > 0)
+        credit_line = next(l for l in lines if float(l["credit"]) > 0)
+        debit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (debit_line["account_id"],)
+        ).fetchone()["code"]
+        credit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (credit_line["account_id"],)
+        ).fetchone()["code"]
+        assert debit_acc == "2100"
+        assert credit_acc == "1100"
+
+        _assert_double_entry_integrity(conn)
+
+
+def test_v44_backfill_delivered_orders():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        order_id, product_id = _seed_order_with_items(
+            conn, product_cost=5000, qty=2, status="delivered"
+        )
+        # payment to create revenue conversion
+        _seed_payment_transaction(
+            conn, order_id, amount=120000, type_="full_payment", method="cash"
+        )
+
+        _migrate_to_version(conn, 44)
+
+        # Revenue conversion entry
+        rev_entry = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type='order' AND source_id=?",
+            (order_id,),
+        ).fetchone()
+        assert rev_entry is not None
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id=?",
+            (rev_entry["id"],),
+        ).fetchall()
+        debit_line = next(l for l in lines if float(l["debit"]) > 0)
+        credit_line = next(l for l in lines if float(l["credit"]) > 0)
+        debit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (debit_line["account_id"],)
+        ).fetchone()["code"]
+        credit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (credit_line["account_id"],)
+        ).fetchone()["code"]
+        assert debit_acc == "2100"  # Customer Deposits
+        assert credit_acc == "4100"  # Order Revenue
+        assert float(debit_line["debit"]) == 120000
+
+        # COGS entry: cost 5000 * qty 2 = 10000; debit 5900, credit 1300
+        cogs_entry = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type='order_cogs' AND source_id=?",
+            (order_id,),
+        ).fetchone()
+        assert cogs_entry is not None
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id=?",
+            (cogs_entry["id"],),
+        ).fetchall()
+        debit_line = next(l for l in lines if float(l["debit"]) > 0)
+        credit_line = next(l for l in lines if float(l["credit"]) > 0)
+        debit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (debit_line["account_id"],)
+        ).fetchone()["code"]
+        credit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (credit_line["account_id"],)
+        ).fetchone()["code"]
+        assert debit_acc == "5900"
+        assert credit_acc == "1300"
+        assert float(debit_line["debit"]) == 10000
+
+        _assert_double_entry_integrity(conn)
+
+
+def test_v44_backfill_delivered_order_zero_cost_skips_cogs():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        order_id, _ = _seed_order_with_items(
+            conn, product_cost=0, qty=3, status="delivered"
+        )
+        _seed_payment_transaction(conn, order_id, amount=50000)
+
+        _migrate_to_version(conn, 44)
+
+        cogs_count = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries "
+            "WHERE source_type='order_cogs' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0]
+        assert cogs_count == 0
+
+
+def test_v44_double_entry_integrity():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        # Seed a mix of data
+        _seed_expense_event(conn, amount_vnd=50000, category="Bao bì")
+        _seed_expense_event(
+            conn,
+            amount_vnd=40000,
+            category="Vận chuyển",
+            payment_source="TK Ân VCB",
+        )
+        order_id, _ = _seed_order_with_items(
+            conn, product_cost=3000, qty=2, status="delivered"
+        )
+        _seed_payment_transaction(conn, order_id, amount=80000, method="transfer")
+        _seed_payment_transaction(
+            conn, order_id, amount=20000, type_="tien_rut", method="cash"
+        )
+
+        _migrate_to_version(conn, 44)
+        _assert_double_entry_integrity(conn)
+
+
+def test_v44_fresh_db_seeds_coa_and_no_backfill():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        assert _migrated_version(conn) == 44
+        _assert_seed_coa(conn)
+        # No historical data → no journal entries
+        entry_count = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries"
+        ).fetchone()[0]
+        assert entry_count == 0

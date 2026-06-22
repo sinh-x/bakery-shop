@@ -1455,6 +1455,429 @@ def _migrate_v43_event_history_and_soft_delete(conn):
         )
 
 
+# ---------------------------------------------------------------------------
+# Double-entry accounting schema (migration v44)
+# ---------------------------------------------------------------------------
+
+ACCOUNTING_SCHEMA = """
+CREATE TABLE IF NOT EXISTS accounts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    code        TEXT UNIQUE NOT NULL,
+    name        TEXT NOT NULL,
+    type        TEXT NOT NULL,
+    parent_id   INTEGER REFERENCES accounts(id),
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_accounts_type ON accounts(type);
+CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(parent_id);
+
+CREATE TABLE IF NOT EXISTS journal_entries (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    description TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
+    source_type TEXT NOT NULL,
+    source_id   INTEGER,
+    locked_at   TEXT,
+    locked_by   TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_journal_entries_created ON journal_entries(created_at);
+CREATE INDEX IF NOT EXISTS idx_journal_entries_source ON journal_entries(source_type, source_id);
+
+CREATE TABLE IF NOT EXISTS journal_lines (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    journal_entry_id INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+    account_id       INTEGER NOT NULL REFERENCES accounts(id),
+    debit            REAL NOT NULL DEFAULT 0,
+    credit           REAL NOT NULL DEFAULT 0,
+    description      TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON journal_lines(journal_entry_id);
+CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(account_id);
+"""
+
+# Chart of accounts seed: (code, name, type, parent_code)
+# parent_code is None for top-level; otherwise resolved to parent account id.
+SEED_CHART_OF_ACCOUNTS = [
+    # Assets
+    ("1000", "Tài sản", "asset", None),
+    ("1100", "Tiền mặt (Cash on Hand)", "asset", "1000"),
+    ("1200", "Tài khoản ngân hàng (Bank Account)", "asset", "1000"),
+    ("1300", "Hàng tồn kho (Inventory)", "asset", "1000"),
+    ("1400", "Nhân viên ứng trước (Staff Advances)", "asset", "1000"),
+    # Liabilities
+    ("2000", "Nợ phải trả", "liability", None),
+    ("2100", "Tiền khách đặt cọc (Customer Deposits)", "liability", "2000"),
+    # Equity
+    ("3000", "Vốn chủ sở hữu", "equity", None),
+    ("3100", "Vốn chủ sở hữu (Owner's Equity)", "equity", "3000"),
+    # Income
+    ("4000", "Doanh thu", "income", None),
+    ("4100", "Doanh thu bán hàng (Order Revenue)", "income", "4000"),
+    # Expenses — 8 accounts matching the 8 expense categories used in the app
+    ("5000", "Chi phí", "expense", None),
+    ("5100", "Nguyên liệu (Ingredients)", "expense", "5000"),
+    ("5200", "Bao bì (Packaging)", "expense", "5000"),
+    ("5300", "Vận chuyển (Delivery/Shipping)", "expense", "5000"),
+    ("5400", "Điện/nước (Utilities)", "expense", "5000"),
+    ("5500", "Dụng cụ (Tools)", "expense", "5000"),
+    ("5600", "Sửa chữa (Equipment Maintenance)", "expense", "5000"),
+    ("5700", "Lương/phụ cấp (Staff Salary)", "expense", "5000"),
+    ("5800", "Khác (Other Expenses)", "expense", "5000"),
+    # COGS
+    ("5900", "Giá vốn hàng bán (COGS)", "expense", "5000"),
+]
+
+# Map expense category (stored in events.data JSON) → expense account code.
+# Keys must match VN labels in app/lib/features/expenses/expense_constants.dart.
+EXPENSE_CATEGORY_TO_ACCOUNT_CODE = {
+    "Nguyên liệu": "5100",
+    "Bao bì": "5200",
+    "Vận chuyển": "5300",
+    "Điện/nước": "5400",
+    "Dụng cụ": "5500",
+    "Sửa chữa": "5600",
+    "Lương/phụ cấp": "5700",
+    "Khác": "5800",
+}
+
+# Map expense payment_source (events.data JSON) → asset account code.
+# "Nhân viên ứng trước" creates a sub-account per staff name (handled in backfill).
+EXPENSE_PAYMENT_SOURCE_TO_ASSET_CODE = {
+    "Shop tiền mặt": "1100",
+    "TK Phượng VCB": "1200",
+    "TK Ân VCB": "1200",
+    "Nhân viên ứng trước": "1400",
+}
+
+# Map payment_transactions.method → asset account code.
+PAYMENT_METHOD_TO_ASSET_CODE = {
+    "cash": "1100",
+    "card": "1100",
+    "transfer": "1200",
+}
+
+# payment_transactions.type values that represent cash flowing back to the
+# customer (negative deposit). These are recorded as debit Customer Deposits,
+# credit Asset — the reverse of a normal deposit/payment.
+PAYMENT_OUTFLOW_TYPES = {"refund", "tien_rut"}
+
+# Account codes used by the backfill.
+CUSTOMER_DEPOSITS_CODE = "2100"
+ORDER_REVENUE_CODE = "4100"
+COGS_CODE = "5900"
+INVENTORY_CODE = "1300"
+STAFF_ADVANCES_CODE = "1400"
+
+
+def _seed_chart_of_accounts(conn) -> None:
+    """Seed the chart of accounts (idempotent via INSERT OR IGNORE)."""
+    code_to_id: dict[str, int] = {}
+    for code, name, acc_type, parent_code in SEED_CHART_OF_ACCOUNTS:
+        parent_id = code_to_id.get(parent_code) if parent_code else None
+        cursor = conn.execute(
+            "INSERT OR IGNORE INTO accounts (code, name, type, parent_id) "
+            "VALUES (?, ?, ?, ?)",
+            (code, name, acc_type, parent_id),
+        )
+        if cursor.lastrowid:
+            code_to_id[code] = int(cursor.lastrowid)
+        else:
+            row = conn.execute(
+                "SELECT id FROM accounts WHERE code = ?", (code,)
+            ).fetchone()
+            code_to_id[code] = int(row[0])
+
+
+def _ensure_staff_advance_sub_account(conn, staff_name: str) -> int:
+    """Create (or return) a sub-account under Nhân viên ứng trước for a staff member.
+
+    Sub-account code is derived as 14XX where XX is a stable zero-padded index
+    assigned by first-seen order. The code is unique within the chart of
+    accounts and the parent is the 1400 parent account.
+    """
+    parent_row = conn.execute(
+        "SELECT id FROM accounts WHERE code = ?", (STAFF_ADVANCES_CODE,)
+    ).fetchone()
+    if parent_row is None:
+        raise RuntimeError(
+            "Staff Advances parent account (1400) missing; seed COA first"
+        )
+    parent_id = int(parent_row[0])
+
+    existing = conn.execute(
+        "SELECT id FROM accounts WHERE parent_id = ? AND name = ?",
+        (parent_id, staff_name),
+    ).fetchone()
+    if existing:
+        return int(existing[0])
+
+    count_row = conn.execute(
+        "SELECT COUNT(*) FROM accounts WHERE parent_id = ?", (parent_id,)
+    ).fetchone()
+    next_idx = int(count_row[0]) + 1
+    code = f"14{next_idx:02d}"
+    cursor = conn.execute(
+        "INSERT INTO accounts (code, name, type, parent_id) VALUES (?, ?, 'asset', ?)",
+        (code, staff_name, parent_id),
+    )
+    return int(cursor.lastrowid)
+
+
+def _account_id_by_code(conn, code: str) -> int:
+    row = conn.execute(
+        "SELECT id FROM accounts WHERE code = ?", (code,)
+    ).fetchone()
+    if row is None:
+        raise RuntimeError(f"Account code {code!r} not found")
+    return int(row[0])
+
+
+def _insert_journal_entry(
+    conn,
+    *,
+    description: str,
+    source_type: str,
+    source_id,
+    lines: list[tuple[int, float, float, str]],
+) -> int:
+    """Create a journal entry with its lines.
+
+    `lines` is a list of (account_id, debit, credit, line_description).
+    Double-entry integrity is enforced: total debit must equal total credit.
+    """
+    total_debit = sum(d for _, d, _, _ in lines)
+    total_credit = sum(c for _, _, c, _ in lines)
+    if abs(total_debit - total_credit) > 0.005:
+        raise RuntimeError(
+            f"Double-entry violation: debit={total_debit} credit={total_credit} "
+            f"for {source_type}:{source_id}"
+        )
+
+    cursor = conn.execute(
+        "INSERT INTO journal_entries (description, source_type, source_id) "
+        "VALUES (?, ?, ?)",
+        (description, source_type, source_id),
+    )
+    entry_id = int(cursor.lastrowid)
+    for account_id, debit, credit, line_desc in lines:
+        conn.execute(
+            "INSERT INTO journal_lines "
+            "(journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (entry_id, account_id, float(debit), float(credit), line_desc),
+        )
+    return entry_id
+
+
+def _backfill_expense_journal_entries(conn) -> None:
+    """Backfill journal entries for all non-deleted expense events."""
+    import json
+
+    rows = conn.execute(
+        "SELECT id, summary, data FROM events "
+        "WHERE type = 'expense' "
+        "  AND (deleted_at IS NULL OR deleted_at = '')"
+    ).fetchall()
+
+    for row in rows:
+        event_id = int(row["id"])
+        # Skip if a journal entry already exists for this source (idempotent).
+        existing = conn.execute(
+            "SELECT 1 FROM journal_entries "
+            "WHERE source_type = 'expense' AND source_id = ?",
+            (event_id,),
+        ).fetchone()
+        if existing:
+            continue
+
+        try:
+            data = json.loads(row["data"]) if row["data"] else {}
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        amount = data.get("amount_vnd")
+        category = data.get("category")
+        payment_source = data.get("payment_source")
+        if not isinstance(amount, (int, float)) or amount <= 0:
+            continue
+        if not isinstance(category, str) or not category:
+            continue
+        if not isinstance(payment_source, str) or not payment_source:
+            continue
+
+        expense_code = EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category)
+        if not expense_code:
+            continue
+
+        if payment_source == "Nhân viên ứng trước":
+            staff_name = (data.get("paid_by_name") or "").strip()
+            if not staff_name:
+                continue
+            asset_account_id = _ensure_staff_advance_sub_account(conn, staff_name)
+        else:
+            asset_code = EXPENSE_PAYMENT_SOURCE_TO_ASSET_CODE.get(payment_source)
+            if not asset_code:
+                continue
+            asset_account_id = _account_id_by_code(conn, asset_code)
+
+        expense_account_id = _account_id_by_code(conn, expense_code)
+
+        _insert_journal_entry(
+            conn,
+            description=f"Expense: {row['summary']}",
+            source_type="expense",
+            source_id=event_id,
+            lines=[
+                (expense_account_id, float(amount), 0.0, "Chi phí"),
+                (asset_account_id, 0.0, float(amount), "Thanh toán"),
+            ],
+        )
+
+
+def _backfill_payment_transaction_journal_entries(conn) -> None:
+    """Backfill journal entries for all payment_transactions."""
+    rows = conn.execute(
+        "SELECT id, order_id, amount, type, method, created_at "
+        "FROM payment_transactions"
+    ).fetchall()
+
+    for row in rows:
+        pt_id = int(row["id"])
+        existing = conn.execute(
+            "SELECT 1 FROM journal_entries "
+            "WHERE source_type = 'payment_transaction' AND source_id = ?",
+            (pt_id,),
+        ).fetchone()
+        if existing:
+            continue
+
+        amount = float(row["amount"] or 0)
+        if amount <= 0:
+            continue
+
+        method = row["method"] or "cash"
+        asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get(method, "1100")
+        asset_account_id = _account_id_by_code(conn, asset_code)
+        deposits_account_id = _account_id_by_code(conn, CUSTOMER_DEPOSITS_CODE)
+
+        ptype = row["type"] or "deposit"
+        if ptype in PAYMENT_OUTFLOW_TYPES:
+            # Cash flows back to customer: debit Customer Deposits, credit Asset.
+            _insert_journal_entry(
+                conn,
+                description=f"Payment: {ptype} {amount}",
+                source_type="payment_transaction",
+                source_id=pt_id,
+                lines=[
+                    (deposits_account_id, amount, 0.0, "Hoàn tiền khách"),
+                    (asset_account_id, 0.0, amount, "Trả lại tiền"),
+                ],
+            )
+        else:
+            # Customer pays in: debit Asset, credit Customer Deposits.
+            _insert_journal_entry(
+                conn,
+                description=f"Payment: {ptype} {amount}",
+                source_type="payment_transaction",
+                source_id=pt_id,
+                lines=[
+                    (asset_account_id, amount, 0.0, "Tiền khách đặt/cọc"),
+                    (deposits_account_id, 0.0, amount, "Tiền khách đặt cọc"),
+                ],
+            )
+
+
+def _backfill_delivered_order_journal_entries(conn) -> None:
+    """Backfill revenue conversion + COGS entries for delivered orders."""
+    from baker.models.payment_transaction import PaymentTransaction
+
+    orders = conn.execute(
+        "SELECT id, order_ref FROM orders WHERE status = 'delivered'"
+    ).fetchall()
+
+    inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
+    revenue_account_id = _account_id_by_code(conn, ORDER_REVENUE_CODE)
+    deposits_account_id = _account_id_by_code(conn, CUSTOMER_DEPOSITS_CODE)
+    cogs_account_id = _account_id_by_code(conn, COGS_CODE)
+
+    for orow in orders:
+        order_id = int(orow["id"])
+        order_ref = orow["order_ref"]
+
+        # Revenue conversion: net payments (deposits + payments + full_payments - tien_rut)
+        # equals total_paid_excl_tien_rut. Move that amount from Customer Deposits
+        # to Order Revenue.
+        net = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id)
+        if net > 0:
+            existing = conn.execute(
+                "SELECT 1 FROM journal_entries "
+                "WHERE source_type = 'order' AND source_id = ?",
+                (order_id,),
+            ).fetchone()
+            if not existing:
+                _insert_journal_entry(
+                    conn,
+                    description=f"Order revenue: {order_ref}",
+                    source_type="order",
+                    source_id=order_id,
+                    lines=[
+                        (deposits_account_id, net, 0.0, "Chuyển cọc sang doanh thu"),
+                        (revenue_account_id, 0.0, net, "Doanh thu bán hàng"),
+                    ],
+                )
+
+        # COGS: for each order_item with product.cost > 0, debit COGS, credit Inventory.
+        # Group into one COGS entry per order for performance and clarity.
+        existing_cogs = conn.execute(
+            "SELECT 1 FROM journal_entries "
+            "WHERE source_type = 'order_cogs' AND source_id = ?",
+            (order_id,),
+        ).fetchone()
+        if existing_cogs:
+            continue
+
+        items = conn.execute(
+            "SELECT oi.product_name, oi.quantity, p.cost "
+            "FROM order_items oi "
+            "LEFT JOIN products p ON CAST(oi.product_id AS INTEGER) = p.id "
+            "WHERE oi.order_id = ? AND oi.is_extra = 0 AND oi.is_gift = 0",
+            (order_id,),
+        ).fetchall()
+
+        total_cogs = 0.0
+        for irow in items:
+            cost = float(irow["cost"] or 0)
+            qty = int(irow["quantity"] or 0)
+            if cost > 0 and qty > 0:
+                total_cogs += cost * qty
+
+        if total_cogs > 0:
+            _insert_journal_entry(
+                conn,
+                description=f"Order COGS: {order_ref}",
+                source_type="order_cogs",
+                source_id=order_id,
+                lines=[
+                    (cogs_account_id, total_cogs, 0.0, "Giá vốn hàng bán"),
+                    (inventory_account_id, 0.0, total_cogs, "Xuất kho"),
+                ],
+            )
+
+
+def _migrate_v44_double_entry_accounting(conn):
+    """Create accounting schema, seed chart of accounts, and backfill journal
+    entries for historical expenses, payment_transactions, and delivered orders."""
+    conn.executescript(ACCOUNTING_SCHEMA)
+    _seed_chart_of_accounts(conn)
+    _backfill_expense_journal_entries(conn)
+    _backfill_payment_transaction_journal_entries(conn)
+    _backfill_delivered_order_journal_entries(conn)
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -1654,6 +2077,11 @@ MIGRATIONS = {
         "description": "Event history audit table, soft-delete columns on events, backfill expense staff_name to audit log",
         "sql": "",
         "callable": _migrate_v43_event_history_and_soft_delete,
+    },
+    44: {
+        "description": "Double-entry accounting: accounts, journal_entries, journal_lines, chart of accounts seed, backfill historical entries",
+        "sql": "",
+        "callable": _migrate_v44_double_entry_accounting,
     },
 }
 
