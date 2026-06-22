@@ -91,6 +91,15 @@ def create_event(body: EventCreate):
             if staff:
                 link_event_person(conn, event_id, staff["id"], "logged_by")
 
+        # Auto-generate double-entry journal for expense events (DG-175).
+        # Accounting failure must never block the primary business operation.
+        if body.type == "expense":
+            try:
+                from baker.api.accounts import _sync_expense_journal
+                _sync_expense_journal(conn, event_id, body.data, body.summary)
+            except Exception:
+                logger.exception("expense journal sync failed for event %d", event_id)
+
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return _row_to_dict(row)
 
@@ -307,6 +316,14 @@ def update_event(event_id: int, body: EventUpdate):
         values.append(event_id)
         conn.execute(f"UPDATE events SET {', '.join(fields)} WHERE id = ?", values)
 
+        # Re-sync double-entry journal if this is an expense event (DG-175).
+        if next_type == "expense":
+            try:
+                from baker.api.accounts import _sync_expense_journal
+                _sync_expense_journal(conn, event_id, next_data, str(row["summary"] if "summary" not in data else data["summary"]))
+            except Exception:
+                logger.exception("expense journal re-sync failed for event %d", event_id)
+
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return _row_to_dict(row)
 
@@ -327,6 +344,14 @@ def delete_event(event_id: int, deleted_by: str = Query("", description="Ngườ
             (now, deleted_by, event_id),
         )
         _log_event_history(conn, event_id, "delete", actor=deleted_by)
+
+        # On soft-delete of an expense event, reverse/delete its journal entry (DG-175).
+        if row["type"] == "expense":
+            try:
+                from baker.api.accounts import _sync_expense_journal
+                _sync_expense_journal(conn, event_id, {}, str(row["summary"]), deleted=True)
+            except Exception:
+                logger.exception("expense journal delete-sync failed for event %d", event_id)
 
 
 @router.get("/{event_id}/history")

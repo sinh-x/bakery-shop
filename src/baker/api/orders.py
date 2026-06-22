@@ -417,6 +417,13 @@ def create_order(body: OrderCreate, request: Request):
                                "new", "delivered", body.createdBy)
             auto_decrement_stock(conn, order.id, order.order_ref)
 
+            # Auto-generate revenue conversion + COGS journal entries (DG-175).
+            try:
+                from baker.api.accounts import _sync_delivered_order_journal
+                _sync_delivered_order_journal(conn, order.id, order.order_ref)
+            except Exception:
+                logger.exception("delivered order journal sync failed for order %d", order.id)
+
         log_context(request, ref_type="order", ref_id=order.id)
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
         return _order_detail(conn, row)
@@ -692,6 +699,14 @@ def transition_status(ref: str, body: StatusTransition):
             )
 
         _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, body.changedBy)
+
+        # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
+        if body.status == "delivered" and row["status"] != "delivered":
+            try:
+                from baker.api.accounts import _sync_delivered_order_journal
+                _sync_delivered_order_journal(conn, row["id"], row["order_ref"])
+            except Exception:
+                logger.exception("delivered order journal sync failed for order %d", row["id"])
 
         # Auto-cascade confirmed order status to main items (non-extra, non-gift) at pending (F5)
         if body.status == "confirmed":

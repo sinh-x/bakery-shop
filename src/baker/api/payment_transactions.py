@@ -1,10 +1,14 @@
 """Payment transaction API routes."""
 
+import logging
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from baker.db.connection import get_db
 from baker.models.payment_transaction import PaymentMethod, PaymentTransaction, TransactionType
+
+logger = logging.getLogger("baker.server")
 
 router = APIRouter(prefix="/api/orders", tags=["payment-transactions"])
 
@@ -75,6 +79,14 @@ def create_transaction(ref: str, body: TransactionCreate):
             note=body.note,
         )
         txn.save(conn)
+
+        # Auto-generate double-entry journal entry (DG-175).
+        try:
+            from baker.api.accounts import _sync_payment_journal
+            _sync_payment_journal(conn, txn.id, body.amount, body.type, body.method)
+        except Exception:
+            logger.exception("payment journal sync failed for txn %d", txn.id)
+
         row = conn.execute(
             "SELECT * FROM payment_transactions WHERE id = ?", (txn.id,)
         ).fetchone()
@@ -122,6 +134,14 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
             "UPDATE payment_transactions SET amount = ?, type = ?, method = ?, note = ? WHERE id = ?",
             (txn.amount, txn.type, txn.method, txn.note, txn.id),
         )
+
+        # Re-sync double-entry journal entry (DG-175).
+        try:
+            from baker.api.accounts import _sync_payment_journal
+            _sync_payment_journal(conn, txn.id, txn.amount, txn.type, txn.method)
+        except Exception:
+            logger.exception("payment journal re-sync failed for txn %d", txn.id)
+
         row = conn.execute(
             "SELECT * FROM payment_transactions WHERE id = ?", (txn.id,)
         ).fetchone()
@@ -134,9 +154,18 @@ def delete_transaction(ref: str, txn_id: int):
     with get_db() as conn:
         order_id = _resolve_order_id(conn, ref)
         row = conn.execute(
-            "SELECT id FROM payment_transactions WHERE id = ? AND order_id = ?",
+            "SELECT id, amount, type, method FROM payment_transactions WHERE id = ? AND order_id = ?",
             (txn_id, order_id),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch")
         conn.execute("DELETE FROM payment_transactions WHERE id = ?", (txn_id,))
+
+        # Reverse/delete the journal entry for the deleted transaction (DG-175).
+        try:
+            from baker.api.accounts import _sync_payment_journal
+            _sync_payment_journal(
+                conn, txn_id, float(row["amount"]), row["type"], row["method"], deleted=True
+            )
+        except Exception:
+            logger.exception("payment journal delete-sync failed for txn %d", txn_id)
