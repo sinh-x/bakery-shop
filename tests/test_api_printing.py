@@ -30,9 +30,14 @@ def _print_work_ticket(client, order_ref: str, item_id: int, printed_by=None):
     return client.post(f"/api/orders/{order_ref}/print", params=params)
 
 
-@patch("baker.api.printing.usb_printer.print_receipt")
-def test_work_ticket_print_inserts_log_and_sets_first_print(mock_print, api_client):
-    mock_print.return_value = None
+@patch("baker.api.printing.os.close")
+@patch("baker.api.printing.os.write")
+@patch("baker.api.printing.usb_printer.open_printer")
+@patch("baker.api.printing.usb_printer.png_to_tspl")
+def test_work_ticket_print_inserts_log_and_sets_first_print(mock_tspl, mock_open, mock_write, mock_close, api_client):
+    mock_tspl.return_value = b"FAKE_TSPL_DATA"
+    mock_open.return_value = 3
+    mock_write.return_value = len(b"FAKE_TSPL_DATA")
     order = _create_order(api_client)
     order_ref = order["orderRef"]
     item_id = _first_work_item_id(api_client, order_ref)
@@ -57,9 +62,14 @@ def test_work_ticket_print_inserts_log_and_sets_first_print(mock_print, api_clie
     assert order_detail["workTicketPrintedBy"] == "An"
 
 
-@patch("baker.api.printing.usb_printer.print_receipt")
-def test_second_print_appends_log_without_overwriting_first_print_fields(mock_print, api_client):
-    mock_print.return_value = None
+@patch("baker.api.printing.os.close")
+@patch("baker.api.printing.os.write")
+@patch("baker.api.printing.usb_printer.open_printer")
+@patch("baker.api.printing.usb_printer.png_to_tspl")
+def test_second_print_appends_log_without_overwriting_first_print_fields(mock_tspl, mock_open, mock_write, mock_close, api_client):
+    mock_tspl.return_value = b"FAKE_TSPL_DATA"
+    mock_open.return_value = 3
+    mock_write.return_value = len(b"FAKE_TSPL_DATA")
     order = _create_order(api_client)
     order_ref = order["orderRef"]
     item_id = _first_work_item_id(api_client, order_ref)
@@ -85,9 +95,14 @@ def test_second_print_appends_log_without_overwriting_first_print_fields(mock_pr
     assert order_detail["workTicketPrintedBy"] == "An"
 
 
-@patch("baker.api.printing.usb_printer.print_receipt")
-def test_print_fills_missing_printed_by_when_legacy_timestamp_exists(mock_print, api_client):
-    mock_print.return_value = None
+@patch("baker.api.printing.os.close")
+@patch("baker.api.printing.os.write")
+@patch("baker.api.printing.usb_printer.open_printer")
+@patch("baker.api.printing.usb_printer.png_to_tspl")
+def test_print_fills_missing_printed_by_when_legacy_timestamp_exists(mock_tspl, mock_open, mock_write, mock_close, api_client):
+    mock_tspl.return_value = b"FAKE_TSPL_DATA"
+    mock_open.return_value = 3
+    mock_write.return_value = len(b"FAKE_TSPL_DATA")
     order = _create_order(api_client)
     order_ref = order["orderRef"]
     item_id = _first_work_item_id(api_client, order_ref)
@@ -111,11 +126,18 @@ def test_print_fills_missing_printed_by_when_legacy_timestamp_exists(mock_print,
     assert order_detail["workTicketPrintedBy"] == "Ngân"
 
 
-@patch("baker.api.printing.usb_printer.print_receipt", side_effect=FileNotFoundError)
+@patch("baker.api.printing.os.close")
+@patch("baker.api.printing.os.write")
+@patch("baker.api.printing.usb_printer.open_printer", side_effect=FileNotFoundError)
+@patch("baker.api.printing.usb_printer.png_to_tspl")
 def test_print_failure_returns_503_and_does_not_write_logs_or_first_print(
-    _mock_print,
+    mock_tspl,
+    _mock_open_printer,
+    _mock_write,
+    _mock_close,
     api_client,
 ):
+    mock_tspl.return_value = b"FAKE_TSPL_DATA"
     order = _create_order(api_client)
     order_ref = order["orderRef"]
     item_id = _first_work_item_id(api_client, order_ref)
@@ -132,9 +154,14 @@ def test_print_failure_returns_503_and_does_not_write_logs_or_first_print(
     assert order_detail["workTicketPrintedBy"] == ""
 
 
-@patch("baker.api.printing.usb_printer.print_receipt")
-def test_print_with_empty_staff_name_succeeds_and_records_empty_string(mock_print, api_client):
-    mock_print.return_value = None
+@patch("baker.api.printing.os.close")
+@patch("baker.api.printing.os.write")
+@patch("baker.api.printing.usb_printer.open_printer")
+@patch("baker.api.printing.usb_printer.png_to_tspl")
+def test_print_with_empty_staff_name_succeeds_and_records_empty_string(mock_tspl, mock_open, mock_write, mock_close, api_client):
+    mock_tspl.return_value = b"FAKE_TSPL_DATA"
+    mock_open.return_value = 3
+    mock_write.return_value = len(b"FAKE_TSPL_DATA")
     order = _create_order(api_client)
     order_ref = order["orderRef"]
     item_id = _first_work_item_id(api_client, order_ref)
@@ -273,8 +300,13 @@ class TestPaperModeBackwardCompat:
 
     def test_existing_print_flow_unaffected_by_paper_mode(self, api_client):
         """Print request succeeds regardless of paper mode setting (AC8)."""
-        with patch("baker.api.printing.usb_printer.print_receipt") as mock_print:
-            mock_print.return_value = None
+        with patch("baker.api.printing.usb_printer.png_to_tspl") as mock_tspl, \
+             patch("baker.api.printing.usb_printer.open_printer") as mock_open, \
+             patch("baker.api.printing.os.write") as mock_write, \
+             patch("baker.api.printing.os.close") as mock_close:
+            mock_tspl.return_value = b"FAKE_TSPL_DATA"
+            mock_open.return_value = 3
+            mock_write.return_value = len(b"FAKE_TSPL_DATA")
             order = _create_order(api_client)
             order_ref = order["orderRef"]
             item_id = _first_work_item_id(api_client, order_ref)
@@ -284,4 +316,4 @@ class TestPaperModeBackwardCompat:
             resp = _print_work_ticket(api_client, order_ref, item_id, printed_by="An")
             assert resp.status_code == 200
             assert resp.json()["status"] == "ok"
-            mock_print.assert_called_once()
+            mock_tspl.assert_called_once()

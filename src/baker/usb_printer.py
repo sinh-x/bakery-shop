@@ -20,7 +20,7 @@ WIDTH_BYTES = PRINT_WIDTH // 8  # 72 bytes per row
 THRESHOLD = 128  # 1-bit bitmap threshold
 
 # Thread lock for serializing print requests
-_print_lock = threading.Lock()
+print_lock = threading.Lock()
 
 # Paper mode configuration
 # PAPER_MODE env var: server default for printer paper type.
@@ -294,7 +294,7 @@ def print_receipt(
 
     tspl_data = png_to_tspl(png_bytes, paper_mode=paper_mode, trail_mm=trail_mm)
 
-    with _print_lock:
+    with print_lock:
         fd = None
         try:
             fd = open_printer(device_path)
