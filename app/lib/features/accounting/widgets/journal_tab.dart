@@ -6,6 +6,7 @@ import '../../../data/models/account.dart';
 import '../../../data/models/journal_entry.dart';
 import '../../../providers/accounting_provider.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
+import 'empty_state.dart';
 
 class JournalTab extends ConsumerStatefulWidget {
   const JournalTab({super.key});
@@ -91,7 +92,7 @@ class _JournalTabState extends ConsumerState<JournalTab> {
               _isLoadingMore = false;
 
               if (_loaded.isEmpty) {
-                return const _EmptyList(text: VN.accountingNoEntries);
+                return const AccountingEmptyState(text: VN.accountingNoEntries);
               }
               return Column(
                 children: [
@@ -278,16 +279,25 @@ class _FilterBar extends StatelessWidget {
             value: sourceType,
             hint: const Text(VN.accountingFilterSourceType),
             items: const [
-              DropdownMenuItem<String?>(value: null, child: Text('Tất cả')),
-              DropdownMenuItem<String?>(value: 'expense', child: Text('Chi phí')),
+              DropdownMenuItem<String?>(
+                value: null,
+                child: Text(VN.accountingSourceTypeAll),
+              ),
+              DropdownMenuItem<String?>(
+                value: 'expense',
+                child: Text(VN.accountingSourceTypeExpense),
+              ),
               DropdownMenuItem<String?>(
                 value: 'payment_transaction',
-                child: Text('Thanh toán'),
+                child: Text(VN.accountingSourceTypePayment),
               ),
-              DropdownMenuItem<String?>(value: 'order', child: Text('Đơn hàng')),
+              DropdownMenuItem<String?>(
+                value: 'order',
+                child: Text(VN.accountingSourceTypeOrder),
+              ),
               DropdownMenuItem<String?>(
                 value: 'order_cogs',
-                child: Text('Giá vốn'),
+                child: Text(VN.accountingSourceTypeCogs),
               ),
               DropdownMenuItem<String?>(
                 value: 'owner_capital',
@@ -420,7 +430,7 @@ class _JournalEntryCard extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
-                        'Tài khoản',
+                        VN.accountingFilterAccount,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: Colors.grey,
                         ),
@@ -489,28 +499,5 @@ class _JournalEntryCard extends StatelessWidget {
     if (dt == null) return iso;
     return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')} '
         '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-  }
-}
-
-class _EmptyList extends StatelessWidget {
-  const _EmptyList({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      children: [
-        const SizedBox(height: 120),
-        Center(
-          child: Text(
-            text,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey,
-                ),
-          ),
-        ),
-      ],
-    );
   }
 }

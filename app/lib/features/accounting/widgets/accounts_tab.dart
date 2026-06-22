@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/accounting_provider.dart';
+import '../../../shared/utils/account_type_helper.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 import '../../../data/models/account.dart';
+import 'empty_state.dart';
 
 class AccountsTab extends ConsumerWidget {
   const AccountsTab({super.key});
@@ -31,7 +33,7 @@ class AccountsTab extends ConsumerWidget {
         ),
         data: (accounts) {
           if (accounts.isEmpty) {
-            return const _EmptyState(text: VN.accountingNoAccounts);
+            return const AccountingEmptyState(text: VN.accountingNoAccounts);
           }
           return ListView.builder(
             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -54,7 +56,7 @@ class _AccountTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final typeColor = _typeColor(account.type);
+    final typeColor = accountTypeColor(account.type);
 
     return ExpansionTile(
       tilePadding: EdgeInsets.only(left: 16.0 + depth * 16, right: 16),
@@ -90,7 +92,7 @@ class _AccountTile extends StatelessWidget {
         ],
       ),
       subtitle: Text(
-        _typeLabel(account.type),
+        accountTypeLabel(account.type),
         style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
       ),
       children: account.children.isEmpty
@@ -98,63 +100,6 @@ class _AccountTile extends StatelessWidget {
           : account.children
               .map((child) => _AccountTile(account: child, depth: depth + 1))
               .toList(),
-    );
-  }
-
-  Color _typeColor(String type) {
-    switch (type) {
-      case 'asset':
-        return Colors.blue;
-      case 'liability':
-        return Colors.orange;
-      case 'equity':
-        return Colors.purple;
-      case 'income':
-        return Colors.green;
-      case 'expense':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  String _typeLabel(String type) {
-    switch (type) {
-      case 'asset':
-        return 'Tài sản';
-      case 'liability':
-        return 'Nợ phải trả';
-      case 'equity':
-        return 'Vốn chủ sở hữu';
-      case 'income':
-        return 'Doanh thu';
-      case 'expense':
-        return 'Chi phí';
-      default:
-        return type;
-    }
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      children: [
-        const SizedBox(height: 120),
-        Center(
-          child: Text(
-            text,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey,
-                ),
-          ),
-        ),
-      ],
     );
   }
 }

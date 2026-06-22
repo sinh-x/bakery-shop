@@ -6,13 +6,12 @@ payment_transactions, and orders routers so that every financial transaction
 automatically produces a double-entry journal entry.
 """
 
-import json
 import logging
 from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
 from baker.db.schema import (
@@ -24,7 +23,6 @@ from baker.db.schema import (
     ORDER_REVENUE_CODE,
     PAYMENT_METHOD_TO_ASSET_CODE,
     PAYMENT_OUTFLOW_TYPES,
-    STAFF_ADVANCES_CODE,
     _account_id_by_code,
     _ensure_staff_advance_sub_account,
     _insert_journal_entry,
@@ -359,7 +357,7 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
 class JournalLockRequest(BaseModel):
     since: str
     until: str
-    lockedBy: str = ""
+    lockedBy: str = Field(default="", max_length=100)
 
 
 class OwnerCapitalRequest(BaseModel):

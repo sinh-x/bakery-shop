@@ -799,6 +799,11 @@ class VN {
   static const accountingLoadMore = 'Tải thêm';
   static const accountingNoAccounts = 'Không có tài khoản';
   static const accountingNoBalances = 'Không có số dư';
+  static const accountingSourceTypeAll = 'Tất cả';
+  static const accountingSourceTypeExpense = 'Chi phí';
+  static const accountingSourceTypePayment = 'Thanh toán';
+  static const accountingSourceTypeOrder = 'Đơn hàng';
+  static const accountingSourceTypeCogs = 'Giá vốn';
   static String accountingLockResult(int count) =>
       'Đã khóa $count bút toán';
 

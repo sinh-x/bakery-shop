@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/accounting_provider.dart';
+import '../../../shared/utils/account_type_helper.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 import '../../../data/models/account_balance.dart';
+import 'empty_state.dart';
 
 class BalancesTab extends ConsumerWidget {
   const BalancesTab({super.key});
@@ -31,7 +33,7 @@ class BalancesTab extends ConsumerWidget {
         ),
         data: (balances) {
           if (balances.isEmpty) {
-            return const _EmptyState(text: VN.accountingNoBalances);
+            return const AccountingEmptyState(text: VN.accountingNoBalances);
           }
           final grouped = _groupByType(balances);
           return ListView.builder(
@@ -71,7 +73,7 @@ class _BalanceGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final typeColor = _typeColor(type);
+    final typeColor = accountTypeColor(type);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -90,7 +92,7 @@ class _BalanceGroup extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                _typeLabel(type),
+                accountTypeLabel(type),
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: typeColor,
@@ -107,40 +109,6 @@ class _BalanceGroup extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  Color _typeColor(String t) {
-    switch (t) {
-      case 'asset':
-        return Colors.blue;
-      case 'liability':
-        return Colors.orange;
-      case 'equity':
-        return Colors.purple;
-      case 'income':
-        return Colors.green;
-      case 'expense':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  String _typeLabel(String t) {
-    switch (t) {
-      case 'asset':
-        return 'Tài sản';
-      case 'liability':
-        return 'Nợ phải trả';
-      case 'equity':
-        return 'Vốn chủ sở hữu';
-      case 'income':
-        return 'Doanh thu';
-      case 'expense':
-        return 'Chi phí';
-      default:
-        return t;
-    }
   }
 }
 
@@ -190,29 +158,6 @@ class _BalanceRow extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      children: [
-        const SizedBox(height: 120),
-        Center(
-          child: Text(
-            text,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey,
-                ),
-          ),
-        ),
-      ],
     );
   }
 }
