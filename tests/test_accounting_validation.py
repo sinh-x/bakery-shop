@@ -1,6 +1,6 @@
 """Tests for accounting validation module — Phase 5 (DG-187, FR6/AC6).
 
-Covers the four validation checks exposed via the service module, the
+Covers the fourteen validation checks exposed via the service module, the
 ``GET /api/accounts/validate`` endpoint, and the ``baker validate-accounts``
 CLI command:
 
@@ -8,6 +8,16 @@ CLI command:
 - COGS completeness (delivered order_items missing cost_at_sale)
 - waste COGS referential integrity (orphaned waste_cogs entries)
 - cost history sanity (negative costs, duplicate effective_from, future dates)
+- accounting equation (Assets = Liabilities + Equity + Income − Expenses)
+- source completeness (expense/payment/order missing journal entries)
+- COGS amount accuracy (cogs_debit vs cost_at_sale × quantity)
+- cash flow integrity (net cash change vs inflows − outflows)
+- lock integrity (locked_at set but locked_by empty)
+- account balance sanity (asset/expense accounts with negative balance)
+- future-dated entries (created_at in the future)
+- duplicate entries (same source_type + source_id, excluding reversals)
+- orphaned lines (journal lines with non-existent account_id)
+- expense category mismatch (debited account ≠ category mapping)
 - clean DB → all checks pass
 - CLI command exit code + output
 """
@@ -87,6 +97,44 @@ def _seed_orphan_waste_cogs_entry(conn) -> int:
     return int(cur.lastrowid)
 
 
+def _insert_balanced_entry(
+    conn,
+    debit_account_id: int,
+    credit_account_id: int,
+    *,
+    amount: float = 100.0,
+    source_type: str = "manual",
+    source_id=None,
+    debit_to: int | None = None,
+    credit_from: int | None = None,
+) -> int:
+    """Insert a balanced journal entry (debit == credit).
+
+    By default debits ``debit_account_id`` and credits ``credit_account_id``.
+    Override with ``debit_to``/``credit_from`` to reverse the direction on a
+    specific account (useful for creating negative-balance scenarios).
+    """
+    d_acct = debit_to if debit_to is not None else debit_account_id
+    c_acct = credit_from if credit_from is not None else credit_account_id
+    cur = conn.execute(
+        "INSERT INTO journal_entries (description, source_type, source_id) "
+        "VALUES (?, ?, ?)",
+        ("Balanced test", source_type, source_id),
+    )
+    entry_id = cur.lastrowid
+    conn.execute(
+        "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (entry_id, d_acct, amount, 0.0, "d"),
+    )
+    conn.execute(
+        "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (entry_id, c_acct, 0.0, amount, "c"),
+    )
+    return entry_id
+
+
 # ---------------------------------------------------------------------------
 # Service-level: clean DB
 # ---------------------------------------------------------------------------
@@ -105,6 +153,16 @@ def test_validation_clean_db_all_pass():
         "cogs_completeness",
         "waste_cogs_referential_integrity",
         "cost_history_sanity",
+        "accounting_equation",
+        "source_completeness",
+        "cogs_amount_accuracy",
+        "cash_flow_integrity",
+        "lock_integrity",
+        "account_balance_sanity",
+        "future_dated_entries",
+        "duplicate_entries",
+        "orphaned_lines",
+        "expense_category_mismatch",
     ]
 
 
@@ -315,8 +373,8 @@ def test_api_validate_endpoint_clean_db(api_client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["summary"]["overall_status"] == "pass"
-    assert len(body["checks"]) == 4
-    assert body["summary"]["total_checks"] == 4
+    assert len(body["checks"]) == 14
+    assert body["summary"]["total_checks"] == 14
 
 
 def test_api_validate_endpoint_reports_failures(api_client):
@@ -353,3 +411,312 @@ def test_cli_validate_accounts_failure_exit_one():
     assert result.exit_code == 1, result.output
     assert "FAIL" in result.output
     assert "double_entry_integrity" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Service-level: lock integrity
+# ---------------------------------------------------------------------------
+
+
+def test_lock_integrity_flags_locked_at_without_locked_by():
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO journal_entries "
+            "(description, source_type, source_id, locked_at, locked_by) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("Partial lock", "manual", None, "2026-06-23T12:00:00", ""),
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "lock_integrity")
+    assert check["status"] == "fail"
+    assert check["issue_count"] == 1
+    assert check["details"][0]["locked_at"] == "2026-06-23T12:00:00"
+
+
+def test_lock_integrity_passes_when_both_set():
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO journal_entries "
+            "(description, source_type, source_id, locked_at, locked_by) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("Full lock", "manual", None, "2026-06-23T12:00:00", "sinh"),
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "lock_integrity")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+def test_lock_integrity_passes_when_neither_set():
+    with get_db() as conn:
+        ensure_schema(conn)
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "lock_integrity")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Service-level: account balance sanity
+# ---------------------------------------------------------------------------
+
+
+def test_account_balance_sanity_flags_negative_asset_balance():
+    with get_db() as conn:
+        ensure_schema(conn)
+        cash = _account_id(conn, "1100")
+        revenue = _account_id(conn, "4100")
+        # Debit revenue (income), credit cash (asset) → cash balance goes
+        # negative while keeping the entry balanced.
+        _insert_balanced_entry(conn, revenue, cash, amount=500)
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "account_balance_sanity")
+    flagged_codes = [f["code"] for f in check["details"]]
+    assert check["status"] == "fail"
+    assert "1100" in flagged_codes
+
+
+def test_account_balance_sanity_passes_on_clean_db():
+    with get_db() as conn:
+        ensure_schema(conn)
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "account_balance_sanity")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Service-level: future-dated entries
+# ---------------------------------------------------------------------------
+
+
+def test_future_dated_entries_flags_future_created_at():
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO journal_entries "
+            "(description, source_type, source_id, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("Future entry", "manual", None, "2999-12-31T23:59:59"),
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "future_dated_entries")
+    assert check["status"] == "fail"
+    assert check["issue_count"] == 1
+    assert check["details"][0]["created_at"] == "2999-12-31T23:59:59"
+
+
+def test_future_dated_entries_passes_on_normal_dates():
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO journal_entries "
+            "(description, source_type, source_id, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("Normal entry", "manual", None, "2020-01-01T10:00:00"),
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "future_dated_entries")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Service-level: duplicate entries
+# ---------------------------------------------------------------------------
+
+
+def test_duplicate_entries_flags_same_source():
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, ?, ?)",
+            ("First", "manual", 42),
+        )
+        conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, ?, ?)",
+            ("Second", "manual", 42),
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "duplicate_entries")
+    assert check["status"] == "fail"
+    assert check["issue_count"] == 1
+    assert check["details"][0]["source_type"] == "manual"
+    assert check["details"][0]["source_id"] == 42
+    assert len(check["details"][0]["entry_ids"]) == 2
+
+
+def test_duplicate_entries_excludes_reversals():
+    """Reversal entries (prefix 'Reversal:') legitimately share a source."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, ?, ?)",
+            ("Original", "manual", 42),
+        )
+        conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, ?, ?)",
+            ("Reversal: Original", "manual", 42),
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "duplicate_entries")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+def test_duplicate_entries_passes_on_distinct_sources():
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, ?, ?)",
+            ("Entry A", "manual", 42),
+        )
+        conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, ?, ?)",
+            ("Entry B", "manual", 43),
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "duplicate_entries")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Service-level: orphaned lines
+# ---------------------------------------------------------------------------
+
+
+def test_orphaned_lines_flags_nonexistent_account():
+    with get_db() as conn:
+        ensure_schema(conn)
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, ?, ?)",
+            ("Entry with orphan line", "manual", None),
+        )
+        entry_id = cur.lastrowid
+        # Commit the entry so we can toggle FK enforcement off, then insert
+        # a journal line pointing to a non-existent account. The check exists
+        # precisely to catch this kind of corruption that can occur when FKs
+        # are disabled (e.g. legacy data, manual DB edits).
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute(
+            "INSERT INTO journal_lines "
+            "(journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (entry_id, 999999, 100.0, 0.0, "orphan"),
+        )
+        conn.execute("PRAGMA foreign_keys = ON")
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "orphaned_lines")
+    assert check["status"] == "fail"
+    assert check["issue_count"] == 1
+    assert check["details"][0]["account_id"] == 999999
+
+
+def test_orphaned_lines_passes_on_valid_account():
+    with get_db() as conn:
+        ensure_schema(conn)
+        cash = _account_id(conn, "1100")
+        revenue = _account_id(conn, "4100")
+        _insert_balanced_entry(conn, cash, revenue, amount=100)
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "orphaned_lines")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Service-level: expense category mismatch
+# ---------------------------------------------------------------------------
+
+
+def _insert_expense_event(conn, *, category: str, amount: float = 10000,
+                          payment_source: str = "Shop tiền mặt") -> int:
+    """Insert an expense event and return its id."""
+    import json
+
+    data = json.dumps({
+        "amount_vnd": amount,
+        "category": category,
+        "payment_source": payment_source,
+    })
+    cur = conn.execute(
+        "INSERT INTO events (type, summary, data) VALUES (?, ?, ?)",
+        ("expense", f"Expense: {category}", data),
+    )
+    return int(cur.lastrowid)
+
+
+def test_expense_category_mismatch_flags_wrong_account():
+    """Expense event with category 'Vận chuyển' should debit 5300, not 5100."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        event_id = _insert_expense_event(conn, category="Vận chuyển")
+        wrong_expense = _account_id(conn, "5100")  # Nguyên liệu — wrong
+        cash = _account_id(conn, "1100")
+        _insert_balanced_entry(
+            conn, wrong_expense, cash, debit_to=wrong_expense, amount=10000,
+            source_type="expense", source_id=event_id,
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "expense_category_mismatch")
+    assert check["status"] == "fail"
+    assert check["issue_count"] == 1
+    finding = check["details"][0]
+    assert finding["category"] == "Vận chuyển"
+    assert finding["expected_account_code"] == "5300"
+    assert finding["actual_account_code"] == "5100"
+
+
+def test_expense_category_mismatch_passes_when_correct():
+    """Expense event with category 'Vận chuyển' correctly debiting 5300."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        event_id = _insert_expense_event(conn, category="Vận chuyển")
+        correct_expense = _account_id(conn, "5300")
+        cash = _account_id(conn, "1100")
+        _insert_balanced_entry(
+            conn, correct_expense, cash, amount=10000,
+            source_type="expense", source_id=event_id,
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "expense_category_mismatch")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+def test_expense_category_mismatch_excludes_inventory_purchase_categories():
+    """Inventory purchase categories (Nguyên liệu, Bao bì) debit Inventory
+    (1300), not expense accounts — they should not be flagged."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        event_id = _insert_expense_event(conn, category="Nguyên liệu")
+        inventory = _account_id(conn, "1300")
+        cash = _account_id(conn, "1100")
+        _insert_balanced_entry(
+            conn, inventory, cash, amount=10000,
+            source_type="expense", source_id=event_id,
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "expense_category_mismatch")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+def test_expense_category_mismatch_passes_on_clean_db():
+    with get_db() as conn:
+        ensure_schema(conn)
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "expense_category_mismatch")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
