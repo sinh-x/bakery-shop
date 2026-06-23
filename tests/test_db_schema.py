@@ -360,7 +360,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 44
+        assert _migrated_version(conn) == 45
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -377,7 +377,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 44
+        assert _migrated_version(conn) == 45
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -391,10 +391,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 44
+        assert _migrated_version(conn) == 45
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 44
+        assert _migrated_version(conn) == 45
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -1271,3 +1271,305 @@ def test_v44_fresh_db_seeds_coa_and_no_backfill():
             "SELECT COUNT(*) FROM journal_entries"
         ).fetchone()[0]
         assert entry_count == 0
+
+
+# ---------------------------------------------------------------------------
+# v45 — cost_history table, order_items.cost_at_sale column, baseline backfill
+# ---------------------------------------------------------------------------
+
+
+def _assert_cost_history_schema(conn) -> None:
+    columns = _schema_columns(conn, "cost_history")
+    assert set(columns) >= {
+        "id",
+        "product_id",
+        "cost",
+        "effective_from",
+        "created_at",
+    }
+    # product_id and cost and effective_from must be NOT NULL
+    assert columns["product_id"]["notnull"] == 1
+    assert columns["cost"]["notnull"] == 1
+    assert columns["effective_from"]["notnull"] == 1
+
+    # FK to products with ON DELETE CASCADE
+    fk_rows = conn.execute("PRAGMA foreign_key_list(cost_history)").fetchall()
+    assert len(fk_rows) == 1
+    fk = fk_rows[0]
+    assert fk["table"] == "products"
+    assert fk["from"] == "product_id"
+    assert fk["to"] == "id"
+    assert fk["on_delete"] == "CASCADE"
+
+    # Index on (product_id, effective_from)
+    index_rows = conn.execute("PRAGMA index_list(cost_history)").fetchall()
+    index_names = [row["name"] for row in index_rows]
+    assert "idx_cost_history_product_effective" in index_names
+    index_info = conn.execute(
+        "PRAGMA index_info(idx_cost_history_product_effective)"
+    ).fetchall()
+    index_columns = [row["name"] for row in index_info]
+    assert index_columns == ["product_id", "effective_from"]
+
+
+def _assert_order_items_cost_at_sale(conn) -> None:
+    columns = _schema_columns(conn, "order_items")
+    assert "cost_at_sale" in columns
+    # Nullable/defaults to 0 for non-delivered items
+    assert columns["cost_at_sale"]["dflt_value"] == "0"
+
+
+def _seed_order_with_item(
+    conn,
+    *,
+    product_cost=5000,
+    product_category="banh_mi",
+    base_price=10000,
+    qty=2,
+    status="delivered",
+    is_extra=0,
+    is_gift=0,
+    order_ref="ORD-V45-001",
+):
+    """Seed an order + product + order_item and return (order_id, product_id, item_id).
+
+    Product name is derived from order_ref to satisfy the UNIQUE constraint on
+    products.name when multiple items are seeded in one test.
+    """
+    cursor = conn.execute(
+        "INSERT INTO orders (order_ref, customer_name, items, total_price, status) "
+        "VALUES (?, 'Khách v45', '[]', 100000, ?)",
+        (order_ref, status),
+    )
+    order_id = int(cursor.lastrowid)
+    product_name = f"Bánh {order_ref}"
+    cursor = conn.execute(
+        "INSERT INTO products (name, category, base_price, cost, recipe_notes) "
+        "VALUES (?, ?, ?, ?, '')",
+        (product_name, product_category, base_price, product_cost),
+    )
+    product_id = int(cursor.lastrowid)
+    cursor = conn.execute(
+        "INSERT INTO order_items "
+        "(order_id, product_id, product_name, quantity, unit_price, position, is_extra, is_gift) "
+        "VALUES (?, ?, ?, ?, 50000, 0, ?, ?)",
+        (order_id, str(product_id), product_name, qty, is_extra, is_gift),
+    )
+    item_id = int(cursor.lastrowid)
+    return order_id, product_id, item_id
+
+
+def test_v45_fresh_db():
+    with get_db() as conn:
+        _migrate_to_version(conn, 45)
+        assert _migrated_version(conn) == 45
+        _assert_cost_history_schema(conn)
+        _assert_order_items_cost_at_sale(conn)
+
+
+def test_v45_incremental_from_v44():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        assert _migrated_version(conn) == 44
+        # No cost_history table, no cost_at_sale column yet
+        tables = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        assert "cost_history" not in tables
+        cols = _schema_columns(conn, "order_items")
+        assert "cost_at_sale" not in cols
+
+        _migrate_to_version(conn, 45)
+        assert _migrated_version(conn) == 45
+        _assert_cost_history_schema(conn)
+        _assert_order_items_cost_at_sale(conn)
+
+
+def test_v45_idempotent():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        # Seed a delivered order with an item (backfill target)
+        _, _, item_id = _seed_order_with_item(
+            conn, product_cost=0, base_price=10000, qty=2, status="delivered"
+        )
+        _migrate_to_version(conn, 45)
+        assert _migrated_version(conn) == 45
+        # Capture backfilled cost
+        cost_after_first = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()["cost_at_sale"]
+        assert float(cost_after_first) == 3000.0  # 30% of 10000
+
+        # Re-run the v45 callable directly (simulates re-migration)
+        from baker.db.schema import _migrate_v45_cost_history_and_cost_at_sale
+
+        _migrate_v45_cost_history_and_cost_at_sale(conn)
+
+        # Schema still valid
+        _assert_cost_history_schema(conn)
+        _assert_order_items_cost_at_sale(conn)
+        # No duplicate data: cost_at_sale unchanged (not re-zeroed)
+        cost_after_second = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()["cost_at_sale"]
+        assert float(cost_after_second) == 3000.0
+        # cost_history table exists but no rows inserted by backfill (baseline is query-time)
+        ch_count = conn.execute("SELECT COUNT(*) FROM cost_history").fetchone()[0]
+        assert ch_count == 0
+
+
+def test_v45_backfill_non_phu_kien_30_percent():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _, _, item_id = _seed_order_with_item(
+            conn,
+            product_cost=5000,
+            product_category="banh_mi",
+            base_price=20000,
+            qty=3,
+            status="delivered",
+        )
+        _migrate_to_version(conn, 45)
+
+        cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()["cost_at_sale"]
+        # 30% of 20000 = 6000
+        assert float(cost) == 6000.0
+
+
+def test_v45_backfill_phu_kien_100_percent():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _, _, item_id = _seed_order_with_item(
+            conn,
+            product_cost=5000,
+            product_category="phu_kien",
+            base_price=15000,
+            qty=2,
+            status="delivered",
+        )
+        _migrate_to_version(conn, 45)
+
+        cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()["cost_at_sale"]
+        # 100% of 15000 for phụ kiện
+        assert float(cost) == 15000.0
+
+
+def test_v45_backfill_skips_non_delivered_orders():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _, _, item_id = _seed_order_with_item(
+            conn,
+            product_cost=5000,
+            base_price=10000,
+            qty=2,
+            status="new",  # not delivered
+        )
+        _migrate_to_version(conn, 45)
+
+        cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()["cost_at_sale"]
+        # Not delivered → no backfill → stays at default 0
+        assert float(cost) == 0.0
+
+
+def test_v45_backfill_skips_extra_and_gift_items():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _, _, extra_item_id = _seed_order_with_item(
+            conn,
+            product_cost=5000,
+            base_price=10000,
+            qty=1,
+            status="delivered",
+            is_extra=1,
+            order_ref="ORD-V45-EXTRA",
+        )
+        _, _, gift_item_id = _seed_order_with_item(
+            conn,
+            product_cost=5000,
+            base_price=10000,
+            qty=1,
+            status="delivered",
+            is_gift=1,
+            order_ref="ORD-V45-GIFT",
+        )
+        _migrate_to_version(conn, 45)
+
+        extra_cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (extra_item_id,)
+        ).fetchone()["cost_at_sale"]
+        gift_cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (gift_item_id,)
+        ).fetchone()["cost_at_sale"]
+        assert float(extra_cost) == 0.0
+        assert float(gift_cost) == 0.0
+
+
+def test_v45_backfill_zero_base_price_skips():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _, _, item_id = _seed_order_with_item(
+            conn,
+            product_cost=0,
+            base_price=0,
+            qty=2,
+            status="delivered",
+        )
+        _migrate_to_version(conn, 45)
+
+        cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()["cost_at_sale"]
+        # 30% of 0 = 0 → no UPDATE applied (cost > 0 guard)
+        assert float(cost) == 0.0
+
+
+def test_v45_no_delivered_orders_is_noop():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        # Seed a non-delivered order only
+        _seed_order_with_item(
+            conn, product_cost=5000, base_price=10000, qty=2, status="new"
+        )
+        _migrate_to_version(conn, 45)
+
+        # cost_history table exists
+        _assert_cost_history_schema(conn)
+        # No rows backfilled (all cost_at_sale remain 0)
+        backfilled = conn.execute(
+            "SELECT COUNT(*) FROM order_items WHERE cost_at_sale > 0"
+        ).fetchone()[0]
+        assert backfilled == 0
+
+
+def test_v45_preserves_existing_cost_at_sale():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _, _, item_id = _seed_order_with_item(
+            conn, product_cost=5000, base_price=10000, qty=2, status="delivered"
+        )
+        # Run v45 once to add the column and backfill (30% of 10000 = 3000)
+        _migrate_to_version(conn, 45)
+        conn.execute(
+            "UPDATE order_items SET cost_at_sale = 7777 WHERE id = ?", (item_id,)
+        )
+        conn.commit()
+
+        # Re-run the v45 callable directly (simulates re-migration)
+        from baker.db.schema import _migrate_v45_cost_history_and_cost_at_sale
+
+        _migrate_v45_cost_history_and_cost_at_sale(conn)
+
+        cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()["cost_at_sale"]
+        # Pre-existing non-zero cost_at_sale is not overwritten (backfill guard)
+        assert float(cost) == 7777.0

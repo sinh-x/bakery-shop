@@ -1878,6 +1878,75 @@ def _migrate_v44_double_entry_accounting(conn):
     _backfill_delivered_order_journal_entries(conn)
 
 
+COST_HISTORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS cost_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id      INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    cost            REAL NOT NULL DEFAULT 0,
+    effective_from  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_cost_history_product_effective
+    ON cost_history(product_id, effective_from);
+"""
+
+# Category slug for accessories. Costs for these products default to 100% of
+# base_price when no cost_history record exists; all other categories use 30%.
+PHU_KIEN_CATEGORY = "phu_kien"
+
+
+def _baseline_cost_for_product(category: str, base_price: float) -> float:
+    """Baseline cost: 30% of base_price for non-phụ-kiện, 100% for phụ kiện."""
+    if category == PHU_KIEN_CATEGORY:
+        return float(base_price)
+    return round(float(base_price) * 0.30, 2)
+
+
+def _backfill_order_items_cost_at_sale(conn) -> None:
+    """Populate cost_at_sale on existing delivered order_items using the
+    baseline rule (30% non-phụ-kiện / 100% phụ-kiện of base_price).
+
+    Idempotent: only updates order_items whose cost_at_sale is 0. Cost_history
+    is not consulted at backfill time because historical cost records do not
+    exist before this migration; the baseline rule is the documented estimate.
+    """
+    rows = conn.execute(
+        """
+        SELECT oi.id AS item_id, p.category, p.base_price
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        LEFT JOIN products p ON CAST(oi.product_id AS INTEGER) = p.id
+        WHERE o.status = 'delivered'
+          AND oi.is_extra = 0
+          AND oi.is_gift = 0
+          AND (oi.cost_at_sale IS NULL OR oi.cost_at_sale = 0)
+        """
+    ).fetchall()
+    for row in rows:
+        category = row["category"] if row["category"] is not None else ""
+        base_price = float(row["base_price"] or 0)
+        cost = _baseline_cost_for_product(category, base_price)
+        if cost > 0:
+            conn.execute(
+                "UPDATE order_items SET cost_at_sale = ? WHERE id = ?",
+                (cost, int(row["item_id"])),
+            )
+
+
+def _migrate_v45_cost_history_and_cost_at_sale(conn):
+    """Create cost_history table, add cost_at_sale column to order_items, and
+    backfill existing delivered order_items with baseline costs.
+
+    Idempotent: re-running on an already-migrated DB produces no errors and no
+    duplicate data. The cost_history table uses CREATE TABLE IF NOT EXISTS; the
+    cost_at_sale column is added via _guard_add_column; the backfill UPDATE only
+    touches rows whose cost_at_sale is still 0 (NULL treated as 0)."""
+    conn.executescript(COST_HISTORY_SCHEMA)
+    _guard_add_column(conn, "order_items", "cost_at_sale", "cost_at_sale REAL DEFAULT 0")
+    _backfill_order_items_cost_at_sale(conn)
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -2082,6 +2151,11 @@ MIGRATIONS = {
         "description": "Double-entry accounting: accounts, journal_entries, journal_lines, chart of accounts seed, backfill historical entries",
         "sql": "",
         "callable": _migrate_v44_double_entry_accounting,
+    },
+    45: {
+        "description": "Cost data foundation: cost_history table, order_items.cost_at_sale column, backfill delivered order_items with baseline costs",
+        "sql": "",
+        "callable": _migrate_v45_cost_history_and_cost_at_sale,
     },
 }
 
