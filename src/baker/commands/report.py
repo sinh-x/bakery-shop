@@ -17,6 +17,7 @@ existing ``validate-accounts`` pattern.
 """
 
 import json
+from datetime import datetime
 from typing import Optional
 
 import click
@@ -34,19 +35,23 @@ def _normalize_date(date_str: Optional[str], *, end_of_day: bool = False) -> Opt
     ``created_at`` is stored as ``YYYY-MM-DDTHH:MM:SS``; a bare date sorts
     before any timestamp on that day, so for ``--until`` we append
     ``T23:59:59`` to make the bound inclusive of the whole day.
+
+    Raises ``click.BadParameter`` if ``date_str`` is non-empty but does not
+    parse as ``YYYY-MM-DD`` — prevents silently passing arbitrary strings
+    through to SQLite (DG-189 Phase 5.6-c1, CQ-3).
     """
     if not date_str:
         return None
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError as exc:
+        raise click.BadParameter(
+            f"{date_str!r} is not a valid YYYY-MM-DD date.",
+            param_hint="Use the format YYYY-MM-DD (e.g. 2026-06-30).",
+        ) from exc
     if end_of_day and len(date_str) == 10 and "T" not in date_str:
         return f"{date_str}T23:59:59"
     return date_str
-
-
-def _account_id_by_code(conn, code: str) -> Optional[int]:
-    row = conn.execute(
-        "SELECT id FROM accounts WHERE code = ?", (code,)
-    ).fetchone()
-    return int(row["id"]) if row is not None else None
 
 
 def _balance_for_type(acc_type: str, debit: float, credit: float) -> float:

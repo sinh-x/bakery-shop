@@ -43,6 +43,7 @@ It is exposed via the CLI (``baker validate-accounts``) and the API
 ``ValidationReport`` structure.
 """
 
+import json
 from typing import Any
 
 # Tolerance for double-entry imbalance. Sub-cent rounding from REAL storage
@@ -760,8 +761,6 @@ def _check_expense_category_mismatch(conn) -> dict[str, Any]:
     — "Nguyên liệu", "Bao bì") correctly debit Inventory (1300), not expense
     accounts, so they are excluded from this check.
     """
-    import json
-
     from baker.db.schema import (
         EXPENSE_CATEGORY_TO_ACCOUNT_CODE,
         INVENTORY_PURCHASE_CATEGORIES,

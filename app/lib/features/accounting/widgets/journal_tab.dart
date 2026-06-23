@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/accounting_service.dart';
-import '../../../data/models/journal_entry.dart';
 import '../../../providers/accounting_provider.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
+import '../providers/journal_pagination_notifier.dart';
 import 'empty_state.dart';
 import 'filter_bar.dart';
 import 'journal_entry_card.dart';
 import 'lock_confirm_dialog.dart';
+
+/// Base page size used by the journal tab.
+const int _journalPageSize = 100;
 
 class JournalTab extends ConsumerStatefulWidget {
   const JournalTab({super.key});
@@ -22,23 +25,20 @@ class _JournalTabState extends ConsumerState<JournalTab> {
   String? _until;
   int? _accountId;
   String? _sourceType;
-  int _offset = 0;
-  final int _pageSize = 100;
-  List<JournalEntry> _loaded = [];
-  int _total = 0;
-  bool _isLoadingMore = false;
+
+  JournalFilter get _filter => JournalFilter(
+        since: _since,
+        until: _until,
+        accountId: _accountId,
+        sourceType: _sourceType,
+        limit: _journalPageSize,
+        offset: 0,
+      );
 
   @override
   Widget build(BuildContext context) {
-    final filter = JournalFilter(
-      since: _since,
-      until: _until,
-      accountId: _accountId,
-      sourceType: _sourceType,
-      limit: _pageSize,
-      offset: _offset,
-    );
-    final journalAsync = ref.watch(journalEntriesProvider(filter));
+    final paginationAsync =
+        ref.watch(journalPaginationProvider(_filter));
 
     return Column(
       children: [
@@ -48,26 +48,14 @@ class _JournalTabState extends ConsumerState<JournalTab> {
           sourceType: _sourceType,
           accountsAsync: ref.watch(accountsProvider),
           accountId: _accountId,
-          onSinceChanged: (v) => setState(() {
-            _since = v;
-            _reset();
-          }),
-          onUntilChanged: (v) => setState(() {
-            _until = v;
-            _reset();
-          }),
-          onSourceTypeChanged: (v) => setState(() {
-            _sourceType = v;
-            _reset();
-          }),
-          onAccountChanged: (v) => setState(() {
-            _accountId = v;
-            _reset();
-          }),
+          onSinceChanged: (v) => setState(() => _since = v),
+          onUntilChanged: (v) => setState(() => _until = v),
+          onSourceTypeChanged: (v) => setState(() => _sourceType = v),
+          onAccountChanged: (v) => setState(() => _accountId = v),
           onLock: _showLockDialog,
         ),
         Expanded(
-          child: journalAsync.when(
+          child: paginationAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Center(
               child: Column(
@@ -76,48 +64,40 @@ class _JournalTabState extends ConsumerState<JournalTab> {
                   const Text(VN.apiError),
                   const SizedBox(height: 8),
                   TextButton(
-                    onPressed: () => ref.invalidate(
-                      journalEntriesProvider(filter),
-                    ),
+                    onPressed: () =>
+                        ref.invalidate(journalPaginationProvider(_filter)),
                     child: const Text(VN.retry),
                   ),
                 ],
               ),
             ),
-            data: (response) {
-              _total = response.total;
-              if (_offset == 0) {
-                _loaded = response.items;
-              } else {
-                _loaded.addAll(response.items);
-              }
-              _isLoadingMore = false;
-
-              if (_loaded.isEmpty) {
+            data: (state) {
+              final loaded = state.loaded;
+              if (loaded.isEmpty) {
                 return const AccountingEmptyState(text: VN.accountingNoEntries);
               }
               return Column(
                 children: [
                   Expanded(
                     child: ListView.builder(
-                      itemCount: _loaded.length,
+                      itemCount: loaded.length,
                       itemBuilder: (context, index) =>
-                          JournalEntryCard(entry: _loaded[index]),
+                          JournalEntryCard(entry: loaded[index]),
                     ),
                   ),
-                  if (_loaded.length < _total)
+                  if (state.hasMore)
                     Padding(
                       padding: const EdgeInsets.all(16),
                       child: OutlinedButton.icon(
-                        onPressed: _isLoadingMore
+                        onPressed: state.isLoadingMore
                             ? null
-                            : () => setState(() {
-                                  _isLoadingMore = true;
-                                  _offset += _pageSize;
-                                }),
+                            : () => ref
+                                .read(journalPaginationProvider(_filter)
+                                    .notifier)
+                                .loadMore(),
                         icon: const Icon(Icons.expand_more),
                         label: Text(
-                          '${VN.accountingLoadMore} (${_total - _loaded.length})',
+                          '${VN.accountingLoadMore} (${state.total - loaded.length})',
                         ),
                       ),
                     ),
@@ -128,14 +108,6 @@ class _JournalTabState extends ConsumerState<JournalTab> {
         ),
       ],
     );
-  }
-
-  /// Clears mutable pagination state so rapid filter changes and post-lock
-  /// invalidation do not mix stale entries into `_loaded` (DG-189 m-1).
-  void _reset() {
-    _offset = 0;
-    _loaded = [];
-    _isLoadingMore = false;
   }
 
   Future<void> _showLockDialog() async {
@@ -176,18 +148,10 @@ class _JournalTabState extends ConsumerState<JournalTab> {
           VN.accountingLockResult(count),
           backgroundColor: Colors.green,
         );
-        // m-1: reset mutable pagination state BEFORE invalidating the
-        // provider so the refreshed result replaces `_loaded` cleanly
-        // instead of appending to stale entries.
-        _reset();
-        ref.invalidate(journalEntriesProvider(JournalFilter(
-          since: _since,
-          until: _until,
-          accountId: _accountId,
-          sourceType: _sourceType,
-          limit: _pageSize,
-          offset: _offset,
-        )));
+        // CQ-1: the accumulated pagination state lives in the notifier.
+        // Invalidating the family re-runs build() for the current filter,
+        // which replaces the accumulated list cleanly — no stale entries.
+        ref.invalidate(journalPaginationProvider(_filter));
       }
     } catch (e) {
       if (mounted) {

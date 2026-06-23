@@ -379,3 +379,35 @@ def test_report_group_registered():
     assert "general-ledger" in result.output
     assert "account-ledger" in result.output
     assert "expense-by-category" in result.output
+
+
+# ---------------------------------------------------------------------------
+# date format validation (DG-189 Phase 5.6-c1, CQ-3)
+# ---------------------------------------------------------------------------
+
+
+def test_trial_balance_rejects_invalid_since_date():
+    """Non-date ``--since`` values must exit non-zero with a clear message."""
+    result = _invoke(
+        ["report", "trial-balance", "--since", "invalid-date", "--until", "2026-06-30"]
+    )
+    assert result.exit_code != 0, result.output
+    assert "YYYY-MM-DD" in result.output
+
+
+def test_trial_balance_rejects_invalid_until_date():
+    """Non-date ``--until`` values must exit non-zero with a clear message."""
+    result = _invoke(
+        ["report", "trial-balance", "--since", "2026-06-01", "--until", "30/06/2026"]
+    )
+    assert result.exit_code != 0, result.output
+    assert "YYYY-MM-DD" in result.output
+
+
+def test_account_ledger_rejects_invalid_date():
+    """Date validation applies to all report commands with --since/--until."""
+    result = _invoke(
+        ["report", "account-ledger", "--account-code", "1100", "--since", "not-a-date"]
+    )
+    assert result.exit_code != 0, result.output
+    assert "YYYY-MM-DD" in result.output
