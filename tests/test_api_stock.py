@@ -287,7 +287,7 @@ def test_waste_stock_cogs_idempotent(api_client):
             "SELECT id FROM stock_movements WHERE movement_type = 'waste' ORDER BY id DESC LIMIT 1"
         ).fetchone()
         # Re-invoke the sync helper directly to verify idempotency.
-        from baker.api.accounts import _sync_waste_cogs_journal
+        from baker.services.journal_sync import _sync_waste_cogs_journal
 
         _sync_waste_cogs_journal(conn, 1, movement["id"], 1)
         entries = _waste_cogs_entries(conn, movement["id"])

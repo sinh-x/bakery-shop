@@ -216,7 +216,7 @@ def waste_stock(product_id: int, body: WasteRequest):
         )
         consume_fifo_items(conn, product_id, chip_id, body.quantity, movement_id)
 
-        from baker.api.accounts import _sync_waste_cogs_journal
+        from baker.services.journal_sync import _sync_waste_cogs_journal
 
         _sync_waste_cogs_journal(conn, product_id, movement_id, body.quantity)
 

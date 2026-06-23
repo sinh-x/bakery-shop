@@ -90,11 +90,12 @@ def test_cost_history_zero_cost_returned(db):
     assert resolve_product_cost(db, pid) == 0.0
 
 
-def test_cost_history_negative_cost_returned_as_is(db):
+def test_cost_history_negative_cost_clamped_to_zero(db):
     pid = _insert_product(db, category="banh_mi", base_price=20000)
     _insert_cost_history(db, pid, -100.0, effective_from="2020-01-01T00:00:00")
-    # resolve_product_cost returns the recorded cost; validation module flags negatives
-    assert resolve_product_cost(db, pid) == pytest.approx(-100.0)
+    # Negative cost_history is clamped to 0 so downstream COGS never stores
+    # negative cost_at_sale (review finding m-2).
+    assert resolve_product_cost(db, pid) == pytest.approx(0.0)
 
 
 def test_is_phu_kien_helper():

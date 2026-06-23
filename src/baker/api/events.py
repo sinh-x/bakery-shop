@@ -95,7 +95,7 @@ def create_event(body: EventCreate):
         # Accounting failure must never block the primary business operation.
         if body.type == "expense":
             try:
-                from baker.api.accounts import _sync_expense_journal
+                from baker.services.journal_sync import _sync_expense_journal
                 _sync_expense_journal(conn, event_id, body.data, body.summary)
             except Exception:
                 logger.exception("expense journal sync failed for event %d", event_id)
@@ -319,7 +319,7 @@ def update_event(event_id: int, body: EventUpdate):
         # Re-sync double-entry journal if this is an expense event (DG-175).
         if next_type == "expense":
             try:
-                from baker.api.accounts import _sync_expense_journal
+                from baker.services.journal_sync import _sync_expense_journal
                 _sync_expense_journal(conn, event_id, next_data, str(row["summary"] if "summary" not in data else data["summary"]))
             except Exception:
                 logger.exception("expense journal re-sync failed for event %d", event_id)
@@ -348,7 +348,7 @@ def delete_event(event_id: int, deleted_by: str = Query("", description="Ngườ
         # On soft-delete of an expense event, reverse/delete its journal entry (DG-175).
         if row["type"] == "expense":
             try:
-                from baker.api.accounts import _sync_expense_journal
+                from baker.services.journal_sync import _sync_expense_journal
                 _sync_expense_journal(conn, event_id, {}, str(row["summary"]), deleted=True)
             except Exception:
                 logger.exception("expense journal delete-sync failed for event %d", event_id)

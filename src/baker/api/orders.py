@@ -419,7 +419,7 @@ def create_order(body: OrderCreate, request: Request):
 
             # Auto-generate revenue conversion + COGS journal entries (DG-175).
             try:
-                from baker.api.accounts import _sync_delivered_order_journal
+                from baker.services.journal_sync import _sync_delivered_order_journal
                 _sync_delivered_order_journal(conn, order.id, order.order_ref)
             except Exception:
                 logger.exception("delivered order journal sync failed for order %d", order.id)
@@ -703,7 +703,7 @@ def transition_status(ref: str, body: StatusTransition):
         # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
         if body.status == "delivered" and row["status"] != "delivered":
             try:
-                from baker.api.accounts import _sync_delivered_order_journal
+                from baker.services.journal_sync import _sync_delivered_order_journal
                 _sync_delivered_order_journal(conn, row["id"], row["order_ref"])
             except Exception:
                 logger.exception("delivered order journal sync failed for order %d", row["id"])

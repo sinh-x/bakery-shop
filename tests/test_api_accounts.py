@@ -569,6 +569,70 @@ def test_delivered_order_no_cogs_when_product_cost_zero(api_client):
         assert len(cogs_entries) == 0
 
 
+def test_delivered_order_multi_item_cogs_single_entry(api_client):
+    """Regression for review finding C-1: a multi-item delivered order with
+    multiple cost-bearing items must produce exactly ONE order_cogs journal
+    entry whose debit/credit equals the accumulated total_cogs across all
+    items — not one entry per item with partial running totals.
+
+    Before the fix, the COGS insert lived inside the per-item loop, producing
+    N duplicate order_cogs entries (one per cost-bearing item) with growing
+    partial totals (item1, item1+item2, item1+item2+item3).
+    """
+    product_a = _create_product(api_client, name="Bột mì", cost=0, base_price=50000)
+    product_b = _create_product(api_client, name="Đường", cost=0, base_price=40000)
+    product_c = _create_product(api_client, name="Trứng", cost=0, base_price=30000)
+    pid_a = int(product_a["id"])
+    pid_b = int(product_b["id"])
+    pid_c = int(product_c["id"])
+    # Seed cost_history with distinct per-unit costs for each product so the
+    # resolved cost_at_sale is non-zero for every item.
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
+            (pid_a, 10000, "2020-01-01T00:00:00"),
+        )
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
+            (pid_b, 8000, "2020-01-01T00:00:00"),
+        )
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
+            (pid_c, 6000, "2020-01-01T00:00:00"),
+        )
+    order = _create_order(
+        api_client,
+        items=[
+            {"productName": "Bột mì", "quantity": 2, "unitPrice": 50000, "productId": str(pid_a)},
+            {"productName": "Đường", "quantity": 3, "unitPrice": 40000, "productId": str(pid_b)},
+            {"productName": "Trứng", "quantity": 4, "unitPrice": 30000, "productId": str(pid_c)},
+        ],
+    )
+    ref = order["orderRef"]
+    order_id = int(order["id"])
+    _create_txn(api_client, ref, amount=400000, type="payment", method="cash")
+
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "delivered"})
+    assert resp.status_code == 200
+    with get_db() as conn:
+        cogs_entries = _journal_for_source(conn, "order_cogs", order_id)
+        # Exactly one COGS entry for the whole order, not one per item.
+        assert len(cogs_entries) == 1, (
+            f"expected exactly 1 order_cogs entry, got {len(cogs_entries)}"
+        )
+        lines = _lines_for_entry(conn, cogs_entries[0].id)
+        debit_line = next(l for l in lines if l.debit > 0)
+        credit_line = next(l for l in lines if l.credit > 0)
+        cogs_acc = Account.get_by_id(conn, debit_line.account_id)
+        inv_acc = Account.get_by_id(conn, credit_line.account_id)
+        assert cogs_acc.code == "5900"
+        assert inv_acc.code == "1300"
+        # Accumulated total: (10000×2) + (8000×3) + (6000×4) = 20000 + 24000 + 24000 = 68000
+        expected_total = 10000 * 2 + 8000 * 3 + 6000 * 4
+        assert debit_line.debit == pytest.approx(expected_total)
+        assert credit_line.credit == pytest.approx(expected_total)
+
+
 def test_delivered_order_journal_idempotent(api_client):
     """Re-transitioning to delivered does not duplicate journal entries."""
     order = _create_order(api_client, total=200000)

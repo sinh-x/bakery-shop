@@ -56,7 +56,9 @@ def resolve_product_cost(conn, product_id: int) -> float:
         (int(product_id),),
     ).fetchone()
     if latest_row is not None:
-        return float(latest_row["cost"] or 0)
+        # Negative cost_history values are clamped to 0 so downstream cost_at_sale
+        # and COGS journal logic never store negative costs (review finding m-2).
+        return max(0.0, float(latest_row["cost"] or 0))
 
     product_row = conn.execute(
         "SELECT base_price, category FROM products WHERE id = ?",

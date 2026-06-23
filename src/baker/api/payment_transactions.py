@@ -82,7 +82,7 @@ def create_transaction(ref: str, body: TransactionCreate):
 
         # Auto-generate double-entry journal entry (DG-175).
         try:
-            from baker.api.accounts import _sync_payment_journal
+            from baker.services.journal_sync import _sync_payment_journal
             _sync_payment_journal(conn, txn.id, body.amount, body.type, body.method)
         except Exception:
             logger.exception("payment journal sync failed for txn %d", txn.id)
@@ -137,7 +137,7 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
 
         # Re-sync double-entry journal entry (DG-175).
         try:
-            from baker.api.accounts import _sync_payment_journal
+            from baker.services.journal_sync import _sync_payment_journal
             _sync_payment_journal(conn, txn.id, txn.amount, txn.type, txn.method)
         except Exception:
             logger.exception("payment journal re-sync failed for txn %d", txn.id)
@@ -163,7 +163,7 @@ def delete_transaction(ref: str, txn_id: int):
 
         # Reverse/delete the journal entry for the deleted transaction (DG-175).
         try:
-            from baker.api.accounts import _sync_payment_journal
+            from baker.services.journal_sync import _sync_payment_journal
             _sync_payment_journal(
                 conn, txn_id, float(row["amount"]), row["type"], row["method"], deleted=True
             )

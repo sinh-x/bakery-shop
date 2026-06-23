@@ -1039,3 +1039,42 @@ def test_submit_no_waste_creates_no_cogs_entry(api_client):
             "SELECT COUNT(*) AS c FROM journal_entries WHERE source_type = 'waste_cogs'"
         ).fetchone()
         assert count["c"] == 0
+
+
+def test_submit_reconciliation_survives_waste_cogs_sync_failure(api_client, monkeypatch):
+    """Regression for review finding M-1: a failure inside _sync_waste_cogs_journal
+    must not break reconciliation submission. The sync call is wrapped in
+    try/except so accounting failures are logged but never block the primary
+    business operation (matching the defensive pattern at all other journal
+    sync call sites).
+    """
+    from baker.services import journal_sync
+
+    def _boom(conn, product_id, movement_id, quantity):
+        raise RuntimeError("simulated accounting failure")
+
+    monkeypatch.setattr(journal_sync, "_sync_waste_cogs_journal", _boom)
+
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 9)
+
+    payload = {
+        "staff_name": "An",
+        "payment_method": "cash",
+        "waste_reason": "Bị hỏng",
+        "lines": [
+            {
+                "product_id": 1,
+                "expected_qty": 9,
+                "counted_qty": 7,
+                "sale_qty": 1,
+                "waste_qty": 1,
+                "manual_unit_price": 15000,
+            }
+        ],
+    }
+
+    resp = api_client.post("/api/reconciliations/submit", json=payload)
+    # Reconciliation must succeed even though waste COGS sync raised.
+    assert resp.status_code == 201
