@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/vietnamese_labels.dart';
+
 /// Shared helpers for accounting account-type presentation.
 ///
 /// Extracted from accounts_tab.dart and balances_tab.dart to avoid
@@ -26,15 +28,15 @@ Color accountTypeColor(String type) {
 String accountTypeLabel(String type) {
   switch (type) {
     case 'asset':
-      return 'Tài sản';
+      return VN.accountingTypeAsset;
     case 'liability':
-      return 'Nợ phải trả';
+      return VN.accountingTypeLiability;
     case 'equity':
-      return 'Vốn chủ sở hữu';
+      return VN.accountingTypeEquity;
     case 'income':
-      return 'Doanh thu';
+      return VN.accountingTypeIncome;
     case 'expense':
-      return 'Chi phí';
+      return VN.accountingTypeExpense;
     default:
       return type;
   }

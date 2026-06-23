@@ -804,6 +804,14 @@ class VN {
   static const accountingSourceTypePayment = 'Thanh toán';
   static const accountingSourceTypeOrder = 'Đơn hàng';
   static const accountingSourceTypeCogs = 'Giá vốn';
+
+  // Account type labels (account_type_helper.dart)
+  static const accountingTypeAsset = 'Tài sản';
+  static const accountingTypeLiability = 'Nợ phải trả';
+  static const accountingTypeEquity = 'Vốn chủ sở hữu';
+  static const accountingTypeIncome = 'Doanh thu';
+  static const accountingTypeExpense = 'Chi phí';
+
   static String accountingLockResult(int count) =>
       'Đã khóa $count bút toán';
 
