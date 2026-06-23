@@ -27,6 +27,7 @@ from baker.db.schema import (
     _ensure_staff_advance_sub_account,
     _insert_journal_entry,
 )
+from baker.services.cost_resolver import resolve_product_cost
 from baker.models.account import Account
 from baker.models.journal_entry import JournalEntry, JournalLine
 from baker.models.payment_transaction import PaymentTransaction
@@ -316,7 +317,10 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
                 ],
             )
 
-    # COGS: one entry per order summing cost*qty for items with product.cost > 0.
+    # COGS: one entry per order summing cost_at_sale*qty for items with a
+    # resolved cost > 0. cost_at_sale is populated at delivery time from
+    # cost_history (via resolve_product_cost), applying the documented baseline
+    # fallback when no historical cost is in effect.
     existing_cogs = conn.execute(
         "SELECT 1 FROM journal_entries WHERE source_type = 'order_cogs' AND source_id = ?",
         (order_id,),
@@ -324,18 +328,35 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
     if existing_cogs:
         return
     items = conn.execute(
-        "SELECT oi.product_name, oi.quantity, p.cost "
+        "SELECT oi.id AS item_id, oi.product_id, oi.quantity, oi.cost_at_sale "
         "FROM order_items oi "
-        "LEFT JOIN products p ON CAST(oi.product_id AS INTEGER) = p.id "
         "WHERE oi.order_id = ? AND oi.is_extra = 0 AND oi.is_gift = 0",
         (order_id,),
     ).fetchall()
     total_cogs = 0.0
     for irow in items:
-        cost = float(irow["cost"] or 0)
         qty = int(irow["quantity"] or 0)
-        if cost > 0 and qty > 0:
-            total_cogs += cost * qty
+        if qty <= 0:
+            continue
+        cost_at_sale = float(irow["cost_at_sale"] or 0)
+        if cost_at_sale == 0:
+            # Populate cost_at_sale at delivery time using cost_history with
+            # baseline fallback. Skip re-population when already set.
+            product_id = irow["product_id"]
+            if product_id is None:
+                continue
+            try:
+                pid = int(product_id)
+            except (TypeError, ValueError):
+                continue
+            cost_at_sale = resolve_product_cost(conn, pid)
+            if cost_at_sale > 0:
+                conn.execute(
+                    "UPDATE order_items SET cost_at_sale = ? WHERE id = ?",
+                    (cost_at_sale, int(irow["item_id"])),
+                )
+        if cost_at_sale > 0:
+            total_cogs += cost_at_sale * qty
     if total_cogs > 0:
         _insert_journal_entry(
             conn,

@@ -470,12 +470,25 @@ def test_delivered_order_creates_revenue_journal(api_client):
 
 
 def test_delivered_order_cogs_for_product_with_cost(api_client):
-    """AC9: delivered order with product.cost > 0 → COGS entry debit 5900, credit 1300."""
+    """AC3: delivered order → COGS entry debit 5900, credit 1300, using
+    cost_at_sale populated at delivery time from cost_history (via
+    resolve_product_cost).
+
+    Seeds an explicit cost_history row so cost_at_sale is resolved from it
+    rather than the baseline rule.
+    """
     product = _create_product(api_client, name="Bột mì", cost=25000, base_price=50000)
-    pid = str(product["id"])
+    pid = int(product["id"])
+    # Seed cost_history so resolve_product_cost returns the recorded cost.
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) "
+            "VALUES (?, ?, ?)",
+            (pid, 25000, "2020-01-01T00:00:00"),
+        )
     order = _create_order(
         api_client,
-        items=[{"productName": "Bột mì", "quantity": 2, "unitPrice": 50000, "productId": pid}],
+        items=[{"productName": "Bột mì", "quantity": 2, "unitPrice": 50000, "productId": str(pid)}],
     )
     ref = order["orderRef"]
     _create_txn(api_client, ref, amount=100000, type="payment", method="cash")
@@ -484,6 +497,11 @@ def test_delivered_order_cogs_for_product_with_cost(api_client):
     resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "delivered"})
     assert resp.status_code == 200
     with get_db() as conn:
+        # cost_at_sale should be populated from cost_history (25000) per item.
+        oi = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE order_id = ?", (order_id,)
+        ).fetchone()
+        assert float(oi["cost_at_sale"] or 0) == 25000.0
         cogs_entries = _journal_for_source(conn, "order_cogs", order_id)
         assert len(cogs_entries) == 1
         lines = _lines_for_entry(conn, cogs_entries[0].id)
@@ -493,18 +511,21 @@ def test_delivered_order_cogs_for_product_with_cost(api_client):
         inv_acc = Account.get_by_id(conn, credit_line.account_id)
         assert cogs_acc.code == "5900"
         assert inv_acc.code == "1300"
-        # cost 25000 × qty 2 = 50000
+        # cost_at_sale 25000 × qty 2 = 50000
         assert debit_line.debit == 50000.0
         assert credit_line.credit == 50000.0
 
 
-def test_delivered_order_no_cogs_when_product_cost_zero(api_client):
-    """AC9: product with cost=0 → no COGS entry."""
-    product = _create_product(api_client, name="Bánh mẫu", cost=0, base_price=100000)
-    pid = str(product["id"])
+def test_delivered_order_cogs_uses_baseline_fallback(api_client):
+    """AC3: when no cost_history row exists, cost_at_sale falls back to the
+    baseline rule (30% of base_price for non-phụ-kiện) and COGS is computed
+    from that value.
+    """
+    product = _create_product(api_client, name="Bánh kem", cost=0, base_price=100000)
+    pid = int(product["id"])
     order = _create_order(
         api_client,
-        items=[{"productName": "Bánh mẫu", "quantity": 1, "unitPrice": 100000, "productId": pid}],
+        items=[{"productName": "Bánh kem", "quantity": 1, "unitPrice": 100000, "productId": str(pid)}],
     )
     ref = order["orderRef"]
     _create_txn(api_client, ref, amount=100000, type="payment", method="cash")
@@ -513,6 +534,37 @@ def test_delivered_order_no_cogs_when_product_cost_zero(api_client):
     resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "delivered"})
     assert resp.status_code == 200
     with get_db() as conn:
+        oi = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE order_id = ?", (order_id,)
+        ).fetchone()
+        # baseline: 30% of 100000 = 30000
+        assert float(oi["cost_at_sale"] or 0) == 30000.0
+        cogs_entries = _journal_for_source(conn, "order_cogs", order_id)
+        assert len(cogs_entries) == 1
+        lines = _lines_for_entry(conn, cogs_entries[0].id)
+        debit_line = next(l for l in lines if l.debit > 0)
+        assert debit_line.debit == 30000.0
+
+
+def test_delivered_order_no_cogs_when_product_cost_zero(api_client):
+    """AC4: product with cost=0 AND base_price=0 → baseline resolves to 0 →
+    cost_at_sale stays 0 → no COGS entry.
+    """
+    product = _create_product(api_client, name="Bánh mẫu", cost=0, base_price=0)
+    pid = str(product["id"])
+    order = _create_order(
+        api_client,
+        items=[{"productName": "Bánh mẫu", "quantity": 1, "unitPrice": 0, "productId": pid}],
+        status="delivered",
+        paymentMethod="cash",
+    )
+    order_id = int(order["id"])
+
+    with get_db() as conn:
+        oi = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE order_id = ?", (order_id,)
+        ).fetchone()
+        assert float(oi["cost_at_sale"] or 0) == 0.0
         cogs_entries = _journal_for_source(conn, "order_cogs", order_id)
         assert len(cogs_entries) == 0
 
