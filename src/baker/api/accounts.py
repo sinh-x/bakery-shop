@@ -28,6 +28,7 @@ from baker.db.schema import (
     _insert_journal_entry,
 )
 from baker.services.cost_resolver import resolve_product_cost
+from baker.services.accounting_validation import run_validation
 from baker.models.account import Account
 from baker.models.journal_entry import JournalEntry, JournalLine
 from baker.models.payment_transaction import PaymentTransaction
@@ -636,3 +637,10 @@ def staff_reimburse(body: StaffReimburseRequest):
         )
         lines = JournalLine.list_for_entry(conn, entry_id)
         return entry.to_api_dict(lines)
+
+
+@router.get("/validate")
+def validate_accounts():
+    """Chạy kiểm tra toàn vẹn dữ liệu kế toán (double-entry, COGS, waste, cost history)."""
+    with get_db() as conn:
+        return run_validation(conn)
