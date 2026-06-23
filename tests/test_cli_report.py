@@ -16,9 +16,12 @@ clean-DB case (no journal entries) is also covered for each command.
 
 import json
 
+import click
 import click.testing
+import pytest
 
 from baker.cli import app
+from baker.commands.report import _normalize_date
 from baker.db.connection import get_db
 from baker.db.schema import ensure_schema
 
@@ -416,11 +419,6 @@ def test_account_ledger_rejects_invalid_date():
 # ---------------------------------------------------------------------------
 # _normalize_date unit tests (DG-189 Phase 5.6-c2, M-2)
 # ---------------------------------------------------------------------------
-
-import pytest  # noqa: E402
-import click  # noqa: E402
-
-from baker.commands.report import _normalize_date  # noqa: E402
 
 
 def test_normalize_date_valid_returns_same_string():
