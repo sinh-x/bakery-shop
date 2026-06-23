@@ -464,6 +464,12 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
             )
             waste_movement_id = movement_cursor.lastrowid
             consume_fifo_items(conn, line.product_id, chip_id, line.waste_qty, waste_movement_id)
+
+            from baker.api.accounts import _sync_waste_cogs_journal
+
+            _sync_waste_cogs_journal(
+                conn, line.product_id, waste_movement_id, line.waste_qty
+            )
             lot_row = conn.execute(
                 "SELECT lot_id FROM inventory_items WHERE consumed_by_movement_id = ? ORDER BY id ASC LIMIT 1",
                 (waste_movement_id,),

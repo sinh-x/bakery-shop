@@ -357,17 +357,59 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
                 )
         if cost_at_sale > 0:
             total_cogs += cost_at_sale * qty
-    if total_cogs > 0:
-        _insert_journal_entry(
-            conn,
-            description=f"Order COGS: {order_ref}",
-            source_type="order_cogs",
-            source_id=order_id,
-            lines=[
-                (cogs_account_id, total_cogs, 0.0, "Giá vốn hàng bán"),
-                (inventory_account_id, 0.0, total_cogs, "Xuất kho"),
-            ],
-        )
+        if total_cogs > 0:
+            _insert_journal_entry(
+                conn,
+                description=f"Order COGS: {order_ref}",
+                source_type="order_cogs",
+                source_id=order_id,
+                lines=[
+                    (cogs_account_id, total_cogs, 0.0, "Giá vốn hàng bán"),
+                    (inventory_account_id, 0.0, total_cogs, "Xuất kho"),
+                ],
+            )
+
+
+def _sync_waste_cogs_journal(
+    conn, product_id: int, movement_id: int, quantity: int
+) -> None:
+    """Create a COGS journal entry for wasted stock (source_type ``waste_cogs``).
+
+    Debits COGS (5900) and credits Inventory (1300) for the cost of the wasted
+    quantity. Cost is resolved via :func:`resolve_product_cost` (cost_history →
+    baseline fallback). When the resolved cost is zero, no entry is created
+    (consistent with sale COGS behaviour for zero-cost items).
+
+    Idempotent: skips when a ``waste_cogs`` entry already exists for the given
+    stock movement.
+    """
+    if quantity <= 0:
+        return
+
+    existing = conn.execute(
+        "SELECT 1 FROM journal_entries WHERE source_type = 'waste_cogs' AND source_id = ?",
+        (movement_id,),
+    ).fetchone()
+    if existing:
+        return
+
+    unit_cost = resolve_product_cost(conn, product_id)
+    total = unit_cost * quantity
+    if total <= 0:
+        return
+
+    cogs_account_id = _account_id_by_code(conn, COGS_CODE)
+    inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
+    _insert_journal_entry(
+        conn,
+        description=f"Waste COGS: movement #{movement_id} product {product_id}",
+        source_type="waste_cogs",
+        source_id=movement_id,
+        lines=[
+            (cogs_account_id, float(total), 0.0, "Giá vốn hàng hao hụt"),
+            (inventory_account_id, 0.0, float(total), "Xuất kho hao hụt"),
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------
