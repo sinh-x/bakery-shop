@@ -17,6 +17,7 @@ class JournalPaginationState {
     required this.total,
     required this.offset,
     required this.isLoadingMore,
+    this.loadMoreError,
   });
 
   /// Entries accumulated across all loaded pages for the current filter.
@@ -31,6 +32,12 @@ class JournalPaginationState {
   /// Whether a "load more" request is in flight for the next page.
   final bool isLoadingMore;
 
+  /// Transient error from the most recent failed [JournalPaginationNotifier.loadMore]
+  /// call. The accumulated [loaded] entries remain available while this is set,
+  /// so a failed page fetch never discards previously loaded pages (DG-189 Phase 5.6-c2, M-1).
+  /// Cleared on the next successful loadMore or build.
+  final Object? loadMoreError;
+
   bool get hasMore => loaded.length < total;
 
   JournalPaginationState copyWith({
@@ -38,12 +45,16 @@ class JournalPaginationState {
     int? total,
     int? offset,
     bool? isLoadingMore,
+    Object? loadMoreError,
+    bool clearLoadMoreError = false,
   }) {
     return JournalPaginationState(
       loaded: loaded ?? this.loaded,
       total: total ?? this.total,
       offset: offset ?? this.offset,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      loadMoreError:
+          clearLoadMoreError ? null : (loadMoreError ?? this.loadMoreError),
     );
   }
 }
@@ -112,8 +123,17 @@ class JournalPaginationNotifier
           isLoadingMore: false,
         ),
       );
-    } catch (error, stackTrace) {
-      state = AsyncError<JournalPaginationState>(error, stackTrace);
+    } catch (error) {
+      // M-1: restore the previous state, preserving all accumulated pages.
+      // Surface the error transiently via [JournalPaginationState.loadMoreError]
+      // so the caller can display an inline indicator/snackbar instead of
+      // discarding the accumulated list.
+      state = AsyncData(
+        current.copyWith(
+          isLoadingMore: false,
+          loadMoreError: error,
+        ),
+      );
     }
   }
 }

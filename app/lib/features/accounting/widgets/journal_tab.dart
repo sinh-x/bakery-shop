@@ -85,6 +85,20 @@ class _JournalTabState extends ConsumerState<JournalTab> {
                           JournalEntryCard(entry: loaded[index]),
                     ),
                   ),
+                  if (state.loadMoreError != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      child: Text(
+                        VN.apiError,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: Colors.red),
+                      ),
+                    ),
                   if (state.hasMore)
                     Padding(
                       padding: const EdgeInsets.all(16),

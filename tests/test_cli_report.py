@@ -411,3 +411,52 @@ def test_account_ledger_rejects_invalid_date():
     )
     assert result.exit_code != 0, result.output
     assert "YYYY-MM-DD" in result.output
+
+
+# ---------------------------------------------------------------------------
+# _normalize_date unit tests (DG-189 Phase 5.6-c2, M-2)
+# ---------------------------------------------------------------------------
+
+import pytest  # noqa: E402
+import click  # noqa: E402
+
+from baker.commands.report import _normalize_date  # noqa: E402
+
+
+def test_normalize_date_valid_returns_same_string():
+    """A valid ``YYYY-MM-DD`` date is returned unchanged without ``end_of_day``."""
+    assert _normalize_date("2026-06-30") == "2026-06-30"
+
+
+def test_normalize_date_invalid_format_raises_bad_parameter():
+    """A non-date string raises ``click.BadParameter`` with a helpful message."""
+    with pytest.raises(click.BadParameter) as exc_info:
+        _normalize_date("30/06/2026")
+    assert "YYYY-MM-DD" in str(exc_info.value)
+
+
+def test_normalize_date_empty_string_returns_none():
+    """An empty string is treated as no bound (returns ``None``)."""
+    assert _normalize_date("") is None
+
+
+def test_normalize_date_none_returns_none():
+    """A ``None`` date string is treated as no bound (returns ``None``)."""
+    assert _normalize_date(None) is None
+
+
+def test_normalize_date_end_of_day_appends_timestamp():
+    """``end_of_day=True`` appends ``T23:59:59`` to an inclusive until bound."""
+    assert _normalize_date("2026-06-30", end_of_day=True) == "2026-06-30T23:59:59"
+
+
+def test_normalize_date_end_of_day_false_returns_plain_date():
+    """``end_of_day=False`` (default) returns the bare date string."""
+    assert _normalize_date("2026-06-30", end_of_day=False) == "2026-06-30"
+
+
+def test_normalize_date_partial_invalid_raises_bad_parameter():
+    """Partial strings that don't match ``YYYY-MM-DD`` raise ``BadParameter``."""
+    for bad in ("20260630", "2026-13-01", "2026-02-31", "abc"):
+        with pytest.raises(click.BadParameter):
+            _normalize_date(bad)
