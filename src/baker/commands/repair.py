@@ -24,10 +24,12 @@ success and 1 on error; errors are written to stderr only — following the
 existing ``validate-accounts`` pattern.
 """
 
+import logging
+
 import click
 
 from baker.db.connection import get_db
-from baker.db.schema import REVENUE_UPDATE_TOLERANCE
+from baker.db.schema import CUSTOMER_DEPOSITS_CODE, REVENUE_UPDATE_TOLERANCE
 from baker.models.payment_transaction import PaymentTransaction
 from baker.services.journal_sync import (
     _delete_journal_entry_cascade,
@@ -35,11 +37,11 @@ from baker.services.journal_sync import (
     _sync_delivered_order_journal,
 )
 
+logger = logging.getLogger(__name__)
+
 
 # Order statuses eligible for revenue repair.
 DELIVERED_STATUSES = ("delivered", "completed")
-# Customer Deposits account code — the debit side of a paid-order revenue entry.
-CUSTOMER_DEPOSITS_CODE = "2100"
 # Tolerance (VND) below which an entry is considered already correct.
 # Aliased to the centralized constant so repair decisions and the pipeline
 # report share one threshold (review finding Mn-1).
@@ -193,8 +195,9 @@ def repair_order_revenue_cmd(order_id, repair_all, dry_run):
             if not dry_run:
                 conn.commit()
     except Exception as exc:  # noqa: BLE001 — top-level CLI guard
+        logger.exception("Repair CLI error")
         click.echo(
-            f"Lỗi khi sửa bút toán: {exc}. Xem log máy chủ để biết chi tiết.",
+            "Lỗi khi sửa bút toán. Xem log máy chủ để biết chi tiết.",
             err=True,
         )
         raise SystemExit(1)

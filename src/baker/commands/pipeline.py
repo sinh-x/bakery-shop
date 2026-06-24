@@ -15,10 +15,14 @@ errors are written to stderr only — following the existing ``validate-accounts
 pattern. User-facing labels are in Vietnamese (VN label policy).
 """
 
+import logging
+
 import click
 
 from baker.db.connection import get_db
-from baker.db.schema import REVENUE_UPDATE_TOLERANCE
+from baker.db.schema import CUSTOMER_DEPOSITS_CODE, REVENUE_UPDATE_TOLERANCE
+
+logger = logging.getLogger(__name__)
 
 
 # Order statuses considered "delivered" for revenue-recognition purposes.
@@ -27,8 +31,6 @@ DELIVERED_STATUSES = ("delivered", "completed")
 UNDELIVERED_EXCLUDED = ("delivered", "completed", "cancelled")
 # Statuses considered "new/pending" for the new-no-deposit report.
 NEW_PENDING_STATUSES = ("new", "confirmed")
-# Account code for Customer Deposits (Tiền khách đặt cọc).
-CUSTOMER_DEPOSITS_CODE = "2100"
 # Transaction types that return cash to the customer.
 REFUND_TYPES = ("refund", "tien_rut")
 # Tolerance (VND) shared with repair/sync so the mismatch count and repair
@@ -56,10 +58,13 @@ def _report_cli_error(exc: BaseException) -> None:
 
     Used as a catch-all guard around read-only pipeline/repair commands so a
     missing, corrupted, or schema-mismatched database surfaces a readable
-    message instead of a raw Python traceback (review finding Mn-3).
+    message instead of a raw Python traceback (review finding Mn-3). Internal
+    exception details are logged server-side via :func:`logger.exception`, not
+    echoed to the user (review finding Mn-7).
     """
+    logger.exception("Pipeline CLI error")
     click.echo(
-        f"Lỗi khi truy vấn dữ liệu: {exc}. Xem log máy chủ để biết chi tiết.",
+        "Lỗi khi truy vấn dữ liệu. Xem log máy chủ để biết chi tiết.",
         err=True,
     )
     raise SystemExit(1)
@@ -89,14 +94,14 @@ def undelivered_deposits_cmd():
                 LEFT JOIN (
                     SELECT order_id, SUM(amount) AS total_deposits
                     FROM payment_transactions
-                    WHERE type != 'tien_rut'
+                    WHERE type NOT IN ({",".join("?" * len(REFUND_TYPES))})
                     GROUP BY order_id
                 ) pt ON pt.order_id = o.id
                 WHERE o.status NOT IN ({",".join("?" * len(UNDELIVERED_EXCLUDED))})
                   AND COALESCE(pt.total_deposits, 0) > 0
                 ORDER BY o.due_date IS NULL, o.due_date ASC, o.order_ref ASC
                 """,
-                list(UNDELIVERED_EXCLUDED),
+                [*REFUND_TYPES, *UNDELIVERED_EXCLUDED],
             ).fetchall()
     except Exception as exc:  # noqa: BLE001 — top-level CLI guard
         _report_cli_error(exc)
@@ -131,7 +136,7 @@ def cancelled_unrefunded_cmd():
     try:
         with get_db() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT o.order_ref     AS order_ref,
                        o.customer_name AS customer_name,
                        COALESCE(d.total_deposits, 0) AS total_deposits,
@@ -140,19 +145,20 @@ def cancelled_unrefunded_cmd():
                 LEFT JOIN (
                     SELECT order_id, SUM(amount) AS total_deposits
                     FROM payment_transactions
-                    WHERE type NOT IN ('refund', 'tien_rut')
+                    WHERE type NOT IN ({",".join("?" * len(REFUND_TYPES))})
                     GROUP BY order_id
                 ) d ON d.order_id = o.id
                 LEFT JOIN (
                     SELECT order_id, SUM(amount) AS total_refunds
                     FROM payment_transactions
-                    WHERE type IN ('refund', 'tien_rut')
+                    WHERE type IN ({",".join("?" * len(REFUND_TYPES))})
                     GROUP BY order_id
                 ) r ON r.order_id = o.id
                 WHERE o.status = 'cancelled'
                   AND COALESCE(d.total_deposits, 0) > COALESCE(r.total_refunds, 0)
                 ORDER BY o.order_ref ASC
                 """,
+                [*REFUND_TYPES, *REFUND_TYPES],
             ).fetchall()
     except Exception as exc:  # noqa: BLE001 — top-level CLI guard
         _report_cli_error(exc)
@@ -201,13 +207,13 @@ def deposit_revenue_gap_cmd():
                 LEFT JOIN (
                     SELECT order_id, SUM(amount) AS total_deposits
                     FROM payment_transactions
-                    WHERE type != 'tien_rut'
+                    WHERE type NOT IN ({",".join("?" * len(REFUND_TYPES))})
                     GROUP BY order_id
                 ) d ON d.order_id = o.id
                 LEFT JOIN (
                     SELECT order_id, SUM(amount) AS total_refunds
                     FROM payment_transactions
-                    WHERE type = 'tien_rut'
+                    WHERE type IN ({",".join("?" * len(REFUND_TYPES))})
                     GROUP BY order_id
                 ) r ON r.order_id = o.id
                 LEFT JOIN (
@@ -222,7 +228,7 @@ def deposit_revenue_gap_cmd():
                 WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
                 ORDER BY o.order_ref ASC
                 """,
-                [CUSTOMER_DEPOSITS_CODE, *DELIVERED_STATUSES],
+                [*REFUND_TYPES, *REFUND_TYPES, CUSTOMER_DEPOSITS_CODE, *DELIVERED_STATUSES],
             ).fetchall()
     except Exception as exc:  # noqa: BLE001 — top-level CLI guard
         _report_cli_error(exc)
@@ -319,6 +325,7 @@ def new_no_deposit_cmd():
     try:
         with get_db() as conn:
             placeholders = ",".join("?" * len(NEW_PENDING_STATUSES))
+            refund_placeholders = ",".join("?" * len(REFUND_TYPES))
             rows = conn.execute(
                 f"""
                 SELECT o.order_ref     AS order_ref,
@@ -329,14 +336,14 @@ def new_no_deposit_cmd():
                 LEFT JOIN (
                     SELECT order_id, SUM(amount) AS total_deposits
                     FROM payment_transactions
-                    WHERE type != 'tien_rut'
+                    WHERE type NOT IN ({refund_placeholders})
                     GROUP BY order_id
                 ) pt ON pt.order_id = o.id
                 WHERE o.status IN ({placeholders})
                   AND COALESCE(pt.total_deposits, 0) = 0
                 ORDER BY o.created_at DESC, o.order_ref ASC
                 """,
-                list(NEW_PENDING_STATUSES),
+                [*REFUND_TYPES, *NEW_PENDING_STATUSES],
             ).fetchall()
     except Exception as exc:  # noqa: BLE001 — top-level CLI guard
         _report_cli_error(exc)
