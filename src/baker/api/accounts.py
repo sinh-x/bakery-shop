@@ -178,6 +178,8 @@ def owner_capital(body: OwnerCapitalRequest):
         desc = f"Vốn chủ sở hữu đưa vào: {body.amount}"
         if body.note:
             desc += f" — {body.note}"
+        # FR6: manual entries have no source record — transaction_date is the
+        # current time at creation.
         entry_id = _insert_journal_entry(
             conn,
             description=desc,
@@ -187,6 +189,7 @@ def owner_capital(body: OwnerCapitalRequest):
                 (asset_account_id, float(body.amount), 0.0, "Tiền đưa vào"),
                 (equity_account_id, 0.0, float(body.amount), "Vốn chủ sở hữu"),
             ],
+            transaction_date=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         )
         entry = JournalEntry.from_row(
             conn.execute("SELECT * FROM journal_entries WHERE id = ?", (entry_id,)).fetchone()
@@ -207,6 +210,8 @@ def owner_draw(body: OwnerDrawRequest):
         desc = f"Chủ rút vốn: {body.amount}"
         if body.note:
             desc += f" — {body.note}"
+        # FR6: manual entries have no source record — transaction_date is the
+        # current time at creation.
         entry_id = _insert_journal_entry(
             conn,
             description=desc,
@@ -216,6 +221,7 @@ def owner_draw(body: OwnerDrawRequest):
                 (equity_account_id, float(body.amount), 0.0, "Giảm vốn"),
                 (asset_account_id, 0.0, float(body.amount), "Rút tiền"),
             ],
+            transaction_date=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         )
         entry = JournalEntry.from_row(
             conn.execute("SELECT * FROM journal_entries WHERE id = ?", (entry_id,)).fetchone()
@@ -238,6 +244,8 @@ def staff_reimburse(body: StaffReimburseRequest):
         desc = f"Hoàn ứng cho {body.staffName}: {body.amount}"
         if body.note:
             desc += f" — {body.note}"
+        # FR6: manual entries have no source record — transaction_date is the
+        # current time at creation.
         entry_id = _insert_journal_entry(
             conn,
             description=desc,
@@ -247,6 +255,7 @@ def staff_reimburse(body: StaffReimburseRequest):
                 (staff_account_id, float(body.amount), 0.0, "Ứng trước nhân viên"),
                 (asset_account_id, 0.0, float(body.amount), "Trả tiền hoàn ứng"),
             ],
+            transaction_date=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         )
         entry = JournalEntry.from_row(
             conn.execute("SELECT * FROM journal_entries WHERE id = ?", (entry_id,)).fetchone()

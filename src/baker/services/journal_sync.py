@@ -74,7 +74,8 @@ def _reverse_journal_entry(conn, entry_id: int) -> Optional[int]:
     Returns the new reversal entry id, or None if the original has no lines.
     """
     orig = conn.execute(
-        "SELECT description, source_type, source_id FROM journal_entries WHERE id = ?",
+        "SELECT description, source_type, source_id, transaction_date "
+        "FROM journal_entries WHERE id = ?",
         (entry_id,),
     ).fetchone()
     if orig is None:
@@ -86,12 +87,16 @@ def _reverse_journal_entry(conn, entry_id: int) -> Optional[int]:
         (line.account_id, float(line.credit), float(line.debit), line.description or "")
         for line in lines
     ]
+    # FR12: the reversal preserves the original entry's transaction_date so
+    # the correction relates to the same period as the entry being reversed.
+    orig_transaction_date = orig["transaction_date"] if "transaction_date" in orig.keys() else None
     return _insert_journal_entry(
         conn,
         description=f"Reversal: {orig['description']}",
         source_type=orig["source_type"],
         source_id=orig["source_id"],
         lines=reversed_lines,
+        transaction_date=orig_transaction_date,
     )
 
 
@@ -195,6 +200,12 @@ def _sync_expense_journal(
         return
     description, lines = built
 
+    # FR4: the expense event's `timestamp` is the business event date.
+    event_row = conn.execute(
+        "SELECT timestamp FROM events WHERE id = ?", (event_id,)
+    ).fetchone()
+    transaction_date = event_row["timestamp"] if event_row else None
+
     if existing_id is None:
         _insert_journal_entry(
             conn,
@@ -202,6 +213,7 @@ def _sync_expense_journal(
             source_type="expense",
             source_id=event_id,
             lines=lines,
+            transaction_date=transaction_date,
         )
     elif _is_locked(conn, existing_id):
         # Locked: reverse the original, then create a new correct entry.
@@ -212,6 +224,7 @@ def _sync_expense_journal(
             source_type="expense",
             source_id=event_id,
             lines=lines,
+            transaction_date=transaction_date,
         )
     else:
         _update_journal_entry_in_place(
@@ -407,6 +420,12 @@ def _sync_payment_journal(
             _delete_journal_entry_cascade(conn, existing_id)
         return
 
+    # FR4: the payment transaction's `created_at` is the business event date.
+    txn_row = conn.execute(
+        "SELECT created_at FROM payment_transactions WHERE id = ?", (txn_id,)
+    ).fetchone()
+    transaction_date = txn_row["created_at"] if txn_row else None
+
     description, lines = _build_payment_journal_lines(
         conn,
         amount,
@@ -425,6 +444,7 @@ def _sync_payment_journal(
             source_type="payment_transaction",
             source_id=txn_id,
             lines=lines,
+            transaction_date=transaction_date,
         )
     elif _is_locked(conn, existing_id):
         _reverse_journal_entry(conn, existing_id)
@@ -434,6 +454,7 @@ def _sync_payment_journal(
             source_type="payment_transaction",
             source_id=txn_id,
             lines=lines,
+            transaction_date=transaction_date,
         )
     else:
         _update_journal_entry_in_place(
@@ -498,7 +519,7 @@ def _reconcile_order_revenue_entry(
     # Bus shipping exclusion (FR3): shipping fees held in 2200 are not revenue.
     # Reduce the recognized revenue amount by shipping_fee for bus orders.
     order_row = conn.execute(
-        "SELECT delivery_type, shipping_fee, total_price FROM orders WHERE id = ?",
+        "SELECT delivery_type, shipping_fee, total_price, due_date, created_at FROM orders WHERE id = ?",
         (order_id,),
     ).fetchone()
     revenue_amount = float(net)
@@ -533,6 +554,12 @@ def _reconcile_order_revenue_entry(
         else:
             _delete_journal_entry_cascade(conn, existing_id)
 
+    # FR4/FR11: order revenue uses the order's due_date (fallback created_at)
+    # as the business event date.
+    order_transaction_date = None
+    if order_row is not None:
+        order_transaction_date = order_row["due_date"] or order_row["created_at"] or None
+
     if revenue_amount > 0:
         # Paid: move net deposits (minus bus shipping) to revenue
         _insert_journal_entry(
@@ -544,6 +571,7 @@ def _reconcile_order_revenue_entry(
                 (deposits_account_id, revenue_amount, 0.0, "Chuyển cọc sang doanh thu"),
                 (revenue_account_id, 0.0, revenue_amount, "Doanh thu bán hàng"),
             ],
+            transaction_date=order_transaction_date,
         )
     else:
         # Truly unpaid (no deposits and no refunds): record the order total
@@ -565,6 +593,7 @@ def _reconcile_order_revenue_entry(
                         (ar_account_id, float(total_price), 0.0, "Phải thu khách hàng"),
                         (revenue_account_id, 0.0, float(total_price), "Doanh thu bán hàng"),
                     ],
+                    transaction_date=order_transaction_date,
                 )
         # else: net <= 0 but deposits existed (refunds drained them) → no
         # revenue to recognize; skip creating any entry.
@@ -590,7 +619,7 @@ def _sync_bus_shipping_release_entry(
         recreated.
     """
     order_row = conn.execute(
-        "SELECT delivery_type, shipping_fee FROM orders WHERE id = ?",
+        "SELECT delivery_type, shipping_fee, due_date, created_at FROM orders WHERE id = ?",
         (order_id,),
     ).fetchone()
     if order_row is None:
@@ -609,6 +638,8 @@ def _sync_bus_shipping_release_entry(
     asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get("cash", "1100")
     asset_account_id = _account_id_by_code(conn, asset_code)
     description = f"Shipping release: {order_ref}"
+    # FR4/FR11: shipping release uses the order's due_date (fallback created_at).
+    order_transaction_date = order_row["due_date"] or order_row["created_at"] or None
 
     existing_id = _find_journal_entry(
         conn, "order_shipping_release", order_id
@@ -642,6 +673,7 @@ def _sync_bus_shipping_release_entry(
             (bus_shipping_account_id, release_amount, 0.0, "Thanh toán ship bus"),
             (asset_account_id, 0.0, release_amount, "Tiền ship bus đã trả"),
         ],
+        transaction_date=order_transaction_date,
     )
 
 
@@ -673,6 +705,14 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
 
     inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
     cogs_account_id = _account_id_by_code(conn, COGS_CODE)
+    # FR4/FR11: order COGS uses the order's due_date (fallback created_at).
+    order_date_row = conn.execute(
+        "SELECT due_date, created_at FROM orders WHERE id = ?", (order_id,)
+    ).fetchone()
+    order_transaction_date = (
+        order_date_row["due_date"] or order_date_row["created_at"] or None
+        if order_date_row else None
+    )
     # COGS: one entry per order summing cost_at_sale*qty for items with a
     # resolved cost > 0. cost_at_sale is populated at delivery time from
     # cost_history (via resolve_product_cost), applying the documented baseline
@@ -727,6 +767,7 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
                 (cogs_account_id, total_cogs, 0.0, "Giá vốn hàng bán"),
                 (inventory_account_id, 0.0, total_cogs, "Xuất kho"),
             ],
+            transaction_date=order_transaction_date,
         )
 
 
@@ -758,6 +799,13 @@ def _sync_waste_cogs_journal(
     if total <= 0:
         return
 
+    # FR5: waste COGS uses the stock movement's `created_at` as the business
+    # event date (queried via source_id = movement_id).
+    movement_row = conn.execute(
+        "SELECT created_at FROM stock_movements WHERE id = ?", (movement_id,)
+    ).fetchone()
+    transaction_date = movement_row["created_at"] if movement_row else None
+
     cogs_account_id = _account_id_by_code(conn, COGS_CODE)
     inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
     _insert_journal_entry(
@@ -769,4 +817,5 @@ def _sync_waste_cogs_journal(
             (cogs_account_id, float(total), 0.0, "Giá vốn hàng hao hụt"),
             (inventory_account_id, 0.0, float(total), "Xuất kho hao hụt"),
         ],
+        transaction_date=transaction_date,
     )
