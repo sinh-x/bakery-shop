@@ -240,33 +240,51 @@ def _held_shipping_for_order(
 ) -> float:
     """Return the net shipping already held in 2200 for the order.
 
-    Sums 2200 credits (held) minus 2200 debits (released) across all
-    ``payment_transaction`` journal entries for the order. Used to compute
-    how much of a new payment's shipping portion should still go to 2200.
+    Sums 2200 credits (held) minus 2200 debits (released) across all journal
+    entries that credit 2200 for this order's shipping. Two source types can
+    place shipping into 2200:
+
+    - ``payment_transaction`` entries (Phase 2 payment-time split): the
+      shipping portion of a deposit payment credits 2200.
+    - ``order_shipping_hold`` entries (Phase 5 backfill): the one-time
+      migration moves the shipping portion from 2100 to 2200 for delivered
+      bus orders that pre-date the payment split.
 
     When ``exclude_txn_id`` is given, that transaction's journal entry is
     excluded from the sum — used on the update path so the current
-    transaction's stale entry does not skew the allocation.
+    transaction's stale entry does not skew the allocation. The exclude
+    clause only applies to ``payment_transaction`` entries (where
+    ``source_id`` is a transaction id); ``order_shipping_hold`` entries are
+    never excluded because their ``source_id`` is the order id.
     """
-    params: list = [order_id, BUS_SHIPPING_HELD_CODE]
     exclude_clause = ""
+    tx_params: list = [order_id]
     if exclude_txn_id is not None:
         exclude_clause = " AND je.source_id != ?"
-        params.append(exclude_txn_id)
+        tx_params.append(exclude_txn_id)
+    # Params: payment_transactions.order_id, [exclude_txn_id], hold source_id,
+    # then the account code (shared by both branches via a.code = ?).
     row = conn.execute(
         f"""
         SELECT COALESCE(SUM(jl.credit - jl.debit), 0) AS net_held
         FROM journal_entries je
         JOIN journal_lines jl ON jl.journal_entry_id = je.id
         JOIN accounts a ON a.id = jl.account_id
-        WHERE je.source_type = 'payment_transaction'
-          AND je.source_id IN (
-              SELECT id FROM payment_transactions WHERE order_id = ?
-          )
-          AND a.code = ?
-          {exclude_clause}
+        WHERE a.code = ?
+          AND (
+                ( je.source_type = 'payment_transaction'
+                    AND je.source_id IN (
+                        SELECT id FROM payment_transactions WHERE order_id = ?
+                    )
+                    {exclude_clause}
+                )
+             OR
+                ( je.source_type = 'order_shipping_hold'
+                    AND je.source_id = ?
+                )
+              )
         """,
-        params,
+        [BUS_SHIPPING_HELD_CODE] + tx_params + [order_id],
     ).fetchone()
     return float(row["net_held"] or 0)
 

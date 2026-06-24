@@ -1,7 +1,13 @@
 import json
 
 from baker.db.connection import get_db
-from baker.db.schema import MIGRATIONS, PRINT_LOG_AND_PRINTED_BY_SCHEMA, ensure_schema
+from baker.db.schema import (
+    BUS_SHIPPING_HELD_CODE,
+    CUSTOMER_DEPOSITS_CODE,
+    MIGRATIONS,
+    PRINT_LOG_AND_PRINTED_BY_SCHEMA,
+    ensure_schema,
+)
 
 
 def _migrate_to_version(conn, target_version: int) -> None:
@@ -1574,3 +1580,186 @@ def test_v45_preserves_existing_cost_at_sale():
         ).fetchone()["cost_at_sale"]
         # Pre-existing non-zero cost_at_sale is not overwritten (backfill guard)
         assert float(cost) == 7777.0
+
+
+# ---------------------------------------------------------------------------
+# v49 — bus shipping accounting backfill (DG-191 Phase 5)
+# ---------------------------------------------------------------------------
+
+
+def test_v49_registered_in_migration_chain():
+    assert 49 in MIGRATIONS
+    assert MIGRATIONS[49]["callable"].__name__ == "_migrate_v49_bus_shipping_backfill"
+
+
+def test_v49_backfill_runs_in_migration_chain():
+    """Migrating from v44 to v49 backfills a delivered bus order end-to-end."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        # Seed a delivered bus order with a stale revenue entry (pre-Phase-3).
+        cursor = conn.execute(
+            "INSERT INTO orders "
+            "(order_ref, customer_name, items, total_price, status, "
+            " delivery_type, shipping_fee) "
+            "VALUES ('ORD-V49-CHAIN', 'Khách chain', '[]', 100000, 'delivered', 'bus', 25000)"
+        )
+        order_id = int(cursor.lastrowid)
+        conn.execute(
+            "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+            "VALUES (?, 100000, 'deposit', 'cash', '')",
+            (order_id,),
+        )
+        # Stale revenue entry debiting 2100 for the full deposit.
+        deposits_acc = conn.execute(
+            "SELECT id FROM accounts WHERE code = ?", (CUSTOMER_DEPOSITS_CODE,)
+        ).fetchone()[0]
+        revenue_acc = conn.execute(
+            "SELECT id FROM accounts WHERE code = '4100'"
+        ).fetchone()[0]
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES ('Order revenue: ORD-V49-CHAIN', 'order', ?)",
+            (order_id,),
+        )
+        stale_id = int(cur.lastrowid)
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 100000, 0.0, 'stale')",
+            (stale_id, deposits_acc),
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 0.0, 100000, 'stale')",
+            (stale_id, revenue_acc),
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 49)
+        assert _migrated_version(conn) == 49
+
+        # Revenue entry corrected to 75000 (net − shipping).
+        rev = conn.execute(
+            "SELECT id FROM journal_entries WHERE source_type='order' AND source_id=?",
+            (order_id,),
+        ).fetchone()
+        assert int(rev["id"]) != stale_id  # stale entry was replaced
+        debit = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit), 0) AS d
+            FROM journal_lines jl
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE jl.journal_entry_id = ? AND a.code = ?
+            """,
+            (rev["id"], CUSTOMER_DEPOSITS_CODE),
+        ).fetchone()["d"]
+        assert float(debit) == 75000.0
+
+        # Hold entry created.
+        hold = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries "
+            "WHERE source_type='order_shipping_hold' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0]
+        assert hold == 1
+
+        # Release entry created.
+        release = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries "
+            "WHERE source_type='order_shipping_release' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0]
+        assert release == 1
+
+        # Double-entry integrity across all entries.
+        rows = conn.execute(
+            """
+            SELECT je.id, SUM(jl.debit) AS td, SUM(jl.credit) AS tc
+            FROM journal_entries je
+            JOIN journal_lines jl ON jl.journal_entry_id = je.id
+            GROUP BY je.id
+            """
+        ).fetchall()
+        for r in rows:
+            assert abs(float(r["td"]) - float(r["tc"])) < 0.005
+
+
+def test_v49_fresh_db_is_noop():
+    """A fresh DB with no delivered bus orders: v49 backfill does nothing."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 49)
+        assert _migrated_version(conn) == 49
+        count = conn.execute("SELECT COUNT(*) FROM journal_entries").fetchone()[0]
+        assert count == 0
+
+
+def test_v49_idempotent_in_chain():
+    """Re-running the v49 callable directly after migration is a no-op."""
+    from baker.db.schema import _migrate_v49_bus_shipping_backfill
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 49)
+        cursor = conn.execute(
+            "INSERT INTO orders "
+            "(order_ref, customer_name, items, total_price, status, "
+            " delivery_type, shipping_fee) "
+            "VALUES ('ORD-V49-IDEM', 'Khách idem', '[]', 100000, 'delivered', 'bus', 25000)"
+        )
+        order_id = int(cursor.lastrowid)
+        conn.execute(
+            "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+            "VALUES (?, 100000, 'deposit', 'cash', '')",
+            (order_id,),
+        )
+        # Stale revenue entry.
+        deposits_acc = conn.execute(
+            "SELECT id FROM accounts WHERE code = ?", (CUSTOMER_DEPOSITS_CODE,)
+        ).fetchone()[0]
+        revenue_acc = conn.execute(
+            "SELECT id FROM accounts WHERE code = '4100'"
+        ).fetchone()[0]
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES ('r', 'order', ?)",
+            (order_id,),
+        )
+        sid = int(cur.lastrowid)
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 100000, 0.0, 's')",
+            (sid, deposits_acc),
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 0.0, 100000, 's')",
+            (sid, revenue_acc),
+        )
+        conn.commit()
+
+        _migrate_v49_bus_shipping_backfill(conn)
+        rev = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type='order' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0]
+        hold = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type='order_shipping_hold' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0]
+        rel = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type='order_shipping_release' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0]
+
+        # Run again — counts must not change.
+        _migrate_v49_bus_shipping_backfill(conn)
+        assert conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type='order' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0] == rev
+        assert conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type='order_shipping_hold' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0] == hold
+        assert conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type='order_shipping_release' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0] == rel

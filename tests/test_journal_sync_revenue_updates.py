@@ -700,3 +700,227 @@ def test_bus_order_release_deletes_stale_unlocked_entry():
         ).fetchall()
         assert len(remaining) == 1
         assert int(remaining[0][0]) != stale_id
+
+
+# ---------------------------------------------------------------------------
+# DG-191 Phase 5 — Bus shipping backfill migration (FR5, NFR2)
+# ---------------------------------------------------------------------------
+
+
+def _hold_entry_count(conn, order_id: int) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) FROM journal_entries "
+        "WHERE source_type = 'order_shipping_hold' AND source_id = ?",
+        (order_id,),
+    ).fetchone()
+    return int(row[0])
+
+
+def _hold_line_amounts(conn, order_id: int) -> dict[str, dict[str, float]]:
+    rows = conn.execute(
+        """
+        SELECT a.code AS code, jl.debit AS debit, jl.credit AS credit
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'order_shipping_hold' AND je.source_id = ?
+        """,
+        (order_id,),
+    ).fetchall()
+    out: dict[str, dict[str, float]] = {}
+    for r in rows:
+        out[r["code"]] = {"debit": float(r["debit"] or 0), "credit": float(r["credit"] or 0)}
+    return out
+
+
+def _seed_stale_bus_order(
+    conn,
+    *,
+    order_ref: str,
+    shipping_fee: float,
+    deposit: float,
+    total_price: float = 100000.0,
+    delivery_type: str = "bus",
+) -> int:
+    """Seed a delivered bus order with a stale revenue entry (pre-Phase-3 style).
+
+    The revenue entry debits 2100 / credits 4100 for the full deposit, i.e. it
+    *includes* the shipping fee — exactly the state the v49 backfill must fix.
+    No payment-time 2100/2200 split and no hold/release entries exist.
+    """
+    oid = _insert_order(
+        conn,
+        order_ref=order_ref,
+        total_price=total_price,
+        status="delivered",
+        delivery_type=delivery_type,
+        shipping_fee=shipping_fee,
+    )
+    _insert_payment(conn, order_id=oid, amount=deposit, ptype="deposit")
+    _insert_revenue_entry(conn, order_id=oid, amount=deposit)
+    return oid
+
+
+def _assert_double_entry_integrity_v49(conn) -> None:
+    rows = conn.execute(
+        """
+        SELECT je.id, SUM(jl.debit) AS total_debit, SUM(jl.credit) AS total_credit
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        GROUP BY je.id
+        """
+    ).fetchall()
+    assert len(rows) > 0, "No journal entries to verify"
+    for row in rows:
+        delta = abs(float(row["total_debit"]) - float(row["total_credit"]))
+        assert delta < 0.005, (
+            f"Entry {row['id']}: debit {row['total_debit']} != credit {row['total_credit']}"
+        )
+
+
+def test_v49_backfill_corrects_revenue_creates_hold_and_release():
+    """AC5: stale revenue (100000→4100) → corrected to 75000, hold+release created."""
+    from baker.db.schema import _migrate_v49_bus_shipping_backfill
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _seed_stale_bus_order(
+            conn,
+            order_ref="ORD-BF-V49-1",
+            shipping_fee=25000,
+            deposit=100000,
+        )
+        # Pre-conditions: stale state.
+        assert _revenue_2100_debit(conn, oid) == 100000.0
+        assert _hold_entry_count(conn, oid) == 0
+        assert _release_entry_count(conn, oid) == 0
+
+        _migrate_v49_bus_shipping_backfill(conn)
+
+        # Revenue corrected to net − shipping = 100000 − 25000 = 75000.
+        assert _revenue_2100_debit(conn, oid) == 75000.0
+        assert _revenue_4100_credit(conn, oid) == 75000.0
+        assert _revenue_entry_count(conn, oid) == 1
+
+        # Hold entry: debit 2100 25000, credit 2200 25000.
+        assert _hold_entry_count(conn, oid) == 1
+        hold = _hold_line_amounts(conn, oid)
+        assert hold[CUSTOMER_DEPOSITS_CODE]["debit"] == 25000.0
+        assert hold[BUS_SHIPPING_HELD_CODE]["credit"] == 25000.0
+
+        # Release entry: debit 2200 25000, credit 1100 25000.
+        assert _release_entry_count(conn, oid) == 1
+        release = _release_line_amounts(conn, oid)
+        assert release[BUS_SHIPPING_HELD_CODE]["debit"] == 25000.0
+        assert release["1100"]["credit"] == 25000.0
+
+        _assert_double_entry_integrity_v49(conn)
+        conn.commit()
+
+
+def test_v49_backfill_is_idempotent():
+    """NFR2: running the backfill twice produces no duplicate entries."""
+    from baker.db.schema import _migrate_v49_bus_shipping_backfill
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _seed_stale_bus_order(
+            conn,
+            order_ref="ORD-BF-V49-2",
+            shipping_fee=25000,
+            deposit=100000,
+        )
+        _migrate_v49_bus_shipping_backfill(conn)
+        rev_after_1 = _revenue_entry_count(conn, oid)
+        hold_after_1 = _hold_entry_count(conn, oid)
+        rel_after_1 = _release_entry_count(conn, oid)
+
+        _migrate_v49_bus_shipping_backfill(conn)
+        assert _revenue_entry_count(conn, oid) == rev_after_1
+        assert _hold_entry_count(conn, oid) == hold_after_1
+        assert _release_entry_count(conn, oid) == rel_after_1
+        assert _revenue_2100_debit(conn, oid) == 75000.0
+        _assert_double_entry_integrity_v49(conn)
+        conn.commit()
+
+
+def test_v49_backfill_skips_non_bus_orders():
+    """FR7: a delivered door/pickup order is untouched by the bus backfill."""
+    from baker.db.schema import _migrate_v49_bus_shipping_backfill
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _seed_stale_bus_order(
+            conn,
+            order_ref="ORD-BF-V49-3",
+            shipping_fee=20000,
+            deposit=100000,
+            delivery_type="door",
+        )
+        assert _revenue_2100_debit(conn, oid) == 100000.0
+
+        _migrate_v49_bus_shipping_backfill(conn)
+
+        assert _revenue_2100_debit(conn, oid) == 100000.0
+        assert _hold_entry_count(conn, oid) == 0
+        assert _release_entry_count(conn, oid) == 0
+        conn.commit()
+
+
+def test_v49_backfill_skips_bus_order_with_zero_shipping_fee():
+    """Bus order with shipping_fee=0 is skipped (nothing to hold/release)."""
+    from baker.db.schema import _migrate_v49_bus_shipping_backfill
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _seed_stale_bus_order(
+            conn,
+            order_ref="ORD-BF-V49-4",
+            shipping_fee=0,
+            deposit=100000,
+        )
+        _migrate_v49_bus_shipping_backfill(conn)
+        assert _revenue_2100_debit(conn, oid) == 100000.0
+        assert _hold_entry_count(conn, oid) == 0
+        assert _release_entry_count(conn, oid) == 0
+        conn.commit()
+
+
+def test_v49_backfill_skips_order_already_has_hold_and_release():
+    """Idempotent when hold+release entries already exist (post-Phase-3 order)."""
+    from baker.db.schema import _migrate_v49_bus_shipping_backfill
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn,
+            order_ref="ORD-BF-V49-5",
+            total_price=100000,
+            status="delivered",
+            delivery_type="bus",
+            shipping_fee=25000,
+        )
+        # Payment-time split + live delivery sync (the Phase 2/3 path).
+        _pay_bus_order(conn, order_id=oid, amount=100000)
+        _sync_delivered_order_journal(conn, oid, "ORD-BF-V49-5")
+        assert _release_entry_count(conn, oid) == 1
+        rev_before = _revenue_entry_count(conn, oid)
+        rel_before = _release_entry_count(conn, oid)
+
+        _migrate_v49_bus_shipping_backfill(conn)
+
+        # Revenue already excludes shipping — no duplicate revenue entry.
+        assert _revenue_entry_count(conn, oid) == rev_before
+        assert _release_entry_count(conn, oid) == rel_before
+        assert _revenue_2100_debit(conn, oid) == 75000.0
+        # The live path already holds shipping in 2200 via the payment-time
+        # split (payment_transaction entries). The backfill must NOT create a
+        # redundant order_shipping_hold entry — that would double-hold the
+        # shipping. No order_shipping_hold entry is expected here.
+        assert _hold_entry_count(conn, oid) == 0
+        # A second run remains a no-op (idempotent).
+        _migrate_v49_bus_shipping_backfill(conn)
+        assert _hold_entry_count(conn, oid) == 0
+        assert _release_entry_count(conn, oid) == rel_before
+        _assert_double_entry_integrity_v49(conn)
+        conn.commit()
