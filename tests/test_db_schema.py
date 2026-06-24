@@ -822,6 +822,7 @@ _EXPECTED_COA = {
     "1400": ("Nhân viên ứng trước (Staff Advances)", "asset", "1000"),
     "2000": ("Nợ phải trả", "liability", None),
     "2100": ("Tiền khách đặt cọc (Customer Deposits)", "liability", "2000"),
+    "2200": ("Tiền ship bus giữ hộ (Bus Shipping Held)", "liability", "2000"),
     "3000": ("Vốn chủ sở hữu", "equity", None),
     "3100": ("Vốn chủ sở hữu (Owner's Equity)", "equity", "3000"),
     "4000": ("Doanh thu", "income", None),
