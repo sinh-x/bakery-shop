@@ -1721,7 +1721,7 @@ def _backfill_expense_journal_entries(conn) -> None:
     import json
 
     rows = conn.execute(
-        "SELECT id, summary, data FROM events "
+        "SELECT id, summary, data, timestamp FROM events "
         "WHERE type = 'expense' "
         "  AND (deleted_at IS NULL OR deleted_at = '')"
     ).fetchall()
@@ -1736,6 +1736,8 @@ def _backfill_expense_journal_entries(conn) -> None:
         ).fetchone()
         if existing:
             continue
+
+        event_timestamp = row["timestamp"] or ""
 
         try:
             data = json.loads(row["data"]) if row["data"] else {}
@@ -1774,6 +1776,7 @@ def _backfill_expense_journal_entries(conn) -> None:
                 description=f"Expense: {row['summary']}",
                 source_type="expense",
                 source_id=event_id,
+                transaction_date=event_timestamp,
                 lines=[
                     (inventory_account_id, float(amount), 0.0, "Nhập kho nguyên vật liệu"),
                     (asset_account_id, 0.0, float(amount), "Thanh toán"),
@@ -1786,6 +1789,7 @@ def _backfill_expense_journal_entries(conn) -> None:
                 description=f"Expense: {row['summary']}",
                 source_type="expense",
                 source_id=event_id,
+                transaction_date=event_timestamp,
                 lines=[
                     (expense_account_id, float(amount), 0.0, "Chi phí"),
                     (asset_account_id, 0.0, float(amount), "Thanh toán"),
@@ -1820,6 +1824,7 @@ def _backfill_payment_transaction_journal_entries(conn) -> None:
         deposits_account_id = _account_id_by_code(conn, CUSTOMER_DEPOSITS_CODE)
 
         ptype = row["type"] or "deposit"
+        transaction_date = row["created_at"] or ""
         if ptype in PAYMENT_OUTFLOW_TYPES:
             # Cash flows back to customer: debit Customer Deposits, credit Asset.
             _insert_journal_entry(
@@ -1827,6 +1832,7 @@ def _backfill_payment_transaction_journal_entries(conn) -> None:
                 description=f"Payment: {ptype} {amount}",
                 source_type="payment_transaction",
                 source_id=pt_id,
+                transaction_date=transaction_date,
                 lines=[
                     (deposits_account_id, amount, 0.0, "Hoàn tiền khách"),
                     (asset_account_id, 0.0, amount, "Trả lại tiền"),
@@ -1839,6 +1845,7 @@ def _backfill_payment_transaction_journal_entries(conn) -> None:
                 description=f"Payment: {ptype} {amount}",
                 source_type="payment_transaction",
                 source_id=pt_id,
+                transaction_date=transaction_date,
                 lines=[
                     (asset_account_id, amount, 0.0, "Tiền khách đặt/cọc"),
                     (deposits_account_id, 0.0, amount, "Tiền khách đặt cọc"),
@@ -1863,7 +1870,8 @@ def _backfill_delivered_order_journal_entries(conn) -> None:
     from baker.services.journal_sync import _reconcile_order_revenue_entry
 
     orders = conn.execute(
-        "SELECT id, order_ref, total_price FROM orders WHERE status IN ('delivered', 'completed')"
+        "SELECT id, order_ref, total_price, due_date, created_at "
+        "FROM orders WHERE status IN ('delivered', 'completed')"
     ).fetchall()
 
     inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
@@ -1872,6 +1880,9 @@ def _backfill_delivered_order_journal_entries(conn) -> None:
     for orow in orders:
         order_id = int(orow["id"])
         order_ref = orow["order_ref"]
+        # FR11: orders.due_date is the only nullable source date field; fall
+        # back to created_at when it is NULL or empty.
+        transaction_date = orow["due_date"] or orow["created_at"] or ""
 
         # Revenue reconciliation — shared with live sync (handles lock checks
         # and idempotent creation via _reconcile_order_revenue_entry).
@@ -1913,6 +1924,7 @@ def _backfill_delivered_order_journal_entries(conn) -> None:
                 description=f"Order COGS: {order_ref}",
                 source_type="order_cogs",
                 source_id=order_id,
+                transaction_date=transaction_date,
                 lines=[
                     (cogs_account_id, total_cogs, 0.0, "Giá vốn hàng bán"),
                     (inventory_account_id, 0.0, total_cogs, "Xuất kho"),
@@ -1930,7 +1942,7 @@ def _migrate_v46_fix_old_expense_journal(conn):
     import json
 
     row = conn.execute(
-        "SELECT id, summary, data FROM events WHERE id = 25"
+        "SELECT id, summary, data, timestamp FROM events WHERE id = 25"
     ).fetchone()
     if row is None:
         return
@@ -1961,6 +1973,7 @@ def _migrate_v46_fix_old_expense_journal(conn):
         description=f"Expense: {row['summary']}",
         source_type="expense",
         source_id=25,
+        transaction_date=row["timestamp"] or "",
         lines=[
             (expense_account_id, float(amount), 0.0, "Chi phí sửa chữa"),
             (asset_account_id, 0.0, float(amount), "Thanh toán tiền mặt"),
