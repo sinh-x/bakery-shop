@@ -435,7 +435,7 @@ def _release_line_amounts(conn, order_id: int) -> dict[str, dict[str, float]]:
     return out
 
 
-def _pay_bus_order(
+def _pay_and_sync(
     conn,
     *,
     order_id: int,
@@ -461,7 +461,7 @@ def test_bus_order_revenue_excludes_shipping_fee_ac3():
             delivery_type="bus",
             shipping_fee=25000,
         )
-        _pay_bus_order(conn, order_id=oid, amount=100000)
+        _pay_and_sync(conn, order_id=oid, amount=100000)
 
         _sync_delivered_order_journal(conn, oid, "ORD-BUS-AC3")
         assert _revenue_2100_debit(conn, oid) == 75000.0
@@ -481,7 +481,7 @@ def test_bus_order_shipping_release_entry_created_ac4():
             delivery_type="bus",
             shipping_fee=25000,
         )
-        _pay_bus_order(conn, order_id=oid, amount=100000)
+        _pay_and_sync(conn, order_id=oid, amount=100000)
 
         _sync_delivered_order_journal(conn, oid, "ORD-BUS-AC4")
         assert _release_entry_count(conn, oid) == 1
@@ -502,7 +502,7 @@ def test_bus_order_shipping_fee_zero_unchanged():
             delivery_type="bus",
             shipping_fee=0,
         )
-        _pay_bus_order(conn, order_id=oid, amount=100000)
+        _pay_and_sync(conn, order_id=oid, amount=100000)
 
         _sync_delivered_order_journal(conn, oid, "ORD-BUS-FEE0")
         assert _revenue_2100_debit(conn, oid) == 100000.0
@@ -522,7 +522,7 @@ def test_pickup_order_revenue_unchanged():
             delivery_type="pickup",
             shipping_fee=25000,
         )
-        _pay_bus_order(conn, order_id=oid, amount=100000)
+        _pay_and_sync(conn, order_id=oid, amount=100000)
 
         _sync_delivered_order_journal(conn, oid, "ORD-PICKUP-RV")
         assert _revenue_2100_debit(conn, oid) == 100000.0
@@ -541,7 +541,7 @@ def test_door_order_revenue_unchanged():
             delivery_type="door",
             shipping_fee=25000,
         )
-        _pay_bus_order(conn, order_id=oid, amount=100000)
+        _pay_and_sync(conn, order_id=oid, amount=100000)
 
         _sync_delivered_order_journal(conn, oid, "ORD-DOOR-RV")
         assert _revenue_2100_debit(conn, oid) == 100000.0
@@ -560,7 +560,7 @@ def test_bus_order_net_equals_shipping_no_revenue_entry():
             delivery_type="bus",
             shipping_fee=25000,
         )
-        _pay_bus_order(conn, order_id=oid, amount=25000)
+        _pay_and_sync(conn, order_id=oid, amount=25000)
 
         _sync_delivered_order_journal(conn, oid, "ORD-BUS-EQ")
         assert _revenue_entry_count(conn, oid) == 0
@@ -582,7 +582,7 @@ def test_bus_order_revenue_partial_after_shipping_excluded():
             delivery_type="bus",
             shipping_fee=25000,
         )
-        _pay_bus_order(conn, order_id=oid, amount=30000)
+        _pay_and_sync(conn, order_id=oid, amount=30000)
 
         _sync_delivered_order_journal(conn, oid, "ORD-BUS-PART")
         assert _revenue_2100_debit(conn, oid) == 5000.0
@@ -601,7 +601,7 @@ def test_bus_order_release_idempotent_when_matches():
             delivery_type="bus",
             shipping_fee=25000,
         )
-        _pay_bus_order(conn, order_id=oid, amount=100000)
+        _pay_and_sync(conn, order_id=oid, amount=100000)
 
         _sync_delivered_order_journal(conn, oid, "ORD-BUS-IDEM")
         first_count = _release_entry_count(conn, oid)
@@ -634,7 +634,7 @@ def test_bus_order_release_reverses_locked_stale_entry():
             delivery_type="bus",
             shipping_fee=25000,
         )
-        _pay_bus_order(conn, order_id=oid, amount=100000)
+        _pay_and_sync(conn, order_id=oid, amount=100000)
         _sync_delivered_order_journal(conn, oid, "ORD-BUS-LOCK")
         release_id = conn.execute(
             "SELECT id FROM journal_entries "
@@ -653,7 +653,7 @@ def test_bus_order_release_reverses_locked_stale_entry():
             "UPDATE orders SET shipping_fee = 30000 WHERE id = ?", (oid,)
         )
         # Add an extra deposit to cover the additional shipping in 2200.
-        _pay_bus_order(conn, order_id=oid, amount=30000)
+        _pay_and_sync(conn, order_id=oid, amount=30000)
 
         _sync_delivered_order_journal(conn, oid, "ORD-BUS-LOCK")
         # The locked original still exists; a reversal offsets it and a new
@@ -678,7 +678,7 @@ def test_bus_order_release_deletes_stale_unlocked_entry():
             delivery_type="bus",
             shipping_fee=25000,
         )
-        _pay_bus_order(conn, order_id=oid, amount=100000)
+        _pay_and_sync(conn, order_id=oid, amount=100000)
         _sync_delivered_order_journal(conn, oid, "ORD-BUS-STALE")
         stale_id = conn.execute(
             "SELECT id FROM journal_entries "
@@ -690,7 +690,7 @@ def test_bus_order_release_deletes_stale_unlocked_entry():
         conn.execute(
             "UPDATE orders SET shipping_fee = 30000 WHERE id = ?", (oid,)
         )
-        _pay_bus_order(conn, order_id=oid, amount=30000)
+        _pay_and_sync(conn, order_id=oid, amount=30000)
 
         _sync_delivered_order_journal(conn, oid, "ORD-BUS-STALE")
         remaining = conn.execute(
@@ -901,7 +901,7 @@ def test_v49_backfill_skips_order_already_has_hold_and_release():
             shipping_fee=25000,
         )
         # Payment-time split + live delivery sync (the Phase 2/3 path).
-        _pay_bus_order(conn, order_id=oid, amount=100000)
+        _pay_and_sync(conn, order_id=oid, amount=100000)
         _sync_delivered_order_journal(conn, oid, "ORD-BF-V49-5")
         assert _release_entry_count(conn, oid) == 1
         rev_before = _revenue_entry_count(conn, oid)

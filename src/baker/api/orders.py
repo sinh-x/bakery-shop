@@ -612,7 +612,7 @@ def edit_order(ref: str, body: OrderEdit):
         )
 
         # Re-sync payment journal entries when shipping_fee changes on a bus order (DG-191 Phase 4).
-        if shipping_fee_changed and row["delivery_type"] == "bus":
+        if (shipping_fee_changed or delivery_type_changed) and row["delivery_type"] == "bus":
             try:
                 from baker.services.journal_sync import _sync_payment_journal
 

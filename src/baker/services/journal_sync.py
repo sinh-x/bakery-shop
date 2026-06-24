@@ -332,8 +332,6 @@ def _build_payment_journal_lines(
         )
         remaining_shipping = max(0.0, shipping_fee - already_held)
         shipping_portion = min(amount_f, remaining_shipping)
-        if shipping_portion < 0:
-            shipping_portion = 0.0
 
     if ptype in PAYMENT_OUTFLOW_TYPES:
         # Cash flows back to customer. Phase 2 does NOT split outflows — the
