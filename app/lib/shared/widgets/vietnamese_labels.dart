@@ -804,6 +804,37 @@ class VN {
   static const accountingSourceTypePayment = 'Thanh toán';
   static const accountingSourceTypeOrder = 'Đơn hàng';
   static const accountingSourceTypeCogs = 'Giá vốn';
+  static const accountingSourceTypeShippingHold = 'Ship bus giữ hộ';
+  static const accountingSourceTypeShippingRelease = 'Trả ship bus';
+
+  /// Map a journal entry ``sourceType`` to a Vietnamese label.
+  ///
+  /// Falls back to the raw ``sourceType`` when no mapping exists so unknown
+  /// source types remain visible rather than blank.
+  static String accountingSourceTypeLabel(String sourceType) {
+    switch (sourceType) {
+      case 'expense':
+        return accountingSourceTypeExpense;
+      case 'payment_transaction':
+        return accountingSourceTypePayment;
+      case 'order':
+        return accountingSourceTypeOrder;
+      case 'order_cogs':
+        return accountingSourceTypeCogs;
+      case 'order_shipping_hold':
+        return accountingSourceTypeShippingHold;
+      case 'order_shipping_release':
+        return accountingSourceTypeShippingRelease;
+      case 'owner_capital':
+        return accountingOwnerCapital;
+      case 'owner_draw':
+        return accountingOwnerDraw;
+      case 'staff_reimburse':
+        return accountingStaffReimburse;
+      default:
+        return sourceType;
+    }
+  }
 
   // Account type labels (account_type_helper.dart)
   static const accountingTypeAsset = 'Tài sản';

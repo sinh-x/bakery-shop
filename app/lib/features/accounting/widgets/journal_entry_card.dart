@@ -45,7 +45,7 @@ class JournalEntryCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                entry.sourceType,
+                VN.accountingSourceTypeLabel(entry.sourceType),
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: Colors.grey.shade700,
                 ),
@@ -106,13 +106,30 @@ class JournalEntryCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                ...entry.lines.map((line) => TableRow(
+                ...entry.lines.map((line) {
+                      final hasDesc =
+                          line.description.isNotEmpty;
+                      return TableRow(
                       children: [
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Text(
-                            '${line.accountCode ?? ''} ${line.accountName ?? ''}',
-                            style: theme.textTheme.bodySmall,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${line.accountCode ?? ''} ${line.accountName ?? ''}',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                              if (hasDesc)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    line.description,
+                                    style: theme.textTheme.labelSmall
+                                        ?.copyWith(color: Colors.grey.shade600),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                         Padding(
@@ -132,7 +149,7 @@ class JournalEntryCard extends StatelessWidget {
                           ),
                         ),
                       ],
-                    )),
+                    );}),
               ],
             ),
           ),

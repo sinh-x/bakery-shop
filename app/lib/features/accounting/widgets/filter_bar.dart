@@ -104,6 +104,14 @@ class FilterBar extends StatelessWidget {
                 child: Text(VN.accountingSourceTypeCogs),
               ),
               DropdownMenuItem<String?>(
+                value: 'order_shipping_hold',
+                child: Text(VN.accountingSourceTypeShippingHold),
+              ),
+              DropdownMenuItem<String?>(
+                value: 'order_shipping_release',
+                child: Text(VN.accountingSourceTypeShippingRelease),
+              ),
+              DropdownMenuItem<String?>(
                 value: 'owner_capital',
                 child: Text(VN.accountingOwnerCapital),
               ),
