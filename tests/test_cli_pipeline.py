@@ -88,12 +88,19 @@ def _insert_revenue_entry(
     revenue_account_id: int,
     amount: float,
     created_at: str = "2026-06-20T10:00:00",
+    transaction_date: str | None = None,
 ) -> int:
-    """Insert a balanced order-revenue journal entry debiting 2100."""
+    """Insert a balanced order-revenue journal entry debiting 2100.
+
+    ``transaction_date`` defaults to ``created_at`` when not provided, mirroring
+    the production ``_insert_journal_entry`` fallback (NFR4 alignment).
+    """
+    td = transaction_date or created_at
     cur = conn.execute(
-        "INSERT INTO journal_entries (description, source_type, source_id, created_at) "
-        "VALUES (?, 'order', ?, ?)",
-        (f"Order revenue: {order_id}", order_id, created_at),
+        "INSERT INTO journal_entries "
+        "(description, source_type, source_id, created_at, transaction_date) "
+        "VALUES (?, 'order', ?, ?, ?)",
+        (f"Order revenue: {order_id}", order_id, created_at, td),
     )
     entry_id = int(cur.lastrowid)
     conn.execute(
