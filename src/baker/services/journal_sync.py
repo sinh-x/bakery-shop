@@ -447,8 +447,16 @@ def _reconcile_order_revenue_entry(
         applied when the order had no deposits and no refunds.
       - Net deposits <= 0 with prior deposits (refunds drained them): no entry.
 
+    Bus shipping exclusion (FR3): when the order's ``delivery_type == 'bus'``
+    and ``shipping_fee > 0``, the recognized revenue is reduced by the
+    shipping fee, since bus shipping is held separately in account 2200 and
+    must never flow into revenue account 4100. The revenue amount becomes
+    ``max(0.0, net_deposits − shipping_fee)``. Non-bus orders and bus orders
+    with ``shipping_fee == 0`` are unchanged.
+
     Update handling: if a revenue entry already exists, its 2100 debit is
-    compared against the current net deposits. When they differ by more than
+    compared against the current revenue amount (net deposits minus any
+    applicable shipping fee). When they differ by more than
     ``REVENUE_UPDATE_TOLERANCE`` the stale entry is removed and a corrected
     one is created.
 
@@ -471,9 +479,23 @@ def _reconcile_order_revenue_entry(
     ).fetchone()
     net = PaymentTransaction.total_paid_net(conn, order_id)
 
+    # Bus shipping exclusion (FR3): shipping fees held in 2200 are not revenue.
+    # Reduce the recognized revenue amount by shipping_fee for bus orders.
+    order_row = conn.execute(
+        "SELECT delivery_type, shipping_fee, total_price FROM orders WHERE id = ?",
+        (order_id,),
+    ).fetchone()
+    revenue_amount = float(net)
+    if order_row is not None:
+        delivery_type = order_row["delivery_type"] or "pickup"
+        shipping_fee = float(order_row["shipping_fee"] or 0)
+        if delivery_type == "bus" and shipping_fee > 0:
+            revenue_amount = max(0.0, revenue_amount - shipping_fee)
+
     if existing:
         existing_id = int(existing["id"])
-        # Compare the existing entry's 2100 debit against current net deposits.
+        # Compare the existing entry's 2100 debit against the current revenue
+        # amount (which excludes bus shipping fees when applicable).
         row = conn.execute(
             """
             SELECT COALESCE(SUM(jl.debit), 0) AS debit_2100
@@ -484,9 +506,9 @@ def _reconcile_order_revenue_entry(
             (existing_id, CUSTOMER_DEPOSITS_CODE),
         ).fetchone()
         current_debit = float(row["debit_2100"]) if row else 0.0
-        mismatch = abs(current_debit - max(net, 0.0))
+        mismatch = abs(current_debit - max(revenue_amount, 0.0))
         if mismatch <= REVENUE_UPDATE_TOLERANCE:
-            # Entry already matches net deposits — leave it untouched.
+            # Entry already matches the expected revenue amount — leave it.
             return
         if respect_locks and _is_locked(conn, existing_id):
             # Locked: cannot delete. Reverse the stale entry, then create a
@@ -495,28 +517,27 @@ def _reconcile_order_revenue_entry(
         else:
             _delete_journal_entry_cascade(conn, existing_id)
 
-    if net > 0:
-        # Paid: move net deposits to revenue
+    if revenue_amount > 0:
+        # Paid: move net deposits (minus bus shipping) to revenue
         _insert_journal_entry(
             conn,
             description=f"Order revenue: {order_ref}",
             source_type="order",
             source_id=order_id,
             lines=[
-                (deposits_account_id, float(net), 0.0, "Chuyển cọc sang doanh thu"),
-                (revenue_account_id, 0.0, float(net), "Doanh thu bán hàng"),
+                (deposits_account_id, revenue_amount, 0.0, "Chuyển cọc sang doanh thu"),
+                (revenue_account_id, 0.0, revenue_amount, "Doanh thu bán hàng"),
             ],
         )
     else:
         # Truly unpaid (no deposits and no refunds): record the order total
-        # as accounts receivable (customer debt). When total_price is unknown
-        # the order row is read from the orders table to remain backwards
-        # compatible with callers that omit it.
+        # as accounts receivable (customer debt). Bus shipping exclusion does
+        # not apply here because there were no deposits to hold shipping in
+        # 2200; the full order total remains a receivable. When total_price
+        # is unknown the order row is read from the orders table to remain
+        # backwards compatible with callers that omit it.
         if PaymentTransaction.total_paid_excl_outflows(conn, order_id) <= 0:
             if total_price is None:
-                order_row = conn.execute(
-                    "SELECT total_price FROM orders WHERE id = ?", (order_id,)
-                ).fetchone()
                 total_price = float(order_row["total_price"] or 0) if order_row else 0.0
             if total_price > 0:
                 _insert_journal_entry(
@@ -533,6 +554,81 @@ def _reconcile_order_revenue_entry(
         # revenue to recognize; skip creating any entry.
 
 
+def _sync_bus_shipping_release_entry(
+    conn, order_id: int, order_ref: str
+) -> None:
+    """Create the shipping release entry for a delivered bus order (FR4).
+
+    Bus orders hold the shipping fee in account 2200 at payment time (see
+    :func:`_build_payment_journal_lines`). At delivery the held shipping is
+    released to the cash asset account (1100): debit 2200, credit 1100.
+
+    Behaviour:
+      - Non-bus orders or ``shipping_fee <= 0``: no-op.
+      - The release amount is ``min(shipping_fee, held_in_2200)`` so the
+        entry never releases more than was actually held.
+      - Idempotent: when an existing ``order_shipping_release`` entry matches
+        the expected release amount (within tolerance), it is left untouched.
+      - Lock semantics (FR6): a locked stale entry is *reversed* then a
+        corrected entry is created; an unlocked stale entry is *deleted* and
+        recreated.
+    """
+    order_row = conn.execute(
+        "SELECT delivery_type, shipping_fee FROM orders WHERE id = ?",
+        (order_id,),
+    ).fetchone()
+    if order_row is None:
+        return
+    delivery_type = order_row["delivery_type"] or "pickup"
+    shipping_fee = float(order_row["shipping_fee"] or 0)
+    if delivery_type != "bus" or shipping_fee <= 0:
+        return
+
+    held_in_2200 = _held_shipping_for_order(conn, order_id)
+    release_amount = min(shipping_fee, held_in_2200)
+    if release_amount <= 0:
+        return
+
+    bus_shipping_account_id = _account_id_by_code(conn, BUS_SHIPPING_HELD_CODE)
+    asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get("cash", "1100")
+    asset_account_id = _account_id_by_code(conn, asset_code)
+    description = f"Shipping release: {order_ref}"
+
+    existing_id = _find_journal_entry(
+        conn, "order_shipping_release", order_id
+    )
+    if existing_id is not None:
+        # Compare the existing entry's 2200 debit against release_amount.
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit), 0) AS debit_2200
+            FROM journal_lines jl
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE jl.journal_entry_id = ? AND a.code = ?
+            """,
+            (existing_id, BUS_SHIPPING_HELD_CODE),
+        ).fetchone()
+        current_debit = float(row["debit_2200"]) if row else 0.0
+        if abs(current_debit - release_amount) <= REVENUE_UPDATE_TOLERANCE:
+            # Already in sync — idempotent no-op.
+            return
+        if _is_locked(conn, existing_id):
+            _reverse_journal_entry(conn, existing_id)
+        else:
+            _delete_journal_entry_cascade(conn, existing_id)
+
+    _insert_journal_entry(
+        conn,
+        description=description,
+        source_type="order_shipping_release",
+        source_id=order_id,
+        lines=[
+            (bus_shipping_account_id, release_amount, 0.0, "Thanh toán ship bus"),
+            (asset_account_id, 0.0, release_amount, "Tiền ship bus đã trả"),
+        ],
+    )
+
+
 def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
     """Create/update revenue conversion + COGS journal entries for a delivered/completed order.
 
@@ -546,6 +642,18 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
     fallback when no historical cost is in effect.
     """
     _reconcile_order_revenue_entry(conn, order_id, order_ref, respect_locks=True)
+
+    # Release the held bus shipping (2200 → 1100) at delivery (FR4). Wrapped in
+    # try/except so accounting failures never block the primary business
+    # operation (NFR1).
+    try:
+        _sync_bus_shipping_release_entry(conn, order_id, order_ref)
+    except Exception:
+        logger.exception(
+            "Failed to sync bus shipping release entry for order %s (%s)",
+            order_id,
+            order_ref,
+        )
 
     inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
     cogs_account_id = _account_id_by_code(conn, COGS_CODE)

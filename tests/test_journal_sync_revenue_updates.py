@@ -17,6 +17,7 @@ Covers:
 
 from baker.db.connection import get_db
 from baker.db.schema import (
+    BUS_SHIPPING_HELD_CODE,
     CUSTOMER_DEPOSITS_CODE,
     ORDER_REVENUE_CODE,
     _backfill_delivered_order_journal_entries,
@@ -47,11 +48,15 @@ def _insert_order(
     customer_name: str = "Khách thử",
     total_price: float = 500000.0,
     status: str = "delivered",
+    delivery_type: str = "pickup",
+    shipping_fee: float = 0.0,
 ) -> int:
     cur = conn.execute(
-        "INSERT INTO orders (order_ref, customer_name, total_price, status, due_date) "
-        "VALUES (?, ?, ?, ?, '2026-06-10')",
-        (order_ref, customer_name, total_price, status),
+        "INSERT INTO orders "
+        "(order_ref, customer_name, total_price, status, due_date, "
+        " delivery_type, shipping_fee) "
+        "VALUES (?, ?, ?, ?, '2026-06-10', ?, ?)",
+        (order_ref, customer_name, total_price, status, delivery_type, shipping_fee),
     )
     return int(cur.lastrowid)
 
@@ -381,3 +386,317 @@ def test_backfill_skips_already_correct_entries():
             (oid,),
         ).fetchone()[0]
         assert int(entry_id_before) == int(entry_id_after)
+
+
+# ---------------------------------------------------------------------------
+# DG-191 Phase 3 — Bus shipping revenue exclusion + shipping release (FR3/FR4)
+# ---------------------------------------------------------------------------
+
+
+def _revenue_4100_credit(conn, order_id: int) -> float:
+    row = conn.execute(
+        """
+        SELECT COALESCE(SUM(jl.credit), 0) AS credit
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'order' AND je.source_id = ? AND a.code = ?
+        """,
+        (order_id, ORDER_REVENUE_CODE),
+    ).fetchone()
+    return float(row["credit"])
+
+
+def _release_entry_count(conn, order_id: int) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) FROM journal_entries "
+        "WHERE source_type = 'order_shipping_release' AND source_id = ?",
+        (order_id,),
+    ).fetchone()
+    return int(row[0])
+
+
+def _release_line_amounts(conn, order_id: int) -> dict[str, dict[str, float]]:
+    """Return per-account debit/credit for the order's shipping release entry."""
+    rows = conn.execute(
+        """
+        SELECT a.code AS code, jl.debit AS debit, jl.credit AS credit
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'order_shipping_release' AND je.source_id = ?
+        ORDER BY je.id DESC
+        """,
+        (order_id,),
+    ).fetchall()
+    out: dict[str, dict[str, float]] = {}
+    for r in rows:
+        out[r["code"]] = {"debit": float(r["debit"] or 0), "credit": float(r["credit"] or 0)}
+    return out
+
+
+def _pay_bus_order(
+    conn,
+    *,
+    order_id: int,
+    amount: float,
+) -> int:
+    """Insert a deposit payment and run the payment journal sync (bus split)."""
+    from baker.services.journal_sync import _sync_payment_journal
+
+    txn_id = _insert_payment(conn, order_id=order_id, amount=amount, ptype="deposit")
+    _sync_payment_journal(conn, txn_id, amount, "deposit", "cash", order_id=order_id)
+    return txn_id
+
+
+def test_bus_order_revenue_excludes_shipping_fee_ac3():
+    """AC3: net=100000, shipping_fee=25000 → revenue entry 2100/4100 = 75000."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn,
+            order_ref="ORD-BUS-AC3",
+            total_price=100000,
+            status="delivered",
+            delivery_type="bus",
+            shipping_fee=25000,
+        )
+        _pay_bus_order(conn, order_id=oid, amount=100000)
+
+        _sync_delivered_order_journal(conn, oid, "ORD-BUS-AC3")
+        assert _revenue_2100_debit(conn, oid) == 75000.0
+        assert _revenue_4100_credit(conn, oid) == 75000.0
+        assert _revenue_entry_count(conn, oid) == 1
+
+
+def test_bus_order_shipping_release_entry_created_ac4():
+    """AC4: shipping_fee=25000 held in 2200 → release entry debit 2200/credit 1100."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn,
+            order_ref="ORD-BUS-AC4",
+            total_price=100000,
+            status="delivered",
+            delivery_type="bus",
+            shipping_fee=25000,
+        )
+        _pay_bus_order(conn, order_id=oid, amount=100000)
+
+        _sync_delivered_order_journal(conn, oid, "ORD-BUS-AC4")
+        assert _release_entry_count(conn, oid) == 1
+        lines = _release_line_amounts(conn, oid)
+        assert lines[BUS_SHIPPING_HELD_CODE]["debit"] == 25000.0
+        assert lines["1100"]["credit"] == 25000.0
+
+
+def test_bus_order_shipping_fee_zero_unchanged():
+    """Bus order with shipping_fee=0: no exclusion, no release entry."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn,
+            order_ref="ORD-BUS-FEE0",
+            total_price=100000,
+            status="delivered",
+            delivery_type="bus",
+            shipping_fee=0,
+        )
+        _pay_bus_order(conn, order_id=oid, amount=100000)
+
+        _sync_delivered_order_journal(conn, oid, "ORD-BUS-FEE0")
+        assert _revenue_2100_debit(conn, oid) == 100000.0
+        assert _revenue_4100_credit(conn, oid) == 100000.0
+        assert _release_entry_count(conn, oid) == 0
+
+
+def test_pickup_order_revenue_unchanged():
+    """Pickup order: no exclusion, no release entry."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn,
+            order_ref="ORD-PICKUP-RV",
+            total_price=100000,
+            status="delivered",
+            delivery_type="pickup",
+            shipping_fee=25000,
+        )
+        _pay_bus_order(conn, order_id=oid, amount=100000)
+
+        _sync_delivered_order_journal(conn, oid, "ORD-PICKUP-RV")
+        assert _revenue_2100_debit(conn, oid) == 100000.0
+        assert _release_entry_count(conn, oid) == 0
+
+
+def test_door_order_revenue_unchanged():
+    """Door order: no exclusion, no release entry."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn,
+            order_ref="ORD-DOOR-RV",
+            total_price=100000,
+            status="delivered",
+            delivery_type="door",
+            shipping_fee=25000,
+        )
+        _pay_bus_order(conn, order_id=oid, amount=100000)
+
+        _sync_delivered_order_journal(conn, oid, "ORD-DOOR-RV")
+        assert _revenue_2100_debit(conn, oid) == 100000.0
+        assert _release_entry_count(conn, oid) == 0
+
+
+def test_bus_order_net_equals_shipping_no_revenue_entry():
+    """net=25000, shipping_fee=25000 → revenue=0, no revenue entry created."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn,
+            order_ref="ORD-BUS-EQ",
+            total_price=25000,
+            status="delivered",
+            delivery_type="bus",
+            shipping_fee=25000,
+        )
+        _pay_bus_order(conn, order_id=oid, amount=25000)
+
+        _sync_delivered_order_journal(conn, oid, "ORD-BUS-EQ")
+        assert _revenue_entry_count(conn, oid) == 0
+        # Release still happens: held 25000 released to 1100.
+        assert _release_entry_count(conn, oid) == 1
+        lines = _release_line_amounts(conn, oid)
+        assert lines[BUS_SHIPPING_HELD_CODE]["debit"] == 25000.0
+
+
+def test_bus_order_revenue_partial_after_shipping_excluded():
+    """net=30000, shipping_fee=25000 → revenue=5000."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn,
+            order_ref="ORD-BUS-PART",
+            total_price=30000,
+            status="delivered",
+            delivery_type="bus",
+            shipping_fee=25000,
+        )
+        _pay_bus_order(conn, order_id=oid, amount=30000)
+
+        _sync_delivered_order_journal(conn, oid, "ORD-BUS-PART")
+        assert _revenue_2100_debit(conn, oid) == 5000.0
+        assert _revenue_4100_credit(conn, oid) == 5000.0
+
+
+def test_bus_order_release_idempotent_when_matches():
+    """Re-syncing a matching release entry is a no-op."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn,
+            order_ref="ORD-BUS-IDEM",
+            total_price=100000,
+            status="delivered",
+            delivery_type="bus",
+            shipping_fee=25000,
+        )
+        _pay_bus_order(conn, order_id=oid, amount=100000)
+
+        _sync_delivered_order_journal(conn, oid, "ORD-BUS-IDEM")
+        first_count = _release_entry_count(conn, oid)
+        first_id = conn.execute(
+            "SELECT id FROM journal_entries "
+            "WHERE source_type='order_shipping_release' AND source_id=?",
+            (oid,),
+        ).fetchone()[0]
+
+        # Re-sync should be a no-op.
+        _sync_delivered_order_journal(conn, oid, "ORD-BUS-IDEM")
+        assert _release_entry_count(conn, oid) == first_count
+        second_id = conn.execute(
+            "SELECT id FROM journal_entries "
+            "WHERE source_type='order_shipping_release' AND source_id=?",
+            (oid,),
+        ).fetchone()[0]
+        assert int(first_id) == int(second_id)
+
+
+def test_bus_order_release_reverses_locked_stale_entry():
+    """Locked stale release entry is reversed; a new corrected entry is created."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn,
+            order_ref="ORD-BUS-LOCK",
+            total_price=100000,
+            status="delivered",
+            delivery_type="bus",
+            shipping_fee=25000,
+        )
+        _pay_bus_order(conn, order_id=oid, amount=100000)
+        _sync_delivered_order_journal(conn, oid, "ORD-BUS-LOCK")
+        release_id = conn.execute(
+            "SELECT id FROM journal_entries "
+            "WHERE source_type='order_shipping_release' AND source_id=?",
+            (oid,),
+        ).fetchone()[0]
+        conn.execute(
+            "UPDATE journal_entries SET locked_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (release_id,),
+        )
+
+        # Increase the held shipping by adding another deposit so the release
+        # amount changes — but here we instead change shipping_fee upward to
+        # force a mismatch. Re-pay is not needed; instead edit shipping_fee.
+        conn.execute(
+            "UPDATE orders SET shipping_fee = 30000 WHERE id = ?", (oid,)
+        )
+        # Add an extra deposit to cover the additional shipping in 2200.
+        _pay_bus_order(conn, order_id=oid, amount=30000)
+
+        _sync_delivered_order_journal(conn, oid, "ORD-BUS-LOCK")
+        # The locked original still exists; a reversal offsets it and a new
+        # corrected entry was created (3 entries total).
+        entries = conn.execute(
+            "SELECT id, locked_at FROM journal_entries "
+            "WHERE source_type='order_shipping_release' AND source_id=?",
+            (oid,),
+        ).fetchall()
+        assert len(entries) == 3
+
+
+def test_bus_order_release_deletes_stale_unlocked_entry():
+    """Stale unlocked release entry is deleted; a new one is created."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn,
+            order_ref="ORD-BUS-STALE",
+            total_price=100000,
+            status="delivered",
+            delivery_type="bus",
+            shipping_fee=25000,
+        )
+        _pay_bus_order(conn, order_id=oid, amount=100000)
+        _sync_delivered_order_journal(conn, oid, "ORD-BUS-STALE")
+        stale_id = conn.execute(
+            "SELECT id FROM journal_entries "
+            "WHERE source_type='order_shipping_release' AND source_id=?",
+            (oid,),
+        ).fetchone()[0]
+
+        # Change shipping_fee and re-pay so release amount differs.
+        conn.execute(
+            "UPDATE orders SET shipping_fee = 30000 WHERE id = ?", (oid,)
+        )
+        _pay_bus_order(conn, order_id=oid, amount=30000)
+
+        _sync_delivered_order_journal(conn, oid, "ORD-BUS-STALE")
+        remaining = conn.execute(
+            "SELECT id FROM journal_entries "
+            "WHERE source_type='order_shipping_release' AND source_id=?",
+            (oid,),
+        ).fetchall()
+        assert len(remaining) == 1
+        assert int(remaining[0][0]) != stale_id
