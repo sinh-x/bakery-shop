@@ -283,7 +283,8 @@ def test_deposit_revenue_gap_empty_db():
 # ---------------------------------------------------------------------------
 
 
-def test_refunds_lists_tien_rut_transactions():
+def test_refunds_lists_outflow_transactions():
+    """`refunds` lists both `tien_rut` and `refund` outflow transactions (Mn-3)."""
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_order(
@@ -295,19 +296,34 @@ def test_refunds_lists_tien_rut_transactions():
             conn, order_id=oid, amount=300000, ptype="tien_rut", method="cash",
             created_at="2026-06-12T09:00:00",
         )
-        # A non-tien_rut payment should NOT appear.
+        # A `refund` outflow should also appear now (Mn-3 parameterization).
         oid2 = _insert_order(
             conn, order_ref="ORD-260624-031", customer_name="Anh N",
             total_price=500000, status="delivered", due_date="2026-06-11",
         )
-        _insert_payment(conn, order_id=oid2, amount=500000, ptype="refund")
+        _insert_payment(
+            conn, order_id=oid2, amount=500000, ptype="refund",
+            created_at="2026-06-13T09:00:00",
+        )
+        # A `deposit` payment is NOT an outflow and must NOT appear.
+        oid3 = _insert_order(
+            conn, order_ref="ORD-260624-032", customer_name="Anh D",
+            total_price=400000, status="delivered", due_date="2026-06-14",
+        )
+        _insert_payment(conn, order_id=oid3, amount=400000, ptype="deposit")
 
     result = _invoke(["pipeline", "refunds"])
     assert result.exit_code == 0, result.output
     assert "ORD-260624-030" in result.output
     assert "Anh R" in result.output
     assert "300.000" in result.output
-    assert "ORD-260624-031" not in result.output  # 'refund' type, not tien_rut
+    assert "tien_rut" in result.output
+    # `refund` outflow now appears (Mn-3 fix).
+    assert "ORD-260624-031" in result.output
+    assert "refund" in result.output
+    assert "500.000" in result.output
+    # A non-outflow deposit must NOT appear.
+    assert "ORD-260624-032" not in result.output
 
 
 def test_refunds_empty_db():

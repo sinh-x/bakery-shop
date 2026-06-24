@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
+from baker.db.schema import PAYMENT_OUTFLOW_TYPES
+
 
 class TransactionType(str, Enum):
     DEPOSIT = "deposit"
@@ -15,6 +17,12 @@ class PaymentMethod(str, Enum):
     CASH = "cash"
     TRANSFER = "transfer"
     CARD = "card"
+
+
+# Outflow transaction types as a tuple (deterministic order for SQL IN
+# parameterization). Mirrors baker.db.schema.PAYMENT_OUTFLOW_TYPES — kept as a
+# module-level tuple so the SQL placeholder count is stable per process.
+_OUTFLOW_TYPES = tuple(PAYMENT_OUTFLOW_TYPES)
 
 
 @dataclass
@@ -74,34 +82,42 @@ class PaymentTransaction:
 
     @staticmethod
     def total_paid_excl_tien_rut(conn, order_id: int) -> float:
-        """Sum of payment transactions EXCLUDING tien_rut cash-back transactions.
+        """Sum of payment transactions EXCLUDING all outflow (cash-back) types.
 
-        tien_rut is a cash-back to the customer, not a customer payment toward the order.
-        Excluding it ensures receipt balance math and completion guards are correct.
+        Outflow types (``refund``, ``tien_rut``) are cash returned to the
+        customer, not customer payments toward the order. Excluding them
+        ensures receipt balance math and completion guards are correct.
 
         Note: for revenue recognition use :meth:`total_paid_net` instead, which
-        subtracts tien_rut refunds so the 2100 (Customer Deposits) debit matches
-        the actual deposit balance being converted to revenue.
+        subtracts outflows so the 2100 (Customer Deposits) debit matches the
+        actual deposit balance being converted to revenue.
         """
+        placeholders = ",".join("?" * len(_OUTFLOW_TYPES))
         row = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions WHERE order_id = ? AND type != 'tien_rut'",
-            (order_id,),
+            f"SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions WHERE order_id = ? AND type NOT IN ({placeholders})",
+            (order_id, *_OUTFLOW_TYPES),
         ).fetchone()
         return float(row[0]) if row else 0.0
 
     @staticmethod
     def total_tien_rut(conn, order_id: int) -> float:
-        """Sum of tien_rut (cash-back) transactions for an order."""
+        """Sum of all outflow (cash-back) transactions for an order.
+
+        Includes every type in :data:`baker.db.schema.PAYMENT_OUTFLOW_TYPES`
+        (``refund`` and ``tien_rut``). Outflow amounts are stored as positive
+        values; revenue recognition subtracts them via :meth:`total_paid_net`.
+        """
+        placeholders = ",".join("?" * len(_OUTFLOW_TYPES))
         row = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "
-            "WHERE order_id = ? AND type = 'tien_rut'",
-            (order_id,),
+            f"SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "
+            f"WHERE order_id = ? AND type IN ({placeholders})",
+            (order_id, *_OUTFLOW_TYPES),
         ).fetchone()
         return float(row[0]) if row else 0.0
 
     @staticmethod
     def total_paid_net(conn, order_id: int) -> float:
-        """Net deposits for an order: deposits (excl tien_rut) minus tien_rut refunds.
+        """Net deposits for an order: payments (excl outflows) minus outflows.
 
         Revenue recognition should use this value so the 2100 (Customer Deposits)
         debit matches the actual deposit balance being converted to revenue.
