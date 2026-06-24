@@ -175,7 +175,7 @@ class JournalEntry:
         """
         cursor = conn.execute(
             "UPDATE journal_entries SET locked_at = ?, locked_by = ? "
-            "WHERE created_at >= ? AND created_at <= ? AND locked_at IS NULL",
+            "WHERE transaction_date >= ? AND transaction_date <= ? AND locked_at IS NULL",
             (locked_at, locked_by, since, until),
         )
         return int(cursor.rowcount)

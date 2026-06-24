@@ -99,10 +99,10 @@ def list_journal(
         conditions: list[str] = []
         params: list = []
         if since is not None:
-            conditions.append("je.created_at >= ?")
+            conditions.append("je.transaction_date >= ?")
             params.append(since)
         if until is not None:
-            conditions.append("je.created_at <= ?")
+            conditions.append("je.transaction_date <= ?")
             params.append(until)
         if source_type is not None:
             conditions.append("je.source_type = ?")
@@ -125,7 +125,7 @@ def list_journal(
 
         rows = conn.execute(
             f"SELECT je.* FROM journal_entries je {where} "
-            "ORDER BY je.created_at DESC, je.id DESC LIMIT ? OFFSET ?",
+            "ORDER BY je.transaction_date DESC, je.id DESC LIMIT ? OFFSET ?",
             [*params, limit, offset],
         ).fetchall()
 

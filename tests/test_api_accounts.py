@@ -790,10 +790,12 @@ def test_journal_lock_locks_entries_in_range(api_client):
     eid = int(ev["id"])
     with get_db() as conn:
         entry_id = _journal_for_source(conn, "expense", eid)[0].id
-        created_at = conn.execute("SELECT created_at FROM journal_entries WHERE id = ?", (entry_id,)).fetchone()["created_at"]
-    # Lock a wide range around created_at
-    since = created_at[:10] + "T00:00:00"
-    until = created_at[:10] + "T23:59:59"
+        transaction_date = conn.execute(
+            "SELECT transaction_date FROM journal_entries WHERE id = ?", (entry_id,)
+        ).fetchone()["transaction_date"]
+    # Lock a wide range around transaction_date (FR9: lock filters on transaction_date)
+    since = transaction_date[:10] + "T00:00:00"
+    until = transaction_date[:10] + "T23:59:59"
     resp = api_client.post("/api/accounts/journal/lock", json={"since": since, "until": until, "lockedBy": "sinh"})
     assert resp.status_code == 200
     body = resp.json()
@@ -809,9 +811,11 @@ def test_journal_lock_skips_already_locked(api_client):
     eid = int(ev["id"])
     with get_db() as conn:
         entry_id = _journal_for_source(conn, "expense", eid)[0].id
-        created_at = conn.execute("SELECT created_at FROM journal_entries WHERE id = ?", (entry_id,)).fetchone()["created_at"]
-    since = created_at[:10] + "T00:00:00"
-    until = created_at[:10] + "T23:59:59"
+        transaction_date = conn.execute(
+            "SELECT transaction_date FROM journal_entries WHERE id = ?", (entry_id,)
+        ).fetchone()["transaction_date"]
+    since = transaction_date[:10] + "T00:00:00"
+    until = transaction_date[:10] + "T23:59:59"
     r1 = api_client.post("/api/accounts/journal/lock", json={"since": since, "until": until})
     assert r1.json()["lockedCount"] >= 1
     r2 = api_client.post("/api/accounts/journal/lock", json={"since": since, "until": until})

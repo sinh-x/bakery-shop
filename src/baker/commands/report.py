@@ -30,9 +30,9 @@ DEBIT_NORMAL_TYPES = ("asset", "expense")
 
 
 def _normalize_date(date_str: Optional[str], *, end_of_day: bool = False) -> Optional[str]:
-    """Convert a ``YYYY-MM-DD`` date into a comparable ``created_at`` bound.
+    """Convert a ``YYYY-MM-DD`` date into a comparable ``transaction_date`` bound.
 
-    ``created_at`` is stored as ``YYYY-MM-DDTHH:MM:SS``; a bare date sorts
+    ``transaction_date`` is stored as ``YYYY-MM-DDTHH:MM:SS``; a bare date sorts
     before any timestamp on that day, so for ``--until`` we append
     ``T23:59:59`` to make the bound inclusive of the whole day.
 
@@ -99,10 +99,10 @@ def trial_balance_cmd(since, until):
     params: list = []
     where_clauses = []
     if since_b:
-        where_clauses.append("je.created_at >= ?")
+        where_clauses.append("je.transaction_date >= ?")
         params.append(since_b)
     if until_b:
-        where_clauses.append("je.created_at <= ?")
+        where_clauses.append("je.transaction_date <= ?")
         params.append(until_b)
     date_filter = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -159,10 +159,10 @@ def income_statement_cmd(since, until):
         params: list = []
         where_clauses = []
         if since_b:
-            where_clauses.append("je.created_at >= ?")
+            where_clauses.append("je.transaction_date >= ?")
             params.append(since_b)
         if until_b:
-            where_clauses.append("je.created_at <= ?")
+            where_clauses.append("je.transaction_date <= ?")
             params.append(until_b)
         date_filter = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -193,10 +193,10 @@ def income_statement_cmd(since, until):
     cogs_params: list = []
     cogs_where = ["a.code = '5900'"]
     if since_b:
-        cogs_where.append("je.created_at >= ?")
+        cogs_where.append("je.transaction_date >= ?")
         cogs_params.append(since_b)
     if until_b:
-        cogs_where.append("je.created_at <= ?")
+        cogs_where.append("je.transaction_date <= ?")
         cogs_params.append(until_b)
     cogs_sql = "WHERE " + " AND ".join(cogs_where)
     with get_db() as conn:
@@ -236,7 +236,7 @@ def balance_sheet_cmd(until):
         params: list = []
         where_clauses = []
         if until_b:
-            where_clauses.append("je.created_at <= ?")
+            where_clauses.append("je.transaction_date <= ?")
             params.append(until_b)
         date_filter = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -296,10 +296,10 @@ def general_ledger_cmd(since, until):
         params: list = []
         where_clauses = []
         if since_b:
-            where_clauses.append("je.created_at >= ?")
+            where_clauses.append("je.transaction_date >= ?")
             params.append(since_b)
         if until_b:
-            where_clauses.append("je.created_at <= ?")
+            where_clauses.append("je.transaction_date <= ?")
             params.append(until_b)
         where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -309,11 +309,11 @@ def general_ledger_cmd(since, until):
                    je.description  AS description,
                    je.source_type  AS source_type,
                    je.source_id    AS source_id,
-                   je.created_at   AS created_at,
+                   je.transaction_date AS transaction_date,
                    je.locked_at    AS locked_at
             FROM journal_entries je
             {where_sql}
-            ORDER BY je.created_at ASC, je.id ASC
+            ORDER BY je.transaction_date ASC, je.id ASC
             """,
             params,
         ).fetchall()
@@ -324,7 +324,7 @@ def general_ledger_cmd(since, until):
 
         for je in entries:
             click.echo(
-                f"#{je['id']}  {je['created_at']}  {je['description']}  "
+                f"#{je['id']}  {je['transaction_date']}  {je['description']}  "
                 f"[source={je['source_type']}:{je['source_id']}]"
                 + ("  (LOCKED)" if je["locked_at"] else "")
             )
@@ -371,17 +371,17 @@ def account_ledger_cmd(account_code, since, until):
         params: list = [account["id"]]
         where_clauses = ["jl.account_id = ?"]
         if since_b:
-            where_clauses.append("je.created_at >= ?")
+            where_clauses.append("je.transaction_date >= ?")
             params.append(since_b)
         if until_b:
-            where_clauses.append("je.created_at <= ?")
+            where_clauses.append("je.transaction_date <= ?")
             params.append(until_b)
         where_sql = "WHERE " + " AND ".join(where_clauses)
 
         rows = conn.execute(
             f"""
             SELECT je.id          AS entry_id,
-                   je.created_at   AS created_at,
+                   je.transaction_date AS transaction_date,
                    je.description AS entry_description,
                    jl.debit        AS debit,
                    jl.credit       AS credit,
@@ -389,7 +389,7 @@ def account_ledger_cmd(account_code, since, until):
             FROM journal_lines jl
             JOIN journal_entries je ON je.id = jl.journal_entry_id
             {where_sql}
-            ORDER BY je.created_at ASC, je.id ASC, jl.id ASC
+            ORDER BY je.transaction_date ASC, je.id ASC, jl.id ASC
             """,
             params,
         ).fetchall()
@@ -411,7 +411,7 @@ def account_ledger_cmd(account_code, since, until):
             else:
                 movement = f"CR {credit:>12,.2f}"
             click.echo(
-                f"{r['created_at']}  #{r['entry_id']:<6}{movement}  "
+                f"{r['transaction_date']}  #{r['entry_id']:<6}{movement}  "
                 f"balance={running:>14,.2f}  {r['line_description']}"
             )
 
@@ -429,17 +429,17 @@ def expense_by_category_cmd(since, until):
         params: list = []
         where_clauses = ["je.source_type = 'expense'", "jl.debit > 0"]
         if since_b:
-            where_clauses.append("je.created_at >= ?")
+            where_clauses.append("je.transaction_date >= ?")
             params.append(since_b)
         if until_b:
-            where_clauses.append("je.created_at <= ?")
+            where_clauses.append("je.transaction_date <= ?")
             params.append(until_b)
         where_sql = "WHERE " + " AND ".join(where_clauses)
 
         rows = conn.execute(
             f"""
             SELECT je.source_id AS event_id,
-                   je.created_at AS created_at,
+                   je.transaction_date AS transaction_date,
                    a.code        AS account_code,
                    a.name        AS account_name,
                    jl.debit      AS debit
@@ -447,7 +447,7 @@ def expense_by_category_cmd(since, until):
             JOIN journal_lines jl ON jl.journal_entry_id = je.id
             JOIN accounts a ON a.id = jl.account_id
             {where_sql}
-            ORDER BY je.created_at ASC
+            ORDER BY je.transaction_date ASC
             """,
             params,
         ).fetchall()

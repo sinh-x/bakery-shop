@@ -45,13 +45,18 @@ def _insert_entry(
     source_id=None,
     description: str = "Test entry",
     created_at: str | None = None,
+    transaction_date: str | None = None,
 ) -> int:
     """Insert a balanced two-line journal entry."""
-    if created_at:
+    # transaction_date defaults to created_at when not provided (mirrors
+    # _insert_journal_entry's behavior of falling back to current time).
+    td = transaction_date or created_at
+    if created_at or td:
         cur = conn.execute(
-            "INSERT INTO journal_entries (description, source_type, source_id, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            (description, source_type, source_id, created_at),
+            "INSERT INTO journal_entries "
+            "(description, source_type, source_id, created_at, transaction_date) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (description, source_type, source_id, created_at, td),
         )
     else:
         cur = conn.execute(
