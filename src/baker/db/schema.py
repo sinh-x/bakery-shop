@@ -1948,6 +1948,7 @@ def _migrate_v47_fix_stale_cogs_entries(conn):
     Idempotent: re-creates via _sync_delivered_order_journal which skips
     existing entries, so we delete stale ones first.
     """
+    _seed_chart_of_accounts(conn)
     from baker.services.cost_resolver import resolve_product_cost
     from baker.services.journal_sync import _sync_delivered_order_journal
 
