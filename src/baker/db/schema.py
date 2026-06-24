@@ -1659,11 +1659,18 @@ def _insert_journal_entry(
     source_type: str,
     source_id,
     lines: list[tuple[int, float, float, str]],
+    transaction_date: str | None = None,
 ) -> int:
     """Create a journal entry with its lines.
 
     `lines` is a list of (account_id, debit, credit, line_description).
     Double-entry integrity is enforced: total debit must equal total credit.
+
+    `transaction_date` is the business event date the entry relates to (used
+    by reports, API filtering, and journal locks). When ``None``, defaults to
+    the current local time — preserving the historical INSERT-time behavior of
+    ``created_at`` so existing call sites work unchanged during the transition.
+    The audit-only ``created_at`` column still records the actual INSERT time.
     """
     total_debit = sum(d for _, d, _, _ in lines)
     total_credit = sum(c for _, _, c, _ in lines)
@@ -1673,11 +1680,31 @@ def _insert_journal_entry(
             f"for {source_type}:{source_id}"
         )
 
-    cursor = conn.execute(
-        "INSERT INTO journal_entries (description, source_type, source_id) "
-        "VALUES (?, ?, ?)",
-        (description, source_type, source_id),
-    )
+    if transaction_date is None:
+        transaction_date = conn.execute(
+            "SELECT strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')"
+        ).fetchone()[0]
+
+    # Transition guard: write transaction_date only when the column exists
+    # (added by migration v50). Before v50 is applied, fall back to the legacy
+    # INSERT that relies on the created_at DEFAULT. This keeps v44/v46/v47/v48/
+    # v49 backfills (which run before v50 on fresh DBs) working unchanged.
+    has_col = "transaction_date" in {
+        r[1] for r in conn.execute("PRAGMA table_info(journal_entries)").fetchall()
+    }
+    if has_col:
+        cursor = conn.execute(
+            "INSERT INTO journal_entries "
+            "(description, source_type, source_id, transaction_date) "
+            "VALUES (?, ?, ?, ?)",
+            (description, source_type, source_id, transaction_date),
+        )
+    else:
+        cursor = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, ?, ?)",
+            (description, source_type, source_id),
+        )
     entry_id = int(cursor.lastrowid)
     for account_id, debit, credit, line_desc in lines:
         conn.execute(
@@ -2129,6 +2156,8 @@ def _migrate_v49_bus_shipping_backfill(conn):
     Non-bus orders and bus orders with ``shipping_fee == 0`` are untouched
     (FR7 regression guard).
     """
+    _seed_chart_of_accounts(conn)
+
     from baker.services.journal_sync import (
         _reconcile_order_revenue_entry,
         _sync_bus_shipping_release_entry,
@@ -2199,6 +2228,131 @@ def _migrate_v49_bus_shipping_backfill(conn):
 
         # (c) Create the release entry (2200 → 1100). Idempotent by construction.
         _sync_bus_shipping_release_entry(conn, order_id, order_ref)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4.1 (DG-192) — journal_entries.transaction_date column + re-backfill
+# ---------------------------------------------------------------------------
+
+
+def _migrate_v50_journal_transaction_date(conn):
+    """Add the ``transaction_date`` column to ``journal_entries`` and create an
+    index on it.
+
+    The column records the business event date an entry relates to (distinct
+    from the audit-only ``created_at`` INSERT timestamp). Existing rows get
+    ``transaction_date = ''`` here; migration v51 backfills them from their
+    source record dates. The default empty string keeps the column ``NOT NULL``
+    while allowing a deferred backfill, and the index supports the report/API/
+    lock queries that switch onto ``transaction_date`` in later phases.
+
+    Idempotent: uses ``_guard_add_column`` so re-running on an already-migrated
+    DB is a no-op, and ``CREATE INDEX IF NOT EXISTS`` guards the index.
+    """
+    _guard_add_column(
+        conn,
+        "journal_entries",
+        "transaction_date",
+        "transaction_date TEXT NOT NULL DEFAULT ''",
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_journal_entries_transaction_date "
+        "ON journal_entries(transaction_date)"
+    )
+
+
+def _backfill_journal_transaction_date(conn) -> None:
+    """Re-backfill ``transaction_date`` on existing ``journal_entries`` from
+    their source record dates.
+
+    Source-type → source-date mapping (FR10/FR11):
+
+    - ``expense`` → ``events.timestamp`` (via ``source_id`` = event id)
+    - ``payment_transaction`` → ``payment_transactions.created_at``
+    - ``order`` → ``orders.due_date`` (fallback ``orders.created_at``)
+    - ``order_cogs`` → ``orders.due_date`` (fallback ``orders.created_at``)
+    - ``waste_cogs`` → ``stock_movements.created_at`` (via ``source_id``)
+    - ``owner_capital``, ``owner_draw``, ``staff_reimburse`` → existing
+      ``created_at`` (no source record exists; INSERT time is the business date)
+    - ``reversal`` → existing ``created_at`` (reversals are corrected in
+      Phase 3 via ``_reverse_journal_entry`` copying the original entry's date)
+    - ``order_shipping_hold`` / ``order_shipping_release`` → ``orders.due_date``
+      (fallback ``orders.created_at``); these originated at order delivery time
+
+    Idempotent (AC10): entries whose ``transaction_date`` is already non-empty
+    are skipped, so re-running on a backfilled DB is a no-op.
+    """
+    conn.execute(
+        """
+        UPDATE journal_entries
+        SET transaction_date = (
+            SELECT e.timestamp
+            FROM events e
+            WHERE e.id = journal_entries.source_id
+        )
+        WHERE source_type = 'expense'
+          AND (transaction_date IS NULL OR transaction_date = '')
+        """
+    )
+    conn.execute(
+        """
+        UPDATE journal_entries
+        SET transaction_date = (
+            SELECT pt.created_at
+            FROM payment_transactions pt
+            WHERE pt.id = journal_entries.source_id
+        )
+        WHERE source_type = 'payment_transaction'
+          AND (transaction_date IS NULL OR transaction_date = '')
+        """
+    )
+    for source_type in ("order", "order_cogs", "order_shipping_hold",
+                        "order_shipping_release"):
+        conn.execute(
+            f"""
+            UPDATE journal_entries
+            SET transaction_date = COALESCE(
+                (SELECT o.due_date FROM orders o WHERE o.id = journal_entries.source_id),
+                (SELECT o.created_at FROM orders o WHERE o.id = journal_entries.source_id)
+            )
+            WHERE source_type = '{source_type}'
+              AND (transaction_date IS NULL OR transaction_date = '')
+            """
+        )
+    conn.execute(
+        """
+        UPDATE journal_entries
+        SET transaction_date = (
+            SELECT sm.created_at
+            FROM stock_movements sm
+            WHERE sm.id = journal_entries.source_id
+        )
+        WHERE source_type = 'waste_cogs'
+          AND (transaction_date IS NULL OR transaction_date = '')
+        """
+    )
+    # Manual / reversal source types have no source record — use the existing
+    # created_at as the business date (FR6/FR12).
+    conn.execute(
+        """
+        UPDATE journal_entries
+        SET transaction_date = created_at
+        WHERE source_type IN (
+            'owner_capital', 'owner_draw', 'staff_reimburse', 'reversal'
+        )
+          AND (transaction_date IS NULL OR transaction_date = '')
+        """
+    )
+
+
+def _migrate_v51_backfill_journal_transaction_date(conn):
+    """Re-backfill existing journal entries with correct ``transaction_date``
+    from their source record dates (FR10/AC10).
+
+    Idempotent: only touches entries whose ``transaction_date`` is still empty.
+    Runs after v50 (which added the column) so all existing rows are populated.
+    """
+    _backfill_journal_transaction_date(conn)
 
 
 COST_HISTORY_SCHEMA = """
@@ -2499,6 +2653,16 @@ MIGRATIONS = {
          "description": "Bus shipping accounting backfill: fix revenue entries, create hold+release entries for delivered bus orders",
          "sql": "",
          "callable": _migrate_v49_bus_shipping_backfill,
+     },
+     50: {
+         "description": "Add transaction_date column + index to journal_entries (DG-192 Phase 4.1)",
+         "sql": "",
+         "callable": _migrate_v50_journal_transaction_date,
+     },
+     51: {
+         "description": "Re-backfill journal_entries.transaction_date from source record dates (DG-192 Phase 4.1)",
+         "sql": "",
+         "callable": _migrate_v51_backfill_journal_transaction_date,
      },
  }
 

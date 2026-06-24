@@ -366,7 +366,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 49
+        assert _migrated_version(conn) == 51
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -383,7 +383,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 49
+        assert _migrated_version(conn) == 51
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -397,10 +397,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 49
+        assert _migrated_version(conn) == 51
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 49
+        assert _migrated_version(conn) == 51
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -1763,3 +1763,316 @@ def test_v49_idempotent_in_chain():
             "SELECT COUNT(*) FROM journal_entries WHERE source_type='order_shipping_release' AND source_id=?",
             (order_id,),
         ).fetchone()[0] == rel
+
+
+# ---------------------------------------------------------------------------
+# v50/v51 — journal_entries.transaction_date column + re-backfill
+# (DG-192 Phase 4.1)
+# ---------------------------------------------------------------------------
+
+
+def test_v50_registered_in_migration_chain():
+    assert 50 in MIGRATIONS
+    assert (
+        MIGRATIONS[50]["callable"].__name__
+        == "_migrate_v50_journal_transaction_date"
+    )
+
+
+def test_v50_adds_transaction_date_column_and_index():
+    with get_db() as conn:
+        _migrate_to_version(conn, 50)
+        assert _migrated_version(conn) == 50
+
+        columns = _schema_columns(conn, "journal_entries")
+        assert "transaction_date" in columns
+        # NOT NULL constraint enforced (DEFAULT '' keeps it non-empty).
+        assert columns["transaction_date"]["notnull"] == 1
+        # created_at preserved as audit column.
+        assert "created_at" in columns
+
+        index_rows = conn.execute(
+            "PRAGMA index_list(journal_entries)"
+        ).fetchall()
+        index_names = [row["name"] for row in index_rows]
+        assert "idx_journal_entries_transaction_date" in index_names
+        # Existing indices preserved.
+        assert "idx_journal_entries_created" in index_names
+        assert "idx_journal_entries_source" in index_names
+
+
+def test_v50_is_idempotent():
+    from baker.db.schema import _migrate_v50_journal_transaction_date
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 50)
+        # Re-running the callable directly must not raise.
+        _migrate_v50_journal_transaction_date(conn)
+        columns = _schema_columns(conn, "journal_entries")
+        assert "transaction_date" in columns
+
+
+def test_v50_existing_entries_get_empty_transaction_date():
+    """v50 adds the column; existing rows get the DEFAULT '' until v51 backfills."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        # Insert an expense-backed journal entry via the v44 backfill.
+        _seed_expense_event(conn, summary="Pre-v50 expense")
+        _migrate_v49_bus_shipping_backfill_idempotent_seed(conn)
+        _migrate_to_version(conn, 50)
+        rows = conn.execute(
+            "SELECT transaction_date FROM journal_entries"
+        ).fetchall()
+        assert rows, "expected at least one journal entry"
+        for row in rows:
+            assert row["transaction_date"] == ""
+
+
+def _migrate_v49_bus_shipping_backfill_idempotent_seed(conn):
+    """Helper: seed a no-op state so v49 backfill has nothing to do (avoids
+    needing a bus order). Runs v49 callable which is a no-op on empty data."""
+    _migrate_to_version(conn, 49)
+
+
+def test_v51_registered_in_migration_chain():
+    assert 51 in MIGRATIONS
+    assert (
+        MIGRATIONS[51]["callable"].__name__
+        == "_migrate_v51_backfill_journal_transaction_date"
+    )
+
+
+def test_v51_backfills_expense_from_event_timestamp():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        event_id = _seed_expense_event(conn, summary="Backfill expense")
+        # The seed sets events.timestamp = '2026-06-22T10:00:00+07:00'.
+        _migrate_to_version(conn, 50)
+        # Before v51: transaction_date is empty.
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries "
+            "WHERE source_type='expense' AND source_id=?",
+            (event_id,),
+        ).fetchone()
+        assert row["transaction_date"] == ""
+
+        _migrate_to_version(conn, 51)
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries "
+            "WHERE source_type='expense' AND source_id=?",
+            (event_id,),
+        ).fetchone()
+        assert row["transaction_date"] == "2026-06-22T10:00:00+07:00"
+
+
+def test_v51_backfills_payment_from_payment_created_at():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        order_id, _ = _seed_order_with_items(conn)
+        pt_id = _seed_payment_transaction(conn, order_id)
+        # Set a known created_at on the payment transaction.
+        conn.execute(
+            "UPDATE payment_transactions SET created_at = '2026-05-15T09:30:00' "
+            "WHERE id = ?",
+            (pt_id,),
+        )
+        conn.commit()
+        # v44 backfill creates the payment_transaction journal entry.
+        _migrate_to_version(conn, 44)
+        _migrate_to_version(conn, 50)
+        _migrate_to_version(conn, 51)
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries "
+            "WHERE source_type='payment_transaction' AND source_id=?",
+            (pt_id,),
+        ).fetchone()
+        assert row["transaction_date"] == "2026-05-15T09:30:00"
+
+
+def test_v51_backfills_order_from_due_date():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        order_id, _ = _seed_order_with_items(conn)
+        conn.execute(
+            "UPDATE orders SET due_date = '2026-05-20' WHERE id = ?",
+            (order_id,),
+        )
+        conn.commit()
+        _migrate_to_version(conn, 50)
+        _migrate_to_version(conn, 51)
+        # The v44 backfill creates a revenue 'order' entry for delivered orders.
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries "
+            "WHERE source_type='order' AND source_id=?",
+            (order_id,),
+        ).fetchone()
+        assert row["transaction_date"] == "2026-05-20"
+
+
+def test_v51_backfills_order_falls_back_to_created_at_when_due_date_null():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        order_id, _ = _seed_order_with_items(conn)
+        # Ensure due_date is NULL/empty and created_at is a known value.
+        conn.execute(
+            "UPDATE orders SET due_date = NULL, created_at = '2026-04-10T08:00:00' "
+            "WHERE id = ?",
+            (order_id,),
+        )
+        conn.commit()
+        _migrate_to_version(conn, 50)
+        _migrate_to_version(conn, 51)
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries "
+            "WHERE source_type='order' AND source_id=?",
+            (order_id,),
+        ).fetchone()
+        assert row["transaction_date"] == "2026-04-10T08:00:00"
+
+
+def test_v51_backfills_order_cogs_from_due_date():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        order_id, _ = _seed_order_with_items(conn, product_cost=5000)
+        conn.execute(
+            "UPDATE orders SET due_date = '2026-06-01' WHERE id = ?",
+            (order_id,),
+        )
+        conn.commit()
+        _migrate_to_version(conn, 50)
+        _migrate_to_version(conn, 51)
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries "
+            "WHERE source_type='order_cogs' AND source_id=?",
+            (order_id,),
+        ).fetchone()
+        assert row["transaction_date"] == "2026-06-01"
+
+
+def test_v51_backfills_manual_entries_from_created_at():
+    """owner_capital/owner_draw/staff_reimburse use created_at as transaction_date."""
+    from baker.db.schema import _insert_journal_entry, _account_id_by_code
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        equity_acc = _account_id_by_code(conn, "3100")
+        cash_acc = _account_id_by_code(conn, "1100")
+        entry_id = _insert_journal_entry(
+            conn,
+            description="Owner capital injection",
+            source_type="owner_capital",
+            source_id=None,
+            lines=[(cash_acc, 1000000.0, 0.0, "Tiền vốn"), (equity_acc, 0.0, 1000000.0, "Vốn")],
+        )
+        # Force a known created_at for deterministic assertion.
+        conn.execute(
+            "UPDATE journal_entries SET created_at = '2026-03-01T12:00:00' "
+            "WHERE id = ?",
+            (entry_id,),
+        )
+        conn.commit()
+        _migrate_to_version(conn, 50)
+        _migrate_to_version(conn, 51)
+        row = conn.execute(
+            "SELECT transaction_date, created_at FROM journal_entries WHERE id = ?",
+            (entry_id,),
+        ).fetchone()
+        assert row["transaction_date"] == "2026-03-01T12:00:00"
+        # created_at preserved (NFR3).
+        assert row["created_at"] == "2026-03-01T12:00:00"
+
+
+def test_v51_is_idempotent():
+    """Re-running v51 callable after migration does not change transaction_date."""
+    from baker.db.schema import _migrate_v51_backfill_journal_transaction_date
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _seed_expense_event(conn, summary="Idempotency expense")
+        _migrate_to_version(conn, 51)
+        rows_before = conn.execute(
+            "SELECT id, transaction_date FROM journal_entries ORDER BY id"
+        ).fetchall()
+        # Run callable again.
+        _migrate_v51_backfill_journal_transaction_date(conn)
+        rows_after = conn.execute(
+            "SELECT id, transaction_date FROM journal_entries ORDER BY id"
+        ).fetchall()
+        assert rows_before == rows_after
+
+
+def test_insert_journal_entry_signature_accepts_transaction_date():
+    """_insert_journal_entry() writes transaction_date when provided."""
+    from baker.db.schema import _insert_journal_entry, _account_id_by_code
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 50)
+        cash_acc = _account_id_by_code(conn, "1100")
+        equity_acc = _account_id_by_code(conn, "3100")
+        entry_id = _insert_journal_entry(
+            conn,
+            description="Explicit transaction_date",
+            source_type="owner_capital",
+            source_id=None,
+            lines=[(cash_acc, 500.0, 0.0, "in"), (equity_acc, 0.0, 500.0, "eq")],
+            transaction_date="2026-02-14T09:00:00",
+        )
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries WHERE id = ?",
+            (entry_id,),
+        ).fetchone()
+        assert row["transaction_date"] == "2026-02-14T09:00:00"
+
+
+def test_insert_journal_entry_defaults_transaction_date_to_now():
+    """Without transaction_date, the helper uses current local time (non-empty)."""
+    from baker.db.schema import _insert_journal_entry, _account_id_by_code
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 50)
+        cash_acc = _account_id_by_code(conn, "1100")
+        equity_acc = _account_id_by_code(conn, "3100")
+        entry_id = _insert_journal_entry(
+            conn,
+            description="Default transaction_date",
+            source_type="owner_capital",
+            source_id=None,
+            lines=[(cash_acc, 100.0, 0.0, "in"), (equity_acc, 0.0, 100.0, "eq")],
+        )
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries WHERE id = ?",
+            (entry_id,),
+        ).fetchone()
+        assert row["transaction_date"] != ""
+        assert row["transaction_date"] is not None
+
+
+def test_v50_v51_full_chain_preserves_created_at():
+    """created_at (audit trail) is never modified by the transaction_date migration."""
+    from baker.db.schema import _insert_journal_entry, _account_id_by_code
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        cash_acc = _account_id_by_code(conn, "1100")
+        equity_acc = _account_id_by_code(conn, "3100")
+        entry_id = _insert_journal_entry(
+            conn,
+            description="Audit preservation",
+            source_type="owner_capital",
+            source_id=None,
+            lines=[(cash_acc, 200.0, 0.0, "in"), (equity_acc, 0.0, 200.0, "eq")],
+        )
+        conn.execute(
+            "UPDATE journal_entries SET created_at = '2026-01-01T00:00:00' WHERE id = ?",
+            (entry_id,),
+        )
+        conn.commit()
+        _migrate_to_version(conn, 51)
+        row = conn.execute(
+            "SELECT transaction_date, created_at FROM journal_entries WHERE id = ?",
+            (entry_id,),
+        ).fetchone()
+        # transaction_date backfilled from created_at (manual source type).
+        assert row["transaction_date"] == "2026-01-01T00:00:00"
+        # created_at untouched (NFR3).
+        assert row["created_at"] == "2026-01-01T00:00:00"
