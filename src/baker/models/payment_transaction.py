@@ -81,7 +81,7 @@ class PaymentTransaction:
         return float(row[0]) if row else 0.0
 
     @staticmethod
-    def total_paid_excl_tien_rut(conn, order_id: int) -> float:
+    def total_paid_excl_outflows(conn, order_id: int) -> float:
         """Sum of payment transactions EXCLUDING all outflow (cash-back) types.
 
         Outflow types (``refund``, ``tien_rut``) are cash returned to the
@@ -100,7 +100,7 @@ class PaymentTransaction:
         return float(row[0]) if row else 0.0
 
     @staticmethod
-    def total_tien_rut(conn, order_id: int) -> float:
+    def total_outflows(conn, order_id: int) -> float:
         """Sum of all outflow (cash-back) transactions for an order.
 
         Includes every type in :data:`baker.db.schema.PAYMENT_OUTFLOW_TYPES`
@@ -121,9 +121,9 @@ class PaymentTransaction:
 
         Revenue recognition should use this value so the 2100 (Customer Deposits)
         debit matches the actual deposit balance being converted to revenue.
-        ``net = total_paid_excl_tien_rut - total_tien_rut``. When net <= 0 there
+        ``net = total_paid_excl_outflows - total_outflows``. When net <= 0 there
         is no deposit balance to convert and no revenue entry should be created.
         """
-        excl = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id)
-        rut = PaymentTransaction.total_tien_rut(conn, order_id)
+        excl = PaymentTransaction.total_paid_excl_outflows(conn, order_id)
+        rut = PaymentTransaction.total_outflows(conn, order_id)
         return excl - rut

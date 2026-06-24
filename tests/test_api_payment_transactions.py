@@ -387,7 +387,7 @@ def test_tien_rut_excluded_from_total_paid(api_client):
 def test_tien_rut_excluded_from_receipt_total_paid(api_client):
     """Receipt total_paid should not include tien_rut in the balance calculation.
 
-    The receipt rendering uses total_paid_excl_tien_rut() for the balance math.
+    The receipt rendering uses total_paid_excl_outflows() for the balance math.
     We verify this indirectly: amountPaid on order detail (which receipts use)
     should exclude tien_rut, and completion guard should work correctly.
     """

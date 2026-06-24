@@ -2,7 +2,7 @@
 
 Repairs stale order-revenue journal entries whose 2100 (Customer Deposits)
 debit no longer matches the order's current net deposits
-(deposits − tien_rut refunds; ``PaymentTransaction.total_paid_net``).
+(deposits − outflows (refund / tien_rut); ``PaymentTransaction.total_paid_net``).
 
 The repair deletes the existing ``source_type = 'order'`` journal entry and
 re-runs :func:`_sync_delivered_order_journal` to recreate it with the current

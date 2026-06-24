@@ -133,8 +133,8 @@ def test_total_paid_net_deposits_minus_tien_rut():
         oid = _insert_order(conn, order_ref="ORD-NET-100")
         _insert_payment(conn, order_id=oid, amount=500000, ptype="deposit")
         _insert_payment(conn, order_id=oid, amount=200000, ptype="tien_rut")
-        assert PaymentTransaction.total_paid_excl_tien_rut(conn, oid) == 500000.0
-        assert PaymentTransaction.total_tien_rut(conn, oid) == 200000.0
+        assert PaymentTransaction.total_paid_excl_outflows(conn, oid) == 500000.0
+        assert PaymentTransaction.total_outflows(conn, oid) == 200000.0
         assert PaymentTransaction.total_paid_net(conn, oid) == 300000.0
 
 

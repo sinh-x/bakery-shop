@@ -381,7 +381,7 @@ def _reconcile_order_revenue_entry(
         # as accounts receivable (customer debt). When total_price is unknown
         # the order row is read from the orders table to remain backwards
         # compatible with callers that omit it.
-        if PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) <= 0:
+        if PaymentTransaction.total_paid_excl_outflows(conn, order_id) <= 0:
             if total_price is None:
                 order_row = conn.execute(
                     "SELECT total_price FROM orders WHERE id = ?", (order_id,)
