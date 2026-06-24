@@ -366,7 +366,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 45
+        assert _migrated_version(conn) == 49
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -383,7 +383,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 45
+        assert _migrated_version(conn) == 49
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -397,10 +397,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 45
+        assert _migrated_version(conn) == 49
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 45
+        assert _migrated_version(conn) == 49
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -1013,7 +1013,7 @@ def test_v44_backfill_expenses():
         ).fetchall()
         assert len(entries) == 2
 
-        # Cash expense: debit 5100 (Nguyên liệu), credit 1100 (Cash)
+        # Cash expense: debit 1300 (Inventory — Nguyên liệu is inventory purchase), credit 1100 (Cash)
         cash_entry = next(e for e in entries if e["source_id"] == event_id)
         lines = conn.execute(
             "SELECT * FROM journal_lines WHERE journal_entry_id = ? ORDER BY id",
@@ -1031,7 +1031,7 @@ def test_v44_backfill_expenses():
         credit_acc = conn.execute(
             "SELECT code FROM accounts WHERE id = ?", (credit_line["account_id"],)
         ).fetchone()["code"]
-        assert debit_acc == "5100"
+        assert debit_acc == "1300"
         assert credit_acc == "1100"
 
         # Bank expense: credit 1200 (Bank Account)

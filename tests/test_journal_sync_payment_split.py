@@ -361,3 +361,51 @@ def test_no_order_id_no_split_backwards_compatible():
         assert BUS_SHIPPING_HELD_CODE not in lines
         assert lines["1100"]["debit"] == 100000.0
         assert lines[CUSTOMER_DEPOSITS_CODE]["credit"] == 100000.0
+
+
+# ---------------------------------------------------------------------------
+# Delete path — _sync_payment_journal(deleted=True)
+# ---------------------------------------------------------------------------
+
+
+def test_sync_payment_journal_deleted_removes_unlocked_entry():
+    """Mn-1: ``_sync_payment_journal(deleted=True)`` removes an unlocked journal
+    entry for the payment transaction. Covers the unlock-and-delete branch
+    (vs. the locked-and-reverse branch)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-BUS-200", shipping_fee=25000, total_price=100000
+        )
+        txn_id = _insert_payment(conn, order_id=oid, amount=100000, ptype="deposit")
+        _sync_payment_journal(conn, txn_id, 100000, "deposit", "cash", order_id=oid)
+
+        # Entry exists and is unlocked (no locked_at set by the live sync path).
+        assert _payment_entry_count(conn, txn_id) == 1
+        assert _payment_line_amounts(conn, txn_id)  # lines present
+
+        # Deleting the payment should cascade-delete its unlocked journal entry.
+        _sync_payment_journal(
+            conn, txn_id, 0, "deposit", "cash", order_id=oid, deleted=True
+        )
+
+        assert _payment_entry_count(conn, txn_id) == 0
+        assert _payment_line_amounts(conn, txn_id) == {}
+
+
+def test_sync_payment_journal_deleted_no_existing_entry_is_noop():
+    """``deleted=True`` with no existing journal entry is a no-op (not an error)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-BUS-201", shipping_fee=0, total_price=100000
+        )
+        txn_id = _insert_payment(conn, order_id=oid, amount=100000, ptype="deposit")
+        # Never synced — no journal entry exists yet.
+        assert _payment_entry_count(conn, txn_id) == 0
+
+        _sync_payment_journal(
+            conn, txn_id, 0, "deposit", "cash", order_id=oid, deleted=True
+        )
+
+        assert _payment_entry_count(conn, txn_id) == 0
