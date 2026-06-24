@@ -130,18 +130,29 @@ def list_journal(
         ).fetchall()
 
         items: list[dict] = []
+        # First pass: collect all journal lines for the page, then batch-fetch
+        # the referenced accounts in one query to avoid N+1 per-line lookups.
+        page_lines: list[list] = []
         for r in rows:
             entry = JournalEntry.from_row(r)
             lines = JournalLine.list_for_entry(conn, entry.id)
             d = entry.to_api_dict(lines)
-            # Enrich lines with account code/name for convenience.
+            page_lines.append((d, lines))
+            items.append(d)
+        account_ids = {
+            int(line["accountId"])
+            for d, lines in page_lines
+            for line in d["lines"]
+        }
+        accounts_by_id = Account.get_by_ids(conn, sorted(account_ids))
+        # Enrich lines with account code/name for convenience.
+        for d, _lines in page_lines:
             for line in d["lines"]:
-                acc = Account.get_by_id(conn, int(line["accountId"]))
+                acc = accounts_by_id.get(int(line["accountId"]))
                 if acc:
                     line["accountCode"] = acc.code
                     line["accountName"] = acc.name
                     line["accountType"] = acc.type
-            items.append(d)
 
         return {"total": total, "limit": limit, "offset": offset, "items": items}
 

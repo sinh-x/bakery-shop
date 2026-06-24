@@ -2322,15 +2322,16 @@ def _backfill_journal_transaction_date(conn) -> None:
     for source_type in ("order", "order_cogs", "order_shipping_hold",
                         "order_shipping_release"):
         conn.execute(
-            f"""
+            """
             UPDATE journal_entries
             SET transaction_date = COALESCE(
                 (SELECT o.due_date FROM orders o WHERE o.id = journal_entries.source_id),
                 (SELECT o.created_at FROM orders o WHERE o.id = journal_entries.source_id)
             )
-            WHERE source_type = '{source_type}'
+            WHERE source_type = ?
               AND (transaction_date IS NULL OR transaction_date = '')
-            """
+            """,
+            (source_type,),
         )
     conn.execute(
         """

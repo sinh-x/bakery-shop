@@ -59,6 +59,22 @@ class Account:
         return Account.from_row(row) if row else None
 
     @staticmethod
+    def get_by_ids(conn, account_ids: list[int]) -> dict[int, "Account"]:
+        """Batch-fetch accounts by id in a single query.
+
+        Returns a mapping of account_id -> Account for O(1) in-memory lookup.
+        Avoids N+1 queries when enriching multiple journal lines.
+        """
+        if not account_ids:
+            return {}
+        placeholders = ",".join("?" for _ in account_ids)
+        rows = conn.execute(
+            f"SELECT * FROM accounts WHERE id IN ({placeholders})",
+            account_ids,
+        ).fetchall()
+        return {int(r["id"]): Account.from_row(r) for r in rows}
+
+    @staticmethod
     def list_all(conn) -> list["Account"]:
         rows = conn.execute(
             "SELECT * FROM accounts ORDER BY code"

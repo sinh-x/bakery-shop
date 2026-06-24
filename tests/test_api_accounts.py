@@ -169,9 +169,9 @@ def test_expense_creates_journal_entry(api_client):
         credit_line = next(l for l in lines if l.credit > 0)
         assert debit_line.debit == 50000.0
         assert credit_line.credit == 50000.0
-        # Debit should hit the Nguyên liệu expense account (5100)
-        expense_acc = Account.get_by_id(conn, debit_line.account_id)
-        assert expense_acc.code == "5100"
+        # "Nguyên liệu" is an inventory-purchase category → debit Inventory (1300)
+        inventory_acc = Account.get_by_id(conn, debit_line.account_id)
+        assert inventory_acc.code == "1300"
         # Credit should hit Cash on Hand (1100)
         cash_acc = Account.get_by_id(conn, credit_line.account_id)
         assert cash_acc.code == "1100"
@@ -264,11 +264,11 @@ def test_expense_update_locked_creates_reversal_and_new(api_client):
         # The reversal entry: debit/credit swapped relative to original 50000
         reversal = entries[1]
         rev_lines = _lines_for_entry(conn, reversal.id)
-        # Original debited expense 50000; reversal credits expense 50000
+        # Original debited Inventory 1300; reversal credits Inventory 1300
         rev_credit = next(l for l in rev_lines if l.credit > 0)
         assert rev_credit.credit == 50000.0
-        rev_expense_acc = Account.get_by_id(conn, rev_credit.account_id)
-        assert rev_expense_acc.code == "5100"
+        rev_inventory_acc = Account.get_by_id(conn, rev_credit.account_id)
+        assert rev_inventory_acc.code == "1300"
 
 
 def test_expense_delete_unlocked_removes_journal(api_client):
@@ -699,16 +699,16 @@ def test_journal_filter_by_account_id(api_client):
     eid = int(ev["id"])
     with get_db() as conn:
         expense_entry = _journal_for_source(conn, "expense", eid)[0]
-        # Find the expense account id (5100)
-        expense_acc_id = _account_id(conn, "5100")
-    resp = api_client.get("/api/accounts/journal", params={"account_id": expense_acc_id})
+        # "Nguyên liệu" debits Inventory (1300), not Expense (5100)
+        inventory_acc_id = _account_id(conn, "1300")
+    resp = api_client.get("/api/accounts/journal", params={"account_id": inventory_acc_id})
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] >= 1
-    # Each entry must touch account 5100 in one of its lines
+    # Each entry must touch account 1300 in one of its lines
     for item in body["items"]:
         codes = {line.get("accountCode") for line in item["lines"]}
-        assert "5100" in codes
+        assert "1300" in codes
 
 
 def test_journal_pagination(api_client):
@@ -751,7 +751,7 @@ def test_journal_entries_include_account_info(api_client):
 
 def test_balances_reflect_transactions(api_client):
     """AC4: balances computed correctly from journal_lines."""
-    # Expense 50000 cash → debit 5100, credit 1100
+    # Expense 50000 cash, "Nguyên liệu" → debit 1300 (Inventory), credit 1100
     _create_expense(api_client, amount=50000, category="Nguyên liệu",
                     payment_source="Shop tiền mặt")
     # Deposit 200000 cash → debit 1100, credit 2100
@@ -760,11 +760,10 @@ def test_balances_reflect_transactions(api_client):
     resp = api_client.get("/api/accounts/balances")
     assert resp.status_code == 200
     balances = {b["code"]: b for b in resp.json()}
-    # Cash on Hand (asset): debit - credit = (200000 + 50000 credit offset) ...
-    # 1100: debit 200000 (deposit) - credit 50000 (expense) = 150000
+    # Cash on Hand (asset): debit 200000 (deposit) - credit 50000 (expense) = 150000
     assert balances["1100"]["balance"] == 150000.0
-    # 5100 expense: debit 50000 - credit 0 = 50000
-    assert balances["5100"]["balance"] == 50000.0
+    # 1300 inventory: debit 50000 - credit 0 = 50000
+    assert balances["1300"]["balance"] == 50000.0
     # 2100 liability: credit 200000 - debit 0 = 200000
     assert balances["2100"]["balance"] == 200000.0
 
