@@ -18,6 +18,7 @@ pattern. User-facing labels are in Vietnamese (VN label policy).
 import click
 
 from baker.db.connection import get_db
+from baker.db.schema import REVENUE_UPDATE_TOLERANCE
 
 
 # Order statuses considered "delivered" for revenue-recognition purposes.
@@ -30,6 +31,9 @@ NEW_PENDING_STATUSES = ("new", "confirmed")
 CUSTOMER_DEPOSITS_CODE = "2100"
 # Transaction types that return cash to the customer.
 REFUND_TYPES = ("refund", "tien_rut")
+# Tolerance (VND) shared with repair/sync so the mismatch count and repair
+# decisions use the same threshold (review finding Mn-1).
+_GAP_MISMATCH_TOLERANCE = REVENUE_UPDATE_TOLERANCE
 
 
 def _vn_amount(amount: float) -> str:
@@ -47,6 +51,20 @@ def _echo_header(title: str) -> None:
     click.echo("")
 
 
+def _report_cli_error(exc: BaseException) -> None:
+    """Print a Vietnamese error message to stderr and exit with code 1.
+
+    Used as a catch-all guard around read-only pipeline/repair commands so a
+    missing, corrupted, or schema-mismatched database surfaces a readable
+    message instead of a raw Python traceback (review finding Mn-3).
+    """
+    click.echo(
+        f"Lỗi khi truy vấn dữ liệu: {exc}. Xem log máy chủ để biết chi tiết.",
+        err=True,
+    )
+    raise SystemExit(1)
+
+
 @click.group("pipeline")
 def pipeline_cmd():
     """Báo cáo dòng tiền doanh thu — các báo cáo chỉ-đọc về dòng tiền đơn hàng."""
@@ -57,28 +75,31 @@ def undelivered_deposits_cmd():
     """Đơn hàng chưa giao nhưng đã có tiền đặt — doanh thu tiềm năng tương lai."""
     _echo_header("Đơn chưa giao có tiền đặt (Doanh thu tiềm năng)")
 
-    with get_db() as conn:
-        rows = conn.execute(
-            f"""
-            SELECT o.order_ref     AS order_ref,
-                   o.customer_name AS customer_name,
-                   o.status        AS status,
-                   o.due_date      AS due_date,
-                   o.total_price   AS total_price,
-                   COALESCE(pt.total_deposits, 0) AS total_deposits
-            FROM orders o
-            LEFT JOIN (
-                SELECT order_id, SUM(amount) AS total_deposits
-                FROM payment_transactions
-                WHERE type != 'tien_rut'
-                GROUP BY order_id
-            ) pt ON pt.order_id = o.id
-            WHERE o.status NOT IN ({",".join("?" * len(UNDELIVERED_EXCLUDED))})
-              AND COALESCE(pt.total_deposits, 0) > 0
-            ORDER BY o.due_date IS NULL, o.due_date ASC, o.order_ref ASC
-            """,
-            list(UNDELIVERED_EXCLUDED),
-        ).fetchall()
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT o.order_ref     AS order_ref,
+                       o.customer_name AS customer_name,
+                       o.status        AS status,
+                       o.due_date      AS due_date,
+                       o.total_price   AS total_price,
+                       COALESCE(pt.total_deposits, 0) AS total_deposits
+                FROM orders o
+                LEFT JOIN (
+                    SELECT order_id, SUM(amount) AS total_deposits
+                    FROM payment_transactions
+                    WHERE type != 'tien_rut'
+                    GROUP BY order_id
+                ) pt ON pt.order_id = o.id
+                WHERE o.status NOT IN ({",".join("?" * len(UNDELIVERED_EXCLUDED))})
+                  AND COALESCE(pt.total_deposits, 0) > 0
+                ORDER BY o.due_date IS NULL, o.due_date ASC, o.order_ref ASC
+                """,
+                list(UNDELIVERED_EXCLUDED),
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001 — top-level CLI guard
+        _report_cli_error(exc)
 
     if not rows:
         click.echo("(không có đơn hàng chưa giao có tiền đặt)")
@@ -107,31 +128,34 @@ def cancelled_unrefunded_cmd():
     """Đơn đã huỷ nhưng tiền đặt chưa hoàn — cọc chưa hoàn trả."""
     _echo_header("Đơn đã huỷ có cọc chưa hoàn")
 
-    with get_db() as conn:
-        rows = conn.execute(
-            """
-            SELECT o.order_ref     AS order_ref,
-                   o.customer_name AS customer_name,
-                   COALESCE(d.total_deposits, 0) AS total_deposits,
-                   COALESCE(r.total_refunds, 0)  AS total_refunds
-            FROM orders o
-            LEFT JOIN (
-                SELECT order_id, SUM(amount) AS total_deposits
-                FROM payment_transactions
-                WHERE type NOT IN ('refund', 'tien_rut')
-                GROUP BY order_id
-            ) d ON d.order_id = o.id
-            LEFT JOIN (
-                SELECT order_id, SUM(amount) AS total_refunds
-                FROM payment_transactions
-                WHERE type IN ('refund', 'tien_rut')
-                GROUP BY order_id
-            ) r ON r.order_id = o.id
-            WHERE o.status = 'cancelled'
-              AND COALESCE(d.total_deposits, 0) > COALESCE(r.total_refunds, 0)
-            ORDER BY o.order_ref ASC
-            """,
-        ).fetchall()
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                """
+                SELECT o.order_ref     AS order_ref,
+                       o.customer_name AS customer_name,
+                       COALESCE(d.total_deposits, 0) AS total_deposits,
+                       COALESCE(r.total_refunds, 0)  AS total_refunds
+                FROM orders o
+                LEFT JOIN (
+                    SELECT order_id, SUM(amount) AS total_deposits
+                    FROM payment_transactions
+                    WHERE type NOT IN ('refund', 'tien_rut')
+                    GROUP BY order_id
+                ) d ON d.order_id = o.id
+                LEFT JOIN (
+                    SELECT order_id, SUM(amount) AS total_refunds
+                    FROM payment_transactions
+                    WHERE type IN ('refund', 'tien_rut')
+                    GROUP BY order_id
+                ) r ON r.order_id = o.id
+                WHERE o.status = 'cancelled'
+                  AND COALESCE(d.total_deposits, 0) > COALESCE(r.total_refunds, 0)
+                ORDER BY o.order_ref ASC
+                """,
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001 — top-level CLI guard
+        _report_cli_error(exc)
 
     if not rows:
         click.echo("(không có đơn đã huỷ có cọc chưa hoàn)")
@@ -160,45 +184,48 @@ def deposit_revenue_gap_cmd():
     """Đối chiếu cọc thực tế (cọc − tiền rút) với nợ 2100 trong bút toán doanh thu — phát hiện lệch."""
     _echo_header("Đối chiếu cọc ↔ doanh thu (2100)")
 
-    with get_db() as conn:
-        # Per delivered/completed order: net deposits (deposits − tien_rut
-        # refunds) vs the 2100 debit recorded in the order revenue journal
-        # entry. Revenue recognition (Phase 4.3) debits 2100 for net deposits,
-        # so this is the correct reconciliation basis.
-        rows = conn.execute(
-            f"""
-            SELECT o.id            AS order_id,
-                   o.order_ref     AS order_ref,
-                   o.customer_name AS customer_name,
-                   COALESCE(d.total_deposits, 0) - COALESCE(r.total_refunds, 0) AS net_deposits,
-                   COALESCE(rev.debit_2100, 0)    AS debit_2100
-            FROM orders o
-            LEFT JOIN (
-                SELECT order_id, SUM(amount) AS total_deposits
-                FROM payment_transactions
-                WHERE type != 'tien_rut'
-                GROUP BY order_id
-            ) d ON d.order_id = o.id
-            LEFT JOIN (
-                SELECT order_id, SUM(amount) AS total_refunds
-                FROM payment_transactions
-                WHERE type = 'tien_rut'
-                GROUP BY order_id
-            ) r ON r.order_id = o.id
-            LEFT JOIN (
-                SELECT je.source_id AS order_id, SUM(jl.debit) AS debit_2100
-                FROM journal_entries je
-                JOIN journal_lines jl ON jl.journal_entry_id = je.id
-                JOIN accounts a ON a.id = jl.account_id
-                WHERE je.source_type = 'order'
-                  AND a.code = ?
-                GROUP BY je.source_id
-            ) rev ON rev.order_id = o.id
-            WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
-            ORDER BY o.order_ref ASC
-            """,
-            [CUSTOMER_DEPOSITS_CODE, *DELIVERED_STATUSES],
-        ).fetchall()
+    try:
+        with get_db() as conn:
+            # Per delivered/completed order: net deposits (deposits − tien_rut
+            # refunds) vs the 2100 debit recorded in the order revenue journal
+            # entry. Revenue recognition (Phase 4.3) debits 2100 for net deposits,
+            # so this is the correct reconciliation basis.
+            rows = conn.execute(
+                f"""
+                SELECT o.id            AS order_id,
+                       o.order_ref     AS order_ref,
+                       o.customer_name AS customer_name,
+                       COALESCE(d.total_deposits, 0) - COALESCE(r.total_refunds, 0) AS net_deposits,
+                       COALESCE(rev.debit_2100, 0)    AS debit_2100
+                FROM orders o
+                LEFT JOIN (
+                    SELECT order_id, SUM(amount) AS total_deposits
+                    FROM payment_transactions
+                    WHERE type != 'tien_rut'
+                    GROUP BY order_id
+                ) d ON d.order_id = o.id
+                LEFT JOIN (
+                    SELECT order_id, SUM(amount) AS total_refunds
+                    FROM payment_transactions
+                    WHERE type = 'tien_rut'
+                    GROUP BY order_id
+                ) r ON r.order_id = o.id
+                LEFT JOIN (
+                    SELECT je.source_id AS order_id, SUM(jl.debit) AS debit_2100
+                    FROM journal_entries je
+                    JOIN journal_lines jl ON jl.journal_entry_id = je.id
+                    JOIN accounts a ON a.id = jl.account_id
+                    WHERE je.source_type = 'order'
+                      AND a.code = ?
+                    GROUP BY je.source_id
+                ) rev ON rev.order_id = o.id
+                WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
+                ORDER BY o.order_ref ASC
+                """,
+                [CUSTOMER_DEPOSITS_CODE, *DELIVERED_STATUSES],
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001 — top-level CLI guard
+        _report_cli_error(exc)
 
     if not rows:
         click.echo("(không có đơn đã giao để đối chiếu)")
@@ -219,7 +246,7 @@ def deposit_revenue_gap_cmd():
         agg_deposits += deposits
         agg_debit += debit
         agg_gap += gap
-        if abs(gap) > 0.5:
+        if abs(gap) > _GAP_MISMATCH_TOLERANCE:
             mismatch_count += 1
         click.echo(
             f"{r['order_ref'][:19]:<20}{r['customer_name'][:23]:<24}"
@@ -241,23 +268,26 @@ def refunds_cmd():
     """Tất cả giao dịch tiền rút (tien_rut) kèm thông tin đơn hàng."""
     _echo_header("Giao dịch tiền rút (tien_rut)")
 
-    with get_db() as conn:
-        rows = conn.execute(
-            """
-            SELECT pt.id          AS pt_id,
-                   pt.amount       AS amount,
-                   pt.method       AS method,
-                   pt.created_at   AS created_at,
-                   pt.note         AS note,
-                   o.order_ref     AS order_ref,
-                   o.customer_name AS customer_name,
-                   o.status        AS status
-            FROM payment_transactions pt
-            JOIN orders o ON o.id = pt.order_id
-            WHERE pt.type = 'tien_rut'
-            ORDER BY pt.created_at DESC, pt.id DESC
-            """,
-        ).fetchall()
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                """
+                SELECT pt.id          AS pt_id,
+                       pt.amount       AS amount,
+                       pt.method       AS method,
+                       pt.created_at   AS created_at,
+                       pt.note         AS note,
+                       o.order_ref     AS order_ref,
+                       o.customer_name AS customer_name,
+                       o.status        AS status
+                FROM payment_transactions pt
+                JOIN orders o ON o.id = pt.order_id
+                WHERE pt.type = 'tien_rut'
+                ORDER BY pt.created_at DESC, pt.id DESC
+                """,
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001 — top-level CLI guard
+        _report_cli_error(exc)
 
     if not rows:
         click.echo("(không có giao dịch tiền rút)")
@@ -286,27 +316,30 @@ def new_no_deposit_cmd():
     """Đơn mới/chờ xác nhận chưa có tiền đặt — cần theo dõi."""
     _echo_header("Đơn mới chưa có tiền đặt")
 
-    with get_db() as conn:
-        placeholders = ",".join("?" * len(NEW_PENDING_STATUSES))
-        rows = conn.execute(
-            f"""
-            SELECT o.order_ref     AS order_ref,
-                   o.customer_name AS customer_name,
-                   o.total_price   AS total_price,
-                   o.created_at     AS created_at
-            FROM orders o
-            LEFT JOIN (
-                SELECT order_id, SUM(amount) AS total_deposits
-                FROM payment_transactions
-                WHERE type != 'tien_rut'
-                GROUP BY order_id
-            ) pt ON pt.order_id = o.id
-            WHERE o.status IN ({placeholders})
-              AND COALESCE(pt.total_deposits, 0) = 0
-            ORDER BY o.created_at DESC, o.order_ref ASC
-            """,
-            list(NEW_PENDING_STATUSES),
-        ).fetchall()
+    try:
+        with get_db() as conn:
+            placeholders = ",".join("?" * len(NEW_PENDING_STATUSES))
+            rows = conn.execute(
+                f"""
+                SELECT o.order_ref     AS order_ref,
+                       o.customer_name AS customer_name,
+                       o.total_price   AS total_price,
+                       o.created_at     AS created_at
+                FROM orders o
+                LEFT JOIN (
+                    SELECT order_id, SUM(amount) AS total_deposits
+                    FROM payment_transactions
+                    WHERE type != 'tien_rut'
+                    GROUP BY order_id
+                ) pt ON pt.order_id = o.id
+                WHERE o.status IN ({placeholders})
+                  AND COALESCE(pt.total_deposits, 0) = 0
+                ORDER BY o.created_at DESC, o.order_ref ASC
+                """,
+                list(NEW_PENDING_STATUSES),
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001 — top-level CLI guard
+        _report_cli_error(exc)
 
     if not rows:
         click.echo("(không có đơn mới chưa có tiền đặt)")

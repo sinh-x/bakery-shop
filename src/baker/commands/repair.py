@@ -27,6 +27,7 @@ existing ``validate-accounts`` pattern.
 import click
 
 from baker.db.connection import get_db
+from baker.db.schema import REVENUE_UPDATE_TOLERANCE
 from baker.models.payment_transaction import PaymentTransaction
 from baker.services.journal_sync import (
     _delete_journal_entry_cascade,
@@ -40,7 +41,9 @@ DELIVERED_STATUSES = ("delivered", "completed")
 # Customer Deposits account code — the debit side of a paid-order revenue entry.
 CUSTOMER_DEPOSITS_CODE = "2100"
 # Tolerance (VND) below which an entry is considered already correct.
-MISMATCH_TOLERANCE = 0.005
+# Aliased to the centralized constant so repair decisions and the pipeline
+# report share one threshold (review finding Mn-1).
+MISMATCH_TOLERANCE = REVENUE_UPDATE_TOLERANCE
 
 
 def _vn_amount(amount: float) -> str:
@@ -163,31 +166,38 @@ def repair_order_revenue_cmd(order_id, repair_all, dry_run):
         click.echo("Không thể dùng --order-id và --all cùng lúc.", err=True)
         raise SystemExit(1)
 
-    with get_db() as conn:
-        if repair_all:
-            rows = conn.execute(
-                f"""
-                SELECT DISTINCT je.source_id AS order_id
-                FROM journal_entries je
-                JOIN journal_lines jl ON jl.journal_entry_id = je.id
-                JOIN accounts a ON a.id = jl.account_id
-                JOIN orders o ON o.id = je.source_id
-                WHERE je.source_type = 'order'
-                  AND a.code = ?
-                  AND o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
-                ORDER BY je.source_id ASC
-                """,
-                [CUSTOMER_DEPOSITS_CODE, *DELIVERED_STATUSES],
-            ).fetchall()
-            order_ids = [int(r["order_id"]) for r in rows]
-        else:
-            order_ids = [order_id]
+    try:
+        with get_db() as conn:
+            if repair_all:
+                rows = conn.execute(
+                    f"""
+                    SELECT DISTINCT je.source_id AS order_id
+                    FROM journal_entries je
+                    JOIN journal_lines jl ON jl.journal_entry_id = je.id
+                    JOIN accounts a ON a.id = jl.account_id
+                    JOIN orders o ON o.id = je.source_id
+                    WHERE je.source_type = 'order'
+                      AND a.code = ?
+                      AND o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
+                    ORDER BY je.source_id ASC
+                    """,
+                    [CUSTOMER_DEPOSITS_CODE, *DELIVERED_STATUSES],
+                ).fetchall()
+                order_ids = [int(r["order_id"]) for r in rows]
+            else:
+                order_ids = [order_id]
 
-        results = []
-        for oid in order_ids:
-            results.append(_process_order(conn, oid, dry_run=dry_run))
-        if not dry_run:
-            conn.commit()
+            results = []
+            for oid in order_ids:
+                results.append(_process_order(conn, oid, dry_run=dry_run))
+            if not dry_run:
+                conn.commit()
+    except Exception as exc:  # noqa: BLE001 — top-level CLI guard
+        click.echo(
+            f"Lỗi khi sửa bút toán: {exc}. Xem log máy chủ để biết chi tiết.",
+            err=True,
+        )
+        raise SystemExit(1)
 
     if not results:
         click.echo("(không có đơn hàng nào để kiểm tra)")
