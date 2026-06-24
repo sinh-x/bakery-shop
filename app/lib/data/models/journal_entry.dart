@@ -31,6 +31,7 @@ sealed class JournalEntry with _$JournalEntry {
     @JsonKey(name: 'lockedAt') String? lockedAt,
     @JsonKey(name: 'lockedBy') @Default('') String lockedBy,
     @JsonKey(name: 'createdAt') String? createdAt,
+    @JsonKey(name: 'transactionDate') String? transactionDate,
     @Default(<JournalLine>[]) List<JournalLine> lines,
   }) = _JournalEntry;
 

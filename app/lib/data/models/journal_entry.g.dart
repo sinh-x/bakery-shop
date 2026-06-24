@@ -40,6 +40,7 @@ _JournalEntry _$JournalEntryFromJson(Map<String, dynamic> json) =>
       lockedAt: json['lockedAt'] as String?,
       lockedBy: json['lockedBy'] as String? ?? '',
       createdAt: json['createdAt'] as String?,
+      transactionDate: json['transactionDate'] as String?,
       lines:
           (json['lines'] as List<dynamic>?)
               ?.map((e) => JournalLine.fromJson(e as Map<String, dynamic>))
@@ -56,6 +57,7 @@ Map<String, dynamic> _$JournalEntryToJson(_JournalEntry instance) =>
       'lockedAt': instance.lockedAt,
       'lockedBy': instance.lockedBy,
       'createdAt': instance.createdAt,
+      'transactionDate': instance.transactionDate,
       'lines': instance.lines,
     };
 

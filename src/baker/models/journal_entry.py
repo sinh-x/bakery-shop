@@ -66,6 +66,7 @@ class JournalEntry:
     locked_by: str = ""
     id: Optional[int] = None
     created_at: Optional[str] = None
+    transaction_date: Optional[str] = None
 
     def save(self, conn) -> int:
         cursor = conn.execute(
@@ -93,6 +94,7 @@ class JournalEntry:
             locked_at=row["locked_at"],
             locked_by=row["locked_by"] or "",
             created_at=row["created_at"],
+            transaction_date=row["transaction_date"],
         )
 
     def to_api_dict(self, lines: Optional[list[JournalLine]] = None) -> dict:
@@ -104,6 +106,7 @@ class JournalEntry:
             "lockedAt": self.locked_at,
             "lockedBy": self.locked_by,
             "createdAt": self.created_at,
+            "transactionDate": self.transaction_date,
             "lines": [line.to_api_dict() for line in (lines or [])],
         }
 

@@ -296,7 +296,7 @@ as String?,
 /// @nodoc
 mixin _$JournalEntry {
 
- String get id; String get description;@JsonKey(name: 'sourceType') String get sourceType;@JsonKey(name: 'sourceId') String? get sourceId;@JsonKey(name: 'lockedAt') String? get lockedAt;@JsonKey(name: 'lockedBy') String get lockedBy;@JsonKey(name: 'createdAt') String? get createdAt; List<JournalLine> get lines;
+ String get id; String get description;@JsonKey(name: 'sourceType') String get sourceType;@JsonKey(name: 'sourceId') String? get sourceId;@JsonKey(name: 'lockedAt') String? get lockedAt;@JsonKey(name: 'lockedBy') String get lockedBy;@JsonKey(name: 'createdAt') String? get createdAt;@JsonKey(name: 'transactionDate') String? get transactionDate; List<JournalLine> get lines;
 /// Create a copy of JournalEntry
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -309,16 +309,16 @@ $JournalEntryCopyWith<JournalEntry> get copyWith => _$JournalEntryCopyWithImpl<J
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is JournalEntry&&(identical(other.id, id) || other.id == id)&&(identical(other.description, description) || other.description == description)&&(identical(other.sourceType, sourceType) || other.sourceType == sourceType)&&(identical(other.sourceId, sourceId) || other.sourceId == sourceId)&&(identical(other.lockedAt, lockedAt) || other.lockedAt == lockedAt)&&(identical(other.lockedBy, lockedBy) || other.lockedBy == lockedBy)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&const DeepCollectionEquality().equals(other.lines, lines));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is JournalEntry&&(identical(other.id, id) || other.id == id)&&(identical(other.description, description) || other.description == description)&&(identical(other.sourceType, sourceType) || other.sourceType == sourceType)&&(identical(other.sourceId, sourceId) || other.sourceId == sourceId)&&(identical(other.lockedAt, lockedAt) || other.lockedAt == lockedAt)&&(identical(other.lockedBy, lockedBy) || other.lockedBy == lockedBy)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.transactionDate, transactionDate) || other.transactionDate == transactionDate)&&const DeepCollectionEquality().equals(other.lines, lines));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,description,sourceType,sourceId,lockedAt,lockedBy,createdAt,const DeepCollectionEquality().hash(lines));
+int get hashCode => Object.hash(runtimeType,id,description,sourceType,sourceId,lockedAt,lockedBy,createdAt,transactionDate,const DeepCollectionEquality().hash(lines));
 
 @override
 String toString() {
-  return 'JournalEntry(id: $id, description: $description, sourceType: $sourceType, sourceId: $sourceId, lockedAt: $lockedAt, lockedBy: $lockedBy, createdAt: $createdAt, lines: $lines)';
+  return 'JournalEntry(id: $id, description: $description, sourceType: $sourceType, sourceId: $sourceId, lockedAt: $lockedAt, lockedBy: $lockedBy, createdAt: $createdAt, transactionDate: $transactionDate, lines: $lines)';
 }
 
 
@@ -329,7 +329,7 @@ abstract mixin class $JournalEntryCopyWith<$Res>  {
   factory $JournalEntryCopyWith(JournalEntry value, $Res Function(JournalEntry) _then) = _$JournalEntryCopyWithImpl;
 @useResult
 $Res call({
- String id, String description,@JsonKey(name: 'sourceType') String sourceType,@JsonKey(name: 'sourceId') String? sourceId,@JsonKey(name: 'lockedAt') String? lockedAt,@JsonKey(name: 'lockedBy') String lockedBy,@JsonKey(name: 'createdAt') String? createdAt, List<JournalLine> lines
+ String id, String description,@JsonKey(name: 'sourceType') String sourceType,@JsonKey(name: 'sourceId') String? sourceId,@JsonKey(name: 'lockedAt') String? lockedAt,@JsonKey(name: 'lockedBy') String lockedBy,@JsonKey(name: 'createdAt') String? createdAt,@JsonKey(name: 'transactionDate') String? transactionDate, List<JournalLine> lines
 });
 
 
@@ -346,7 +346,7 @@ class _$JournalEntryCopyWithImpl<$Res>
 
 /// Create a copy of JournalEntry
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? description = null,Object? sourceType = null,Object? sourceId = freezed,Object? lockedAt = freezed,Object? lockedBy = null,Object? createdAt = freezed,Object? lines = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? description = null,Object? sourceType = null,Object? sourceId = freezed,Object? lockedAt = freezed,Object? lockedBy = null,Object? createdAt = freezed,Object? transactionDate = freezed,Object? lines = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,description: null == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
@@ -355,6 +355,7 @@ as String,sourceId: freezed == sourceId ? _self.sourceId : sourceId // ignore: c
 as String?,lockedAt: freezed == lockedAt ? _self.lockedAt : lockedAt // ignore: cast_nullable_to_non_nullable
 as String?,lockedBy: null == lockedBy ? _self.lockedBy : lockedBy // ignore: cast_nullable_to_non_nullable
 as String,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as String?,transactionDate: freezed == transactionDate ? _self.transactionDate : transactionDate // ignore: cast_nullable_to_non_nullable
 as String?,lines: null == lines ? _self.lines : lines // ignore: cast_nullable_to_non_nullable
 as List<JournalLine>,
   ));
@@ -438,10 +439,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String description, @JsonKey(name: 'sourceType')  String sourceType, @JsonKey(name: 'sourceId')  String? sourceId, @JsonKey(name: 'lockedAt')  String? lockedAt, @JsonKey(name: 'lockedBy')  String lockedBy, @JsonKey(name: 'createdAt')  String? createdAt,  List<JournalLine> lines)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String description, @JsonKey(name: 'sourceType')  String sourceType, @JsonKey(name: 'sourceId')  String? sourceId, @JsonKey(name: 'lockedAt')  String? lockedAt, @JsonKey(name: 'lockedBy')  String lockedBy, @JsonKey(name: 'createdAt')  String? createdAt, @JsonKey(name: 'transactionDate')  String? transactionDate,  List<JournalLine> lines)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _JournalEntry() when $default != null:
-return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that.lockedAt,_that.lockedBy,_that.createdAt,_that.lines);case _:
+return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that.lockedAt,_that.lockedBy,_that.createdAt,_that.transactionDate,_that.lines);case _:
   return orElse();
 
 }
@@ -459,10 +460,10 @@ return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String description, @JsonKey(name: 'sourceType')  String sourceType, @JsonKey(name: 'sourceId')  String? sourceId, @JsonKey(name: 'lockedAt')  String? lockedAt, @JsonKey(name: 'lockedBy')  String lockedBy, @JsonKey(name: 'createdAt')  String? createdAt,  List<JournalLine> lines)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String description, @JsonKey(name: 'sourceType')  String sourceType, @JsonKey(name: 'sourceId')  String? sourceId, @JsonKey(name: 'lockedAt')  String? lockedAt, @JsonKey(name: 'lockedBy')  String lockedBy, @JsonKey(name: 'createdAt')  String? createdAt, @JsonKey(name: 'transactionDate')  String? transactionDate,  List<JournalLine> lines)  $default,) {final _that = this;
 switch (_that) {
 case _JournalEntry():
-return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that.lockedAt,_that.lockedBy,_that.createdAt,_that.lines);}
+return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that.lockedAt,_that.lockedBy,_that.createdAt,_that.transactionDate,_that.lines);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -476,10 +477,10 @@ return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String description, @JsonKey(name: 'sourceType')  String sourceType, @JsonKey(name: 'sourceId')  String? sourceId, @JsonKey(name: 'lockedAt')  String? lockedAt, @JsonKey(name: 'lockedBy')  String lockedBy, @JsonKey(name: 'createdAt')  String? createdAt,  List<JournalLine> lines)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String description, @JsonKey(name: 'sourceType')  String sourceType, @JsonKey(name: 'sourceId')  String? sourceId, @JsonKey(name: 'lockedAt')  String? lockedAt, @JsonKey(name: 'lockedBy')  String lockedBy, @JsonKey(name: 'createdAt')  String? createdAt, @JsonKey(name: 'transactionDate')  String? transactionDate,  List<JournalLine> lines)?  $default,) {final _that = this;
 switch (_that) {
 case _JournalEntry() when $default != null:
-return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that.lockedAt,_that.lockedBy,_that.createdAt,_that.lines);case _:
+return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that.lockedAt,_that.lockedBy,_that.createdAt,_that.transactionDate,_that.lines);case _:
   return null;
 
 }
@@ -491,7 +492,7 @@ return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that
 @JsonSerializable()
 
 class _JournalEntry implements JournalEntry {
-  const _JournalEntry({required this.id, this.description = '', @JsonKey(name: 'sourceType') this.sourceType = '', @JsonKey(name: 'sourceId') this.sourceId, @JsonKey(name: 'lockedAt') this.lockedAt, @JsonKey(name: 'lockedBy') this.lockedBy = '', @JsonKey(name: 'createdAt') this.createdAt, final  List<JournalLine> lines = const <JournalLine>[]}): _lines = lines;
+  const _JournalEntry({required this.id, this.description = '', @JsonKey(name: 'sourceType') this.sourceType = '', @JsonKey(name: 'sourceId') this.sourceId, @JsonKey(name: 'lockedAt') this.lockedAt, @JsonKey(name: 'lockedBy') this.lockedBy = '', @JsonKey(name: 'createdAt') this.createdAt, @JsonKey(name: 'transactionDate') this.transactionDate, final  List<JournalLine> lines = const <JournalLine>[]}): _lines = lines;
   factory _JournalEntry.fromJson(Map<String, dynamic> json) => _$JournalEntryFromJson(json);
 
 @override final  String id;
@@ -501,6 +502,7 @@ class _JournalEntry implements JournalEntry {
 @override@JsonKey(name: 'lockedAt') final  String? lockedAt;
 @override@JsonKey(name: 'lockedBy') final  String lockedBy;
 @override@JsonKey(name: 'createdAt') final  String? createdAt;
+@override@JsonKey(name: 'transactionDate') final  String? transactionDate;
  final  List<JournalLine> _lines;
 @override@JsonKey() List<JournalLine> get lines {
   if (_lines is EqualUnmodifiableListView) return _lines;
@@ -522,16 +524,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _JournalEntry&&(identical(other.id, id) || other.id == id)&&(identical(other.description, description) || other.description == description)&&(identical(other.sourceType, sourceType) || other.sourceType == sourceType)&&(identical(other.sourceId, sourceId) || other.sourceId == sourceId)&&(identical(other.lockedAt, lockedAt) || other.lockedAt == lockedAt)&&(identical(other.lockedBy, lockedBy) || other.lockedBy == lockedBy)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&const DeepCollectionEquality().equals(other._lines, _lines));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _JournalEntry&&(identical(other.id, id) || other.id == id)&&(identical(other.description, description) || other.description == description)&&(identical(other.sourceType, sourceType) || other.sourceType == sourceType)&&(identical(other.sourceId, sourceId) || other.sourceId == sourceId)&&(identical(other.lockedAt, lockedAt) || other.lockedAt == lockedAt)&&(identical(other.lockedBy, lockedBy) || other.lockedBy == lockedBy)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.transactionDate, transactionDate) || other.transactionDate == transactionDate)&&const DeepCollectionEquality().equals(other._lines, _lines));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,description,sourceType,sourceId,lockedAt,lockedBy,createdAt,const DeepCollectionEquality().hash(_lines));
+int get hashCode => Object.hash(runtimeType,id,description,sourceType,sourceId,lockedAt,lockedBy,createdAt,transactionDate,const DeepCollectionEquality().hash(_lines));
 
 @override
 String toString() {
-  return 'JournalEntry(id: $id, description: $description, sourceType: $sourceType, sourceId: $sourceId, lockedAt: $lockedAt, lockedBy: $lockedBy, createdAt: $createdAt, lines: $lines)';
+  return 'JournalEntry(id: $id, description: $description, sourceType: $sourceType, sourceId: $sourceId, lockedAt: $lockedAt, lockedBy: $lockedBy, createdAt: $createdAt, transactionDate: $transactionDate, lines: $lines)';
 }
 
 
@@ -542,7 +544,7 @@ abstract mixin class _$JournalEntryCopyWith<$Res> implements $JournalEntryCopyWi
   factory _$JournalEntryCopyWith(_JournalEntry value, $Res Function(_JournalEntry) _then) = __$JournalEntryCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String description,@JsonKey(name: 'sourceType') String sourceType,@JsonKey(name: 'sourceId') String? sourceId,@JsonKey(name: 'lockedAt') String? lockedAt,@JsonKey(name: 'lockedBy') String lockedBy,@JsonKey(name: 'createdAt') String? createdAt, List<JournalLine> lines
+ String id, String description,@JsonKey(name: 'sourceType') String sourceType,@JsonKey(name: 'sourceId') String? sourceId,@JsonKey(name: 'lockedAt') String? lockedAt,@JsonKey(name: 'lockedBy') String lockedBy,@JsonKey(name: 'createdAt') String? createdAt,@JsonKey(name: 'transactionDate') String? transactionDate, List<JournalLine> lines
 });
 
 
@@ -559,7 +561,7 @@ class __$JournalEntryCopyWithImpl<$Res>
 
 /// Create a copy of JournalEntry
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? description = null,Object? sourceType = null,Object? sourceId = freezed,Object? lockedAt = freezed,Object? lockedBy = null,Object? createdAt = freezed,Object? lines = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? description = null,Object? sourceType = null,Object? sourceId = freezed,Object? lockedAt = freezed,Object? lockedBy = null,Object? createdAt = freezed,Object? transactionDate = freezed,Object? lines = null,}) {
   return _then(_JournalEntry(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,description: null == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
@@ -568,6 +570,7 @@ as String,sourceId: freezed == sourceId ? _self.sourceId : sourceId // ignore: c
 as String?,lockedAt: freezed == lockedAt ? _self.lockedAt : lockedAt // ignore: cast_nullable_to_non_nullable
 as String?,lockedBy: null == lockedBy ? _self.lockedBy : lockedBy // ignore: cast_nullable_to_non_nullable
 as String,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as String?,transactionDate: freezed == transactionDate ? _self.transactionDate : transactionDate // ignore: cast_nullable_to_non_nullable
 as String?,lines: null == lines ? _self._lines : lines // ignore: cast_nullable_to_non_nullable
 as List<JournalLine>,
   ));
