@@ -81,9 +81,15 @@ def create_transaction(ref: str, body: TransactionCreate):
         txn.save(conn)
 
         # Auto-generate double-entry journal entry (DG-175).
+        # Bus orders split the credit between Customer Deposits (2100) and
+        # Bus Shipping Held (2200) — pass order_id so the journal sync reads
+        # delivery_type/shipping_fee from the orders table (DG-191 Phase 2).
         try:
             from baker.services.journal_sync import _sync_payment_journal
-            _sync_payment_journal(conn, txn.id, body.amount, body.type, body.method)
+            _sync_payment_journal(
+                conn, txn.id, body.amount, body.type, body.method,
+                order_id=order_id,
+            )
         except Exception:
             logger.exception("payment journal sync failed for txn %d", txn.id)
 
@@ -135,10 +141,15 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
             (txn.amount, txn.type, txn.method, txn.note, txn.id),
         )
 
-        # Re-sync double-entry journal entry (DG-175).
+        # Re-sync double-entry journal entry (DG-175). Pass order_id so the
+        # bus-shipping split is recomputed from the current delivery_type /
+        # shipping_fee (DG-191 Phase 2).
         try:
             from baker.services.journal_sync import _sync_payment_journal
-            _sync_payment_journal(conn, txn.id, txn.amount, txn.type, txn.method)
+            _sync_payment_journal(
+                conn, txn.id, txn.amount, txn.type, txn.method,
+                order_id=order_id,
+            )
         except Exception:
             logger.exception("payment journal re-sync failed for txn %d", txn.id)
 
@@ -162,10 +173,13 @@ def delete_transaction(ref: str, txn_id: int):
         conn.execute("DELETE FROM payment_transactions WHERE id = ?", (txn_id,))
 
         # Reverse/delete the journal entry for the deleted transaction (DG-175).
+        # Pass order_id so any bus-shipping held balance is consistent on
+        # subsequent re-syncs (DG-191 Phase 2).
         try:
             from baker.services.journal_sync import _sync_payment_journal
             _sync_payment_journal(
-                conn, txn_id, float(row["amount"]), row["type"], row["method"], deleted=True
+                conn, txn_id, float(row["amount"]), row["type"], row["method"],
+                order_id=order_id, deleted=True,
             )
         except Exception:
             logger.exception("payment journal delete-sync failed for txn %d", txn_id)

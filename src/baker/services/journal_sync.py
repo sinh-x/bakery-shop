@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 from baker.db.schema import (
     ACCOUNTS_RECEIVABLE_CODE,
+    BUS_SHIPPING_HELD_CODE,
     COGS_CODE,
     CUSTOMER_DEPOSITS_CODE,
     EXPENSE_CATEGORY_TO_ACCOUNT_CODE,
@@ -218,27 +219,132 @@ def _sync_expense_journal(
         )
 
 
+def _bus_shipping_allocation_for_order(
+    conn, order_id: int
+) -> tuple[str, float]:
+    """Return ``(delivery_type, shipping_fee)`` for the order, or ``("pickup", 0)``.
+
+    Reads the orders table directly so callers do not need to pass the values.
+    """
+    row = conn.execute(
+        "SELECT delivery_type, shipping_fee FROM orders WHERE id = ?",
+        (order_id,),
+    ).fetchone()
+    if row is None:
+        return "pickup", 0.0
+    return (row["delivery_type"] or "pickup"), float(row["shipping_fee"] or 0)
+
+
+def _held_shipping_for_order(
+    conn, order_id: int, *, exclude_txn_id: Optional[int] = None
+) -> float:
+    """Return the net shipping already held in 2200 for the order.
+
+    Sums 2200 credits (held) minus 2200 debits (released) across all
+    ``payment_transaction`` journal entries for the order. Used to compute
+    how much of a new payment's shipping portion should still go to 2200.
+
+    When ``exclude_txn_id`` is given, that transaction's journal entry is
+    excluded from the sum — used on the update path so the current
+    transaction's stale entry does not skew the allocation.
+    """
+    params: list = [order_id, BUS_SHIPPING_HELD_CODE]
+    exclude_clause = ""
+    if exclude_txn_id is not None:
+        exclude_clause = " AND je.source_id != ?"
+        params.append(exclude_txn_id)
+    row = conn.execute(
+        f"""
+        SELECT COALESCE(SUM(jl.credit - jl.debit), 0) AS net_held
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'payment_transaction'
+          AND je.source_id IN (
+              SELECT id FROM payment_transactions WHERE order_id = ?
+          )
+          AND a.code = ?
+          {exclude_clause}
+        """,
+        params,
+    ).fetchone()
+    return float(row["net_held"] or 0)
+
+
 def _build_payment_journal_lines(
-    conn, amount: float, ptype: str, method: str
+    conn,
+    amount: float,
+    ptype: str,
+    method: str,
+    *,
+    order_id: Optional[int] = None,
+    delivery_type: str = "pickup",
+    shipping_fee: float = 0.0,
+    exclude_txn_id: Optional[int] = None,
 ) -> tuple[str, list[tuple[int, float, float, str]]]:
-    """Build (description, lines) for a payment_transaction's journal entry."""
+    """Build (description, lines) for a payment_transaction's journal entry.
+
+    Bus orders (``delivery_type == 'bus'``) with ``shipping_fee > 0`` split the
+    inflow credit between Customer Deposits (2100) and Bus Shipping Held (2200).
+    The shipping portion is allocated to 2200 only up to the order's
+    ``shipping_fee`` across all payments (first payments cover shipping; later
+    payments go entirely to 2100). ``exclude_txn_id`` is used on the update
+    path so the current transaction's stale entry does not skew the allocation.
+
+    Outflow transactions (refund/tien_rut) are NOT split in Phase 2 — the
+    2200 release at refund time is deferred to Phase 3 (revenue exclusion +
+    shipping release). Outflows use the standard reverse lines (debit
+    Customer Deposits, credit Asset) so the held shipping balance in 2200 is
+    preserved until the delivery release entry handles it.
+
+    Non-bus orders and bus orders with no shipping_fee behave exactly as before.
+    """
     asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get(method or "cash", "1100")
     asset_account_id = _account_id_by_code(conn, asset_code)
     deposits_account_id = _account_id_by_code(conn, CUSTOMER_DEPOSITS_CODE)
     amount_f = float(amount)
     ptype = ptype or "deposit"
+
+    # Determine the shipping portion to allocate to 2200 for this inflow payment.
+    shipping_portion = 0.0
+    is_bus = delivery_type == "bus"
+    if is_bus and shipping_fee > 0 and order_id is not None:
+        already_held = _held_shipping_for_order(
+            conn, order_id, exclude_txn_id=exclude_txn_id
+        )
+        remaining_shipping = max(0.0, shipping_fee - already_held)
+        shipping_portion = min(amount_f, remaining_shipping)
+        if shipping_portion < 0:
+            shipping_portion = 0.0
+
     if ptype in PAYMENT_OUTFLOW_TYPES:
-        # Cash flows back to customer: debit Customer Deposits, credit Asset.
+        # Cash flows back to customer. Phase 2 does NOT split outflows — the
+        # 2200 release is deferred to Phase 3 (delivery shipping release).
+        # Standard reverse lines: debit Customer Deposits, credit Asset.
         lines = [
             (deposits_account_id, amount_f, 0.0, "Hoàn tiền khách"),
             (asset_account_id, 0.0, amount_f, "Trả lại tiền"),
         ]
-    else:
-        # Customer pays in: debit Asset, credit Customer Deposits.
+        description = f"Payment: {ptype} {amount_f}"
+        return description, lines
+
+    # Inflow: customer pays in. Debit Asset, credit Customer Deposits (+ 2200
+    # for the bus shipping portion).
+    if shipping_portion > 0:
+        bus_shipping_account_id = _account_id_by_code(conn, BUS_SHIPPING_HELD_CODE)
+        deposit_portion = amount_f - shipping_portion
         lines = [
             (asset_account_id, amount_f, 0.0, "Tiền khách đặt/cọc"),
-            (deposits_account_id, 0.0, amount_f, "Tiền khách đặt cọc"),
+            (deposits_account_id, 0.0, deposit_portion, "Tiền khách đặt cọc"),
+            (bus_shipping_account_id, 0.0, shipping_portion, "Tiền ship bus giữ hộ"),
         ]
+        description = f"Payment: {ptype} {amount_f} (bus shipping split)"
+        return description, lines
+    # Default inflow (no shipping split)
+    lines = [
+        (asset_account_id, amount_f, 0.0, "Tiền khách đặt/cọc"),
+        (deposits_account_id, 0.0, amount_f, "Tiền khách đặt cọc"),
+    ]
     description = f"Payment: {ptype} {amount_f}"
     return description, lines
 
@@ -250,9 +356,25 @@ def _sync_payment_journal(
     ptype: str,
     method: str,
     *,
+    order_id: Optional[int] = None,
+    delivery_type: str = "pickup",
+    shipping_fee: float = 0.0,
     deleted: bool = False,
 ) -> None:
-    """Create/update/delete the journal entry for a payment_transaction."""
+    """Create/update/delete the journal entry for a payment_transaction.
+
+    When ``order_id`` is provided, the order's ``delivery_type`` and
+    ``shipping_fee`` are read from the orders table unless explicitly
+    overridden by the ``delivery_type`` / ``shipping_fee`` keyword arguments.
+    Bus orders with shipping split the credit between 2100 and 2200 (see
+    :func:`_build_payment_journal_lines`).
+    """
+    # Resolve order context from the orders table when only order_id is given.
+    if order_id is not None and (not delivery_type or delivery_type == "pickup") and shipping_fee == 0.0:
+        d_type, s_fee = _bus_shipping_allocation_for_order(conn, order_id)
+        delivery_type = d_type
+        shipping_fee = s_fee
+
     existing_id = _find_journal_entry(conn, "payment_transaction", txn_id)
 
     if deleted:
@@ -269,7 +391,16 @@ def _sync_payment_journal(
             _delete_journal_entry_cascade(conn, existing_id)
         return
 
-    description, lines = _build_payment_journal_lines(conn, amount, ptype, method)
+    description, lines = _build_payment_journal_lines(
+        conn,
+        amount,
+        ptype,
+        method,
+        order_id=order_id,
+        delivery_type=delivery_type,
+        shipping_fee=shipping_fee,
+        exclude_txn_id=txn_id if existing_id is not None else None,
+    )
 
     if existing_id is None:
         _insert_journal_entry(
