@@ -78,9 +78,36 @@ class PaymentTransaction:
 
         tien_rut is a cash-back to the customer, not a customer payment toward the order.
         Excluding it ensures receipt balance math and completion guards are correct.
+
+        Note: for revenue recognition use :meth:`total_paid_net` instead, which
+        subtracts tien_rut refunds so the 2100 (Customer Deposits) debit matches
+        the actual deposit balance being converted to revenue.
         """
         row = conn.execute(
             "SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions WHERE order_id = ? AND type != 'tien_rut'",
             (order_id,),
         ).fetchone()
         return float(row[0]) if row else 0.0
+
+    @staticmethod
+    def total_tien_rut(conn, order_id: int) -> float:
+        """Sum of tien_rut (cash-back) transactions for an order."""
+        row = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) as total FROM payment_transactions "
+            "WHERE order_id = ? AND type = 'tien_rut'",
+            (order_id,),
+        ).fetchone()
+        return float(row[0]) if row else 0.0
+
+    @staticmethod
+    def total_paid_net(conn, order_id: int) -> float:
+        """Net deposits for an order: deposits (excl tien_rut) minus tien_rut refunds.
+
+        Revenue recognition should use this value so the 2100 (Customer Deposits)
+        debit matches the actual deposit balance being converted to revenue.
+        ``net = total_paid_excl_tien_rut - total_tien_rut``. When net <= 0 there
+        is no deposit balance to convert and no revenue entry should be created.
+        """
+        excl = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id)
+        rut = PaymentTransaction.total_tien_rut(conn, order_id)
+        return excl - rut

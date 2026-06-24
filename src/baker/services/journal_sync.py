@@ -14,11 +14,13 @@ import logging
 from typing import Any, Optional
 
 from baker.db.schema import (
+    ACCOUNTS_RECEIVABLE_CODE,
     COGS_CODE,
     CUSTOMER_DEPOSITS_CODE,
     EXPENSE_CATEGORY_TO_ACCOUNT_CODE,
     EXPENSE_PAYMENT_SOURCE_TO_ASSET_CODE,
     INVENTORY_CODE,
+    INVENTORY_PURCHASE_CATEGORIES,
     ORDER_REVENUE_CODE,
     PAYMENT_METHOD_TO_ASSET_CODE,
     PAYMENT_OUTFLOW_TYPES,
@@ -33,6 +35,10 @@ from baker.services.cost_resolver import resolve_product_cost
 logger = logging.getLogger("baker.server")
 
 STAFF_ADVANCE_PAYMENT_SOURCE = "Nhân viên ứng trước"
+
+# Tolerance (VND) below which an existing order revenue entry's 2100 debit is
+# considered already in sync with the current net deposits — no update needed.
+_REVENUE_UPDATE_TOLERANCE = 0.005
 
 
 def _find_journal_entry(conn, source_type: str, source_id: int) -> Optional[int]:
@@ -137,13 +143,21 @@ def _build_expense_journal_lines(
             return None
         asset_account_id = _account_id_by_code(conn, asset_code)
 
-    expense_account_id = _account_id_by_code(conn, expense_code)
     amount_f = float(amount)
     description = f"Expense: {summary}"
-    lines = [
-        (expense_account_id, amount_f, 0.0, "Chi phí"),
-        (asset_account_id, 0.0, amount_f, "Thanh toán"),
-    ]
+
+    if category in INVENTORY_PURCHASE_CATEGORIES:
+        inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
+        lines = [
+            (inventory_account_id, amount_f, 0.0, "Nhập kho nguyên vật liệu"),
+            (asset_account_id, 0.0, amount_f, "Thanh toán"),
+        ]
+    else:
+        expense_account_id = _account_id_by_code(conn, expense_code)
+        lines = [
+            (expense_account_id, amount_f, 0.0, "Chi phí"),
+            (asset_account_id, 0.0, amount_f, "Thanh toán"),
+        ]
     return description, lines
 
 
@@ -280,23 +294,71 @@ def _sync_payment_journal(
 
 
 def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
-    """Create revenue conversion + COGS journal entries for a delivered order.
+    """Create/update revenue conversion + COGS journal entries for a delivered/completed order.
 
-    Idempotent: skips if entries already exist for this order.
+    Revenue recognition:
+      - Paid orders (net deposits > 0): debit Customer Deposits (2100), credit
+        Order Revenue (4100) for net payments received (deposits − tien_rut refunds).
+      - Unpaid orders (zero net deposits): debit Accounts Receivable (1500),
+        credit Order Revenue (4100) for the order total_price, recording the
+        amount as customer debt.
+      - Net deposits <= 0 (refunds >= deposits): no revenue entry is created.
+
+    Update handling: if a ``source_type = 'order'`` revenue entry already exists,
+    its 2100 debit is compared against the current net deposits. When they differ
+    by more than the tolerance (0.005), the stale entry is deleted (cascade
+    journal_lines) and recreated to match the current payment state. Locked
+    entries are never deleted — they are reversed instead. This makes the
+    function idempotent and able to reflect payment corrections and refunds.
     """
     inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
     revenue_account_id = _account_id_by_code(conn, ORDER_REVENUE_CODE)
     deposits_account_id = _account_id_by_code(conn, CUSTOMER_DEPOSITS_CODE)
     cogs_account_id = _account_id_by_code(conn, COGS_CODE)
+    # Ensure AR account exists (idempotent seed for existing DBs)
+    conn.execute(
+        "INSERT OR IGNORE INTO accounts (code, name, type, parent_id) "
+        "VALUES (?, ?, 'asset', (SELECT id FROM accounts WHERE code = '1000'))",
+        (ACCOUNTS_RECEIVABLE_CODE, "Phải thu khách hàng (Accounts Receivable)"),
+    )
+    ar_account_id = _account_id_by_code(conn, ACCOUNTS_RECEIVABLE_CODE)
 
-    # Revenue conversion: net payments (excl. tien_rut) from Customer Deposits → Revenue.
-    net = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id)
-    if net > 0:
-        existing = conn.execute(
-            "SELECT 1 FROM journal_entries WHERE source_type = 'order' AND source_id = ?",
-            (order_id,),
+    # Revenue conversion — detect stale entries and update them.
+    existing = conn.execute(
+        "SELECT id FROM journal_entries WHERE source_type = 'order' AND source_id = ?",
+        (order_id,),
+    ).fetchone()
+    net = PaymentTransaction.total_paid_net(conn, order_id)
+
+    if existing:
+        existing_id = int(existing["id"])
+        # Compare the existing entry's 2100 debit against current net deposits.
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit), 0) AS debit_2100
+            FROM journal_lines jl
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE jl.journal_entry_id = ? AND a.code = ?
+            """,
+            (existing_id, CUSTOMER_DEPOSITS_CODE),
         ).fetchone()
-        if not existing:
+        current_debit = float(row["debit_2100"]) if row else 0.0
+        mismatch = abs(current_debit - max(net, 0.0))
+        if mismatch <= _REVENUE_UPDATE_TOLERANCE:
+            # Entry already matches net deposits — leave it untouched.
+            pass
+        elif _is_locked(conn, existing_id):
+            # Locked: cannot delete. Reverse the stale entry, then create a
+            # corrected one below.
+            _reverse_journal_entry(conn, existing_id)
+            existing = None  # fall through to creation logic
+        else:
+            _delete_journal_entry_cascade(conn, existing_id)
+            existing = None  # fall through to creation logic
+
+    if not existing:
+        if net > 0:
+            # Paid: move net deposits to revenue
             _insert_journal_entry(
                 conn,
                 description=f"Order revenue: {order_ref}",
@@ -307,6 +369,26 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
                     (revenue_account_id, 0.0, float(net), "Doanh thu bán hàng"),
                 ],
             )
+        elif PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) <= 0:
+            # Truly unpaid (no deposits and no refunds): record the order total
+            # as accounts receivable (customer debt).
+            order_row = conn.execute(
+                "SELECT total_price FROM orders WHERE id = ?", (order_id,)
+            ).fetchone()
+            total_price = float(order_row["total_price"] or 0) if order_row else 0.0
+            if total_price > 0:
+                _insert_journal_entry(
+                    conn,
+                    description=f"Order revenue (AR): {order_ref}",
+                    source_type="order",
+                    source_id=order_id,
+                    lines=[
+                        (ar_account_id, total_price, 0.0, "Phải thu khách hàng"),
+                        (revenue_account_id, 0.0, total_price, "Doanh thu bán hàng"),
+                    ],
+                )
+        # else: net <= 0 but deposits existed (refunds drained them) → no
+        # revenue to recognize; skip creating any entry.
 
     # COGS: one entry per order summing cost_at_sale*qty for items with a
     # resolved cost > 0. cost_at_sale is populated at delivery time from

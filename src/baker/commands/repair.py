@@ -2,12 +2,12 @@
 
 Repairs stale order-revenue journal entries whose 2100 (Customer Deposits)
 debit no longer matches the order's current net deposits
-(``PaymentTransaction.total_paid_excl_tien_rut``).
+(deposits − tien_rut refunds; ``PaymentTransaction.total_paid_net``).
 
 The repair deletes the existing ``source_type = 'order'`` journal entry and
 re-runs :func:`_sync_delivered_order_journal` to recreate it with the current
-payment amounts. The command is idempotent: entries already within 0.005 of the
-net deposits are skipped.
+net deposit amounts. The command is idempotent: entries already within 0.005 of
+the net deposits are skipped.
 
 Modes:
 - ``--order-id <id>`` — repair a single order
@@ -89,7 +89,7 @@ def _process_order(conn, order_id: int, *, dry_run: bool) -> dict:
     """
     order_ref = _order_ref(conn, order_id)
     entry_id, old_debit = _order_revenue_2100_debit(conn, order_id)
-    net = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id)
+    net = PaymentTransaction.total_paid_net(conn, order_id)
 
     if entry_id is None:
         # No revenue entry with a 2100 debit — nothing to repair.

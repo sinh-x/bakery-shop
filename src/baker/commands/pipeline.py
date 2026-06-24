@@ -157,18 +157,20 @@ def cancelled_unrefunded_cmd():
 
 @pipeline_cmd.command("deposit-revenue-gap")
 def deposit_revenue_gap_cmd():
-    """Đối chiếu cọc (trừ tiền rút) với nợ 2100 trong bút toán doanh thu — phát hiện lệch."""
+    """Đối chiếu cọc thực tế (cọc − tiền rút) với nợ 2100 trong bút toán doanh thu — phát hiện lệch."""
     _echo_header("Đối chiếu cọc ↔ doanh thu (2100)")
 
     with get_db() as conn:
-        # Per delivered/completed order: net deposits (excl tien_rut) vs the
-        # 2100 debit recorded in the order revenue journal entry.
+        # Per delivered/completed order: net deposits (deposits − tien_rut
+        # refunds) vs the 2100 debit recorded in the order revenue journal
+        # entry. Revenue recognition (Phase 4.3) debits 2100 for net deposits,
+        # so this is the correct reconciliation basis.
         rows = conn.execute(
             f"""
             SELECT o.id            AS order_id,
                    o.order_ref     AS order_ref,
                    o.customer_name AS customer_name,
-                   COALESCE(d.total_deposits, 0) AS total_deposits,
+                   COALESCE(d.total_deposits, 0) - COALESCE(r.total_refunds, 0) AS net_deposits,
                    COALESCE(rev.debit_2100, 0)    AS debit_2100
             FROM orders o
             LEFT JOIN (
@@ -177,6 +179,12 @@ def deposit_revenue_gap_cmd():
                 WHERE type != 'tien_rut'
                 GROUP BY order_id
             ) d ON d.order_id = o.id
+            LEFT JOIN (
+                SELECT order_id, SUM(amount) AS total_refunds
+                FROM payment_transactions
+                WHERE type = 'tien_rut'
+                GROUP BY order_id
+            ) r ON r.order_id = o.id
             LEFT JOIN (
                 SELECT je.source_id AS order_id, SUM(jl.debit) AS debit_2100
                 FROM journal_entries je
@@ -197,7 +205,7 @@ def deposit_revenue_gap_cmd():
         return
 
     click.echo(
-        f"{'Mã đơn':<20}{'Khách hàng':<24}{'Cọc (trừ rút)':>16}{'Nợ 2100':>16}{'Lệch':>16}"
+        f"{'Mã đơn':<20}{'Khách hàng':<24}{'Cọc thực tế':>16}{'Nợ 2100':>16}{'Lệch':>16}"
     )
     click.echo("-" * 92)
     agg_deposits = 0.0
@@ -205,7 +213,7 @@ def deposit_revenue_gap_cmd():
     agg_gap = 0.0
     mismatch_count = 0
     for r in rows:
-        deposits = float(r["total_deposits"])
+        deposits = float(r["net_deposits"])
         debit = float(r["debit_2100"])
         gap = deposits - debit
         agg_deposits += deposits

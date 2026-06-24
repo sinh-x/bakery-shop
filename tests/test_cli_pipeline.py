@@ -230,8 +230,8 @@ def test_deposit_revenue_gap_surfaces_mismatch():
         ensure_schema(conn)
         deposits_acc = _account_id(conn, "2100")
         revenue_acc = _account_id(conn, "4100")
-        # Delivered order: 500k net deposits, but revenue entry debits 2100
-        # for the full 500k (no mismatch) — baseline.
+        # Delivered order: 500k deposit (net = 500k, no refund), revenue entry
+        # debits 2100 for 500k — no mismatch (baseline).
         oid1 = _insert_order(
             conn, order_ref="ORD-260624-020", customer_name="Khách 1",
             total_price=500000, status="delivered", due_date="2026-06-10",
@@ -242,9 +242,9 @@ def test_deposit_revenue_gap_surfaces_mismatch():
             revenue_account_id=revenue_acc, amount=500000,
         )
         # Delivered order: 500k deposit + 200k tien_rut (refund). Net deposits
-        # = 500k, but stale revenue entry debits 2100 for 500k → no mismatch
-        # in net terms. To create the documented mismatch, the revenue entry
-        # debits 700k (deposit + refund, the double-debit bug).
+        # = 500k − 200k = 300k (Phase 4.3 net semantics). The stale revenue
+        # entry debits 2100 for 700k (the old gross double-debit bug), so the
+        # gap is 300k − 700k = -400k.
         oid2 = _insert_order(
             conn, order_ref="ORD-260624-021", customer_name="Khách 2",
             total_price=700000, status="delivered", due_date="2026-06-12",
@@ -259,11 +259,12 @@ def test_deposit_revenue_gap_surfaces_mismatch():
     result = _invoke(["pipeline", "deposit-revenue-gap"])
     assert result.exit_code == 0, result.output
     assert "ORD-260624-020" in result.output
-    # Order 2: deposits 500k, debit 2100 = 700k, gap = -200k
+    # Order 2: net deposits 300k, debit 2100 = 700k, gap = -400k
     assert "ORD-260624-021" in result.output
     assert "700.000" in result.output  # 2100 debit for the buggy order
-    # Aggregate gap = 500k - 700k = -200k
-    assert "-200.000" in result.output
+    assert "300.000" in result.output  # net deposits (500k − 200k)
+    # Aggregate gap = (500k - 500k) + (300k - 700k) = -400k
+    assert "-400.000" in result.output
     assert "Số đơn lệch" in result.output
     assert "2/2" not in result.output  # order 1 has no mismatch
     assert "1/2" in result.output  # only order 2 mismatches

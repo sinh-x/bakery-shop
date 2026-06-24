@@ -1508,6 +1508,7 @@ SEED_CHART_OF_ACCOUNTS = [
     ("1200", "Tài khoản ngân hàng (Bank Account)", "asset", "1000"),
     ("1300", "Hàng tồn kho (Inventory)", "asset", "1000"),
     ("1400", "Nhân viên ứng trước (Staff Advances)", "asset", "1000"),
+    ("1500", "Phải thu khách hàng (Accounts Receivable)", "asset", "1000"),
     # Liabilities
     ("2000", "Nợ phải trả", "liability", None),
     ("2100", "Tiền khách đặt cọc (Customer Deposits)", "liability", "2000"),
@@ -1544,6 +1545,12 @@ EXPENSE_CATEGORY_TO_ACCOUNT_CODE = {
     "Khác": "5800",
 }
 
+# Categories that represent inventory purchases (raw materials, packaging).
+# These debit Inventory (1300) instead of an expense account — the cost sits
+# in inventory until goods are sold/wasted, at which point COGS (5900) is
+# debited and Inventory is credited.
+INVENTORY_PURCHASE_CATEGORIES = {"Nguyên liệu", "Bao bì"}
+
 # Map expense payment_source (events.data JSON) → asset account code.
 # "Nhân viên ứng trước" creates a sub-account per staff name (handled in backfill).
 EXPENSE_PAYMENT_SOURCE_TO_ASSET_CODE = {
@@ -1571,6 +1578,7 @@ ORDER_REVENUE_CODE = "4100"
 COGS_CODE = "5900"
 INVENTORY_CODE = "1300"
 STAFF_ADVANCES_CODE = "1400"
+ACCOUNTS_RECEIVABLE_CODE = "1500"
 
 
 def _seed_chart_of_accounts(conn) -> None:
@@ -1724,18 +1732,30 @@ def _backfill_expense_journal_entries(conn) -> None:
                 continue
             asset_account_id = _account_id_by_code(conn, asset_code)
 
-        expense_account_id = _account_id_by_code(conn, expense_code)
-
-        _insert_journal_entry(
-            conn,
-            description=f"Expense: {row['summary']}",
-            source_type="expense",
-            source_id=event_id,
-            lines=[
-                (expense_account_id, float(amount), 0.0, "Chi phí"),
-                (asset_account_id, 0.0, float(amount), "Thanh toán"),
-            ],
-        )
+        if category in INVENTORY_PURCHASE_CATEGORIES:
+            inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
+            _insert_journal_entry(
+                conn,
+                description=f"Expense: {row['summary']}",
+                source_type="expense",
+                source_id=event_id,
+                lines=[
+                    (inventory_account_id, float(amount), 0.0, "Nhập kho nguyên vật liệu"),
+                    (asset_account_id, 0.0, float(amount), "Thanh toán"),
+                ],
+            )
+        else:
+            expense_account_id = _account_id_by_code(conn, expense_code)
+            _insert_journal_entry(
+                conn,
+                description=f"Expense: {row['summary']}",
+                source_type="expense",
+                source_id=event_id,
+                lines=[
+                    (expense_account_id, float(amount), 0.0, "Chi phí"),
+                    (asset_account_id, 0.0, float(amount), "Thanh toán"),
+                ],
+            )
 
 
 def _backfill_payment_transaction_journal_entries(conn) -> None:
@@ -1792,43 +1812,96 @@ def _backfill_payment_transaction_journal_entries(conn) -> None:
 
 
 def _backfill_delivered_order_journal_entries(conn) -> None:
-    """Backfill revenue conversion + COGS entries for delivered orders."""
+    """Backfill revenue conversion + COGS entries for delivered and completed orders.
+
+    Revenue entries are reconciled against current net deposits
+    (deposits − tien_rut refunds): stale entries are deleted and recreated so
+    the 2100 debit matches the actual deposit balance being converted to
+    revenue. Orders with net deposits <= 0 get no revenue entry. This keeps the
+    backfill consistent with :func:`_sync_delivered_order_journal`.
+    """
     from baker.models.payment_transaction import PaymentTransaction
+    from baker.services.journal_sync import _REVENUE_UPDATE_TOLERANCE
 
     orders = conn.execute(
-        "SELECT id, order_ref FROM orders WHERE status = 'delivered'"
+        "SELECT id, order_ref, total_price FROM orders WHERE status IN ('delivered', 'completed')"
     ).fetchall()
 
     inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
     revenue_account_id = _account_id_by_code(conn, ORDER_REVENUE_CODE)
     deposits_account_id = _account_id_by_code(conn, CUSTOMER_DEPOSITS_CODE)
     cogs_account_id = _account_id_by_code(conn, COGS_CODE)
+    # Ensure AR account exists (idempotent seed for existing DBs)
+    conn.execute(
+        "INSERT OR IGNORE INTO accounts (code, name, type, parent_id) "
+        "VALUES (?, ?, 'asset', (SELECT id FROM accounts WHERE code = '1000'))",
+        (ACCOUNTS_RECEIVABLE_CODE, "Phải thu khách hàng (Accounts Receivable)"),
+    )
+    ar_account_id = _account_id_by_code(conn, ACCOUNTS_RECEIVABLE_CODE)
 
     for orow in orders:
         order_id = int(orow["id"])
         order_ref = orow["order_ref"]
 
-        # Revenue conversion: net payments (deposits + payments + full_payments - tien_rut)
-        # equals total_paid_excl_tien_rut. Move that amount from Customer Deposits
-        # to Order Revenue.
-        net = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id)
-        if net > 0:
-            existing = conn.execute(
-                "SELECT 1 FROM journal_entries "
-                "WHERE source_type = 'order' AND source_id = ?",
-                (order_id,),
+        # Revenue conversion — reconcile against current net deposits.
+        existing = conn.execute(
+            "SELECT id FROM journal_entries "
+            "WHERE source_type = 'order' AND source_id = ?",
+            (order_id,),
+        ).fetchone()
+        net = PaymentTransaction.total_paid_net(conn, order_id)
+
+        if existing:
+            existing_id = int(existing["id"])
+            row = conn.execute(
+                """
+                SELECT COALESCE(SUM(jl.debit), 0) AS debit_2100
+                FROM journal_lines jl
+                JOIN accounts a ON a.id = jl.account_id
+                WHERE jl.journal_entry_id = ? AND a.code = ?
+                """,
+                (existing_id, CUSTOMER_DEPOSITS_CODE),
             ).fetchone()
-            if not existing:
+            current_debit = float(row["debit_2100"]) if row else 0.0
+            if abs(current_debit - max(net, 0.0)) <= _REVENUE_UPDATE_TOLERANCE:
+                # Already in sync — skip.
+                continue
+            # Stale: delete and recreate below.
+            conn.execute(
+                "DELETE FROM journal_lines WHERE journal_entry_id = ?",
+                (existing_id,),
+            )
+            conn.execute("DELETE FROM journal_entries WHERE id = ?", (existing_id,))
+
+        if net > 0:
+            # Paid: move net deposits to revenue
+            _insert_journal_entry(
+                conn,
+                description=f"Order revenue: {order_ref}",
+                source_type="order",
+                source_id=order_id,
+                lines=[
+                    (deposits_account_id, net, 0.0, "Chuyển cọc sang doanh thu"),
+                    (revenue_account_id, 0.0, net, "Doanh thu bán hàng"),
+                ],
+            )
+        elif PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) <= 0:
+            # Truly unpaid (no deposits and no refunds): record as accounts
+            # receivable (customer debt).
+            total_price = float(orow["total_price"] or 0)
+            if total_price > 0:
                 _insert_journal_entry(
                     conn,
-                    description=f"Order revenue: {order_ref}",
+                    description=f"Order revenue (AR): {order_ref}",
                     source_type="order",
                     source_id=order_id,
                     lines=[
-                        (deposits_account_id, net, 0.0, "Chuyển cọc sang doanh thu"),
-                        (revenue_account_id, 0.0, net, "Doanh thu bán hàng"),
+                        (ar_account_id, total_price, 0.0, "Phải thu khách hàng"),
+                        (revenue_account_id, 0.0, total_price, "Doanh thu bán hàng"),
                     ],
                 )
+        # else: net <= 0 but deposits existed (refunds drained them) → no
+        # revenue to recognize; skip creating any entry.
 
         # COGS: for each order_item with product.cost > 0, debit COGS, credit Inventory.
         # Group into one COGS entry per order for performance and clarity.
@@ -1868,6 +1941,135 @@ def _backfill_delivered_order_journal_entries(conn) -> None:
             )
 
 
+def _migrate_v46_fix_old_expense_journal(conn):
+    """One-time fix: backfill journal entry for old-format expense event #25.
+
+    Event #25 uses pre-standardization data keys (``amount``, ``currency``
+    instead of ``amount_vnd``, ``category``). Map the known fields manually:
+    equipment repair → Sửa chữa (5600), Shop tiền mặt → 1100.
+    """
+    import json
+
+    row = conn.execute(
+        "SELECT id, summary, data FROM events WHERE id = 25"
+    ).fetchone()
+    if row is None:
+        return
+
+    existing = conn.execute(
+        "SELECT 1 FROM journal_entries "
+        "WHERE source_type = 'expense' AND source_id = 25"
+    ).fetchone()
+    if existing:
+        return
+
+    try:
+        data = json.loads(row["data"]) if row["data"] else {}
+    except (json.JSONDecodeError, TypeError):
+        return
+
+    amount = data.get("amount")
+    payment_source = data.get("payment_source")
+    if not isinstance(amount, (int, float)) or amount <= 0:
+        return
+    if payment_source != "Shop tiền mặt":
+        return
+
+    expense_account_id = _account_id_by_code(conn, "5600")
+    asset_account_id = _account_id_by_code(conn, "1100")
+    _insert_journal_entry(
+        conn,
+        description=f"Expense: {row['summary']}",
+        source_type="expense",
+        source_id=25,
+        lines=[
+            (expense_account_id, float(amount), 0.0, "Chi phí sửa chữa"),
+            (asset_account_id, 0.0, float(amount), "Thanh toán tiền mặt"),
+        ],
+    )
+
+
+def _migrate_v47_fix_stale_cogs_entries(conn):
+    """One-time fix: delete and re-create order_cogs journal entries that were
+    generated with the old cost resolver (which returned 0 for products with
+    cost=0 and no cost_history). The current resolver uses baseline fallback
+    (30% base_price, 100% for phụ kiện) so stale entries may be understated.
+
+    Idempotent: re-creates via _sync_delivered_order_journal which skips
+    existing entries, so we delete stale ones first.
+    """
+    from baker.services.cost_resolver import resolve_product_cost
+    from baker.services.journal_sync import _sync_delivered_order_journal
+
+    stale_ids = []
+    rows = conn.execute(
+        """
+        SELECT je.id AS entry_id, je.source_id AS order_id
+        FROM journal_entries je
+        WHERE je.source_type = 'order_cogs'
+        ORDER BY je.id
+        """
+    ).fetchall()
+
+    for r in rows:
+        entry_id = int(r["entry_id"])
+        order_id = int(r["order_id"])
+
+        actual = conn.execute(
+            """
+            SELECT SUM(jl.debit) FROM journal_lines jl
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE jl.journal_entry_id = ? AND a.code = '5900'
+            """,
+            (entry_id,),
+        ).fetchone()[0]
+        actual = float(actual or 0)
+
+        items = conn.execute(
+            """
+            SELECT oi.product_id, oi.quantity
+            FROM order_items oi
+            WHERE oi.order_id = ? AND oi.is_extra = 0 AND oi.is_gift = 0
+            """,
+            (order_id,),
+        ).fetchall()
+
+        expected = 0.0
+        for i in items:
+            pid_str = i["product_id"]
+            if pid_str is None:
+                continue
+            try:
+                pid = int(pid_str)
+            except (TypeError, ValueError):
+                continue
+            cost = resolve_product_cost(conn, pid)
+            qty = int(i["quantity"] or 0)
+            expected += cost * qty
+
+        if abs(actual - expected) > 0.01:
+            stale_ids.append(entry_id)
+
+    if stale_ids:
+        placeholders = ",".join("?" * len(stale_ids))
+        conn.execute(
+            f"DELETE FROM journal_entries WHERE id IN ({placeholders})",
+            stale_ids,
+        )
+
+    orders = conn.execute(
+        """
+        SELECT DISTINCT o.id, o.order_ref
+        FROM orders o
+        JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.status IN ('delivered', 'completed')
+        """
+    ).fetchall()
+
+    for o in orders:
+        _sync_delivered_order_journal(conn, int(o["id"]), o["order_ref"])
+
+
 def _migrate_v44_double_entry_accounting(conn):
     """Create accounting schema, seed chart of accounts, and backfill journal
     entries for historical expenses, payment_transactions, and delivered orders."""
@@ -1876,6 +2078,62 @@ def _migrate_v44_double_entry_accounting(conn):
     _backfill_expense_journal_entries(conn)
     _backfill_payment_transaction_journal_entries(conn)
     _backfill_delivered_order_journal_entries(conn)
+
+
+def _migrate_v48_fix_inventory_purchase_entries(conn):
+    """One-time fix: delete and re-create expense journal entries for
+    Nguyên liệu and Bao bì categories. These were originally recorded as
+    debit expense (5100/5200) but should debit Inventory (1300) — the cost
+    sits in inventory until goods are sold/wasted (COGS).
+
+    Idempotent: deletes stale entries then re-runs the expense backfill
+    which now routes inventory purchases to Inventory (1300).
+    """
+    import json
+
+    stale_ids = []
+    rows = conn.execute(
+        "SELECT id, data FROM events WHERE type = 'expense' AND deleted_at IS NULL"
+    ).fetchall()
+
+    for row in rows:
+        try:
+            data = json.loads(row["data"]) if row["data"] else {}
+        except (json.JSONDecodeError, TypeError):
+            continue
+        category = data.get("category")
+        if category not in INVENTORY_PURCHASE_CATEGORIES:
+            continue
+
+        je = conn.execute(
+            "SELECT id FROM journal_entries "
+            "WHERE source_type = 'expense' AND source_id = ?",
+            (row["id"],),
+        ).fetchone()
+        if je is None:
+            continue
+
+        entry_id = int(je["id"])
+        lines = conn.execute(
+            """
+            SELECT a.code FROM journal_lines jl
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE jl.journal_entry_id = ? AND jl.debit > 0
+            """,
+            (entry_id,),
+        ).fetchall()
+        debit_codes = {l["code"] for l in lines}
+        if INVENTORY_CODE not in debit_codes:
+            stale_ids.append(entry_id)
+
+    if stale_ids:
+        placeholders = ",".join("?" * len(stale_ids))
+        conn.execute(
+            f"DELETE FROM journal_entries WHERE id IN ({placeholders})",
+            stale_ids,
+        )
+
+    _backfill_expense_journal_entries(conn)
 
 
 COST_HISTORY_SCHEMA = """
@@ -2155,9 +2413,24 @@ MIGRATIONS = {
     45: {
         "description": "Cost data foundation: cost_history table, order_items.cost_at_sale column, backfill delivered order_items with baseline costs",
         "sql": "",
-        "callable": _migrate_v45_cost_history_and_cost_at_sale,
-    },
-}
+         "callable": _migrate_v45_cost_history_and_cost_at_sale,
+     },
+     46: {
+         "description": "One-time fix: backfill journal entry for old-format expense event #25 (pre-standardization data)",
+         "sql": "",
+         "callable": _migrate_v46_fix_old_expense_journal,
+     },
+     47: {
+         "description": "One-time fix: delete and re-create stale order_cogs entries generated with old cost resolver (no baseline fallback)",
+         "sql": "",
+         "callable": _migrate_v47_fix_stale_cogs_entries,
+     },
+     48: {
+         "description": "One-time fix: re-route Nguyên liệu and Bao bì expense journal entries to debit Inventory (1300) instead of expense accounts",
+         "sql": "",
+         "callable": _migrate_v48_fix_inventory_purchase_entries,
+     },
+ }
 
 
 def ensure_schema(conn):

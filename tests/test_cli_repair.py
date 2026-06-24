@@ -366,7 +366,11 @@ def test_repair_dry_run_skips_already_correct():
 
 
 def test_repair_fixes_refund_double_debit():
-    """500k deposit + 200k tien_rut; stale revenue debits 700k → repaired to 500k net."""
+    """500k deposit + 200k tien_rut; stale revenue debits 700k → repaired to 300k net.
+
+    Phase 4.3 changed revenue recognition to use net deposits (deposits −
+    tien_rut refunds), so the corrected 2100 debit is 500k − 200k = 300k.
+    """
     with get_db() as conn:
         ensure_schema(conn)
         deposits_acc = _account_id(conn, "2100")
@@ -386,10 +390,11 @@ def test_repair_fixes_refund_double_debit():
     result = _invoke(["repair-order-revenue", "--order-id", str(oid)])
     assert result.exit_code == 0, result.output
     assert "đã sửa" in result.output
+    assert "300.000" in result.output  # net deposits (500k − 200k)
 
     with get_db() as conn:
         ensure_schema(conn)
-        assert _revenue_2100_debit(conn, oid) == 500000.0
+        assert _revenue_2100_debit(conn, oid) == 300000.0
 
 
 # ---------------------------------------------------------------------------
