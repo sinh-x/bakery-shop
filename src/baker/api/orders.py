@@ -611,6 +611,30 @@ def edit_order(ref: str, body: OrderEdit):
             params,
         )
 
+        # Re-sync payment journal entries when shipping_fee changes on a bus order (DG-191 Phase 4).
+        if shipping_fee_changed and row["delivery_type"] == "bus":
+            try:
+                from baker.services.journal_sync import _sync_payment_journal
+
+                txn_rows = conn.execute(
+                    "SELECT id, amount, type, method FROM payment_transactions WHERE order_id = ?",
+                    (row["id"],),
+                ).fetchall()
+                for txn_row in txn_rows:
+                    _sync_payment_journal(
+                        conn,
+                        txn_row["id"],
+                        float(txn_row["amount"]),
+                        txn_row["type"],
+                        txn_row["method"],
+                        order_id=row["id"],
+                    )
+            except Exception:
+                logger.exception(
+                    "payment journal re-sync failed for order %d after shipping_fee edit",
+                    row["id"],
+                )
+
         # Log each changed field with old/new values
         changed_by = data.get("changedBy", "")
         for camel, snake in field_map.items():
