@@ -91,6 +91,7 @@ def list_journal(
     account_id: Optional[int] = Query(None, description="Lọc theo account id"),
     source_type: Optional[str] = Query(None, description="Lọc theo source_type"),
     source_id: Optional[int] = Query(None, description="Lọc theo source_id"),
+    include_invalidated: bool = Query(False, description="Bao gồm journal entries từ giao dịch đã hủy"),
     limit: int = Query(100, ge=1, le=1000, description="Số kết quả tối đa"),
     offset: int = Query(0, ge=0, description="Bỏ qua bao nhiêu kết quả"),
 ):
@@ -115,6 +116,19 @@ def list_journal(
                 "EXISTS (SELECT 1 FROM journal_lines jl WHERE jl.journal_entry_id = je.id AND jl.account_id = ?)"
             )
             params.append(account_id)
+        # Exclude journal entries whose source payment transaction is
+        # invalidated, unless the caller explicitly opts in via
+        # ?include_invalidated=true (FR7/AC8).
+        if not include_invalidated:
+            conditions.append(
+                "NOT ("
+                "je.source_type = 'payment_transaction' AND "
+                "EXISTS ("
+                "SELECT 1 FROM payment_transactions pt "
+                "WHERE pt.id = je.source_id AND pt.invalidated_at IS NOT NULL"
+                ")"
+                ")"
+            )
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         total_row = conn.execute(

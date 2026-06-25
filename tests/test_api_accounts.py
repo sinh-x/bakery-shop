@@ -13,6 +13,8 @@ Covers:
 - Phase 1 foundation tests retained (seed + empty balances)
 """
 
+from datetime import datetime
+
 import pytest
 
 from baker.db.connection import get_db
@@ -954,3 +956,118 @@ def test_order_create_still_works(api_client):
     order = _create_order(api_client, total=250000)
     assert "orderRef" in order
     assert order["totalPrice"] == 250000
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Downstream consumers: journal listing excludes invalidated (FR7, AC8)
+# ---------------------------------------------------------------------------
+
+
+def _invalidate_txn(conn, txn_id: int, invalidated_by: str = "tester") -> None:
+    """Simulate the invalidated state for Phase 3 consumer-filter tests.
+
+    Sets ``invalidated_at`` on the payment transaction. The journal entry is
+    left in place so the consumer filter (FR7) can be tested independently of
+    Phase 2's journal cleanup behavior.
+    """
+    conn.execute(
+        "UPDATE payment_transactions SET invalidated_at = ?, invalidated_by = ? WHERE id = ?",
+        (datetime.now().isoformat(), invalidated_by, txn_id),
+    )
+
+
+def test_journal_excludes_invalidated_payment_by_default(api_client):
+    """AC8: journal entries from invalidated transactions are excluded by default."""
+    order = _create_order(api_client, total=200000)
+    txn = _create_txn(api_client, order["orderRef"], amount=200000, type="deposit", method="cash")
+    txn_id = int(txn["id"])
+
+    # Before invalidation: the payment journal entry is visible.
+    resp = api_client.get("/api/accounts/journal", params={"source_type": "payment_transaction"})
+    assert resp.status_code == 200
+    assert resp.json()["total"] >= 1
+
+    # Invalidate the transaction (sets invalidated_at + reverses journal entry).
+    with get_db() as conn:
+        _invalidate_txn(conn, txn_id)
+
+    # After invalidation: default listing excludes payment_transaction entries
+    # whose source transaction is invalidated.
+    resp = api_client.get("/api/accounts/journal", params={"source_type": "payment_transaction"})
+    assert resp.status_code == 200
+    body = resp.json()
+    for item in body["items"]:
+        assert int(item["sourceId"]) != txn_id, (
+            f"Invalidated txn {txn_id} journal entry leaked into default listing"
+        )
+
+    # Explicit opt-in includes the invalidated-source entry.
+    resp_inc = api_client.get(
+        "/api/accounts/journal",
+        params={"source_type": "payment_transaction", "include_invalidated": "true"},
+    )
+    assert resp_inc.status_code == 200
+    body_inc = resp_inc.json()
+    assert any(int(item["sourceId"]) == txn_id for item in body_inc["items"]), (
+        "include_invalidated=true should surface the invalidated-source entry"
+    )
+
+
+def test_journal_invalidated_filter_preserves_other_sources(api_client):
+    """FR7: the invalidated filter does not affect non-payment sources."""
+    _create_expense(api_client, amount=50000)
+    order = _create_order(api_client, total=100000)
+    txn = _create_txn(api_client, order["orderRef"], amount=100000, type="deposit", method="cash")
+    with get_db() as conn:
+        _invalidate_txn(conn, int(txn["id"]))
+
+    # Expense entries are still visible (not affected by the payment-invalidated filter).
+    resp = api_client.get("/api/accounts/journal", params={"source_type": "expense"})
+    assert resp.status_code == 200
+    assert resp.json()["total"] >= 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Accounting integrity after invalidation (NFR1, AC10)
+# ---------------------------------------------------------------------------
+
+
+def test_validate_passes_after_invalidation(api_client):
+    """AC10: GET /api/accounts/validate passes all checks after a transaction is invalidated.
+
+    The invalidated transaction's journal entry is reversed (unlocked → deleted),
+    and ``source_completeness`` must exclude invalidated transactions so the
+    accounting integrity report stays clean (NFR1).
+    """
+    order = _create_order(api_client, total=150000)
+    txn = _create_txn(api_client, order["orderRef"], amount=150000, type="deposit", method="cash")
+    txn_id = int(txn["id"])
+
+    # Full invalidation: set invalidated_at and reverse/remove the journal entry.
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE payment_transactions SET invalidated_at = ?, invalidated_by = ? WHERE id = ?",
+            (datetime.now().isoformat(), "tester", txn_id),
+        )
+        from baker.services.journal_sync import _sync_payment_journal
+        row = conn.execute("SELECT * FROM payment_transactions WHERE id = ?", (txn_id,)).fetchone()
+        _sync_payment_journal(
+            conn,
+            txn_id,
+            float(row["amount"]),
+            row["type"],
+            row["method"],
+            order_id=int(row["order_id"]),
+            deleted=True,
+        )
+
+    resp = api_client.get("/api/accounts/validate")
+    assert resp.status_code == 200
+    body = resp.json()
+    summary = body["summary"]
+    assert summary["total_checks"] == 14, f"Expected 14 checks, got {summary['total_checks']}"
+    failed = [c for c in body["checks"] if c["status"] != "pass"]
+    assert not failed, (
+        "Accounting integrity checks failed after invalidation: "
+        + ", ".join(c.get("name", str(c)) for c in failed)
+    )

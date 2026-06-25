@@ -1873,3 +1873,101 @@ def test_auto_decrement_stock_is_idempotent(api_client):
             (ref,),
         ).fetchone()
         assert restores["c"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Downstream consumers: completion guard + receipts (FR8/FR9, AC6/AC9)
+# ---------------------------------------------------------------------------
+
+
+def _invalidate_payment_txn(conn, txn_id: int) -> None:
+    """Simulate Phase 2 invalidate: set invalidated_at and reverse the journal entry."""
+    from datetime import datetime
+    from baker.services.journal_sync import _sync_payment_journal
+    conn.execute(
+        "UPDATE payment_transactions SET invalidated_at = ?, invalidated_by = ? WHERE id = ?",
+        (datetime.now().isoformat(), "tester", txn_id),
+    )
+    row = conn.execute("SELECT * FROM payment_transactions WHERE id = ?", (txn_id,)).fetchone()
+    _sync_payment_journal(
+        conn,
+        txn_id,
+        float(row["amount"]),
+        row["type"],
+        row["method"],
+        order_id=int(row["order_id"]),
+        deleted=True,
+    )
+
+
+def test_completion_guard_rejects_when_only_payment_is_invalidated(api_client):
+    """AC6: an invalidated deposit is excluded from the completion guard.
+
+    Order total_price=200,000đ with one invalidated deposit of 200,000đ must be
+    rejected at the completed transition with "Chưa thanh toán đủ".
+    """
+    order = _create_order(api_client, items=[{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}])
+    ref = order["orderRef"]
+    total = order["totalPrice"]
+    assert total == 200000
+
+    # Pay the full amount, then move the order forward to delivered.
+    pay = api_client.post(f"/api/orders/{ref}/transactions", json={"amount": total, "type": "deposit", "method": "cash"})
+    assert pay.status_code == 201
+    txn_id = int(pay.json()["id"])
+    for status in ["confirmed", "in_progress", "ready", "delivered"]:
+        r = api_client.post(f"/api/orders/{ref}/status", json={"status": status, "reason": "Tiến độ"})
+        assert r.status_code == 200
+
+    # Invalidate the only payment. Now nothing counts toward total_paid.
+    with get_db() as conn:
+        _invalidate_payment_txn(conn, txn_id)
+
+    # Completion must be rejected because the invalidated deposit is excluded.
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "completed", "reason": "Hoàn thành"},
+    )
+    assert resp.status_code == 422
+    body = resp.json()
+    detail = body.get("detail") or body.get("rejectionDetail") or ""
+    assert "Chưa thanh toán đủ" in detail or "thanh toán" in detail.lower(), (
+        f"Expected unpaid rejection, got: {body}"
+    )
+
+
+def test_completion_guard_accepts_when_valid_payment_covers_total(api_client):
+    """AC6 complement: a valid (non-invalidated) payment still allows completion."""
+    order = _create_order(api_client, items=[{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}])
+    ref = order["orderRef"]
+    total = order["totalPrice"]
+    pay = api_client.post(f"/api/orders/{ref}/transactions", json={"amount": total, "type": "deposit", "method": "cash"})
+    assert pay.status_code == 201
+    for status in ["confirmed", "in_progress", "ready", "delivered"]:
+        api_client.post(f"/api/orders/{ref}/status", json={"status": status, "reason": "Tiến độ"})
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "completed", "reason": "Hoàn thành"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "completed"
+
+
+def test_receipt_total_excludes_invalidated_transaction(api_client):
+    """AC9: receipt payment total excludes invalidated transactions.
+
+    Receipts call ``PaymentTransaction.total_paid_excl_outflows`` which filters
+    ``invalidated_at IS NULL`` (Phase 1). This test verifies the model-level
+    exclusion holds through the receipt calculation path.
+    """
+    from baker.models.payment_transaction import PaymentTransaction
+    order = _create_order(api_client, items=[{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}])
+    ref = order["orderRef"]
+    total = order["totalPrice"]
+    pay = api_client.post(f"/api/orders/{ref}/transactions", json={"amount": total, "type": "deposit", "method": "cash"})
+    txn_id = int(pay.json()["id"])
+
+    with get_db() as conn:
+        order_id = int(conn.execute("SELECT id FROM orders WHERE order_ref = ?", (ref,)).fetchone()["id"])
+        # Before invalidation the full amount counts.
+        assert PaymentTransaction.total_paid_excl_outflows(conn, order_id) == 200000.0
+        _invalidate_payment_txn(conn, txn_id)
+        # After invalidation the receipt total excludes the invalidated deposit.
+        assert PaymentTransaction.total_paid_excl_outflows(conn, order_id) == 0.0

@@ -364,15 +364,19 @@ def _check_source_completeness(conn) -> dict[str, Any]:
             "timestamp": r["timestamp"],
         })
 
-    # Payment transactions without journal entries
+    # Payment transactions without journal entries.
+    # Invalidated transactions (invalidated_at IS NOT NULL) are excluded —
+    # their journal entry is reversed/removed by invalidation (DG-196 Phase 3,
+    # NFR1/AC10: accounting integrity must pass after invalidation).
     pt_rows = conn.execute(
         """
         SELECT pt.id, pt.amount, pt.type, pt.method, pt.created_at
         FROM payment_transactions pt
-        WHERE NOT EXISTS (
+        WHERE (pt.invalidated_at IS NULL OR pt.invalidated_at = '')
+          AND NOT EXISTS (
             SELECT 1 FROM journal_entries je
             WHERE je.source_type = 'payment_transaction' AND je.source_id = pt.id
-        )
+          )
         ORDER BY pt.id
         """,
     ).fetchall()
