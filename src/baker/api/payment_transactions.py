@@ -27,6 +27,11 @@ class TransactionUpdate(BaseModel):
     note: str | None = None
 
 
+class InvalidationRequest(BaseModel):
+    invalidatedBy: str = ""
+    reason: str = ""
+
+
 def _resolve_order_id(conn, ref: str) -> int:
     row = conn.execute(
         "SELECT id FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
@@ -183,3 +188,131 @@ def delete_transaction(ref: str, txn_id: int):
             )
         except Exception:
             logger.exception("payment journal delete-sync failed for txn %d", txn_id)
+
+
+def _now_iso(conn) -> str:
+    """Return the current local timestamp as ISO-8601 string (matches journal_entries default)."""
+    return conn.execute(
+        "SELECT strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')"
+    ).fetchone()[0]
+
+
+@router.post("/{ref}/transactions/{txn_id}/invalidate")
+def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest):
+    """Đánh dấu giao dịch là không hợp lệ (soft-delete) + đảo bút toán journal.
+
+    FR1/FR3: Sets ``invalidated_at``/``invalidated_by`` and reverses (locked)
+    or deletes (unlocked) the matching journal entry via
+    ``_sync_payment_journal(deleted=True)``. The locked-reversal path preserves
+    the original ``transaction_date`` (same-timestamp reversal); the unlocked
+    path deletes the entry outright. FR10: logs ``action_type='invalidate'`` to
+    ``order_history``.
+    """
+    with get_db() as conn:
+        order_id = _resolve_order_id(conn, ref)
+        row = conn.execute(
+            "SELECT * FROM payment_transactions WHERE id = ? AND order_id = ?",
+            (txn_id, order_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch")
+
+        if row["invalidated_at"]:
+            raise HTTPException(
+                status_code=422,
+                detail="Giao dịch đã được hủy trước đó",
+            )
+
+        invalidated_at = _now_iso(conn)
+        invalidated_by = body.invalidatedBy or ""
+        conn.execute(
+            "UPDATE payment_transactions "
+            "SET invalidated_at = ?, invalidated_by = ? WHERE id = ?",
+            (invalidated_at, invalidated_by, txn_id),
+        )
+
+        # FR3/NFR2: journal sync is fire-and-forget. _sync_payment_journal
+        # (deleted=True) reverses locked entries (preserving the original
+        # transaction_date) and deletes unlocked ones.
+        try:
+            from baker.services.journal_sync import _sync_payment_journal
+            _sync_payment_journal(
+                conn, txn_id, float(row["amount"]), row["type"], row["method"],
+                order_id=order_id, deleted=True,
+            )
+        except Exception:
+            logger.exception("payment journal invalidate-sync failed for txn %d", txn_id)
+
+        # FR10: audit trail.
+        try:
+            from baker.api.orders import _log_order_history
+            _log_order_history(
+                conn, order_id, "invalidate", "payment_transaction",
+                str(txn_id), invalidated_by, invalidated_by,
+            )
+        except Exception:
+            logger.exception("order_history log failed for invalidate txn %d", txn_id)
+
+        updated = conn.execute(
+            "SELECT * FROM payment_transactions WHERE id = ?", (txn_id,)
+        ).fetchone()
+        return PaymentTransaction.from_row(updated).to_api_dict()
+
+
+@router.post("/{ref}/transactions/{txn_id}/restore")
+def restore_transaction(ref: str, txn_id: int):
+    """Khôi phục giao dịch đã hủy + tạo lại bút toán journal.
+
+    FR2/FR4: Clears ``invalidated_at``/``invalidated_by`` and re-creates the
+    journal entry via ``_sync_payment_journal`` (create path), which uses the
+    transaction's ``created_at`` as ``transaction_date`` (FR4). FR10: logs
+    ``action_type='restore'`` to ``order_history``.
+    """
+    with get_db() as conn:
+        order_id = _resolve_order_id(conn, ref)
+        row = conn.execute(
+            "SELECT * FROM payment_transactions WHERE id = ? AND order_id = ?",
+            (txn_id, order_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch")
+
+        if not row["invalidated_at"]:
+            raise HTTPException(
+                status_code=422,
+                detail="Giao dịch chưa bị hủy, không cần khôi phục",
+            )
+
+        conn.execute(
+            "UPDATE payment_transactions "
+            "SET invalidated_at = NULL, invalidated_by = '' WHERE id = ?",
+            (txn_id,),
+        )
+
+        # FR4/NFR2: journal sync is fire-and-forget. The create path reads the
+        # transaction's created_at for transaction_date. If a prior reversal
+        # entry exists (locked case), a new entry is created alongside it; the
+        # reversal is left intact so the locked period's books are preserved.
+        try:
+            from baker.services.journal_sync import _sync_payment_journal
+            _sync_payment_journal(
+                conn, txn_id, float(row["amount"]), row["type"], row["method"],
+                order_id=order_id,
+            )
+        except Exception:
+            logger.exception("payment journal restore-sync failed for txn %d", txn_id)
+
+        # FR10: audit trail.
+        try:
+            from baker.api.orders import _log_order_history
+            _log_order_history(
+                conn, order_id, "restore", "payment_transaction",
+                str(txn_id), "", "",
+            )
+        except Exception:
+            logger.exception("order_history log failed for restore txn %d", txn_id)
+
+        updated = conn.execute(
+            "SELECT * FROM payment_transactions WHERE id = ?", (txn_id,)
+        ).fetchone()
+        return PaymentTransaction.from_row(updated).to_api_dict()
