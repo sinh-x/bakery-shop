@@ -1507,12 +1507,12 @@ SEED_CHART_OF_ACCOUNTS = [
     ("1100", "Tiền mặt (Cash on Hand)", "asset", "1000"),
     ("1200", "Tài khoản ngân hàng (Bank Account)", "asset", "1000"),
     ("1300", "Hàng tồn kho (Inventory)", "asset", "1000"),
-    ("1400", "Nhân viên ứng trước (Staff Advances)", "asset", "1000"),
     ("1500", "Phải thu khách hàng (Accounts Receivable)", "asset", "1000"),
     # Liabilities
     ("2000", "Nợ phải trả", "liability", None),
     ("2100", "Tiền khách đặt cọc (Customer Deposits)", "liability", "2000"),
     ("2200", "Tiền ship bus giữ hộ (Bus Shipping Held)", "liability", "2000"),
+    ("2300", "Phải trả nhân viên (Staff Payables)", "liability", "2000"),
     # Equity
     ("3000", "Vốn chủ sở hữu", "equity", None),
     ("3100", "Vốn chủ sở hữu (Owner's Equity)", "equity", "3000"),
@@ -1558,7 +1558,7 @@ EXPENSE_PAYMENT_SOURCE_TO_ASSET_CODE = {
     "Shop tiền mặt": "1100",
     "TK Phượng VCB": "1200",
     "TK Ân VCB": "1200",
-    "Nhân viên ứng trước": "1400",
+    "Nhân viên ứng trước": "2300",
 }
 
 # Map payment_transactions.method → asset account code.
@@ -1578,7 +1578,7 @@ CUSTOMER_DEPOSITS_CODE = "2100"
 ORDER_REVENUE_CODE = "4100"
 COGS_CODE = "5900"
 INVENTORY_CODE = "1300"
-STAFF_ADVANCES_CODE = "1400"
+STAFF_PAYABLES_CODE = "2300"
 ACCOUNTS_RECEIVABLE_CODE = "1500"
 BUS_SHIPPING_HELD_CODE = "2200"
 
@@ -1609,18 +1609,18 @@ def _seed_chart_of_accounts(conn) -> None:
 
 
 def _ensure_staff_advance_sub_account(conn, staff_name: str) -> int:
-    """Create (or return) a sub-account under Nhân viên ứng trước for a staff member.
+    """Create (or return) a sub-account under Phải trả nhân viên for a staff member.
 
-    Sub-account code is derived as 14XX where XX is a stable zero-padded index
+    Sub-account code is derived as 23XX where XX is a stable zero-padded index
     assigned by first-seen order. The code is unique within the chart of
-    accounts and the parent is the 1400 parent account.
+    accounts and the parent is the 2300 parent account.
     """
     parent_row = conn.execute(
-        "SELECT id FROM accounts WHERE code = ?", (STAFF_ADVANCES_CODE,)
+        "SELECT id FROM accounts WHERE code = ?", (STAFF_PAYABLES_CODE,)
     ).fetchone()
     if parent_row is None:
         raise RuntimeError(
-            "Staff Advances parent account (1400) missing; seed COA first"
+            "Staff Payables parent account (2300) missing; seed COA first"
         )
     parent_id = int(parent_row[0])
 
@@ -1635,9 +1635,9 @@ def _ensure_staff_advance_sub_account(conn, staff_name: str) -> int:
         "SELECT COUNT(*) FROM accounts WHERE parent_id = ?", (parent_id,)
     ).fetchone()
     next_idx = int(count_row[0]) + 1
-    code = f"14{next_idx:02d}"
+    code = f"23{next_idx:02d}"
     cursor = conn.execute(
-        "INSERT INTO accounts (code, name, type, parent_id) VALUES (?, ?, 'asset', ?)",
+        "INSERT INTO accounts (code, name, type, parent_id) VALUES (?, ?, 'liability', ?)",
         (code, staff_name, parent_id),
     )
     return int(cursor.lastrowid)
