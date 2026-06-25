@@ -40,6 +40,7 @@ class RutTienSection extends ConsumerWidget {
     });
     final totalReceived = txns
         .where((t) => t.type == 'tien_rut')
+        .where((t) => t.invalidatedAt == null)
         .fold<double>(0, (sum, t) => sum + t.amount);
     final remaining = totalTarget.toDouble() - totalReceived;
     final isFullyReceived = totalReceived >= totalTarget;

@@ -62,6 +62,29 @@ class PaymentTransactionService {
   Future<void> deleteTransaction(String orderRef, String txnId) async {
     await _dio.delete('/api/orders/$orderRef/transactions/$txnId');
   }
+
+  Future<PaymentTransaction> invalidateTransaction(
+    String orderRef,
+    String txnId, {
+    String invalidatedBy = '',
+    String reason = '',
+  }) async {
+    final response = await _dio.post(
+      '/api/orders/$orderRef/transactions/$txnId/invalidate',
+      data: {'invalidatedBy': invalidatedBy, 'reason': reason},
+    );
+    return PaymentTransaction.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<PaymentTransaction> restoreTransaction(
+    String orderRef,
+    String txnId,
+  ) async {
+    final response = await _dio.post(
+      '/api/orders/$orderRef/transactions/$txnId/restore',
+    );
+    return PaymentTransaction.fromJson(response.data as Map<String, dynamic>);
+  }
 }
 
 final paymentTransactionServiceProvider =

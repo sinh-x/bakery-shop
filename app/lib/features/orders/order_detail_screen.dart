@@ -405,6 +405,8 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
   double _computePaid(List<PaymentTransaction> txns) {
     var paid = 0.0;
     for (final t in txns) {
+      // Exclude invalidated transactions from payment totals (DG-196).
+      if (t.invalidatedAt != null) continue;
       if (t.type == 'refund') {
         paid -= t.amount;
       } else if (t.type != 'tien_rut') {
@@ -465,6 +467,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       isScrollControlled: true,
       builder: (_) => _TransactionDetailSheet(
         txn: txn,
+        orderRef: order.orderRef,
         onEdit: () => _openEditPaymentSheet(txn),
       ),
     );
@@ -1142,6 +1145,7 @@ class _TransactionTile extends StatelessWidget {
     final color = _txnColor(txn.type);
     final typeLabel = txnTypeLabel(txn.type);
     final methodLabel = paymentMethodLabel(txn.method);
+    final isInvalidated = txn.invalidatedAt != null;
 
     String dateStr = '';
     if (txn.createdAt != null) {
@@ -1153,6 +1157,23 @@ class _TransactionTile extends StatelessWidget {
       }
     }
 
+    final baseTextStyle = theme.textTheme.bodyMedium?.copyWith(
+      fontWeight: FontWeight.w600,
+      color: txn.type == 'refund' ? Colors.orange : Colors.green,
+    );
+    final amountStyle = isInvalidated
+        ? baseTextStyle?.copyWith(
+            color: theme.colorScheme.outline,
+            decoration: TextDecoration.lineThrough,
+          )
+        : baseTextStyle;
+    final methodStyle = isInvalidated
+        ? theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.outline,
+            decoration: TextDecoration.lineThrough,
+          )
+        : theme.textTheme.bodySmall;
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -1163,14 +1184,22 @@ class _TransactionTile extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: color.withAlpha(30),
+                color: isInvalidated
+                    ? theme.colorScheme.outline.withAlpha(20)
+                    : color.withAlpha(30),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: color.withAlpha(100)),
+                border: Border.all(
+                  color: isInvalidated
+                      ? theme.colorScheme.outline.withAlpha(100)
+                      : color.withAlpha(100),
+                ),
               ),
               child: Text(
-                typeLabel,
+                isInvalidated ? VN.txnInvalidatedBadge : typeLabel,
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: color,
+                  color: isInvalidated
+                      ? theme.colorScheme.outline
+                      : color,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -1180,7 +1209,7 @@ class _TransactionTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(methodLabel, style: theme.textTheme.bodySmall),
+                  Text(methodLabel, style: methodStyle),
                   if (dateStr.isNotEmpty)
                     Text(
                       dateStr,
@@ -1195,10 +1224,7 @@ class _TransactionTile extends StatelessWidget {
               txn.type == 'refund'
                   ? '-${formatVND(txn.amount)}'
                   : formatVND(txn.amount),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: txn.type == 'refund' ? Colors.orange : Colors.green,
-              ),
+              style: amountStyle,
             ),
           ],
         ),
@@ -1384,11 +1410,27 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
 
 // ── Transaction detail sheet ──────────────────────────────────────────────────
 
-class _TransactionDetailSheet extends StatelessWidget {
-  const _TransactionDetailSheet({required this.txn, required this.onEdit});
+class _TransactionDetailSheet extends ConsumerStatefulWidget {
+  const _TransactionDetailSheet({
+    required this.txn,
+    required this.orderRef,
+    required this.onEdit,
+  });
 
   final PaymentTransaction txn;
+  final String orderRef;
   final VoidCallback onEdit;
+
+  @override
+  ConsumerState<_TransactionDetailSheet> createState() =>
+      _TransactionDetailSheetState();
+}
+
+class _TransactionDetailSheetState
+    extends ConsumerState<_TransactionDetailSheet> {
+  bool _acting = false;
+
+  PaymentTransaction get txn => widget.txn;
 
   @override
   Widget build(BuildContext context) {
@@ -1396,6 +1438,7 @@ class _TransactionDetailSheet extends StatelessWidget {
     final color = _txnColor(txn.type);
     final typeLabel = txnTypeLabel(txn.type);
     final methodLabel = paymentMethodLabel(txn.method);
+    final isInvalidated = txn.invalidatedAt != null;
 
     String dateStr = '';
     if (txn.createdAt != null) {
@@ -1404,6 +1447,16 @@ class _TransactionDetailSheet extends StatelessWidget {
         dateStr = DateFormat('dd/MM/yyyy HH:mm').format(dt);
       } catch (_) {
         dateStr = txn.createdAt!;
+      }
+    }
+
+    String invalidatedDateStr = '';
+    if (txn.invalidatedAt != null) {
+      try {
+        final dt = DateTime.parse(txn.invalidatedAt!).toLocal();
+        invalidatedDateStr = DateFormat('dd/MM/yyyy HH:mm').format(dt);
+      } catch (_) {
+        invalidatedDateStr = txn.invalidatedAt!;
       }
     }
 
@@ -1421,14 +1474,20 @@ class _TransactionDetailSheet extends StatelessWidget {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: color.withAlpha(30),
+                  color: isInvalidated
+                      ? theme.colorScheme.outline.withAlpha(20)
+                      : color.withAlpha(30),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: color.withAlpha(100)),
+                  border: Border.all(
+                    color: isInvalidated
+                        ? theme.colorScheme.outline.withAlpha(100)
+                        : color.withAlpha(100),
+                  ),
                 ),
                 child: Text(
-                  typeLabel,
+                  isInvalidated ? VN.txnInvalidatedBadge : typeLabel,
                   style: theme.textTheme.labelMedium?.copyWith(
-                    color: color,
+                    color: isInvalidated ? theme.colorScheme.outline : color,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -1440,7 +1499,11 @@ class _TransactionDetailSheet extends StatelessWidget {
                     : formatVND(txn.amount),
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
-                  color: txn.type == 'refund' ? Colors.orange : Colors.green,
+                  color: isInvalidated
+                      ? theme.colorScheme.outline
+                      : (txn.type == 'refund' ? Colors.orange : Colors.green),
+                  decoration:
+                      isInvalidated ? TextDecoration.lineThrough : null,
                 ),
               ),
             ],
@@ -1450,18 +1513,164 @@ class _TransactionDetailSheet extends StatelessWidget {
           if (dateStr.isNotEmpty) _DetailRow(label: VN.txnType, value: dateStr),
           if (txn.notes.isNotEmpty)
             _DetailRow(label: VN.txnNoteLabel, value: txn.notes),
+          if (isInvalidated) ...[
+            const SizedBox(height: 8),
+            if (invalidatedDateStr.isNotEmpty)
+              _DetailRow(
+                label: VN.txnInvalidatedAtLabel,
+                value: invalidatedDateStr,
+              ),
+            if (txn.invalidatedBy.isNotEmpty)
+              _DetailRow(
+                label: VN.txnInvalidatedByLabel,
+                value: txn.invalidatedBy,
+              ),
+          ],
           const SizedBox(height: 20),
-          OutlinedButton.icon(
-            onPressed: () {
-              Navigator.pop(context);
-              onEdit();
-            },
-            icon: const Icon(Icons.edit_outlined, size: 18),
-            label: const Text(VN.editPayment),
+          if (_acting)
+            const Center(child: CircularProgressIndicator())
+          else ...[
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                widget.onEdit();
+              },
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text(VN.editPayment),
+            ),
+            const SizedBox(height: 8),
+            if (isInvalidated)
+              FilledButton.icon(
+                onPressed: _onRestore,
+                icon: const Icon(Icons.restore, size: 18),
+                label: const Text(VN.restorePayment),
+              )
+            else
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: theme.colorScheme.error,
+                  side: BorderSide(color: theme.colorScheme.error),
+                ),
+                onPressed: _onInvalidate,
+                icon: const Icon(Icons.block_outlined, size: 18),
+                label: const Text(VN.invalidatePayment),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _onInvalidate() async {
+    final reason = await _showInvalidateReasonDialog();
+    if (reason == null || !mounted) return;
+    setState(() => _acting = true);
+    try {
+      await ref
+          .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
+          .invalidate(txn.id, reason: reason);
+      if (mounted) {
+        Navigator.pop(context);
+        showTopSnackBar(context, VN.paymentInvalidated);
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.apiError}: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _acting = false);
+    }
+  }
+
+  Future<void> _onRestore() async {
+    final confirmed = await _showRestoreConfirmDialog();
+    if (!confirmed || !mounted) return;
+    setState(() => _acting = true);
+    try {
+      await ref
+          .read(orderPaymentTransactionsProvider(widget.orderRef).notifier)
+          .restore(txn.id);
+      if (mounted) {
+        Navigator.pop(context);
+        showTopSnackBar(context, VN.paymentRestored);
+      }
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.apiError}: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _acting = false);
+    }
+  }
+
+  Future<String?> _showInvalidateReasonDialog() async {
+    final ctrl = TextEditingController();
+    final theme = Theme.of(context);
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setS) => AlertDialog(
+            title: const Text(VN.invalidateConfirmTitle),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(VN.invalidateConfirmMessage),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ctrl,
+                  decoration: const InputDecoration(
+                    labelText: VN.invalidateReasonLabel,
+                    hintText: VN.invalidateReasonHint,
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
+                  autofocus: true,
+                  onChanged: (_) => setS(() {}),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text(VN.cancel),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: theme.colorScheme.error,
+                ),
+                onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+                child: const Text(VN.invalidatePayment),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      ctrl.dispose();
+    }
+  }
+
+  Future<bool> _showRestoreConfirmDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(VN.restoreConfirmTitle),
+        content: const Text(VN.restoreConfirmMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(VN.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(VN.restorePayment),
           ),
         ],
       ),
     );
+    return result ?? false;
   }
 }
 

@@ -383,6 +383,24 @@ class VN {
   static const paymentAmountLabel = 'Số tiền';
   static const txnType = 'Loại thanh toán';
 
+  // Payment transaction invalidation (DG-196)
+  static const txnInvalidatedBadge = 'Đã hủy';
+  static const txnInvalidatedAtLabel = 'Ngày hủy';
+  static const txnInvalidatedByLabel = 'Người hủy';
+  static const invalidatePayment = 'Hủy giao dịch';
+  static const restorePayment = 'Khôi phục giao dịch';
+  static const invalidateConfirmTitle = 'Hủy giao dịch?';
+  static const invalidateConfirmMessage =
+      'Giao dịch sẽ bị hủy và không tính vào tổng thanh toán. '
+      'Bút toán kế toán sẽ được đảo.';
+  static const restoreConfirmTitle = 'Khôi phục giao dịch?';
+  static const restoreConfirmMessage =
+      'Giao dịch sẽ được khôi phục và tính lại vào tổng thanh toán.';
+  static const paymentInvalidated = 'Đã hủy giao dịch';
+  static const paymentRestored = 'Đã khôi phục giao dịch';
+  static const invalidateReasonLabel = 'Lý do hủy (tùy chọn)';
+  static const invalidateReasonHint = 'Nhập lý do hủy giao dịch...';
+
   // Work item statuses
   static const workItemPending = 'Chờ xử lý';
   static const workItemConfirmed = 'Đã xác nhận';
