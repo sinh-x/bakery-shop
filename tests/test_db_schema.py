@@ -825,10 +825,10 @@ _EXPECTED_COA = {
     "1100": ("Tiền mặt (Cash on Hand)", "asset", "1000"),
     "1200": ("Tài khoản ngân hàng (Bank Account)", "asset", "1000"),
     "1300": ("Hàng tồn kho (Inventory)", "asset", "1000"),
-    "1400": ("Nhân viên ứng trước (Staff Advances)", "asset", "1000"),
     "2000": ("Nợ phải trả", "liability", None),
     "2100": ("Tiền khách đặt cọc (Customer Deposits)", "liability", "2000"),
     "2200": ("Tiền ship bus giữ hộ (Bus Shipping Held)", "liability", "2000"),
+    "2300": ("Phải trả nhân viên (Staff Payables)", "liability", "2000"),
     "3000": ("Vốn chủ sở hữu", "equity", None),
     "3100": ("Vốn chủ sở hữu (Owner's Equity)", "equity", "3000"),
     "4000": ("Doanh thu", "income", None),
@@ -1065,9 +1065,9 @@ def test_v44_backfill_expense_staff_advance_creates_sub_account():
 
         _migrate_to_version(conn, 44)
 
-        # Sub-account created under 1400
+        # Sub-account created under 2300
         parent = conn.execute(
-            "SELECT id FROM accounts WHERE code = '1400'"
+            "SELECT id FROM accounts WHERE code = '2300'"
         ).fetchone()
         subs = conn.execute(
             "SELECT * FROM accounts WHERE parent_id = ? ORDER BY id",
@@ -1075,6 +1075,10 @@ def test_v44_backfill_expense_staff_advance_creates_sub_account():
         ).fetchall()
         assert len(subs) == 1
         assert subs[0]["name"] == "Ân"
+        # AC1/AC2: sub-account is a 23XX liability under 2300
+        assert subs[0]["code"].startswith("23")
+        assert subs[0]["type"] == "liability"
+        assert subs[0]["parent_id"] == parent["id"]
 
         # Journal entry credit goes to the staff sub-account
         entry = conn.execute(

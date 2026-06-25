@@ -37,7 +37,7 @@ def test_accounts_seeded_after_migrate():
             "1100",  # Cash on Hand
             "1200",  # Bank Account
             "1300",  # Inventory
-            "1400",  # Staff Advances (parent)
+            "2300",  # Staff Payables (parent)
             "2100",  # Customer Deposits
             "3100",  # Owner's Equity
             "4100",  # Order Revenue
@@ -145,7 +145,11 @@ def test_list_accounts_returns_hierarchy(api_client):
     child_codes = {c["code"] for c in asset_group["children"]}
     assert "1100" in child_codes
     assert "1200" in child_codes
-    assert "1400" in child_codes  # Staff Advances parent
+    assert "1300" in child_codes
+    # Staff Payables (2300) is a liability, not an asset child
+    liability_group = next(a for a in tree if a["code"] == "2000")
+    liability_child_codes = {c["code"] for c in liability_group["children"]}
+    assert "2300" in liability_child_codes  # Staff Payables parent
 
 
 # ---------------------------------------------------------------------------
@@ -188,10 +192,11 @@ def test_expense_staff_advance_creates_sub_account(api_client):
         lines = _lines_for_entry(conn, entries[0].id)
         debit_line = next(l for l in lines if l.debit > 0)
         credit_line = next(l for l in lines if l.credit > 0)
-        # Credit account should be a sub-account under 1400 named "Phượng"
+        # Credit account should be a sub-account under 2300 named "Phượng"
         staff_acc = Account.get_by_id(conn, credit_line.account_id)
-        assert staff_acc.code.startswith("14")
-        assert staff_acc.parent_id == _account_id(conn, "1400")
+        assert staff_acc.code.startswith("23")
+        assert staff_acc.type == "liability"
+        assert staff_acc.parent_id == _account_id(conn, "2300")
         assert staff_acc.name == "Phượng"
 
 
@@ -875,8 +880,9 @@ def test_staff_reimburse_creates_journal_entry(api_client):
         debit_line = next(l for l in lines if l.debit > 0)
         credit_line = next(l for l in lines if l.credit > 0)
         staff_acc = Account.get_by_id(conn, debit_line.account_id)
-        assert staff_acc.code.startswith("14")
-        assert staff_acc.parent_id == _account_id(conn, "1400")
+        assert staff_acc.code.startswith("23")
+        assert staff_acc.type == "liability"
+        assert staff_acc.parent_id == _account_id(conn, "2300")
         assert staff_acc.name == "Lan"
         assert Account.get_by_id(conn, credit_line.account_id).code == "1100"
         assert debit_line.debit == 100000.0
@@ -889,7 +895,7 @@ def test_staff_reimburse_creates_sub_account_idempotent(api_client):
     with get_db() as conn:
         rows = conn.execute(
             "SELECT id FROM accounts WHERE parent_id = ? AND name = 'Mai'",
-            (_account_id(conn, "1400"),),
+            (_account_id(conn, "2300"),),
         ).fetchall()
         assert len(rows) == 1
 
