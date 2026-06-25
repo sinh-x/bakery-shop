@@ -2462,6 +2462,31 @@ def _migrate_v52_reclassify_staff_advances_as_liabilities(conn):
         conn.execute("DELETE FROM accounts WHERE id = ?", (old_parent_id,))
 
 
+def _migrate_v53_payment_transaction_invalidation(conn):
+    """Add soft-delete (invalidation) columns to ``payment_transactions``.
+
+    Mirrors the v43 events soft-delete pattern (``deleted_at``/``deleted_by``):
+    invalidation is a soft-delete that preserves the row for audit while
+    excluding it from payment totals, completion guards, and journal listings.
+
+    Adds ``invalidated_at TEXT`` (NULL = valid) and ``invalidated_by TEXT
+    DEFAULT ''`` plus an index on ``invalidated_at`` for fast filtering of
+    valid (non-NULL) rows.
+
+    Idempotent: re-running on an already-migrated DB is a no-op because
+    ``_guard_add_column`` checks ``PRAGMA table_info`` before altering and
+    ``CREATE INDEX IF NOT EXISTS`` skips existing indexes.
+    """
+    _guard_add_column(conn, "payment_transactions", "invalidated_at", "invalidated_at TEXT")
+    _guard_add_column(
+        conn, "payment_transactions", "invalidated_by", "invalidated_by TEXT DEFAULT ''"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_payment_transactions_invalidated_at "
+        "ON payment_transactions(invalidated_at)"
+    )
+
+
 COST_HISTORY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS cost_history (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2775,6 +2800,11 @@ MIGRATIONS = {
         "description": "Reclassify staff advance accounts (1400 asset) to staff payables (2300 liability) — DG-194 review remediation",
         "sql": "",
         "callable": _migrate_v52_reclassify_staff_advances_as_liabilities,
+    },
+    53: {
+        "description": "Add invalidated_at/invalidated_by soft-delete columns to payment_transactions — DG-196 payment transaction invalidation",
+        "sql": "",
+        "callable": _migrate_v53_payment_transaction_invalidation,
     },
 }
 

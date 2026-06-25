@@ -366,7 +366,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 52
+        assert _migrated_version(conn) == 53
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -383,7 +383,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 52
+        assert _migrated_version(conn) == 53
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -397,10 +397,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 52
+        assert _migrated_version(conn) == 53
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 52
+        assert _migrated_version(conn) == 53
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -2275,3 +2275,81 @@ def test_v52_runs_in_full_migration_chain_after_v51():
         ).fetchall()
         assert len(subs) == 2
         assert all(s["type"] == "liability" for s in subs)
+
+
+def test_v53_registered_in_migration_chain():
+    """v53 is registered in MIGRATIONS with the expected callable."""
+    assert 53 in MIGRATIONS
+    assert (
+        MIGRATIONS[53]["callable"].__name__
+        == "_migrate_v53_payment_transaction_invalidation"
+    )
+
+
+def test_v53_adds_invalidation_columns_on_incremental_db():
+    """Applying v53 on top of a v52 DB adds invalidated_at/invalidated_by plus
+    index to payment_transactions."""
+    from baker.db.schema import _migrate_v53_payment_transaction_invalidation
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 52)
+        # Columns absent before v53.
+        cols_before = _schema_columns(conn, "payment_transactions")
+        assert "invalidated_at" not in cols_before
+        assert "invalidated_by" not in cols_before
+
+        _migrate_v53_payment_transaction_invalidation(conn)
+
+        cols = _schema_columns(conn, "payment_transactions")
+        assert "invalidated_at" in cols
+        assert "invalidated_by" in cols
+        # Index created.
+        idx_rows = conn.execute(
+            "PRAGMA index_list(payment_transactions)"
+        ).fetchall()
+        idx_names = [r["name"] for r in idx_rows]
+        assert "idx_payment_transactions_invalidated_at" in idx_names
+
+
+def test_v53_applies_in_full_migration_chain():
+    """v53 executes as part of ensure_schema after v52 and columns exist."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 52)
+        _migrate_to_version(conn, 53)
+        assert _migrated_version(conn) == 53
+        cols = _schema_columns(conn, "payment_transactions")
+        assert "invalidated_at" in cols
+        assert "invalidated_by" in cols
+
+
+def test_v53_idempotent_on_already_migrated_db():
+    """Re-running the v53 callable after it has already run is a no-op."""
+    from baker.db.schema import _migrate_v53_payment_transaction_invalidation
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 52)
+        _migrate_v53_payment_transaction_invalidation(conn)
+        cols_after_first = _schema_columns(conn, "payment_transactions")
+        # Second application must not raise or duplicate.
+        _migrate_v53_payment_transaction_invalidation(conn)
+        cols_after_second = _schema_columns(conn, "payment_transactions")
+        assert set(cols_after_first) == set(cols_after_second)
+
+
+def test_v53_idempotent_on_fresh_db():
+    """v53 on a fresh DB (already at v53 via ensure_schema) is a no-op."""
+    from baker.db.schema import _migrate_v53_payment_transaction_invalidation
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 53
+        before = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND "
+            "tbl_name='payment_transactions'"
+        ).fetchall()
+        _migrate_v53_payment_transaction_invalidation(conn)
+        after = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND "
+            "tbl_name='payment_transactions'"
+        ).fetchall()
+        assert before == after
