@@ -132,7 +132,7 @@ class TestBuildIppPrintJobRequest:
         url = "http://lily:631/printers/Y41BT"
         req = _build_ipp_print_job_request(b"tspl", url)
         assert b"printer-uri" in req
-        assert url.encode("ascii") in req
+        assert b"ipp://localhost/printers/Y41BT" in req
 
     def test_contains_job_name(self):
         req = _build_ipp_print_job_request(b"tspl", "http://lily:631/printers/Y41BT")
