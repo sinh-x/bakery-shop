@@ -19,7 +19,7 @@ from baker.db.schema import (
     COGS_CODE,
     CUSTOMER_DEPOSITS_CODE,
     EXPENSE_CATEGORY_TO_ACCOUNT_CODE,
-    EXPENSE_PAYMENT_SOURCE_TO_ASSET_CODE,
+    EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
     INVENTORY_CODE,
     INVENTORY_PURCHASE_CATEGORIES,
     ORDER_REVENUE_CODE,
@@ -27,7 +27,7 @@ from baker.db.schema import (
     PAYMENT_OUTFLOW_TYPES,
     REVENUE_UPDATE_TOLERANCE,
     _account_id_by_code,
-    _ensure_staff_advance_sub_account,
+    _ensure_staff_payable_sub_account,
     _insert_journal_entry,
 )
 from baker.models.journal_entry import JournalEntry, JournalLine
@@ -143,12 +143,12 @@ def _build_expense_journal_lines(
         staff_name = (data.get("paid_by_name") or "").strip()
         if not staff_name:
             return None
-        asset_account_id = _ensure_staff_advance_sub_account(conn, staff_name)
+        payment_account_id = _ensure_staff_payable_sub_account(conn, staff_name)
     else:
-        asset_code = EXPENSE_PAYMENT_SOURCE_TO_ASSET_CODE.get(payment_source)
-        if not asset_code:
+        account_code = EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE.get(payment_source)
+        if not account_code:
             return None
-        asset_account_id = _account_id_by_code(conn, asset_code)
+        payment_account_id = _account_id_by_code(conn, account_code)
 
     amount_f = float(amount)
     description = f"Expense: {summary}"
@@ -157,13 +157,13 @@ def _build_expense_journal_lines(
         inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
         lines = [
             (inventory_account_id, amount_f, 0.0, "Nhập kho nguyên vật liệu"),
-            (asset_account_id, 0.0, amount_f, "Thanh toán"),
+            (payment_account_id, 0.0, amount_f, "Thanh toán"),
         ]
     else:
         expense_account_id = _account_id_by_code(conn, expense_code)
         lines = [
             (expense_account_id, amount_f, 0.0, "Chi phí"),
-            (asset_account_id, 0.0, amount_f, "Thanh toán"),
+            (payment_account_id, 0.0, amount_f, "Thanh toán"),
         ]
     return description, lines
 

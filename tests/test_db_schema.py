@@ -366,7 +366,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 51
+        assert _migrated_version(conn) == 52
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -383,7 +383,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 51
+        assert _migrated_version(conn) == 52
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -397,10 +397,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 51
+        assert _migrated_version(conn) == 52
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 51
+        assert _migrated_version(conn) == 52
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -2080,3 +2080,198 @@ def test_v50_v51_full_chain_preserves_created_at():
         assert row["transaction_date"] == "2026-01-01T00:00:00"
         # created_at untouched (NFR3).
         assert row["created_at"] == "2026-01-01T00:00:00"
+
+
+def _seed_legacy_1400_chart(conn) -> int:
+    """Insert the pre-DG-194 1400 parent + two 14XX staff sub-accounts.
+
+    Mirrors what a v51-era database would contain after running v44 with the
+    old seed data. Returns the 1400 parent account id.
+    """
+    assets_root = conn.execute(
+        "SELECT id FROM accounts WHERE code = '1000'"
+    ).fetchone()
+    assets_root_id = int(assets_root[0]) if assets_root else None
+    liabilities_root = conn.execute(
+        "SELECT id FROM accounts WHERE code = '2000'"
+    ).fetchone()
+    liabilities_root_id = int(liabilities_root[0]) if liabilities_root else None
+
+    # Parent 1400 (asset) — old classification.
+    cursor = conn.execute(
+        "INSERT INTO accounts (code, name, type, parent_id) "
+        "VALUES ('1400', 'Nhân viên ứng trước (Staff Advances)', 'asset', ?)",
+        (assets_root_id,),
+    )
+    parent_id = int(cursor.lastrowid)
+    # Per-staff sub-accounts 1401, 1402 (asset) under 1400.
+    for code, name in (("1401", "Phượng"), ("1402", "Sinh")):
+        conn.execute(
+            "INSERT INTO accounts (code, name, type, parent_id) "
+            "VALUES (?, ?, 'asset', ?)",
+            (code, name, parent_id),
+        )
+    conn.commit()
+    # Sanity: liabilities root must exist (v44 seeds it).
+    assert liabilities_root_id is not None
+    return parent_id
+
+
+def test_v52_registered_in_migration_chain():
+    assert 52 in MIGRATIONS
+    assert (
+        MIGRATIONS[52]["callable"].__name__
+        == "_migrate_v52_reclassify_staff_advances_as_liabilities"
+    )
+
+
+def test_v52_reclassifies_1400_to_2300_when_2300_absent():
+    """M-1: existing DB with 1400 (asset) gets reclassified to 2300 (liability)
+    and 14XX sub-accounts are reparented + renumbered to 23XX."""
+    from baker.db.schema import _migrate_v52_reclassify_staff_advances_as_liabilities
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 51)
+        # Remove the DG-194-seeded 2300 so the migration exercises case 1
+        # (1400 present, 2300 absent — the legacy-DB scenario).
+        conn.execute("DELETE FROM accounts WHERE code = '2300'")
+        old_parent_id = _seed_legacy_1400_chart(conn)
+
+        _migrate_v52_reclassify_staff_advances_as_liabilities(conn)
+
+        # 1400 is gone; 2300 exists as a liability under 2000.
+        assert conn.execute(
+            "SELECT id FROM accounts WHERE code = '1400'"
+        ).fetchone() is None
+        new_parent = conn.execute(
+            "SELECT id, name, type, parent_id FROM accounts WHERE code = '2300'"
+        ).fetchone()
+        assert new_parent is not None
+        assert new_parent["type"] == "liability"
+        assert new_parent["name"] == "Phải trả nhân viên (Staff Payables)"
+        # Same row id — the 1400 row was UPDATEd in place to become 2300.
+        assert int(new_parent["id"]) == old_parent_id
+
+        # Sub-accounts reparented to 2300, type liability, codes 23XX.
+        subs = conn.execute(
+            "SELECT code, name, type, parent_id FROM accounts "
+            "WHERE parent_id = ? ORDER BY id",
+            (old_parent_id,),
+        ).fetchall()
+        assert len(subs) == 2
+        for sub in subs:
+            assert sub["type"] == "liability"
+            assert sub["code"].startswith("23")
+            assert int(sub["parent_id"]) == old_parent_id
+        assert [s["name"] for s in subs] == ["Phượng", "Sinh"]
+        # No orphaned 14XX accounts remain.
+        assert conn.execute(
+            "SELECT id FROM accounts WHERE code LIKE '14__'"
+        ).fetchone() is None
+
+
+def test_v52_merges_sub_accounts_when_both_1400_and_2300_exist():
+    """M-1 edge case: insert-before-migrate (2300 seeded, 1400 still present).
+    Sub-accounts move under 2300 and 1400 parent is deleted."""
+    from baker.db.schema import _migrate_v52_reclassify_staff_advances_as_liabilities
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 51)
+        # At this point DG-194 seed already inserted 2300.
+        target_2300 = conn.execute(
+            "SELECT id FROM accounts WHERE code = '2300'"
+        ).fetchone()
+        assert target_2300 is not None
+        target_2300_id = int(target_2300[0])
+        old_parent_id = _seed_legacy_1400_chart(conn)
+
+        _migrate_v52_reclassify_staff_advances_as_liabilities(conn)
+
+        # 1400 parent deleted; 2300 kept (unchanged row id).
+        assert conn.execute(
+            "SELECT id FROM accounts WHERE code = '1400'"
+        ).fetchone() is None
+        kept = conn.execute(
+            "SELECT id FROM accounts WHERE code = '2300'"
+        ).fetchone()
+        assert int(kept["id"]) == target_2300_id
+
+        # Both legacy sub-accounts now live under 2300 as 23XX liabilities.
+        subs = conn.execute(
+            "SELECT code, name, type, parent_id FROM accounts "
+            "WHERE parent_id = ? ORDER BY id",
+            (target_2300_id,),
+        ).fetchall()
+        legacy = [s for s in subs if s["name"] in ("Phượng", "Sinh")]
+        assert len(legacy) == 2
+        for sub in legacy:
+            assert sub["type"] == "liability"
+            assert sub["code"].startswith("23")
+            assert int(sub["parent_id"]) == target_2300_id
+        # No 14XX codes remain.
+        assert conn.execute(
+            "SELECT id FROM accounts WHERE code LIKE '14__'"
+        ).fetchone() is None
+
+
+def test_v52_idempotent_on_fresh_db():
+    """Fresh DB (no 1400, 2300 already seeded) — migration is a no-op."""
+    from baker.db.schema import _migrate_v52_reclassify_staff_advances_as_liabilities
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 51)
+        before = conn.execute(
+            "SELECT id, code, name, type, parent_id FROM accounts ORDER BY id"
+        ).fetchall()
+        _migrate_v52_reclassify_staff_advances_as_liabilities(conn)
+        after = conn.execute(
+            "SELECT id, code, name, type, parent_id FROM accounts ORDER BY id"
+        ).fetchall()
+        assert before == after
+
+
+def test_v52_idempotent_on_already_migrated_db():
+    """Re-running v52 after it has already run produces no changes."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 51)
+        conn.execute("DELETE FROM accounts WHERE code = '2300'")
+        _seed_legacy_1400_chart(conn)
+        _migrate_to_version(conn, 52)
+        snapshot = conn.execute(
+            "SELECT id, code, name, type, parent_id FROM accounts ORDER BY id"
+        ).fetchall()
+        # Re-apply the callable directly.
+        from baker.db.schema import _migrate_v52_reclassify_staff_advances_as_liabilities
+
+        _migrate_v52_reclassify_staff_advances_as_liabilities(conn)
+        after = conn.execute(
+            "SELECT id, code, name, type, parent_id FROM accounts ORDER BY id"
+        ).fetchall()
+        assert snapshot == after
+
+
+def test_v52_runs_in_full_migration_chain_after_v51():
+    """v52 executes as part of ensure_schema after v51 and reclassifies a
+    legacy 1400 chart end-to-end."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 51)
+        # Simulate a legacy DB: drop the DG-194 2300 seed and insert 1400.
+        conn.execute("DELETE FROM accounts WHERE code = '2300'")
+        _seed_legacy_1400_chart(conn)
+        # Run the full remaining chain (v52).
+        _migrate_to_version(conn, 52)
+        assert _migrated_version(conn) == 52
+        # 1400 gone, 2300 present as liability.
+        assert conn.execute(
+            "SELECT id FROM accounts WHERE code = '1400'"
+        ).fetchone() is None
+        new_parent = conn.execute(
+            "SELECT type FROM accounts WHERE code = '2300'"
+        ).fetchone()
+        assert new_parent["type"] == "liability"
+        subs = conn.execute(
+            "SELECT type FROM accounts WHERE parent_id = ("
+            "SELECT id FROM accounts WHERE code = '2300')"
+        ).fetchall()
+        assert len(subs) == 2
+        assert all(s["type"] == "liability" for s in subs)

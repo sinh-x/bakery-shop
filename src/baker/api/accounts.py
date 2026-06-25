@@ -17,7 +17,7 @@ from baker.db.connection import get_db
 from baker.db.schema import (
     PAYMENT_METHOD_TO_ASSET_CODE,
     _account_id_by_code,
-    _ensure_staff_advance_sub_account,
+    _ensure_staff_payable_sub_account,
     _insert_journal_entry,
 )
 from baker.services.accounting_validation import run_validation
@@ -250,7 +250,7 @@ def staff_reimburse(body: StaffReimburseRequest):
         raise HTTPException(status_code=422, detail="staffName là bắt buộc")
     asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get(body.method, "1100")
     with get_db() as conn:
-        staff_account_id = _ensure_staff_advance_sub_account(conn, body.staffName.strip())
+        staff_account_id = _ensure_staff_payable_sub_account(conn, body.staffName.strip())
         asset_account_id = _account_id_by_code(conn, asset_code)
         desc = f"Hoàn ứng cho {body.staffName}: {body.amount}"
         if body.note:
