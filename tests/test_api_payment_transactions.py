@@ -359,9 +359,16 @@ def _create_order_with_tien_rut_item(client, cash_amount=200000):
 
 
 def test_tien_rut_txn_creation(api_client):
-    """Create a tien_rut transaction on an order with tien_rut items."""
+    """Create a tien_rut transaction on an order with tien_rut items.
+
+    DG-198 Phase 3: the guardrail requires sufficient available deposits
+    before a tien_rut is allowed, so we first deposit the cash-back amount.
+    """
     order = _create_order_with_tien_rut_item(api_client, cash_amount=200000)
     ref = order["orderRef"]
+
+    # Deposit 200k so the subsequent 200k tien_rut is within available deposits.
+    _create_txn(api_client, ref, amount=200000, type="payment")
 
     # Create tien_rut transaction (cash-back to customer)
     txn = _create_txn(api_client, ref, amount=200000, type="tien_rut")
@@ -443,6 +450,99 @@ def test_completion_guard_premature_without_payment(api_client):
     })
     assert resp.status_code == 422
     assert "thiếu" in resp.json()["detail"]
+
+
+# --- DG-198 Phase 3 — guardrail preventing excess tien_rut ---
+
+
+def test_tien_rut_exceeding_deposits_rejected(api_client):
+    """AC1: tien_rut greater than available deposits returns 422.
+
+    Available = total_paid_excl_outflows - total_outflows. With 500k in
+    deposits and no existing outflows, a 600k tien_rut must be rejected.
+    """
+    order = _create_order(api_client, total=600000)
+    ref = order["orderRef"]
+    # Deposit 500k
+    _create_txn(api_client, ref, amount=500000, type="payment")
+    # Attempt to withdraw 600k (>500k available) → 422
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 600000, "type": "tien_rut"},
+    )
+    assert resp.status_code == 422
+    assert "Số tiền rút vượt quá số dư cọc hiện có" in resp.json()["detail"]
+
+
+def test_tien_rut_within_deposits_succeeds(api_client):
+    """Valid tien_rut within available deposits succeeds (regression)."""
+    order = _create_order(api_client, total=600000)
+    ref = order["orderRef"]
+    # Deposit 500k
+    _create_txn(api_client, ref, amount=500000, type="payment")
+    # Withdraw 300k (<=500k available) → 201
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 300000, "type": "tien_rut"},
+    )
+    assert resp.status_code == 201
+    txn = resp.json()
+    assert txn["type"] == "tien_rut"
+    assert txn["amount"] == 300000
+
+
+def test_tien_rut_equal_to_available_succeeds(api_client):
+    """tien_rut exactly equal to available deposits succeeds (boundary)."""
+    order = _create_order(api_client, total=600000)
+    ref = order["orderRef"]
+    _create_txn(api_client, ref, amount=500000, type="payment")
+    # Withdraw exactly 500k (== available) → 201
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 500000, "type": "tien_rut"},
+    )
+    assert resp.status_code == 201
+
+
+def test_tien_rut_exceeds_available_after_prior_outflow(api_client):
+    """Guardrail accounts for prior outflows: 500k deposit, 200k prior
+    tien_rut, then 400k tien_rut must be rejected (only 300k available)."""
+    order = _create_order(api_client, total=600000)
+    ref = order["orderRef"]
+    _create_txn(api_client, ref, amount=500000, type="payment")
+    _create_txn(api_client, ref, amount=200000, type="tien_rut")
+    # Available = 500k - 200k = 300k; 400k > 300k → 422
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 400000, "type": "tien_rut"},
+    )
+    assert resp.status_code == 422
+    assert "Số tiền rút vượt quá số dư cọc hiện có" in resp.json()["detail"]
+
+
+def test_tien_rut_no_deposits_rejected(api_client):
+    """tien_rut with zero deposits (available = 0) is rejected."""
+    order = _create_order(api_client, total=600000)
+    ref = order["orderRef"]
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 50000, "type": "tien_rut"},
+    )
+    assert resp.status_code == 422
+    assert "Số tiền rút vượt quá số dư cọc hiện có" in resp.json()["detail"]
+
+
+def test_tien_rut_guardrail_does_not_affect_other_types(api_client):
+    """Guardrail only applies to tien_rut; deposit/payment still allowed
+    when no deposits exist."""
+    order = _create_order(api_client, total=600000)
+    ref = order["orderRef"]
+    # A deposit/payment with no prior deposits must succeed (not guarded).
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 500000, "type": "payment"},
+    )
+    assert resp.status_code == 201
 
 
 # --- Invalidate / Restore endpoints (DG-196 Phase 2) ---
