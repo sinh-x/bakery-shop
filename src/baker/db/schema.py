@@ -1513,6 +1513,7 @@ SEED_CHART_OF_ACCOUNTS = [
     ("2100", "Tiền khách đặt cọc (Customer Deposits)", "liability", "2000"),
     ("2200", "Tiền ship bus giữ hộ (Bus Shipping Held)", "liability", "2000"),
     ("2300", "Phải trả nhân viên (Staff Payables)", "liability", "2000"),
+    ("2400", "Tiền rút tạm giữ (Tien Rut Held)", "liability", "2000"),
     # Equity
     ("3000", "Vốn chủ sở hữu", "equity", None),
     ("3100", "Vốn chủ sở hữu (Owner's Equity)", "equity", "3000"),
@@ -1581,6 +1582,7 @@ INVENTORY_CODE = "1300"
 STAFF_PAYABLES_CODE = "2300"
 ACCOUNTS_RECEIVABLE_CODE = "1500"
 BUS_SHIPPING_HELD_CODE = "2200"
+TIEN_RUT_HELD_CODE = "2400"
 
 # Tolerance (VND) below which an existing order revenue entry's 2100 debit is
 # considered already in sync with the current net deposits — no update needed.
