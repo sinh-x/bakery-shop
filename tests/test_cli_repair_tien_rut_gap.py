@@ -1,16 +1,18 @@
-"""Tests for ``baker repair-tien-rut-gap`` CLI command — DG-198 Phase 5 backfill
+"""Tests for ``baker repair-tien-rut-gap`` CLI command — DG-198 reversal backfill
 (FR4, AC4).
 
 Covers:
 
 - ``--all`` detects and backfills orders whose ``tien_rut`` journal entry
-  debited 2100 (pre-fix state) instead of 2400.
+  debited 2100 (pre-fix outflow state) instead of crediting 2400 (the current
+  deposit-inflow routing).
 - ``--order-id`` backfills a single affected order.
 - ``--dry-run`` reports the gap without mutating.
 - Idempotency: a second run is a no-op (NFR3).
-- Non-affected orders (no tien_rut, or already on 2400) are skipped.
-- AC4: after backfill each order has 2400 holding cleared and 2100/4100
-  balanced.
+- Non-affected orders (no tien_rut, or already crediting 2400) are skipped.
+- AC4: after backfill each order has 2400 credited at payment time (inflow)
+  and a separate tien rut return entry (DR 2400 / CR Asset) at delivery, plus
+  a deposits→revenue entry (DR 2100 / CR 4100).
 - Command registration / ``--help``.
 - Service-level helper coverage (``_process_tien_rut_gap_order``).
 """
@@ -88,12 +90,12 @@ def _insert_prefixed_tien_rut_journal(
     method: str = "cash",
 ) -> int:
     """Insert a PRE-FIX tien_rut journal entry that debits 2100 (the old,
-    broken routing) instead of 2400.
+    broken outflow routing) instead of crediting 2400.
 
-    This simulates the state of the 8 existing orders before the Phase 2 fix:
-    the ``tien_rut`` payment transaction exists, its journal entry debits 2100
-    (Customer Deposits) and credits the asset account, leaving 2100 overdrawn
-    and 2400 empty.
+    This simulates the state of the 8 existing orders before the DG-198
+    reversal: the ``tien_rut`` payment transaction exists, its journal entry
+    debits 2100 (Customer Deposits) and credits the asset account (treated as
+    an outflow), leaving 2100 overdrawn and 2400 empty.
     """
     asset_code = "1100" if method == "cash" else "1200"
     asset_acc = _account_id(conn, asset_code)
@@ -127,8 +129,9 @@ def _insert_stale_revenue_entry(
     """Insert a PRE-FIX revenue entry that debits 2100 and credits 4100 for the
     full deposit balance, with NO 2400 credit line.
 
-    This mirrors the pre-Phase-4 revenue entry for orders with tien_rut: the
-    2100 debit cleared the full deposit balance, but 2400 was never cleared.
+    This mirrors the pre-reversal revenue entry for orders with tien_rut: the
+    2100 debit cleared the full deposit balance, but 2400 was never cleared
+    via a separate return entry.
     """
     deposits_acc = _account_id(conn, CUSTOMER_DEPOSITS_CODE)
     revenue_acc = _account_id(conn, ORDER_REVENUE_CODE)
@@ -156,28 +159,10 @@ def _invoke(args):
     return runner.invoke(app, args)
 
 
-def _revenue_lines(conn, order_id: int) -> dict[str, dict[str, float]]:
-    rows = conn.execute(
-        """
-        SELECT a.code AS code, jl.debit AS debit, jl.credit AS credit
-        FROM journal_entries je
-        JOIN journal_lines jl ON jl.journal_entry_id = je.id
-        JOIN accounts a ON a.id = jl.account_id
-        WHERE je.source_type = 'order' AND je.source_id = ?
-        ORDER BY je.id DESC
-        """,
-        (order_id,),
-    ).fetchall()
-    out: dict[str, dict[str, float]] = {}
-    for r in rows:
-        out[r["code"]] = {"debit": float(r["debit"] or 0), "credit": float(r["credit"] or 0)}
-    return out
-
-
-def _payment_journal_2400_debit(conn, txn_id: int) -> float:
+def _payment_journal_2400_credit(conn, txn_id: int) -> float:
     row = conn.execute(
         """
-        SELECT COALESCE(SUM(jl.debit), 0) AS d
+        SELECT COALESCE(SUM(jl.credit), 0) AS c
         FROM journal_entries je
         JOIN journal_lines jl ON jl.journal_entry_id = je.id
         JOIN accounts a ON a.id = jl.account_id
@@ -186,7 +171,7 @@ def _payment_journal_2400_debit(conn, txn_id: int) -> float:
         """,
         (txn_id, TIEN_RUT_HELD_CODE),
     ).fetchone()
-    return float(row["d"] or 0)
+    return float(row["c"] or 0)
 
 
 def _payment_journal_2100_debit(conn, txn_id: int) -> float:
@@ -202,6 +187,44 @@ def _payment_journal_2100_debit(conn, txn_id: int) -> float:
         (txn_id, CUSTOMER_DEPOSITS_CODE),
     ).fetchone()
     return float(row["d"] or 0)
+
+
+def _tien_rut_return_entry(conn, order_id: int) -> dict:
+    """Return the tien rut return entry lines (DR 2400 / CR Asset)."""
+    rows = conn.execute(
+        """
+        SELECT a.code AS code, jl.debit AS debit, jl.credit AS credit
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'order' AND je.source_id = ?
+          AND je.description LIKE 'Tien rut return:%'
+        """,
+        (order_id,),
+    ).fetchall()
+    out: dict[str, dict[str, float]] = {}
+    for r in rows:
+        out[r["code"]] = {"debit": float(r["debit"] or 0), "credit": float(r["credit"] or 0)}
+    return out
+
+
+def _revenue_entry(conn, order_id: int) -> dict:
+    """Return the deposits→revenue entry lines (DR 2100 / CR 4100)."""
+    rows = conn.execute(
+        """
+        SELECT a.code AS code, jl.debit AS debit, jl.credit AS credit
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'order' AND je.source_id = ?
+          AND je.description LIKE 'Order revenue:%'
+        """,
+        (order_id,),
+    ).fetchall()
+    out: dict[str, dict[str, float]] = {}
+    for r in rows:
+        out[r["code"]] = {"debit": float(r["debit"] or 0), "credit": float(r["credit"] or 0)}
+    return out
 
 
 def _seed_gap_order(
@@ -288,7 +311,7 @@ def test_detection_excludes_orders_without_tien_rut():
 
 
 def test_detection_excludes_orders_already_on_2400():
-    """An order whose tien_rut already debits 2400 is NOT affected (already fixed)."""
+    """An order whose tien_rut already credits 2400 is NOT affected (already fixed)."""
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_order(conn, order_ref="GAP-DET-3", total_price=700000)
@@ -297,7 +320,7 @@ def test_detection_excludes_orders_already_on_2400():
         dep = _insert_payment(conn, order_id=oid, amount=500000, ptype="deposit")
         _sync_payment_journal(conn, dep, 500000, "deposit", "cash", order_id=oid)
         rut = _insert_payment(conn, order_id=oid, amount=300000, ptype="tien_rut")
-        # Correct (post-fix) routing: debits 2400.
+        # Correct (post-reversal) routing: credits 2400 (deposit inflow).
         _sync_payment_journal(conn, rut, 300000, "tien_rut", "cash", order_id=oid)
         affected = _tien_rut_orders_needing_backfill(conn)
         assert oid not in affected
@@ -305,14 +328,15 @@ def test_detection_excludes_orders_already_on_2400():
 
 
 # ---------------------------------------------------------------------------
-# AC4 — backfill fixes the gap (2400 cleared, 2100/4100 balanced)
+# AC4 — backfill fixes the gap (2400 credited, separate return + revenue entries)
 # ---------------------------------------------------------------------------
 
 
 def test_backfill_all_clears_2400_and_balances_revenue():
     """AC4: a gap order backfilled via ``--all`` ends with the tien_rut payment
-    journal entry debiting 2400 (not 2100), and the revenue entry crediting 2400
-    and balancing 2100/4100."""
+    journal entry crediting 2400 (not debiting 2100), plus a separate tien rut
+    return entry (DR 2400 / CR Asset) and a deposits→revenue entry
+    (DR 2100 / CR 4100)."""
     with get_db() as conn:
         ensure_schema(conn)
         oid, rut_txn = _seed_gap_order(
@@ -320,7 +344,7 @@ def test_backfill_all_clears_2400_and_balances_revenue():
         )
         # Pre-state: tien_rut journal debits 2100, 2400 untouched.
         assert _payment_journal_2100_debit(conn, rut_txn) == 300000.0
-        assert _payment_journal_2400_debit(conn, rut_txn) == 0.0
+        assert _payment_journal_2400_credit(conn, rut_txn) == 0.0
         conn.commit()
 
     result = _invoke(["repair-tien-rut-gap", "--all"])
@@ -328,14 +352,18 @@ def test_backfill_all_clears_2400_and_balances_revenue():
     assert "đã sửa" in result.output
 
     with get_db() as conn:
-        # Post-state: tien_rut journal now debits 2400, 2100 untouched.
-        assert _payment_journal_2400_debit(conn, rut_txn) == 300000.0
+        # Post-state: tien_rut journal now credits 2400, 2100 untouched.
+        assert _payment_journal_2400_credit(conn, rut_txn) == 300000.0
         assert _payment_journal_2100_debit(conn, rut_txn) == 0.0
-        # Revenue entry: debit 2100 500k, credit 2400 300k, credit 4100 200k.
-        lines = _revenue_lines(conn, oid)
-        assert lines[CUSTOMER_DEPOSITS_CODE]["debit"] == 500000.0
-        assert lines[TIEN_RUT_HELD_CODE]["credit"] == 300000.0
-        assert lines[ORDER_REVENUE_CODE]["credit"] == 200000.0
+        # Revenue entry: debit 2100 500k, credit 4100 500k (deposits only).
+        rev = _revenue_entry(conn, oid)
+        assert rev[CUSTOMER_DEPOSITS_CODE]["debit"] == 500000.0
+        assert rev[ORDER_REVENUE_CODE]["credit"] == 500000.0
+        assert TIEN_RUT_HELD_CODE not in rev
+        # Tien rut return entry: debit 2400 300k, credit 1100 300k.
+        ret = _tien_rut_return_entry(conn, oid)
+        assert ret[TIEN_RUT_HELD_CODE]["debit"] == 300000.0
+        assert ret["1100"]["credit"] == 300000.0
 
 
 def test_backfill_single_order_id():
@@ -349,8 +377,8 @@ def test_backfill_single_order_id():
     assert "đã sửa" in result.output
 
     with get_db() as conn:
-        lines = _revenue_lines(conn, oid)
-        assert lines[TIEN_RUT_HELD_CODE]["credit"] == 300000.0
+        ret = _tien_rut_return_entry(conn, oid)
+        assert ret[TIEN_RUT_HELD_CODE]["debit"] == 300000.0
 
 
 def test_backfill_single_order_id_not_affected_reports_empty():
@@ -387,10 +415,9 @@ def test_dry_run_reports_gap_without_mutating():
     with get_db() as conn:
         # No mutation: tien_rut journal still debits 2100, 2400 still empty.
         assert _payment_journal_2100_debit(conn, rut_txn) == 300000.0
-        assert _payment_journal_2400_debit(conn, rut_txn) == 0.0
-        lines = _revenue_lines(conn, oid)
-        # Stale revenue entry untouched: no 2400 credit.
-        assert TIEN_RUT_HELD_CODE not in lines
+        assert _payment_journal_2400_credit(conn, rut_txn) == 0.0
+        # Stale revenue entry untouched: no 2400 credit, no return entry.
+        assert _tien_rut_return_entry(conn, oid) == {}
 
 
 # ---------------------------------------------------------------------------
@@ -410,8 +437,9 @@ def test_backfill_is_idempotent():
     assert r1.exit_code == 0, r1.output
 
     with get_db() as conn:
-        first_2400 = _payment_journal_2400_debit(conn, rut_txn)
-        first_lines = _revenue_lines(conn, oid)
+        first_2400 = _payment_journal_2400_credit(conn, rut_txn)
+        first_rev = _revenue_entry(conn, oid)
+        first_ret = _tien_rut_return_entry(conn, oid)
         conn.commit()
 
     # Second run: detection should return no affected orders.
@@ -420,9 +448,9 @@ def test_backfill_is_idempotent():
     assert "không có đơn hàng nào" in r2.output
 
     with get_db() as conn:
-        assert _payment_journal_2400_debit(conn, rut_txn) == first_2400
-        second_lines = _revenue_lines(conn, oid)
-        assert second_lines == first_lines
+        assert _payment_journal_2400_credit(conn, rut_txn) == first_2400
+        assert _revenue_entry(conn, oid) == first_rev
+        assert _tien_rut_return_entry(conn, oid) == first_ret
 
 
 def test_process_tien_rut_gap_order_idempotent_service_level():
@@ -431,14 +459,16 @@ def test_process_tien_rut_gap_order_idempotent_service_level():
         ensure_schema(conn)
         oid, rut_txn = _seed_gap_order(conn, order_ref="GAP-IDEM-2")
         _process_tien_rut_gap_order(conn, oid, dry_run=False)
-        first_2400 = _payment_journal_2400_debit(conn, rut_txn)
-        first_lines = _revenue_lines(conn, oid)
+        first_2400 = _payment_journal_2400_credit(conn, rut_txn)
+        first_rev = _revenue_entry(conn, oid)
+        first_ret = _tien_rut_return_entry(conn, oid)
         # Second call: detection already excludes the order, so re-applying the
         # service function on the same order must not change anything (the
         # sync helpers are idempotent).
         _process_tien_rut_gap_order(conn, oid, dry_run=False)
-        assert _payment_journal_2400_debit(conn, rut_txn) == first_2400
-        assert _revenue_lines(conn, oid) == first_lines
+        assert _payment_journal_2400_credit(conn, rut_txn) == first_2400
+        assert _revenue_entry(conn, oid) == first_rev
+        assert _tien_rut_return_entry(conn, oid) == first_ret
         conn.commit()
 
 
@@ -455,7 +485,7 @@ def test_process_tien_rut_gap_order_dry_run_no_mutation():
         assert result["action"] == "will-backfill"
         assert result["tien_rut_total"] == 300000.0
         # No mutation occurred.
-        assert _payment_journal_2400_debit(conn, rut_txn) == 0.0
+        assert _payment_journal_2400_credit(conn, rut_txn) == 0.0
         conn.commit()
 
 

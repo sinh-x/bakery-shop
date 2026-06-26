@@ -1572,7 +1572,18 @@ PAYMENT_METHOD_TO_ASSET_CODE = {
 # payment_transactions.type values that represent cash flowing back to the
 # customer (negative deposit). These are recorded as debit Customer Deposits,
 # credit Asset — the reverse of a normal deposit/payment.
-PAYMENT_OUTFLOW_TYPES = {"refund", "tien_rut"}
+#
+# NOTE (DG-198 reversal): ``tien_rut`` is NOT an outflow. It is a deposit
+# inflow — the customer gives cash to the shop for safekeeping — so it journals
+# DR Asset / CR 2400 (Tien Rut Held) like a deposit, and at delivery 2400 is
+# returned to the customer via a separate ``order`` journal entry. Only
+# ``refund`` is an outflow (DR 2100 / CR Asset).
+PAYMENT_OUTFLOW_TYPES = {"refund"}
+
+# payment_transactions.type values that represent tien_rut deposit inflows
+# (customer cash held by the shop). Journaled DR Asset / CR 2400 at payment
+# time; 2400 is cleared via a separate return entry at delivery.
+PAYMENT_TIEN_RUT_TYPES = {"tien_rut"}
 
 # Account codes used by the backfill.
 CUSTOMER_DEPOSITS_CODE = "2100"
@@ -1824,6 +1835,7 @@ def _backfill_payment_transaction_journal_entries(conn) -> None:
         asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get(method, "1100")
         asset_account_id = _account_id_by_code(conn, asset_code)
         deposits_account_id = _account_id_by_code(conn, CUSTOMER_DEPOSITS_CODE)
+        tien_rut_account_id = _account_id_by_code(conn, TIEN_RUT_HELD_CODE)
 
         ptype = row["type"] or "deposit"
         transaction_date = row["created_at"] or ""
@@ -1838,6 +1850,21 @@ def _backfill_payment_transaction_journal_entries(conn) -> None:
                 lines=[
                     (deposits_account_id, amount, 0.0, "Hoàn tiền khách"),
                     (asset_account_id, 0.0, amount, "Trả lại tiền"),
+                ],
+            )
+        elif ptype in PAYMENT_TIEN_RUT_TYPES:
+            # Tien rut deposit inflow (DG-198 reversal): customer gives cash to
+            # the shop for safekeeping. DR Asset, CR 2400 (Tien Rut Held). 2400
+            # is cleared at delivery via a separate return entry.
+            _insert_journal_entry(
+                conn,
+                description=f"Payment: tien_rut {amount}",
+                source_type="payment_transaction",
+                source_id=pt_id,
+                transaction_date=transaction_date,
+                lines=[
+                    (asset_account_id, amount, 0.0, "Tiền khách gửi giữ hộ"),
+                    (tien_rut_account_id, 0.0, amount, "Tiền rút tạm giữ"),
                 ],
             )
         else:

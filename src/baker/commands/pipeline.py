@@ -32,10 +32,18 @@ DELIVERED_STATUSES = ("delivered", "completed")
 UNDELIVERED_EXCLUDED = ("delivered", "completed", "cancelled")
 # Statuses considered "new/pending" for the new-no-deposit report.
 NEW_PENDING_STATUSES = ("new", "confirmed")
-# Outflow transaction types (refund, tien_rut) as a tuple for deterministic SQL
+# Outflow transaction types (refund only) as a tuple for deterministic SQL
 # IN-clause parameterization. Mirrors baker.db.schema.PAYMENT_OUTFLOW_TYPES;
 # kept as a tuple so the placeholder count is stable per process (review Mn-1).
+# NOTE (DG-198 reversal): tien_rut is NOT an outflow — it is a deposit inflow
+# (customer gives cash to the shop for safekeeping). It journals to 2400 and
+# is returned at delivery via a separate journal entry.
 _OUTFLOW_TYPES = tuple(PAYMENT_OUTFLOW_TYPES)
+# Transaction types listed in the ``refunds`` business report — both
+# ``refund`` (true outflow) and ``tien_rut`` (deposit inflow held for the
+# customer). The report tracks cash-withdrawal transactions regardless of
+# accounting direction, so it is decoupled from PAYMENT_OUTFLOW_TYPES.
+_REFUND_REPORT_TYPES = ("refund", "tien_rut")
 # Tolerance (VND) shared with repair/sync so the mismatch count and repair
 # decisions use the same threshold (review finding Mn-1).
 _GAP_MISMATCH_TOLERANCE = REVENUE_UPDATE_TOLERANCE
@@ -280,7 +288,7 @@ def refunds_cmd():
 
     try:
         with get_db() as conn:
-            placeholders = ",".join("?" * len(_OUTFLOW_TYPES))
+            placeholders = ",".join("?" * len(_REFUND_REPORT_TYPES))
             rows = conn.execute(
                 f"""
                 SELECT pt.id          AS pt_id,
@@ -297,7 +305,7 @@ def refunds_cmd():
                 WHERE pt.type IN ({placeholders})
                 ORDER BY pt.created_at DESC, pt.id DESC
                 """,
-                _OUTFLOW_TYPES,
+                _REFUND_REPORT_TYPES,
             ).fetchall()
     except Exception as exc:  # noqa: BLE001 — top-level CLI guard
         _report_cli_error()

@@ -55,7 +55,6 @@ from baker.db.schema import (
     COGS_CODE,
     CUSTOMER_DEPOSITS_CODE,
     ORDER_REVENUE_CODE,
-    TIEN_RUT_HELD_CODE,
 )
 
 # Tolerance for double-entry imbalance. Sub-cent rounding from REAL storage
@@ -863,22 +862,23 @@ def _check_expense_category_mismatch(conn) -> dict[str, Any]:
 
 def _check_deposit_revenue_integrity(conn) -> dict[str, Any]:
     """Flag delivered order revenue entries where the deposit balance moved
-    into revenue does not reconcile with the tien_rut held and net revenue.
+    into revenue does not reconcile with the net revenue recognised.
 
-    For every ``source_type = 'order'`` journal entry (the revenue entry
-    created at delivery), the accounting identity must hold::
+    For every ``source_type = 'order'`` revenue entry (the deposits→revenue
+    entry created at delivery, identified by a 2100 debit), the accounting
+    identity must hold::
 
-        debit_2100 = credit_2400 + credit_4100
+        debit_2100 = credit_4100
 
-    i.e. the Customer Deposits (2100) cleared into revenue equal the Tien Rut
-    Held (2400) returned to the customer plus the Order Revenue (4100)
-    recognised as net revenue. A violation indicates a deposit-revenue gap —
-    the original failure mode that DG-198 fixes (tien_rut debiting 2100 with
-    no offsetting revenue entry).
+    i.e. the Customer Deposits (2100) cleared into revenue equal the Order
+    Revenue (4100) recognised. Tien Rut Held (2400) is cleared separately via
+    a distinct ``Tien rut return:`` entry (DR 2400 / CR Asset) and is NOT part
+    of this check. A violation indicates a deposit-revenue gap — the original
+    failure mode that DG-198 fixes.
 
     Accounts Receivable (AR) entries — unpaid orders with zero deposits — are
-    excluded: they debit 1500 and credit 4100 only, with no 2100/2400
-    component, so the identity is not applicable.
+    excluded: they debit 1500 and credit 4100 only, with no 2100 component,
+    so the identity is not applicable.
     """
     rows = conn.execute(
         """
@@ -886,7 +886,6 @@ def _check_deposit_revenue_integrity(conn) -> dict[str, Any]:
                je.description AS description,
                je.source_id   AS order_id,
                COALESCE(SUM(CASE WHEN a.code = ? THEN jl.debit  ELSE 0 END), 0) AS debit_2100,
-               COALESCE(SUM(CASE WHEN a.code = ? THEN jl.credit ELSE 0 END), 0) AS credit_2400,
                COALESCE(SUM(CASE WHEN a.code = ? THEN jl.credit ELSE 0 END), 0) AS credit_4100
         FROM journal_entries je
         JOIN journal_lines jl ON jl.journal_entry_id = je.id
@@ -894,12 +893,11 @@ def _check_deposit_revenue_integrity(conn) -> dict[str, Any]:
         WHERE je.source_type = 'order'
         GROUP BY je.id
         HAVING debit_2100 > 0
-           AND ABS(debit_2100 - (credit_2400 + credit_4100)) > ?
+           AND ABS(debit_2100 - credit_4100) > ?
         ORDER BY je.id
         """,
         (
             CUSTOMER_DEPOSITS_CODE,
-            TIEN_RUT_HELD_CODE,
             ORDER_REVENUE_CODE,
             DEBIT_CREDIT_TOLERANCE,
         ),
@@ -911,10 +909,9 @@ def _check_deposit_revenue_integrity(conn) -> dict[str, Any]:
             "order_id": int(r["order_id"]) if r["order_id"] is not None else None,
             "description": r["description"],
             "debit_2100": float(r["debit_2100"]),
-            "credit_2400": float(r["credit_2400"]),
             "credit_4100": float(r["credit_4100"]),
             "gap": round(
-                float(r["debit_2100"]) - float(r["credit_2400"]) - float(r["credit_4100"]),
+                float(r["debit_2100"]) - float(r["credit_4100"]),
                 4,
             ),
         }

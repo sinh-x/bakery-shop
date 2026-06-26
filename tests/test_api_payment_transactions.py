@@ -361,55 +361,52 @@ def _create_order_with_tien_rut_item(client, cash_amount=200000):
 def test_tien_rut_txn_creation(api_client):
     """Create a tien_rut transaction on an order with tien_rut items.
 
-    DG-198 Phase 3: the guardrail requires sufficient available deposits
-    before a tien_rut is allowed, so we first deposit the cash-back amount.
+    DG-198 reversal: tien_rut is a deposit inflow (customer gives cash to the
+    shop for safekeeping), no longer guarded by available deposits.
     """
     order = _create_order_with_tien_rut_item(api_client, cash_amount=200000)
     ref = order["orderRef"]
 
-    # Deposit 200k so the subsequent 200k tien_rut is within available deposits.
-    _create_txn(api_client, ref, amount=200000, type="payment")
-
-    # Create tien_rut transaction (cash-back to customer)
+    # Create tien_rut transaction (customer gives cash for safekeeping).
     txn = _create_txn(api_client, ref, amount=200000, type="tien_rut")
     assert txn["type"] == "tien_rut"
     assert txn["amount"] == 200000
 
 
-def test_tien_rut_excluded_from_total_paid(api_client):
-    """tien_rut transactions are excluded from payment total (amountPaid)."""
+def test_tien_rut_included_in_total_paid(api_client):
+    """tien_rut is a deposit inflow (DG-198 reversal), so it IS included in
+    amountPaid (total_paid_excl_outflows). Only refund is excluded."""
     order = _create_order_with_tien_rut_item(api_client, cash_amount=200000)
     ref = order["orderRef"]
 
     # Customer pays 350000 for the cake
     _create_txn(api_client, ref, amount=350000, type="payment")
-    # Customer receives 200000 cash-back
+    # Customer gives 200000 cash for safekeeping (tien_rut deposit inflow)
     _create_txn(api_client, ref, amount=200000, type="tien_rut")
 
     detail = api_client.get(f"/api/orders/{ref}").json()
-    # amountPaid should be 350000 (payment only), NOT 550000
-    assert detail["amountPaid"] == 350000
+    # amountPaid = 350000 + 200000 = 550000 (tien_rut is included)
+    assert detail["amountPaid"] == 550000
 
 
-def test_tien_rut_excluded_from_receipt_total_paid(api_client):
-    """Receipt total_paid should not include tien_rut in the balance calculation.
+def test_tien_rut_included_in_receipt_total_paid(api_client):
+    """Receipt total_paid includes tien_rut (DG-198 reversal: deposit inflow).
 
-    The receipt rendering uses total_paid_excl_outflows() for the balance math.
-    We verify this indirectly: amountPaid on order detail (which receipts use)
-    should exclude tien_rut, and completion guard should work correctly.
+    The receipt rendering uses total_paid_excl_outflows() for the balance math,
+    which now includes tien_rut. Verified indirectly via amountPaid on order
+    detail (which receipts use).
     """
     order = _create_order_with_tien_rut_item(api_client, cash_amount=200000)
     ref = order["orderRef"]
 
     # Customer pays full amount
     _create_txn(api_client, ref, amount=350000, type="payment")
-    # tien_rut cash-back recorded
+    # tien_rut cash given for safekeeping
     _create_txn(api_client, ref, amount=200000, type="tien_rut")
 
     detail = api_client.get(f"/api/orders/{ref}").json()
-    # amountPaid should be 350000 (payment only), NOT 550000
-    # This confirms receipts will show correct balance since they use the same method
-    assert detail["amountPaid"] == 350000
+    # amountPaid = 350000 + 200000 = 550000 (tien_rut included)
+    assert detail["amountPaid"] == 550000
 
 
 def test_completion_guard_with_tien_rut(api_client):
@@ -433,17 +430,23 @@ def test_completion_guard_with_tien_rut(api_client):
 
 
 def test_completion_guard_premature_without_payment(api_client):
-    """Completion guard blocks completion when payment doesn't cover total."""
+    """Completion guard blocks completion when payment doesn't cover total.
+
+    DG-198 reversal: tien_rut is now a deposit inflow (counted in amountPaid),
+    so an order with 200k payment + 200k tien_rut (total 370k) has amountPaid
+    = 400k and SHOULD complete. This test now uses a refund (true outflow) to
+    verify the guard still blocks when the net is insufficient.
+    """
     order = _create_order_with_tien_rut_item(api_client, cash_amount=200000)
     ref = order["orderRef"]
 
     # Order total = 350000 (cake) + 20000 (cash_fee) = 370000
-    # Customer only pays partial amount (200000 < 370000)
+    # Customer pays 200000, then a 200000 refund is issued (outflow).
+    # Net deposits = 200000 - 200000 = 0 < 370000 → completion blocked.
     _create_txn(api_client, ref, amount=200000, type="payment")
-    # tien_rut cash-back given
-    _create_txn(api_client, ref, amount=200000, type="tien_rut")
+    _create_txn(api_client, ref, amount=200000, type="refund")
 
-    # Completion should be blocked: 200000 paid vs 370000 total
+    # Completion should be blocked: 0 net paid vs 370000 total
     resp = api_client.post(f"/api/orders/{ref}/status", json={
         "status": "completed",
         "reason": "Hoàn tất đơn hàng",
@@ -452,89 +455,40 @@ def test_completion_guard_premature_without_payment(api_client):
     assert "thiếu" in resp.json()["detail"]
 
 
-# --- DG-198 Phase 3 — guardrail preventing excess tien_rut ---
+# --- DG-198 reversal — guardrail removed (tien_rut is an inflow) ---
 
 
-def test_tien_rut_exceeding_deposits_rejected(api_client):
-    """AC1: tien_rut greater than available deposits returns 422.
-
-    Available = total_paid_excl_outflows - total_outflows. With 500k in
-    deposits and no existing outflows, a 600k tien_rut must be rejected.
-    """
+def test_tien_rut_no_deposit_required_succeeds(api_client):
+    """DG-198 reversal: tien_rut is a deposit inflow, so the API no longer
+    requires available deposits before creation. A 600k tien_rut with zero
+    deposits is accepted (the customer is giving cash to the shop)."""
     order = _create_order(api_client, total=600000)
     ref = order["orderRef"]
-    # Deposit 500k
-    _create_txn(api_client, ref, amount=500000, type="payment")
-    # Attempt to withdraw 600k (>500k available) → 422
     resp = api_client.post(
         f"/api/orders/{ref}/transactions",
         json={"amount": 600000, "type": "tien_rut"},
     )
-    assert resp.status_code == 422
-    assert "Số tiền rút vượt quá số dư cọc hiện có" in resp.json()["detail"]
-
-
-def test_tien_rut_within_deposits_succeeds(api_client):
-    """Valid tien_rut within available deposits succeeds (regression)."""
-    order = _create_order(api_client, total=600000)
-    ref = order["orderRef"]
-    # Deposit 500k
-    _create_txn(api_client, ref, amount=500000, type="payment")
-    # Withdraw 300k (<=500k available) → 201
-    resp = api_client.post(
-        f"/api/orders/{ref}/transactions",
-        json={"amount": 300000, "type": "tien_rut"},
-    )
     assert resp.status_code == 201
     txn = resp.json()
     assert txn["type"] == "tien_rut"
-    assert txn["amount"] == 300000
+    assert txn["amount"] == 600000
 
 
-def test_tien_rut_equal_to_available_succeeds(api_client):
-    """tien_rut exactly equal to available deposits succeeds (boundary)."""
+def test_tien_rut_exceeds_deposits_succeeds(api_client):
+    """DG-198 reversal: the guardrail that rejected tien_rut > available is
+    removed. 500k deposit + 600k tien_rut is accepted (no 422)."""
     order = _create_order(api_client, total=600000)
     ref = order["orderRef"]
     _create_txn(api_client, ref, amount=500000, type="payment")
-    # Withdraw exactly 500k (== available) → 201
     resp = api_client.post(
         f"/api/orders/{ref}/transactions",
-        json={"amount": 500000, "type": "tien_rut"},
+        json={"amount": 600000, "type": "tien_rut"},
     )
     assert resp.status_code == 201
 
 
-def test_tien_rut_exceeds_available_after_prior_outflow(api_client):
-    """Guardrail accounts for prior outflows: 500k deposit, 200k prior
-    tien_rut, then 400k tien_rut must be rejected (only 300k available)."""
-    order = _create_order(api_client, total=600000)
-    ref = order["orderRef"]
-    _create_txn(api_client, ref, amount=500000, type="payment")
-    _create_txn(api_client, ref, amount=200000, type="tien_rut")
-    # Available = 500k - 200k = 300k; 400k > 300k → 422
-    resp = api_client.post(
-        f"/api/orders/{ref}/transactions",
-        json={"amount": 400000, "type": "tien_rut"},
-    )
-    assert resp.status_code == 422
-    assert "Số tiền rút vượt quá số dư cọc hiện có" in resp.json()["detail"]
-
-
-def test_tien_rut_no_deposits_rejected(api_client):
-    """tien_rut with zero deposits (available = 0) is rejected."""
-    order = _create_order(api_client, total=600000)
-    ref = order["orderRef"]
-    resp = api_client.post(
-        f"/api/orders/{ref}/transactions",
-        json={"amount": 50000, "type": "tien_rut"},
-    )
-    assert resp.status_code == 422
-    assert "Số tiền rút vượt quá số dư cọc hiện có" in resp.json()["detail"]
-
-
 def test_tien_rut_guardrail_does_not_affect_other_types(api_client):
-    """Guardrail only applies to tien_rut; deposit/payment still allowed
-    when no deposits exist."""
+    """tien_rut and deposit/payment all succeed regardless of prior deposits."""
     order = _create_order(api_client, total=600000)
     ref = order["orderRef"]
     # A deposit/payment with no prior deposits must succeed (not guarded).

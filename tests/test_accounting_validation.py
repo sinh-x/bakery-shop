@@ -780,7 +780,9 @@ def test_deposit_revenue_integrity_passes_on_clean_db():
 
 
 def test_deposit_revenue_integrity_passes_when_balanced_with_tien_rut():
-    """Revenue entry: debit 2100 500k = credit 2400 300k + credit 4100 200k."""
+    """Revenue entry: debit 2100 500k = credit 4100 500k. Tien rut (2400) is
+    cleared in a separate return entry, not part of this revenue entry
+    (DG-198 reversal)."""
     with get_db() as conn:
         ensure_schema(conn)
         order_id = _insert_delivered_order(conn)
@@ -789,8 +791,7 @@ def test_deposit_revenue_integrity_passes_when_balanced_with_tien_rut():
             order_id=order_id,
             lines=[
                 ("2100", 500000.0, 0.0),
-                ("2400", 0.0, 300000.0),
-                ("4100", 0.0, 200000.0),
+                ("4100", 0.0, 500000.0),
             ],
         )
         report = run_validation(conn)
@@ -818,8 +819,11 @@ def test_deposit_revenue_integrity_passes_when_no_tien_rut():
     assert check["issue_count"] == 0
 
 
-def test_deposit_revenue_integrity_passes_when_net_zero():
-    """Revenue entry: debit 2100 500k = credit 2400 500k (4100 omitted)."""
+def test_deposit_revenue_integrity_flags_2400_credit_in_revenue_entry():
+    """DG-198 reversal: 2400 must NOT appear in the revenue entry (it is
+    cleared separately via a Tien rut return entry). A revenue entry that
+    credits 2400 instead of 4100 is a gap: debit 2100 500k != credit 4100 0.
+    """
     with get_db() as conn:
         ensure_schema(conn)
         order_id = _insert_delivered_order(conn)
@@ -828,19 +832,24 @@ def test_deposit_revenue_integrity_passes_when_net_zero():
             order_id=order_id,
             lines=[
                 ("2100", 500000.0, 0.0),
+                # Old-style 2400 credit (pre-reversal) — now a gap.
                 ("2400", 0.0, 500000.0),
             ],
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "deposit_revenue_integrity")
-    assert check["status"] == "pass"
-    assert check["issue_count"] == 0
+    assert check["status"] == "fail"
+    assert check["issue_count"] == 1
+    finding = check["details"][0]
+    assert finding["debit_2100"] == 500000.0
+    assert finding["credit_4100"] == 0.0
+    assert finding["gap"] == 500000.0
 
 
 def test_deposit_revenue_integrity_flags_gap_2400_missing():
-    """Gap scenario: debit 2100 500k but only credit 4100 200k — 300k of
-    tien_rut held in 2400 is missing from the revenue entry (the original
-    DG-198 failure mode). debit_2100 (500k) != credit_2400 (0) + credit_4100 (200k).
+    """Gap scenario: debit 2100 500k but only credit 4100 200k — revenue is
+    understated by 300k (the original DG-198 failure mode: deposit balance
+    not fully converted to revenue). debit_2100 (500k) != credit_4100 (200k).
     """
     with get_db() as conn:
         ensure_schema(conn)
@@ -865,14 +874,13 @@ def test_deposit_revenue_integrity_flags_gap_2400_missing():
     assert finding["entry_id"] == entry_id
     assert finding["order_id"] == order_id
     assert finding["debit_2100"] == 500000.0
-    assert finding["credit_2400"] == 0.0
     assert finding["credit_4100"] == 200000.0
     assert finding["gap"] == 300000.0
 
 
 def test_deposit_revenue_integrity_flags_gap_2400_understated():
-    """Gap scenario: 2400 credit too small. debit 2100 500k, credit 2400 100k,
-    credit 4100 200k → 500k != 300k, gap 200k.
+    """Gap scenario: 4100 credit too small. debit 2100 500k, credit 4100 100k
+    → 500k != 100k, gap 400k.
     """
     with get_db() as conn:
         ensure_schema(conn)
@@ -882,9 +890,8 @@ def test_deposit_revenue_integrity_flags_gap_2400_understated():
             order_id=order_id,
             lines=[
                 ("2100", 500000.0, 0.0),
-                ("2400", 0.0, 100000.0),
-                ("4100", 0.0, 200000.0),
-                ("1100", 0.0, 200000.0),  # balance the entry
+                ("4100", 0.0, 100000.0),
+                ("1100", 0.0, 400000.0),  # balance the entry
             ],
         )
         report = run_validation(conn)
@@ -893,9 +900,8 @@ def test_deposit_revenue_integrity_flags_gap_2400_understated():
     assert check["issue_count"] == 1
     finding = check["details"][0]
     assert finding["debit_2100"] == 500000.0
-    assert finding["credit_2400"] == 100000.0
-    assert finding["credit_4100"] == 200000.0
-    assert finding["gap"] == 200000.0
+    assert finding["credit_4100"] == 100000.0
+    assert finding["gap"] == 400000.0
 
 
 def test_deposit_revenue_integrity_excludes_ar_entries():

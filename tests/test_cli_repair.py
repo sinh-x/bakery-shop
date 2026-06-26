@@ -366,10 +366,12 @@ def test_repair_dry_run_skips_already_correct():
 
 
 def test_repair_fixes_refund_double_debit():
-    """500k deposit + 200k tien_rut; stale revenue debits 700k → repaired to 300k net.
+    """500k deposit + 200k refund; stale revenue debits 700k → repaired to 300k net.
 
-    Phase 4.3 changed revenue recognition to use net deposits (deposits −
-    tien_rut refunds), so the corrected 2100 debit is 500k − 200k = 300k.
+    Refund is a true outflow (DR 2100 at payment time), so the deposit balance
+    converted to revenue is 500k − 200k = 300k. (``tien_rut`` is no longer an
+    outflow per the DG-198 reversal — it is a deposit inflow journaled to 2400
+    and returned separately — so a tien_rut would NOT reduce the 2100 debit.)
     """
     with get_db() as conn:
         ensure_schema(conn)
@@ -380,7 +382,7 @@ def test_repair_fixes_refund_double_debit():
             total_price=700000, status="delivered",
         )
         _insert_payment(conn, order_id=oid, amount=500000, ptype="deposit")
-        _insert_payment(conn, order_id=oid, amount=200000, ptype="tien_rut")
+        _insert_payment(conn, order_id=oid, amount=200000, ptype="refund")
         _insert_revenue_entry(
             conn, order_id=oid, deposits_account_id=deposits_acc,
             revenue_account_id=revenue_acc, amount=700000,
@@ -390,7 +392,7 @@ def test_repair_fixes_refund_double_debit():
     result = _invoke(["repair-order-revenue", "--order-id", str(oid)])
     assert result.exit_code == 0, result.output
     assert "đã sửa" in result.output
-    assert "300.000" in result.output  # net deposits (500k − 200k)
+    assert "300.000" in result.output  # net deposits (500k − 200k refund)
 
     with get_db() as conn:
         ensure_schema(conn)

@@ -77,22 +77,6 @@ def create_transaction(ref: str, body: TransactionCreate):
     with get_db() as conn:
         order_id = _resolve_order_id(conn, ref)
 
-        # DG-198 Phase 3 / FR2 / NFR2: guardrail preventing excess tien_rut.
-        # Runs inside the same DB transaction as payment creation so there is
-        # no race-condition window. ``available`` is the net deposit balance
-        # (payments excluding outflows minus existing outflows); a tien_rut
-        # must not exceed it or account 2400 would be overdrawn.
-        if body.type == TransactionType.TIEN_RUT.value:
-            available = (
-                PaymentTransaction.total_paid_excl_outflows(conn, order_id)
-                - PaymentTransaction.total_outflows(conn, order_id)
-            )
-            if body.amount > available:
-                raise HTTPException(
-                    status_code=422,
-                    detail="Số tiền rút vượt quá số dư cọc hiện có",
-                )
-
         txn = PaymentTransaction(
             order_id=order_id,
             amount=body.amount,

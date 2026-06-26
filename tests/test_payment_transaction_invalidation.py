@@ -116,40 +116,44 @@ def test_total_for_order_excludes_invalidated():
 
 
 def test_total_outflows_excludes_invalidated():
-    """Invalidated outflows (tien_rut/refund) are excluded from total_outflows."""
+    """Invalidated outflows (refund only — tien_rut is no longer an outflow per
+    the DG-198 reversal) are excluded from total_outflows."""
     with get_db() as conn:
         ensure_schema(conn)
         order_id = _seed_order(conn)
-        _insert_txn(conn, order_id, 50000, type_="tien_rut")
+        _insert_txn(conn, order_id, 50000, type_="refund")
         _insert_txn(conn, order_id, 30000, type_="refund",
                     invalidated_at="2026-06-25T10:00:00")
         assert PaymentTransaction.total_outflows(conn, order_id) == 50000.0
 
 
 def test_total_paid_net_excludes_invalidated():
-    """total_paid_net excludes invalidated rows on both sides."""
+    """total_paid_net excludes invalidated rows on both sides. tien_rut is now
+    a deposit inflow (included in excl_outflows), not an outflow."""
     with get_db() as conn:
         ensure_schema(conn)
         order_id = _seed_order(conn)
-        # valid payment 200k, invalidated payment 100k, valid outflow 50k,
-        # invalidated outflow 30k -> net = 200k - 50k = 150k
+        # valid payment 200k, invalidated payment 100k, valid refund 50k,
+        # invalidated refund 30k -> net = 200k - 50k = 150k
         _insert_txn(conn, order_id, 200000, type_="payment")
         _insert_txn(conn, order_id, 100000, type_="payment",
                     invalidated_at="2026-06-25T10:00:00")
-        _insert_txn(conn, order_id, 50000, type_="tien_rut")
+        _insert_txn(conn, order_id, 50000, type_="refund")
         _insert_txn(conn, order_id, 30000, type_="refund",
                     invalidated_at="2026-06-25T10:00:00")
         assert PaymentTransaction.total_paid_net(conn, order_id) == 150000.0
 
 
 def test_all_invalidated_yields_zero_totals():
-    """When every transaction is invalidated, all totals are zero."""
+    """When every transaction is invalidated, all totals are zero. (tien_rut is
+    no longer an outflow — it is included in excl_outflows — but when
+    invalidated it contributes 0 to every total.)"""
     with get_db() as conn:
         ensure_schema(conn)
         order_id = _seed_order(conn)
         _insert_txn(conn, order_id, 200000, type_="payment",
                     invalidated_at="2026-06-25T10:00:00")
-        _insert_txn(conn, order_id, 50000, type_="tien_rut",
+        _insert_txn(conn, order_id, 50000, type_="refund",
                     invalidated_at="2026-06-25T10:00:00")
         assert PaymentTransaction.total_for_order(conn, order_id) == 0.0
         assert PaymentTransaction.total_paid_excl_outflows(conn, order_id) == 0.0

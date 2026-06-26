@@ -3,11 +3,12 @@ recognition.
 
 Covers:
 
-- ``PaymentTransaction.total_paid_net`` (deposits − tien_rut refunds)
+- ``PaymentTransaction.total_paid_net`` (deposits − refund outflows)
 - ``_sync_delivered_order_journal`` updates a stale revenue entry when the
   2100 debit no longer matches net deposits (payment correction scenario)
-- Refund handling: a ``tien_rut`` on a delivered order reduces the 2100 debit
-  to net deposits on re-sync
+- Refund handling: a ``refund`` on a delivered order reduces the 2100 debit
+  to net deposits on re-sync (``tien_rut`` is no longer an outflow per the
+  DG-198 reversal — it is a deposit inflow journaled to 2400)
 - Net deposits <= 0 (refunds >= deposits) → no revenue entry is created
 - Idempotent: re-syncing an already-correct entry is a no-op
 - ``_backfill_delivered_order_journal_entries`` reconciles stale entries against
@@ -133,14 +134,18 @@ def _revenue_entry_count(conn, order_id: int) -> int:
 
 
 def test_total_paid_net_deposits_minus_tien_rut():
+    """tien_rut is a deposit inflow (DG-198 reversal), not an outflow. So
+    total_paid_excl_outflows includes tien_rut, total_outflows only counts
+    refund, and total_paid_net = deposits + tien_rut − refund."""
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_order(conn, order_ref="ORD-NET-100")
         _insert_payment(conn, order_id=oid, amount=500000, ptype="deposit")
         _insert_payment(conn, order_id=oid, amount=200000, ptype="tien_rut")
-        assert PaymentTransaction.total_paid_excl_outflows(conn, oid) == 500000.0
-        assert PaymentTransaction.total_outflows(conn, oid) == 200000.0
-        assert PaymentTransaction.total_paid_net(conn, oid) == 300000.0
+        # tien_rut is included in excl_outflows; outflows (refund) = 0.
+        assert PaymentTransaction.total_paid_excl_outflows(conn, oid) == 700000.0
+        assert PaymentTransaction.total_outflows(conn, oid) == 0.0
+        assert PaymentTransaction.total_paid_net(conn, oid) == 700000.0
 
 
 def test_total_paid_net_zero_when_no_deposits():
@@ -151,11 +156,12 @@ def test_total_paid_net_zero_when_no_deposits():
 
 
 def test_total_paid_net_negative_when_refunds_exceed_deposits():
+    """refund is a true outflow: 200k deposit + 500k refund → net = -300k."""
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_order(conn, order_ref="ORD-NET-102")
         _insert_payment(conn, order_id=oid, amount=200000, ptype="deposit")
-        _insert_payment(conn, order_id=oid, amount=500000, ptype="tien_rut")
+        _insert_payment(conn, order_id=oid, amount=500000, ptype="refund")
         assert PaymentTransaction.total_paid_net(conn, oid) == -300000.0
 
 
@@ -233,12 +239,14 @@ def test_sync_recreates_after_external_stale_insert():
 
 
 # ---------------------------------------------------------------------------
-# Refund (tien_rut) handling
+# Refund handling (tien_rut is no longer an outflow — DG-198 reversal)
 # ---------------------------------------------------------------------------
 
 
 def test_sync_refund_reduces_revenue_to_net_deposits():
-    """500k deposit + 200k tien_rut → 2100 debit = 300k net."""
+    """500k deposit + 200k refund → 2100 debit = 300k net. refund is a true
+    outflow that debits 2100 at payment time, so it reduces the deposit
+    balance converted to revenue."""
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_order(
@@ -249,7 +257,7 @@ def test_sync_refund_reduces_revenue_to_net_deposits():
         assert _revenue_2100_debit(conn, oid) == 500000.0
 
         # Issue a refund after delivery.
-        _insert_payment(conn, order_id=oid, amount=200000, ptype="tien_rut")
+        _insert_payment(conn, order_id=oid, amount=200000, ptype="refund")
         _sync_delivered_order_journal(conn, oid, "ORD-REF-300")
         assert _revenue_2100_debit(conn, oid) == 300000.0
 
@@ -258,21 +266,21 @@ def test_sync_skips_revenue_when_net_deposits_zero_or_negative():
     """Refunds >= deposits → no revenue entry created."""
     with get_db() as conn:
         ensure_schema(conn)
-        # Net exactly zero: 500k deposit + 500k tien_rut.
+        # Net exactly zero: 500k deposit + 500k refund.
         oid_zero = _insert_order(
             conn, order_ref="ORD-REF-310", total_price=500000, status="delivered"
         )
         _insert_payment(conn, order_id=oid_zero, amount=500000, ptype="deposit")
-        _insert_payment(conn, order_id=oid_zero, amount=500000, ptype="tien_rut")
+        _insert_payment(conn, order_id=oid_zero, amount=500000, ptype="refund")
         _sync_delivered_order_journal(conn, oid_zero, "ORD-REF-310")
         assert _revenue_entry_count(conn, oid_zero) == 0
 
-        # Net negative: 200k deposit + 500k tien_rut.
+        # Net negative: 200k deposit + 500k refund.
         oid_neg = _insert_order(
             conn, order_ref="ORD-REF-311", total_price=200000, status="delivered"
         )
         _insert_payment(conn, order_id=oid_neg, amount=200000, ptype="deposit")
-        _insert_payment(conn, order_id=oid_neg, amount=500000, ptype="tien_rut")
+        _insert_payment(conn, order_id=oid_neg, amount=500000, ptype="refund")
         _sync_delivered_order_journal(conn, oid_neg, "ORD-REF-311")
         assert _revenue_entry_count(conn, oid_neg) == 0
 
@@ -289,7 +297,7 @@ def test_sync_removes_revenue_entry_when_refund_drains_deposits():
         assert _revenue_entry_count(conn, oid) == 1
 
         # Drain deposits with a full refund.
-        _insert_payment(conn, order_id=oid, amount=500000, ptype="tien_rut")
+        _insert_payment(conn, order_id=oid, amount=500000, ptype="refund")
         _sync_delivered_order_journal(conn, oid, "ORD-REF-320")
         assert _revenue_entry_count(conn, oid) == 0
 
@@ -355,13 +363,13 @@ def test_backfill_reconciles_stale_revenue_to_net_deposits():
             conn, order_ref="ORD-BF-500", total_price=700000, status="delivered"
         )
         _insert_payment(conn, order_id=oid, amount=500000, ptype="deposit")
-        _insert_payment(conn, order_id=oid, amount=200000, ptype="tien_rut")
+        _insert_payment(conn, order_id=oid, amount=200000, ptype="refund")
         # Stale entry debiting 700k (the old gross, ignoring the refund).
         _insert_revenue_entry(conn, order_id=oid, amount=700000)
         assert _revenue_2100_debit(conn, oid) == 700000.0
 
         _backfill_delivered_order_journal_entries(conn)
-        # Net = 500k − 200k = 300k.
+        # Net = 500k − 200k refund = 300k.
         assert _revenue_2100_debit(conn, oid) == 300000.0
         assert _revenue_entry_count(conn, oid) == 1
         conn.commit()

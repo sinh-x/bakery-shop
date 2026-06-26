@@ -2,7 +2,9 @@
 
 Repairs stale order-revenue journal entries whose 2100 (Customer Deposits)
 debit no longer matches the order's current net deposits
-(deposits − outflows (refund / tien_rut); ``PaymentTransaction.total_paid_net``).
+(deposits − outflows (refund only); ``PaymentTransaction.total_paid_net``).
+``tien_rut`` is a deposit inflow (DG-198 reversal), not an outflow, so it is
+not subtracted from the deposit balance.
 
 The repair deletes the existing ``source_type = 'order'`` journal entry and
 re-runs :func:`_sync_delivered_order_journal` to recreate it with the current
@@ -255,13 +257,15 @@ def _tien_rut_orders_needing_backfill(conn):
     """Return order ids with a deposit-revenue gap caused by pre-fix tien_rut.
 
     An order is affected when it has at least one valid ``tien_rut`` payment
-    transaction whose journal entry does NOT debit account 2400 (Tien Rut
-    Held). Before the Phase 2 fix, ``tien_rut`` debited 2100 (Customer
-    Deposits) directly, overdrawing 2100 and skipping revenue recognition.
+    transaction whose journal entry does NOT credit account 2400 (Tien Rut
+    Held). Before the DG-198 reversal, ``tien_rut`` was treated as an outflow
+    and debited 2100 (Customer Deposits) directly, overdrawing 2100 and
+    skipping revenue recognition. The current correct routing is DR Asset /
+    CR 2400 (a deposit inflow).
 
     The detection is idempotent: once the backfill re-syncs a tien_rut payment
-    journal entry to debit 2400, the order drops out of this list, so a second
-    run is a no-op (NFR3).
+    journal entry to credit 2400, the order drops out of this list, so a
+    second run is a no-op (NFR3).
     """
     from baker.models.payment_transaction import _invalidation_filter
 
@@ -274,7 +278,7 @@ def _tien_rut_orders_needing_backfill(conn):
     invalidation = _invalidation_filter(conn)
 
     # payment_transactions with type='tien_rut' whose journal entry has no 2400
-    # debit line. An invalidated tien_rut has no journal entry (it was
+    # credit line. An invalidated tien_rut has no journal entry (it was
     # reversed/deleted), so it is naturally excluded.
     rows = conn.execute(
         f"""
@@ -288,7 +292,7 @@ def _tien_rut_orders_needing_backfill(conn):
               SELECT 1 FROM journal_lines jl
               WHERE jl.journal_entry_id = je.id
                 AND jl.account_id = ?
-                AND jl.debit > 0
+                AND jl.credit > 0
           )
         ORDER BY pt.order_id ASC
         """,
@@ -301,11 +305,13 @@ def _process_tien_rut_gap_order(conn, order_id: int, *, dry_run: bool) -> dict:
     """Backfill one order's tien_rut deposit-revenue gap (FR4).
 
     Steps for the live run:
-      1. Re-sync each ``tien_rut`` payment journal entry so it debits 2400
-         instead of 2100 (Phase 2 routing). Idempotent: re-syncing an entry
-         already on 2400 is a no-op.
-      2. Reconcile the order revenue entry so it clears 2400 and balances
-         2100/4100 (Phase 4 logic). Idempotent within
+      1. Re-sync each ``tien_rut`` payment journal entry so it credits 2400
+         (DR Asset / CR 2400 — the DG-198 reversal inflow routing) instead of
+         debiting 2100. Idempotent: re-syncing an entry already on 2400 is a
+         no-op.
+      2. Reconcile the order's journal entries so deposits→revenue (DR 2100 /
+         CR 4100) and tien_rut→return (DR 2400 / CR Asset) are created
+         separately via ``_reconcile_order_revenue_entry``. Idempotent within
          ``REVENUE_UPDATE_TOLERANCE``.
 
     Dry-run reports the gap and the planned actions without mutating.

@@ -102,26 +102,27 @@ asset account is credited — the reverse of a normal deposit.
 Outflows are **not split** for bus shipping at payment time; the held shipping
 balance in 2200 is preserved until the delivery release entry (§3.3).
 
-### 1.3 Tien Rut — cash withdrawal (outflow)
+### 1.3 Tien Rut — cash held for the customer (deposit inflow)
 
-> Triggered by `type = tien_rut`. Member of `PAYMENT_OUTFLOW_TYPES`.
-> Implemented in DG-198 Phase 2 (FR1).
+> Triggered by `type = tien_rut`. NOT a member of `PAYMENT_OUTFLOW_TYPES`
+> (DG-198 reversal). Implemented in DG-198 Phase 2 (FR1), reversed in DG-198
+> review.
 
-`tien_rut` debits **2400 (Tien Rut Held)** instead of 2100, so Customer
-Deposits is not overdrawn while revenue recognition is pending. The amount is
-held in 2400 until the order is delivered, at which point the revenue entry
-clears 2400 (§3.2).
+`tien_rut` is a **deposit inflow**: the customer gives cash to the shop for
+safekeeping. It journals **DR Asset / CR 2400 (Tien Rut Held)** — the same
+direction as a deposit, but crediting 2400 instead of 2100 so Customer
+Deposits is not affected. The amount is held in 2400 until the order is
+delivered, at which point a separate **Tien rut return entry** (§3.2) returns
+the held cash to the customer (DR 2400 / CR Asset).
 
 | Action | Debit | Credit |
 |--------|-------|--------|
-| Tien rut (cash withdrawal) | 2400 (Tien Rut Held) | Asset (1100/1200) |
+| Tien rut (cash held for customer) | Asset (1100/1200) | 2400 (Tien Rut Held) |
 
-**Guardrail (DG-198 Phase 3 / FR2):** the API rejects `tien_rut` creation when
-`amount > available`, where
-`available = total_paid_excl_outflows − total_outflows`. The check runs inside
-the same DB transaction as payment creation (NFR2 — no race-condition window).
-On rejection the API returns HTTP 422 with message
-`"Số tiền rút vượt quá số dư cọc hiện có"`.
+`tien_rut` is **not split** for bus shipping (it is not a product deposit).
+The guardrail that previously rejected `tien_rut` creation when
+`amount > available deposits` has been **removed** (DG-198 reversal) —
+`tien_rut` is an inflow, so no deposit-balance limit applies.
 
 ### 1.4 Invalidation / Restoration of a payment transaction
 
@@ -209,35 +210,58 @@ transaction clears the sub-account (out of scope for this doc).
 ## 3. Order Delivery (Revenue Recognition)
 
 When an order is delivered/completed, `_sync_delivered_order_journal()` creates
-up to three journal entries: the revenue entry, the bus shipping release
-entry, and the COGS entry.
+up to four journal entries: the revenue entry, the tien rut return entry, the
+bus shipping release entry, and the COGS entry.
 
 ### 3.1 Revenue entry — paid order
 
-> `source_type = 'order'`. Implemented in DG-198 Phase 4 (FR3).
+> `source_type = 'order'`, description prefix `Order revenue:`. Implemented in
+> DG-198 Phase 4 (FR3), reversed in DG-198 review.
 
 For a paid order (any deposits held), a revenue entry is **always** created
 (replacing the previous "skip when net <= 0" behaviour). It debits Customer
-Deposits for the full deposit balance still held, credits Tien Rut Held (2400)
-for the tien_rut held (clearing the holding), and credits Order Revenue (4100)
-for the net revenue.
+Deposits (2100) for the full deposit balance still held and credits Order
+Revenue (4100) for the same amount. **Deposits only — `tien_rut` is NOT netted
+against deposits**; it is returned separately via the tien rut return entry
+(§3.2).
 
 Definitions:
-- `deposit_balance = max(0, deposits_in − refund_total − shipping_held)`
-  where `deposits_in = total_paid_excl_outflows`,
-  `refund_total = total_outflows − tien_rut_held`,
-  `shipping_held = shipping_fee` for bus orders (else 0).
-- `credit_2400 = min(tien_rut_held, deposit_balance)`
-- `revenue_amount = max(0, deposit_balance − tien_rut_held)`
+- `deposit_balance = max(0, deposits_in − tien_rut_total − refund_total − shipping_held)`
+  where `deposits_in = total_paid_excl_outflows` (includes `tien_rut`),
+  `tien_rut_total = total_tien_rut` (excluded from the deposit balance because
+  it journals to 2400, not 2100), `refund_total = total_outflows` (refund
+  only), `shipping_held = shipping_fee` for bus orders (else 0).
+- `revenue_amount = deposit_balance`
 
 | Action | Debit | Credit |
 |--------|-------|--------|
-| Revenue recognition (paid order) | 2100 (Customer Deposits) = deposit_balance | 2400 (Tien Rut Held) = credit_2400 *(if > 0)* + 4100 (Order Revenue) = revenue_amount *(if > 0)* |
+| Revenue recognition (paid order) | 2100 (Customer Deposits) = deposit_balance | 4100 (Order Revenue) = revenue_amount *(if > 0)* |
 
 Zero-amount lines are omitted so the entry always balances. This entry clears
-the 2100 deposit balance and the 2400 tien_rut holding in one balanced entry.
+the 2100 deposit balance into revenue. `tien_rut` (2400) is NOT touched here.
 
-### 3.2 Revenue entry — unpaid order (Accounts Receivable)
+### 3.2 Tien rut return entry — delivery
+
+> `source_type = 'order'`, description prefix `Tien rut return:`. DG-198
+> reversal (FR3).
+
+When `tien_rut` is held in 2400 for the order, a **separate** return entry is
+created at delivery that debits Tien Rut Held (2400) for the full held amount
+and credits the asset account — returning the held cash to the customer. The
+asset account is the same one used by the original `tien_rut` payment method
+(defaulting to 1100 when the method cannot be determined).
+
+| Action | Debit | Credit |
+|--------|-------|--------|
+| Tien rut return at delivery | 2400 (Tien Rut Held) = tien_rut_held | Asset (1100/1200) = tien_rut_held |
+
+`tien_rut_held = _held_tien_rut_for_order` (2400 credits at payment time minus
+2400 debits at return/reversal). When `tien_rut_held <= 0` any existing return
+entry is removed (the holding has already been cleared or was reversed). The
+entry shares `source_type='order'`/`source_id=order_id` with the revenue entry
+but is distinguishable by its `Tien rut return:` description prefix.
+
+### 3.3 Revenue entry — unpaid order (Accounts Receivable)
 
 > `source_type = 'order'`. Applies when `total_paid_excl_outflows <= 0` and
 > `total_price > 0`.
@@ -254,7 +278,7 @@ hold shipping in 2200; the full order total remains a receivable. When
 `deposit_balance <= 0` but deposits existed (nothing held, e.g. fully
 refunded), no entry is created (nothing to recognise).
 
-### 3.3 Bus shipping release (delivery)
+### 3.4 Bus shipping release (delivery)
 
 > `source_type = 'order_shipping_release'`. Implemented in DG-191.
 
@@ -270,7 +294,7 @@ For a delivered bus order with `shipping_fee > 0`, the shipping fee held in
 entry matching the expected release amount (within tolerance) is left
 untouched.
 
-### 3.4 COGS at sale
+### 3.5 COGS at sale
 
 > `source_type = 'order_cogs'`.
 
@@ -313,19 +337,21 @@ Re-syncs the `source_type = 'order'` revenue entry for orders whose revenue
 entry is missing or stale (calls `_reconcile_order_revenue_entry`). Produces
 the same debit/credit lines as §3.1 / §3.2.
 
-### 5.2 `baker repair-tien-rut-gap` (DG-198 Phase 5)
+### 5.2 `baker repair-tien-rut-gap` (DG-198 reversal)
 
 Backfills existing orders whose `tien_rut` payment journal entries were
-recorded against 2100 (pre-fix) instead of 2400. For each affected order it:
+recorded against 2100 (pre-reversal outflow routing) instead of crediting
+2400 (the current deposit-inflow routing). For each affected order it:
 
-1. Re-syncs the `tien_rut` `payment_transaction` journal entry → routes to 2400
-   via `_sync_payment_journal` (§1.3).
-2. Reconciles the revenue entry → clears 2400 via
-   `_reconcile_order_revenue_entry` (§3.1).
+1. Re-syncs the `tien_rut` `payment_transaction` journal entry → routes to
+   2400 (DR Asset / CR 2400) via `_sync_payment_journal` (§1.3).
+2. Reconciles the order's journal entries via `_reconcile_order_revenue_entry`
+   → creates the deposits→revenue entry (§3.1) and the tien rut return entry
+   (§3.2) separately.
 
-Idempotent (NFR3): detection excludes orders already on 2400, and the
-sync/reconcile helpers are themselves idempotent. Supports `--order-id`,
-`--all`, `--dry-run`.
+Idempotent (NFR3): detection excludes orders whose `tien_rut` journal entry
+already credits 2400, and the sync/reconcile helpers are themselves
+idempotent. Supports `--order-id`, `--all`, `--dry-run`.
 
 ---
 
@@ -393,15 +419,19 @@ correction relates to the same period as the entry being reversed.
 
 `baker validate-accounts` runs registered checks in
 `src/baker/services/accounting_validation.py`. The deposit-revenue integrity
-check (DG-198 Phase 6, check #15) verifies the balance equation for every
-`source_type = 'order'` revenue entry with a 2100 debit:
+check (DG-198, check #15) verifies the balance equation for every
+`source_type = 'order'` revenue entry (description prefix `Order revenue:`)
+with a 2100 debit:
 
 ```
-debit_2100 = credit_2400 + credit_4100   (within tolerance)
+debit_2100 = credit_4100   (within tolerance)
 ```
 
-AR-only entries (debit 1500, no 2100) are excluded. A gap (2400 credit missing
-or understated) is flagged with the correct gap amount.
+i.e. the Customer Deposits (2100) cleared into revenue equal the Order Revenue
+(4100) recognised. Tien Rut Held (2400) is cleared separately via the
+`Tien rut return:` entry (§3.2) and is NOT part of this check. AR-only entries
+(debit 1500, no 2100) are excluded. A gap (revenue understated) is flagged
+with the correct gap amount.
 
 ---
 
