@@ -36,6 +36,11 @@ Checks:
       debited account code does not match the expense event's category
       mapping in ``EXPENSE_CATEGORY_TO_ACCOUNT_CODE`` (inventory purchase
       categories debit Inventory, not expense accounts, and are excluded).
+  15. ``deposit_revenue_integrity`` — for every delivered order revenue entry
+      (``source_type = 'order'``), the 2100 debit must equal the 2400 credit
+      plus the 4100 credit (deposits = tien_rut held + net revenue). Flags
+      any revenue entry where this identity does not hold within tolerance
+      (DG-198 Phase 6, FR5/AC5).
 
 The module is deliberately side-effect free: it only reads the database.
 It is exposed via the CLI (``baker validate-accounts``) and the API
@@ -46,7 +51,12 @@ It is exposed via the CLI (``baker validate-accounts``) and the API
 import json
 from typing import Any
 
-from baker.db.schema import COGS_CODE
+from baker.db.schema import (
+    COGS_CODE,
+    CUSTOMER_DEPOSITS_CODE,
+    ORDER_REVENUE_CODE,
+    TIEN_RUT_HELD_CODE,
+)
 
 # Tolerance for double-entry imbalance. Sub-cent rounding from REAL storage
 # and per-line float arithmetic is expected; only imbalances above this
@@ -851,6 +861,73 @@ def _check_expense_category_mismatch(conn) -> dict[str, Any]:
     }
 
 
+def _check_deposit_revenue_integrity(conn) -> dict[str, Any]:
+    """Flag delivered order revenue entries where the deposit balance moved
+    into revenue does not reconcile with the tien_rut held and net revenue.
+
+    For every ``source_type = 'order'`` journal entry (the revenue entry
+    created at delivery), the accounting identity must hold::
+
+        debit_2100 = credit_2400 + credit_4100
+
+    i.e. the Customer Deposits (2100) cleared into revenue equal the Tien Rut
+    Held (2400) returned to the customer plus the Order Revenue (4100)
+    recognised as net revenue. A violation indicates a deposit-revenue gap —
+    the original failure mode that DG-198 fixes (tien_rut debiting 2100 with
+    no offsetting revenue entry).
+
+    Accounts Receivable (AR) entries — unpaid orders with zero deposits — are
+    excluded: they debit 1500 and credit 4100 only, with no 2100/2400
+    component, so the identity is not applicable.
+    """
+    rows = conn.execute(
+        """
+        SELECT je.id          AS entry_id,
+               je.description AS description,
+               je.source_id   AS order_id,
+               COALESCE(SUM(CASE WHEN a.code = ? THEN jl.debit  ELSE 0 END), 0) AS debit_2100,
+               COALESCE(SUM(CASE WHEN a.code = ? THEN jl.credit ELSE 0 END), 0) AS credit_2400,
+               COALESCE(SUM(CASE WHEN a.code = ? THEN jl.credit ELSE 0 END), 0) AS credit_4100
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'order'
+        GROUP BY je.id
+        HAVING debit_2100 > 0
+           AND ABS(debit_2100 - (credit_2400 + credit_4100)) > ?
+        ORDER BY je.id
+        """,
+        (
+            CUSTOMER_DEPOSITS_CODE,
+            TIEN_RUT_HELD_CODE,
+            ORDER_REVENUE_CODE,
+            DEBIT_CREDIT_TOLERANCE,
+        ),
+    ).fetchall()
+
+    findings = [
+        {
+            "entry_id": int(r["entry_id"]),
+            "order_id": int(r["order_id"]) if r["order_id"] is not None else None,
+            "description": r["description"],
+            "debit_2100": float(r["debit_2100"]),
+            "credit_2400": float(r["credit_2400"]),
+            "credit_4100": float(r["credit_4100"]),
+            "gap": round(
+                float(r["debit_2100"]) - float(r["credit_2400"]) - float(r["credit_4100"]),
+                4,
+            ),
+        }
+        for r in rows
+    ]
+    return {
+        "check": "deposit_revenue_integrity",
+        "status": "pass" if not findings else "fail",
+        "issue_count": len(findings),
+        "details": findings,
+    }
+
+
 CHECKS = (
     _check_double_entry_integrity,
     _check_cogs_completeness,
@@ -866,6 +943,7 @@ CHECKS = (
     _check_duplicate_entries,
     _check_orphaned_lines,
     _check_expense_category_mismatch,
+    _check_deposit_revenue_integrity,
 )
 
 
@@ -875,7 +953,7 @@ def run_validation(conn) -> dict[str, Any]:
     The report has the shape::
 
         {
-          "summary": {"total_checks": 14, "passed": N, "failed": M,
+          "summary": {"total_checks": 15, "passed": N, "failed": M,
                        "total_issues": K, "overall_status": "pass"|"fail"},
           "checks": [ <per-check result dicts> ]
         }

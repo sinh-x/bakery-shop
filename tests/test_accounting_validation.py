@@ -1,6 +1,6 @@
 """Tests for accounting validation module — Phase 5 (DG-187, FR6/AC6).
 
-Covers the fourteen validation checks exposed via the service module, the
+Covers the fifteen validation checks exposed via the service module, the
 ``GET /api/accounts/validate`` endpoint, and the ``baker validate-accounts``
 CLI command:
 
@@ -18,6 +18,7 @@ CLI command:
 - duplicate entries (same source_type + source_id, excluding reversals)
 - orphaned lines (journal lines with non-existent account_id)
 - expense category mismatch (debited account ≠ category mapping)
+- deposit revenue integrity (2100 debit = 2400 credit + 4100 credit)
 - clean DB → all checks pass
 - CLI command exit code + output
 """
@@ -163,6 +164,7 @@ def test_validation_clean_db_all_pass():
         "duplicate_entries",
         "orphaned_lines",
         "expense_category_mismatch",
+        "deposit_revenue_integrity",
     ]
 
 
@@ -373,8 +375,8 @@ def test_api_validate_endpoint_clean_db(api_client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["summary"]["overall_status"] == "pass"
-    assert len(body["checks"]) == 14
-    assert body["summary"]["total_checks"] == 14
+    assert len(body["checks"]) == 15
+    assert body["summary"]["total_checks"] == 15
 
 
 def test_api_validate_endpoint_reports_failures(api_client):
@@ -718,5 +720,244 @@ def test_expense_category_mismatch_passes_on_clean_db():
         ensure_schema(conn)
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "expense_category_mismatch")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Deposit revenue integrity (DG-198 Phase 6, FR5/AC5)
+# ---------------------------------------------------------------------------
+
+
+def _insert_revenue_entry(
+    conn,
+    *,
+    order_id: int,
+    lines: list[tuple[str, float, float]],
+    description: str = "Order revenue: TEST",
+) -> int:
+    """Insert a ``source_type = 'order'`` journal entry with the given
+    (account_code, debit, credit) lines. Caller is responsible for keeping
+    the entry balanced (debit sum == credit sum) when double-entry integrity
+    is expected to pass.
+    """
+    cur = conn.execute(
+        "INSERT INTO journal_entries (description, source_type, source_id) "
+        "VALUES (?, 'order', ?)",
+        (description, order_id),
+    )
+    entry_id = int(cur.lastrowid)
+    for code, debit, credit in lines:
+        acct = _account_id(conn, code)
+        conn.execute(
+            "INSERT INTO journal_lines "
+            "(journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (entry_id, acct, debit, credit, ""),
+        )
+    return entry_id
+
+
+def _insert_delivered_order(conn, *, order_id: int | None = None) -> int:
+    if order_id is None:
+        cur = conn.execute(
+            "INSERT INTO orders "
+            "(order_ref, customer_name, total_price, status, due_date) "
+            "VALUES (?, ?, ?, 'delivered', '2026-06-10')",
+            ("ORD-DRI-1", "Tester", 500000.0),
+        )
+        return int(cur.lastrowid)
+    return order_id
+
+
+def test_deposit_revenue_integrity_passes_on_clean_db():
+    with get_db() as conn:
+        ensure_schema(conn)
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "deposit_revenue_integrity")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+def test_deposit_revenue_integrity_passes_when_balanced_with_tien_rut():
+    """Revenue entry: debit 2100 500k = credit 2400 300k + credit 4100 200k."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_id = _insert_delivered_order(conn)
+        _insert_revenue_entry(
+            conn,
+            order_id=order_id,
+            lines=[
+                ("2100", 500000.0, 0.0),
+                ("2400", 0.0, 300000.0),
+                ("4100", 0.0, 200000.0),
+            ],
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "deposit_revenue_integrity")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+def test_deposit_revenue_integrity_passes_when_no_tien_rut():
+    """Revenue entry: debit 2100 500k = credit 4100 500k (no 2400 line)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_id = _insert_delivered_order(conn)
+        _insert_revenue_entry(
+            conn,
+            order_id=order_id,
+            lines=[
+                ("2100", 500000.0, 0.0),
+                ("4100", 0.0, 500000.0),
+            ],
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "deposit_revenue_integrity")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+def test_deposit_revenue_integrity_passes_when_net_zero():
+    """Revenue entry: debit 2100 500k = credit 2400 500k (4100 omitted)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_id = _insert_delivered_order(conn)
+        _insert_revenue_entry(
+            conn,
+            order_id=order_id,
+            lines=[
+                ("2100", 500000.0, 0.0),
+                ("2400", 0.0, 500000.0),
+            ],
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "deposit_revenue_integrity")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+def test_deposit_revenue_integrity_flags_gap_2400_missing():
+    """Gap scenario: debit 2100 500k but only credit 4100 200k — 300k of
+    tien_rut held in 2400 is missing from the revenue entry (the original
+    DG-198 failure mode). debit_2100 (500k) != credit_2400 (0) + credit_4100 (200k).
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_id = _insert_delivered_order(conn)
+        entry_id = _insert_revenue_entry(
+            conn,
+            order_id=order_id,
+            lines=[
+                ("2100", 500000.0, 0.0),
+                ("4100", 0.0, 200000.0),
+                # Top up with an asset credit to keep the entry balanced so
+                # double_entry_integrity does not also fire — only the
+                # deposit-revenue identity is wrong.
+                ("1100", 0.0, 300000.0),
+            ],
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "deposit_revenue_integrity")
+    assert check["status"] == "fail"
+    assert check["issue_count"] == 1
+    finding = check["details"][0]
+    assert finding["entry_id"] == entry_id
+    assert finding["order_id"] == order_id
+    assert finding["debit_2100"] == 500000.0
+    assert finding["credit_2400"] == 0.0
+    assert finding["credit_4100"] == 200000.0
+    assert finding["gap"] == 300000.0
+
+
+def test_deposit_revenue_integrity_flags_gap_2400_understated():
+    """Gap scenario: 2400 credit too small. debit 2100 500k, credit 2400 100k,
+    credit 4100 200k → 500k != 300k, gap 200k.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_id = _insert_delivered_order(conn)
+        _insert_revenue_entry(
+            conn,
+            order_id=order_id,
+            lines=[
+                ("2100", 500000.0, 0.0),
+                ("2400", 0.0, 100000.0),
+                ("4100", 0.0, 200000.0),
+                ("1100", 0.0, 200000.0),  # balance the entry
+            ],
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "deposit_revenue_integrity")
+    assert check["status"] == "fail"
+    assert check["issue_count"] == 1
+    finding = check["details"][0]
+    assert finding["debit_2100"] == 500000.0
+    assert finding["credit_2400"] == 100000.0
+    assert finding["credit_4100"] == 200000.0
+    assert finding["gap"] == 200000.0
+
+
+def test_deposit_revenue_integrity_excludes_ar_entries():
+    """Unpaid order AR entries (debit 1500, credit 4100) have no 2100 debit,
+    so the deposit-revenue identity is not applicable and they must not be
+    flagged.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_id = _insert_delivered_order(conn)
+        _insert_revenue_entry(
+            conn,
+            order_id=order_id,
+            description="Order revenue (AR): TEST",
+            lines=[
+                ("1500", 500000.0, 0.0),
+                ("4100", 0.0, 500000.0),
+            ],
+        )
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "deposit_revenue_integrity")
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+def test_deposit_revenue_integrity_end_to_end_after_journal_sync():
+    """End-to-end: deposit + tien_rut payment, sync, deliver, sync revenue —
+    validate-accounts must report no deposit-revenue gap (AC5).
+    """
+    from baker.services.journal_sync import (
+        _sync_delivered_order_journal,
+        _sync_payment_journal,
+    )
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        cur = conn.execute(
+            "INSERT INTO orders "
+            "(order_ref, customer_name, total_price, status, due_date) "
+            "VALUES (?, ?, ?, 'pending', '2026-06-10')",
+            ("ORD-DRI-E2E", "Tester", 500000.0),
+        )
+        order_id = int(cur.lastrowid)
+        dep_cur = conn.execute(
+            "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+            "VALUES (?, ?, 'deposit', 'cash', '')",
+            (order_id, 500000.0),
+        )
+        _sync_payment_journal(
+            conn, int(dep_cur.lastrowid), 500000.0, "deposit", "cash", order_id=order_id
+        )
+        tr_cur = conn.execute(
+            "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+            "VALUES (?, ?, 'tien_rut', 'cash', '')",
+            (order_id, 300000.0),
+        )
+        _sync_payment_journal(
+            conn, int(tr_cur.lastrowid), 300000.0, "tien_rut", "cash", order_id=order_id
+        )
+        conn.execute("UPDATE orders SET status = 'delivered' WHERE id = ?", (order_id,))
+        _sync_delivered_order_journal(conn, order_id, order_ref="ORD-DRI-E2E")
+        report = run_validation(conn)
+    check = next(c for c in report["checks"] if c["check"] == "deposit_revenue_integrity")
     assert check["status"] == "pass"
     assert check["issue_count"] == 0
