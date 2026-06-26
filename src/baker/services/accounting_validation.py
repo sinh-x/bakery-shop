@@ -692,7 +692,9 @@ def _check_duplicate_entries(conn) -> dict[str, Any]:
     """Flag multiple journal entries sharing the same ``source_type`` +
     ``source_id``. Reversal entries (whose description starts with
     ``Reversal:``) are excluded — they legitimately share a source with the
-    original entry they reverse.
+    original entry they reverse. ``source_type = 'order'`` entries are also
+    excluded — DG-198 creates two entries per delivered order (revenue +
+    tien rut return), which is intentional.
     """
     rows = conn.execute(
         """
@@ -703,6 +705,7 @@ def _check_duplicate_entries(conn) -> dict[str, Any]:
         FROM journal_entries je
         WHERE je.source_id IS NOT NULL
           AND je.description NOT LIKE 'Reversal:%'
+          AND je.source_type != 'order'
         GROUP BY je.source_type, je.source_id
         HAVING cnt > 1
         ORDER BY je.source_type, je.source_id
