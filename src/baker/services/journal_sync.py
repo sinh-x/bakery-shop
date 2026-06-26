@@ -26,6 +26,7 @@ from baker.db.schema import (
     PAYMENT_METHOD_TO_ASSET_CODE,
     PAYMENT_OUTFLOW_TYPES,
     REVENUE_UPDATE_TOLERANCE,
+    TIEN_RUT_HELD_CODE,
     _account_id_by_code,
     _ensure_staff_payable_sub_account,
     _insert_journal_entry,
@@ -358,9 +359,10 @@ def _build_payment_journal_lines(
 
     Outflow transactions (refund/tien_rut) are NOT split in Phase 2 — the
     2200 release at refund time is deferred to Phase 3 (revenue exclusion +
-    shipping release). Outflows use the standard reverse lines (debit
-    Customer Deposits, credit Asset) so the held shipping balance in 2200 is
-    preserved until the delivery release entry handles it.
+    shipping release). ``tien_rut`` debits 2400 (Tien Rut Held) instead of
+    2100 (Customer Deposits) so deposits are not overdrawn while revenue
+    recognition is pending; ``refund`` still debits 2100. The held shipping
+    balance in 2200 is preserved until the delivery release entry handles it.
 
     Non-bus orders and bus orders with no shipping_fee behave exactly as before.
     """
@@ -383,9 +385,15 @@ def _build_payment_journal_lines(
     if ptype in PAYMENT_OUTFLOW_TYPES:
         # Cash flows back to customer. Phase 2 does NOT split outflows — the
         # 2200 release is deferred to Phase 3 (delivery shipping release).
-        # Standard reverse lines: debit Customer Deposits, credit Asset.
+        # tien_rut debits 2400 (Tien Rut Held) instead of 2100 so deposits are
+        # not overdrawn; refund still debits 2100 (Customer Deposits).
+        outflow_debit_account_id = (
+            _account_id_by_code(conn, TIEN_RUT_HELD_CODE)
+            if ptype == "tien_rut"
+            else deposits_account_id
+        )
         lines = [
-            (deposits_account_id, amount_f, 0.0, "Hoàn tiền khách"),
+            (outflow_debit_account_id, amount_f, 0.0, "Hoàn tiền khách"),
             (asset_account_id, 0.0, amount_f, "Trả lại tiền"),
         ]
         description = f"Payment: {ptype} {amount_f}"

@@ -21,6 +21,7 @@ from baker.db.connection import get_db
 from baker.db.schema import (
     BUS_SHIPPING_HELD_CODE,
     CUSTOMER_DEPOSITS_CODE,
+    TIEN_RUT_HELD_CODE,
     ensure_schema,
 )
 from baker.services.journal_sync import _sync_payment_journal
@@ -261,8 +262,12 @@ def test_third_payment_after_shipping_covered_all_to_2100():
 
 
 def test_bus_order_outflow_no_2200_split():
-    """Bus order, refund/tien_rut → standard reverse lines, no 2200 involvement.
-    Phase 2 defers 2200 release to Phase 3 (delivery shipping release)."""
+    """Bus order, refund → standard reverse lines, no 2200 involvement.
+
+    Phase 2 defers 2200 release to Phase 3 (delivery shipping release).
+    DG-198 Phase 2 routes tien_rut to 2400 (covered separately); refund
+    still debits 2100.
+    """
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_order(
@@ -272,14 +277,86 @@ def test_bus_order_outflow_no_2200_split():
         txn1 = _insert_payment(conn, order_id=oid, amount=100000, ptype="deposit")
         _sync_payment_journal(conn, txn1, 100000, "deposit", "cash", order_id=oid)
         # Then a refund (outflow).
-        txn2 = _insert_payment(conn, order_id=oid, amount=30000, ptype="tien_rut")
-        _sync_payment_journal(conn, txn2, 30000, "tien_rut", "cash", order_id=oid)
+        txn2 = _insert_payment(conn, order_id=oid, amount=30000, ptype="refund")
+        _sync_payment_journal(conn, txn2, 30000, "refund", "cash", order_id=oid)
 
         lines2 = _payment_line_amounts(conn, txn2)
         # Outflow: debit 2100 30000, credit 1100 30000 — no 2200 line.
         assert BUS_SHIPPING_HELD_CODE not in lines2
         assert lines2[CUSTOMER_DEPOSITS_CODE]["debit"] == 30000.0
         assert lines2["1100"]["credit"] == 30000.0
+
+
+# ---------------------------------------------------------------------------
+# DG-198 Phase 2 — tien_rut routes to 2400 (Tien Rut Held)
+# ---------------------------------------------------------------------------
+
+
+def test_tien_rut_debits_2400_not_2100():
+    """DG-198 AC2: tien_rut payment debits 2400 (Tien Rut Held), credits asset.
+
+    Given deposits of 500k and a tien_rut of 300k, the journal entry for the
+    tien_rut transaction must debit 2400 (300k) and credit the asset account
+    (300k); it must NOT debit 2100 (Customer Deposits).
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-TR-201", total_price=500000, status="new"
+        )
+        # Deposit 500k into 2100.
+        txn_dep = _insert_payment(conn, order_id=oid, amount=500000, ptype="deposit")
+        _sync_payment_journal(conn, txn_dep, 500000, "deposit", "cash", order_id=oid)
+        # Withdraw 300k as tien_rut → must debit 2400, not 2100.
+        txn_rut = _insert_payment(conn, order_id=oid, amount=300000, ptype="tien_rut")
+        _sync_payment_journal(conn, txn_rut, 300000, "tien_rut", "cash", order_id=oid)
+
+        lines = _payment_line_amounts(conn, txn_rut)
+        # 2400 debited 300000, 1100 credited 300000, 2100 untouched.
+        assert TIEN_RUT_HELD_CODE in lines
+        assert lines[TIEN_RUT_HELD_CODE]["debit"] == 300000.0
+        assert lines["1100"]["credit"] == 300000.0
+        assert CUSTOMER_DEPOSITS_CODE not in lines
+
+
+def test_tien_rut_on_bus_order_debits_2400_no_2200_split():
+    """tien_rut on a bus order still routes to 2400; no 2200 involvement.
+
+    Outflows are never split into 2200 (Phase 2 defers the 2200 release to
+    the delivery revenue entry). The full tien_rut amount debits 2400.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-TR-202", shipping_fee=25000, total_price=100000
+        )
+        txn_dep = _insert_payment(conn, order_id=oid, amount=100000, ptype="deposit")
+        _sync_payment_journal(conn, txn_dep, 100000, "deposit", "cash", order_id=oid)
+        txn_rut = _insert_payment(conn, order_id=oid, amount=30000, ptype="tien_rut")
+        _sync_payment_journal(conn, txn_rut, 30000, "tien_rut", "cash", order_id=oid)
+
+        lines = _payment_line_amounts(conn, txn_rut)
+        assert BUS_SHIPPING_HELD_CODE not in lines
+        assert lines[TIEN_RUT_HELD_CODE]["debit"] == 30000.0
+        assert lines["1100"]["credit"] == 30000.0
+
+
+def test_refund_still_debits_2100_not_2400():
+    """refund type is unchanged: debits 2100 (Customer Deposits), not 2400."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-TR-203", total_price=500000, status="new"
+        )
+        txn_dep = _insert_payment(conn, order_id=oid, amount=500000, ptype="deposit")
+        _sync_payment_journal(conn, txn_dep, 500000, "deposit", "cash", order_id=oid)
+        txn_ref = _insert_payment(conn, order_id=oid, amount=200000, ptype="refund")
+        _sync_payment_journal(conn, txn_ref, 200000, "refund", "cash", order_id=oid)
+
+        lines = _payment_line_amounts(conn, txn_ref)
+        assert lines[CUSTOMER_DEPOSITS_CODE]["debit"] == 200000.0
+        assert lines["1100"]["credit"] == 200000.0
+        assert TIEN_RUT_HELD_CODE not in lines
 
 
 # ---------------------------------------------------------------------------
