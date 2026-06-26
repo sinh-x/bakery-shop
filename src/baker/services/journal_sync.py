@@ -337,6 +337,43 @@ def _held_shipping_for_order(
     return float(row["net_held"] or 0)
 
 
+def _held_tien_rut_for_order(
+    conn, order_id: int, *, exclude_txn_id: Optional[int] = None
+) -> float:
+    """Return the net tien_rut currently held in account 2400 for the order.
+
+    Sums 2400 debits (held at payment time) minus 2400 credits (released by
+    invalidation/reversal) across the order's ``payment_transaction`` journal
+    entries. Used by :func:`_reconcile_order_revenue_entry` to clear the 2400
+    holding at delivery (FR3).
+
+    ``exclude_txn_id`` excludes that transaction's journal entry from the sum —
+    used on the update path so the current transaction's stale entry does not
+    skew the total.
+    """
+    exclude_clause = ""
+    params: list = [order_id]
+    if exclude_txn_id is not None:
+        exclude_clause = " AND je.source_id != ?"
+        params.append(exclude_txn_id)
+    row = conn.execute(
+        f"""
+        SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS net_held
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE a.code = ?
+          AND je.source_type = 'payment_transaction'
+          AND je.source_id IN (
+              SELECT id FROM payment_transactions WHERE order_id = ?
+          )
+          {exclude_clause}
+        """,
+        [TIEN_RUT_HELD_CODE] + params,
+    ).fetchone()
+    return float(row["net_held"] or 0)
+
+
 def _build_payment_journal_lines(
     conn,
     amount: float,
@@ -518,26 +555,32 @@ def _reconcile_order_revenue_entry(
     (:func:`_sync_delivered_order_journal`) and the migration backfill
     (:func:`baker.db.schema._backfill_delivered_order_journal_entries`).
 
-    Revenue rules:
-      - Paid orders (net deposits > 0): debit Customer Deposits (2100), credit
-        Order Revenue (4100) for net payments (deposits − tien_rut refunds).
-      - Unpaid orders (zero net deposits): debit Accounts Receivable (1500),
-        credit Order Revenue (4100) for ``total_price`` (customer debt). Only
-        applied when the order had no deposits and no refunds.
-      - Net deposits <= 0 with prior deposits (refunds drained them): no entry.
+    Revenue rules (DG-198 Phase 4, FR3):
+      - Paid orders (any deposits): always create a revenue entry that
+        debits Customer Deposits (2100) for the full deposit balance still
+        held, credits Tien Rut Held (2400) for the tien_rut held in 2400, and
+        credits Order Revenue (4100) for the net revenue
+        (deposit balance − tien_rut held). This replaces the previous
+        "skip when net <= 0" behaviour, which left 2100/2400 uncleared.
+      - Unpaid orders (zero deposits, zero outflows): debit Accounts Receivable
+        (1500), credit Order Revenue (4100) for ``total_price`` (customer debt).
+      - Negative or zero deposit balance with zero deposits (nothing held):
+        no entry is created (nothing to recognise).
 
-    Bus shipping exclusion (FR3): when the order's ``delivery_type == 'bus'``
-    and ``shipping_fee > 0``, the recognized revenue is reduced by the
-    shipping fee, since bus shipping is held separately in account 2200 and
-    must never flow into revenue account 4100. The revenue amount becomes
-    ``max(0.0, net_deposits − shipping_fee)``. Non-bus orders and bus orders
-    with ``shipping_fee == 0`` are unchanged.
+    The 2100 debit clears the deposit balance still held in 2100 at delivery:
+    inflows credit 2100 at payment time, refunds debit 2100 at payment time,
+    and tien_rut debits 2400 (held separately). Bus shipping held in 2200 is
+    excluded from the deposit balance so it never flows into 4100.
+
+    Bus shipping exclusion: when the order's ``delivery_type == 'bus'`` and
+    ``shipping_fee > 0``, the recognised revenue is reduced by the shipping
+    fee, since bus shipping is held separately in account 2200 and must never
+    flow into revenue account 4100.
 
     Update handling: if a revenue entry already exists, its 2100 debit is
-    compared against the current revenue amount (net deposits minus any
-    applicable shipping fee). When they differ by more than
-    ``REVENUE_UPDATE_TOLERANCE`` the stale entry is removed and a corrected
-    one is created.
+    compared against the expected deposit balance. When they differ by more
+    than ``REVENUE_UPDATE_TOLERANCE`` the stale entry is removed and a
+    corrected one is created.
 
     Lock handling (``respect_locks``):
       - ``True`` (default): locked stale entries are *reversed* rather than
@@ -556,38 +599,58 @@ def _reconcile_order_revenue_entry(
         "SELECT id FROM journal_entries WHERE source_type = 'order' AND source_id = ?",
         (order_id,),
     ).fetchone()
-    net = PaymentTransaction.total_paid_net(conn, order_id)
 
-    # Bus shipping exclusion (FR3): shipping fees held in 2200 are not revenue.
-    # Reduce the recognized revenue amount by shipping_fee for bus orders.
     order_row = conn.execute(
         "SELECT delivery_type, shipping_fee, total_price, due_date, created_at FROM orders WHERE id = ?",
         (order_id,),
     ).fetchone()
-    revenue_amount = float(net)
+
+    # Deposit balance still held in 2100 at delivery. Inflows credit 2100,
+    # refunds debit 2100, and tien_rut debits 2400 (held separately). For bus
+    # orders the shipping portion is split into 2200 at payment time, so it is
+    # subtracted here so the 2100 debit clears exactly the 2100 balance.
+    deposits_in = float(PaymentTransaction.total_paid_excl_outflows(conn, order_id))
+    tien_rut_held = _held_tien_rut_for_order(conn, order_id)
+    refund_total = float(PaymentTransaction.total_outflows(conn, order_id)) - tien_rut_held
+    shipping_held = 0.0
     if order_row is not None:
         delivery_type = order_row["delivery_type"] or "pickup"
         shipping_fee = float(order_row["shipping_fee"] or 0)
         if delivery_type == "bus" and shipping_fee > 0:
-            revenue_amount = max(0.0, revenue_amount - shipping_fee)
+            shipping_held = shipping_fee
+    deposit_balance = max(0.0, deposits_in - refund_total - shipping_held)
+
+    # Net revenue (4100 credit) = deposit balance − tien_rut held. Capped so
+    # the entry always balances: the 2400 credit never exceeds the 2100 debit
+    # (possible for bus orders where the guardrail does not net out shipping).
+    credit_2400 = min(tien_rut_held, deposit_balance)
+    revenue_amount = max(0.0, deposit_balance - tien_rut_held)
 
     if existing:
         existing_id = int(existing["id"])
-        # Compare the existing entry's 2100 debit against the current revenue
-        # amount (which excludes bus shipping fees when applicable).
+        # Compare the existing entry's 2100 debit and 2400 credit against the
+        # expected values. Both must match for the entry to be considered
+        # in sync — adding a tien_rut after delivery keeps the 2100 debit
+        # unchanged but requires a new 2400 credit line (DG-198 Phase 4).
         row = conn.execute(
             """
-            SELECT COALESCE(SUM(jl.debit), 0) AS debit_2100
+            SELECT
+              COALESCE(SUM(CASE WHEN a.code = ? THEN jl.debit ELSE 0 END), 0) AS debit_2100,
+              COALESCE(SUM(CASE WHEN a.code = ? THEN jl.credit ELSE 0 END), 0) AS credit_2400
             FROM journal_lines jl
             JOIN accounts a ON a.id = jl.account_id
-            WHERE jl.journal_entry_id = ? AND a.code = ?
+            WHERE jl.journal_entry_id = ?
             """,
-            (existing_id, CUSTOMER_DEPOSITS_CODE),
+            (CUSTOMER_DEPOSITS_CODE, TIEN_RUT_HELD_CODE, existing_id),
         ).fetchone()
         current_debit = float(row["debit_2100"]) if row else 0.0
-        mismatch = abs(current_debit - max(revenue_amount, 0.0))
+        current_credit_2400 = float(row["credit_2400"]) if row else 0.0
+        mismatch = abs(current_debit - deposit_balance) + abs(
+            current_credit_2400 - credit_2400
+        )
         if mismatch <= REVENUE_UPDATE_TOLERANCE:
-            # Entry already matches the expected revenue amount — leave it.
+            # Entry already matches the expected deposit balance and 2400
+            # credit — leave it.
             return
         if respect_locks and _is_locked(conn, existing_id):
             # Locked: cannot delete. Reverse the stale entry, then create a
@@ -602,17 +665,34 @@ def _reconcile_order_revenue_entry(
     if order_row is not None:
         order_transaction_date = order_row["due_date"] or order_row["created_at"] or None
 
-    if revenue_amount > 0:
-        # Paid: move net deposits (minus bus shipping) to revenue
+    if deposit_balance > 0:
+        # Paid: clear the full 2100 deposit balance to revenue. Credit 2400
+        # for the tien_rut held (capped at the deposit balance), credit 4100
+        # for the net revenue (deposit balance − tien_rut held). Lines with a
+        # zero amount are omitted so double-entry integrity holds and no empty
+        # lines are written (DG-198 Phase 4, FR3).
+        lines: list[tuple[int, float, float, str]] = [
+            (deposits_account_id, deposit_balance, 0.0, "Chuyển cọc sang doanh thu"),
+        ]
+        if credit_2400 > 0:
+            lines.append(
+                (
+                    _account_id_by_code(conn, TIEN_RUT_HELD_CODE),
+                    0.0,
+                    credit_2400,
+                    "Xoá tiền rút tạm giữ",
+                )
+            )
+        if revenue_amount > 0:
+            lines.append(
+                (revenue_account_id, 0.0, revenue_amount, "Doanh thu bán hàng")
+            )
         _insert_journal_entry(
             conn,
             description=f"Order revenue: {order_ref}",
             source_type="order",
             source_id=order_id,
-            lines=[
-                (deposits_account_id, revenue_amount, 0.0, "Chuyển cọc sang doanh thu"),
-                (revenue_account_id, 0.0, revenue_amount, "Doanh thu bán hàng"),
-            ],
+            lines=lines,
             transaction_date=order_transaction_date,
         )
     else:
@@ -637,8 +717,8 @@ def _reconcile_order_revenue_entry(
                     ],
                     transaction_date=order_transaction_date,
                 )
-        # else: net <= 0 but deposits existed (refunds drained them) → no
-        # revenue to recognize; skip creating any entry.
+        # else: deposit balance <= 0 but no deposits existed (nothing held) →
+        # no revenue to recognise; skip creating any entry.
 
 
 def _sync_bus_shipping_release_entry(
