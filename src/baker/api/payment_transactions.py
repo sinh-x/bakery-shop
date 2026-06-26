@@ -89,19 +89,20 @@ def create_transaction(ref: str, body: TransactionCreate):
         # Bus orders split the credit between Customer Deposits (2100) and
         # Bus Shipping Held (2200) — pass order_id so the journal sync reads
         # delivery_type/shipping_fee from the orders table (DG-191 Phase 2).
-        try:
-            from baker.services.journal_sync import _sync_payment_journal
-            _sync_payment_journal(
-                conn, txn.id, body.amount, body.type, body.method,
-                order_id=order_id,
-            )
-        except Exception:
-            logger.exception("payment journal sync failed for txn %d", txn.id)
+        from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
+        sync_status = run_journal_sync(
+            _sync_payment_journal,
+            conn, txn.id, body.amount, body.type, body.method,
+            order_id=order_id,
+            log_label=f"payment journal sync for txn {txn.id}",
+        )
 
         row = conn.execute(
             "SELECT * FROM payment_transactions WHERE id = ?", (txn.id,)
         ).fetchone()
-        return PaymentTransaction.from_row(row).to_api_dict()
+        result = PaymentTransaction.from_row(row).to_api_dict()
+        result["accountingSync"] = sync_status
+        return result
 
 
 @router.patch("/{ref}/transactions/{txn_id}")
@@ -149,19 +150,20 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
         # Re-sync double-entry journal entry (DG-175). Pass order_id so the
         # bus-shipping split is recomputed from the current delivery_type /
         # shipping_fee (DG-191 Phase 2).
-        try:
-            from baker.services.journal_sync import _sync_payment_journal
-            _sync_payment_journal(
-                conn, txn.id, txn.amount, txn.type, txn.method,
-                order_id=order_id,
-            )
-        except Exception:
-            logger.exception("payment journal re-sync failed for txn %d", txn.id)
+        from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
+        sync_status = run_journal_sync(
+            _sync_payment_journal,
+            conn, txn.id, txn.amount, txn.type, txn.method,
+            order_id=order_id,
+            log_label=f"payment journal re-sync for txn {txn.id}",
+        )
 
         row = conn.execute(
             "SELECT * FROM payment_transactions WHERE id = ?", (txn.id,)
         ).fetchone()
-        return PaymentTransaction.from_row(row).to_api_dict()
+        result = PaymentTransaction.from_row(row).to_api_dict()
+        result["accountingSync"] = sync_status
+        return result
 
 
 @router.delete("/{ref}/transactions/{txn_id}", status_code=204)
@@ -179,15 +181,15 @@ def delete_transaction(ref: str, txn_id: int):
 
         # Reverse/delete the journal entry for the deleted transaction (DG-175).
         # Pass order_id so any bus-shipping held balance is consistent on
-        # subsequent re-syncs (DG-191 Phase 2).
-        try:
-            from baker.services.journal_sync import _sync_payment_journal
-            _sync_payment_journal(
-                conn, txn_id, float(row["amount"]), row["type"], row["method"],
-                order_id=order_id, deleted=True,
-            )
-        except Exception:
-            logger.exception("payment journal delete-sync failed for txn %d", txn_id)
+        # subsequent re-syncs (DG-191 Phase 2). No response body (204) — the
+        # failure counter is surfaced via /api/health (OPS-1).
+        from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
+        run_journal_sync(
+            _sync_payment_journal,
+            conn, txn_id, float(row["amount"]), row["type"], row["method"],
+            order_id=order_id, deleted=True,
+            log_label=f"payment journal delete-sync for txn {txn_id}",
+        )
 
 
 def _now_iso(conn) -> str:
@@ -234,14 +236,13 @@ def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest):
         # FR3/NFR2: journal sync is fire-and-forget. _sync_payment_journal
         # (deleted=True) reverses locked entries (preserving the original
         # transaction_date) and deletes unlocked ones.
-        try:
-            from baker.services.journal_sync import _sync_payment_journal
-            _sync_payment_journal(
-                conn, txn_id, float(row["amount"]), row["type"], row["method"],
-                order_id=order_id, deleted=True,
-            )
-        except Exception:
-            logger.exception("payment journal invalidate-sync failed for txn %d", txn_id)
+        from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
+        sync_status = run_journal_sync(
+            _sync_payment_journal,
+            conn, txn_id, float(row["amount"]), row["type"], row["method"],
+            order_id=order_id, deleted=True,
+            log_label=f"payment journal invalidate-sync for txn {txn_id}",
+        )
 
         # FR10: audit trail.
         try:
@@ -256,7 +257,9 @@ def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest):
         updated = conn.execute(
             "SELECT * FROM payment_transactions WHERE id = ?", (txn_id,)
         ).fetchone()
-        return PaymentTransaction.from_row(updated).to_api_dict()
+        result = PaymentTransaction.from_row(updated).to_api_dict()
+        result["accountingSync"] = sync_status
+        return result
 
 
 @router.post("/{ref}/transactions/{txn_id}/restore")
@@ -293,14 +296,13 @@ def restore_transaction(ref: str, txn_id: int):
         # transaction's created_at for transaction_date. If a prior reversal
         # entry exists (locked case), a new entry is created alongside it; the
         # reversal is left intact so the locked period's books are preserved.
-        try:
-            from baker.services.journal_sync import _sync_payment_journal
-            _sync_payment_journal(
-                conn, txn_id, float(row["amount"]), row["type"], row["method"],
-                order_id=order_id,
-            )
-        except Exception:
-            logger.exception("payment journal restore-sync failed for txn %d", txn_id)
+        from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
+        sync_status = run_journal_sync(
+            _sync_payment_journal,
+            conn, txn_id, float(row["amount"]), row["type"], row["method"],
+            order_id=order_id,
+            log_label=f"payment journal restore-sync for txn {txn_id}",
+        )
 
         # FR10: audit trail.
         try:
@@ -315,4 +317,6 @@ def restore_transaction(ref: str, txn_id: int):
         updated = conn.execute(
             "SELECT * FROM payment_transactions WHERE id = ?", (txn_id,)
         ).fetchone()
-        return PaymentTransaction.from_row(updated).to_api_dict()
+        result = PaymentTransaction.from_row(updated).to_api_dict()
+        result["accountingSync"] = sync_status
+        return result

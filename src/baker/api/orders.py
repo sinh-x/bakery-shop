@@ -418,11 +418,12 @@ def create_order(body: OrderCreate, request: Request):
             auto_decrement_stock(conn, order.id, order.order_ref)
 
             # Auto-generate revenue conversion + COGS journal entries (DG-175).
-            try:
-                from baker.services.journal_sync import _sync_delivered_order_journal
-                _sync_delivered_order_journal(conn, order.id, order.order_ref)
-            except Exception:
-                logger.exception("delivered order journal sync failed for order %d", order.id)
+            from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync
+            run_journal_sync(
+                _sync_delivered_order_journal,
+                conn, order.id, order.order_ref,
+                log_label=f"delivered order journal sync for order {order.id}",
+            )
 
         log_context(request, ref_type="order", ref_id=order.id)
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
@@ -613,26 +614,22 @@ def edit_order(ref: str, body: OrderEdit):
 
         # Re-sync payment journal entries when shipping_fee changes on a bus order (DG-191 Phase 4).
         if (shipping_fee_changed or delivery_type_changed) and row["delivery_type"] == "bus":
-            try:
-                from baker.services.journal_sync import _sync_payment_journal
+            from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
 
-                txn_rows = conn.execute(
-                    "SELECT id, amount, type, method FROM payment_transactions WHERE order_id = ?",
-                    (row["id"],),
-                ).fetchall()
-                for txn_row in txn_rows:
-                    _sync_payment_journal(
-                        conn,
-                        txn_row["id"],
-                        float(txn_row["amount"]),
-                        txn_row["type"],
-                        txn_row["method"],
-                        order_id=row["id"],
-                    )
-            except Exception:
-                logger.exception(
-                    "payment journal re-sync failed for order %d after shipping_fee edit",
-                    row["id"],
+            txn_rows = conn.execute(
+                "SELECT id, amount, type, method FROM payment_transactions WHERE order_id = ?",
+                (row["id"],),
+            ).fetchall()
+            for txn_row in txn_rows:
+                run_journal_sync(
+                    _sync_payment_journal,
+                    conn,
+                    txn_row["id"],
+                    float(txn_row["amount"]),
+                    txn_row["type"],
+                    txn_row["method"],
+                    order_id=row["id"],
+                    log_label=f"payment journal re-sync for order {row['id']} after shipping_fee edit",
                 )
 
         # Log each changed field with old/new values
@@ -726,11 +723,12 @@ def transition_status(ref: str, body: StatusTransition):
 
         # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
         if body.status == "delivered" and row["status"] != "delivered":
-            try:
-                from baker.services.journal_sync import _sync_delivered_order_journal
-                _sync_delivered_order_journal(conn, row["id"], row["order_ref"])
-            except Exception:
-                logger.exception("delivered order journal sync failed for order %d", row["id"])
+            from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync
+            run_journal_sync(
+                _sync_delivered_order_journal,
+                conn, row["id"], row["order_ref"],
+                log_label=f"delivered order journal sync for order {row['id']}",
+            )
 
         # Auto-cascade confirmed order status to main items (non-extra, non-gift) at pending (F5)
         if body.status == "confirmed":

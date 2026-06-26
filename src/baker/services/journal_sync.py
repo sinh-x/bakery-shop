@@ -11,7 +11,7 @@ wrap each ``_sync_*`` call in try/except with ``logger.exception``.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from baker.db.schema import (
     ACCOUNTS_RECEIVABLE_CODE,
@@ -37,6 +37,40 @@ from baker.services.cost_resolver import resolve_product_cost
 logger = logging.getLogger("baker.server")
 
 STAFF_ADVANCE_PAYMENT_SOURCE = "Nhân viên ứng trước"
+
+# Process-level counter of journal sync failures (review finding OPS-1).
+# Incremented by :func:`run_journal_sync` whenever a sync callable raises.
+# Exposed via the ``/api/health`` endpoint so operators can detect accumulated
+# accounting gaps without tailing logs.
+journal_sync_failures: int = 0
+
+
+def run_journal_sync(
+    sync_fn: Callable[..., None],
+    *args: Any,
+    log_label: str,
+    **kwargs: Any,
+) -> str:
+    """Run a journal sync callable with non-blocking error handling + observability.
+
+    Wraps the fire-and-forget pattern used by every API endpoint that triggers
+    an accounting journal sync (NFR1: accounting failures must never block the
+    primary business operation). On failure the exception is logged via
+    ``logger.exception`` and the :data:`journal_sync_failures` counter is
+    incremented, so the gap is observable through ``/api/health``.
+
+    Returns ``"ok"`` when the sync succeeded, or ``"failed"`` when it raised.
+    Callers may attach this to their API response (e.g. an
+    ``accounting_sync`` field) so the Flutter client can surface a warning.
+    """
+    global journal_sync_failures
+    try:
+        sync_fn(*args, **kwargs)
+    except Exception:
+        journal_sync_failures += 1
+        logger.exception("%s failed", log_label)
+        return "failed"
+    return "ok"
 
 # Backwards-compatible alias kept so any external import of the legacy name
 # continues to resolve to the centralized constant in ``baker.db.schema``.
@@ -692,16 +726,14 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
     _reconcile_order_revenue_entry(conn, order_id, order_ref, respect_locks=True)
 
     # Release the held bus shipping (2200 → 1100) at delivery (FR4). Wrapped in
-    # try/except so accounting failures never block the primary business
-    # operation (NFR1).
-    try:
-        _sync_bus_shipping_release_entry(conn, order_id, order_ref)
-    except Exception:
-        logger.exception(
-            "Failed to sync bus shipping release entry for order %s (%s)",
-            order_id,
-            order_ref,
-        )
+    # the shared non-blocking wrapper so accounting failures never block the
+    # primary business operation (NFR1) and are observable via the
+    # ``journal_sync_failures`` counter (review finding OPS-1).
+    run_journal_sync(
+        _sync_bus_shipping_release_entry,
+        conn, order_id, order_ref,
+        log_label=f"bus shipping release sync for order {order_id} ({order_ref})",
+    )
 
     inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
     cogs_account_id = _account_id_by_code(conn, COGS_CODE)

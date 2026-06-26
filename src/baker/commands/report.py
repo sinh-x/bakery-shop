@@ -23,6 +23,7 @@ from typing import Optional
 import click
 
 from baker.db.connection import get_db
+from baker.db.schema import COGS_CODE
 
 
 # Account types whose natural balance is debit - credit (asset/expense).
@@ -188,10 +189,10 @@ def income_statement_cmd(since, until):
 
     revenue = net("income")
 
-    # COGS is account code 5900 (an expense sub-account). Report it
+    # COGS is account code COGS_CODE (an expense sub-account). Report it
     # separately from operating expenses for clarity.
-    cogs_params: list = []
-    cogs_where = ["a.code = '5900'"]
+    cogs_params: list = [COGS_CODE]
+    cogs_where = ["a.code = ?"]
     if since_b:
         cogs_where.append("je.transaction_date >= ?")
         cogs_params.append(since_b)

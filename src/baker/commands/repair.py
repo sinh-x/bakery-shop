@@ -30,6 +30,7 @@ import click
 
 from baker.db.connection import get_db
 from baker.db.schema import CUSTOMER_DEPOSITS_CODE, REVENUE_UPDATE_TOLERANCE
+from baker.formatters import format_vnd_amount
 from baker.models.payment_transaction import PaymentTransaction
 from baker.services.journal_sync import (
     _delete_journal_entry_cascade,
@@ -49,11 +50,8 @@ MISMATCH_TOLERANCE = REVENUE_UPDATE_TOLERANCE
 
 
 def _vn_amount(amount: float) -> str:
-    """Format a VND amount with Vietnamese thousand separators (dot) and no decimals.
-
-    Example: 1500000 -> "1.500.000".
-    """
-    return f"{int(round(amount)):,}".replace(",", ".")
+    """Format a VND amount (thin wrapper over baker.formatters.format_vnd_amount)."""
+    return format_vnd_amount(amount)
 
 
 def _order_revenue_2100_debit(conn, order_id: int):

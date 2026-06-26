@@ -468,16 +468,13 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
             waste_movement_id = movement_cursor.lastrowid
             consume_fifo_items(conn, line.product_id, chip_id, line.waste_qty, waste_movement_id)
 
-            from baker.services.journal_sync import _sync_waste_cogs_journal
+            from baker.services.journal_sync import _sync_waste_cogs_journal, run_journal_sync
 
-            try:
-                _sync_waste_cogs_journal(
-                    conn, line.product_id, waste_movement_id, line.waste_qty
-                )
-            except Exception:
-                logger.exception(
-                    "waste cogs sync failed for movement %d", waste_movement_id
-                )
+            run_journal_sync(
+                _sync_waste_cogs_journal,
+                conn, line.product_id, waste_movement_id, line.waste_qty,
+                log_label=f"waste cogs sync for movement {waste_movement_id}",
+            )
             lot_row = conn.execute(
                 "SELECT lot_id FROM inventory_items WHERE consumed_by_movement_id = ? ORDER BY id ASC LIMIT 1",
                 (waste_movement_id,),

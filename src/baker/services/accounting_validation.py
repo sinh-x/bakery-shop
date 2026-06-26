@@ -46,6 +46,8 @@ It is exposed via the CLI (``baker validate-accounts``) and the API
 import json
 from typing import Any
 
+from baker.db.schema import COGS_CODE
+
 # Tolerance for double-entry imbalance. Sub-cent rounding from REAL storage
 # and per-line float arithmetic is expected; only imbalances above this
 # threshold are reported as integrity violations.
@@ -427,11 +429,11 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
     from baker.services.cost_resolver import resolve_product_cost
 
     rows = conn.execute(
-        """
+        f"""
         SELECT je.id          AS entry_id,
                je.description AS description,
                je.source_id   AS order_id,
-               SUM(CASE WHEN a.code = '5900' THEN jl.debit ELSE 0 END) AS cogs_debit
+               SUM(CASE WHEN a.code = ? THEN jl.debit ELSE 0 END) AS cogs_debit
         FROM journal_entries je
         JOIN journal_lines jl ON jl.journal_entry_id = je.id
         JOIN accounts a ON a.id = jl.account_id
@@ -439,6 +441,7 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
         GROUP BY je.id
         ORDER BY je.id
         """,
+        (COGS_CODE,),
     ).fetchall()
 
     findings: list[dict[str, Any]] = []

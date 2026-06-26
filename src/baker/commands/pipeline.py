@@ -21,6 +21,7 @@ import click
 
 from baker.db.connection import get_db
 from baker.db.schema import CUSTOMER_DEPOSITS_CODE, PAYMENT_OUTFLOW_TYPES, REVENUE_UPDATE_TOLERANCE
+from baker.formatters import format_vnd_amount
 
 logger = logging.getLogger(__name__)
 
@@ -41,12 +42,12 @@ _GAP_MISMATCH_TOLERANCE = REVENUE_UPDATE_TOLERANCE
 
 
 def _vn_amount(amount: float) -> str:
-    """Format a VND amount with Vietnamese thousand separators (dot) and no decimals.
+    """Format a VND amount (thin wrapper over baker.formatters.format_vnd_amount).
 
-    VND is conventionally whole-dong; decimals are not used in practice.
-    Example: 1500000 -> "1.500.000".
+    Kept as a local alias so existing call sites stay concise and the dotted
+    separator renders consistently across CLI reports.
     """
-    return f"{int(round(amount)):,}".replace(",", ".")
+    return format_vnd_amount(amount)
 
 
 def _echo_header(title: str) -> None:

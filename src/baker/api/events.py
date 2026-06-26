@@ -94,11 +94,12 @@ def create_event(body: EventCreate):
         # Auto-generate double-entry journal for expense events (DG-175).
         # Accounting failure must never block the primary business operation.
         if body.type == "expense":
-            try:
-                from baker.services.journal_sync import _sync_expense_journal
-                _sync_expense_journal(conn, event_id, body.data, body.summary)
-            except Exception:
-                logger.exception("expense journal sync failed for event %d", event_id)
+            from baker.services.journal_sync import _sync_expense_journal, run_journal_sync
+            run_journal_sync(
+                _sync_expense_journal,
+                conn, event_id, body.data, body.summary,
+                log_label=f"expense journal sync for event {event_id}",
+            )
 
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return _row_to_dict(row)
@@ -318,11 +319,12 @@ def update_event(event_id: int, body: EventUpdate):
 
         # Re-sync double-entry journal if this is an expense event (DG-175).
         if next_type == "expense":
-            try:
-                from baker.services.journal_sync import _sync_expense_journal
-                _sync_expense_journal(conn, event_id, next_data, str(row["summary"] if "summary" not in data else data["summary"]))
-            except Exception:
-                logger.exception("expense journal re-sync failed for event %d", event_id)
+            from baker.services.journal_sync import _sync_expense_journal, run_journal_sync
+            run_journal_sync(
+                _sync_expense_journal,
+                conn, event_id, next_data, str(row["summary"] if "summary" not in data else data["summary"]),
+                log_label=f"expense journal re-sync for event {event_id}",
+            )
 
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return _row_to_dict(row)
@@ -347,11 +349,12 @@ def delete_event(event_id: int, deleted_by: str = Query("", description="Ngườ
 
         # On soft-delete of an expense event, reverse/delete its journal entry (DG-175).
         if row["type"] == "expense":
-            try:
-                from baker.services.journal_sync import _sync_expense_journal
-                _sync_expense_journal(conn, event_id, {}, str(row["summary"]), deleted=True)
-            except Exception:
-                logger.exception("expense journal delete-sync failed for event %d", event_id)
+            from baker.services.journal_sync import _sync_expense_journal, run_journal_sync
+            run_journal_sync(
+                _sync_expense_journal,
+                conn, event_id, {}, str(row["summary"]), deleted=True,
+                log_label=f"expense journal delete-sync for event {event_id}",
+            )
 
 
 @router.get("/{event_id}/history")

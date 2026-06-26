@@ -75,7 +75,14 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "version": VERSION, "fingerprint": BUILD_FINGERPRINT}
+        from baker.services.journal_sync import journal_sync_failures
+
+        return {
+            "status": "ok",
+            "version": VERSION,
+            "fingerprint": BUILD_FINGERPRINT,
+            "journalSyncFailures": journal_sync_failures,
+        }
 
     app.include_router(photos_router)
     app.include_router(products_router)

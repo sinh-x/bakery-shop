@@ -74,6 +74,52 @@ def _account_with_children(conn, account: Account) -> dict:
     }
 
 
+def _create_manual_journal_entry(
+    conn,
+    *,
+    source_type: str,
+    description: str,
+    account_resolver,
+    line_builder,
+) -> dict:
+    """Shared factory for the three manual journal entry endpoints
+    (owner_capital, owner_draw, staff_reimburse).
+
+    Centralizes the repeated insert-then-fetch-then-return pattern so the
+    three endpoints only differ in how they resolve accounts and build lines
+    (review finding CQ-3).
+
+    Parameters:
+        conn: open DB connection.
+        source_type: journal ``source_type`` tag (e.g. ``owner_capital``).
+        description: human-readable journal entry description.
+        account_resolver: callable(conn) -> None that pre-resolves any
+            account ids the line_builder needs (it may close over variables
+            and mutate them in place). Run before line building.
+        line_builder: callable() -> list[tuple[int, float, float, str]] of
+            (account_id, debit, credit, line_description) journal lines.
+
+    Returns the API dict of the created journal entry (with lines).
+    """
+    account_resolver(conn)
+    lines = line_builder()
+    # FR6: manual entries have no source record — transaction_date is the
+    # current time at creation.
+    entry_id = _insert_journal_entry(
+        conn,
+        description=description,
+        source_type=source_type,
+        source_id=None,
+        lines=lines,
+        transaction_date=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+    )
+    entry = JournalEntry.from_row(
+        conn.execute("SELECT * FROM journal_entries WHERE id = ?", (entry_id,)).fetchone()
+    )
+    fetched_lines = JournalLine.list_for_entry(conn, entry_id)
+    return entry.to_api_dict(fetched_lines)
+
+
 @router.get("")
 def list_accounts():
     """Danh sách tài khoản phân cấp (chart of accounts)."""
@@ -96,6 +142,19 @@ def list_journal(
     offset: int = Query(0, ge=0, description="Bỏ qua bao nhiêu kết quả"),
 ):
     """Tra cứu journal entries với filter và phân trang."""
+    # Validate ISO date format on since/until to prevent silent wrong results
+    # from SQLite string comparisons (review finding OPS-2). Bare dates
+    # (YYYY-MM-DD) and full timestamps are both accepted.
+    for label, value in (("since", since), ("until", until)):
+        if value is None:
+            continue
+        try:
+            datetime.fromisoformat(value)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{label} không đúng định dạng ISO: {value}",
+            ) from exc
     with get_db() as conn:
         conditions: list[str] = []
         params: list = []
@@ -197,30 +256,30 @@ def owner_capital(body: OwnerCapitalRequest):
     if body.amount <= 0:
         raise HTTPException(status_code=422, detail="Số tiền phải lớn hơn 0")
     asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get(body.method, "1100")
+    desc = f"Vốn chủ sở hữu đưa vào: {body.amount}"
+    if body.note:
+        desc += f" — {body.note}"
+    resolved: dict[str, int] = {}
+
+    def resolver(conn):
+        resolved["asset"] = _account_id_by_code(conn, asset_code)
+        resolved["equity"] = _account_id_by_code(conn, "3100")
+
+    def line_builder():
+        amt = float(body.amount)
+        return [
+            (resolved["asset"], amt, 0.0, "Tiền đưa vào"),
+            (resolved["equity"], 0.0, amt, "Vốn chủ sở hữu"),
+        ]
+
     with get_db() as conn:
-        asset_account_id = _account_id_by_code(conn, asset_code)
-        equity_account_id = _account_id_by_code(conn, "3100")
-        desc = f"Vốn chủ sở hữu đưa vào: {body.amount}"
-        if body.note:
-            desc += f" — {body.note}"
-        # FR6: manual entries have no source record — transaction_date is the
-        # current time at creation.
-        entry_id = _insert_journal_entry(
+        return _create_manual_journal_entry(
             conn,
-            description=desc,
             source_type="owner_capital",
-            source_id=None,
-            lines=[
-                (asset_account_id, float(body.amount), 0.0, "Tiền đưa vào"),
-                (equity_account_id, 0.0, float(body.amount), "Vốn chủ sở hữu"),
-            ],
-            transaction_date=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            description=desc,
+            account_resolver=resolver,
+            line_builder=line_builder,
         )
-        entry = JournalEntry.from_row(
-            conn.execute("SELECT * FROM journal_entries WHERE id = ?", (entry_id,)).fetchone()
-        )
-        lines = JournalLine.list_for_entry(conn, entry_id)
-        return entry.to_api_dict(lines)
 
 
 @router.post("/owner-draw", status_code=201)
@@ -229,30 +288,30 @@ def owner_draw(body: OwnerDrawRequest):
     if body.amount <= 0:
         raise HTTPException(status_code=422, detail="Số tiền phải lớn hơn 0")
     asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get(body.method, "1100")
+    desc = f"Chủ rút vốn: {body.amount}"
+    if body.note:
+        desc += f" — {body.note}"
+    resolved: dict[str, int] = {}
+
+    def resolver(conn):
+        resolved["asset"] = _account_id_by_code(conn, asset_code)
+        resolved["equity"] = _account_id_by_code(conn, "3100")
+
+    def line_builder():
+        amt = float(body.amount)
+        return [
+            (resolved["equity"], amt, 0.0, "Giảm vốn"),
+            (resolved["asset"], 0.0, amt, "Rút tiền"),
+        ]
+
     with get_db() as conn:
-        asset_account_id = _account_id_by_code(conn, asset_code)
-        equity_account_id = _account_id_by_code(conn, "3100")
-        desc = f"Chủ rút vốn: {body.amount}"
-        if body.note:
-            desc += f" — {body.note}"
-        # FR6: manual entries have no source record — transaction_date is the
-        # current time at creation.
-        entry_id = _insert_journal_entry(
+        return _create_manual_journal_entry(
             conn,
-            description=desc,
             source_type="owner_draw",
-            source_id=None,
-            lines=[
-                (equity_account_id, float(body.amount), 0.0, "Giảm vốn"),
-                (asset_account_id, 0.0, float(body.amount), "Rút tiền"),
-            ],
-            transaction_date=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            description=desc,
+            account_resolver=resolver,
+            line_builder=line_builder,
         )
-        entry = JournalEntry.from_row(
-            conn.execute("SELECT * FROM journal_entries WHERE id = ?", (entry_id,)).fetchone()
-        )
-        lines = JournalLine.list_for_entry(conn, entry_id)
-        return entry.to_api_dict(lines)
 
 
 @router.post("/staff-reimburse", status_code=201)
@@ -263,30 +322,31 @@ def staff_reimburse(body: StaffReimburseRequest):
     if not body.staffName.strip():
         raise HTTPException(status_code=422, detail="staffName là bắt buộc")
     asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get(body.method, "1100")
+    staff_name = body.staffName.strip()
+    desc = f"Hoàn ứng cho {staff_name}: {body.amount}"
+    if body.note:
+        desc += f" — {body.note}"
+    resolved: dict[str, int] = {}
+
+    def resolver(conn):
+        resolved["staff"] = _ensure_staff_payable_sub_account(conn, staff_name)
+        resolved["asset"] = _account_id_by_code(conn, asset_code)
+
+    def line_builder():
+        amt = float(body.amount)
+        return [
+            (resolved["staff"], amt, 0.0, "Ứng trước nhân viên"),
+            (resolved["asset"], 0.0, amt, "Trả tiền hoàn ứng"),
+        ]
+
     with get_db() as conn:
-        staff_account_id = _ensure_staff_payable_sub_account(conn, body.staffName.strip())
-        asset_account_id = _account_id_by_code(conn, asset_code)
-        desc = f"Hoàn ứng cho {body.staffName}: {body.amount}"
-        if body.note:
-            desc += f" — {body.note}"
-        # FR6: manual entries have no source record — transaction_date is the
-        # current time at creation.
-        entry_id = _insert_journal_entry(
+        return _create_manual_journal_entry(
             conn,
-            description=desc,
             source_type="staff_reimburse",
-            source_id=None,
-            lines=[
-                (staff_account_id, float(body.amount), 0.0, "Ứng trước nhân viên"),
-                (asset_account_id, 0.0, float(body.amount), "Trả tiền hoàn ứng"),
-            ],
-            transaction_date=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            description=desc,
+            account_resolver=resolver,
+            line_builder=line_builder,
         )
-        entry = JournalEntry.from_row(
-            conn.execute("SELECT * FROM journal_entries WHERE id = ?", (entry_id,)).fetchone()
-        )
-        lines = JournalLine.list_for_entry(conn, entry_id)
-        return entry.to_api_dict(lines)
 
 
 @router.get("/validate")

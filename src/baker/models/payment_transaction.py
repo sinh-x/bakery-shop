@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from functools import lru_cache
 from typing import Optional
 
 from baker.db.schema import PAYMENT_OUTFLOW_TYPES
@@ -24,6 +25,28 @@ class PaymentMethod(str, Enum):
 # module-level tuple so the SQL placeholder count is stable per process.
 _OUTFLOW_TYPES = tuple(PAYMENT_OUTFLOW_TYPES)
 
+# Schema migration version that introduced the ``invalidated_at`` column on
+# ``payment_transactions`` (DG-196 Phase 1). Used by ``_invalidation_filter``
+# to avoid running ``PRAGMA table_info`` on every query.
+_INVALIDATION_MIGRATION_VERSION = 53
+
+
+@lru_cache(maxsize=1)
+def _schema_version(conn) -> int:
+    """Return the current ``schema_version`` max, or 0 if the table is absent.
+
+    Cached per-process because migrations are applied once at startup; the
+    schema does not change mid-process. The connection is not held by the
+    cache — only the resolved integer version is retained.
+    """
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
+    )
+    if not cursor.fetchone():
+        return 0
+    row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
 
 def _invalidation_filter(conn) -> str:
     """Return the SQL fragment excluding invalidated rows, or '' if the
@@ -35,9 +58,15 @@ def _invalidation_filter(conn) -> str:
     run). Querying ``invalidated_at`` before the column exists raises
     ``sqlite3.OperationalError``, so the filter is omitted when the column is
     absent — at that point no transactions can be invalidated anyway.
+
+    The schema version is resolved once per process via :func:`_schema_version`
+    (cached) to avoid running ``PRAGMA table_info`` on every query
+    (review finding CQ-6). When the cached version is below the invalidation
+    migration, the empty filter is returned without any extra query.
     """
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(payment_transactions)").fetchall()}
-    return "AND invalidated_at IS NULL" if "invalidated_at" in cols else ""
+    if _schema_version(conn) >= _INVALIDATION_MIGRATION_VERSION:
+        return "AND invalidated_at IS NULL"
+    return ""
 
 
 @dataclass
