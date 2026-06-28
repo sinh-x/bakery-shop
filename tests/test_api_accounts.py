@@ -1065,7 +1065,7 @@ def test_validate_passes_after_invalidation(api_client):
     assert resp.status_code == 200
     body = resp.json()
     summary = body["summary"]
-    assert summary["total_checks"] == 15, f"Expected 15 checks, got {summary['total_checks']}"
+    assert summary["total_checks"] == 16, f"Expected 16 checks, got {summary['total_checks']}"
     failed = [c for c in body["checks"] if c["status"] != "pass"]
     assert not failed, (
         "Accounting integrity checks failed after invalidation: "

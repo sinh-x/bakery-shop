@@ -40,7 +40,12 @@ Checks:
       (``source_type = 'order'``), the 2100 debit must equal the 2400 credit
       plus the 4100 credit (deposits = tien_rut held + net revenue). Flags
       any revenue entry where this identity does not hold within tolerance
-      (DG-198 Phase 6, FR5/AC5).
+             (DG-198 Phase 6, FR5/AC5).
+   16. ``deposit_balance_integrity`` — per-order 2100 net balance must be zero
+       for delivered, completed, and cancelled orders (excluding active orders
+       where deposits are expected). Computed across ``payment_transaction``,
+       ``order``, and ``order_shipping_hold`` journal entries grouped by
+       ``payment_transactions.order_id``.
 
 The module is deliberately side-effect free: it only reads the database.
 It is exposed via the CLI (``baker validate-accounts``) and the API
@@ -55,6 +60,7 @@ from baker.db.schema import (
     COGS_CODE,
     CUSTOMER_DEPOSITS_CODE,
     ORDER_REVENUE_CODE,
+    TIEN_RUT_HELD_CODE,
 )
 
 # Tolerance for double-entry imbalance. Sub-cent rounding from REAL storage
@@ -928,6 +934,146 @@ def _check_deposit_revenue_integrity(conn) -> dict[str, Any]:
     }
 
 
+def _check_deposit_balance_integrity(conn) -> dict[str, Any]:
+    """Flag orders where the per-order 2100 (Customer Deposits) balance is
+    non-zero and the order is in a terminal state (delivered, completed,
+    cancelled) OR is an active order whose due date has already passed
+    (overdue — deposit should have been cleared by now).
+
+    Per-order 2100 balance = total credits from payment_transaction journal
+    entries − total debits from payment_transaction journal entries − total
+    debits from ``source_type = 'order'`` revenue entries − total debits from
+    ``source_type = 'order_shipping_hold'`` entries.
+
+    Active orders (confirmed, ready, new) with a future due date are NOT
+    flagged — the deposit balance is expected to clear at delivery.
+
+    Payment transactions are linked to orders via ``payment_transactions.order_id``
+    (NOT ``je.source_id`` — source_id for payment_transaction entries is the
+    payment_transaction ID, not the order ID). Invalidated (soft-deleted)
+    payment transactions are excluded.
+    """
+    deposits_code = CUSTOMER_DEPOSITS_CODE
+
+    rows = conn.execute(
+        """
+        SELECT o.id               AS order_id,
+               o.order_ref        AS order_ref,
+               o.status           AS status,
+               o.due_date         AS due_date,
+               COALESCE(pt.dep_credit, 0) AS deposits_in,
+               COALESCE(pt.ref_debit, 0)  AS refunds_out,
+               COALESCE(ord.rev_debit, 0) AS revenue_cleared,
+               COALESCE(ship.ship_debit, 0) AS shipping_cleared,
+               (
+                   COALESCE(pt.dep_credit, 0)
+                   - COALESCE(pt.ref_debit, 0)
+                   - COALESCE(ord.rev_debit, 0)
+                   - COALESCE(ship.ship_debit, 0)
+               ) AS net_2100
+        FROM orders o
+        LEFT JOIN (
+            SELECT pt2.order_id,
+                   SUM(CASE WHEN a2.code = ? AND jl2.credit > 0
+                       THEN jl2.credit ELSE 0 END) AS dep_credit,
+                   SUM(CASE WHEN a2.code = ? AND jl2.debit > 0
+                       THEN jl2.debit ELSE 0 END)  AS ref_debit
+            FROM payment_transactions pt2
+            JOIN journal_entries je2
+                ON je2.source_type = 'payment_transaction'
+                AND je2.source_id = pt2.id
+            JOIN journal_lines jl2 ON jl2.journal_entry_id = je2.id
+            JOIN accounts a2 ON a2.id = jl2.account_id AND a2.code = ?
+            WHERE (pt2.invalidated_at IS NULL OR pt2.invalidated_at = '')
+            GROUP BY pt2.order_id
+        ) pt ON pt.order_id = o.id
+        LEFT JOIN (
+            SELECT je3.source_id AS order_id,
+                   SUM(CASE WHEN a3.code = ? AND jl3.debit > 0
+                       THEN jl3.debit ELSE 0 END) AS rev_debit
+            FROM journal_entries je3
+            JOIN journal_lines jl3 ON jl3.journal_entry_id = je3.id
+            JOIN accounts a3 ON a3.id = jl3.account_id AND a3.code = ?
+            WHERE je3.source_type = 'order'
+              AND je3.description NOT LIKE 'Reversal:%'
+            GROUP BY je3.source_id
+        ) ord ON ord.order_id = o.id
+        LEFT JOIN (
+            SELECT je4.source_id AS order_id,
+                   SUM(CASE WHEN a4.code = ? AND jl4.debit > 0
+                       THEN jl4.debit ELSE 0 END) AS ship_debit
+            FROM journal_entries je4
+            JOIN journal_lines jl4 ON jl4.journal_entry_id = je4.id
+            JOIN accounts a4 ON a4.id = jl4.account_id AND a4.code = ?
+            WHERE je4.source_type = 'order_shipping_hold'
+            GROUP BY je4.source_id
+        ) ship ON ship.order_id = o.id
+        WHERE COALESCE(pt.dep_credit, 0) > 0
+           OR COALESCE(ord.rev_debit, 0) > 0
+        ORDER BY o.id
+        """,
+        (
+            deposits_code, deposits_code, deposits_code,
+            deposits_code, deposits_code,
+            deposits_code, deposits_code,
+        ),
+    ).fetchall()
+
+    findings: list[dict[str, Any]] = []
+    for r in rows:
+        order_id = int(r["order_id"])
+        order_ref = r["order_ref"]
+        status = r["status"]
+        due_date = r["due_date"]
+        net = float(r["net_2100"])
+        deposits_in = float(r["deposits_in"])
+        refunds_out = float(r["refunds_out"])
+        revenue_cleared = float(r["revenue_cleared"])
+        shipping_cleared = float(r["shipping_cleared"])
+
+        if abs(net) <= DEBIT_CREDIT_TOLERANCE:
+            continue  # clean
+
+        # Terminal statuses — always flag non-zero balance.
+        if status in ("delivered", "completed"):
+            issue_type = "outstanding_balance"
+        elif status == "cancelled":
+            issue_type = "cancelled_with_deposits"
+        else:
+            # Active order (confirmed, ready, new) — only flag if overdue.
+            if not due_date:
+                continue  # no due date, can't determine — skip
+            # Compare due_date to now (local time).  SQLite stores dates in
+            # local time via ``strftime('%Y-%m-%d', 'now', 'localtime')``, so
+            # we compare as strings (YYYY-MM-DD lexicographic order works).
+            today = conn.execute(
+                "SELECT strftime('%Y-%m-%d', 'now', 'localtime')"
+            ).fetchone()[0]
+            if due_date >= today:
+                continue  # not yet due — deposit is expected
+            issue_type = "overdue_active_balance"
+
+        findings.append({
+            "order_id": order_id,
+            "order_ref": order_ref,
+            "status": status,
+            "due_date": due_date,
+            "deposits_in": round(deposits_in, 2),
+            "refunds_out": round(refunds_out, 2),
+            "revenue_cleared": round(revenue_cleared, 2),
+            "shipping_cleared": round(shipping_cleared, 2),
+            "net_2100": round(net, 2),
+            "issue_type": issue_type,
+        })
+
+    return {
+        "check": "deposit_balance_integrity",
+        "status": "pass" if not findings else "fail",
+        "issue_count": len(findings),
+        "details": findings,
+    }
+
+
 CHECKS = (
     _check_double_entry_integrity,
     _check_cogs_completeness,
@@ -944,6 +1090,7 @@ CHECKS = (
     _check_orphaned_lines,
     _check_expense_category_mismatch,
     _check_deposit_revenue_integrity,
+    _check_deposit_balance_integrity,
 )
 
 
