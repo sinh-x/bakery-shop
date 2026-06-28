@@ -761,7 +761,7 @@ def update_payment_method(ref: str, body: PaymentMethodUpdate):
 
         # Update the latest payment transaction's method
         txn_row = conn.execute(
-            "SELECT id FROM payment_transactions WHERE order_id = ? ORDER BY id DESC LIMIT 1",
+            "SELECT id, amount, type FROM payment_transactions WHERE order_id = ? ORDER BY id DESC LIMIT 1",
             (row["id"],),
         ).fetchone()
         if not txn_row:
@@ -772,6 +772,15 @@ def update_payment_method(ref: str, body: PaymentMethodUpdate):
             (body.method, txn_row["id"]),
         )
         _log_order_history(conn, row["id"], "field_edit", "payment_method", "", body.method, "")
+
+        from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
+
+        run_journal_sync(
+            _sync_payment_journal,
+            conn, txn_row["id"], txn_row["amount"], txn_row["type"], body.method,
+            order_id=row["id"],
+            log_label=f"payment journal re-sync after method change for txn {txn_row['id']}",
+        )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         return _order_detail(conn, updated)

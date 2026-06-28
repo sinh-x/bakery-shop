@@ -1192,8 +1192,20 @@ CREATE INDEX idx_knowledge_pinned ON knowledge_entries(pinned);
 """
 
 
+ALLOWED_TABLES = {
+    "orders",
+    "reconciliation_lines",
+    "stock_movements",
+    "order_items",
+    "events",
+    "journal_entries",
+    "payment_transactions",
+}
+
+
 def _guard_add_column(conn, table: str, column: str, col_def: str):
     """Add a column only if it doesn't already exist (idempotent forward-only migration)."""
+    assert table in ALLOWED_TABLES, f"table {table!r} not in ALLOWED_TABLES"
     existing = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
     if column not in existing:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
