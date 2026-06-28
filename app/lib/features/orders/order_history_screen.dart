@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/labels/orders.dart';
 import '../../shared/theme/bakery_theme.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'widgets/order_card.dart';
 
@@ -31,7 +31,6 @@ class OrderHistoryScreen extends ConsumerStatefulWidget {
 
 class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
   final _searchController = TextEditingController();
-  final _dateFormat = DateFormat('dd/MM/yyyy');
   _DateFilterMode _mode = _DateFilterMode.range;
   String _searchQuery = '';
   String? _rangeError;
@@ -144,9 +143,9 @@ class _OrderHistoryScreenState extends ConsumerState<OrderHistoryScreen> {
                     OutlinedButton.icon(
                       icon: const Icon(Icons.event),
                       label: Text(
-                        _mode == _DateFilterMode.single
-                            ? _dateFormat.format(fromDate)
-                            : '${_dateFormat.format(fromDate)} - ${_dateFormat.format(toDate)}',
+                          _mode == _DateFilterMode.single
+                              ? formatDisplayDate(fromDate)
+                              : '${formatDisplayDate(fromDate)} - ${formatDisplayDate(toDate)}',
                       ),
                       onPressed: () {
                         if (_mode == _DateFilterMode.single) {

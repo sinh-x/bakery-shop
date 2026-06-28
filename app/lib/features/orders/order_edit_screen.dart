@@ -13,6 +13,7 @@ import '../../providers/config_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/config_parsers.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/order_helpers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/api_error.dart';
@@ -74,7 +75,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _shippingFee = order.shippingFee;
     if (order.dueDate != null) {
       try {
-        _dueDate = DateFormat('yyyy-MM-dd').parse(order.dueDate!);
+        _dueDate = parseApiDateTime(order.dueDate!);
       } catch (error, stackTrace) {
         debugPrint('order_edit: invalid due date "${order.dueDate}": $error');
         debugPrintStack(stackTrace: stackTrace);
@@ -93,7 +94,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
   bool get _needsAddress => _deliveryType == 'bus' || _deliveryType == 'door';
 
-  String _formatDateDisplay(DateTime d) => DateFormat('dd/MM/yyyy').format(d);
+  String _formatDateDisplay(DateTime d) => formatDisplayDate(d);
 
   String _formatDateApi(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
 

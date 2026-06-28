@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/models/order.dart';
@@ -11,6 +10,7 @@ import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/theme/bakery_theme.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
@@ -173,7 +173,6 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   List<Object> _groupByDueDate(List<Order> orders) {
     final noDue = <Order>[];
     final byDate = <String, List<Order>>{};
-    final dateFormat = DateFormat('dd/MM/yyyy');
 
     for (final o in orders) {
       if (o.dueDate == null || o.dueDate!.isEmpty) {
@@ -195,10 +194,9 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     }
 
     for (final dateStr in sortedDates) {
-      // Format YYYY-MM-DD to dd/MM/yyyy for display
       try {
-        final parsed = DateTime.parse(dateStr);
-        result.add(dateFormat.format(parsed));
+        final parsed = parseApiDateTime(dateStr);
+        result.add(formatDisplayDate(parsed));
       } catch (_) {
         result.add(dateStr);
       }
