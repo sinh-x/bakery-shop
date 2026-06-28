@@ -180,3 +180,143 @@ def test_stock_overview_includes_migrated_accessories_when_display_and_stock_eli
     nen = next(item for item in overview if item["product_name"] == "Nến")
     assert nen["category"] == "phu_kien"
     assert nen["quantity"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Waste COGS journal entry (Phase 4.4 / DG-187 / FR5, AC5)
+# ---------------------------------------------------------------------------
+
+
+def _waste_cogs_entries(conn, movement_id: int):
+    return conn.execute(
+        "SELECT * FROM journal_entries WHERE source_type = 'waste_cogs' AND source_id = ? ORDER BY id",
+        (movement_id,),
+    ).fetchall()
+
+
+def _entry_lines(conn, entry_id: int):
+    return conn.execute(
+        "SELECT * FROM journal_lines WHERE journal_entry_id = ? ORDER BY id",
+        (entry_id,),
+    ).fetchall()
+
+
+def test_waste_stock_creates_cogs_journal_entry_with_baseline(api_client):
+    """AC5: standalone waste with no cost_history → baseline cost →
+    waste_cogs journal entry debiting 5900 and crediting 1300."""
+    chip_id = _create_chip(api_client, 1, "Lớn", 15000)
+    api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 3, "price_chip_id": chip_id},
+    )
+
+    waste = api_client.post(
+        "/api/products/1/stock/waste",
+        json={"quantity": 2, "reason": "expired", "price_chip_id": chip_id},
+    )
+    assert waste.status_code == 200
+
+    with get_db() as conn:
+        movement = conn.execute(
+            "SELECT id FROM stock_movements WHERE movement_type = 'waste' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        entries = _waste_cogs_entries(conn, movement["id"])
+        assert len(entries) == 1
+
+        lines = _entry_lines(conn, entries[0]["id"])
+        debit_line = next(l for l in lines if l["debit"] > 0)
+        credit_line = next(l for l in lines if l["credit"] > 0)
+        cogs_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id = ?", (debit_line["account_id"],)
+        ).fetchone()
+        inv_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id = ?", (credit_line["account_id"],)
+        ).fetchone()
+        assert cogs_acc["code"] == "5900"
+        assert inv_acc["code"] == "1300"
+        # Product 1 base_price=10000 → baseline 30% = 3000 × 2 = 6000
+        assert debit_line["debit"] == 6000.0
+        assert credit_line["credit"] == 6000.0
+
+
+def test_waste_stock_cogs_uses_cost_history_when_present(api_client):
+    """AC5: when cost_history row exists, it overrides the baseline."""
+    chip_id = _create_chip(api_client, 1, "Lớn", 15000)
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
+            (1, 25000, "2020-01-01T00:00:00"),
+        )
+    api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 2, "price_chip_id": chip_id},
+    )
+
+    waste = api_client.post(
+        "/api/products/1/stock/waste",
+        json={"quantity": 1, "reason": "spoiled", "price_chip_id": chip_id},
+    )
+    assert waste.status_code == 200
+
+    with get_db() as conn:
+        movement = conn.execute(
+            "SELECT id FROM stock_movements WHERE movement_type = 'waste' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        entries = _waste_cogs_entries(conn, movement["id"])
+        assert len(entries) == 1
+        lines = _entry_lines(conn, entries[0]["id"])
+        debit_line = next(l for l in lines if l["debit"] > 0)
+        # cost_history cost 25000 × qty 1 = 25000
+        assert debit_line["debit"] == 25000.0
+
+
+def test_waste_stock_cogs_idempotent(api_client):
+    """Repeated waste on the same movement should not create duplicate entries."""
+    chip_id = _create_chip(api_client, 1, "Lớn", 15000)
+    api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 4, "price_chip_id": chip_id},
+    )
+
+    api_client.post(
+        "/api/products/1/stock/waste",
+        json={"quantity": 1, "reason": "expired", "price_chip_id": chip_id},
+    )
+    with get_db() as conn:
+        movement = conn.execute(
+            "SELECT id FROM stock_movements WHERE movement_type = 'waste' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        # Re-invoke the sync helper directly to verify idempotency.
+        from baker.services.journal_sync import _sync_waste_cogs_journal
+
+        _sync_waste_cogs_journal(conn, 1, movement["id"], 1)
+        entries = _waste_cogs_entries(conn, movement["id"])
+        assert len(entries) == 1
+
+
+def test_waste_stock_no_cogs_when_cost_zero(api_client):
+    """AC5 edge case: product with zero base_price and no cost_history →
+    baseline cost is 0 → no waste_cogs entry."""
+    prod = api_client.post(
+        "/api/products",
+        json={"name": "Mẫu 0", "category": "cake", "base_price": 0, "cost": 0},
+    )
+    assert prod.status_code == 201
+    pid = prod.json()["id"]
+    chip_id = _create_chip(api_client, pid, "Mặc định", 0)
+    api_client.post(
+        f"/api/products/{pid}/stock/restock",
+        json={"quantity": 2, "price_chip_id": chip_id},
+    )
+    waste = api_client.post(
+        f"/api/products/{pid}/stock/waste",
+        json={"quantity": 1, "reason": "hỏng", "price_chip_id": chip_id},
+    )
+    assert waste.status_code == 200
+    with get_db() as conn:
+        movement = conn.execute(
+            "SELECT id FROM stock_movements WHERE movement_type = 'waste' AND product_id = ? ORDER BY id DESC LIMIT 1",
+            (pid,),
+        ).fetchone()
+        entries = _waste_cogs_entries(conn, movement["id"])
+        assert len(entries) == 0

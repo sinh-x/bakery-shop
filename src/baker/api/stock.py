@@ -216,6 +216,14 @@ def waste_stock(product_id: int, body: WasteRequest):
         )
         consume_fifo_items(conn, product_id, chip_id, body.quantity, movement_id)
 
+        from baker.services.journal_sync import _sync_waste_cogs_journal, run_journal_sync
+
+        run_journal_sync(
+            _sync_waste_cogs_journal,
+            conn, product_id, movement_id, body.quantity,
+            log_label=f"waste cogs sync for movement {movement_id}",
+        )
+
         option_qty = available_quantity(conn, product_id, chip_id)
 
         return {

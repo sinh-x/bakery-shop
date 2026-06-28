@@ -383,6 +383,24 @@ class VN {
   static const paymentAmountLabel = 'Số tiền';
   static const txnType = 'Loại thanh toán';
 
+  // Payment transaction invalidation (DG-196)
+  static const txnInvalidatedBadge = 'Đã hủy';
+  static const txnInvalidatedAtLabel = 'Ngày hủy';
+  static const txnInvalidatedByLabel = 'Người hủy';
+  static const invalidatePayment = 'Hủy giao dịch';
+  static const restorePayment = 'Khôi phục giao dịch';
+  static const invalidateConfirmTitle = 'Hủy giao dịch?';
+  static const invalidateConfirmMessage =
+      'Giao dịch sẽ bị hủy và không tính vào tổng thanh toán. '
+      'Bút toán kế toán sẽ được đảo.';
+  static const restoreConfirmTitle = 'Khôi phục giao dịch?';
+  static const restoreConfirmMessage =
+      'Giao dịch sẽ được khôi phục và tính lại vào tổng thanh toán.';
+  static const paymentInvalidated = 'Đã hủy giao dịch';
+  static const paymentRestored = 'Đã khôi phục giao dịch';
+  static const invalidateReasonLabel = 'Lý do hủy (tùy chọn)';
+  static const invalidateReasonHint = 'Nhập lý do hủy giao dịch...';
+
   // Work item statuses
   static const workItemPending = 'Chờ xử lý';
   static const workItemConfirmed = 'Đã xác nhận';
@@ -774,6 +792,77 @@ class VN {
   static const taiNAnh = 'Đã tải {count} ảnh';
   static const khongTheTaiAnh = 'Không thể tải ảnh';
   static const khongTheChiaSe = 'Không thể chia sẻ';
+
+  // Accounting
+  static const accountingTitle = 'Kế toán';
+  static const accountingTabAccounts = 'Tài khoản';
+  static const accountingTabJournal = 'Sổ nhật ký';
+  static const accountingTabBalances = 'Số dư';
+  static const accountingLockJournal = 'Khóa sổ';
+  static const accountingLockConfirm = 'Khóa tất cả bút toán trong khoảng này?';
+  static const accountingLockSuccess = 'Đã khóa sổ';
+  static const accountingFilterSince = 'Từ ngày';
+  static const accountingFilterUntil = 'Đến ngày';
+  static const accountingFilterAccount = 'Tài khoản';
+  static const accountingFilterSourceType = 'Loại giao dịch';
+  static const accountingNoEntries = 'Không có bút toán nào';
+  static const accountingDebit = 'Nợ';
+  static const accountingCredit = 'Có';
+  static const accountingBalance = 'Số dư';
+  static const accountingOwnerCapital = 'Vốn chủ sở hữu vào';
+  static const accountingOwnerDraw = 'Rút vốn';
+  static const accountingStaffReimburse = 'Hoàn ứng';
+  static const accountingLocked = 'Đã khóa';
+  static const accountingUnlocked = 'Chưa khóa';
+  static const accountingLoadMore = 'Tải thêm';
+  static const accountingNoAccounts = 'Không có tài khoản';
+  static const accountingNoBalances = 'Không có số dư';
+  static const accountingSourceTypeAll = 'Tất cả';
+  static const accountingSourceTypeExpense = 'Chi phí';
+  static const accountingSourceTypePayment = 'Thanh toán';
+  static const accountingSourceTypeOrder = 'Đơn hàng';
+  static const accountingSourceTypeCogs = 'Giá vốn';
+  static const accountingSourceTypeShippingHold = 'Ship bus giữ hộ';
+  static const accountingSourceTypeShippingRelease = 'Trả ship bus';
+
+  /// Map a journal entry ``sourceType`` to a Vietnamese label.
+  ///
+  /// Falls back to the raw ``sourceType`` when no mapping exists so unknown
+  /// source types remain visible rather than blank.
+  static String accountingSourceTypeLabel(String sourceType) {
+    switch (sourceType) {
+      case 'expense':
+        return accountingSourceTypeExpense;
+      case 'payment_transaction':
+        return accountingSourceTypePayment;
+      case 'order':
+        return accountingSourceTypeOrder;
+      case 'order_cogs':
+        return accountingSourceTypeCogs;
+      case 'order_shipping_hold':
+        return accountingSourceTypeShippingHold;
+      case 'order_shipping_release':
+        return accountingSourceTypeShippingRelease;
+      case 'owner_capital':
+        return accountingOwnerCapital;
+      case 'owner_draw':
+        return accountingOwnerDraw;
+      case 'staff_reimburse':
+        return accountingStaffReimburse;
+      default:
+        return sourceType;
+    }
+  }
+
+  // Account type labels (account_type_helper.dart)
+  static const accountingTypeAsset = 'Tài sản';
+  static const accountingTypeLiability = 'Nợ phải trả';
+  static const accountingTypeEquity = 'Vốn chủ sở hữu';
+  static const accountingTypeIncome = 'Doanh thu';
+  static const accountingTypeExpense = 'Chi phí';
+
+  static String accountingLockResult(int count) =>
+      'Đã khóa $count bút toán';
 
   // Bulk selection
   static const chonAnh = 'Chọn';

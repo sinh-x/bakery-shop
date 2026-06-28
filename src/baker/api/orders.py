@@ -417,6 +417,14 @@ def create_order(body: OrderCreate, request: Request):
                                "new", "delivered", body.createdBy)
             auto_decrement_stock(conn, order.id, order.order_ref)
 
+            # Auto-generate revenue conversion + COGS journal entries (DG-175).
+            from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync
+            run_journal_sync(
+                _sync_delivered_order_journal,
+                conn, order.id, order.order_ref,
+                log_label=f"delivered order journal sync for order {order.id}",
+            )
+
         log_context(request, ref_type="order", ref_id=order.id)
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
         return _order_detail(conn, row)
@@ -604,6 +612,26 @@ def edit_order(ref: str, body: OrderEdit):
             params,
         )
 
+        # Re-sync payment journal entries when shipping_fee changes on a bus order (DG-191 Phase 4).
+        if (shipping_fee_changed or delivery_type_changed) and row["delivery_type"] == "bus":
+            from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
+
+            txn_rows = conn.execute(
+                "SELECT id, amount, type, method FROM payment_transactions WHERE order_id = ?",
+                (row["id"],),
+            ).fetchall()
+            for txn_row in txn_rows:
+                run_journal_sync(
+                    _sync_payment_journal,
+                    conn,
+                    txn_row["id"],
+                    float(txn_row["amount"]),
+                    txn_row["type"],
+                    txn_row["method"],
+                    order_id=row["id"],
+                    log_label=f"payment journal re-sync for order {row['id']} after shipping_fee edit",
+                )
+
         # Log each changed field with old/new values
         changed_by = data.get("changedBy", "")
         for camel, snake in field_map.items():
@@ -661,7 +689,7 @@ def transition_status(ref: str, body: StatusTransition):
 
         # Block completion if not fully paid
         if body.status == "completed":
-            total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, row["id"])
+            total_paid = PaymentTransaction.total_paid_excl_outflows(conn, row["id"])
             total_price = float(row["total_price"])
             if total_paid < total_price:
                 remaining = total_price - total_paid
@@ -692,6 +720,15 @@ def transition_status(ref: str, body: StatusTransition):
             )
 
         _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, body.changedBy)
+
+        # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
+        if body.status == "delivered" and row["status"] != "delivered":
+            from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync
+            run_journal_sync(
+                _sync_delivered_order_journal,
+                conn, row["id"], row["order_ref"],
+                log_label=f"delivered order journal sync for order {row['id']}",
+            )
 
         # Auto-cascade confirmed order status to main items (non-extra, non-gift) at pending (F5)
         if body.status == "confirmed":
@@ -724,7 +761,7 @@ def update_payment_method(ref: str, body: PaymentMethodUpdate):
 
         # Update the latest payment transaction's method
         txn_row = conn.execute(
-            "SELECT id FROM payment_transactions WHERE order_id = ? ORDER BY id DESC LIMIT 1",
+            "SELECT id, amount, type FROM payment_transactions WHERE order_id = ? ORDER BY id DESC LIMIT 1",
             (row["id"],),
         ).fetchone()
         if not txn_row:
@@ -735,6 +772,15 @@ def update_payment_method(ref: str, body: PaymentMethodUpdate):
             (body.method, txn_row["id"]),
         )
         _log_order_history(conn, row["id"], "field_edit", "payment_method", "", body.method, "")
+
+        from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
+
+        run_journal_sync(
+            _sync_payment_journal,
+            conn, txn_row["id"], txn_row["amount"], txn_row["type"], body.method,
+            order_id=row["id"],
+            log_label=f"payment journal re-sync after method change for txn {txn_row['id']}",
+        )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         return _order_detail(conn, updated)

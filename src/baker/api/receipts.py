@@ -670,7 +670,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
     if main_count == 1:
         total_price = float(order.get("totalPrice", 0) or order.get("total_price", 0))
         order_id = order.get("id")
-        total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) if order_id else 0.0
+        total_paid = PaymentTransaction.total_paid_excl_outflows(conn, order_id) if order_id else 0.0
         remaining = total_price - total_paid
 
         y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
@@ -1030,7 +1030,7 @@ def _render_financial_summary(draw, y, order, conn, fbb, fb) -> int:
         rut_recv = _tien_rut_received(conn, order_id)
         rut_color = (0, 100, 0) if rut_recv >= rut_target else (200, 0, 0)
         y = _row(draw, y, "Tiền rút đã nhận:", f"{_format_vnd_full(rut_recv)} / {_format_vnd_full(rut_target)}", fb, color_v=rut_color)
-    total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) if order_id else 0.0
+    total_paid = PaymentTransaction.total_paid_excl_outflows(conn, order_id) if order_id else 0.0
     remaining = total_price - total_paid
 
     y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
@@ -1399,7 +1399,7 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
         rut_recv = _tien_rut_received(conn, order_id)
         rut_color = (0, 100, 0) if rut_recv >= rut_target else (200, 0, 0)
         y = _row(draw, y, "Tiền rút đã nhận:", f"{_format_vnd_full(rut_recv)} / {_format_vnd_full(rut_target)}", fb, color_v=rut_color)
-    total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) if order_id else 0.0
+    total_paid = PaymentTransaction.total_paid_excl_outflows(conn, order_id) if order_id else 0.0
     remaining = total_price - total_paid
 
     y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))

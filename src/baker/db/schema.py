@@ -1192,8 +1192,20 @@ CREATE INDEX idx_knowledge_pinned ON knowledge_entries(pinned);
 """
 
 
+ALLOWED_TABLES = {
+    "orders",
+    "reconciliation_lines",
+    "stock_movements",
+    "order_items",
+    "events",
+    "journal_entries",
+    "payment_transactions",
+}
+
+
 def _guard_add_column(conn, table: str, column: str, col_def: str):
     """Add a column only if it doesn't already exist (idempotent forward-only migration)."""
+    assert table in ALLOWED_TABLES, f"table {table!r} not in ALLOWED_TABLES"
     existing = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
     if column not in existing:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
@@ -1455,6 +1467,1146 @@ def _migrate_v43_event_history_and_soft_delete(conn):
         )
 
 
+# ---------------------------------------------------------------------------
+# Double-entry accounting schema (migration v44)
+# ---------------------------------------------------------------------------
+
+ACCOUNTING_SCHEMA = """
+CREATE TABLE IF NOT EXISTS accounts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    code        TEXT UNIQUE NOT NULL,
+    name        TEXT NOT NULL,
+    type        TEXT NOT NULL,
+    parent_id   INTEGER REFERENCES accounts(id),
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_accounts_type ON accounts(type);
+CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(parent_id);
+
+CREATE TABLE IF NOT EXISTS journal_entries (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    description TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
+    source_type TEXT NOT NULL,
+    source_id   INTEGER,
+    locked_at   TEXT,
+    locked_by   TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_journal_entries_created ON journal_entries(created_at);
+CREATE INDEX IF NOT EXISTS idx_journal_entries_source ON journal_entries(source_type, source_id);
+
+CREATE TABLE IF NOT EXISTS journal_lines (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    journal_entry_id INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+    account_id       INTEGER NOT NULL REFERENCES accounts(id),
+    debit            REAL NOT NULL DEFAULT 0,
+    credit           REAL NOT NULL DEFAULT 0,
+    description      TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON journal_lines(journal_entry_id);
+CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(account_id);
+"""
+
+# Chart of accounts seed: (code, name, type, parent_code)
+# parent_code is None for top-level; otherwise resolved to parent account id.
+SEED_CHART_OF_ACCOUNTS = [
+    # Assets
+    ("1000", "Tài sản", "asset", None),
+    ("1100", "Tiền mặt (Cash on Hand)", "asset", "1000"),
+    ("1200", "Tài khoản ngân hàng (Bank Account)", "asset", "1000"),
+    ("1300", "Hàng tồn kho (Inventory)", "asset", "1000"),
+    ("1500", "Phải thu khách hàng (Accounts Receivable)", "asset", "1000"),
+    # Liabilities
+    ("2000", "Nợ phải trả", "liability", None),
+    ("2100", "Tiền khách đặt cọc (Customer Deposits)", "liability", "2000"),
+    ("2200", "Tiền ship bus giữ hộ (Bus Shipping Held)", "liability", "2000"),
+    ("2300", "Phải trả nhân viên (Staff Payables)", "liability", "2000"),
+    ("2400", "Tiền rút tạm giữ (Tien Rut Held)", "liability", "2000"),
+    # Equity
+    ("3000", "Vốn chủ sở hữu", "equity", None),
+    ("3100", "Vốn chủ sở hữu (Owner's Equity)", "equity", "3000"),
+    # Income
+    ("4000", "Doanh thu", "income", None),
+    ("4100", "Doanh thu bán hàng (Order Revenue)", "income", "4000"),
+    # Expenses — 8 accounts matching the 8 expense categories used in the app
+    ("5000", "Chi phí", "expense", None),
+    ("5100", "Nguyên liệu (Ingredients)", "expense", "5000"),
+    ("5200", "Bao bì (Packaging)", "expense", "5000"),
+    ("5300", "Vận chuyển (Delivery/Shipping)", "expense", "5000"),
+    ("5400", "Điện/nước (Utilities)", "expense", "5000"),
+    ("5500", "Dụng cụ (Tools)", "expense", "5000"),
+    ("5600", "Sửa chữa (Equipment Maintenance)", "expense", "5000"),
+    ("5700", "Lương/phụ cấp (Staff Salary)", "expense", "5000"),
+    ("5800", "Khác (Other Expenses)", "expense", "5000"),
+    # COGS
+    ("5900", "Giá vốn hàng bán (COGS)", "expense", "5000"),
+]
+
+# Map expense category (stored in events.data JSON) → expense account code.
+# Keys must match VN labels in app/lib/features/expenses/expense_constants.dart.
+EXPENSE_CATEGORY_TO_ACCOUNT_CODE = {
+    "Nguyên liệu": "5100",
+    "Bao bì": "5200",
+    "Vận chuyển": "5300",
+    "Điện/nước": "5400",
+    "Dụng cụ": "5500",
+    "Sửa chữa": "5600",
+    "Lương/phụ cấp": "5700",
+    "Khác": "5800",
+}
+
+# Categories that represent inventory purchases (raw materials, packaging).
+# These debit Inventory (1300) instead of an expense account — the cost sits
+# in inventory until goods are sold/wasted, at which point COGS (5900) is
+# debited and Inventory is credited.
+INVENTORY_PURCHASE_CATEGORIES = {"Nguyên liệu", "Bao bì"}
+
+# Map expense payment_source (events.data JSON) → payment account code.
+# "Nhân viên ứng trước" creates a sub-account per staff name (handled in backfill).
+EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE = {
+    "Shop tiền mặt": "1100",
+    "TK Phượng VCB": "1200",
+    "TK Ân VCB": "1200",
+    "Nhân viên ứng trước": "2300",
+}
+
+# Map payment_transactions.method → asset account code.
+PAYMENT_METHOD_TO_ASSET_CODE = {
+    "cash": "1100",
+    "card": "1100",
+    "transfer": "1200",
+}
+
+# payment_transactions.type values that represent cash flowing back to the
+# customer (negative deposit). These are recorded as debit Customer Deposits,
+# credit Asset — the reverse of a normal deposit/payment.
+#
+# NOTE (DG-198 reversal): ``tien_rut`` is NOT an outflow. It is a deposit
+# inflow — the customer gives cash to the shop for safekeeping — so it journals
+# DR Asset / CR 2400 (Tien Rut Held) like a deposit, and at delivery 2400 is
+# returned to the customer via a separate ``order`` journal entry. Only
+# ``refund`` is an outflow (DR 2100 / CR Asset).
+PAYMENT_OUTFLOW_TYPES = {"refund"}
+
+# payment_transactions.type values that represent tien_rut deposit inflows
+# (customer cash held by the shop). Journaled DR Asset / CR 2400 at payment
+# time; 2400 is cleared via a separate return entry at delivery.
+PAYMENT_TIEN_RUT_TYPES = {"tien_rut"}
+
+# Account codes used by the backfill.
+CUSTOMER_DEPOSITS_CODE = "2100"
+ORDER_REVENUE_CODE = "4100"
+COGS_CODE = "5900"
+INVENTORY_CODE = "1300"
+STAFF_PAYABLES_CODE = "2300"
+ACCOUNTS_RECEIVABLE_CODE = "1500"
+BUS_SHIPPING_HELD_CODE = "2200"
+TIEN_RUT_HELD_CODE = "2400"
+
+# Tolerance (VND) below which an existing order revenue entry's 2100 debit is
+# considered already in sync with the current net deposits — no update needed.
+# Single source of truth shared by journal_sync, the backfill, pipeline reports,
+# and the repair command (review finding Mn-1).
+REVENUE_UPDATE_TOLERANCE = 0.005
+
+
+def _seed_chart_of_accounts(conn) -> None:
+    """Seed the chart of accounts (idempotent via INSERT OR IGNORE)."""
+    code_to_id: dict[str, int] = {}
+    for code, name, acc_type, parent_code in SEED_CHART_OF_ACCOUNTS:
+        parent_id = code_to_id.get(parent_code) if parent_code else None
+        cursor = conn.execute(
+            "INSERT OR IGNORE INTO accounts (code, name, type, parent_id) "
+            "VALUES (?, ?, ?, ?)",
+            (code, name, acc_type, parent_id),
+        )
+        if cursor.lastrowid:
+            code_to_id[code] = int(cursor.lastrowid)
+        else:
+            row = conn.execute(
+                "SELECT id FROM accounts WHERE code = ?", (code,)
+            ).fetchone()
+            code_to_id[code] = int(row[0])
+
+
+def _ensure_staff_payable_sub_account(conn, staff_name: str) -> int:
+    """Create (or return) a sub-account under Phải trả nhân viên for a staff member.
+
+    Sub-account code is derived as 23XX where XX is a stable zero-padded index
+    assigned by first-seen order. The code is unique within the chart of
+    accounts and the parent is the 2300 parent account.
+    """
+    parent_row = conn.execute(
+        "SELECT id FROM accounts WHERE code = ?", (STAFF_PAYABLES_CODE,)
+    ).fetchone()
+    if parent_row is None:
+        raise RuntimeError(
+            "Staff Payables parent account (2300) missing; seed COA first"
+        )
+    parent_id = int(parent_row[0])
+
+    existing = conn.execute(
+        "SELECT id FROM accounts WHERE parent_id = ? AND name = ?",
+        (parent_id, staff_name),
+    ).fetchone()
+    if existing:
+        return int(existing[0])
+
+    count_row = conn.execute(
+        "SELECT COUNT(*) FROM accounts WHERE parent_id = ?", (parent_id,)
+    ).fetchone()
+    next_idx = int(count_row[0]) + 1
+    code = f"23{next_idx:02d}"
+    cursor = conn.execute(
+        "INSERT INTO accounts (code, name, type, parent_id) VALUES (?, ?, 'liability', ?)",
+        (code, staff_name, parent_id),
+    )
+    return int(cursor.lastrowid)
+
+
+def _account_id_by_code(conn, code: str) -> int:
+    row = conn.execute(
+        "SELECT id FROM accounts WHERE code = ?", (code,)
+    ).fetchone()
+    if row is None:
+        raise RuntimeError(f"Account code {code!r} not found")
+    return int(row[0])
+
+
+def _insert_journal_entry(
+    conn,
+    *,
+    description: str,
+    source_type: str,
+    source_id,
+    lines: list[tuple[int, float, float, str]],
+    transaction_date: str | None = None,
+) -> int:
+    """Create a journal entry with its lines.
+
+    `lines` is a list of (account_id, debit, credit, line_description).
+    Double-entry integrity is enforced: total debit must equal total credit.
+
+    `transaction_date` is the business event date the entry relates to (used
+    by reports, API filtering, and journal locks). When ``None``, defaults to
+    the current local time — preserving the historical INSERT-time behavior of
+    ``created_at`` so existing call sites work unchanged during the transition.
+    The audit-only ``created_at`` column still records the actual INSERT time.
+    """
+    total_debit = sum(d for _, d, _, _ in lines)
+    total_credit = sum(c for _, _, c, _ in lines)
+    if abs(total_debit - total_credit) > 0.005:
+        raise RuntimeError(
+            f"Double-entry violation: debit={total_debit} credit={total_credit} "
+            f"for {source_type}:{source_id}"
+        )
+
+    if transaction_date is None:
+        transaction_date = conn.execute(
+            "SELECT strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')"
+        ).fetchone()[0]
+
+    # Transition guard: write transaction_date only when the column exists
+    # (added by migration v50). Before v50 is applied, fall back to the legacy
+    # INSERT that relies on the created_at DEFAULT. This keeps v44/v46/v47/v48/
+    # v49 backfills (which run before v50 on fresh DBs) working unchanged.
+    has_col = "transaction_date" in {
+        r[1] for r in conn.execute("PRAGMA table_info(journal_entries)").fetchall()
+    }
+    if has_col:
+        cursor = conn.execute(
+            "INSERT INTO journal_entries "
+            "(description, source_type, source_id, transaction_date) "
+            "VALUES (?, ?, ?, ?)",
+            (description, source_type, source_id, transaction_date),
+        )
+    else:
+        cursor = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, ?, ?)",
+            (description, source_type, source_id),
+        )
+    entry_id = int(cursor.lastrowid)
+    for account_id, debit, credit, line_desc in lines:
+        conn.execute(
+            "INSERT INTO journal_lines "
+            "(journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (entry_id, account_id, float(debit), float(credit), line_desc),
+        )
+    return entry_id
+
+
+def _backfill_expense_journal_entries(conn) -> None:
+    """Backfill journal entries for all non-deleted expense events."""
+    import json
+
+    rows = conn.execute(
+        "SELECT id, summary, data, timestamp FROM events "
+        "WHERE type = 'expense' "
+        "  AND (deleted_at IS NULL OR deleted_at = '')"
+    ).fetchall()
+
+    for row in rows:
+        event_id = int(row["id"])
+        # Skip if a journal entry already exists for this source (idempotent).
+        existing = conn.execute(
+            "SELECT 1 FROM journal_entries "
+            "WHERE source_type = 'expense' AND source_id = ?",
+            (event_id,),
+        ).fetchone()
+        if existing:
+            continue
+
+        event_timestamp = row["timestamp"] or ""
+
+        try:
+            data = json.loads(row["data"]) if row["data"] else {}
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        amount = data.get("amount_vnd")
+        category = data.get("category")
+        payment_source = data.get("payment_source")
+        if not isinstance(amount, (int, float)) or amount <= 0:
+            continue
+        if not isinstance(category, str) or not category:
+            continue
+        if not isinstance(payment_source, str) or not payment_source:
+            continue
+
+        expense_code = EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category)
+        if not expense_code:
+            continue
+
+        if payment_source == "Nhân viên ứng trước":
+            staff_name = (data.get("paid_by_name") or "").strip()
+            if not staff_name:
+                continue
+            payment_account_id = _ensure_staff_payable_sub_account(conn, staff_name)
+        else:
+            account_code = EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE.get(payment_source)
+            if not account_code:
+                continue
+            payment_account_id = _account_id_by_code(conn, account_code)
+
+        if category in INVENTORY_PURCHASE_CATEGORIES:
+            inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
+            _insert_journal_entry(
+                conn,
+                description=f"Expense: {row['summary']}",
+                source_type="expense",
+                source_id=event_id,
+                transaction_date=event_timestamp,
+                lines=[
+                    (inventory_account_id, float(amount), 0.0, "Nhập kho nguyên vật liệu"),
+                    (payment_account_id, 0.0, float(amount), "Thanh toán"),
+                ],
+            )
+        else:
+            expense_account_id = _account_id_by_code(conn, expense_code)
+            _insert_journal_entry(
+                conn,
+                description=f"Expense: {row['summary']}",
+                source_type="expense",
+                source_id=event_id,
+                transaction_date=event_timestamp,
+                lines=[
+                    (expense_account_id, float(amount), 0.0, "Chi phí"),
+                    (payment_account_id, 0.0, float(amount), "Thanh toán"),
+                ],
+            )
+
+
+def _backfill_payment_transaction_journal_entries(conn) -> None:
+    """Backfill journal entries for all payment_transactions."""
+    rows = conn.execute(
+        "SELECT id, order_id, amount, type, method, created_at "
+        "FROM payment_transactions"
+    ).fetchall()
+
+    for row in rows:
+        pt_id = int(row["id"])
+        existing = conn.execute(
+            "SELECT 1 FROM journal_entries "
+            "WHERE source_type = 'payment_transaction' AND source_id = ?",
+            (pt_id,),
+        ).fetchone()
+        if existing:
+            continue
+
+        amount = float(row["amount"] or 0)
+        if amount <= 0:
+            continue
+
+        method = row["method"] or "cash"
+        asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get(method, "1100")
+        asset_account_id = _account_id_by_code(conn, asset_code)
+        deposits_account_id = _account_id_by_code(conn, CUSTOMER_DEPOSITS_CODE)
+        tien_rut_account_id = _account_id_by_code(conn, TIEN_RUT_HELD_CODE)
+
+        ptype = row["type"] or "deposit"
+        transaction_date = row["created_at"] or ""
+        if ptype in PAYMENT_OUTFLOW_TYPES:
+            # Cash flows back to customer: debit Customer Deposits, credit Asset.
+            _insert_journal_entry(
+                conn,
+                description=f"Payment: {ptype} {amount}",
+                source_type="payment_transaction",
+                source_id=pt_id,
+                transaction_date=transaction_date,
+                lines=[
+                    (deposits_account_id, amount, 0.0, "Hoàn tiền khách"),
+                    (asset_account_id, 0.0, amount, "Trả lại tiền"),
+                ],
+            )
+        elif ptype in PAYMENT_TIEN_RUT_TYPES:
+            # Tien rut deposit inflow (DG-198 reversal): customer gives cash to
+            # the shop for safekeeping. DR Asset, CR 2400 (Tien Rut Held). 2400
+            # is cleared at delivery via a separate return entry.
+            _insert_journal_entry(
+                conn,
+                description=f"Payment: tien_rut {amount}",
+                source_type="payment_transaction",
+                source_id=pt_id,
+                transaction_date=transaction_date,
+                lines=[
+                    (asset_account_id, amount, 0.0, "Tiền khách gửi giữ hộ"),
+                    (tien_rut_account_id, 0.0, amount, "Tiền rút tạm giữ"),
+                ],
+            )
+        else:
+            # Customer pays in: debit Asset, credit Customer Deposits.
+            _insert_journal_entry(
+                conn,
+                description=f"Payment: {ptype} {amount}",
+                source_type="payment_transaction",
+                source_id=pt_id,
+                transaction_date=transaction_date,
+                lines=[
+                    (asset_account_id, amount, 0.0, "Tiền khách đặt/cọc"),
+                    (deposits_account_id, 0.0, amount, "Tiền khách đặt cọc"),
+                ],
+            )
+
+
+def _backfill_delivered_order_journal_entries(conn) -> None:
+    """Backfill revenue conversion + COGS entries for delivered and completed orders.
+
+    Revenue entries are reconciled against current net deposits
+    (deposits − tien_rut refunds): stale entries are deleted and recreated so
+    the 2100 debit matches the actual deposit balance being converted to
+    revenue. Orders with net deposits <= 0 get no revenue entry. This keeps the
+    backfill consistent with :func:`_sync_delivered_order_journal`.
+
+    Delegates revenue reconciliation to
+    :func:`_reconcile_order_revenue_entry` so that locked entries are reversed
+    (never deleted) — the same path used by live sync (review findings M-1, Mn-2).
+    """
+    from baker.models.payment_transaction import PaymentTransaction
+    from baker.services.journal_sync import _reconcile_order_revenue_entry
+
+    orders = conn.execute(
+        "SELECT id, order_ref, total_price, due_date, created_at "
+        "FROM orders WHERE status IN ('delivered', 'completed')"
+    ).fetchall()
+
+    inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
+    cogs_account_id = _account_id_by_code(conn, COGS_CODE)
+
+    for orow in orders:
+        order_id = int(orow["id"])
+        order_ref = orow["order_ref"]
+        # FR11: orders.due_date is the only nullable source date field; fall
+        # back to created_at when it is NULL or empty.
+        transaction_date = orow["due_date"] or orow["created_at"] or ""
+
+        # Revenue reconciliation — shared with live sync (handles lock checks
+        # and idempotent creation via _reconcile_order_revenue_entry).
+        _reconcile_order_revenue_entry(
+            conn,
+            order_id,
+            order_ref,
+            total_price=float(orow["total_price"] or 0),
+        )
+
+        # COGS: for each order_item with product.cost > 0, debit COGS, credit Inventory.
+        # Group into one COGS entry per order for performance and clarity.
+        existing_cogs = conn.execute(
+            "SELECT 1 FROM journal_entries "
+            "WHERE source_type = 'order_cogs' AND source_id = ?",
+            (order_id,),
+        ).fetchone()
+        if existing_cogs:
+            continue
+
+        items = conn.execute(
+            "SELECT oi.product_name, oi.quantity, p.cost "
+            "FROM order_items oi "
+            "LEFT JOIN products p ON CAST(oi.product_id AS INTEGER) = p.id "
+            "WHERE oi.order_id = ? AND oi.is_extra = 0 AND oi.is_gift = 0",
+            (order_id,),
+        ).fetchall()
+
+        total_cogs = 0.0
+        for irow in items:
+            cost = float(irow["cost"] or 0)
+            qty = int(irow["quantity"] or 0)
+            if cost > 0 and qty > 0:
+                total_cogs += cost * qty
+
+        if total_cogs > 0:
+            _insert_journal_entry(
+                conn,
+                description=f"Order COGS: {order_ref}",
+                source_type="order_cogs",
+                source_id=order_id,
+                transaction_date=transaction_date,
+                lines=[
+                    (cogs_account_id, total_cogs, 0.0, "Giá vốn hàng bán"),
+                    (inventory_account_id, 0.0, total_cogs, "Xuất kho"),
+                ],
+            )
+
+
+def _migrate_v46_fix_old_expense_journal(conn):
+    """One-time fix: backfill journal entry for old-format expense event #25.
+
+    Event #25 uses pre-standardization data keys (``amount``, ``currency``
+    instead of ``amount_vnd``, ``category``). Map the known fields manually:
+    equipment repair → Sửa chữa (5600), Shop tiền mặt → 1100.
+    """
+    import json
+
+    row = conn.execute(
+        "SELECT id, summary, data, timestamp FROM events WHERE id = 25"
+    ).fetchone()
+    if row is None:
+        return
+
+    existing = conn.execute(
+        "SELECT 1 FROM journal_entries "
+        "WHERE source_type = 'expense' AND source_id = 25"
+    ).fetchone()
+    if existing:
+        return
+
+    try:
+        data = json.loads(row["data"]) if row["data"] else {}
+    except (json.JSONDecodeError, TypeError):
+        return
+
+    amount = data.get("amount")
+    payment_source = data.get("payment_source")
+    if not isinstance(amount, (int, float)) or amount <= 0:
+        return
+    if payment_source != "Shop tiền mặt":
+        return
+
+    expense_account_id = _account_id_by_code(conn, "5600")
+    asset_account_id = _account_id_by_code(conn, "1100")
+    _insert_journal_entry(
+        conn,
+        description=f"Expense: {row['summary']}",
+        source_type="expense",
+        source_id=25,
+        transaction_date=row["timestamp"] or "",
+        lines=[
+            (expense_account_id, float(amount), 0.0, "Chi phí sửa chữa"),
+            (asset_account_id, 0.0, float(amount), "Thanh toán tiền mặt"),
+        ],
+    )
+
+
+def _migrate_v47_fix_stale_cogs_entries(conn):
+    """One-time fix: delete and re-create order_cogs journal entries that were
+    generated with the old cost resolver (which returned 0 for products with
+    cost=0 and no cost_history). The current resolver uses baseline fallback
+    (30% base_price, 100% for phụ kiện) so stale entries may be understated.
+
+    Idempotent: re-creates via _sync_delivered_order_journal which skips
+    existing entries, so we delete stale ones first.
+    """
+    _seed_chart_of_accounts(conn)
+    from baker.services.cost_resolver import resolve_product_cost
+    from baker.services.journal_sync import _sync_delivered_order_journal
+
+    stale_ids = []
+    rows = conn.execute(
+        """
+        SELECT je.id AS entry_id, je.source_id AS order_id
+        FROM journal_entries je
+        WHERE je.source_type = 'order_cogs'
+        ORDER BY je.id
+        """
+    ).fetchall()
+
+    for r in rows:
+        entry_id = int(r["entry_id"])
+        order_id = int(r["order_id"])
+
+        actual = conn.execute(
+            """
+            SELECT SUM(jl.debit) FROM journal_lines jl
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE jl.journal_entry_id = ? AND a.code = '5900'
+            """,
+            (entry_id,),
+        ).fetchone()[0]
+        actual = float(actual or 0)
+
+        items = conn.execute(
+            """
+            SELECT oi.product_id, oi.quantity
+            FROM order_items oi
+            WHERE oi.order_id = ? AND oi.is_extra = 0 AND oi.is_gift = 0
+            """,
+            (order_id,),
+        ).fetchall()
+
+        expected = 0.0
+        for i in items:
+            pid_str = i["product_id"]
+            if pid_str is None:
+                continue
+            try:
+                pid = int(pid_str)
+            except (TypeError, ValueError):
+                continue
+            cost = resolve_product_cost(conn, pid)
+            qty = int(i["quantity"] or 0)
+            expected += cost * qty
+
+        if abs(actual - expected) > 0.01:
+            stale_ids.append(entry_id)
+
+    if stale_ids:
+        placeholders = ",".join("?" * len(stale_ids))
+        conn.execute(
+            f"DELETE FROM journal_entries WHERE id IN ({placeholders})",
+            stale_ids,
+        )
+
+    orders = conn.execute(
+        """
+        SELECT DISTINCT o.id, o.order_ref
+        FROM orders o
+        JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.status IN ('delivered', 'completed')
+        """
+    ).fetchall()
+
+    for o in orders:
+        _sync_delivered_order_journal(conn, int(o["id"]), o["order_ref"])
+
+
+def _migrate_v44_double_entry_accounting(conn):
+    """Create accounting schema, seed chart of accounts, and backfill journal
+    entries for historical expenses, payment_transactions, and delivered orders."""
+    conn.executescript(ACCOUNTING_SCHEMA)
+    _seed_chart_of_accounts(conn)
+    _backfill_expense_journal_entries(conn)
+    _backfill_payment_transaction_journal_entries(conn)
+    _backfill_delivered_order_journal_entries(conn)
+
+
+def _migrate_v48_fix_inventory_purchase_entries(conn):
+    """One-time fix: delete and re-create expense journal entries for
+    Nguyên liệu and Bao bì categories. These were originally recorded as
+    debit expense (5100/5200) but should debit Inventory (1300) — the cost
+    sits in inventory until goods are sold/wasted (COGS).
+
+    Idempotent: deletes stale entries then re-runs the expense backfill
+    which now routes inventory purchases to Inventory (1300).
+    """
+    import json
+
+    stale_ids = []
+    rows = conn.execute(
+        "SELECT id, data FROM events WHERE type = 'expense' AND deleted_at IS NULL"
+    ).fetchall()
+
+    for row in rows:
+        try:
+            data = json.loads(row["data"]) if row["data"] else {}
+        except (json.JSONDecodeError, TypeError):
+            continue
+        category = data.get("category")
+        if category not in INVENTORY_PURCHASE_CATEGORIES:
+            continue
+
+        je = conn.execute(
+            "SELECT id FROM journal_entries "
+            "WHERE source_type = 'expense' AND source_id = ?",
+            (row["id"],),
+        ).fetchone()
+        if je is None:
+            continue
+
+        entry_id = int(je["id"])
+        lines = conn.execute(
+            """
+            SELECT a.code FROM journal_lines jl
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE jl.journal_entry_id = ? AND jl.debit > 0
+            """,
+            (entry_id,),
+        ).fetchall()
+        debit_codes = {l["code"] for l in lines}
+        if INVENTORY_CODE not in debit_codes:
+            stale_ids.append(entry_id)
+
+    if stale_ids:
+        placeholders = ",".join("?" * len(stale_ids))
+        conn.execute(
+            f"DELETE FROM journal_entries WHERE id IN ({placeholders})",
+            stale_ids,
+        )
+
+    _backfill_expense_journal_entries(conn)
+
+
+def _migrate_v49_bus_shipping_backfill(conn):
+    """One-time backfill: correct delivered bus orders for the shipping hold & release accounting.
+
+    Prior to the bus shipping separation (FR5), delivered bus orders had:
+
+    1. Stale revenue entries that *included* the shipping fee in the 2100→4100
+       conversion (because ``shipping_fee`` was part of ``total_price`` and the
+       old reconciler did not exclude it).
+    2. No shipping hold entry — the shipping portion sat in 2100 instead of
+       being moved to the dedicated 2200 holding account at payment time.
+    3. No shipping release entry — nothing debited 2200 / credited 1100 at
+       delivery to reflect paying the bus driver.
+
+    This migration iterates every delivered/completed bus order with
+    ``shipping_fee > 0`` and corrects all three:
+
+    a. **Revenue fix** — delegates to
+       :func:`_reconcile_order_revenue_entry`, which already excludes
+       ``shipping_fee`` from the recognized revenue for bus orders (Phase 3).
+       Stale entries are reconciled (locked → reversed, unlocked → deleted and
+       recreated) so the 2100 debit matches ``net_deposits − shipping_fee``.
+    b. **Hold entry** — when no ``order_shipping_hold`` journal entry exists for
+       the order, creates one moving the shipping portion from Customer
+       Deposits (2100) to Bus Shipping Held (2200): debit 2100, credit 2200.
+       This mirrors what the payment-time split (Phase 2) would have produced.
+    c. **Release entry** — delegates to
+       :func:`_sync_bus_shipping_release_entry`, which creates the
+       2200→1100 release entry (Phase 3, FR4) and is idempotent.
+
+    Idempotency (NFR2):
+
+    - Revenue reconciliation is idempotent (no-op when the 2100 debit already
+      matches ``net_deposits − shipping_fee``).
+    - The hold entry is skipped when an ``order_shipping_hold`` entry already
+      exists for the order.
+    - The release entry is idempotent by construction.
+
+    Non-bus orders and bus orders with ``shipping_fee == 0`` are untouched
+    (FR7 regression guard).
+    """
+    _seed_chart_of_accounts(conn)
+
+    from baker.services.journal_sync import (
+        _reconcile_order_revenue_entry,
+        _sync_bus_shipping_release_entry,
+    )
+
+    orders = conn.execute(
+        "SELECT id, order_ref, total_price, shipping_fee "
+        "FROM orders "
+        "WHERE status IN ('delivered', 'completed') "
+        "  AND delivery_type = 'bus' "
+        "  AND shipping_fee > 0"
+    ).fetchall()
+
+    deposits_account_id = _account_id_by_code(conn, CUSTOMER_DEPOSITS_CODE)
+    bus_shipping_account_id = _account_id_by_code(conn, BUS_SHIPPING_HELD_CODE)
+
+    for orow in orders:
+        order_id = int(orow["id"])
+        order_ref = orow["order_ref"]
+        shipping_fee = float(orow["shipping_fee"] or 0)
+        if shipping_fee <= 0:
+            continue
+
+        # (a) Fix the revenue entry: reconcile against net deposits minus the
+        # bus shipping fee (Phase 3 logic lives inside the reconciler).
+        _reconcile_order_revenue_entry(
+            conn,
+            order_id,
+            order_ref,
+            total_price=float(orow["total_price"] or 0),
+        )
+
+        # (b) Create the hold entry (2100 → 2200) if not already present.
+        # Skip when shipping is already held in 2200 — either via an earlier
+        # run of this backfill (order_shipping_hold entry exists) or via the
+        # Phase 2 payment-time split (payment_transaction entries crediting
+        # 2200). This keeps the backfill idempotent and avoids double-holding.
+        existing_hold = conn.execute(
+            "SELECT 1 FROM journal_entries "
+            "WHERE source_type = 'order_shipping_hold' AND source_id = ?",
+            (order_id,),
+        ).fetchone()
+        if not existing_hold:
+            from baker.services.journal_sync import _held_shipping_for_order
+
+            already_held = _held_shipping_for_order(conn, order_id)
+            if already_held < shipping_fee - 0.005:
+                _insert_journal_entry(
+                    conn,
+                    description=f"Bus shipping hold: {order_ref}",
+                    source_type="order_shipping_hold",
+                    source_id=order_id,
+                    lines=[
+                        (
+                            deposits_account_id,
+                            shipping_fee,
+                            0.0,
+                            "Rút ship bus khỏi cọc",
+                        ),
+                        (
+                            bus_shipping_account_id,
+                            0.0,
+                            shipping_fee,
+                            "Tiền ship bus giữ hộ",
+                        ),
+                    ],
+                )
+
+        # (c) Create the release entry (2200 → 1100). Idempotent by construction.
+        _sync_bus_shipping_release_entry(conn, order_id, order_ref)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4.1 (DG-192) — journal_entries.transaction_date column + re-backfill
+# ---------------------------------------------------------------------------
+
+
+def _migrate_v50_journal_transaction_date(conn):
+    """Add the ``transaction_date`` column to ``journal_entries`` and create an
+    index on it.
+
+    The column records the business event date an entry relates to (distinct
+    from the audit-only ``created_at`` INSERT timestamp). Existing rows get
+    ``transaction_date = ''`` here; migration v51 backfills them from their
+    source record dates. The default empty string keeps the column ``NOT NULL``
+    while allowing a deferred backfill, and the index supports the report/API/
+    lock queries that switch onto ``transaction_date`` in later phases.
+
+    Idempotent: uses ``_guard_add_column`` so re-running on an already-migrated
+    DB is a no-op, and ``CREATE INDEX IF NOT EXISTS`` guards the index.
+    """
+    _guard_add_column(
+        conn,
+        "journal_entries",
+        "transaction_date",
+        "transaction_date TEXT NOT NULL DEFAULT ''",
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_journal_entries_transaction_date "
+        "ON journal_entries(transaction_date)"
+    )
+
+
+def _backfill_journal_transaction_date(conn) -> None:
+    """Re-backfill ``transaction_date`` on existing ``journal_entries`` from
+    their source record dates.
+
+    Source-type → source-date mapping (FR10/FR11):
+
+    - ``expense`` → ``events.timestamp`` (via ``source_id`` = event id)
+    - ``payment_transaction`` → ``payment_transactions.created_at``
+    - ``order`` → ``orders.due_date`` (fallback ``orders.created_at``)
+    - ``order_cogs`` → ``orders.due_date`` (fallback ``orders.created_at``)
+    - ``waste_cogs`` → ``stock_movements.created_at`` (via ``source_id``)
+    - ``owner_capital``, ``owner_draw``, ``staff_reimburse`` → existing
+      ``created_at`` (no source record exists; INSERT time is the business date)
+    - ``reversal`` → existing ``created_at`` (reversals are corrected in
+      Phase 3 via ``_reverse_journal_entry`` copying the original entry's date)
+    - ``order_shipping_hold`` / ``order_shipping_release`` → ``orders.due_date``
+      (fallback ``orders.created_at``); these originated at order delivery time
+
+    Idempotent (AC10): entries whose ``transaction_date`` is already non-empty
+    are skipped, so re-running on a backfilled DB is a no-op.
+    """
+    conn.execute(
+        """
+        UPDATE journal_entries
+        SET transaction_date = (
+            SELECT e.timestamp
+            FROM events e
+            WHERE e.id = journal_entries.source_id
+        )
+        WHERE source_type = 'expense'
+          AND (transaction_date IS NULL OR transaction_date = '')
+        """
+    )
+    conn.execute(
+        """
+        UPDATE journal_entries
+        SET transaction_date = (
+            SELECT pt.created_at
+            FROM payment_transactions pt
+            WHERE pt.id = journal_entries.source_id
+        )
+        WHERE source_type = 'payment_transaction'
+          AND (transaction_date IS NULL OR transaction_date = '')
+        """
+    )
+    for source_type in ("order", "order_cogs", "order_shipping_hold",
+                        "order_shipping_release"):
+        conn.execute(
+            """
+            UPDATE journal_entries
+            SET transaction_date = COALESCE(
+                (SELECT o.due_date FROM orders o WHERE o.id = journal_entries.source_id),
+                (SELECT o.created_at FROM orders o WHERE o.id = journal_entries.source_id)
+            )
+            WHERE source_type = ?
+              AND (transaction_date IS NULL OR transaction_date = '')
+            """,
+            (source_type,),
+        )
+    conn.execute(
+        """
+        UPDATE journal_entries
+        SET transaction_date = (
+            SELECT sm.created_at
+            FROM stock_movements sm
+            WHERE sm.id = journal_entries.source_id
+        )
+        WHERE source_type = 'waste_cogs'
+          AND (transaction_date IS NULL OR transaction_date = '')
+        """
+    )
+    # Manual / reversal source types have no source record — use the existing
+    # created_at as the business date (FR6/FR12).
+    conn.execute(
+        """
+        UPDATE journal_entries
+        SET transaction_date = created_at
+        WHERE source_type IN (
+            'owner_capital', 'owner_draw', 'staff_reimburse', 'reversal'
+        )
+          AND (transaction_date IS NULL OR transaction_date = '')
+        """
+    )
+
+
+def _migrate_v51_backfill_journal_transaction_date(conn):
+    """Re-backfill existing journal entries with correct ``transaction_date``
+    from their source record dates (FR10/AC10).
+
+    Idempotent: only touches entries whose ``transaction_date`` is still empty.
+    Runs after v50 (which added the column) so all existing rows are populated.
+    """
+    _backfill_journal_transaction_date(conn)
+
+
+def _migrate_v52_reclassify_staff_advances_as_liabilities(conn):
+    """Reclassify staff advance accounts (1400 asset) → staff payables (2300
+    liability) for databases that already ran the v44 double-entry migration
+    with the old 1400 seed (DG-194).
+
+    On a v51-era database the chart of accounts seeded account 1400
+    ("Nhân viên ứng trước", asset, parent 1000) plus per-staff sub-accounts
+    14XX. The DG-194 seed now inserts 2300 ("Phải trả nhân viên", liability,
+    parent 2000) via INSERT OR IGNORE, which leaves the old 1400 parent and
+    its 14XX sub-accounts orphaned on existing databases.
+
+    This migration:
+      1. If 1400 exists and 2300 does not — UPDATE the 1400 row in place to
+         code=2300, type='liability', parent=2000, name="Phải trả nhân viên
+         (Staff Payables)".
+      2. If both 1400 and 2300 exist (insert-before-migrate edge case) — move
+         any 14XX sub-accounts under 2300, then delete the orphaned 1400
+         parent.
+      3. For each 14XX sub-account: reparent to the 2300 account, change type
+         to 'liability', and renumber the code from 14XX → 23XX (zero-padded
+         sequential index under 2300 to avoid colliding with seed-created
+         23XX sub-accounts).
+      4. If neither 1400 nor 2300 exists — no-op; seeding handles fresh DBs.
+
+    Idempotent: re-running on an already-migrated DB finds no 1400 account and
+    no 14XX sub-accounts, so every branch is a no-op.
+    """
+    parent_1400 = conn.execute(
+        "SELECT id FROM accounts WHERE code = '1400'"
+    ).fetchone()
+    parent_2300 = conn.execute(
+        "SELECT id FROM accounts WHERE code = ?", (STAFF_PAYABLES_CODE,)
+    ).fetchone()
+
+    if parent_1400 is None and parent_2300 is None:
+        # Fresh install — seeding (INSERT OR IGNORE) handles COA. Nothing to do.
+        return
+
+    if parent_1400 is None:
+        # Already migrated (no 1400, 2300 present). No-op.
+        return
+
+    old_parent_id = int(parent_1400[0])
+
+    if parent_2300 is None:
+        # Case 1: reclassify the 1400 row in place to become 2300.
+        liabilities_root = conn.execute(
+            "SELECT id FROM accounts WHERE code = '2000'"
+        ).fetchone()
+        parent_id = int(liabilities_root[0]) if liabilities_root else None
+        conn.execute(
+            "UPDATE accounts SET code = ?, name = ?, type = 'liability', "
+            "parent_id = ? WHERE id = ?",
+            (
+                STAFF_PAYABLES_CODE,
+                "Phải trả nhân viên (Staff Payables)",
+                parent_id,
+                old_parent_id,
+            ),
+        )
+        new_parent_id = old_parent_id
+    else:
+        # Case 2: 2300 already present (insert-before-migrate). Keep 2300 as
+        # the parent and remove the orphaned 1400 parent after reparenting.
+        new_parent_id = int(parent_2300[0])
+
+    # Reparent and renumber each 14XX sub-account. Codes are rewritten to
+    # 23XX using a zero-padded sequential index starting after any existing
+    # 23XX sub-accounts so we never collide with seed- or backfill-created
+    # payables.
+    existing_count_row = conn.execute(
+        "SELECT COUNT(*) FROM accounts WHERE parent_id = ?", (new_parent_id,)
+    ).fetchone()
+    next_idx = int(existing_count_row[0]) if existing_count_row else 0
+
+    subs = conn.execute(
+        "SELECT id, name FROM accounts WHERE parent_id = ? ORDER BY id",
+        (old_parent_id,),
+    ).fetchall()
+    for sub in subs:
+        next_idx += 1
+        new_code = f"23{next_idx:02d}"
+        conn.execute(
+            "UPDATE accounts SET code = ?, type = 'liability', parent_id = ? "
+            "WHERE id = ?",
+            (new_code, new_parent_id, int(sub["id"])),
+        )
+
+    if parent_2300 is not None:
+        # Case 2 cleanup: the 1400 parent is now empty (all subs reparented).
+        conn.execute("DELETE FROM accounts WHERE id = ?", (old_parent_id,))
+
+
+def _migrate_v53_payment_transaction_invalidation(conn):
+    """Add soft-delete (invalidation) columns to ``payment_transactions``.
+
+    Mirrors the v43 events soft-delete pattern (``deleted_at``/``deleted_by``):
+    invalidation is a soft-delete that preserves the row for audit while
+    excluding it from payment totals, completion guards, and journal listings.
+
+    Adds ``invalidated_at TEXT`` (NULL = valid) and ``invalidated_by TEXT
+    DEFAULT ''`` plus an index on ``invalidated_at`` for fast filtering of
+    valid (non-NULL) rows.
+
+    Idempotent: re-running on an already-migrated DB is a no-op because
+    ``_guard_add_column`` checks ``PRAGMA table_info`` before altering and
+    ``CREATE INDEX IF NOT EXISTS`` skips existing indexes.
+    """
+    _guard_add_column(conn, "payment_transactions", "invalidated_at", "invalidated_at TEXT")
+    _guard_add_column(
+        conn, "payment_transactions", "invalidated_by", "invalidated_by TEXT DEFAULT ''"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_payment_transactions_invalidated_at "
+        "ON payment_transactions(invalidated_at)"
+    )
+
+
+def _migrate_v54_add_account_2400(conn):
+    """Ensure account 2400 (Tien Rut Held) exists in chart of accounts.
+
+    DG-199 Phase 4.2. This calls the existing _seed_chart_of_accounts() which
+    uses INSERT OR IGNORE for every account, so re-running v54 on an
+    already-migrated DB is a no-op (idempotent by design).
+    """
+    _seed_chart_of_accounts(conn)
+
+
+COST_HISTORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS cost_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id      INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    cost            REAL NOT NULL DEFAULT 0,
+    effective_from  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_cost_history_product_effective
+    ON cost_history(product_id, effective_from);
+"""
+
+# Category slug for accessories. Costs for these products default to 100% of
+# base_price when no cost_history record exists; all other categories use 30%.
+PHU_KIEN_CATEGORY = "phu_kien"
+
+
+def _baseline_cost_for_product(category: str, base_price: float) -> float:
+    """Baseline cost: 30% of base_price for non-phụ-kiện, 100% for phụ kiện."""
+    if category == PHU_KIEN_CATEGORY:
+        return float(base_price)
+    return round(float(base_price) * 0.30, 2)
+
+
+def _backfill_order_items_cost_at_sale(conn) -> None:
+    """Populate cost_at_sale on existing delivered order_items using the
+    baseline rule (30% non-phụ-kiện / 100% phụ-kiện of base_price).
+
+    Idempotent: only updates order_items whose cost_at_sale is 0. Cost_history
+    is not consulted at backfill time because historical cost records do not
+    exist before this migration; the baseline rule is the documented estimate.
+    """
+    rows = conn.execute(
+        """
+        SELECT oi.id AS item_id, p.category, p.base_price
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        LEFT JOIN products p ON CAST(oi.product_id AS INTEGER) = p.id
+        WHERE o.status = 'delivered'
+          AND oi.is_extra = 0
+          AND oi.is_gift = 0
+          AND (oi.cost_at_sale IS NULL OR oi.cost_at_sale = 0)
+        """
+    ).fetchall()
+    for row in rows:
+        category = row["category"] if row["category"] is not None else ""
+        base_price = float(row["base_price"] or 0)
+        cost = _baseline_cost_for_product(category, base_price)
+        if cost > 0:
+            conn.execute(
+                "UPDATE order_items SET cost_at_sale = ? WHERE id = ?",
+                (cost, int(row["item_id"])),
+            )
+
+
+def _migrate_v45_cost_history_and_cost_at_sale(conn):
+    """Create cost_history table, add cost_at_sale column to order_items, and
+    backfill existing delivered order_items with baseline costs.
+
+    Idempotent: re-running on an already-migrated DB produces no errors and no
+    duplicate data. The cost_history table uses CREATE TABLE IF NOT EXISTS; the
+    cost_at_sale column is added via _guard_add_column; the backfill UPDATE only
+    touches rows whose cost_at_sale is still 0 (NULL treated as 0)."""
+    conn.executescript(COST_HISTORY_SCHEMA)
+    _guard_add_column(conn, "order_items", "cost_at_sale", "cost_at_sale REAL DEFAULT 0")
+    _backfill_order_items_cost_at_sale(conn)
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -1655,7 +2807,62 @@ MIGRATIONS = {
         "sql": "",
         "callable": _migrate_v43_event_history_and_soft_delete,
     },
-}
+    44: {
+        "description": "Double-entry accounting: accounts, journal_entries, journal_lines, chart of accounts seed, backfill historical entries",
+        "sql": "",
+        "callable": _migrate_v44_double_entry_accounting,
+    },
+    45: {
+        "description": "Cost data foundation: cost_history table, order_items.cost_at_sale column, backfill delivered order_items with baseline costs",
+        "sql": "",
+         "callable": _migrate_v45_cost_history_and_cost_at_sale,
+     },
+     46: {
+         "description": "One-time fix: backfill journal entry for old-format expense event #25 (pre-standardization data)",
+         "sql": "",
+         "callable": _migrate_v46_fix_old_expense_journal,
+     },
+     47: {
+         "description": "One-time fix: delete and re-create stale order_cogs entries generated with old cost resolver (no baseline fallback)",
+         "sql": "",
+         "callable": _migrate_v47_fix_stale_cogs_entries,
+     },
+     48: {
+         "description": "One-time fix: re-route Nguyên liệu and Bao bì expense journal entries to debit Inventory (1300) instead of expense accounts",
+         "sql": "",
+         "callable": _migrate_v48_fix_inventory_purchase_entries,
+     },
+     49: {
+         "description": "Bus shipping accounting backfill: fix revenue entries, create hold+release entries for delivered bus orders",
+         "sql": "",
+         "callable": _migrate_v49_bus_shipping_backfill,
+     },
+     50: {
+         "description": "Add transaction_date column + index to journal_entries (DG-192 Phase 4.1)",
+         "sql": "",
+         "callable": _migrate_v50_journal_transaction_date,
+     },
+    51: {
+        "description": "Re-backfill journal_entries.transaction_date from source record dates (DG-192 Phase 4.1)",
+        "sql": "",
+        "callable": _migrate_v51_backfill_journal_transaction_date,
+    },
+    52: {
+        "description": "Reclassify staff advance accounts (1400 asset) to staff payables (2300 liability) — DG-194 review remediation",
+        "sql": "",
+        "callable": _migrate_v52_reclassify_staff_advances_as_liabilities,
+    },
+     53: {
+         "description": "Add invalidated_at/invalidated_by soft-delete columns to payment_transactions — DG-196 payment transaction invalidation",
+         "sql": "",
+         "callable": _migrate_v53_payment_transaction_invalidation,
+     },
+     54: {
+         "description": "Ensure account 2400 (Tien Rut Held) exists in chart of accounts — DG-199 Phase 4.2",
+         "sql": "",
+         "callable": _migrate_v54_add_account_2400,
+     },
+ }
 
 
 def ensure_schema(conn):

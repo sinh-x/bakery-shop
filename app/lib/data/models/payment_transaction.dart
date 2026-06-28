@@ -13,6 +13,8 @@ sealed class PaymentTransaction with _$PaymentTransaction {
     required double amount,
     @JsonKey(name: 'note') @Default('') String notes,
     String? createdAt,
+    String? invalidatedAt,
+    @Default('') String invalidatedBy,
   }) = _PaymentTransaction;
 
   factory PaymentTransaction.fromJson(Map<String, dynamic> json) =>

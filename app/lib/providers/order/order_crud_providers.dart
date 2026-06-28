@@ -433,6 +433,33 @@ class OrderPaymentTransactionsNotifier
     state = AsyncData(current.where((t) => t.id != txnId).toList());
     ref.read(orderDetailProvider(orderRef).notifier).refresh();
   }
+
+  Future<PaymentTransaction> invalidate(
+    String txnId, {
+    String reason = '',
+  }) async {
+    final service = ref.read(paymentTransactionServiceProvider);
+    final invalidatedBy = ref.read(loggedByProvider);
+    final updated = await service.invalidateTransaction(
+      orderRef,
+      txnId,
+      invalidatedBy: invalidatedBy,
+      reason: reason,
+    );
+    final current = state.value ?? [];
+    state = AsyncData(current.map((t) => t.id == txnId ? updated : t).toList());
+    ref.read(orderDetailProvider(orderRef).notifier).refresh();
+    return updated;
+  }
+
+  Future<PaymentTransaction> restore(String txnId) async {
+    final service = ref.read(paymentTransactionServiceProvider);
+    final updated = await service.restoreTransaction(orderRef, txnId);
+    final current = state.value ?? [];
+    state = AsyncData(current.map((t) => t.id == txnId ? updated : t).toList());
+    ref.read(orderDetailProvider(orderRef).notifier).refresh();
+    return updated;
+  }
 }
 
 final orderPaymentTransactionsProvider =

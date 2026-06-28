@@ -289,7 +289,7 @@ class Order:
 
         if conn is not None:
             from baker.models.payment_transaction import PaymentTransaction
-            amount_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, row["id"])
+            amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, row["id"])
         else:
             amount_paid = row["amount_paid"] or 0.0
 

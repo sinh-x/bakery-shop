@@ -1,7 +1,13 @@
 import json
 
 from baker.db.connection import get_db
-from baker.db.schema import MIGRATIONS, PRINT_LOG_AND_PRINTED_BY_SCHEMA, ensure_schema
+from baker.db.schema import (
+    BUS_SHIPPING_HELD_CODE,
+    CUSTOMER_DEPOSITS_CODE,
+    MIGRATIONS,
+    PRINT_LOG_AND_PRINTED_BY_SCHEMA,
+    ensure_schema,
+)
 
 
 def _migrate_to_version(conn, target_version: int) -> None:
@@ -360,7 +366,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 43
+        assert _migrated_version(conn) == 54
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -377,7 +383,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 43
+        assert _migrated_version(conn) == 54
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -391,10 +397,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 43
+        assert _migrated_version(conn) == 54
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 43
+        assert _migrated_version(conn) == 54
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -732,3 +738,1706 @@ def test_schema_migration_v43_no_expense_events_is_noop():
 
         audit_count = conn.execute("SELECT COUNT(*) FROM event_history").fetchone()[0]
         assert audit_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Migration v44 — Double-entry accounting
+# ---------------------------------------------------------------------------
+
+
+def _assert_accounts_table(conn) -> None:
+    columns = _schema_columns(conn, "accounts")
+    assert set(columns) >= {
+        "id",
+        "code",
+        "name",
+        "type",
+        "parent_id",
+        "is_active",
+        "created_at",
+    }
+    assert columns["code"]["notnull"] == 1
+    assert columns["name"]["notnull"] == 1
+    assert columns["type"]["notnull"] == 1
+    # code must be unique
+    index_rows = conn.execute("PRAGMA index_list(accounts)").fetchall()
+    index_names = [row["name"] for row in index_rows]
+    assert "sqlite_autoindex_accounts_1" in index_names or any(
+        "unique" in str(row).lower() for row in index_rows
+    )
+    # parent_id self-reference
+    fk_rows = conn.execute("PRAGMA foreign_key_list(accounts)").fetchall()
+    parent_fks = [fk for fk in fk_rows if fk["from"] == "parent_id"]
+    assert len(parent_fks) == 1
+    assert parent_fks[0]["table"] == "accounts"
+
+
+def _assert_journal_entries_table(conn) -> None:
+    columns = _schema_columns(conn, "journal_entries")
+    assert set(columns) >= {
+        "id",
+        "description",
+        "created_at",
+        "source_type",
+        "source_id",
+        "locked_at",
+        "locked_by",
+    }
+    assert columns["description"]["notnull"] == 1
+    assert columns["source_type"]["notnull"] == 1
+    # source_id is nullable
+    assert columns["source_id"]["notnull"] == 0
+    assert columns["locked_at"]["notnull"] == 0
+
+    index_rows = conn.execute("PRAGMA index_list(journal_entries)").fetchall()
+    index_names = [row["name"] for row in index_rows]
+    assert "idx_journal_entries_created" in index_names
+    assert "idx_journal_entries_source" in index_names
+
+
+def _assert_journal_lines_table(conn) -> None:
+    columns = _schema_columns(conn, "journal_lines")
+    assert set(columns) >= {
+        "id",
+        "journal_entry_id",
+        "account_id",
+        "debit",
+        "credit",
+        "description",
+    }
+    for name in ("journal_entry_id", "account_id", "debit", "credit"):
+        assert columns[name]["notnull"] == 1
+
+    fk_rows = conn.execute("PRAGMA foreign_key_list(journal_lines)").fetchall()
+    fk_tables = {(fk["from"], fk["table"], fk["on_delete"]) for fk in fk_rows}
+    assert ("journal_entry_id", "journal_entries", "CASCADE") in fk_tables
+    assert ("account_id", "accounts", "NO ACTION") in fk_tables
+
+    index_rows = conn.execute("PRAGMA index_list(journal_lines)").fetchall()
+    index_names = [row["name"] for row in index_rows]
+    assert "idx_journal_lines_entry" in index_names
+    assert "idx_journal_lines_account" in index_names
+
+
+# Expected chart of accounts seeded by v44.
+_EXPECTED_COA = {
+    "1000": ("Tài sản", "asset", None),
+    "1100": ("Tiền mặt (Cash on Hand)", "asset", "1000"),
+    "1200": ("Tài khoản ngân hàng (Bank Account)", "asset", "1000"),
+    "1300": ("Hàng tồn kho (Inventory)", "asset", "1000"),
+    "2000": ("Nợ phải trả", "liability", None),
+    "2100": ("Tiền khách đặt cọc (Customer Deposits)", "liability", "2000"),
+    "2200": ("Tiền ship bus giữ hộ (Bus Shipping Held)", "liability", "2000"),
+    "2300": ("Phải trả nhân viên (Staff Payables)", "liability", "2000"),
+    "3000": ("Vốn chủ sở hữu", "equity", None),
+    "3100": ("Vốn chủ sở hữu (Owner's Equity)", "equity", "3000"),
+    "4000": ("Doanh thu", "income", None),
+    "4100": ("Doanh thu bán hàng (Order Revenue)", "income", "4000"),
+    "5000": ("Chi phí", "expense", None),
+    "5100": ("Nguyên liệu (Ingredients)", "expense", "5000"),
+    "5200": ("Bao bì (Packaging)", "expense", "5000"),
+    "5300": ("Vận chuyển (Delivery/Shipping)", "expense", "5000"),
+    "5400": ("Điện/nước (Utilities)", "expense", "5000"),
+    "5500": ("Dụng cụ (Tools)", "expense", "5000"),
+    "5600": ("Sửa chữa (Equipment Maintenance)", "expense", "5000"),
+    "5700": ("Lương/phụ cấp (Staff Salary)", "expense", "5000"),
+    "5800": ("Khác (Other Expenses)", "expense", "5000"),
+    "5900": ("Giá vốn hàng bán (COGS)", "expense", "5000"),
+}
+
+
+def _assert_seed_coa(conn) -> None:
+    rows = conn.execute("SELECT * FROM accounts ORDER BY code").fetchall()
+    by_code = {row["code"]: row for row in rows}
+    for code, (name, acc_type, parent_code) in _EXPECTED_COA.items():
+        assert code in by_code, f"Missing account code {code}"
+        row = by_code[code]
+        assert row["name"] == name, f"{code}: name {row['name']!r} != {name!r}"
+        assert row["type"] == acc_type, f"{code}: type {row['type']!r} != {acc_type!r}"
+        if parent_code:
+            assert parent_code in by_code, f"Parent {parent_code} missing"
+            assert row["parent_id"] == by_code[parent_code]["id"]
+        else:
+            assert row["parent_id"] is None
+        assert row["is_active"] == 1
+    # At least the required minimum accounts per AC8
+    assert len(rows) >= 21
+
+
+def _seed_expense_event(
+    conn,
+    *,
+    amount_vnd=50000,
+    category="Nguyên liệu",
+    payment_source="Shop tiền mặt",
+    paid_by_name="",
+    summary="Test expense",
+):
+    data = json.dumps(
+        {
+            "amount_vnd": amount_vnd,
+            "category": category,
+            "payment_method": "TM",
+            "payment_source": payment_source,
+            "vendor": "NCC A",
+            "note": "",
+            "paid_by_name": paid_by_name,
+        }
+    )
+    cursor = conn.execute(
+        "INSERT INTO events (type, summary, data, logged_by, timestamp) "
+        "VALUES ('expense', ?, ?, '', '2026-06-22T10:00:00+07:00')",
+        (summary, data),
+    )
+    return int(cursor.lastrowid)
+
+
+def _seed_payment_transaction(
+    conn, order_id, amount=200000, type_="deposit", method="cash"
+):
+    cursor = conn.execute(
+        "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+        "VALUES (?, ?, ?, ?, '')",
+        (order_id, amount, type_, method),
+    )
+    return int(cursor.lastrowid)
+
+
+def _seed_order_with_items(conn, *, product_cost=5000, qty=2, status="delivered"):
+    # Order
+    cursor = conn.execute(
+        "INSERT INTO orders (order_ref, customer_name, items, total_price, status) "
+        "VALUES ('ORD-TEST-001', 'Khách test', '[]', 100000, ?)",
+        (status,),
+    )
+    order_id = int(cursor.lastrowid)
+    # Product
+    cursor = conn.execute(
+        "INSERT INTO products (name, category, base_price, cost, recipe_notes) "
+        "VALUES ('Bánh test', 'banh_mi', 10000, ?, '')",
+        (product_cost,),
+    )
+    product_id = int(cursor.lastrowid)
+    # Order item with product_id as string (matches app convention)
+    conn.execute(
+        "INSERT INTO order_items "
+        "(order_id, product_id, product_name, quantity, unit_price, position) "
+        "VALUES (?, ?, 'Bánh test', ?, 50000, 0)",
+        (order_id, str(product_id), qty),
+    )
+    return order_id, product_id
+
+
+def _assert_double_entry_integrity(conn) -> None:
+    """Every journal entry has total debit == total credit."""
+    rows = conn.execute(
+        """
+        SELECT je.id, SUM(jl.debit) AS total_debit, SUM(jl.credit) AS total_credit
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        GROUP BY je.id
+        """
+    ).fetchall()
+    assert len(rows) > 0, "No journal entries to verify"
+    for row in rows:
+        delta = abs(float(row["total_debit"]) - float(row["total_credit"]))
+        assert delta < 0.005, (
+            f"Entry {row['id']}: debit {row['total_debit']} != credit {row['total_credit']}"
+        )
+
+
+def test_v44_accounts_table():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        _migrate_to_version(conn, 44)
+        assert _migrated_version(conn) == 44
+        _assert_accounts_table(conn)
+
+
+def test_v44_journal_entries_table():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _assert_journal_entries_table(conn)
+
+
+def test_v44_journal_lines_table():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _assert_journal_lines_table(conn)
+
+
+def test_v44_seed_coa():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _assert_seed_coa(conn)
+
+
+def test_v44_seed_coa_idempotent():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        account_count = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+        # Re-run callable (simulates re-migration safety)
+        from baker.db.schema import _migrate_v44_double_entry_accounting
+
+        _migrate_v44_double_entry_accounting(conn)
+        account_count_after = conn.execute(
+            "SELECT COUNT(*) FROM accounts"
+        ).fetchone()[0]
+        assert account_count == account_count_after
+
+
+def test_v44_backfill_expenses():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        event_id = _seed_expense_event(
+            conn,
+            amount_vnd=50000,
+            category="Nguyên liệu",
+            payment_source="Shop tiền mặt",
+            summary="Expense cash",
+        )
+        event_id_bank = _seed_expense_event(
+            conn,
+            amount_vnd=30000,
+            category="Điện/nước",
+            payment_source="TK Phượng VCB",
+            summary="Expense bank",
+        )
+
+        _migrate_to_version(conn, 44)
+        assert _migrated_version(conn) == 44
+
+        # Two expense journal entries
+        entries = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type = 'expense' ORDER BY id"
+        ).fetchall()
+        assert len(entries) == 2
+
+        # Cash expense: debit 1300 (Inventory — Nguyên liệu is inventory purchase), credit 1100 (Cash)
+        cash_entry = next(e for e in entries if e["source_id"] == event_id)
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id = ? ORDER BY id",
+            (cash_entry["id"],),
+        ).fetchall()
+        assert len(lines) == 2
+        debit_line = next(l for l in lines if float(l["debit"]) > 0)
+        credit_line = next(l for l in lines if float(l["credit"]) > 0)
+        assert float(debit_line["debit"]) == 50000
+        assert float(credit_line["credit"]) == 50000
+        # account codes
+        debit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id = ?", (debit_line["account_id"],)
+        ).fetchone()["code"]
+        credit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id = ?", (credit_line["account_id"],)
+        ).fetchone()["code"]
+        assert debit_acc == "1300"
+        assert credit_acc == "1100"
+
+        # Bank expense: credit 1200 (Bank Account)
+        bank_entry = next(e for e in entries if e["source_id"] == event_id_bank)
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id = ?",
+            (bank_entry["id"],),
+        ).fetchall()
+        credit_line = next(l for l in lines if float(l["credit"]) > 0)
+        credit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id = ?", (credit_line["account_id"],)
+        ).fetchone()["code"]
+        assert credit_acc == "1200"
+
+        _assert_double_entry_integrity(conn)
+
+
+def test_v44_backfill_expense_staff_advance_creates_sub_account():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        # Seed staff
+        conn.execute("INSERT OR IGNORE INTO staff (name, role) VALUES ('Ân', 'staff')")
+        event_id = _seed_expense_event(
+            conn,
+            amount_vnd=40000,
+            category="Lương/phụ cấp",
+            payment_source="Nhân viên ứng trước",
+            paid_by_name="Ân",
+            summary="Staff advance Ân",
+        )
+
+        _migrate_to_version(conn, 44)
+
+        # Sub-account created under 2300
+        parent = conn.execute(
+            "SELECT id FROM accounts WHERE code = '2300'"
+        ).fetchone()
+        subs = conn.execute(
+            "SELECT * FROM accounts WHERE parent_id = ? ORDER BY id",
+            (parent["id"],),
+        ).fetchall()
+        assert len(subs) == 1
+        assert subs[0]["name"] == "Ân"
+        # AC1/AC2: sub-account is a 23XX liability under 2300
+        assert subs[0]["code"].startswith("23")
+        assert subs[0]["type"] == "liability"
+        assert subs[0]["parent_id"] == parent["id"]
+
+        # Journal entry credit goes to the staff sub-account
+        entry = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type='expense' AND source_id=?",
+            (event_id,),
+        ).fetchone()
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id = ?", (entry["id"],)
+        ).fetchall()
+        credit_line = next(l for l in lines if float(l["credit"]) > 0)
+        assert credit_line["account_id"] == subs[0]["id"]
+        _assert_double_entry_integrity(conn)
+
+
+def test_v44_backfill_payments():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        # Need an order for FK
+        cursor = conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, items, total_price, status) "
+            "VALUES ('ORD-P-001', 'Khách p', '[]', 200000, 'new')"
+        )
+        order_id = int(cursor.lastrowid)
+
+        pt_cash = _seed_payment_transaction(
+            conn, order_id, amount=200000, type_="deposit", method="cash"
+        )
+        pt_transfer = _seed_payment_transaction(
+            conn, order_id, amount=50000, type_="payment", method="transfer"
+        )
+        pt_refund = _seed_payment_transaction(
+            conn, order_id, amount=10000, type_="refund", method="cash"
+        )
+
+        _migrate_to_version(conn, 44)
+
+        entries = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type='payment_transaction' "
+            "ORDER BY id"
+        ).fetchall()
+        assert len(entries) == 3
+
+        # deposit cash: debit 1100, credit 2100
+        dep_entry = next(e for e in entries if e["source_id"] == pt_cash)
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id=?",
+            (dep_entry["id"],),
+        ).fetchall()
+        debit_line = next(l for l in lines if float(l["debit"]) > 0)
+        credit_line = next(l for l in lines if float(l["credit"]) > 0)
+        debit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (debit_line["account_id"],)
+        ).fetchone()["code"]
+        credit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (credit_line["account_id"],)
+        ).fetchone()["code"]
+        assert debit_acc == "1100"
+        assert credit_acc == "2100"
+        assert float(debit_line["debit"]) == 200000
+
+        # transfer payment: debit 1200
+        tr_entry = next(e for e in entries if e["source_id"] == pt_transfer)
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id=?",
+            (tr_entry["id"],),
+        ).fetchall()
+        debit_line = next(l for l in lines if float(l["debit"]) > 0)
+        debit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (debit_line["account_id"],)
+        ).fetchone()["code"]
+        assert debit_acc == "1200"
+
+        # refund: debit 2100, credit 1100 (reversed)
+        rf_entry = next(e for e in entries if e["source_id"] == pt_refund)
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id=?",
+            (rf_entry["id"],),
+        ).fetchall()
+        debit_line = next(l for l in lines if float(l["debit"]) > 0)
+        credit_line = next(l for l in lines if float(l["credit"]) > 0)
+        debit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (debit_line["account_id"],)
+        ).fetchone()["code"]
+        credit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (credit_line["account_id"],)
+        ).fetchone()["code"]
+        assert debit_acc == "2100"
+        assert credit_acc == "1100"
+
+        _assert_double_entry_integrity(conn)
+
+
+def test_v44_backfill_delivered_orders():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        order_id, product_id = _seed_order_with_items(
+            conn, product_cost=5000, qty=2, status="delivered"
+        )
+        # payment to create revenue conversion
+        _seed_payment_transaction(
+            conn, order_id, amount=120000, type_="full_payment", method="cash"
+        )
+
+        _migrate_to_version(conn, 44)
+
+        # Revenue conversion entry
+        rev_entry = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type='order' AND source_id=?",
+            (order_id,),
+        ).fetchone()
+        assert rev_entry is not None
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id=?",
+            (rev_entry["id"],),
+        ).fetchall()
+        debit_line = next(l for l in lines if float(l["debit"]) > 0)
+        credit_line = next(l for l in lines if float(l["credit"]) > 0)
+        debit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (debit_line["account_id"],)
+        ).fetchone()["code"]
+        credit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (credit_line["account_id"],)
+        ).fetchone()["code"]
+        assert debit_acc == "2100"  # Customer Deposits
+        assert credit_acc == "4100"  # Order Revenue
+        assert float(debit_line["debit"]) == 120000
+
+        # COGS entry: cost 5000 * qty 2 = 10000; debit 5900, credit 1300
+        cogs_entry = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type='order_cogs' AND source_id=?",
+            (order_id,),
+        ).fetchone()
+        assert cogs_entry is not None
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id=?",
+            (cogs_entry["id"],),
+        ).fetchall()
+        debit_line = next(l for l in lines if float(l["debit"]) > 0)
+        credit_line = next(l for l in lines if float(l["credit"]) > 0)
+        debit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (debit_line["account_id"],)
+        ).fetchone()["code"]
+        credit_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id=?", (credit_line["account_id"],)
+        ).fetchone()["code"]
+        assert debit_acc == "5900"
+        assert credit_acc == "1300"
+        assert float(debit_line["debit"]) == 10000
+
+        _assert_double_entry_integrity(conn)
+
+
+def test_v44_backfill_delivered_order_zero_cost_skips_cogs():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        order_id, _ = _seed_order_with_items(
+            conn, product_cost=0, qty=3, status="delivered"
+        )
+        _seed_payment_transaction(conn, order_id, amount=50000)
+
+        _migrate_to_version(conn, 44)
+
+        cogs_count = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries "
+            "WHERE source_type='order_cogs' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0]
+        assert cogs_count == 0
+
+
+def test_v44_double_entry_integrity():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        # Seed a mix of data
+        _seed_expense_event(conn, amount_vnd=50000, category="Bao bì")
+        _seed_expense_event(
+            conn,
+            amount_vnd=40000,
+            category="Vận chuyển",
+            payment_source="TK Ân VCB",
+        )
+        order_id, _ = _seed_order_with_items(
+            conn, product_cost=3000, qty=2, status="delivered"
+        )
+        _seed_payment_transaction(conn, order_id, amount=80000, method="transfer")
+        _seed_payment_transaction(
+            conn, order_id, amount=20000, type_="tien_rut", method="cash"
+        )
+
+        _migrate_to_version(conn, 44)
+        _assert_double_entry_integrity(conn)
+
+
+def test_v44_fresh_db_seeds_coa_and_no_backfill():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        assert _migrated_version(conn) == 44
+        _assert_seed_coa(conn)
+        # No historical data → no journal entries
+        entry_count = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries"
+        ).fetchone()[0]
+        assert entry_count == 0
+
+
+# ---------------------------------------------------------------------------
+# v45 — cost_history table, order_items.cost_at_sale column, baseline backfill
+# ---------------------------------------------------------------------------
+
+
+def _assert_cost_history_schema(conn) -> None:
+    columns = _schema_columns(conn, "cost_history")
+    assert set(columns) >= {
+        "id",
+        "product_id",
+        "cost",
+        "effective_from",
+        "created_at",
+    }
+    # product_id and cost and effective_from must be NOT NULL
+    assert columns["product_id"]["notnull"] == 1
+    assert columns["cost"]["notnull"] == 1
+    assert columns["effective_from"]["notnull"] == 1
+
+    # FK to products with ON DELETE CASCADE
+    fk_rows = conn.execute("PRAGMA foreign_key_list(cost_history)").fetchall()
+    assert len(fk_rows) == 1
+    fk = fk_rows[0]
+    assert fk["table"] == "products"
+    assert fk["from"] == "product_id"
+    assert fk["to"] == "id"
+    assert fk["on_delete"] == "CASCADE"
+
+    # Index on (product_id, effective_from)
+    index_rows = conn.execute("PRAGMA index_list(cost_history)").fetchall()
+    index_names = [row["name"] for row in index_rows]
+    assert "idx_cost_history_product_effective" in index_names
+    index_info = conn.execute(
+        "PRAGMA index_info(idx_cost_history_product_effective)"
+    ).fetchall()
+    index_columns = [row["name"] for row in index_info]
+    assert index_columns == ["product_id", "effective_from"]
+
+
+def _assert_order_items_cost_at_sale(conn) -> None:
+    columns = _schema_columns(conn, "order_items")
+    assert "cost_at_sale" in columns
+    # Nullable/defaults to 0 for non-delivered items
+    assert columns["cost_at_sale"]["dflt_value"] == "0"
+
+
+def _seed_order_with_item(
+    conn,
+    *,
+    product_cost=5000,
+    product_category="banh_mi",
+    base_price=10000,
+    qty=2,
+    status="delivered",
+    is_extra=0,
+    is_gift=0,
+    order_ref="ORD-V45-001",
+):
+    """Seed an order + product + order_item and return (order_id, product_id, item_id).
+
+    Product name is derived from order_ref to satisfy the UNIQUE constraint on
+    products.name when multiple items are seeded in one test.
+    """
+    cursor = conn.execute(
+        "INSERT INTO orders (order_ref, customer_name, items, total_price, status) "
+        "VALUES (?, 'Khách v45', '[]', 100000, ?)",
+        (order_ref, status),
+    )
+    order_id = int(cursor.lastrowid)
+    product_name = f"Bánh {order_ref}"
+    cursor = conn.execute(
+        "INSERT INTO products (name, category, base_price, cost, recipe_notes) "
+        "VALUES (?, ?, ?, ?, '')",
+        (product_name, product_category, base_price, product_cost),
+    )
+    product_id = int(cursor.lastrowid)
+    cursor = conn.execute(
+        "INSERT INTO order_items "
+        "(order_id, product_id, product_name, quantity, unit_price, position, is_extra, is_gift) "
+        "VALUES (?, ?, ?, ?, 50000, 0, ?, ?)",
+        (order_id, str(product_id), product_name, qty, is_extra, is_gift),
+    )
+    item_id = int(cursor.lastrowid)
+    return order_id, product_id, item_id
+
+
+def test_v45_fresh_db():
+    with get_db() as conn:
+        _migrate_to_version(conn, 45)
+        assert _migrated_version(conn) == 45
+        _assert_cost_history_schema(conn)
+        _assert_order_items_cost_at_sale(conn)
+
+
+def test_v45_incremental_from_v44():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        assert _migrated_version(conn) == 44
+        # No cost_history table, no cost_at_sale column yet
+        tables = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        assert "cost_history" not in tables
+        cols = _schema_columns(conn, "order_items")
+        assert "cost_at_sale" not in cols
+
+        _migrate_to_version(conn, 45)
+        assert _migrated_version(conn) == 45
+        _assert_cost_history_schema(conn)
+        _assert_order_items_cost_at_sale(conn)
+
+
+def test_v45_idempotent():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        # Seed a delivered order with an item (backfill target)
+        _, _, item_id = _seed_order_with_item(
+            conn, product_cost=0, base_price=10000, qty=2, status="delivered"
+        )
+        _migrate_to_version(conn, 45)
+        assert _migrated_version(conn) == 45
+        # Capture backfilled cost
+        cost_after_first = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()["cost_at_sale"]
+        assert float(cost_after_first) == 3000.0  # 30% of 10000
+
+        # Re-run the v45 callable directly (simulates re-migration)
+        from baker.db.schema import _migrate_v45_cost_history_and_cost_at_sale
+
+        _migrate_v45_cost_history_and_cost_at_sale(conn)
+
+        # Schema still valid
+        _assert_cost_history_schema(conn)
+        _assert_order_items_cost_at_sale(conn)
+        # No duplicate data: cost_at_sale unchanged (not re-zeroed)
+        cost_after_second = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()["cost_at_sale"]
+        assert float(cost_after_second) == 3000.0
+        # cost_history table exists but no rows inserted by backfill (baseline is query-time)
+        ch_count = conn.execute("SELECT COUNT(*) FROM cost_history").fetchone()[0]
+        assert ch_count == 0
+
+
+def test_v45_backfill_non_phu_kien_30_percent():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _, _, item_id = _seed_order_with_item(
+            conn,
+            product_cost=5000,
+            product_category="banh_mi",
+            base_price=20000,
+            qty=3,
+            status="delivered",
+        )
+        _migrate_to_version(conn, 45)
+
+        cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()["cost_at_sale"]
+        # 30% of 20000 = 6000
+        assert float(cost) == 6000.0
+
+
+def test_v45_backfill_phu_kien_100_percent():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _, _, item_id = _seed_order_with_item(
+            conn,
+            product_cost=5000,
+            product_category="phu_kien",
+            base_price=15000,
+            qty=2,
+            status="delivered",
+        )
+        _migrate_to_version(conn, 45)
+
+        cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()["cost_at_sale"]
+        # 100% of 15000 for phụ kiện
+        assert float(cost) == 15000.0
+
+
+def test_v45_backfill_skips_non_delivered_orders():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _, _, item_id = _seed_order_with_item(
+            conn,
+            product_cost=5000,
+            base_price=10000,
+            qty=2,
+            status="new",  # not delivered
+        )
+        _migrate_to_version(conn, 45)
+
+        cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()["cost_at_sale"]
+        # Not delivered → no backfill → stays at default 0
+        assert float(cost) == 0.0
+
+
+def test_v45_backfill_skips_extra_and_gift_items():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _, _, extra_item_id = _seed_order_with_item(
+            conn,
+            product_cost=5000,
+            base_price=10000,
+            qty=1,
+            status="delivered",
+            is_extra=1,
+            order_ref="ORD-V45-EXTRA",
+        )
+        _, _, gift_item_id = _seed_order_with_item(
+            conn,
+            product_cost=5000,
+            base_price=10000,
+            qty=1,
+            status="delivered",
+            is_gift=1,
+            order_ref="ORD-V45-GIFT",
+        )
+        _migrate_to_version(conn, 45)
+
+        extra_cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (extra_item_id,)
+        ).fetchone()["cost_at_sale"]
+        gift_cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (gift_item_id,)
+        ).fetchone()["cost_at_sale"]
+        assert float(extra_cost) == 0.0
+        assert float(gift_cost) == 0.0
+
+
+def test_v45_backfill_zero_base_price_skips():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _, _, item_id = _seed_order_with_item(
+            conn,
+            product_cost=0,
+            base_price=0,
+            qty=2,
+            status="delivered",
+        )
+        _migrate_to_version(conn, 45)
+
+        cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()["cost_at_sale"]
+        # 30% of 0 = 0 → no UPDATE applied (cost > 0 guard)
+        assert float(cost) == 0.0
+
+
+def test_v45_no_delivered_orders_is_noop():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        # Seed a non-delivered order only
+        _seed_order_with_item(
+            conn, product_cost=5000, base_price=10000, qty=2, status="new"
+        )
+        _migrate_to_version(conn, 45)
+
+        # cost_history table exists
+        _assert_cost_history_schema(conn)
+        # No rows backfilled (all cost_at_sale remain 0)
+        backfilled = conn.execute(
+            "SELECT COUNT(*) FROM order_items WHERE cost_at_sale > 0"
+        ).fetchone()[0]
+        assert backfilled == 0
+
+
+def test_v45_preserves_existing_cost_at_sale():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _, _, item_id = _seed_order_with_item(
+            conn, product_cost=5000, base_price=10000, qty=2, status="delivered"
+        )
+        # Run v45 once to add the column and backfill (30% of 10000 = 3000)
+        _migrate_to_version(conn, 45)
+        conn.execute(
+            "UPDATE order_items SET cost_at_sale = 7777 WHERE id = ?", (item_id,)
+        )
+        conn.commit()
+
+        # Re-run the v45 callable directly (simulates re-migration)
+        from baker.db.schema import _migrate_v45_cost_history_and_cost_at_sale
+
+        _migrate_v45_cost_history_and_cost_at_sale(conn)
+
+        cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()["cost_at_sale"]
+        # Pre-existing non-zero cost_at_sale is not overwritten (backfill guard)
+        assert float(cost) == 7777.0
+
+
+# ---------------------------------------------------------------------------
+# v49 — bus shipping accounting backfill (DG-191 Phase 5)
+# ---------------------------------------------------------------------------
+
+
+def test_v49_registered_in_migration_chain():
+    assert 49 in MIGRATIONS
+    assert MIGRATIONS[49]["callable"].__name__ == "_migrate_v49_bus_shipping_backfill"
+
+
+def test_v49_backfill_runs_in_migration_chain():
+    """Migrating from v44 to v49 backfills a delivered bus order end-to-end."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        # Seed a delivered bus order with a stale revenue entry (pre-Phase-3).
+        cursor = conn.execute(
+            "INSERT INTO orders "
+            "(order_ref, customer_name, items, total_price, status, "
+            " delivery_type, shipping_fee) "
+            "VALUES ('ORD-V49-CHAIN', 'Khách chain', '[]', 100000, 'delivered', 'bus', 25000)"
+        )
+        order_id = int(cursor.lastrowid)
+        conn.execute(
+            "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+            "VALUES (?, 100000, 'deposit', 'cash', '')",
+            (order_id,),
+        )
+        # Stale revenue entry debiting 2100 for the full deposit.
+        deposits_acc = conn.execute(
+            "SELECT id FROM accounts WHERE code = ?", (CUSTOMER_DEPOSITS_CODE,)
+        ).fetchone()[0]
+        revenue_acc = conn.execute(
+            "SELECT id FROM accounts WHERE code = '4100'"
+        ).fetchone()[0]
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES ('Order revenue: ORD-V49-CHAIN', 'order', ?)",
+            (order_id,),
+        )
+        stale_id = int(cur.lastrowid)
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 100000, 0.0, 'stale')",
+            (stale_id, deposits_acc),
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 0.0, 100000, 'stale')",
+            (stale_id, revenue_acc),
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 49)
+        assert _migrated_version(conn) == 49
+
+        # Revenue entry corrected to 75000 (net − shipping).
+        rev = conn.execute(
+            "SELECT id FROM journal_entries WHERE source_type='order' AND source_id=?",
+            (order_id,),
+        ).fetchone()
+        assert int(rev["id"]) != stale_id  # stale entry was replaced
+        debit = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit), 0) AS d
+            FROM journal_lines jl
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE jl.journal_entry_id = ? AND a.code = ?
+            """,
+            (rev["id"], CUSTOMER_DEPOSITS_CODE),
+        ).fetchone()["d"]
+        assert float(debit) == 75000.0
+
+        # Hold entry created.
+        hold = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries "
+            "WHERE source_type='order_shipping_hold' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0]
+        assert hold == 1
+
+        # Release entry created.
+        release = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries "
+            "WHERE source_type='order_shipping_release' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0]
+        assert release == 1
+
+        # Double-entry integrity across all entries.
+        rows = conn.execute(
+            """
+            SELECT je.id, SUM(jl.debit) AS td, SUM(jl.credit) AS tc
+            FROM journal_entries je
+            JOIN journal_lines jl ON jl.journal_entry_id = je.id
+            GROUP BY je.id
+            """
+        ).fetchall()
+        for r in rows:
+            assert abs(float(r["td"]) - float(r["tc"])) < 0.005
+
+
+def test_v49_fresh_db_is_noop():
+    """A fresh DB with no delivered bus orders: v49 backfill does nothing."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 49)
+        assert _migrated_version(conn) == 49
+        count = conn.execute("SELECT COUNT(*) FROM journal_entries").fetchone()[0]
+        assert count == 0
+
+
+def test_v49_idempotent_in_chain():
+    """Re-running the v49 callable directly after migration is a no-op."""
+    from baker.db.schema import _migrate_v49_bus_shipping_backfill
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 49)
+        cursor = conn.execute(
+            "INSERT INTO orders "
+            "(order_ref, customer_name, items, total_price, status, "
+            " delivery_type, shipping_fee) "
+            "VALUES ('ORD-V49-IDEM', 'Khách idem', '[]', 100000, 'delivered', 'bus', 25000)"
+        )
+        order_id = int(cursor.lastrowid)
+        conn.execute(
+            "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+            "VALUES (?, 100000, 'deposit', 'cash', '')",
+            (order_id,),
+        )
+        # Stale revenue entry.
+        deposits_acc = conn.execute(
+            "SELECT id FROM accounts WHERE code = ?", (CUSTOMER_DEPOSITS_CODE,)
+        ).fetchone()[0]
+        revenue_acc = conn.execute(
+            "SELECT id FROM accounts WHERE code = '4100'"
+        ).fetchone()[0]
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES ('r', 'order', ?)",
+            (order_id,),
+        )
+        sid = int(cur.lastrowid)
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 100000, 0.0, 's')",
+            (sid, deposits_acc),
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 0.0, 100000, 's')",
+            (sid, revenue_acc),
+        )
+        conn.commit()
+
+        _migrate_v49_bus_shipping_backfill(conn)
+        rev = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type='order' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0]
+        hold = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type='order_shipping_hold' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0]
+        rel = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type='order_shipping_release' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0]
+
+        # Run again — counts must not change.
+        _migrate_v49_bus_shipping_backfill(conn)
+        assert conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type='order' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0] == rev
+        assert conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type='order_shipping_hold' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0] == hold
+        assert conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type='order_shipping_release' AND source_id=?",
+            (order_id,),
+        ).fetchone()[0] == rel
+
+
+# ---------------------------------------------------------------------------
+# v50/v51 — journal_entries.transaction_date column + re-backfill
+# (DG-192 Phase 4.1)
+# ---------------------------------------------------------------------------
+
+
+def test_v50_registered_in_migration_chain():
+    assert 50 in MIGRATIONS
+    assert (
+        MIGRATIONS[50]["callable"].__name__
+        == "_migrate_v50_journal_transaction_date"
+    )
+
+
+def test_v50_adds_transaction_date_column_and_index():
+    with get_db() as conn:
+        _migrate_to_version(conn, 50)
+        assert _migrated_version(conn) == 50
+
+        columns = _schema_columns(conn, "journal_entries")
+        assert "transaction_date" in columns
+        # NOT NULL constraint enforced (DEFAULT '' keeps it non-empty).
+        assert columns["transaction_date"]["notnull"] == 1
+        # created_at preserved as audit column.
+        assert "created_at" in columns
+
+        index_rows = conn.execute(
+            "PRAGMA index_list(journal_entries)"
+        ).fetchall()
+        index_names = [row["name"] for row in index_rows]
+        assert "idx_journal_entries_transaction_date" in index_names
+        # Existing indices preserved.
+        assert "idx_journal_entries_created" in index_names
+        assert "idx_journal_entries_source" in index_names
+
+
+def test_v50_is_idempotent():
+    from baker.db.schema import _migrate_v50_journal_transaction_date
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 50)
+        # Re-running the callable directly must not raise.
+        _migrate_v50_journal_transaction_date(conn)
+        columns = _schema_columns(conn, "journal_entries")
+        assert "transaction_date" in columns
+
+
+def test_v50_existing_entries_get_empty_transaction_date():
+    """v50 adds the column; existing rows get the DEFAULT '' until v51 backfills."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        # Insert an expense-backed journal entry via the v44 backfill.
+        _seed_expense_event(conn, summary="Pre-v50 expense")
+        _migrate_v49_bus_shipping_backfill_idempotent_seed(conn)
+        _migrate_to_version(conn, 50)
+        rows = conn.execute(
+            "SELECT transaction_date FROM journal_entries"
+        ).fetchall()
+        assert rows, "expected at least one journal entry"
+        for row in rows:
+            assert row["transaction_date"] == ""
+
+
+def _migrate_v49_bus_shipping_backfill_idempotent_seed(conn):
+    """Helper: seed a no-op state so v49 backfill has nothing to do (avoids
+    needing a bus order). Runs v49 callable which is a no-op on empty data."""
+    _migrate_to_version(conn, 49)
+
+
+def test_v51_registered_in_migration_chain():
+    assert 51 in MIGRATIONS
+    assert (
+        MIGRATIONS[51]["callable"].__name__
+        == "_migrate_v51_backfill_journal_transaction_date"
+    )
+
+
+def test_v51_backfills_expense_from_event_timestamp():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        event_id = _seed_expense_event(conn, summary="Backfill expense")
+        # The seed sets events.timestamp = '2026-06-22T10:00:00+07:00'.
+        _migrate_to_version(conn, 50)
+        # Before v51: transaction_date is empty.
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries "
+            "WHERE source_type='expense' AND source_id=?",
+            (event_id,),
+        ).fetchone()
+        assert row["transaction_date"] == ""
+
+        _migrate_to_version(conn, 51)
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries "
+            "WHERE source_type='expense' AND source_id=?",
+            (event_id,),
+        ).fetchone()
+        assert row["transaction_date"] == "2026-06-22T10:00:00+07:00"
+
+
+def test_v51_backfills_payment_from_payment_created_at():
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        order_id, _ = _seed_order_with_items(conn)
+        pt_id = _seed_payment_transaction(conn, order_id)
+        # Set a known created_at on the payment transaction.
+        conn.execute(
+            "UPDATE payment_transactions SET created_at = '2026-05-15T09:30:00' "
+            "WHERE id = ?",
+            (pt_id,),
+        )
+        conn.commit()
+        # v44 backfill creates the payment_transaction journal entry.
+        _migrate_to_version(conn, 44)
+        _migrate_to_version(conn, 50)
+        _migrate_to_version(conn, 51)
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries "
+            "WHERE source_type='payment_transaction' AND source_id=?",
+            (pt_id,),
+        ).fetchone()
+        assert row["transaction_date"] == "2026-05-15T09:30:00"
+
+
+def test_v51_backfills_order_from_due_date():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        order_id, _ = _seed_order_with_items(conn)
+        conn.execute(
+            "UPDATE orders SET due_date = '2026-05-20' WHERE id = ?",
+            (order_id,),
+        )
+        conn.commit()
+        _migrate_to_version(conn, 50)
+        _migrate_to_version(conn, 51)
+        # The v44 backfill creates a revenue 'order' entry for delivered orders.
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries "
+            "WHERE source_type='order' AND source_id=?",
+            (order_id,),
+        ).fetchone()
+        assert row["transaction_date"] == "2026-05-20"
+
+
+def test_v51_backfills_order_falls_back_to_created_at_when_due_date_null():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        order_id, _ = _seed_order_with_items(conn)
+        # Ensure due_date is NULL/empty and created_at is a known value.
+        conn.execute(
+            "UPDATE orders SET due_date = NULL, created_at = '2026-04-10T08:00:00' "
+            "WHERE id = ?",
+            (order_id,),
+        )
+        conn.commit()
+        _migrate_to_version(conn, 50)
+        _migrate_to_version(conn, 51)
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries "
+            "WHERE source_type='order' AND source_id=?",
+            (order_id,),
+        ).fetchone()
+        assert row["transaction_date"] == "2026-04-10T08:00:00"
+
+
+def test_v51_backfills_order_cogs_from_due_date():
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        order_id, _ = _seed_order_with_items(conn, product_cost=5000)
+        conn.execute(
+            "UPDATE orders SET due_date = '2026-06-01' WHERE id = ?",
+            (order_id,),
+        )
+        conn.commit()
+        _migrate_to_version(conn, 50)
+        _migrate_to_version(conn, 51)
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries "
+            "WHERE source_type='order_cogs' AND source_id=?",
+            (order_id,),
+        ).fetchone()
+        assert row["transaction_date"] == "2026-06-01"
+
+
+def test_v51_backfills_manual_entries_from_created_at():
+    """owner_capital/owner_draw/staff_reimburse use created_at as transaction_date."""
+    from baker.db.schema import _insert_journal_entry, _account_id_by_code
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        equity_acc = _account_id_by_code(conn, "3100")
+        cash_acc = _account_id_by_code(conn, "1100")
+        entry_id = _insert_journal_entry(
+            conn,
+            description="Owner capital injection",
+            source_type="owner_capital",
+            source_id=None,
+            lines=[(cash_acc, 1000000.0, 0.0, "Tiền vốn"), (equity_acc, 0.0, 1000000.0, "Vốn")],
+        )
+        # Force a known created_at for deterministic assertion.
+        conn.execute(
+            "UPDATE journal_entries SET created_at = '2026-03-01T12:00:00' "
+            "WHERE id = ?",
+            (entry_id,),
+        )
+        conn.commit()
+        _migrate_to_version(conn, 50)
+        _migrate_to_version(conn, 51)
+        row = conn.execute(
+            "SELECT transaction_date, created_at FROM journal_entries WHERE id = ?",
+            (entry_id,),
+        ).fetchone()
+        assert row["transaction_date"] == "2026-03-01T12:00:00"
+        # created_at preserved (NFR3).
+        assert row["created_at"] == "2026-03-01T12:00:00"
+
+
+def test_v51_is_idempotent():
+    """Re-running v51 callable after migration does not change transaction_date."""
+    from baker.db.schema import _migrate_v51_backfill_journal_transaction_date
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        _seed_expense_event(conn, summary="Idempotency expense")
+        _migrate_to_version(conn, 51)
+        rows_before = conn.execute(
+            "SELECT id, transaction_date FROM journal_entries ORDER BY id"
+        ).fetchall()
+        # Run callable again.
+        _migrate_v51_backfill_journal_transaction_date(conn)
+        rows_after = conn.execute(
+            "SELECT id, transaction_date FROM journal_entries ORDER BY id"
+        ).fetchall()
+        assert rows_before == rows_after
+
+
+def test_insert_journal_entry_signature_accepts_transaction_date():
+    """_insert_journal_entry() writes transaction_date when provided."""
+    from baker.db.schema import _insert_journal_entry, _account_id_by_code
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 50)
+        cash_acc = _account_id_by_code(conn, "1100")
+        equity_acc = _account_id_by_code(conn, "3100")
+        entry_id = _insert_journal_entry(
+            conn,
+            description="Explicit transaction_date",
+            source_type="owner_capital",
+            source_id=None,
+            lines=[(cash_acc, 500.0, 0.0, "in"), (equity_acc, 0.0, 500.0, "eq")],
+            transaction_date="2026-02-14T09:00:00",
+        )
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries WHERE id = ?",
+            (entry_id,),
+        ).fetchone()
+        assert row["transaction_date"] == "2026-02-14T09:00:00"
+
+
+def test_insert_journal_entry_defaults_transaction_date_to_now():
+    """Without transaction_date, the helper uses current local time (non-empty)."""
+    from baker.db.schema import _insert_journal_entry, _account_id_by_code
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 50)
+        cash_acc = _account_id_by_code(conn, "1100")
+        equity_acc = _account_id_by_code(conn, "3100")
+        entry_id = _insert_journal_entry(
+            conn,
+            description="Default transaction_date",
+            source_type="owner_capital",
+            source_id=None,
+            lines=[(cash_acc, 100.0, 0.0, "in"), (equity_acc, 0.0, 100.0, "eq")],
+        )
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries WHERE id = ?",
+            (entry_id,),
+        ).fetchone()
+        assert row["transaction_date"] != ""
+        assert row["transaction_date"] is not None
+
+
+def test_v50_v51_full_chain_preserves_created_at():
+    """created_at (audit trail) is never modified by the transaction_date migration."""
+    from baker.db.schema import _insert_journal_entry, _account_id_by_code
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 44)
+        cash_acc = _account_id_by_code(conn, "1100")
+        equity_acc = _account_id_by_code(conn, "3100")
+        entry_id = _insert_journal_entry(
+            conn,
+            description="Audit preservation",
+            source_type="owner_capital",
+            source_id=None,
+            lines=[(cash_acc, 200.0, 0.0, "in"), (equity_acc, 0.0, 200.0, "eq")],
+        )
+        conn.execute(
+            "UPDATE journal_entries SET created_at = '2026-01-01T00:00:00' WHERE id = ?",
+            (entry_id,),
+        )
+        conn.commit()
+        _migrate_to_version(conn, 51)
+        row = conn.execute(
+            "SELECT transaction_date, created_at FROM journal_entries WHERE id = ?",
+            (entry_id,),
+        ).fetchone()
+        # transaction_date backfilled from created_at (manual source type).
+        assert row["transaction_date"] == "2026-01-01T00:00:00"
+        # created_at untouched (NFR3).
+        assert row["created_at"] == "2026-01-01T00:00:00"
+
+
+def _seed_legacy_1400_chart(conn) -> int:
+    """Insert the pre-DG-194 1400 parent + two 14XX staff sub-accounts.
+
+    Mirrors what a v51-era database would contain after running v44 with the
+    old seed data. Returns the 1400 parent account id.
+    """
+    assets_root = conn.execute(
+        "SELECT id FROM accounts WHERE code = '1000'"
+    ).fetchone()
+    assets_root_id = int(assets_root[0]) if assets_root else None
+    liabilities_root = conn.execute(
+        "SELECT id FROM accounts WHERE code = '2000'"
+    ).fetchone()
+    liabilities_root_id = int(liabilities_root[0]) if liabilities_root else None
+
+    # Parent 1400 (asset) — old classification.
+    cursor = conn.execute(
+        "INSERT INTO accounts (code, name, type, parent_id) "
+        "VALUES ('1400', 'Nhân viên ứng trước (Staff Advances)', 'asset', ?)",
+        (assets_root_id,),
+    )
+    parent_id = int(cursor.lastrowid)
+    # Per-staff sub-accounts 1401, 1402 (asset) under 1400.
+    for code, name in (("1401", "Phượng"), ("1402", "Sinh")):
+        conn.execute(
+            "INSERT INTO accounts (code, name, type, parent_id) "
+            "VALUES (?, ?, 'asset', ?)",
+            (code, name, parent_id),
+        )
+    conn.commit()
+    # Sanity: liabilities root must exist (v44 seeds it).
+    assert liabilities_root_id is not None
+    return parent_id
+
+
+def test_v52_registered_in_migration_chain():
+    assert 52 in MIGRATIONS
+    assert (
+        MIGRATIONS[52]["callable"].__name__
+        == "_migrate_v52_reclassify_staff_advances_as_liabilities"
+    )
+
+
+def test_v52_reclassifies_1400_to_2300_when_2300_absent():
+    """M-1: existing DB with 1400 (asset) gets reclassified to 2300 (liability)
+    and 14XX sub-accounts are reparented + renumbered to 23XX."""
+    from baker.db.schema import _migrate_v52_reclassify_staff_advances_as_liabilities
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 51)
+        # Remove the DG-194-seeded 2300 so the migration exercises case 1
+        # (1400 present, 2300 absent — the legacy-DB scenario).
+        conn.execute("DELETE FROM accounts WHERE code = '2300'")
+        old_parent_id = _seed_legacy_1400_chart(conn)
+
+        _migrate_v52_reclassify_staff_advances_as_liabilities(conn)
+
+        # 1400 is gone; 2300 exists as a liability under 2000.
+        assert conn.execute(
+            "SELECT id FROM accounts WHERE code = '1400'"
+        ).fetchone() is None
+        new_parent = conn.execute(
+            "SELECT id, name, type, parent_id FROM accounts WHERE code = '2300'"
+        ).fetchone()
+        assert new_parent is not None
+        assert new_parent["type"] == "liability"
+        assert new_parent["name"] == "Phải trả nhân viên (Staff Payables)"
+        # Same row id — the 1400 row was UPDATEd in place to become 2300.
+        assert int(new_parent["id"]) == old_parent_id
+
+        # Sub-accounts reparented to 2300, type liability, codes 23XX.
+        subs = conn.execute(
+            "SELECT code, name, type, parent_id FROM accounts "
+            "WHERE parent_id = ? ORDER BY id",
+            (old_parent_id,),
+        ).fetchall()
+        assert len(subs) == 2
+        for sub in subs:
+            assert sub["type"] == "liability"
+            assert sub["code"].startswith("23")
+            assert int(sub["parent_id"]) == old_parent_id
+        assert [s["name"] for s in subs] == ["Phượng", "Sinh"]
+        # No orphaned 14XX accounts remain.
+        assert conn.execute(
+            "SELECT id FROM accounts WHERE code LIKE '14__'"
+        ).fetchone() is None
+
+
+def test_v52_merges_sub_accounts_when_both_1400_and_2300_exist():
+    """M-1 edge case: insert-before-migrate (2300 seeded, 1400 still present).
+    Sub-accounts move under 2300 and 1400 parent is deleted."""
+    from baker.db.schema import _migrate_v52_reclassify_staff_advances_as_liabilities
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 51)
+        # At this point DG-194 seed already inserted 2300.
+        target_2300 = conn.execute(
+            "SELECT id FROM accounts WHERE code = '2300'"
+        ).fetchone()
+        assert target_2300 is not None
+        target_2300_id = int(target_2300[0])
+        old_parent_id = _seed_legacy_1400_chart(conn)
+
+        _migrate_v52_reclassify_staff_advances_as_liabilities(conn)
+
+        # 1400 parent deleted; 2300 kept (unchanged row id).
+        assert conn.execute(
+            "SELECT id FROM accounts WHERE code = '1400'"
+        ).fetchone() is None
+        kept = conn.execute(
+            "SELECT id FROM accounts WHERE code = '2300'"
+        ).fetchone()
+        assert int(kept["id"]) == target_2300_id
+
+        # Both legacy sub-accounts now live under 2300 as 23XX liabilities.
+        subs = conn.execute(
+            "SELECT code, name, type, parent_id FROM accounts "
+            "WHERE parent_id = ? ORDER BY id",
+            (target_2300_id,),
+        ).fetchall()
+        legacy = [s for s in subs if s["name"] in ("Phượng", "Sinh")]
+        assert len(legacy) == 2
+        for sub in legacy:
+            assert sub["type"] == "liability"
+            assert sub["code"].startswith("23")
+            assert int(sub["parent_id"]) == target_2300_id
+        # No 14XX codes remain.
+        assert conn.execute(
+            "SELECT id FROM accounts WHERE code LIKE '14__'"
+        ).fetchone() is None
+
+
+def test_v52_idempotent_on_fresh_db():
+    """Fresh DB (no 1400, 2300 already seeded) — migration is a no-op."""
+    from baker.db.schema import _migrate_v52_reclassify_staff_advances_as_liabilities
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 51)
+        before = conn.execute(
+            "SELECT id, code, name, type, parent_id FROM accounts ORDER BY id"
+        ).fetchall()
+        _migrate_v52_reclassify_staff_advances_as_liabilities(conn)
+        after = conn.execute(
+            "SELECT id, code, name, type, parent_id FROM accounts ORDER BY id"
+        ).fetchall()
+        assert before == after
+
+
+def test_v52_idempotent_on_already_migrated_db():
+    """Re-running v52 after it has already run produces no changes."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 51)
+        conn.execute("DELETE FROM accounts WHERE code = '2300'")
+        _seed_legacy_1400_chart(conn)
+        _migrate_to_version(conn, 52)
+        snapshot = conn.execute(
+            "SELECT id, code, name, type, parent_id FROM accounts ORDER BY id"
+        ).fetchall()
+        # Re-apply the callable directly.
+        from baker.db.schema import _migrate_v52_reclassify_staff_advances_as_liabilities
+
+        _migrate_v52_reclassify_staff_advances_as_liabilities(conn)
+        after = conn.execute(
+            "SELECT id, code, name, type, parent_id FROM accounts ORDER BY id"
+        ).fetchall()
+        assert snapshot == after
+
+
+def test_v52_runs_in_full_migration_chain_after_v51():
+    """v52 executes as part of ensure_schema after v51 and reclassifies a
+    legacy 1400 chart end-to-end."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 51)
+        # Simulate a legacy DB: drop the DG-194 2300 seed and insert 1400.
+        conn.execute("DELETE FROM accounts WHERE code = '2300'")
+        _seed_legacy_1400_chart(conn)
+        # Run the full remaining chain (v52).
+        _migrate_to_version(conn, 52)
+        assert _migrated_version(conn) == 52
+        # 1400 gone, 2300 present as liability.
+        assert conn.execute(
+            "SELECT id FROM accounts WHERE code = '1400'"
+        ).fetchone() is None
+        new_parent = conn.execute(
+            "SELECT type FROM accounts WHERE code = '2300'"
+        ).fetchone()
+        assert new_parent["type"] == "liability"
+        subs = conn.execute(
+            "SELECT type FROM accounts WHERE parent_id = ("
+            "SELECT id FROM accounts WHERE code = '2300')"
+        ).fetchall()
+        assert len(subs) == 2
+        assert all(s["type"] == "liability" for s in subs)
+
+
+def test_v53_registered_in_migration_chain():
+    """v53 is registered in MIGRATIONS with the expected callable."""
+    assert 53 in MIGRATIONS
+    assert (
+        MIGRATIONS[53]["callable"].__name__
+        == "_migrate_v53_payment_transaction_invalidation"
+    )
+
+
+def test_v53_adds_invalidation_columns_on_incremental_db():
+    """Applying v53 on top of a v52 DB adds invalidated_at/invalidated_by plus
+    index to payment_transactions."""
+    from baker.db.schema import _migrate_v53_payment_transaction_invalidation
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 52)
+        # Columns absent before v53.
+        cols_before = _schema_columns(conn, "payment_transactions")
+        assert "invalidated_at" not in cols_before
+        assert "invalidated_by" not in cols_before
+
+        _migrate_v53_payment_transaction_invalidation(conn)
+
+        cols = _schema_columns(conn, "payment_transactions")
+        assert "invalidated_at" in cols
+        assert "invalidated_by" in cols
+        # Index created.
+        idx_rows = conn.execute(
+            "PRAGMA index_list(payment_transactions)"
+        ).fetchall()
+        idx_names = [r["name"] for r in idx_rows]
+        assert "idx_payment_transactions_invalidated_at" in idx_names
+
+
+def test_v53_applies_in_full_migration_chain():
+    """v53 executes as part of ensure_schema after v52 and columns exist."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 52)
+        _migrate_to_version(conn, 53)
+        assert _migrated_version(conn) == 53
+        cols = _schema_columns(conn, "payment_transactions")
+        assert "invalidated_at" in cols
+        assert "invalidated_by" in cols
+
+
+def test_v53_idempotent_on_already_migrated_db():
+    """Re-running the v53 callable after it has already run is a no-op."""
+    from baker.db.schema import _migrate_v53_payment_transaction_invalidation
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 52)
+        _migrate_v53_payment_transaction_invalidation(conn)
+        cols_after_first = _schema_columns(conn, "payment_transactions")
+        # Second application must not raise or duplicate.
+        _migrate_v53_payment_transaction_invalidation(conn)
+        cols_after_second = _schema_columns(conn, "payment_transactions")
+        assert set(cols_after_first) == set(cols_after_second)
+
+
+def test_v53_idempotent_on_fresh_db():
+    """v53 on a fresh DB (already at v53 via ensure_schema) is a no-op."""
+    from baker.db.schema import _migrate_v53_payment_transaction_invalidation
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 53
+        before = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND "
+            "tbl_name='payment_transactions'"
+        ).fetchall()
+        _migrate_v53_payment_transaction_invalidation(conn)
+        after = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND "
+            "tbl_name='payment_transactions'"
+        ).fetchall()
+        assert before == after
+
+
+# ── v54 Migration: Account 2400 (DG-199 Phase 4.2) ───────────────────────
+
+
+def test_v54_registered_in_migration_chain():
+    """v54 is registered in MIGRATIONS with the expected callable."""
+    assert 54 in MIGRATIONS
+    assert (
+        MIGRATIONS[54]["callable"].__name__
+        == "_migrate_v54_add_account_2400"
+    )
+
+
+def test_v54_adds_account_2400_on_incremental_db():
+    """Applying v54 on top of a v53 DB: account 2400 already exists from v44,
+    so v54 is a no-op (INSERT OR IGNORE on all accounts)."""
+    from baker.db.schema import _migrate_v54_add_account_2400
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 53)
+        # Account 2400 already exists (seeded by v44).
+        before = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2400'"
+        ).fetchone()
+        assert before is not None
+        assert before["type"] == "liability"
+
+        # v54 on an already-correct DB is a no-op.
+        _migrate_v54_add_account_2400(conn)
+        after = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2400'"
+        ).fetchone()
+        assert after is not None
+        assert after["id"] == before["id"]
+        assert after["name"] == before["name"]
+
+
+def test_v54_applies_in_full_migration_chain():
+    """v54 executes as part of ensure_schema and account 2400 exists on fresh DB."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 54)
+        assert _migrated_version(conn) == 54
+        row = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2400'"
+        ).fetchone()
+        assert row is not None
+        assert row["type"] == "liability"
+
+
+def test_v54_idempotent_on_already_migrated_db():
+    """Re-running the v54 callable after it has already run is a no-op."""
+    from baker.db.schema import _migrate_v54_add_account_2400
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 53)
+        _migrate_v54_add_account_2400(conn)
+        count_after_first = conn.execute(
+            "SELECT COUNT(*) FROM accounts WHERE code = '2400'"
+        ).fetchone()[0]
+        assert count_after_first == 1
+
+        # Second application must not raise or duplicate.
+        _migrate_v54_add_account_2400(conn)
+        count_after_second = conn.execute(
+            "SELECT COUNT(*) FROM accounts WHERE code = '2400'"
+        ).fetchone()[0]
+        assert count_after_second == 1
+
+
+def test_v54_idempotent_on_fresh_db():
+    """v54 on a fresh DB (already at v54 via ensure_schema) is a no-op."""
+    from baker.db.schema import _migrate_v54_add_account_2400
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 54
+        row_before = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2400'"
+        ).fetchone()
+        _migrate_v54_add_account_2400(conn)
+        row_after = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2400'"
+        ).fetchone()
+        assert row_before is not None
+        assert row_before["id"] == row_after["id"]
+        assert row_before["name"] == row_after["name"]
+        assert row_before["type"] == row_after["type"]

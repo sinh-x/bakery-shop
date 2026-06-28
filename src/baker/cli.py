@@ -37,6 +37,10 @@ from baker.commands.staff import staff_cmd
 from baker.commands.serve import serve_cmd
 from baker.commands.db import db_cmd
 from baker.commands.server_log import server_log_cmd
+from baker.commands.validate import validate_accounts_cmd
+from baker.commands.report import report_cmd
+from baker.commands.pipeline import pipeline_cmd
+from baker.commands.repair import repair_order_revenue_cmd, repair_tien_rut_gap_cmd
 
 app.add_command(log_cmd, "log")
 app.add_command(organize_cmd, "organize")
@@ -52,3 +56,8 @@ app.add_command(staff_cmd, "staff")
 app.add_command(serve_cmd, "serve")
 app.add_command(db_cmd)
 app.add_command(server_log_cmd, "server-log")
+app.add_command(validate_accounts_cmd, "validate-accounts")
+app.add_command(report_cmd, "report")
+app.add_command(pipeline_cmd, "pipeline")
+app.add_command(repair_order_revenue_cmd, "repair-order-revenue")
+app.add_command(repair_tien_rut_gap_cmd, "repair-tien-rut-gap")

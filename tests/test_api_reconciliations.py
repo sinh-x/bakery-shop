@@ -900,3 +900,181 @@ def test_submit_no_chip_product_still_works_with_base_row(api_client):
         },
     )
     assert submit.status_code == 201
+
+
+def test_submit_waste_creates_cogs_journal_entry(api_client):
+    """AC5: reconciliation waste line auto-generates a waste_cogs journal
+    entry (debit 5900, credit 1300) using cost_history → baseline fallback."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 9)
+
+    payload = {
+        "staff_name": "An",
+        "payment_method": "cash",
+        "waste_reason": "Bị hỏng",
+        "lines": [
+            {
+                "product_id": 1,
+                "expected_qty": 9,
+                "counted_qty": 7,
+                "sale_qty": 1,
+                "waste_qty": 1,
+                "manual_unit_price": 15000,
+            }
+        ],
+    }
+
+    resp = api_client.post("/api/reconciliations/submit", json=payload)
+    assert resp.status_code == 201
+
+    with get_db() as conn:
+        waste_movement = conn.execute(
+            "SELECT id FROM stock_movements WHERE movement_type = 'waste' "
+            "AND reference_id LIKE 'reconciliation:%' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert waste_movement is not None
+        entries = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type = 'waste_cogs' "
+            "AND source_id = ? ORDER BY id",
+            (waste_movement["id"],),
+        ).fetchall()
+        assert len(entries) == 1
+
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id = ? ORDER BY id",
+            (entries[0]["id"],),
+        ).fetchall()
+        debit_line = next(l for l in lines if l["debit"] > 0)
+        credit_line = next(l for l in lines if l["credit"] > 0)
+        cogs_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id = ?", (debit_line["account_id"],)
+        ).fetchone()
+        inv_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id = ?", (credit_line["account_id"],)
+        ).fetchone()
+        assert cogs_acc["code"] == "5900"
+        assert inv_acc["code"] == "1300"
+        # Product 1 base_price=10000 → baseline 30% = 3000 × 1 = 3000
+        assert debit_line["debit"] == 3000.0
+        assert credit_line["credit"] == 3000.0
+
+
+def test_submit_waste_cogs_uses_cost_history_when_present(api_client):
+    """AC5: reconciliation waste with explicit cost_history row uses that
+    cost instead of baseline."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 5)
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
+            (1, 22000, "2020-01-01T00:00:00"),
+        )
+
+    payload = {
+        "staff_name": "An",
+        "payment_method": "cash",
+        "waste_reason": "Hết hạn",
+        "lines": [
+            {
+                "product_id": 1,
+                "expected_qty": 5,
+                "counted_qty": 3,
+                "sale_qty": 1,
+                "waste_qty": 1,
+                "manual_unit_price": 15000,
+            }
+        ],
+    }
+
+    resp = api_client.post("/api/reconciliations/submit", json=payload)
+    assert resp.status_code == 201
+
+    with get_db() as conn:
+        waste_movement = conn.execute(
+            "SELECT id FROM stock_movements WHERE movement_type = 'waste' "
+            "AND reference_id LIKE 'reconciliation:%' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        entries = conn.execute(
+            "SELECT id FROM journal_entries WHERE source_type = 'waste_cogs' AND source_id = ?",
+            (waste_movement["id"],),
+        ).fetchall()
+        assert len(entries) == 1
+        lines = conn.execute(
+            "SELECT * FROM journal_lines WHERE journal_entry_id = ?",
+            (entries[0]["id"],),
+        ).fetchall()
+        debit_line = next(l for l in lines if l["debit"] > 0)
+        # cost_history cost 22000 × qty 1 = 22000
+        assert debit_line["debit"] == 22000.0
+
+
+def test_submit_no_waste_creates_no_cogs_entry(api_client):
+    """AC5 negative: reconciliation with no waste lines produces no
+    waste_cogs journal entry."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 5)
+
+    payload = {
+        "staff_name": "An",
+        "payment_method": "cash",
+        "lines": [
+            {
+                "product_id": 1,
+                "expected_qty": 5,
+                "counted_qty": 4,
+                "sale_qty": 1,
+                "waste_qty": 0,
+                "manual_unit_price": 15000,
+            }
+        ],
+    }
+
+    resp = api_client.post("/api/reconciliations/submit", json=payload)
+    assert resp.status_code == 201
+
+    with get_db() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries WHERE source_type = 'waste_cogs'"
+        ).fetchone()
+        assert count["c"] == 0
+
+
+def test_submit_reconciliation_survives_waste_cogs_sync_failure(api_client, monkeypatch):
+    """Regression for review finding M-1: a failure inside _sync_waste_cogs_journal
+    must not break reconciliation submission. The sync call is wrapped in
+    try/except so accounting failures are logged but never block the primary
+    business operation (matching the defensive pattern at all other journal
+    sync call sites).
+    """
+    from baker.services import journal_sync
+
+    def _boom(conn, product_id, movement_id, quantity):
+        raise RuntimeError("simulated accounting failure")
+
+    monkeypatch.setattr(journal_sync, "_sync_waste_cogs_journal", _boom)
+
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 9)
+
+    payload = {
+        "staff_name": "An",
+        "payment_method": "cash",
+        "waste_reason": "Bị hỏng",
+        "lines": [
+            {
+                "product_id": 1,
+                "expected_qty": 9,
+                "counted_qty": 7,
+                "sale_qty": 1,
+                "waste_qty": 1,
+                "manual_unit_price": 15000,
+            }
+        ],
+    }
+
+    resp = api_client.post("/api/reconciliations/submit", json=payload)
+    # Reconciliation must succeed even though waste COGS sync raised.
+    assert resp.status_code == 201
