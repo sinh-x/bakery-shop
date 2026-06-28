@@ -22,6 +22,7 @@
 | Sync state | `Notifier` |
 | `setState` in ConsumerWidget | Prohibited |
 | VN labels | Domain files under `lib/shared/labels/` |
+| Date/Time formatting | Use `lib/shared/utils/date_formatting.dart`; no direct `DateFormat` or `padLeft` |
 | Test naming | `<component>_test.dart` |
 | Widget test pattern | `pumpWidget` with provider overrides |
 | Lint rules | 12 rules activated (see §7) |
@@ -322,6 +323,55 @@ These rules are documented for Phase 2. Phase 3 will apply them to `analysis_opt
 3. For pre-existing violations (not related to current in-progress work), add `// ignore_for_file:` at the top of each violating file.
 4. New code must comply with all enabled rules — no new `// ignore:` comments for new code.
 5. Verify: `dart analyze` returns zero errors.
+
+---
+
+## §8 Date/Time Formatting
+
+### Shared Utility Requirement
+
+All DateTime display in screen widgets MUST use the shared utility functions from `lib/shared/utils/date_formatting.dart`. Direct use of `DateFormat.format()`, `DateFormat` constructors, or manual `padLeft` for date/time strings is prohibited in screen and widget code.
+
+### Available Functions
+
+| Function | Purpose | Example Output |
+|----------|---------|---------------|
+| `formatDisplay(dynamic value, String timezone)` | Full datetime for display (VN timezone) | `28/06/2026 14:30` |
+| `formatDisplayDate(dynamic value, String timezone)` | Date only | `28/06/2026` |
+| `formatDisplayTime(dynamic value, String timezone)` | Time only | `14:30` |
+| `formatDisplayShort(dynamic value, String timezone)` | Short datetime | `28/06 14:30` |
+| `parseApiDateTime(String? value, String timezone)` | Parse API string to DateTime in target timezone | `DateTime` object |
+
+### Correct Usage
+
+```dart
+import 'package:bakery_app/shared/utils/date_formatting.dart';
+
+// In screen widget
+Text(formatDisplay(order.createdAt, timezone));
+Text(formatDisplayDate(order.dueDate, timezone));
+Text(formatDisplayTime(event.startTime, timezone));
+```
+
+### Anti-patterns
+
+```dart
+// ❌ PROHIBITED — direct DateFormat usage
+import 'package:intl/intl.dart';
+DateFormat('dd/MM/yyyy HH:mm').format(date);
+DateFormat('yyyy-MM-dd').parse(str);
+
+// ❌ PROHIBITED — manual padLeft for DateTime formatting
+'${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}'
+
+// ❌ PROHIBITED — DateFormat with explicit format strings in widgets
+final formatter = DateFormat('dd/MM/yyyy');
+Text(formatter.format(order.createdAt));
+```
+
+### Exception
+
+Services, providers, and data-layer code that parse API responses or serialize data before sending to the server may use `DateFormat` for the `yyyy-MM-dd HH:mm:ss` API format if the shared utility does not cover the exact serialization need. Screen widgets must never use `DateFormat` directly.
 
 ---
 
