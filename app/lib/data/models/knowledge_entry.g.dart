@@ -17,12 +17,10 @@ _KnowledgeEntry _$KnowledgeEntryFromJson(Map<String, dynamic> json) =>
           const <String>[],
       loggedBy: json['logged_by'] as String? ?? '',
       source: json['source'] as String? ?? 'app',
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      createdAt: parseApiDateTime(json['created_at'] as String),
+      updatedAt: parseApiDateTime(json['updated_at'] as String),
       pinned: json['pinned'] as bool? ?? false,
-      pinnedAt: json['pinned_at'] == null
-          ? null
-          : DateTime.parse(json['pinned_at'] as String),
+      pinnedAt: _nullableTimestampFromJson(json['pinned_at'] as String?),
       photos:
           (json['photos'] as List<dynamic>?)
               ?.map((e) => KnowledgePhoto.fromJson(e as Map<String, dynamic>))

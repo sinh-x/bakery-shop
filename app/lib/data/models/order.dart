@@ -2,6 +2,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 
 import 'order_item.dart';
 import 'packing_item.dart';
+import '../../shared/utils/date_formatting.dart';
 
 part 'order.freezed.dart';
 part 'order.g.dart';
@@ -30,8 +31,8 @@ sealed class Order with _$Order {
     @Default([]) List<PackingItem> packingChecklist,
     String? workTicketPrintedAt,
     String? workTicketPrintedBy,
-    required DateTime createdAt,
-    required DateTime updatedAt,
+    @JsonKey(fromJson: parseApiDateTime) required DateTime createdAt,
+    @JsonKey(fromJson: parseApiDateTime) required DateTime updatedAt,
   }) = _Order;
 
   factory Order.fromJson(Map<String, dynamic> json) => _$OrderFromJson(json);
