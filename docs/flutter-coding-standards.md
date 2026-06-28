@@ -336,11 +336,12 @@ All DateTime display in screen widgets MUST use the shared utility functions fro
 
 | Function | Purpose | Example Output |
 |----------|---------|---------------|
-| `formatDisplay(dynamic value, String timezone)` | Full datetime for display (VN timezone) | `28/06/2026 14:30` |
-| `formatDisplayDate(dynamic value, String timezone)` | Date only | `28/06/2026` |
-| `formatDisplayTime(dynamic value, String timezone)` | Time only | `14:30` |
-| `formatDisplayShort(dynamic value, String timezone)` | Short datetime | `28/06 14:30` |
-| `parseApiDateTime(String? value, String timezone)` | Parse API string to DateTime in target timezone | `DateTime` object |
+| `parseApiDateTime(String value)` | Parse API string to local DateTime | `DateTime` object |
+| `formatDisplay(DateTime dt, {String? pattern})` | Full datetime (default: `dd/MM/yyyy HH:mm`) | `28/06/2026 14:30` |
+| `formatDisplayDate(DateTime dt)` | Date only (`dd/MM/yyyy`) | `28/06/2026` |
+| `formatDisplayTime(DateTime dt)` | Time only (`HH:mm`) | `14:30` |
+| `formatDisplayShort(DateTime dt)` | Short datetime (`dd/MM HH:mm`) | `28/06 14:30` |
+| `formatDisplayTimeOfDay(TimeOfDay tod)` | Time from a TimeOfDay (`HH:mm`) | `14:30` |
 
 ### Correct Usage
 
@@ -348,9 +349,11 @@ All DateTime display in screen widgets MUST use the shared utility functions fro
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 
 // In screen widget
-Text(formatDisplay(order.createdAt, timezone));
-Text(formatDisplayDate(order.dueDate, timezone));
-Text(formatDisplayTime(event.startTime, timezone));
+Text(formatDisplay(order.createdAt));
+Text(formatDisplay(order.createdAt, pattern: 'yyyy-MM-dd'));
+Text(formatDisplayDate(order.dueDate));
+Text(formatDisplayTime(event.startTime));
+Text(formatDisplayTimeOfDay(TimeOfDay.now()));
 ```
 
 ### Anti-patterns
