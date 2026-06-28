@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/account.dart';
+import '../../../shared/utils/date_formatting.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 
 /// Filter bar for the accounting journal tab.
@@ -164,7 +165,7 @@ class DateChip extends StatelessWidget {
         );
         if (picked != null) {
           onSelected(
-            '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}',
+            formatDisplay(picked, pattern: 'yyyy-MM-dd'),
           );
         }
       },
