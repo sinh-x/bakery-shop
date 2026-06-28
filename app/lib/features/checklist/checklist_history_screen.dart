@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/providers/checklist_provider.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/checklist.dart';
 
@@ -90,7 +91,7 @@ class _ChecklistHistoryScreenState
                 Expanded(
                   child: OutlinedButton.icon(
                     icon: const Icon(Icons.calendar_today, size: 16),
-                    label: Text(_fmtDisplay(_fromDate)),
+                    label: Text(formatDisplayDate(_fromDate)),
                     onPressed: _pickFromDate,
                   ),
                 ),
@@ -103,7 +104,7 @@ class _ChecklistHistoryScreenState
                 Expanded(
                   child: OutlinedButton.icon(
                     icon: const Icon(Icons.calendar_today, size: 16),
-                    label: Text(_fmtDisplay(_toDate)),
+                    label: Text(formatDisplayDate(_toDate)),
                     onPressed: _pickToDate,
                   ),
                 ),
@@ -155,8 +156,6 @@ class _ChecklistHistoryScreenState
     );
   }
 
-  String _fmtDisplay(DateTime dt) =>
-      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
 }
 
 class _DayCard extends StatefulWidget {
@@ -268,7 +267,7 @@ class _DayCardState extends State<_DayCard> {
 
   String _formatDateHeader(String isoDate) {
     try {
-      final dt = DateTime.parse(isoDate);
+      final dt = parseApiDateTime(isoDate);
       const weekdays = [
         'Thứ 2',
         'Thứ 3',
@@ -279,7 +278,7 @@ class _DayCardState extends State<_DayCard> {
         'Chủ nhật',
       ];
       final weekday = weekdays[dt.weekday - 1];
-      return '$weekday, ${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+      return '$weekday, ${formatDisplayDate(dt)}';
     } catch (_) {
       return isoDate;
     }
@@ -374,8 +373,8 @@ class _HistoryEntryTile extends StatelessWidget {
   String _fmtTime(String? completedAt) {
     if (completedAt == null) return '';
     try {
-      final dt = DateTime.parse(completedAt);
-      return ' • ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      final dt = parseApiDateTime(completedAt);
+      return ' • ${formatDisplayTime(dt)}';
     } catch (_) {
       return '';
     }

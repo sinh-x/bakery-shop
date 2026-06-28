@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/checklist_service.dart';
 import '../models/checklist_template.dart';
 import '../models/checklist_entry.dart';
+import '../../shared/utils/date_formatting.dart';
 
 // ── Checklist template provider ────────────────────────────────────────────
 
@@ -163,7 +164,7 @@ class ChecklistHistoryNotifier
   }
 
   String _fmt(DateTime dt) =>
-      '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+      formatDisplay(dt, pattern: 'yyyy-MM-dd');
 }
 
 final checklistHistoryProvider =
