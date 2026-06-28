@@ -2516,6 +2516,16 @@ def _migrate_v53_payment_transaction_invalidation(conn):
     )
 
 
+def _migrate_v54_add_account_2400(conn):
+    """Ensure account 2400 (Tien Rut Held) exists in chart of accounts.
+
+    DG-199 Phase 4.2. This calls the existing _seed_chart_of_accounts() which
+    uses INSERT OR IGNORE for every account, so re-running v54 on an
+    already-migrated DB is a no-op (idempotent by design).
+    """
+    _seed_chart_of_accounts(conn)
+
+
 COST_HISTORY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS cost_history (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2830,12 +2840,17 @@ MIGRATIONS = {
         "sql": "",
         "callable": _migrate_v52_reclassify_staff_advances_as_liabilities,
     },
-    53: {
-        "description": "Add invalidated_at/invalidated_by soft-delete columns to payment_transactions — DG-196 payment transaction invalidation",
-        "sql": "",
-        "callable": _migrate_v53_payment_transaction_invalidation,
-    },
-}
+     53: {
+         "description": "Add invalidated_at/invalidated_by soft-delete columns to payment_transactions — DG-196 payment transaction invalidation",
+         "sql": "",
+         "callable": _migrate_v53_payment_transaction_invalidation,
+     },
+     54: {
+         "description": "Ensure account 2400 (Tien Rut Held) exists in chart of accounts — DG-199 Phase 4.2",
+         "sql": "",
+         "callable": _migrate_v54_add_account_2400,
+     },
+ }
 
 
 def ensure_schema(conn):

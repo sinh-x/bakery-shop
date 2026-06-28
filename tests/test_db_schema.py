@@ -2353,3 +2353,91 @@ def test_v53_idempotent_on_fresh_db():
             "tbl_name='payment_transactions'"
         ).fetchall()
         assert before == after
+
+
+# ── v54 Migration: Account 2400 (DG-199 Phase 4.2) ───────────────────────
+
+
+def test_v54_registered_in_migration_chain():
+    """v54 is registered in MIGRATIONS with the expected callable."""
+    assert 54 in MIGRATIONS
+    assert (
+        MIGRATIONS[54]["callable"].__name__
+        == "_migrate_v54_add_account_2400"
+    )
+
+
+def test_v54_adds_account_2400_on_incremental_db():
+    """Applying v54 on top of a v53 DB: account 2400 already exists from v44,
+    so v54 is a no-op (INSERT OR IGNORE on all accounts)."""
+    from baker.db.schema import _migrate_v54_add_account_2400
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 53)
+        # Account 2400 already exists (seeded by v44).
+        before = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2400'"
+        ).fetchone()
+        assert before is not None
+        assert before["type"] == "liability"
+
+        # v54 on an already-correct DB is a no-op.
+        _migrate_v54_add_account_2400(conn)
+        after = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2400'"
+        ).fetchone()
+        assert after is not None
+        assert after["id"] == before["id"]
+        assert after["name"] == before["name"]
+
+
+def test_v54_applies_in_full_migration_chain():
+    """v54 executes as part of ensure_schema and account 2400 exists on fresh DB."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 54)
+        assert _migrated_version(conn) == 54
+        row = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2400'"
+        ).fetchone()
+        assert row is not None
+        assert row["type"] == "liability"
+
+
+def test_v54_idempotent_on_already_migrated_db():
+    """Re-running the v54 callable after it has already run is a no-op."""
+    from baker.db.schema import _migrate_v54_add_account_2400
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 53)
+        _migrate_v54_add_account_2400(conn)
+        count_after_first = conn.execute(
+            "SELECT COUNT(*) FROM accounts WHERE code = '2400'"
+        ).fetchone()[0]
+        assert count_after_first == 1
+
+        # Second application must not raise or duplicate.
+        _migrate_v54_add_account_2400(conn)
+        count_after_second = conn.execute(
+            "SELECT COUNT(*) FROM accounts WHERE code = '2400'"
+        ).fetchone()[0]
+        assert count_after_second == 1
+
+
+def test_v54_idempotent_on_fresh_db():
+    """v54 on a fresh DB (already at v54 via ensure_schema) is a no-op."""
+    from baker.db.schema import _migrate_v54_add_account_2400
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 54
+        row_before = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2400'"
+        ).fetchone()
+        _migrate_v54_add_account_2400(conn)
+        row_after = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2400'"
+        ).fetchone()
+        assert row_before is not None
+        assert row_before["id"] == row_after["id"]
+        assert row_before["name"] == row_after["name"]
+        assert row_before["type"] == row_after["type"]
