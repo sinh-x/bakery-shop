@@ -612,19 +612,38 @@ rustic -P baker-prod restore <snapshot-id> /tmp/baker-restore
 
 ---
 
-## 12. Tailscale Cert Renewal
+## 12. Tailscale Cert Renewal (Routine — every ~90 days)
 
-Tailscale certs expire after ~90 days. Caddy mounts them read-only, so there is no auto-renewal. You must re-generate manually:
+Tailscale certs expire after ~90 days. Caddy mounts them read-only, so there is no auto-renewal. Run this manually before expiry.
 
+**Next renewal:** **Sep 20, 2026** (before expiry Sep 25, 2026)
+
+**Tip:** Set a calendar reminder ~5 days before the expiry date shown by:
 ```bash
-cd /home/sinh/bakery-shop
-tailscale cert --cert-file=certs/${DOMAIN}.crt --key-file=certs/${DOMAIN}.key ${DOMAIN}
-
-# Restart Caddy to pick up new certs
-docker compose --profile prod restart caddy
+ssh lily "openssl x509 -in /home/sinh/bakery-shop/certs/lily.tail10c2c6.ts.net.crt -noout -enddate"
 ```
 
-Consider setting a calendar reminder every 2 months.
+### Steps
+
+```bash
+# 1. SSH to lily and generate new cert
+ssh lily "tailscale cert lily.tail10c2c6.ts.net"
+
+# 2. Copy new certs into bakery-shop certs directory
+ssh lily "cp ~/lily.tail10c2c6.ts.net.* ~/bakery-shop/certs/"
+
+# 3. Restart Caddy to pick up new certs
+ssh lily "docker restart bakery-shop-caddy-1"
+
+# 4. Verify
+ssh lily "curl -sv --resolve lily.tail10c2c6.ts.net:443:127.0.0.1 https://lily.tail10c2c6.ts.net/ 2>&1 | grep 'expire date'"
+```
+
+### One-liner (copy-paste for routine renewal)
+
+```bash
+ssh lily "tailscale cert lily.tail10c2c6.ts.net && cp ~/lily.tail10c2c6.ts.net.* ~/bakery-shop/certs/ && docker restart bakery-shop-caddy-1"
+```
 
 ---
 
