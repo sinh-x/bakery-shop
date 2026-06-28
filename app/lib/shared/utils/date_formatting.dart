@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 DateTime parseApiDateTime(String value) {
@@ -29,4 +30,8 @@ String formatDisplayTime(DateTime dt) {
 String formatDisplayShort(DateTime dt) {
   final local = dt.toLocal();
   return DateFormat('dd/MM HH:mm').format(local);
+}
+
+String formatDisplayTimeOfDay(TimeOfDay tod) {
+  return DateFormat('HH:mm').format(DateTime(0, 1, 1, tod.hour, tod.minute));
 }

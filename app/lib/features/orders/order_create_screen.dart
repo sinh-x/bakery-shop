@@ -136,8 +136,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   String _formatDateApi(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
   String _formatDateDisplay(DateTime d) => formatDisplayDate(d);
 
-  String _formatTime(TimeOfDay t) =>
-      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  String _formatTime(TimeOfDay t) => formatDisplayTimeOfDay(t);
 
   String _deriveSlot(TimeOfDay t) {
     if (t.hour < 12) return VN.timeSlotMorning;
