@@ -1,6 +1,7 @@
 import os
 from importlib.metadata import PackageNotFoundError
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import yaml
 
@@ -27,6 +28,8 @@ LOG_LEVEL: str
 LOG_DIR: Path
 BUILD_FINGERPRINT: str
 PRINT_IPP_URL: str | None
+TIMEZONE: ZoneInfo
+TIMEZONE_NAME: str
 
 
 def _load_from(path: Path) -> dict:
@@ -42,7 +45,7 @@ def reload(config_path: Path | str | None = None) -> None:
     Falls back to DEFAULT_CONFIG_PATH, then built-in defaults.
     Called automatically on first import; call again with a path to switch configs.
     """
-    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT, LOG_LEVEL, LOG_DIR, BUILD_FINGERPRINT, PRINT_IPP_URL
+    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT, LOG_LEVEL, LOG_DIR, BUILD_FINGERPRINT, PRINT_IPP_URL, TIMEZONE, TIMEZONE_NAME
 
     path = Path(config_path).expanduser() if config_path else DEFAULT_CONFIG_PATH
     cfg = _load_from(path)
@@ -56,6 +59,8 @@ def reload(config_path: Path | str | None = None) -> None:
     LOG_DIR = Path(os.environ.get("BAKER_LOG_DIR") or cfg.get("log_dir", DATA_DIR / "logs")).expanduser()
     BUILD_FINGERPRINT = os.environ.get("BAKER_BUILD_FINGERPRINT") or "unknown"
     PRINT_IPP_URL = os.environ.get("BAKER_PRINT_IPP_URL") or None
+    TIMEZONE_NAME = os.environ.get("BAKER_TIMEZONE") or cfg.get("timezone", "Asia/Ho_Chi_Minh")
+    TIMEZONE = ZoneInfo(TIMEZONE_NAME)
 
 
 # Load defaults on import
