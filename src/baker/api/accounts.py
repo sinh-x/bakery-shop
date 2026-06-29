@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
+from baker.utils.time import now_iso
 from baker.db.schema import (
     PAYMENT_METHOD_TO_ASSET_CODE,
     _account_id_by_code,
@@ -111,7 +112,7 @@ def _create_manual_journal_entry(
         source_type=source_type,
         source_id=None,
         lines=lines,
-        transaction_date=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        transaction_date=now_iso(),
     )
     entry = JournalEntry.from_row(
         conn.execute("SELECT * FROM journal_entries WHERE id = ?", (entry_id,)).fetchone()
@@ -242,7 +243,7 @@ def lock_journal(body: JournalLockRequest):
     """Khóa journal entries trong khoảng [since, until]."""
     if not body.since or not body.until:
         raise HTTPException(status_code=422, detail="since và until là bắt buộc")
-    now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    now = now_iso()
     with get_db() as conn:
         count = JournalEntry.lock_range(
             conn, since=body.since, until=body.until, locked_at=now, locked_by=body.lockedBy

@@ -222,7 +222,7 @@ def delete_knowledge(entry_id: int):
 @router.post("/{entry_id}/pin")
 def pin_knowledge(entry_id: int):
     """Ghim mục tri thức lên đầu danh sách."""
-    import datetime
+    from baker.utils.time import now_iso
 
     with get_db() as conn:
         row = conn.execute(
@@ -231,7 +231,7 @@ def pin_knowledge(entry_id: int):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy mục tri thức")
 
-        pinned_at = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        pinned_at = now_iso()
         conn.execute(
             "UPDATE knowledge_entries SET pinned = 1, pinned_at = ? WHERE id = ?",
             (pinned_at, entry_id),

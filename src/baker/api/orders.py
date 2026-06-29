@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
 from baker.logging import log_context, logger
+from baker.utils.time import now_iso
 from baker.models.order import (
     PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN,
     Order,
@@ -605,7 +606,8 @@ def edit_order(ref: str, body: OrderEdit):
         if not updates:
             raise HTTPException(status_code=400, detail="Không có gì để cập nhật")
 
-        updates.append("updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')")
+        updates.append("updated_at = ?")
+        params.append(now_iso())
         params.append(row["id"])
         conn.execute(
             f"UPDATE orders SET {', '.join(updates)} WHERE id = ?",
