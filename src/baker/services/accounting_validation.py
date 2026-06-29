@@ -1047,9 +1047,11 @@ def _check_deposit_balance_integrity(conn) -> dict[str, Any]:
             # Active order (confirmed, ready, new) — only flag if overdue.
             if not due_date:
                 continue  # no due date, can't determine — skip
-            # Compare due_date to now (local time).  SQLite stores dates in
-            # local time via ``strftime('%Y-%m-%d', 'now', 'localtime')``, so
-            # we compare as strings (YYYY-MM-DD lexicographic order works).
+            # Compare due_date to today (local time). Date-only values use
+            # ``strftime('%Y-%m-%d', 'now', 'localtime')``; timestamp columns
+            # are now normalized to ``+07:00``-suffixed ISO-8601 via
+            # ``baker.utils.time.now_iso()`` (v55 migration, DG-174 Phase 2).
+            # Date-only comparison uses lexicographic YYYY-MM-DD order.
             today = conn.execute(
                 "SELECT strftime('%Y-%m-%d', 'now', 'localtime')"
             ).fetchone()[0]

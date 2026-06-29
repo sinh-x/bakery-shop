@@ -39,6 +39,11 @@ def _create_chip(client, product_id: int, label: str, price: float) -> int:
 
 
 def _mark_order_as_legacy_pos(conn, order_ref: str, created_at: str) -> None:
+    # Post-v55 migration all stored timestamps carry the configured timezone
+    # offset. Ensure the legacy-POS fixture matches the normalized shape so
+    # date-range comparisons against offset-suffixed bounds stay correct.
+    if created_at and "T" in created_at and not created_at.endswith(("Z",)) and "+" not in created_at and "-" not in created_at[10:]:
+        created_at = created_at + "+07:00"
     conn.execute(
         """UPDATE orders
            SET due_date = '', source = ?, created_at = ?

@@ -1706,9 +1706,9 @@ def _insert_journal_entry(
         )
 
     if transaction_date is None:
-        transaction_date = conn.execute(
-            "SELECT strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')"
-        ).fetchone()[0]
+        from baker.utils.time import now_iso
+
+        transaction_date = now_iso()
 
     # Transition guard: write transaction_date only when the column exists
     # (added by migration v50). Before v50 is applied, fall back to the legacy

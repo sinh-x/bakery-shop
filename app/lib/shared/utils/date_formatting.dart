@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+/// Default timezone offset applied to naive (offset-less) API timestamps
+/// before the server config is fetched. Asia/Ho_Chi_Minh (`+07:00`).
+///
+/// This is the single source of truth for the default offset. Other modules
+/// (e.g. `config_service.dart`) reference this constant instead of defining
+/// their own copy, so the default cannot drift out of sync.
+const String kDefaultServerTimezoneOffset = '+07:00';
+
 /// Timezone offset applied to naive (offset-less) API timestamps.
 ///
-/// Defaults to `+07:00` (Asia/Ho_Chi_Minh) and is updated at startup from the
-/// server's `GET /api/config` endpoint via [setServerTimezoneOffset].
-String _serverTimezoneOffset = '+07:00';
+/// Defaults to [kDefaultServerTimezoneOffset] and is updated at startup from
+/// the server's `GET /api/config` endpoint via [setServerTimezoneOffset].
+String _serverTimezoneOffset = kDefaultServerTimezoneOffset;
 
 /// Update the timezone offset used to interpret naive API timestamps.
 ///

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
 from baker.logging import log_context, logger
-from baker.utils.time import now_iso
+from baker.utils.time import now_iso, tz_offset
 from baker.models.order import (
     PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN,
     Order,
@@ -28,9 +28,13 @@ router = APIRouter(prefix="/api/orders", tags=["orders"])
 
 
 def _day_bounds(date_str: str) -> tuple[str, str]:
+    offset = tz_offset()
     day = datetime.strptime(date_str, "%Y-%m-%d")
     next_day = day + timedelta(days=1)
-    return f"{date_str}T00:00:00", next_day.strftime("%Y-%m-%dT00:00:00")
+    return (
+        f"{date_str}T00:00:00{offset}",
+        next_day.strftime(f"%Y-%m-%dT00:00:00{offset}"),
+    )
 
 
 class OrderItemIn(BaseModel):
