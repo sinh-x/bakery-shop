@@ -25,15 +25,12 @@ class ConfigValue {
 
 /// Server-side configuration returned by `GET /api/config`.
 class ServerConfig {
-  final String timezone;
   final String timezoneOffset;
 
-  const ServerConfig({required this.timezone, required this.timezoneOffset});
+  const ServerConfig({required this.timezoneOffset});
 
-  factory ServerConfig.fromJson(Map<String, dynamic> json) => ServerConfig(
-        timezone: json['timezone'] as String,
-        timezoneOffset: json['timezone_offset'] as String,
-      );
+  factory ServerConfig.fromJson(Map<String, dynamic> json) =>
+      ServerConfig(timezoneOffset: json['timezone_offset'] as String);
 }
 
 class ConfigService {
@@ -50,7 +47,10 @@ class ConfigService {
   }
 
   Future<ServerConfig> getServerConfig() async {
-    final response = await _dio.get('/api/config');
+    final response = await _dio.get(
+      '/api/config',
+      options: Options(receiveTimeout: const Duration(seconds: 4)),
+    );
     return ServerConfig.fromJson(response.data as Map<String, dynamic>);
   }
 
