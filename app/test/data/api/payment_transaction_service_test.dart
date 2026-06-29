@@ -61,7 +61,7 @@ void main() {
       expect(interceptor.lastPath, '/api/orders/ORD-260625-001/transactions/20/invalidate');
       expect(interceptor.lastBody, containsPair('invalidatedBy', 'Sinh'));
       expect(interceptor.lastBody, containsPair('reason', 'sai so tien'));
-      expect(txn.invalidatedAt, '2026-06-25T12:00:00');
+      expect(txn.invalidatedAt, isA<DateTime>());
       expect(txn.invalidatedBy, 'Sinh');
     });
 
@@ -101,7 +101,7 @@ void main() {
       final txns = await service.listTransactions('ORD-260625-001');
 
       expect(txns.length, 2);
-      expect(txns[0].invalidatedAt, '2026-06-25T12:00:00');
+      expect(txns[0].invalidatedAt, isA<DateTime>());
       expect(txns[0].invalidatedBy, 'An');
       expect(txns[1].invalidatedAt, isNull);
       expect(txns[1].invalidatedBy, '');

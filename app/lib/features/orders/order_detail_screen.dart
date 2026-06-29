@@ -1147,14 +1147,7 @@ class _TransactionTile extends StatelessWidget {
     final methodLabel = paymentMethodLabel(txn.method);
     final isInvalidated = txn.invalidatedAt != null;
 
-    String dateStr = '';
-    if (txn.createdAt != null) {
-      try {
-        dateStr = formatDisplayShort(parseApiDateTime(txn.createdAt!));
-      } catch (_) {
-        dateStr = txn.createdAt!;
-      }
-    }
+    final dateStr = txn.createdAt != null ? formatDisplayShort(txn.createdAt!) : '';
 
     final baseTextStyle = theme.textTheme.bodyMedium?.copyWith(
       fontWeight: FontWeight.w600,
@@ -1439,23 +1432,10 @@ class _TransactionDetailSheetState
     final methodLabel = paymentMethodLabel(txn.method);
     final isInvalidated = txn.invalidatedAt != null;
 
-    String dateStr = '';
-    if (txn.createdAt != null) {
-      try {
-        dateStr = formatDisplay(parseApiDateTime(txn.createdAt!));
-      } catch (_) {
-        dateStr = txn.createdAt!;
-      }
-    }
+    final dateStr = txn.createdAt != null ? formatDisplay(txn.createdAt!) : '';
 
-    String invalidatedDateStr = '';
-    if (txn.invalidatedAt != null) {
-      try {
-        invalidatedDateStr = formatDisplay(parseApiDateTime(txn.invalidatedAt!));
-      } catch (_) {
-        invalidatedDateStr = txn.invalidatedAt!;
-      }
-    }
+    final invalidatedDateStr =
+        txn.invalidatedAt != null ? formatDisplay(txn.invalidatedAt!) : '';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
