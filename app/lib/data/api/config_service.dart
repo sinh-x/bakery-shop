@@ -3,8 +3,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api_client.dart';
-import '../../shared/utils/date_formatting.dart'
-    show setServerTimezoneOffset, kDefaultServerTimezoneOffset;
+import '../../shared/utils/date_formatting.dart' show setServerTimezoneOffset;
 
 class ConfigValue {
   final String value;
@@ -81,20 +80,6 @@ class ConfigService {
 final configServiceProvider = Provider<ConfigService>((ref) {
   final dio = ref.watch(dioProvider);
   return ConfigService(dio);
-});
-
-/// Fallback timezone offset used before the server config is fetched.
-///
-/// Defined in `date_formatting.dart` ([kDefaultServerTimezoneOffset]) to keep
-/// a single source of truth — re-exported here for provider consumers.
-const kDefaultTimezoneOffset = kDefaultServerTimezoneOffset;
-
-/// Holds the server-configured timezone offset. Defaults to `+07:00` until
-/// [initServerTimezone] updates it from the server config. Reading this
-/// provider does NOT trigger a network fetch — call [initServerTimezone]
-/// explicitly at real-app startup (see `main.dart`).
-final serverTimezoneOffsetProvider = Provider<String>((ref) {
-  return kDefaultTimezoneOffset;
 });
 
 /// Fetch the server timezone config and update [setServerTimezoneOffset].
