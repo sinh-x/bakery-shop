@@ -56,6 +56,51 @@ void main() {
     });
   });
 
+  group('setServerTimezoneOffset', () {
+    test('default offset is +07:00', () {
+      expect(currentServerTimezoneOffset, '+07:00');
+    });
+
+    test('naive timestamp uses configured offset', () {
+      setServerTimezoneOffset('+06:00');
+      final dt = parseApiDateTime('2026-05-23T10:00:00');
+      expect(dt.toUtc().toIso8601String(), '2026-05-23T04:00:00.000Z');
+      // restore default
+      setServerTimezoneOffset('+07:00');
+    });
+
+    test('explicit offset timestamps are unaffected by config', () {
+      setServerTimezoneOffset('+06:00');
+      final dt = parseApiDateTime('2026-05-23T10:00:00+07:00');
+      expect(dt.toUtc().toIso8601String(), '2026-05-23T03:00:00.000Z');
+      setServerTimezoneOffset('+07:00');
+    });
+
+    test('empty offset is ignored', () {
+      setServerTimezoneOffset('+06:00');
+      setServerTimezoneOffset('');
+      expect(currentServerTimezoneOffset, '+06:00');
+      setServerTimezoneOffset('+07:00');
+    });
+  });
+
+  group('toLocalIsoString', () {
+    test('emits local time with configured offset', () {
+      setServerTimezoneOffset('+07:00');
+      // Local 10:00 in a +07:00 device -> 10:00:00+07:00
+      final local = DateTime(2026, 5, 23, 10, 0);
+      expect(toLocalIsoString(local), '2026-05-23T10:00:00+07:00');
+    });
+
+    test('UTC input converts to device local then appends offset', () {
+      setServerTimezoneOffset('+07:00');
+      final utc = DateTime.utc(2026, 5, 23, 3, 0);
+      // UTC 03:00 -> device local depends on TZ; just verify offset suffix
+      expect(toLocalIsoString(utc).endsWith('+07:00'), isTrue);
+      setServerTimezoneOffset('+07:00');
+    });
+  });
+
   group('formatDisplay', () {
     test('default pattern dd/MM/yyyy HH:mm', () {
       final dt = DateTime(2026, 5, 23, 14, 30);

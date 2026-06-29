@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../shared/utils/date_formatting.dart' show toLocalIsoString;
 import '../models/event.dart';
 import '../models/event_photo.dart';
 import 'api_client.dart';
@@ -31,7 +32,7 @@ class EventService {
       'source': source,
     };
     if (timestamp != null) {
-      body['timestamp'] = timestamp.toIso8601String();
+      body['timestamp'] = toLocalIsoString(timestamp);
     }
     if (orderId != null) {
       body['order_id'] = orderId;
@@ -108,7 +109,7 @@ class EventService {
     if (tags != null) body['tags'] = tags;
     if (loggedBy != null) body['logged_by'] = loggedBy;
     if (data != null) body['data'] = data;
-    if (timestamp != null) body['timestamp'] = timestamp.toIso8601String();
+    if (timestamp != null) body['timestamp'] = toLocalIsoString(timestamp);
     final response = await _dio.patch('/api/events/$id', data: body);
     return BakeryEvent.fromJson(response.data as Map<String, dynamic>);
   }

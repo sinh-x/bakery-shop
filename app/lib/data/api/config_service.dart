@@ -1,7 +1,10 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api_client.dart';
+import '../../shared/utils/date_formatting.dart'
+    show setServerTimezoneOffset;
 
 class ConfigValue {
   final String value;
@@ -21,6 +24,19 @@ class ConfigValue {
       );
 }
 
+/// Server-side configuration returned by `GET /api/config`.
+class ServerConfig {
+  final String timezone;
+  final String timezoneOffset;
+
+  const ServerConfig({required this.timezone, required this.timezoneOffset});
+
+  factory ServerConfig.fromJson(Map<String, dynamic> json) => ServerConfig(
+        timezone: json['timezone'] as String,
+        timezoneOffset: json['timezone_offset'] as String,
+      );
+}
+
 class ConfigService {
   final Dio _dio;
 
@@ -32,6 +48,11 @@ class ConfigService {
     return list
         .map((json) => ConfigValue.fromJson(json as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<ServerConfig> getServerConfig() async {
+    final response = await _dio.get('/api/config');
+    return ServerConfig.fromJson(response.data as Map<String, dynamic>);
   }
 
   Future<void> createConfigValue(String configKey, String value, {int sortOrder = 0}) async {
@@ -61,3 +82,27 @@ final configServiceProvider = Provider<ConfigService>((ref) {
   final dio = ref.watch(dioProvider);
   return ConfigService(dio);
 });
+
+/// Fallback timezone offset used before the server config is fetched.
+const kDefaultTimezoneOffset = '+07:00';
+
+/// Holds the server-configured timezone offset. Defaults to `+07:00` until
+/// [initServerTimezone] updates it from the server config. Reading this
+/// provider does NOT trigger a network fetch — call [initServerTimezone]
+/// explicitly at real-app startup (see `main.dart`).
+final serverTimezoneOffsetProvider = Provider<String>((ref) {
+  return kDefaultTimezoneOffset;
+});
+
+/// Fetch the server timezone config and update [setServerTimezoneOffset].
+///
+/// Call once at app startup from `main.dart` (not from widget tests). Failures
+/// are logged and the default offset is kept.
+Future<void> initServerTimezone(ConfigService service) async {
+  try {
+    final config = await service.getServerConfig();
+    setServerTimezoneOffset(config.timezoneOffset);
+  } catch (error) {
+    debugPrint('initServerTimezone: fetch failed, using default: $error');
+  }
+}
