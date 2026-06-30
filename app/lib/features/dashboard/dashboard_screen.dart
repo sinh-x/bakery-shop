@@ -7,6 +7,7 @@ import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/theme/bakery_theme.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
@@ -112,15 +113,12 @@ class _DashboardContent extends StatelessWidget {
   final List<Order> orders;
   final Future<void> Function() onRefresh;
 
-  String _dateStr(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
   @override
   Widget build(BuildContext context) {
     final today = DateTime.now();
-    final todayStr = _dateStr(today);
+    final todayStr = formatDisplay(today, pattern: 'yyyy-MM-dd');
     final in3Days = today.add(const Duration(days: 3));
-    final in3DaysStr = _dateStr(in3Days);
+    final in3DaysStr = formatDisplay(in3Days, pattern: 'yyyy-MM-dd');
 
     // Overdue: dueDate < today, status not terminal
     final overdueOrders = orders.where((o) {

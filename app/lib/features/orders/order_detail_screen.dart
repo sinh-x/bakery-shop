@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api/api_client.dart';
@@ -24,6 +23,7 @@ import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/vnd_units.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/api_error.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/enum_attribute_display.dart';
@@ -321,8 +321,8 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
   String _formatDueDisplay(String? date, String? time) {
     if (date == null) return '—';
     try {
-      final d = DateFormat('yyyy-MM-dd').parse(date);
-      final dateStr = DateFormat('dd/MM/yyyy').format(d);
+      final d = parseApiDateTime(date);
+      final dateStr = formatDisplayDate(d);
       return time != null ? '$dateStr $time' : dateStr;
     } catch (_) {
       return time != null ? '$date $time' : date;
@@ -431,7 +431,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       final service = ref.read(orderServiceProvider);
       await service.updateWorkTicketPrintedAt(
         order.orderRef,
-        DateTime.now().toIso8601String(),
+        toLocalIsoString(DateTime.now()),
       );
       ref.invalidate(orderDetailProvider(order.orderRef));
       ref.invalidate(orderListProvider);
@@ -1147,15 +1147,7 @@ class _TransactionTile extends StatelessWidget {
     final methodLabel = paymentMethodLabel(txn.method);
     final isInvalidated = txn.invalidatedAt != null;
 
-    String dateStr = '';
-    if (txn.createdAt != null) {
-      try {
-        final dt = DateTime.parse(txn.createdAt!).toLocal();
-        dateStr = DateFormat('dd/MM HH:mm').format(dt);
-      } catch (_) {
-        dateStr = txn.createdAt!;
-      }
-    }
+    final dateStr = txn.createdAt != null ? formatDisplayShort(txn.createdAt!) : '';
 
     final baseTextStyle = theme.textTheme.bodyMedium?.copyWith(
       fontWeight: FontWeight.w600,
@@ -1440,25 +1432,10 @@ class _TransactionDetailSheetState
     final methodLabel = paymentMethodLabel(txn.method);
     final isInvalidated = txn.invalidatedAt != null;
 
-    String dateStr = '';
-    if (txn.createdAt != null) {
-      try {
-        final dt = DateTime.parse(txn.createdAt!).toLocal();
-        dateStr = DateFormat('dd/MM/yyyy HH:mm').format(dt);
-      } catch (_) {
-        dateStr = txn.createdAt!;
-      }
-    }
+    final dateStr = txn.createdAt != null ? formatDisplay(txn.createdAt!) : '';
 
-    String invalidatedDateStr = '';
-    if (txn.invalidatedAt != null) {
-      try {
-        final dt = DateTime.parse(txn.invalidatedAt!).toLocal();
-        invalidatedDateStr = DateFormat('dd/MM/yyyy HH:mm').format(dt);
-      } catch (_) {
-        invalidatedDateStr = txn.invalidatedAt!;
-      }
-    }
+    final invalidatedDateStr =
+        txn.invalidatedAt != null ? formatDisplay(txn.invalidatedAt!) : '';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),

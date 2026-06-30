@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/accounting_service.dart';
 import '../../../providers/accounting_provider.dart';
+import '../../../shared/utils/date_formatting.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 import '../providers/journal_pagination_notifier.dart';
 import 'empty_state.dart';
@@ -136,8 +137,8 @@ class _JournalTabState extends ConsumerState<JournalTab> {
     );
     if (picked == null || !mounted) return;
 
-    final sinceStr = _dateStr(picked.start);
-    final untilStr = _dateStr(picked.end.add(const Duration(days: 1)));
+    final sinceStr = formatDisplay(picked.start, pattern: 'yyyy-MM-dd');
+    final untilStr = formatDisplay(picked.end.add(const Duration(days: 1)), pattern: 'yyyy-MM-dd');
     if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -173,7 +174,4 @@ class _JournalTabState extends ConsumerState<JournalTab> {
       }
     }
   }
-
-  String _dateStr(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 }

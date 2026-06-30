@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'date_formatting.dart';
+
 /// Shared order/work-item helper functions.
 /// Eliminates duplication across OrderCard, CakeQueueCard, DeliveryOrderCard.
 
@@ -7,7 +9,7 @@ import 'package:flutter/material.dart';
 Color? urgencyBorderColor(String? dueDate) {
   if (dueDate == null || dueDate.isEmpty) return null;
   try {
-    final due = DateTime.parse(dueDate);
+    final due = parseApiDateTime(dueDate);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final dueDateOnly = DateTime(due.year, due.month, due.day);
@@ -27,9 +29,9 @@ bool isDueWithin2Hours(String? dueDate, String? dueTime) {
     final now = DateTime.now();
     DateTime due;
     if (dueTime != null && dueTime.isNotEmpty) {
-      due = DateTime.parse('$dueDate $dueTime');
+      due = parseApiDateTime('$dueDate $dueTime');
     } else {
-      due = DateTime.parse(dueDate);
+      due = parseApiDateTime(dueDate);
     }
     return due.isAfter(now) && due.difference(now).inMinutes <= 120;
   } catch (error, stackTrace) {

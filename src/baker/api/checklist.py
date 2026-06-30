@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from baker.db.connection import get_db
+from baker.utils.time import now_iso
 
 
 router = APIRouter(prefix="/api/checklist", tags=["checklist"])
@@ -201,8 +202,8 @@ def toggle_entry(entry_id: int, body: ToggleRequest):
             # Tick
             conn.execute(
                 "UPDATE checklist_entries SET completed = 1, completed_by = ?, "
-                "completed_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') WHERE id = ?",
-                (body.staff_name, entry_id),
+                "completed_at = ? WHERE id = ?",
+                (body.staff_name, now_iso(), entry_id),
             )
 
         row = conn.execute(

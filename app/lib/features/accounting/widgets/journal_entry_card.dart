@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../data/models/journal_entry.dart';
+import '../../../shared/utils/date_formatting.dart';
 import '../../../shared/widgets/vietnamese_labels.dart';
 
 /// Card displaying a single journal entry with an expandable line-item table.
@@ -33,7 +34,7 @@ class JournalEntryCard extends StatelessWidget {
           children: [
             if (entry.createdAt != null) ...[
               Text(
-                _formatTimestamp(entry.createdAt!),
+                formatDisplayShort(parseApiDateTime(entry.createdAt!)),
                 style: theme.textTheme.bodySmall,
               ),
               const SizedBox(width: 8),
@@ -157,12 +158,5 @@ class JournalEntryCard extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  String _formatTimestamp(String iso) {
-    final dt = DateTime.tryParse(iso)?.toLocal();
-    if (dt == null) return iso;
-    return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')} '
-        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 }

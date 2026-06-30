@@ -366,7 +366,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 54
+        assert _migrated_version(conn) == 55
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -383,7 +383,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 54
+        assert _migrated_version(conn) == 55
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -397,10 +397,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 54
+        assert _migrated_version(conn) == 55
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 54
+        assert _migrated_version(conn) == 55
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -2441,3 +2441,143 @@ def test_v54_idempotent_on_fresh_db():
         assert row_before["id"] == row_after["id"]
         assert row_before["name"] == row_after["name"]
         assert row_before["type"] == row_after["type"]
+
+
+# ── v55 Migration: Timezone standardization (DG-174 Phase 2) ──────────────
+
+
+def _v55_insert_event(conn, timestamp: str) -> int:
+    """Insert an events row with an explicit timestamp for v55 test setup."""
+    cursor = conn.execute(
+        "INSERT INTO events (timestamp, type, summary) VALUES (?, 'note', 'v55 test')",
+        (timestamp,),
+    )
+    return int(cursor.lastrowid)
+
+
+def _v55_insert_order(conn, order_ref: str, created_at: str) -> int:
+    """Insert an orders row with an explicit created_at for v55 test setup."""
+    cursor = conn.execute(
+        "INSERT INTO orders (order_ref, customer_name, items, created_at, updated_at) "
+        "VALUES (?, 'v55 test', '[]', ?, ?)",
+        (order_ref, created_at, created_at),
+    )
+    return int(cursor.lastrowid)
+
+
+def test_v55_registered_in_migration_chain():
+    """v55 is registered in MIGRATIONS with the expected callable."""
+    assert 55 in MIGRATIONS
+    assert (
+        MIGRATIONS[55]["callable"].__name__
+        == "_migrate_v55_normalize_timestamps"
+    )
+
+
+def test_v55_fresh_db():
+    """v55 on a fresh DB (via ensure_schema) reaches version 55 and normalizes
+    any rows seeded by earlier migrations so all timestamp columns carry an
+    offset suffix."""
+    from baker.db.schema import _migrate_v55_normalize_timestamps
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 55
+
+        # Insert rows in each of the three shapes v55 must handle.
+        bare = "2026-06-29T08:30:00"
+        utc_z = "2026-06-29T01:30:00Z"
+        already_offset = "2026-06-29T08:30:00+07:00"
+        bare_id = _v55_insert_event(conn, bare)
+        z_id = _v55_insert_event(conn, utc_z)
+        offset_id = _v55_insert_event(conn, already_offset)
+        conn.commit()
+
+        _migrate_v55_normalize_timestamps(conn)
+        conn.commit()
+
+        bare_after = conn.execute(
+            "SELECT timestamp FROM events WHERE id = ?", (bare_id,)
+        ).fetchone()[0]
+        z_after = conn.execute(
+            "SELECT timestamp FROM events WHERE id = ?", (z_id,)
+        ).fetchone()[0]
+        offset_after = conn.execute(
+            "SELECT timestamp FROM events WHERE id = ?", (offset_id,)
+        ).fetchone()[0]
+
+        # Bare timestamps gain the configured offset.
+        assert bare_after == "2026-06-29T08:30:00+07:00", bare_after
+        # UTC 'Z' timestamps convert to local time with the offset.
+        assert z_after == "2026-06-29T08:30:00+07:00", z_after
+        # Already-offset timestamps are left unchanged (idempotent).
+        assert offset_after == already_offset, offset_after
+
+
+def test_v55_incremental_from_v54():
+    """Applying v55 on top of a v54 DB normalizes bare and UTC-Z timestamps
+    while leaving already-offset values untouched, across multiple tables."""
+    from baker.db.schema import _migrate_v55_normalize_timestamps
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 54)
+        assert _migrated_version(conn) == 54
+
+        # Seed rows with the three shapes across events and orders.
+        e_bare = _v55_insert_event(conn, "2026-06-28T10:00:00")
+        e_z = _v55_insert_event(conn, "2026-06-28T03:00:00Z")
+        e_offset = _v55_insert_event(conn, "2026-06-28T10:00:00+07:00")
+        o_bare = _v55_insert_order(conn, "V55-B1", "2026-06-28T11:00:00")
+        o_z = _v55_insert_order(conn, "V55-Z1", "2026-06-28T04:00:00Z")
+        conn.commit()
+
+        _migrate_v55_normalize_timestamps(conn)
+        conn.commit()
+
+        assert conn.execute(
+            "SELECT timestamp FROM events WHERE id = ?", (e_bare,)
+        ).fetchone()[0] == "2026-06-28T10:00:00+07:00"
+        assert conn.execute(
+            "SELECT timestamp FROM events WHERE id = ?", (e_z,)
+        ).fetchone()[0] == "2026-06-28T10:00:00+07:00"
+        assert conn.execute(
+            "SELECT timestamp FROM events WHERE id = ?", (e_offset,)
+        ).fetchone()[0] == "2026-06-28T10:00:00+07:00"
+
+        assert conn.execute(
+            "SELECT created_at FROM orders WHERE id = ?", (o_bare,)
+        ).fetchone()[0] == "2026-06-28T11:00:00+07:00"
+        assert conn.execute(
+            "SELECT created_at FROM orders WHERE id = ?", (o_z,)
+        ).fetchone()[0] == "2026-06-28T11:00:00+07:00"
+
+
+def test_v55_idempotent():
+    """Re-running the v55 callable on an already-migrated DB is a no-op —
+    already-offset timestamps are skipped."""
+    from baker.db.schema import _migrate_v55_normalize_timestamps
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 54)
+        _v55_insert_event(conn, "2026-06-27T09:00:00")
+        _v55_insert_event(conn, "2026-06-27T02:00:00Z")
+        conn.commit()
+
+        _migrate_v55_normalize_timestamps(conn)
+        conn.commit()
+        after_first = conn.execute(
+            "SELECT timestamp FROM events ORDER BY id"
+        ).fetchall()
+        first_values = [r[0] for r in after_first]
+
+        # Second run must not alter any row.
+        _migrate_v55_normalize_timestamps(conn)
+        conn.commit()
+        after_second = conn.execute(
+            "SELECT timestamp FROM events ORDER BY id"
+        ).fetchall()
+        second_values = [r[0] for r in after_second]
+
+        assert second_values == first_values
+        # Every value carries the offset after migration.
+        assert all(v.endswith("+07:00") for v in second_values), second_values

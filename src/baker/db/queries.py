@@ -3,30 +3,36 @@
 import json
 from datetime import datetime, timedelta
 
+from baker.utils.time import tz_offset
+
 
 def today_range():
-    """Return (start, end) ISO strings for today."""
-    today = datetime.now().strftime("%Y-%m-%d")
-    return f"{today}T00:00:00", f"{today}T23:59:59"
+    """Return (start, end) ISO strings for today with configured TZ offset."""
+    today = datetime.now().astimezone()
+    date_str = today.strftime("%Y-%m-%d")
+    offset = tz_offset()
+    return f"{date_str}T00:00:00{offset}", f"{date_str}T23:59:59{offset}"
 
 
 def week_range():
     """Return (start, end) ISO strings for the current week (Mon-Sun)."""
-    now = datetime.now()
+    now = datetime.now().astimezone()
     monday = now - timedelta(days=now.weekday())
     sunday = monday + timedelta(days=6)
-    return monday.strftime("%Y-%m-%dT00:00:00"), sunday.strftime("%Y-%m-%dT23:59:59")
+    offset = tz_offset()
+    return f"{monday.strftime('%Y-%m-%d')}T00:00:00{offset}", f"{sunday.strftime('%Y-%m-%d')}T23:59:59{offset}"
 
 
 def month_range():
     """Return (start, end) ISO strings for the current month."""
-    now = datetime.now()
+    now = datetime.now().astimezone()
     start = now.replace(day=1)
     if now.month == 12:
         end = now.replace(year=now.year + 1, month=1, day=1) - timedelta(days=1)
     else:
         end = now.replace(month=now.month + 1, day=1) - timedelta(days=1)
-    return start.strftime("%Y-%m-%dT00:00:00"), end.strftime("%Y-%m-%dT23:59:59")
+    offset = tz_offset()
+    return f"{start.strftime('%Y-%m-%d')}T00:00:00{offset}", f"{end.strftime('%Y-%m-%d')}T23:59:59{offset}"
 
 
 def fetch_staff(conn, *, active_only=True):

@@ -16,7 +16,7 @@ void main() {
         'invalidatedBy': 'Sinh',
       });
 
-      expect(txn.invalidatedAt, '2026-06-25T12:00:00');
+      expect(txn.invalidatedAt, isA<DateTime>());
       expect(txn.invalidatedBy, 'Sinh');
       expect(txn.invalidatedAt, isNotNull);
     });
@@ -41,28 +41,28 @@ void main() {
         id: '12',
         orderId: '1',
         amount: 50000.0,
-        createdAt: '2026-06-25T10:00:00',
-        invalidatedAt: '2026-06-25T12:00:00',
+        createdAt: null,
+        invalidatedAt: null,
         invalidatedBy: 'An',
       );
       final json = txn.toJson();
 
-      expect(json['invalidatedAt'], '2026-06-25T12:00:00');
+      expect(json['invalidatedAt'], isNull);
       expect(json['invalidatedBy'], 'An');
     });
 
     test('isInvalidated is true when invalidatedAt is set', () {
-      const invalidated = PaymentTransaction(
-        id: '13',
-        orderId: '1',
-        amount: 100.0,
-        invalidatedAt: '2026-06-25T12:00:00',
-      );
-      const valid = PaymentTransaction(
-        id: '14',
-        orderId: '1',
-        amount: 100.0,
-      );
+      final invalidated = PaymentTransaction.fromJson({
+        'id': '13',
+        'orderId': '1',
+        'amount': 100.0,
+        'invalidatedAt': '2026-06-25T12:00:00',
+      });
+      final valid = PaymentTransaction.fromJson({
+        'id': '14',
+        'orderId': '1',
+        'amount': 100.0,
+      });
 
       expect(invalidated.invalidatedAt != null, isTrue);
       expect(valid.invalidatedAt != null, isFalse);

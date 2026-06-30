@@ -3,7 +3,9 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from baker import config
 from baker.db.connection import get_db
+from baker.utils.time import tz_offset
 
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -18,6 +20,15 @@ class ConfigValueUpdate(BaseModel):
     old_value: str
     new_value: str
     sort_order: int | None = None
+
+
+@router.get("")
+def get_server_config():
+    """Trả về cấu hình máy chủ cho Flutter (timezone, offset)."""
+    return {
+        "timezone": config.TIMEZONE_NAME,
+        "timezone_offset": tz_offset(),
+    }
 
 
 @router.get("/{config_key}")

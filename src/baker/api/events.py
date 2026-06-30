@@ -2,8 +2,6 @@
 
 import json
 import logging
-import re
-from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
@@ -15,6 +13,7 @@ from baker.db.connection import get_db
 from baker.db.queries import fetch_events, find_staff_by_name, link_event_person
 from baker.models.event import Event
 from baker.models.order import Order
+from baker.utils.time import normalize_timestamp, now_iso
 
 logger = logging.getLogger("baker.server")
 
@@ -173,9 +172,6 @@ def _log_event_history(conn, event_id, action_type, actor="", field_name="", old
     )
 
 
-_TZ_RE = re.compile(r'(Z|[+-]\d{2}:?\d{2})$')
-
-
 def _normalize_timestamp(raw: str | None) -> str | None:
     if raw is None:
         return None
@@ -183,12 +179,9 @@ def _normalize_timestamp(raw: str | None) -> str | None:
     if not value:
         raise HTTPException(status_code=422, detail="timestamp không được để trống")
     try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return normalize_timestamp(value)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="timestamp không đúng định dạng ISO") from exc
-    if not _TZ_RE.search(value):
-        return f"{value}+07:00"
-    return value
 
 
 def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
@@ -340,7 +333,7 @@ def delete_event(event_id: int, deleted_by: str = Query("", description="Ngườ
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
 
-        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S") + "+07:00"
+        now = now_iso()
         conn.execute(
             "UPDATE events SET deleted_at = ?, deleted_by = ? WHERE id = ?",
             (now, deleted_by, event_id),

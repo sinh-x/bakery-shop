@@ -20,6 +20,19 @@ def test_health(api_client):
     assert data["fingerprint"]
 
 
+# --- Server config (timezone) ---
+
+
+def test_server_config_returns_timezone(api_client):
+    resp = api_client.get("/api/config")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "timezone" in data
+    assert "timezone_offset" in data
+    assert data["timezone"] == "Asia/Ho_Chi_Minh"
+    assert data["timezone_offset"] == "+07:00"
+
+
 # --- List products ---
 
 

@@ -13,6 +13,8 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+
+from baker.utils.time import now_iso
 from PIL import Image
 
 from baker.api.receipts import (
@@ -240,7 +242,7 @@ def print_receipt(
             conn.execute(
                 """UPDATE orders
                    SET work_ticket_printed_at = CASE
-                           WHEN work_ticket_printed_at IS NULL THEN strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+                           WHEN work_ticket_printed_at IS NULL THEN ?
                            ELSE work_ticket_printed_at
                        END,
                        work_ticket_printed_by = CASE
@@ -250,6 +252,7 @@ def print_receipt(
                        END
                    WHERE id = ?""",
                 (
+                    now_iso(),
                     normalized_printed_by,
                     normalized_printed_by,
                     normalized_printed_by,

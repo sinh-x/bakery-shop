@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Optional
 
 from baker.models.event import Event
+from baker.utils.time import now_iso
 
 
 class OrderStatus(str, Enum):
@@ -267,8 +268,8 @@ class Order:
             return False
 
         conn.execute(
-            "UPDATE orders SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') WHERE id = ?",
-            (new_status, row["id"]),
+            "UPDATE orders SET status = ?, updated_at = ? WHERE id = ?",
+            (new_status, now_iso(), row["id"]),
         )
 
         data = {"order_ref": row["order_ref"], "from_status": current, "to_status": new_status}

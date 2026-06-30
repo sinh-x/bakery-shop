@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
 
@@ -132,9 +133,7 @@ class ExpenseFormCard extends StatelessWidget {
                       icon: const Icon(Icons.event),
                       label: Text(
                         '${VN.expenseDateLabel}: '
-                        '${eventDateTime.day.toString().padLeft(2, '0')}/'
-                        '${eventDateTime.month.toString().padLeft(2, '0')}/'
-                        '${eventDateTime.year}',
+                        '${formatDisplayDate(eventDateTime)}',
                       ),
                     ),
                   ),
@@ -145,8 +144,7 @@ class ExpenseFormCard extends StatelessWidget {
                       icon: const Icon(Icons.schedule),
                       label: Text(
                         '${VN.expenseTimeLabel}: '
-                        '${eventDateTime.hour.toString().padLeft(2, '0')}:'
-                        '${eventDateTime.minute.toString().padLeft(2, '0')}',
+                        '${formatDisplayTime(eventDateTime)}',
                       ),
                     ),
                   ),

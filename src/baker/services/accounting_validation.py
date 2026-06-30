@@ -62,6 +62,7 @@ from baker.db.schema import (
     ORDER_REVENUE_CODE,
     TIEN_RUT_HELD_CODE,
 )
+from baker.utils.time import now_iso
 
 # Tolerance for double-entry imbalance. Sub-cent rounding from REAL storage
 # and per-line float arithmetic is expected; only imbalances above this
@@ -130,12 +131,12 @@ def _check_cogs_completeness(conn) -> dict[str, Any]:
                o.order_ref    AS order_ref,
                p.base_price   AS base_price,
                p.category     AS category,
-               EXISTS (
-                   SELECT 1 FROM cost_history ch
-                   WHERE ch.product_id = CAST(oi.product_id AS INTEGER)
-                     AND ch.effective_from
-                       <= strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
-               ) AS has_cost_history
+                EXISTS (
+                    SELECT 1 FROM cost_history ch
+                    WHERE ch.product_id = CAST(oi.product_id AS INTEGER)
+                      AND ch.effective_from
+                        <= ?
+                ) AS has_cost_history
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
         LEFT JOIN products p ON p.id = CAST(oi.product_id AS INTEGER)
@@ -145,6 +146,7 @@ def _check_cogs_completeness(conn) -> dict[str, Any]:
           AND (oi.cost_at_sale IS NULL OR oi.cost_at_sale = 0)
         ORDER BY oi.id
         """,
+        (now_iso(),),
     ).fetchall()
 
     findings = []
@@ -267,9 +269,10 @@ def _check_cost_history_sanity(conn) -> dict[str, Any]:
         """
         SELECT id, product_id, cost, effective_from, created_at
         FROM cost_history
-        WHERE effective_from > strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+        WHERE effective_from > ?
         ORDER BY id
         """,
+        (now_iso(),),
     ).fetchall()
     for r in future_rows:
         findings.append({
@@ -671,9 +674,10 @@ def _check_future_dated_entries(conn) -> dict[str, Any]:
                je.source_id   AS source_id,
                je.created_at  AS created_at
         FROM journal_entries je
-        WHERE je.created_at > strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+        WHERE je.created_at > ?
         ORDER BY je.id
         """,
+        (now_iso(),),
     ).fetchall()
 
     findings = [
@@ -1043,9 +1047,11 @@ def _check_deposit_balance_integrity(conn) -> dict[str, Any]:
             # Active order (confirmed, ready, new) — only flag if overdue.
             if not due_date:
                 continue  # no due date, can't determine — skip
-            # Compare due_date to now (local time).  SQLite stores dates in
-            # local time via ``strftime('%Y-%m-%d', 'now', 'localtime')``, so
-            # we compare as strings (YYYY-MM-DD lexicographic order works).
+            # Compare due_date to today (local time). Date-only values use
+            # ``strftime('%Y-%m-%d', 'now', 'localtime')``; timestamp columns
+            # are now normalized to ``+07:00``-suffixed ISO-8601 via
+            # ``baker.utils.time.now_iso()`` (v55 migration, DG-174 Phase 2).
+            # Date-only comparison uses lexicographic YYYY-MM-DD order.
             today = conn.execute(
                 "SELECT strftime('%Y-%m-%d', 'now', 'localtime')"
             ).fetchone()[0]

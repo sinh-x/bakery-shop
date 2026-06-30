@@ -1,5 +1,6 @@
 import 'package:image_picker/image_picker.dart' show XFile;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../shared/utils/date_formatting.dart';
 
 import '../../data/api/order_service.dart';
 import '../../data/api/payment_transaction_service.dart';
@@ -95,12 +96,7 @@ class OrderHistoryNotifier extends AsyncNotifier<List<Order>> {
     );
   }
 
-  String _formatDate(DateTime date) {
-    final y = date.year.toString().padLeft(4, '0');
-    final m = date.month.toString().padLeft(2, '0');
-    final d = date.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
+  String _formatDate(DateTime date) => formatDisplay(date, pattern: 'yyyy-MM-dd');
 }
 
 final orderHistoryProvider =
