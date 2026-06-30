@@ -27,6 +27,7 @@ from baker.api.receipts import (
 from baker.config import PRINT_IPP_URL
 from baker.db.connection import get_db
 from baker import ipp_client, usb_printer
+from baker.utils.time import now_utc
 
 router = APIRouter(prefix="/api/orders", tags=["printing"])
 
@@ -237,10 +238,11 @@ def print_receipt(
             if inserted is not None:
                 printed_at = inserted["printed_at"]
 
+            printed_at_value = now_utc()
             conn.execute(
                 """UPDATE orders
                    SET work_ticket_printed_at = CASE
-                           WHEN work_ticket_printed_at IS NULL THEN strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+                           WHEN work_ticket_printed_at IS NULL THEN ?
                            ELSE work_ticket_printed_at
                        END,
                        work_ticket_printed_by = CASE
@@ -250,6 +252,7 @@ def print_receipt(
                        END
                    WHERE id = ?""",
                 (
+                    printed_at_value,
                     normalized_printed_by,
                     normalized_printed_by,
                     normalized_printed_by,

@@ -21,6 +21,7 @@ from baker.models.order import (
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
 from baker.services.order_stock import auto_decrement_stock, restore_stock_for_order
+from baker.utils.time import now_utc
 
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -605,7 +606,8 @@ def edit_order(ref: str, body: OrderEdit):
         if not updates:
             raise HTTPException(status_code=400, detail="Không có gì để cập nhật")
 
-        updates.append("updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')")
+        updates.append("updated_at = ?")
+        params.append(now_utc())
         params.append(row["id"])
         conn.execute(
             f"UPDATE orders SET {', '.join(updates)} WHERE id = ?",

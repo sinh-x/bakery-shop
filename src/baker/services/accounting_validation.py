@@ -62,6 +62,7 @@ from baker.db.schema import (
     ORDER_REVENUE_CODE,
     TIEN_RUT_HELD_CODE,
 )
+from baker.utils.time import now_utc
 
 # Tolerance for double-entry imbalance. Sub-cent rounding from REAL storage
 # and per-line float arithmetic is expected; only imbalances above this
@@ -133,8 +134,7 @@ def _check_cogs_completeness(conn) -> dict[str, Any]:
                EXISTS (
                    SELECT 1 FROM cost_history ch
                    WHERE ch.product_id = CAST(oi.product_id AS INTEGER)
-                     AND ch.effective_from
-                       <= strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+                     AND ch.effective_from <= ?
                ) AS has_cost_history
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
@@ -145,6 +145,7 @@ def _check_cogs_completeness(conn) -> dict[str, Any]:
           AND (oi.cost_at_sale IS NULL OR oi.cost_at_sale = 0)
         ORDER BY oi.id
         """,
+        (now_utc(),),
     ).fetchall()
 
     findings = []
@@ -267,9 +268,10 @@ def _check_cost_history_sanity(conn) -> dict[str, Any]:
         """
         SELECT id, product_id, cost, effective_from, created_at
         FROM cost_history
-        WHERE effective_from > strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+        WHERE effective_from > ?
         ORDER BY id
         """,
+        (now_utc(),),
     ).fetchall()
     for r in future_rows:
         findings.append({
@@ -671,9 +673,10 @@ def _check_future_dated_entries(conn) -> dict[str, Any]:
                je.source_id   AS source_id,
                je.created_at  AS created_at
         FROM journal_entries je
-        WHERE je.created_at > strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+        WHERE je.created_at > ?
         ORDER BY je.id
         """,
+        (now_utc(),),
     ).fetchall()
 
     findings = [

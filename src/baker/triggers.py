@@ -3,9 +3,10 @@
 import json
 import logging
 import subprocess
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from baker.db.connection import get_db
+from baker.utils.time import now_utc
 
 logger = logging.getLogger("baker.server")
 
@@ -58,7 +59,7 @@ def evaluate_triggers(entry: dict) -> None:
                 "SELECT * FROM log_triggers WHERE active = 1"
             ).fetchall()
 
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             for row in rows:
                 try:
                     condition = json.loads(row["condition"])
@@ -75,6 +76,8 @@ def evaluate_triggers(entry: dict) -> None:
                 if last_fired:
                     try:
                         last_dt = datetime.fromisoformat(last_fired)
+                        if last_dt.tzinfo is None:
+                            last_dt = last_dt.replace(tzinfo=timezone.utc)
                         if now - last_dt < timedelta(seconds=cooldown):
                             continue
                     except (ValueError, TypeError):
@@ -84,7 +87,7 @@ def evaluate_triggers(entry: dict) -> None:
                 _fire_action(action, entry)
                 conn.execute(
                     "UPDATE log_triggers SET last_fired = ? WHERE id = ?",
-                    (now.isoformat(), row["id"]),
+                    (now_utc(), row["id"]),
                 )
     except Exception:
         logger.warning("Trigger evaluation error", exc_info=True)

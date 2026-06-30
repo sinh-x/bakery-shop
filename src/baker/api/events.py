@@ -3,7 +3,7 @@
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
@@ -15,6 +15,7 @@ from baker.db.connection import get_db
 from baker.db.queries import fetch_events, find_staff_by_name, link_event_person
 from baker.models.event import Event
 from baker.models.order import Order
+from baker.utils.time import now_utc
 
 logger = logging.getLogger("baker.server")
 
@@ -187,7 +188,10 @@ def _normalize_timestamp(raw: str | None) -> str | None:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="timestamp không đúng định dạng ISO") from exc
     if not _TZ_RE.search(value):
-        return f"{value}+07:00"
+        # Treat bare timestamps as UTC and append the Z suffix so all stored
+        # timestamps are UTC (DG-202 FR1). Previously these were assumed to be
+        # +07:00 local time; the database now stores UTC only.
+        return f"{value}Z"
     return value
 
 
@@ -340,7 +344,7 @@ def delete_event(event_id: int, deleted_by: str = Query("", description="Ngườ
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
 
-        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S") + "+07:00"
+        now = now_utc()
         conn.execute(
             "UPDATE events SET deleted_at = ?, deleted_by = ? WHERE id = ?",
             (now, deleted_by, event_id),

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from baker.models.event import Event
+from baker.utils.time import now_utc
 
 
 @dataclass
@@ -37,11 +38,12 @@ class InventoryItem:
             raise ValueError(f"Item '{name}' not found in inventory. Add it first with: baker inv add {name}")
 
         new_qty = row["quantity"] + amount
-        params = [new_qty, row["id"]]
-        sql = "UPDATE inventory SET quantity = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')"
+        params: list = [new_qty, now_utc()]
+        sql = "UPDATE inventory SET quantity = ?, updated_at = ?"
         if cost is not None:
             sql += ", cost_per_unit = ?"
-            params.insert(1, cost)
+            params.append(cost)
+        params.append(row["id"])
         sql += " WHERE id = ?"
         conn.execute(sql, params)
 
@@ -59,8 +61,8 @@ class InventoryItem:
 
         new_qty = row["quantity"] - amount
         conn.execute(
-            "UPDATE inventory SET quantity = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') WHERE id = ?",
-            (new_qty, row["id"]),
+            "UPDATE inventory SET quantity = ?, updated_at = ? WHERE id = ?",
+            (new_qty, now_utc(), row["id"]),
         )
 
         data = {"item": name, "amount": -amount, "new_qty": new_qty, "unit": row["unit"]}
@@ -77,8 +79,8 @@ class InventoryItem:
 
         old_qty = row["quantity"]
         conn.execute(
-            "UPDATE inventory SET quantity = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') WHERE id = ?",
-            (quantity, row["id"]),
+            "UPDATE inventory SET quantity = ?, updated_at = ? WHERE id = ?",
+            (quantity, now_utc(), row["id"]),
         )
 
         data = {"item": name, "old_qty": old_qty, "new_qty": quantity, "unit": row["unit"]}

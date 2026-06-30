@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from baker.db.connection import get_db
 from baker.models.payment_transaction import PaymentMethod, PaymentTransaction, TransactionType
+from baker.utils.time import now_utc
 
 logger = logging.getLogger("baker.server")
 
@@ -194,10 +195,13 @@ def delete_transaction(ref: str, txn_id: int):
 
 
 def _now_iso(conn) -> str:
-    """Return the current local timestamp as ISO-8601 string (matches journal_entries default)."""
-    return conn.execute(
-        "SELECT strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')"
-    ).fetchone()[0]
+    """Return the current UTC timestamp as an ISO-8601 string with Z suffix.
+
+    The ``conn`` argument is retained for backward compatibility with existing
+    call sites; the value is now produced by :func:`baker.utils.time.now_utc`
+    so all timestamps are UTC ``Z``-suffixed (DG-202 FR1).
+    """
+    return now_utc()
 
 
 @router.post("/{ref}/transactions/{txn_id}/invalidate")

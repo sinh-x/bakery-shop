@@ -10,6 +10,7 @@ from starlette.requests import Request
 
 import baker.config
 from baker.db.connection import get_db
+from baker.utils.time import now_utc
 
 
 logger = logging.getLogger("baker.server")
@@ -33,7 +34,7 @@ def setup_logging() -> None:
         class JsonFormatter(logging.Formatter):
             def format(self, record):
                 entry = {
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": now_utc(),
                     "level": record.levelname,
                     "message": record.getMessage(),
                 }
@@ -67,7 +68,7 @@ def log_to_db(entry: dict) -> None:
                     ref_type, ref_id, message, detail)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    entry.get("timestamp", datetime.now().isoformat()),
+                    entry.get("timestamp", now_utc()),
                     entry.get("level", "INFO"),
                     entry.get("method", ""),
                     entry.get("path", ""),
