@@ -320,3 +320,63 @@ def test_waste_stock_no_cogs_when_cost_zero(api_client):
         ).fetchone()
         entries = _waste_cogs_entries(conn, movement["id"])
         assert len(entries) == 0
+
+
+# ─── Timestamp format (DG-202 TC-8) ───────────────────────────────────────────
+
+
+def test_stock_movement_created_at_is_z_suffixed(api_client):
+    """TC-8: stock_movements.created_at is Z-suffixed UTC (DEFAULT now_utc in
+    schema)."""
+    from datetime import datetime
+
+    from baker.db.connection import get_db
+
+    chip_id = _create_chip(api_client, 1, "TC-8", 12000)
+    resp = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 3, "price_chip_id": chip_id},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT created_at FROM stock_movements "
+            "WHERE movement_type = 'restock' AND product_id = 1 "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    assert row is not None
+    created_at = row["created_at"]
+    assert created_at is not None
+    assert created_at.endswith("Z"), f"created_at not Z-suffixed: {created_at}"
+    assert "+" not in created_at
+    datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_stock_movement_waste_created_at_is_z_suffixed(api_client):
+    """TC-8 (waste): waste stock movements also have Z-suffixed created_at."""
+    from datetime import datetime
+
+    from baker.db.connection import get_db
+
+    _create_chip(api_client, 1, "TC-8w", 15000)
+    api_client.post(
+        "/api/products/1/stock/restock", json={"quantity": 2}
+    )
+    waste_resp = api_client.post(
+        "/api/products/1/stock/waste",
+        json={"quantity": 1, "reason": "expired"},
+    )
+    assert waste_resp.status_code == 200
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT created_at FROM stock_movements "
+            "WHERE movement_type = 'waste' AND product_id = 1 "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    assert row is not None
+    created_at = row["created_at"]
+    assert created_at.endswith("Z")
+    assert "+" not in created_at
+    datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")

@@ -1071,3 +1071,43 @@ def test_validate_passes_after_invalidation(api_client):
         "Accounting integrity checks failed after invalidation: "
         + ", ".join(c.get("name", str(c)) for c in failed)
     )
+
+
+# ---------------------------------------------------------------------------
+# Timestamp format (DG-202 TC-9)
+# ---------------------------------------------------------------------------
+
+
+def test_account_created_at_is_z_suffixed(api_client):
+    """TC-9: accounts.created_at is Z-suffixed UTC for seeded accounts."""
+    from datetime import datetime
+
+    resp = api_client.get("/api/accounts")
+    assert resp.status_code == 200
+    accounts = resp.json()
+    assert len(accounts) > 0
+    for account in accounts:
+        created_at = account.get("createdAt")
+        assert created_at is not None, f"Account {account.get('code')} has null createdAt"
+        assert created_at.endswith("Z"), (
+            f"Account {account['code']} createdAt not Z-suffixed: {created_at}"
+        )
+        assert "+" not in created_at
+        datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_account_created_at_z_suffixed_in_db():
+    """TC-9 (DB-level): accounts.created_at in the DB is Z-suffixed UTC."""
+    from datetime import datetime
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        rows = conn.execute("SELECT code, created_at FROM accounts LIMIT 5").fetchall()
+    assert len(rows) > 0
+    for row in rows:
+        created_at = row["created_at"]
+        assert created_at is not None
+        assert created_at.endswith("Z"), (
+            f"Account {row['code']} createdAt not Z-suffixed: {created_at}"
+        )
+        datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")

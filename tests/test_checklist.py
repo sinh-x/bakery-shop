@@ -277,3 +277,68 @@ def test_history_shows_completion(api_client):
     assert len(ticked) == 1
     assert ticked[0]["completed"] is True
     assert ticked[0]["completed_by"] == "Tân"
+
+
+# ─── Timestamp format (DG-202 TC-5, TC-6) ────────────────────────────────────
+
+
+def test_completed_at_is_z_suffixed_when_set(api_client):
+    """TC-5: completed_at is Z-suffixed UTC when a checklist entry is toggled
+    complete."""
+    from datetime import datetime
+
+    api_client.get(f"/api/checklist/daily?date={TODAY}")
+    resp = api_client.get(f"/api/checklist/daily?date={TODAY}")
+    entry_id = resp.json()["entries"][0]["id"]
+
+    toggle_resp = api_client.post(
+        f"/api/checklist/daily/{entry_id}/toggle", json={"staff_name": "Tân"}
+    )
+    assert toggle_resp.status_code == 200
+    completed_at = toggle_resp.json()["completed_at"]
+    assert completed_at is not None
+    assert completed_at.endswith("Z")
+    assert "+" not in completed_at
+    datetime.strptime(completed_at, "%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_completed_at_null_when_not_completed(api_client):
+    """TC-5 (null case): completed_at is null before toggling."""
+    api_client.get(f"/api/checklist/daily?date={TODAY}")
+    resp = api_client.get(f"/api/checklist/daily?date={TODAY}")
+    entry_id = resp.json()["entries"][0]["id"]
+    entry = next(e for e in resp.json()["entries"] if e["id"] == entry_id)
+    assert entry["completed_at"] is None
+
+
+def test_created_at_is_z_suffixed(api_client):
+    """TC-6: created_at on checklist entries is Z-suffixed UTC."""
+    from datetime import datetime
+
+    api_client.get(f"/api/checklist/daily?date={TODAY}")
+    resp = api_client.get(f"/api/checklist/daily?date={TODAY}")
+    entries = resp.json()["entries"]
+    assert len(entries) > 0
+    for entry in entries:
+        created_at = entry["created_at"]
+        assert created_at is not None
+        assert created_at.endswith("Z"), f"created_at not Z-suffixed: {created_at}"
+        assert "+" not in created_at
+        datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_template_created_at_is_z_suffixed(api_client):
+    """TC-6 (template): checklist template created_at is Z-suffixed UTC."""
+    from datetime import datetime
+
+    resp = api_client.post("/api/checklist/templates", json={
+        "name": "TC-6 template",
+        "period": "opening",
+        "sort_order": 99,
+    })
+    assert resp.status_code == 201
+    created_at = resp.json()["created_at"]
+    assert created_at is not None
+    assert created_at.endswith("Z")
+    assert "+" not in created_at
+    datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")

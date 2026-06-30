@@ -972,3 +972,105 @@ def test_deposit_revenue_integrity_end_to_end_after_journal_sync():
     check = next(c for c in report["checks"] if c["check"] == "deposit_revenue_integrity")
     assert check["status"] == "pass"
     assert check["issue_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Timestamp format (DG-202 TC-3, TC-4)
+# ---------------------------------------------------------------------------
+
+
+def test_locked_at_is_z_suffixed_via_api(api_client):
+    """TC-3: locked_at is Z-suffixed UTC when journal entries are locked via
+    the /api/accounts/journal/lock endpoint."""
+    from datetime import datetime
+
+    # Insert a journal entry with a transaction_date in the lock range.
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO journal_entries "
+            "(description, source_type, source_id, transaction_date) "
+            "VALUES (?, ?, ?, ?)",
+            ("Lock test", "manual", None, "2026-06-01"),
+        )
+        conn.commit()
+
+    resp = api_client.post("/api/accounts/journal/lock", json={
+        "since": "2026-06-01",
+        "until": "2026-06-30",
+        "lockedBy": "sinh",
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["lockedCount"] >= 1
+    locked_at = body["lockedAt"]
+    assert locked_at.endswith("Z")
+    assert "+" not in locked_at
+    datetime.strptime(locked_at, "%Y-%m-%dT%H:%M:%SZ")
+
+    # Verify the stored locked_at in the DB is also Z-suffixed.
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT locked_at FROM journal_entries "
+            "WHERE transaction_date = '2026-06-01' AND locked_at IS NOT NULL "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    assert row is not None
+    assert row["locked_at"].endswith("Z")
+
+
+def test_locked_at_null_when_not_locked():
+    """TC-3 (null case): locked_at is None for an unlocked journal entry."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, ?, ?)",
+            ("Unlocked test", "manual", None),
+        )
+        entry_id = cur.lastrowid
+        row = conn.execute(
+            "SELECT locked_at FROM journal_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+    assert row["locked_at"] is None
+
+
+def test_transaction_date_format_is_set(api_client):
+    """TC-4: transaction_date on journal entries is set (Z-suffix or date-only
+    as appropriate). The journal list API returns transactionDate populated."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO journal_entries "
+            "(description, source_type, source_id, transaction_date) "
+            "VALUES (?, ?, ?, ?)",
+            ("TC-4 entry", "manual", None, "2026-06-15T10:00:00Z"),
+        )
+        conn.commit()
+
+    resp = api_client.get("/api/accounts/journal", params={"source_type": "manual"})
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    entry = next((e for e in items if e["description"] == "TC-4 entry"), None)
+    assert entry is not None
+    td = entry["transactionDate"]
+    assert td is not None
+    assert td == "2026-06-15T10:00:00Z"
+
+
+def test_transaction_date_empty_when_not_set():
+    """TC-4 (null case): transaction_date is empty/None when not explicitly
+    set on a journal entry."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, ?, ?)",
+            ("TC-4 no date", "manual", None),
+        )
+        entry_id = cur.lastrowid
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+    # transaction_date may be NULL or empty string.
+    assert row["transaction_date"] is None or row["transaction_date"] == ""

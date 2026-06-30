@@ -1105,3 +1105,29 @@ def test_update_category_prefix_conflict_returns_409(api_client):
     resp = api_client.patch(f"/api/categories/{khac['id']}", json={"code_prefix": "BMI"})
     assert resp.status_code == 409
     assert "đã được dùng" in resp.json()["detail"]
+
+
+# ─── Timestamp format (DG-202 TC-10) ─────────────────────────────────────────
+
+
+def test_product_price_chip_created_at_is_z_suffixed(api_client):
+    """TC-10: product_price_chips.created_at is Z-suffixed UTC."""
+    from datetime import datetime
+
+    resp = api_client.post(
+        "/api/products/1/price-chips",
+        json={"label": "TC-10", "price": 12000, "position": 0},
+    )
+    assert resp.status_code == 201
+    chip_id = resp.json()["id"]
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT created_at FROM product_price_chips WHERE id = ?", (chip_id,)
+        ).fetchone()
+    assert row is not None
+    created_at = row["created_at"]
+    assert created_at is not None
+    assert created_at.endswith("Z"), f"created_at not Z-suffixed: {created_at}"
+    assert "+" not in created_at
+    datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")

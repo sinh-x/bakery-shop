@@ -1237,3 +1237,47 @@ def test_patch_deleted_event_returns_404(api_client):
     api_client.delete(f"/api/events/{event_id}?deleted_by=Sin")
     resp = api_client.patch(f"/api/events/{event_id}", json={"summary": "Nope"})
     assert resp.status_code == 404
+
+
+# ─── Timestamp format (DG-202 TC-11) ────────────────────────────────────────
+
+
+def _make_test_image_bytes(width=100, height=100) -> bytes:
+    """Create a minimal JPEG image for testing photo uploads."""
+    import io
+    from PIL import Image
+    img = Image.new("RGB", (width, height), color="green")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    buf.seek(0)
+    return buf.read()
+
+
+def test_event_photo_created_at_is_z_suffixed(api_client):
+    """TC-11: event_photos.created_at is Z-suffixed UTC."""
+    from datetime import datetime
+
+    create_resp = api_client.post("/api/events", json={"summary": "TC-11 event"})
+    event_id = create_resp.json()["id"]
+
+    image_data = _make_test_image_bytes()
+    resp = api_client.post(
+        f"/api/events/{event_id}/photos",
+        files={"file": ("photo.jpg", image_data, "image/jpeg")},
+        data={"tags": "test"},
+    )
+    assert resp.status_code == 201
+    photo = resp.json()
+    created_at = photo.get("created_at")
+    assert created_at is not None, "event_photo created_at is null"
+    assert created_at.endswith("Z"), f"created_at not Z-suffixed: {created_at}"
+    assert "+" not in created_at
+    datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")
+
+    # Verify via the list endpoint as well.
+    list_resp = api_client.get(f"/api/events/{event_id}/photos")
+    assert list_resp.status_code == 200
+    photos = list_resp.json()
+    assert len(photos) == 1
+    assert photos[0]["created_at"] == created_at
+    assert photos[0]["created_at"].endswith("Z")

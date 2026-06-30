@@ -159,3 +159,52 @@ def test_all_invalidated_yields_zero_totals():
         assert PaymentTransaction.total_paid_excl_outflows(conn, order_id) == 0.0
         assert PaymentTransaction.total_outflows(conn, order_id) == 0.0
         assert PaymentTransaction.total_paid_net(conn, order_id) == 0.0
+
+
+# ─── Timestamp format (DG-202 TC-2) ───────────────────────────────────────────
+
+
+def test_invalidated_at_is_z_suffixed_via_api(api_client):
+    """TC-2: invalidated_at is Z-suffixed UTC when set via the invalidate API."""
+    from datetime import datetime
+
+    order_resp = api_client.post("/api/orders", json={
+        "customerName": "TC-2",
+        "dueDate": "2026-06-25",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 100000}],
+    })
+    assert order_resp.status_code == 201
+    ref = order_resp.json()["orderRef"]
+
+    txn_resp = api_client.post(f"/api/orders/{ref}/transactions", json={"amount": 100000})
+    assert txn_resp.status_code == 201
+    txn_id = txn_resp.json()["id"]
+
+    inv_resp = api_client.post(
+        f"/api/orders/{ref}/transactions/{txn_id}/invalidate",
+        json={"invalidatedBy": "sinh", "reason": "nhập nhầm"},
+    )
+    assert inv_resp.status_code == 200
+    invalidated_at = inv_resp.json()["invalidatedAt"]
+    assert invalidated_at is not None
+    assert invalidated_at.endswith("Z")
+    assert "+" not in invalidated_at
+    datetime.strptime(invalidated_at, "%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_invalidated_at_none_for_valid_transaction(api_client):
+    """TC-2 (null case): invalidated_at is None for a valid (non-invalidated)
+    transaction returned via the API."""
+    order_resp = api_client.post("/api/orders", json={
+        "customerName": "TC-2-null",
+        "dueDate": "2026-06-25",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 50000}],
+    })
+    ref = order_resp.json()["orderRef"]
+    txn_resp = api_client.post(f"/api/orders/{ref}/transactions", json={"amount": 50000})
+    txn_id = txn_resp.json()["id"]
+
+    list_resp = api_client.get(f"/api/orders/{ref}/transactions")
+    assert list_resp.status_code == 200
+    txn = next(t for t in list_resp.json() if t["id"] == txn_id)
+    assert txn["invalidatedAt"] is None

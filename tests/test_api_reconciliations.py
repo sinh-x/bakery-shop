@@ -1078,3 +1078,51 @@ def test_submit_reconciliation_survives_waste_cogs_sync_failure(api_client, monk
     resp = api_client.post("/api/reconciliations/submit", json=payload)
     # Reconciliation must succeed even though waste COGS sync raised.
     assert resp.status_code == 201
+
+
+# ─── Timestamp format (DG-202 TC-7) ──────────────────────────────────────────
+
+
+def test_reconciliation_session_created_at_is_z_suffixed(api_client):
+    """TC-7: reconciliation_sessions.created_at is Z-suffixed UTC."""
+    from datetime import datetime
+
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 5)
+
+    payload = {
+        "staff_name": "TC-7",
+        "payment_method": "cash",
+        "waste_reason": "",
+        "lines": [
+            {
+                "product_id": 1,
+                "expected_qty": 5,
+                "counted_qty": 5,
+                "sale_qty": 0,
+                "waste_qty": 0,
+                "manual_unit_price": 12000,
+            }
+        ],
+    }
+    resp = api_client.post("/api/reconciliations/submit", json=payload)
+    assert resp.status_code == 201
+    session_id = resp.json()["id"]
+
+    # Verify via the history list endpoint.
+    history = api_client.get("/api/reconciliations/history")
+    assert history.status_code == 200
+    sessions = history.json()["sessions"]
+    session = next(s for s in sessions if s["id"] == session_id)
+    created_at = session["created_at"]
+    assert created_at is not None
+    assert created_at.endswith("Z"), f"created_at not Z-suffixed: {created_at}"
+    assert "+" not in created_at
+    datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")
+
+    # Also verify via the detail endpoint.
+    detail = api_client.get(f"/api/reconciliations/history/{session_id}")
+    assert detail.status_code == 200
+    assert detail.json()["created_at"] == created_at
+    assert detail.json()["created_at"].endswith("Z")
