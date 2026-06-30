@@ -22,6 +22,7 @@ String _serverTimezoneOffset = kDefaultServerTimezoneOffset;
 void setServerTimezoneOffset(String offset) {
   final trimmed = offset.trim();
   if (trimmed.isEmpty) return;
+  if (!RegExp(r'^[+-]\d{2}:\d{2}$').hasMatch(trimmed)) return;
   _serverTimezoneOffset = trimmed;
 }
 

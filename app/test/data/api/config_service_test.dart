@@ -75,16 +75,29 @@ void main() {
     });
 
     test('sends request to /api/config', () async {
-      final interceptor = _JsonInterceptor(const <String, dynamic>{
-        'timezone_offset': '+07:00',
-      });
-      final dio = Dio()..interceptors.add(interceptor);
+      final captured = <RequestOptions>[];
+      final dio = Dio()
+        ..interceptors.add(
+          InterceptorsWrapper(
+            onRequest: (options, handler) {
+              captured.add(options);
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: const <String, dynamic>{'timezone_offset': '+07:00'},
+                ),
+              );
+            },
+          ),
+        );
       final service = ConfigService(dio);
 
       await service.getServerConfig();
 
-      final matched = dio.interceptors.whereType<_JsonInterceptor>().first;
-      expect(matched, isNotNull);
+      expect(captured, hasLength(1));
+      expect(captured.single.path, '/api/config');
+      expect(captured.single.method, 'GET');
     });
 
     test('sets an explicit receiveTimeout on the request options', () async {
@@ -109,7 +122,7 @@ void main() {
       await service.getServerConfig();
 
       expect(captured, hasLength(1));
-      expect(captured.single.receiveTimeout, isNotNull);
+      expect(captured.single.receiveTimeout, const Duration(seconds: 4));
     });
   });
 

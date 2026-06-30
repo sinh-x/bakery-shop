@@ -90,7 +90,7 @@ Future<void> initServerTimezone(ConfigService service) async {
   try {
     final config = await service.getServerConfig();
     setServerTimezoneOffset(config.timezoneOffset);
-  } catch (error) {
+  } on Object catch (error) {
     debugPrint('initServerTimezone: fetch failed, using default: $error');
   }
 }
