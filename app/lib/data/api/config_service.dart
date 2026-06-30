@@ -87,12 +87,22 @@ class ServerConfig {
 /// than depending on Riverpod. Failures are non-fatal: the [ServerTimezone]
 /// defaults to the device's local offset, so display helpers keep working
 /// when the API is unreachable.
+///
+/// Intentional raw Dio isolation (review-auto cycle 1 OPS-1): a standalone
+/// [Dio] is used here — NOT the shared `dioProvider` — because:
+/// 1. `GET /api/config` is an unauthenticated public endpoint, so it must
+///    not carry the auth interceptors attached to `dioProvider`.
+/// 2. This runs at startup before Riverpod's `ProviderScope` exists, so
+///    `dioProvider` is not yet constructable.
+/// Do not refactor this to use `dioProvider` without first verifying both
+/// constraints no longer apply.
 Future<void> initServerTimezone() async {
   try {
     final prefs = await SharedPreferences.getInstance();
     const defaultUrl = kIsWeb ? '' : kDefaultApiUrl;
     final rawUrl = prefs.getString(kApiUrlKey) ?? defaultUrl;
     final baseUrl = rawUrl.endsWith('/') ? rawUrl.substring(0, rawUrl.length - 1) : rawUrl;
+    // Raw Dio (not dioProvider): unauthenticated endpoint + pre-Riverpod startup.
     final dio = Dio(BaseOptions(
       baseUrl: baseUrl,
       connectTimeout: const Duration(seconds: 5),

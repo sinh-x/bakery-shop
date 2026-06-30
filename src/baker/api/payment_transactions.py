@@ -194,12 +194,11 @@ def delete_transaction(ref: str, txn_id: int):
         )
 
 
-def _now_iso(conn) -> str:
+def _now_iso() -> str:
     """Return the current UTC timestamp as an ISO-8601 string with Z suffix.
 
-    The ``conn`` argument is retained for backward compatibility with existing
-    call sites; the value is now produced by :func:`baker.utils.time.now_utc`
-    so all timestamps are UTC ``Z``-suffixed (DG-202 FR1).
+    All timestamps are UTC ``Z``-suffixed (DG-202 FR1) via
+    :func:`baker.utils.time.now_utc`.
     """
     return now_utc()
 
@@ -230,7 +229,7 @@ def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest):
                 detail="Giao dịch đã được hủy trước đó",
             )
 
-        invalidated_at = _now_iso(conn)
+        invalidated_at = _now_iso()
         invalidated_by = body.invalidatedBy or ""
         conn.execute(
             "UPDATE payment_transactions "

@@ -184,7 +184,7 @@ def _normalize_timestamp(raw: str | None) -> str | None:
     if not value:
         raise HTTPException(status_code=422, detail="timestamp không được để trống")
     try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="timestamp không đúng định dạng ISO") from exc
     if not _TZ_RE.search(value):
@@ -192,7 +192,16 @@ def _normalize_timestamp(raw: str | None) -> str | None:
         # timestamps are UTC (DG-202 FR1). Previously these were assumed to be
         # +07:00 local time; the database now stores UTC only.
         return f"{value}Z"
-    return value
+    # Offset-suffixed timestamps (e.g. ``+07:00``) are converted to UTC ``Z``
+    # so every timestamp stored via the events API is UTC Z-suffixed (DG-202
+    # FR1, review-auto cycle 1 CQ-1). Fractional seconds are preserved when
+    # present to keep sub-second precision.
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    utc_dt = parsed.astimezone(timezone.utc)
+    if utc_dt.microsecond:
+        return utc_dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{utc_dt.microsecond:06d}Z"
+    return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:

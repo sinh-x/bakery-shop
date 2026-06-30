@@ -9,7 +9,7 @@ part 'event.g.dart';
 sealed class BakeryEvent with _$BakeryEvent {
   const factory BakeryEvent({
     required int id,
-    @JsonKey(fromJson: parseApiDateTimeRequired, toJson: _timestampToJson)
+    @JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson)
     required DateTime timestamp,
     @Default('note') String type,
     required String summary,
@@ -23,5 +23,3 @@ sealed class BakeryEvent with _$BakeryEvent {
   factory BakeryEvent.fromJson(Map<String, dynamic> json) =>
       _$BakeryEventFromJson(json);
 }
-
-String _timestampToJson(DateTime value) => value.toUtc().toIso8601String();

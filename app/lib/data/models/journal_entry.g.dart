@@ -54,9 +54,9 @@ Map<String, dynamic> _$JournalEntryToJson(_JournalEntry instance) =>
       'description': instance.description,
       'sourceType': instance.sourceType,
       'sourceId': instance.sourceId,
-      'lockedAt': instance.lockedAt?.toIso8601String(),
+      'lockedAt': timestampToJson(instance.lockedAt),
       'lockedBy': instance.lockedBy,
-      'createdAt': instance.createdAt?.toIso8601String(),
+      'createdAt': timestampToJson(instance.createdAt),
       'transactionDate': instance.transactionDate,
       'lines': instance.lines,
     };

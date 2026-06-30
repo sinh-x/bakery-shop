@@ -85,6 +85,49 @@ def test_create_event_with_custom_timestamp(api_client):
     assert resp.json()["timestamp"] == "2026-05-23T19:57:00Z"
 
 
+def test_create_event_converts_offset_timestamp_to_utc_z(api_client):
+    # DG-202 review-auto cycle 1 CQ-1: offset-suffixed timestamps must be
+    # converted to UTC Z so all stored timestamps share one format.
+    resp = api_client.post("/api/events", json={
+        "summary": "Sự kiện với timestamp +07:00",
+        "type": "expense",
+        "timestamp": "2026-05-23T19:57:00+07:00",
+        "data": {
+            "amount_vnd": 75000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "NCC A",
+            "note": "Mua đường",
+            "staff_name": "Lan",
+            "paid_by_name": "Phượng",
+        },
+    })
+    assert resp.status_code == 201
+    # +07:00 -> UTC is 12:57:00Z.
+    assert resp.json()["timestamp"] == "2026-05-23T12:57:00Z"
+
+
+def test_create_event_preserves_fractional_seconds_on_offset_timestamp(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Sự kiện với fractional + offset",
+        "type": "expense",
+        "timestamp": "2026-05-23T19:57:00.123456+07:00",
+        "data": {
+            "amount_vnd": 75000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "NCC A",
+            "note": "Mua đường",
+            "staff_name": "Lan",
+            "paid_by_name": "Phượng",
+        },
+    })
+    assert resp.status_code == 201
+    assert resp.json()["timestamp"] == "2026-05-23T12:57:00.123456Z"
+
+
 def test_create_expense_event_rejects_non_integer_amount(api_client):
     resp = api_client.post("/api/events", json={
         "summary": "Chi tiền mua sữa",

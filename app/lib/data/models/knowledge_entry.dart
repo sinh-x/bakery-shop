@@ -15,12 +15,13 @@ sealed class KnowledgeEntry with _$KnowledgeEntry {
     @Default(<String>[]) List<String> tags,
     @JsonKey(name: 'logged_by') @Default('') String loggedBy,
     @Default('app') String source,
-    @JsonKey(name: 'created_at', fromJson: parseApiDateTimeRequired)
+    @JsonKey(name: 'created_at', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)
     required DateTime createdAt,
-    @JsonKey(name: 'updated_at', fromJson: parseApiDateTimeRequired)
+    @JsonKey(name: 'updated_at', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)
     required DateTime updatedAt,
     @Default(false) bool pinned,
-    @JsonKey(name: 'pinned_at', fromJson: parseApiDateTime) DateTime? pinnedAt,
+    @JsonKey(name: 'pinned_at', fromJson: parseApiDateTime, toJson: timestampToJson)
+    DateTime? pinnedAt,
     @Default(<KnowledgePhoto>[]) List<KnowledgePhoto> photos,
   }) = _KnowledgeEntry;
 

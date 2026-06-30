@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$Order {
 
- String get id; String get orderRef; String get publicOrderCode; String get customerName; String get customerPhone; List<OrderItem> get items; double get totalPrice; String get status; String? get dueDate; String? get dueTime; String get deliveryType; String get deliveryAddress; double get shippingFee; String get notes; String get source; String get createdBy; double get amountPaid; bool get isPaid; List<PackingItem> get packingChecklist; String? get workTicketPrintedAt; String? get workTicketPrintedBy;@JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired) DateTime get createdAt;@JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired) DateTime get updatedAt;
+ String get id; String get orderRef; String get publicOrderCode; String get customerName; String get customerPhone; List<OrderItem> get items; double get totalPrice; String get status; String? get dueDate; String? get dueTime; String get deliveryType; String get deliveryAddress; double get shippingFee; String get notes; String get source; String get createdBy; double get amountPaid; bool get isPaid; List<PackingItem> get packingChecklist; String? get workTicketPrintedAt; String? get workTicketPrintedBy;@JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson) DateTime get createdAt;@JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson) DateTime get updatedAt;
 /// Create a copy of Order
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -48,7 +48,7 @@ abstract mixin class $OrderCopyWith<$Res>  {
   factory $OrderCopyWith(Order value, $Res Function(Order) _then) = _$OrderCopyWithImpl;
 @useResult
 $Res call({
- String id, String orderRef, String publicOrderCode, String customerName, String customerPhone, List<OrderItem> items, double totalPrice, String status, String? dueDate, String? dueTime, String deliveryType, String deliveryAddress, double shippingFee, String notes, String source, String createdBy, double amountPaid, bool isPaid, List<PackingItem> packingChecklist, String? workTicketPrintedAt, String? workTicketPrintedBy,@JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired) DateTime createdAt,@JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired) DateTime updatedAt
+ String id, String orderRef, String publicOrderCode, String customerName, String customerPhone, List<OrderItem> items, double totalPrice, String status, String? dueDate, String? dueTime, String deliveryType, String deliveryAddress, double shippingFee, String notes, String source, String createdBy, double amountPaid, bool isPaid, List<PackingItem> packingChecklist, String? workTicketPrintedAt, String? workTicketPrintedBy,@JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson) DateTime createdAt,@JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson) DateTime updatedAt
 });
 
 
@@ -172,7 +172,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String orderRef,  String publicOrderCode,  String customerName,  String customerPhone,  List<OrderItem> items,  double totalPrice,  String status,  String? dueDate,  String? dueTime,  String deliveryType,  String deliveryAddress,  double shippingFee,  String notes,  String source,  String createdBy,  double amountPaid,  bool isPaid,  List<PackingItem> packingChecklist,  String? workTicketPrintedAt,  String? workTicketPrintedBy, @JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired)  DateTime createdAt, @JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired)  DateTime updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String orderRef,  String publicOrderCode,  String customerName,  String customerPhone,  List<OrderItem> items,  double totalPrice,  String status,  String? dueDate,  String? dueTime,  String deliveryType,  String deliveryAddress,  double shippingFee,  String notes,  String source,  String createdBy,  double amountPaid,  bool isPaid,  List<PackingItem> packingChecklist,  String? workTicketPrintedAt,  String? workTicketPrintedBy, @JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)  DateTime createdAt, @JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)  DateTime updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Order() when $default != null:
 return $default(_that.id,_that.orderRef,_that.publicOrderCode,_that.customerName,_that.customerPhone,_that.items,_that.totalPrice,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.shippingFee,_that.notes,_that.source,_that.createdBy,_that.amountPaid,_that.isPaid,_that.packingChecklist,_that.workTicketPrintedAt,_that.workTicketPrintedBy,_that.createdAt,_that.updatedAt);case _:
@@ -193,7 +193,7 @@ return $default(_that.id,_that.orderRef,_that.publicOrderCode,_that.customerName
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String orderRef,  String publicOrderCode,  String customerName,  String customerPhone,  List<OrderItem> items,  double totalPrice,  String status,  String? dueDate,  String? dueTime,  String deliveryType,  String deliveryAddress,  double shippingFee,  String notes,  String source,  String createdBy,  double amountPaid,  bool isPaid,  List<PackingItem> packingChecklist,  String? workTicketPrintedAt,  String? workTicketPrintedBy, @JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired)  DateTime createdAt, @JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired)  DateTime updatedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String orderRef,  String publicOrderCode,  String customerName,  String customerPhone,  List<OrderItem> items,  double totalPrice,  String status,  String? dueDate,  String? dueTime,  String deliveryType,  String deliveryAddress,  double shippingFee,  String notes,  String source,  String createdBy,  double amountPaid,  bool isPaid,  List<PackingItem> packingChecklist,  String? workTicketPrintedAt,  String? workTicketPrintedBy, @JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)  DateTime createdAt, @JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)  DateTime updatedAt)  $default,) {final _that = this;
 switch (_that) {
 case _Order():
 return $default(_that.id,_that.orderRef,_that.publicOrderCode,_that.customerName,_that.customerPhone,_that.items,_that.totalPrice,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.shippingFee,_that.notes,_that.source,_that.createdBy,_that.amountPaid,_that.isPaid,_that.packingChecklist,_that.workTicketPrintedAt,_that.workTicketPrintedBy,_that.createdAt,_that.updatedAt);}
@@ -210,7 +210,7 @@ return $default(_that.id,_that.orderRef,_that.publicOrderCode,_that.customerName
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String orderRef,  String publicOrderCode,  String customerName,  String customerPhone,  List<OrderItem> items,  double totalPrice,  String status,  String? dueDate,  String? dueTime,  String deliveryType,  String deliveryAddress,  double shippingFee,  String notes,  String source,  String createdBy,  double amountPaid,  bool isPaid,  List<PackingItem> packingChecklist,  String? workTicketPrintedAt,  String? workTicketPrintedBy, @JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired)  DateTime createdAt, @JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired)  DateTime updatedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String orderRef,  String publicOrderCode,  String customerName,  String customerPhone,  List<OrderItem> items,  double totalPrice,  String status,  String? dueDate,  String? dueTime,  String deliveryType,  String deliveryAddress,  double shippingFee,  String notes,  String source,  String createdBy,  double amountPaid,  bool isPaid,  List<PackingItem> packingChecklist,  String? workTicketPrintedAt,  String? workTicketPrintedBy, @JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)  DateTime createdAt, @JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)  DateTime updatedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _Order() when $default != null:
 return $default(_that.id,_that.orderRef,_that.publicOrderCode,_that.customerName,_that.customerPhone,_that.items,_that.totalPrice,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.shippingFee,_that.notes,_that.source,_that.createdBy,_that.amountPaid,_that.isPaid,_that.packingChecklist,_that.workTicketPrintedAt,_that.workTicketPrintedBy,_that.createdAt,_that.updatedAt);case _:
@@ -225,7 +225,7 @@ return $default(_that.id,_that.orderRef,_that.publicOrderCode,_that.customerName
 @JsonSerializable()
 
 class _Order implements Order {
-  const _Order({required this.id, required this.orderRef, this.publicOrderCode = '', required this.customerName, this.customerPhone = '', required final  List<OrderItem> items, required this.totalPrice, this.status = 'new', this.dueDate, this.dueTime, this.deliveryType = 'pickup', this.deliveryAddress = '', this.shippingFee = 0.0, this.notes = '', this.source = '', this.createdBy = '', this.amountPaid = 0.0, this.isPaid = false, final  List<PackingItem> packingChecklist = const [], this.workTicketPrintedAt, this.workTicketPrintedBy, @JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired) required this.createdAt, @JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired) required this.updatedAt}): _items = items,_packingChecklist = packingChecklist;
+  const _Order({required this.id, required this.orderRef, this.publicOrderCode = '', required this.customerName, this.customerPhone = '', required final  List<OrderItem> items, required this.totalPrice, this.status = 'new', this.dueDate, this.dueTime, this.deliveryType = 'pickup', this.deliveryAddress = '', this.shippingFee = 0.0, this.notes = '', this.source = '', this.createdBy = '', this.amountPaid = 0.0, this.isPaid = false, final  List<PackingItem> packingChecklist = const [], this.workTicketPrintedAt, this.workTicketPrintedBy, @JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson) required this.createdAt, @JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson) required this.updatedAt}): _items = items,_packingChecklist = packingChecklist;
   factory _Order.fromJson(Map<String, dynamic> json) => _$OrderFromJson(json);
 
 @override final  String id;
@@ -261,8 +261,8 @@ class _Order implements Order {
 
 @override final  String? workTicketPrintedAt;
 @override final  String? workTicketPrintedBy;
-@override@JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired) final  DateTime createdAt;
-@override@JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired) final  DateTime updatedAt;
+@override@JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson) final  DateTime createdAt;
+@override@JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson) final  DateTime updatedAt;
 
 /// Create a copy of Order
 /// with the given fields replaced by the non-null parameter values.
@@ -297,7 +297,7 @@ abstract mixin class _$OrderCopyWith<$Res> implements $OrderCopyWith<$Res> {
   factory _$OrderCopyWith(_Order value, $Res Function(_Order) _then) = __$OrderCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String orderRef, String publicOrderCode, String customerName, String customerPhone, List<OrderItem> items, double totalPrice, String status, String? dueDate, String? dueTime, String deliveryType, String deliveryAddress, double shippingFee, String notes, String source, String createdBy, double amountPaid, bool isPaid, List<PackingItem> packingChecklist, String? workTicketPrintedAt, String? workTicketPrintedBy,@JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired) DateTime createdAt,@JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired) DateTime updatedAt
+ String id, String orderRef, String publicOrderCode, String customerName, String customerPhone, List<OrderItem> items, double totalPrice, String status, String? dueDate, String? dueTime, String deliveryType, String deliveryAddress, double shippingFee, String notes, String source, String createdBy, double amountPaid, bool isPaid, List<PackingItem> packingChecklist, String? workTicketPrintedAt, String? workTicketPrintedBy,@JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson) DateTime createdAt,@JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson) DateTime updatedAt
 });
 
 

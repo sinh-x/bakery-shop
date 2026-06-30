@@ -16,9 +16,11 @@ sealed class ChecklistEntry with _$ChecklistEntry {
     @JsonKey(
       name: 'completed_at',
       fromJson: parseApiDateTime,
+      toJson: timestampToJson,
     )
     DateTime? completedAt,
-    @JsonKey(name: 'created_at', fromJson: parseApiDateTime) DateTime? createdAt,
+    @JsonKey(name: 'created_at', fromJson: parseApiDateTime, toJson: timestampToJson)
+    DateTime? createdAt,
     @JsonKey(name: 'template_name') String? templateName,
     @JsonKey(name: 'template_period') String? templatePeriod,
     @JsonKey(name: 'template_sort_order') int? templateSortOrder,

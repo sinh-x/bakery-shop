@@ -46,7 +46,7 @@ void main() {
       );
       final json = txn.toJson();
 
-      expect(json['invalidatedAt'], '2026-06-25T12:00:00.000Z');
+      expect(json['invalidatedAt'], '2026-06-25T12:00:00Z');
       expect(json['invalidatedBy'], 'An');
     });
 

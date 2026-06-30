@@ -27,7 +27,7 @@ Map<String, dynamic> _$PaymentTransactionToJson(_PaymentTransaction instance) =>
       'method': instance.method,
       'amount': instance.amount,
       'note': instance.notes,
-      'createdAt': instance.createdAt?.toIso8601String(),
-      'invalidatedAt': instance.invalidatedAt?.toIso8601String(),
+      'createdAt': timestampToJson(instance.createdAt),
+      'invalidatedAt': timestampToJson(instance.invalidatedAt),
       'invalidatedBy': instance.invalidatedBy,
     };

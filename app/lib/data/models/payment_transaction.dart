@@ -14,10 +14,12 @@ sealed class PaymentTransaction with _$PaymentTransaction {
     @Default('cash') String method,
     required double amount,
     @JsonKey(name: 'note') @Default('') String notes,
-    @JsonKey(name: 'createdAt', fromJson: parseApiDateTime) DateTime? createdAt,
+    @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)
+    DateTime? createdAt,
     @JsonKey(
       name: 'invalidatedAt',
       fromJson: parseApiDateTime,
+      toJson: timestampToJson,
     )
     DateTime? invalidatedAt,
     @JsonKey(name: 'invalidatedBy') @Default('') String invalidatedBy,

@@ -124,10 +124,11 @@ void main() {
       expect(displayed.hour, 12);
       expect(displayed.minute, 30);
 
-      // Serializing back to JSON emits a UTC Z-suffixed string (the model's
-      // toJson uses `value.toUtc().toIso8601String()`).
+      // Serializing back to JSON emits a clean UTC Z-suffixed string (no
+      // fractional seconds) via the shared `timestampToJson` helper, matching
+      // Python `now_utc()` output (DG-202 review-auto cycle 1 CQ-2).
       final reSerialized = event.toJson();
-      expect(reSerialized['timestamp'], wire);
+      expect(reSerialized['timestamp'], '2026-06-30T05:30:00Z');
     });
 
     test('parses Z-suffixed server timestamp', () {

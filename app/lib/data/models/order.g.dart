@@ -60,6 +60,6 @@ Map<String, dynamic> _$OrderToJson(_Order instance) => <String, dynamic>{
   'packingChecklist': instance.packingChecklist,
   'workTicketPrintedAt': instance.workTicketPrintedAt,
   'workTicketPrintedBy': instance.workTicketPrintedBy,
-  'createdAt': instance.createdAt.toIso8601String(),
-  'updatedAt': instance.updatedAt.toIso8601String(),
+  'createdAt': timestampToJson(instance.createdAt),
+  'updatedAt': timestampToJson(instance.updatedAt),
 };

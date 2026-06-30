@@ -31,9 +31,9 @@ sealed class Order with _$Order {
     @Default([]) List<PackingItem> packingChecklist,
     String? workTicketPrintedAt,
     String? workTicketPrintedBy,
-    @JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired)
+    @JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)
     required DateTime createdAt,
-    @JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired)
+    @JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)
     required DateTime updatedAt,
   }) = _Order;
 

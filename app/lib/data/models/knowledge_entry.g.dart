@@ -37,10 +37,10 @@ Map<String, dynamic> _$KnowledgeEntryToJson(_KnowledgeEntry instance) =>
       'tags': instance.tags,
       'logged_by': instance.loggedBy,
       'source': instance.source,
-      'created_at': instance.createdAt.toIso8601String(),
-      'updated_at': instance.updatedAt.toIso8601String(),
+      'created_at': timestampToJson(instance.createdAt),
+      'updated_at': timestampToJson(instance.updatedAt),
       'pinned': instance.pinned,
-      'pinned_at': instance.pinnedAt?.toIso8601String(),
+      'pinned_at': timestampToJson(instance.pinnedAt),
       'photos': instance.photos,
     };
 

@@ -95,3 +95,18 @@ String formatHourMinute(int hour, int minute) {
   return '${hour.toString().padLeft(2, '0')}:'
       '${minute.toString().padLeft(2, '0')}';
 }
+
+/// Serializes a [DateTime] to the canonical UTC Z-suffixed wire format used
+/// across the bakery-shop backend: ``YYYY-MM-DDTHH:MM:SSZ`` (no fractional
+/// seconds). This matches Python's ``now_utc()`` output so that timestamps
+/// produced on either side of the wire share one format and sort correctly
+/// under lexicographic SQLite ordering (DG-202 FR1, review-auto cycle 1 CQ-2).
+///
+/// Use this as the `toJson` for any UTC timestamp ``DateTime`` field exposed
+/// via `@JsonKey(toJson: timestampToJson)`. Accepts ``null`` for nullable
+/// fields and returns ``null`` in that case.
+String? timestampToJson(DateTime? value) {
+  if (value == null) return null;
+  final iso = value.toUtc().toIso8601String();
+  return iso.replaceAll(RegExp(r'\.000'), '');
+}

@@ -23,7 +23,7 @@ _BakeryEvent _$BakeryEventFromJson(Map<String, dynamic> json) => _BakeryEvent(
 Map<String, dynamic> _$BakeryEventToJson(_BakeryEvent instance) =>
     <String, dynamic>{
       'id': instance.id,
-      'timestamp': _timestampToJson(instance.timestamp),
+      'timestamp': timestampToJson(instance.timestamp),
       'type': instance.type,
       'summary': instance.summary,
       'tags': instance.tags,
