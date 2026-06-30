@@ -87,7 +87,7 @@ def _insert_revenue_entry(
     deposits_account_id: int,
     revenue_account_id: int,
     amount: float,
-    created_at: str = "2026-06-20T10:00:00",
+    created_at: str = "2026-06-20T10:00:00Z",
     transaction_date: str | None = None,
 ) -> int:
     """Insert a balanced order-revenue journal entry debiting 2100.
@@ -302,7 +302,7 @@ def test_refunds_lists_outflow_transactions():
         _insert_payment(conn, order_id=oid, amount=1000000, ptype="deposit")
         _insert_payment(
             conn, order_id=oid, amount=300000, ptype="tien_rut", method="cash",
-            created_at="2026-06-12T09:00:00",
+            created_at="2026-06-12T09:00:00Z",
         )
         # A `refund` outflow should also appear now (Mn-3 parameterization).
         oid2 = _insert_order(
@@ -311,7 +311,7 @@ def test_refunds_lists_outflow_transactions():
         )
         _insert_payment(
             conn, order_id=oid2, amount=500000, ptype="refund",
-            created_at="2026-06-13T09:00:00",
+            created_at="2026-06-13T09:00:00Z",
         )
         # A `deposit` payment is NOT an outflow and must NOT appear.
         oid3 = _insert_order(

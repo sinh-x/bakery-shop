@@ -109,7 +109,7 @@ def test_print_fills_missing_printed_by_when_legacy_timestamp_exists(mock_tspl, 
 
     detail_before = api_client.get(f"/api/orders/{order_ref}").json()
     order_id = detail_before["id"]
-    legacy_ts = "2026-04-01T08:30:00"
+    legacy_ts = "2026-04-01T08:30:00Z"
 
     from baker.db.connection import get_db
     with get_db() as conn:

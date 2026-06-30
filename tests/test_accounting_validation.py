@@ -311,7 +311,7 @@ def test_cost_history_sanity_flags_negative_cost():
         ensure_schema(conn)
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (1, -500, "2020-01-01T00:00:00"),
+            (1, -500, "2020-01-01T00:00:00Z"),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "cost_history_sanity")
@@ -326,11 +326,11 @@ def test_cost_history_sanity_flags_duplicate_effective_from():
         ensure_schema(conn)
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (1, 100, "2020-01-01T00:00:00"),
+            (1, 100, "2020-01-01T00:00:00Z"),
         )
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (1, 200, "2020-01-01T00:00:00"),
+            (1, 200, "2020-01-01T00:00:00Z"),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "cost_history_sanity")
@@ -344,13 +344,13 @@ def test_cost_history_sanity_flags_future_effective_from():
         ensure_schema(conn)
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (1, 100, "2999-12-31T00:00:00"),
+            (1, 100, "2999-12-31T00:00:00Z"),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "cost_history_sanity")
     futures = [f for f in check["details"] if f["anomaly"] == "future_effective_from"]
     assert len(futures) == 1
-    assert futures[0]["effective_from"] == "2999-12-31T00:00:00"
+    assert futures[0]["effective_from"] == "2999-12-31T00:00:00Z"
 
 
 def test_cost_history_sanity_passes_on_clean_history():
@@ -358,11 +358,11 @@ def test_cost_history_sanity_passes_on_clean_history():
         ensure_schema(conn)
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (1, 100, "2020-01-01T00:00:00"),
+            (1, 100, "2020-01-01T00:00:00Z"),
         )
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (1, 200, "2021-01-01T00:00:00"),
+            (1, 200, "2021-01-01T00:00:00Z"),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "cost_history_sanity")
@@ -432,13 +432,13 @@ def test_lock_integrity_flags_locked_at_without_locked_by():
             "INSERT INTO journal_entries "
             "(description, source_type, source_id, locked_at, locked_by) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("Partial lock", "manual", None, "2026-06-23T12:00:00", ""),
+            ("Partial lock", "manual", None, "2026-06-23T12:00:00Z", ""),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "lock_integrity")
     assert check["status"] == "fail"
     assert check["issue_count"] == 1
-    assert check["details"][0]["locked_at"] == "2026-06-23T12:00:00"
+    assert check["details"][0]["locked_at"] == "2026-06-23T12:00:00Z"
 
 
 def test_lock_integrity_passes_when_both_set():
@@ -448,7 +448,7 @@ def test_lock_integrity_passes_when_both_set():
             "INSERT INTO journal_entries "
             "(description, source_type, source_id, locked_at, locked_by) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("Full lock", "manual", None, "2026-06-23T12:00:00", "sinh"),
+            ("Full lock", "manual", None, "2026-06-23T12:00:00Z", "sinh"),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "lock_integrity")
@@ -506,13 +506,13 @@ def test_future_dated_entries_flags_future_created_at():
             "INSERT INTO journal_entries "
             "(description, source_type, source_id, created_at) "
             "VALUES (?, ?, ?, ?)",
-            ("Future entry", "manual", None, "2999-12-31T23:59:59"),
+            ("Future entry", "manual", None, "2999-12-31T23:59:59Z"),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "future_dated_entries")
     assert check["status"] == "fail"
     assert check["issue_count"] == 1
-    assert check["details"][0]["created_at"] == "2999-12-31T23:59:59"
+    assert check["details"][0]["created_at"] == "2999-12-31T23:59:59Z"
 
 
 def test_future_dated_entries_passes_on_normal_dates():
@@ -522,7 +522,7 @@ def test_future_dated_entries_passes_on_normal_dates():
             "INSERT INTO journal_entries "
             "(description, source_type, source_id, created_at) "
             "VALUES (?, ?, ?, ?)",
-            ("Normal entry", "manual", None, "2020-01-01T10:00:00"),
+            ("Normal entry", "manual", None, "2020-01-01T10:00:00Z"),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "future_dated_entries")

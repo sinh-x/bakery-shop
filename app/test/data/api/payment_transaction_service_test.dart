@@ -36,7 +36,7 @@ Map<String, dynamic> _txnJson({
     'method': 'cash',
     'amount': 200000.0,
     'note': '',
-    'createdAt': '2026-06-25T10:00:00',
+    'createdAt': '2026-06-25T10:00:00Z',
     if (invalidatedAt.isNotEmpty) 'invalidatedAt': invalidatedAt,
     'invalidatedBy': invalidatedBy,
   };

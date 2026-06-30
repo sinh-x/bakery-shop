@@ -245,7 +245,7 @@ def test_waste_stock_cogs_uses_cost_history_when_present(api_client):
     with get_db() as conn:
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (1, 25000, "2020-01-01T00:00:00"),
+            (1, 25000, "2020-01-01T00:00:00Z"),
         )
     api_client.post(
         "/api/products/1/stock/restock",

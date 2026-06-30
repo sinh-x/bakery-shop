@@ -968,7 +968,7 @@ def test_submit_waste_cogs_uses_cost_history_when_present(api_client):
         _set_stock(conn, 1, 5)
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (1, 22000, "2020-01-01T00:00:00"),
+            (1, 22000, "2020-01-01T00:00:00Z"),
         )
 
     payload = {

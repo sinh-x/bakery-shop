@@ -47,13 +47,13 @@ def test_from_row_reads_invalidation_fields():
         ensure_schema(conn)
         order_id = _seed_order(conn)
         txn_id = _insert_txn(conn, order_id, 100000,
-                             invalidated_at="2026-06-25T10:00:00",
+                             invalidated_at="2026-06-25T10:00:00Z",
                              invalidated_by="sinh")
         row = conn.execute(
             "SELECT * FROM payment_transactions WHERE id = ?", (txn_id,)
         ).fetchone()
         txn = PaymentTransaction.from_row(row)
-        assert txn.invalidated_at == "2026-06-25T10:00:00"
+        assert txn.invalidated_at == "2026-06-25T10:00:00Z"
         assert txn.invalidated_by == "sinh"
 
 
@@ -75,18 +75,18 @@ def test_from_row_handles_absent_columns_gracefully():
 def test_to_api_dict_includes_invalidation_fields():
     """to_api_dict emits invalidatedAt/invalidatedBy (FR6 / AC7 partial)."""
     txn = PaymentTransaction(
-        order_id=1, amount=100000, id=42, created_at="2026-06-25T09:00:00",
-        invalidated_at="2026-06-25T10:00:00", invalidated_by="sinh",
+        order_id=1, amount=100000, id=42, created_at="2026-06-25T09:00:00Z",
+        invalidated_at="2026-06-25T10:00:00Z", invalidated_by="sinh",
     )
     d = txn.to_api_dict()
-    assert d["invalidatedAt"] == "2026-06-25T10:00:00"
+    assert d["invalidatedAt"] == "2026-06-25T10:00:00Z"
     assert d["invalidatedBy"] == "sinh"
 
 
 def test_to_api_dict_invalidation_fields_none_for_valid_txn():
     """Valid transactions emit None/empty invalidated fields."""
     txn = PaymentTransaction(order_id=1, amount=100000, id=1,
-                             created_at="2026-06-25T09:00:00")
+                             created_at="2026-06-25T09:00:00Z")
     d = txn.to_api_dict()
     assert d["invalidatedAt"] is None
     assert d["invalidatedBy"] == ""
@@ -99,7 +99,7 @@ def test_total_paid_excl_outflows_excludes_invalidated():
         order_id = _seed_order(conn)
         _insert_txn(conn, order_id, 200000, type_="deposit")
         _insert_txn(conn, order_id, 100000, type_="deposit",
-                    invalidated_at="2026-06-25T10:00:00", invalidated_by="sinh")
+                    invalidated_at="2026-06-25T10:00:00Z", invalidated_by="sinh")
         total = PaymentTransaction.total_paid_excl_outflows(conn, order_id)
         assert total == 200000.0
 
@@ -111,7 +111,7 @@ def test_total_for_order_excludes_invalidated():
         order_id = _seed_order(conn)
         _insert_txn(conn, order_id, 200000, type_="deposit")
         _insert_txn(conn, order_id, 100000, type_="deposit",
-                    invalidated_at="2026-06-25T10:00:00")
+                    invalidated_at="2026-06-25T10:00:00Z")
         assert PaymentTransaction.total_for_order(conn, order_id) == 200000.0
 
 
@@ -123,7 +123,7 @@ def test_total_outflows_excludes_invalidated():
         order_id = _seed_order(conn)
         _insert_txn(conn, order_id, 50000, type_="refund")
         _insert_txn(conn, order_id, 30000, type_="refund",
-                    invalidated_at="2026-06-25T10:00:00")
+                    invalidated_at="2026-06-25T10:00:00Z")
         assert PaymentTransaction.total_outflows(conn, order_id) == 50000.0
 
 
@@ -137,10 +137,10 @@ def test_total_paid_net_excludes_invalidated():
         # invalidated refund 30k -> net = 200k - 50k = 150k
         _insert_txn(conn, order_id, 200000, type_="payment")
         _insert_txn(conn, order_id, 100000, type_="payment",
-                    invalidated_at="2026-06-25T10:00:00")
+                    invalidated_at="2026-06-25T10:00:00Z")
         _insert_txn(conn, order_id, 50000, type_="refund")
         _insert_txn(conn, order_id, 30000, type_="refund",
-                    invalidated_at="2026-06-25T10:00:00")
+                    invalidated_at="2026-06-25T10:00:00Z")
         assert PaymentTransaction.total_paid_net(conn, order_id) == 150000.0
 
 
@@ -152,9 +152,9 @@ def test_all_invalidated_yields_zero_totals():
         ensure_schema(conn)
         order_id = _seed_order(conn)
         _insert_txn(conn, order_id, 200000, type_="payment",
-                    invalidated_at="2026-06-25T10:00:00")
+                    invalidated_at="2026-06-25T10:00:00Z")
         _insert_txn(conn, order_id, 50000, type_="refund",
-                    invalidated_at="2026-06-25T10:00:00")
+                    invalidated_at="2026-06-25T10:00:00Z")
         assert PaymentTransaction.total_for_order(conn, order_id) == 0.0
         assert PaymentTransaction.total_paid_excl_outflows(conn, order_id) == 0.0
         assert PaymentTransaction.total_outflows(conn, order_id) == 0.0

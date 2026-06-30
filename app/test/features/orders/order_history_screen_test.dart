@@ -35,8 +35,8 @@ Map<String, dynamic> _orderJson({
     'shippingFee': 0.0,
     'workTicketPrintedAt': null,
     'createdBy': '',
-    'createdAt': '2026-05-18T08:00:00',
-    'updatedAt': '2026-05-18T08:00:00',
+    'createdAt': '2026-05-18T08:00:00Z',
+    'updatedAt': '2026-05-18T08:00:00Z',
   };
 }
 

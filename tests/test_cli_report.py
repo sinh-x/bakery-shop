@@ -119,7 +119,7 @@ def _seed_known_dataset(conn):
     cogs = _account_id(conn, "5900")
     inventory = _account_id(conn, "1300")
     transport = _account_id(conn, "5300")
-    ts = "2026-06-15T10:00:00"
+    ts = "2026-06-15T10:00:00Z"
 
     _insert_entry(
         conn,

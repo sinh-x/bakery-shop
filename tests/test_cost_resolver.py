@@ -64,35 +64,35 @@ def test_baseline_missing_product(db):
 
 def test_latest_cost_history_wins(db):
     pid = _insert_product(db, category="banh_mi", base_price=20000)
-    _insert_cost_history(db, pid, 4500.0, effective_from="2026-01-01T00:00:00")
-    _insert_cost_history(db, pid, 5200.0, effective_from="2026-03-01T00:00:00")
+    _insert_cost_history(db, pid, 4500.0, effective_from="2026-01-01T00:00:00Z")
+    _insert_cost_history(db, pid, 5200.0, effective_from="2026-03-01T00:00:00Z")
     assert resolve_product_cost(db, pid) == pytest.approx(5200.0)
 
 
 def test_future_effective_from_falls_back_to_baseline(db):
     pid = _insert_product(db, category="banh_mi", base_price=20000)
-    _insert_cost_history(db, pid, 9999.0, effective_from="9999-12-31T00:00:00")
+    _insert_cost_history(db, pid, 9999.0, effective_from="9999-12-31T00:00:00Z")
     # No currently-effective cost_history → baseline (30% of 20000 = 6000)
     assert resolve_product_cost(db, pid) == pytest.approx(6000.0)
 
 
 def test_past_then_future_returns_past(db):
     pid = _insert_product(db, category="banh_mi", base_price=20000)
-    _insert_cost_history(db, pid, 3000.0, effective_from="2020-01-01T00:00:00")
-    _insert_cost_history(db, pid, 9999.0, effective_from="9999-12-31T00:00:00")
+    _insert_cost_history(db, pid, 3000.0, effective_from="2020-01-01T00:00:00Z")
+    _insert_cost_history(db, pid, 9999.0, effective_from="9999-12-31T00:00:00Z")
     assert resolve_product_cost(db, pid) == pytest.approx(3000.0)
 
 
 def test_cost_history_zero_cost_returned(db):
     pid = _insert_product(db, category="banh_mi", base_price=20000)
-    _insert_cost_history(db, pid, 0.0, effective_from="2020-01-01T00:00:00")
+    _insert_cost_history(db, pid, 0.0, effective_from="2020-01-01T00:00:00Z")
     # Explicit 0 cost_history entry wins (0 returned), baseline not applied
     assert resolve_product_cost(db, pid) == 0.0
 
 
 def test_cost_history_negative_cost_clamped_to_zero(db):
     pid = _insert_product(db, category="banh_mi", base_price=20000)
-    _insert_cost_history(db, pid, -100.0, effective_from="2020-01-01T00:00:00")
+    _insert_cost_history(db, pid, -100.0, effective_from="2020-01-01T00:00:00Z")
     # Negative cost_history is clamped to 0 so downstream COGS never stores
     # negative cost_at_sale (review finding m-2).
     assert resolve_product_cost(db, pid) == pytest.approx(0.0)

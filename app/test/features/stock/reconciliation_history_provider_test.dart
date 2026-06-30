@@ -18,7 +18,7 @@ class _FakeHistoryService extends ReconciliationService {
         wasteReason: 'Bị vỡ',
         linkedOrderRef: 'POS-001',
         lineCount: 2,
-        createdAt: '2026-05-04T10:00:00',
+        createdAt: '2026-05-04T10:00:00Z',
       ),
     ];
   }
@@ -33,7 +33,7 @@ class _FakeHistoryService extends ReconciliationService {
       wasteReason: '',
       linkedOrderRef: 'ORD-RECON-0001',
       linkedPaymentRef: 'PTX-1',
-      createdAt: '2026-05-04T10:00:00',
+      createdAt: '2026-05-04T10:00:00Z',
       lines: [
         ReconciliationHistoryLine(
           id: 1,
