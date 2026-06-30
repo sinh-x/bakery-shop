@@ -366,7 +366,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 54
+        assert _migrated_version(conn) == 55
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -383,7 +383,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 54
+        assert _migrated_version(conn) == 55
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -397,10 +397,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 54
+        assert _migrated_version(conn) == 55
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 54
+        assert _migrated_version(conn) == 55
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -2441,3 +2441,161 @@ def test_v54_idempotent_on_fresh_db():
         assert row_before["id"] == row_after["id"]
         assert row_before["name"] == row_after["name"]
         assert row_before["type"] == row_after["type"]
+
+
+# ── v55 Migration: UTC timestamp standardization (DG-202 Phase 2) ──────
+
+
+def test_v55_registered_in_migration_chain():
+    """v55 is registered in MIGRATIONS with the expected callable."""
+    assert 55 in MIGRATIONS
+    assert (
+        MIGRATIONS[55]["callable"].__name__
+        == "_migrate_v55_utc_timestamp_standardization"
+    )
+
+
+def test_v55_appends_z_to_bare_timestamps():
+    """Bare timestamps (no suffix) get a trailing 'Z' appended."""
+    from baker.db.schema import _migrate_v55_utc_timestamp_standardization
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM events")
+        conn.execute(
+            "INSERT INTO events (type, summary, timestamp) VALUES ('note', 'a', ?)",
+            ("2026-03-07T09:17:29",),
+        )
+        conn.execute(
+            "INSERT INTO events (type, summary, timestamp) VALUES ('note', 'b', ?)",
+            ("2026-06-10T07:47:06.706",),
+        )
+        conn.commit()
+
+        _migrate_v55_utc_timestamp_standardization(conn)
+
+        rows = conn.execute(
+            "SELECT summary, timestamp FROM events ORDER BY summary"
+        ).fetchall()
+        assert rows[0]["timestamp"] == "2026-03-07T09:17:29Z"
+        assert rows[1]["timestamp"] == "2026-06-10T07:47:06.706Z"
+
+
+def test_v55_converts_plus07_to_utc_z():
+    """+07:00-suffixed timestamps are shifted by -7h and suffixed with 'Z',
+    preserving fractional seconds."""
+    from baker.db.schema import _migrate_v55_utc_timestamp_standardization
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM events")
+        conn.execute(
+            "INSERT INTO events (type, summary, timestamp) VALUES ('note', 'whole', ?)",
+            ("2026-06-30T03:00:00+07:00",),
+        )
+        conn.execute(
+            "INSERT INTO events (type, summary, timestamp) VALUES ('note', 'frac', ?)",
+            ("2026-06-17T20:50:53.105+07:00",),
+        )
+        conn.commit()
+
+        _migrate_v55_utc_timestamp_standardization(conn)
+
+        rows = conn.execute(
+            "SELECT summary, timestamp FROM events ORDER BY summary"
+        ).fetchall()
+        assert rows[0]["timestamp"] == "2026-06-17T13:50:53.105Z"
+        assert rows[1]["timestamp"] == "2026-06-29T20:00:00Z"
+
+
+def test_v55_idempotent():
+    """Re-running the v55 callable on an already-migrated DB is a no-op."""
+    from baker.db.schema import _migrate_v55_utc_timestamp_standardization
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM events")
+        conn.execute(
+            "INSERT INTO events (type, summary, timestamp) VALUES ('note', 'x', ?)",
+            ("2026-03-07T09:17:29",),
+        )
+        conn.commit()
+
+        _migrate_v55_utc_timestamp_standardization(conn)
+        first = conn.execute("SELECT timestamp FROM events WHERE summary='x'").fetchone()[0]
+        assert first == "2026-03-07T09:17:29Z"
+
+        _migrate_v55_utc_timestamp_standardization(conn)
+        second = conn.execute("SELECT timestamp FROM events WHERE summary='x'").fetchone()[0]
+        assert second == "2026-03-07T09:17:29Z"
+
+
+def test_v55_preserves_date_only_columns():
+    """Date-only and time-only columns are NOT touched by the migration."""
+    from baker.db.schema import _migrate_v55_utc_timestamp_standardization
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM orders WHERE id=99999")
+        conn.execute(
+            "INSERT INTO orders (id, order_ref, customer_name, due_date, due_time, created_at, updated_at) "
+            "VALUES (99999, 'TEST-99999', 't', '2026-03-20', '14:00', '2026-03-20T08:21:51', '2026-03-20T08:21:51')"
+        )
+        conn.execute("DELETE FROM checklist_entries")
+        conn.execute(
+            "INSERT INTO checklist_entries (template_id, checklist_date, completed) "
+            "VALUES (1, '2026-03-25', 0)"
+        )
+        conn.commit()
+
+        _migrate_v55_utc_timestamp_standardization(conn)
+
+        due_date = conn.execute(
+            "SELECT due_date FROM orders WHERE id=99999"
+        ).fetchone()[0]
+        due_time = conn.execute(
+            "SELECT due_time FROM orders WHERE id=99999"
+        ).fetchone()[0]
+        checklist_date = conn.execute(
+            "SELECT checklist_date FROM checklist_entries WHERE checklist_date='2026-03-25' LIMIT 1"
+        ).fetchone()[0]
+        assert due_date == "2026-03-20"
+        assert due_time == "14:00"
+        assert checklist_date == "2026-03-25"
+        conn.execute("DELETE FROM orders WHERE id=99999")
+        conn.commit()
+
+
+def test_v55_excludes_schema_version_and_server_logs():
+    """schema_version.applied_at and server_logs.timestamp are excluded from
+    the migration (per DG-202 §5 Out of Scope)."""
+    from baker.db.schema import _migrate_v55_utc_timestamp_standardization
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM server_logs")
+        conn.execute(
+            "INSERT INTO server_logs (timestamp, level, message) VALUES (?, 'INFO', 't')",
+            ("2026-03-24T03:20:24.347",),
+        )
+        conn.commit()
+
+        _migrate_v55_utc_timestamp_standardization(conn)
+
+        sl = conn.execute("SELECT timestamp FROM server_logs LIMIT 1").fetchone()[0]
+        assert sl == "2026-03-24T03:20:24.347"
+        conn.execute("DELETE FROM server_logs")
+        conn.commit()
+
+
+def test_v55_new_default_is_utc_z():
+    """After migration v55, new rows use the updated DEFAULT producing a 'Z' suffix."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("INSERT INTO events (type, summary) VALUES ('note', 'def')")
+        ts = conn.execute(
+            "SELECT timestamp FROM events WHERE summary='def'"
+        ).fetchone()[0]
+        assert ts.endswith("Z")
+        conn.execute("DELETE FROM events WHERE summary='def'")
+        conn.commit()
