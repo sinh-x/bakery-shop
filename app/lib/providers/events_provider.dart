@@ -164,7 +164,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     DateTime? since,
     DateTime? until,
   }) {
-    final local = timestamp.toLocal();
+    final local = ServerTimezone.toServerLocal(timestamp);
     if (since != null && local.isBefore(since)) {
       return false;
     }
@@ -175,7 +175,9 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
   }
 
   DateTime? _parseLocalDateTimeOrNull(String? iso) =>
-      parseApiDateTime(iso)?.toLocal();
+      parseApiDateTime(iso) == null
+          ? null
+          : ServerTimezone.toServerLocal(parseApiDateTime(iso)!);
 
   Future<void> refresh({
     String? type,

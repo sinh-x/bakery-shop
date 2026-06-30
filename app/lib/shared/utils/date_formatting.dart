@@ -1,9 +1,36 @@
 import 'package:intl/intl.dart';
 
+/// Server timezone configuration fetched from `GET /api/config` at startup
+/// (DG-202 FR7/AC6). The Flutter client uses the server's timezone offset —
+/// rather than the device's local timezone — for display conversion, keeping
+/// timestamps consistent with the server's configured timezone.
+///
+/// `ServerTimezone.offsetMinutes` is the server timezone's UTC offset in
+/// minutes (e.g., 420 for +07:00). It defaults to the device's local offset
+/// (via `DateTime.now().timeZoneOffset`) so display helpers keep working
+/// before `initServerTimezone()` runs or if the API is unreachable.
+class ServerTimezone {
+  static int offsetMinutes = DateTime.now().timeZoneOffset.inMinutes;
+
+  static void configure(String timezoneName, int offsetMinutesValue) {
+    ServerTimezone.timezoneName = timezoneName;
+    offsetMinutes = offsetMinutesValue;
+  }
+
+  static String timezoneName = DateTime.now().timeZoneName;
+
+  /// Returns a UTC [DateTime] shifted by the server timezone offset, producing
+  /// a wall-clock [DateTime] in the server's local time (no UTC label).
+  static DateTime toServerLocal(DateTime dateTime) {
+    final utc = dateTime.toUtc();
+    return utc.add(Duration(minutes: offsetMinutes));
+  }
+}
+
 /// Parses an API timestamp string (Z-suffixed UTC, +07:00 offset, or bare
 /// ISO-8601) into a [DateTime]. The returned [DateTime] retains the original
-/// timezone information; callers should use `.toLocal()` (or the
-/// `formatDisplay*` helpers below) when presenting it to the user.
+/// timezone information; callers should use the `formatDisplay*` helpers below
+/// (which apply the server timezone offset) when presenting it to the user.
 ///
 /// `DateTime.parse` natively handles `Z`-suffixed, offset-suffixed, and bare
 /// ISO-8601 strings, so this is backward-compatible with legacy bare
@@ -21,32 +48,32 @@ DateTime parseApiDateTimeRequired(String value) {
   return DateTime.parse(value);
 }
 
-/// Formats a [DateTime] for full display in the device's local timezone as
+/// Formats a [DateTime] for full display in the server's timezone as
 /// `dd/MM/yyyy HH:mm`. Returns an empty string when [dateTime] is null.
 String formatDisplay(DateTime? dateTime) {
   if (dateTime == null) return '';
-  return DateFormat('dd/MM/yyyy HH:mm').format(dateTime.toLocal());
+  return DateFormat('dd/MM/yyyy HH:mm').format(ServerTimezone.toServerLocal(dateTime));
 }
 
-/// Formats a [DateTime] for date-only display in the device's local timezone
+/// Formats a [DateTime] for date-only display in the server's timezone
 /// as `dd/MM/yyyy`. Returns an empty string when [dateTime] is null.
 String formatDisplayDate(DateTime? dateTime) {
   if (dateTime == null) return '';
-  return DateFormat('dd/MM/yyyy').format(dateTime.toLocal());
+  return DateFormat('dd/MM/yyyy').format(ServerTimezone.toServerLocal(dateTime));
 }
 
-/// Formats a [DateTime] for time-only display in the device's local timezone
+/// Formats a [DateTime] for time-only display in the server's timezone
 /// as `HH:mm`. Returns an empty string when [dateTime] is null.
 String formatDisplayTime(DateTime? dateTime) {
   if (dateTime == null) return '';
-  return DateFormat('HH:mm').format(dateTime.toLocal());
+  return DateFormat('HH:mm').format(ServerTimezone.toServerLocal(dateTime));
 }
 
-/// Formats a [DateTime] for short display in the device's local timezone as
+/// Formats a [DateTime] for short display in the server's timezone as
 /// `dd/MM HH:mm`. Returns an empty string when [dateTime] is null.
 String formatDisplayShort(DateTime? dateTime) {
   if (dateTime == null) return '';
-  return DateFormat('dd/MM HH:mm').format(dateTime.toLocal());
+  return DateFormat('dd/MM HH:mm').format(ServerTimezone.toServerLocal(dateTime));
 }
 
 /// Formats a [DateTime] as a date-only API string `yyyy-MM-dd`. Use this for

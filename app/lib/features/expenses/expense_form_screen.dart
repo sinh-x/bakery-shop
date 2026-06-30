@@ -5,6 +5,7 @@ import 'package:bakery_app/features/expenses/widgets/expense_form_card.dart';
 import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/providers/staff_provider.dart';
 import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,7 +46,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       return;
     }
     _editingId = event.id;
-    _eventDateTime = event.timestamp.toLocal();
+    _eventDateTime = ServerTimezone.toServerLocal(event.timestamp);
     final data = ExpenseEventMapper.fromEvent(event);
     if (data == null) return;
     _amountCtrl.text = data.amountVnd.toString();
