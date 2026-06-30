@@ -7,6 +7,7 @@ import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/theme/bakery_theme.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
@@ -112,8 +113,7 @@ class _DashboardContent extends StatelessWidget {
   final List<Order> orders;
   final Future<void> Function() onRefresh;
 
-  String _dateStr(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  String _dateStr(DateTime d) => formatApiDate(d);
 
   @override
   Widget build(BuildContext context) {

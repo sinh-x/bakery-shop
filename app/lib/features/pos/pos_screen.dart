@@ -9,6 +9,7 @@ import '../../../providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import '../../../shared/mixins/auto_refresh_mixin.dart';
 import '../../../shared/utils/category_grouping.dart';
+import '../../../shared/utils/date_formatting.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../../shared/widgets/collapsible_category_sections.dart';
 import 'widgets/pos_cart_bar.dart';
@@ -135,10 +136,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
   }
 
   String _refreshLabel() {
-    final ts = _lastStockRefreshAt;
-    final hh = ts.hour.toString().padLeft(2, '0');
-    final mm = ts.minute.toString().padLeft(2, '0');
-    return VN.stockUpdatedAt('$hh:$mm');
+    return VN.stockUpdatedAt(formatDisplayTime(_lastStockRefreshAt));
   }
 
   void _onPosAppBarMenuSelected(String value) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/providers/checklist_provider.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/checklist.dart';
 
@@ -155,8 +156,7 @@ class _ChecklistHistoryScreenState
     );
   }
 
-  String _fmtDisplay(DateTime dt) =>
-      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+  String _fmtDisplay(DateTime dt) => formatDisplayDate(dt);
 }
 
 class _DayCard extends StatefulWidget {
@@ -267,22 +267,19 @@ class _DayCardState extends State<_DayCard> {
   }
 
   String _formatDateHeader(String isoDate) {
-    try {
-      final dt = DateTime.parse(isoDate);
-      const weekdays = [
-        'Thứ 2',
-        'Thứ 3',
-        'Thứ 4',
-        'Thứ 5',
-        'Thứ 6',
-        'Thứ 7',
-        'Chủ nhật',
-      ];
-      final weekday = weekdays[dt.weekday - 1];
-      return '$weekday, ${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
-    } catch (_) {
-      return isoDate;
-    }
+    final dt = parseApiDate(isoDate);
+    if (dt == null) return isoDate;
+    const weekdays = [
+      'Thứ 2',
+      'Thứ 3',
+      'Thứ 4',
+      'Thứ 5',
+      'Thứ 6',
+      'Thứ 7',
+      'Chủ nhật',
+    ];
+    final weekday = weekdays[dt.weekday - 1];
+    return '$weekday, ${formatDisplayDate(dt)}';
   }
 }
 
@@ -372,12 +369,8 @@ class _HistoryEntryTile extends StatelessWidget {
   }
 
   String _fmtTime(String? completedAt) {
-    if (completedAt == null) return '';
-    try {
-      final dt = DateTime.parse(completedAt);
-      return ' • ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return '';
-    }
+    final dt = parseApiDateTime(completedAt);
+    if (dt == null) return '';
+    return ' • ${formatDisplayTime(dt)}';
   }
 }

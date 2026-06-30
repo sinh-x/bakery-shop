@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../shared/utils/date_formatting.dart';
+
 part 'journal_entry.freezed.dart';
 part 'journal_entry.g.dart';
 
@@ -28,9 +30,10 @@ sealed class JournalEntry with _$JournalEntry {
     @Default('') String description,
     @JsonKey(name: 'sourceType') @Default('') String sourceType,
     @JsonKey(name: 'sourceId') String? sourceId,
-    @JsonKey(name: 'lockedAt') String? lockedAt,
+    @JsonKey(name: 'lockedAt', fromJson: parseApiDateTime) DateTime? lockedAt,
     @JsonKey(name: 'lockedBy') @Default('') String lockedBy,
-    @JsonKey(name: 'createdAt') String? createdAt,
+    @JsonKey(name: 'createdAt', fromJson: parseApiDateTime)
+    DateTime? createdAt,
     @JsonKey(name: 'transactionDate') String? transactionDate,
     @Default(<JournalLine>[]) List<JournalLine> lines,
   }) = _JournalEntry;

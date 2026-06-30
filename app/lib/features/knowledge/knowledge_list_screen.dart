@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
@@ -358,7 +359,7 @@ class _KnowledgeEntryCard extends StatelessWidget {
               ],
               const SizedBox(height: 4),
               Text(
-                _formatDate(entry.updatedAt),
+                formatDisplayDate(entry.updatedAt),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -368,12 +369,5 @@ class _KnowledgeEntryCard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _formatDate(DateTime dt) {
-    final day = dt.day.toString().padLeft(2, '0');
-    final month = dt.month.toString().padLeft(2, '0');
-    final year = dt.year;
-    return '$day/$month/$year';
   }
 }

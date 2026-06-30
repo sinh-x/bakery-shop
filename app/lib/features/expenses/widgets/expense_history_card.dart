@@ -1,9 +1,9 @@
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 class ExpenseHistoryCard extends StatelessWidget {
   const ExpenseHistoryCard({
@@ -20,9 +20,7 @@ class ExpenseHistoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final data = ExpenseEventMapper.fromEvent(event);
-    final formattedTimestamp = DateFormat(
-      'dd/MM/yyyy HH:mm',
-    ).format(event.timestamp.toLocal());
+    final formattedTimestamp = formatDisplay(event.timestamp);
     if (data == null) return const SizedBox.shrink();
     return Card(
       child: Padding(

@@ -6,6 +6,7 @@ import '../data/api/api_client.dart';
 import '../data/api/event_service.dart';
 import '../data/mappers/expense_event_mapper.dart';
 import '../data/models/event.dart';
+import '../shared/utils/date_formatting.dart';
 
 const kLoggedByKey = 'logged_by_name';
 
@@ -173,12 +174,8 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     return true;
   }
 
-  DateTime? _parseLocalDateTimeOrNull(String? iso) {
-    if (iso == null || iso.trim().isEmpty) {
-      return null;
-    }
-    return DateTime.tryParse(iso)?.toLocal();
-  }
+  DateTime? _parseLocalDateTimeOrNull(String? iso) =>
+      parseApiDateTime(iso)?.toLocal();
 
   Future<void> refresh({
     String? type,
@@ -199,12 +196,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     );
   }
 
-  String _todayIso() {
-    final now = DateTime.now();
-    return '${now.year.toString().padLeft(4, '0')}-'
-        '${now.month.toString().padLeft(2, '0')}-'
-        '${now.day.toString().padLeft(2, '0')}';
-  }
+  String _todayIso() => formatApiDate(DateTime.now());
 }
 
 final eventsProvider = AsyncNotifierProvider<EventsNotifier, List<BakeryEvent>>(

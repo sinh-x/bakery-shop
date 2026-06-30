@@ -37,9 +37,9 @@ _JournalEntry _$JournalEntryFromJson(Map<String, dynamic> json) =>
       description: json['description'] as String? ?? '',
       sourceType: json['sourceType'] as String? ?? '',
       sourceId: json['sourceId'] as String?,
-      lockedAt: json['lockedAt'] as String?,
+      lockedAt: parseApiDateTime(json['lockedAt'] as String?),
       lockedBy: json['lockedBy'] as String? ?? '',
-      createdAt: json['createdAt'] as String?,
+      createdAt: parseApiDateTime(json['createdAt'] as String?),
       transactionDate: json['transactionDate'] as String?,
       lines:
           (json['lines'] as List<dynamic>?)
@@ -54,9 +54,9 @@ Map<String, dynamic> _$JournalEntryToJson(_JournalEntry instance) =>
       'description': instance.description,
       'sourceType': instance.sourceType,
       'sourceId': instance.sourceId,
-      'lockedAt': instance.lockedAt,
+      'lockedAt': instance.lockedAt?.toIso8601String(),
       'lockedBy': instance.lockedBy,
-      'createdAt': instance.createdAt,
+      'createdAt': instance.createdAt?.toIso8601String(),
       'transactionDate': instance.transactionDate,
       'lines': instance.lines,
     };

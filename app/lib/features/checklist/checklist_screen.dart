@@ -6,6 +6,7 @@ import '../../data/models/checklist_entry.dart';
 import '../../data/providers/checklist_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/checklist.dart';
 
@@ -178,22 +179,20 @@ class _ChecklistScreenState extends ConsumerState<ChecklistScreen>
   }
 
   String _formatDate(String isoDate) {
-    try {
-      final dt = DateTime.parse(isoDate);
-      final weekdays = [
-        'Thứ 2',
-        'Thứ 3',
-        'Thứ 4',
-        'Thứ 5',
-        'Thứ 6',
-        'Thứ 7',
-        'Chủ nhật',
-      ];
-      final weekday = weekdays[dt.weekday - 1];
-      return '$weekday, ${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
-    } catch (_) {
-      return isoDate;
-    }
+    final dt = parseApiDate(isoDate);
+    if (dt == null) return isoDate;
+    final weekdays = [
+      'Thứ 2',
+      'Thứ 3',
+      'Thứ 4',
+      'Thứ 5',
+      'Thứ 6',
+      'Thứ 7',
+      'Chủ nhật',
+    ];
+    final weekday = weekdays[dt.weekday - 1];
+    // Format dd/MM/yyyy from the date portion of formatDisplayDate (dd/MM/yyyy).
+    return '$weekday, ${formatDisplayDate(dt)}';
   }
 }
 
@@ -322,13 +321,9 @@ class _ChecklistEntryTileState extends State<_ChecklistEntryTile> {
     }
   }
 
-  String _formatCompletedAt(String? completedAt) {
+  String _formatCompletedAt(DateTime? completedAt) {
     if (completedAt == null) return '';
-    try {
-      final dt = DateTime.parse(completedAt);
-      return ' • ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return '';
-    }
+    final time = formatDisplayTime(completedAt);
+    return ' • $time';
   }
 }

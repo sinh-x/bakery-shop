@@ -14,14 +14,11 @@ import '../../providers/pos_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/labels/orders.dart';
 import '../../shared/utils/api_error.dart' as api_error;
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 
 String posCheckoutLocalDueDate(DateTime dateTime) {
-  final local = dateTime.toLocal();
-  final year = local.year.toString().padLeft(4, '0');
-  final month = local.month.toString().padLeft(2, '0');
-  final day = local.day.toString().padLeft(2, '0');
-  return '$year-$month-$day';
+  return formatApiDate(dateTime);
 }
 
 @visibleForTesting

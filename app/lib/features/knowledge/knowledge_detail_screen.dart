@@ -13,6 +13,7 @@ import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
 import '../../shared/services/image_download_metadata.dart';
 import '../../shared/services/web_share_fallback_helpers.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/knowledge_photo_gallery.dart';
@@ -212,7 +213,7 @@ class KnowledgeDetailScreen extends ConsumerWidget {
 
               // Updated at
               Text(
-                'Cập nhật: ${_formatDateTime(entry.updatedAt)}',
+                'Cập nhật: ${formatDisplay(entry.updatedAt)}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -222,15 +223,6 @@ class KnowledgeDetailScreen extends ConsumerWidget {
         );
       },
     );
-  }
-
-  String _formatDateTime(DateTime dt) {
-    final day = dt.day.toString().padLeft(2, '0');
-    final month = dt.month.toString().padLeft(2, '0');
-    final year = dt.year;
-    final hour = dt.hour.toString().padLeft(2, '0');
-    final minute = dt.minute.toString().padLeft(2, '0');
-    return '$day/$month/$year $hour:$minute';
   }
 }
 

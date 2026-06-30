@@ -34,8 +34,8 @@ _Order _$OrderFromJson(Map<String, dynamic> json) => _Order(
       const [],
   workTicketPrintedAt: json['workTicketPrintedAt'] as String?,
   workTicketPrintedBy: json['workTicketPrintedBy'] as String?,
-  createdAt: DateTime.parse(json['createdAt'] as String),
-  updatedAt: DateTime.parse(json['updatedAt'] as String),
+  createdAt: parseApiDateTimeRequired(json['createdAt'] as String),
+  updatedAt: parseApiDateTimeRequired(json['updatedAt'] as String),
 );
 
 Map<String, dynamic> _$OrderToJson(_Order instance) => <String, dynamic>{

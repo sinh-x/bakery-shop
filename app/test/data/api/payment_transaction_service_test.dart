@@ -46,7 +46,7 @@ void main() {
   group('PaymentTransactionService invalidate/restore', () {
     test('invalidateTransaction POSTs to invalidate endpoint with body', () async {
       final interceptor = _RecordingInterceptor(
-        _txnJson(invalidatedAt: '2026-06-25T12:00:00', invalidatedBy: 'Sinh'),
+        _txnJson(invalidatedAt: '2026-06-25T12:00:00Z', invalidatedBy: 'Sinh'),
       );
       final dio = Dio()..interceptors.add(interceptor);
       final service = PaymentTransactionService(dio);
@@ -61,7 +61,7 @@ void main() {
       expect(interceptor.lastPath, '/api/orders/ORD-260625-001/transactions/20/invalidate');
       expect(interceptor.lastBody, containsPair('invalidatedBy', 'Sinh'));
       expect(interceptor.lastBody, containsPair('reason', 'sai so tien'));
-      expect(txn.invalidatedAt, '2026-06-25T12:00:00');
+      expect(txn.invalidatedAt, DateTime.parse('2026-06-25T12:00:00Z'));
       expect(txn.invalidatedBy, 'Sinh');
     });
 
@@ -88,7 +88,7 @@ void main() {
                   requestOptions: options,
                   statusCode: 200,
                   data: [
-                    _txnJson(invalidatedAt: '2026-06-25T12:00:00', invalidatedBy: 'An'),
+                    _txnJson(invalidatedAt: '2026-06-25T12:00:00Z', invalidatedBy: 'An'),
                     _txnJson(),
                   ],
                 ),
@@ -101,7 +101,7 @@ void main() {
       final txns = await service.listTransactions('ORD-260625-001');
 
       expect(txns.length, 2);
-      expect(txns[0].invalidatedAt, '2026-06-25T12:00:00');
+      expect(txns[0].invalidatedAt, DateTime.parse('2026-06-25T12:00:00Z'));
       expect(txns[0].invalidatedBy, 'An');
       expect(txns[1].invalidatedAt, isNull);
       expect(txns[1].invalidatedBy, '');

@@ -6,6 +6,7 @@ import 'package:bakery_app/features/expenses/widgets/expense_history_card.dart';
 import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 import 'package:bakery_app/shared/mixins/auto_refresh_mixin.dart';
+import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -362,8 +363,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
     });
   }
 
-  String _isoDate(DateTime input) =>
-      '${input.year.toString().padLeft(4, '0')}-${input.month.toString().padLeft(2, '0')}-${input.day.toString().padLeft(2, '0')}';
+  String _isoDate(DateTime input) => formatApiDate(input);
 
   String _localDayStartIso(DateTime input) {
     final start = DateTime(input.year, input.month, input.day);
