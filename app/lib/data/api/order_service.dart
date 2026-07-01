@@ -42,6 +42,7 @@ class OrderService {
   Future<Order> createOrder({
     required String customerName,
     String customerPhone = '',
+    int? customerId,
     List<Map<String, dynamic>> items = const [],
     String? dueDate,
     String? dueTime,
@@ -63,6 +64,7 @@ class OrderService {
       'notes': notes,
       'shippingFee': shippingFee,
     };
+    if (customerId != null) body['customerId'] = customerId;
     if (dueDate != null) body['dueDate'] = dueDate;
     if (dueTime != null) body['dueTime'] = dueTime;
     if (source != null && source.isNotEmpty) body['source'] = source;

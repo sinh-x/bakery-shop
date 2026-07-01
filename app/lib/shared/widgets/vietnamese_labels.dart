@@ -818,6 +818,14 @@ class VN {
   static const openCustomerManagement = 'Khách hàng';
   static const customerCreatedAt = 'Ngày tạo';
 
+  // Customer search in order flows (DG-182 Phase 4)
+  static const customerSearchHint = 'Tìm khách theo tên hoặc SĐT...';
+  static const customerSearchLinked = 'Đã chọn: {name}';
+  static const customerSearchChange = 'Đổi khách';
+  static const customerSearchClear = 'Bỏ chọn khách';
+  static const customerSearchNoMatch = 'Không tìm thấy khách';
+  static const customerSearchLoading = 'Đang tìm...';
+
   // Accounting
   static const accountingTitle = 'Kế toán';
   static const accountingTabAccounts = 'Tài khoản';
