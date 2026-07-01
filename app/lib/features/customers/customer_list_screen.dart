@@ -97,8 +97,11 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
                   ],
                 ),
               ),
-              data: (customers) =>
-                  _CustomerList(customers: customers),
+              data: (customers) => _CustomerList(
+                customers: customers,
+                onRefresh: () =>
+                    ref.read(customerListProvider.notifier).refresh(),
+              ),
             ),
           ),
         ],
@@ -113,9 +116,10 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
 }
 
 class _CustomerList extends StatelessWidget {
-  const _CustomerList({required this.customers});
+  const _CustomerList({required this.customers, required this.onRefresh});
 
   final List<Customer> customers;
+  final Future<void> Function() onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -133,7 +137,7 @@ class _CustomerList extends StatelessWidget {
     }
 
     return RefreshIndicator(
-      onRefresh: () async {},
+      onRefresh: onRefresh,
       child: ListView.separated(
         itemCount: customers.length,
         itemBuilder: (context, index) {
