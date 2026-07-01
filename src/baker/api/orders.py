@@ -350,6 +350,10 @@ def create_order(body: OrderCreate, request: Request):
         raise HTTPException(status_code=422, detail="Vui lòng chọn ngày nhận/giao bánh")
 
     with get_db() as conn:
+        if body.customerId is not None:
+            exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (body.customerId,)).fetchone()
+            if not exists:
+                raise HTTPException(status_code=422, detail="Khách hàng không tồn tại")
         public_order_code = _generate_unique_public_order_code(conn, body.dueDate, body.deliveryType)
         order = Order(
             customer_name=body.customerName,
@@ -481,6 +485,11 @@ def edit_order(ref: str, body: OrderEdit):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        if "customerId" in data and data["customerId"] is not None:
+            exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (data["customerId"],)).fetchone()
+            if not exists:
+                raise HTTPException(status_code=422, detail="Khách hàng không tồn tại")
 
         updates = []
         params: list = []

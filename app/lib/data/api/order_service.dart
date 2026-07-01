@@ -80,6 +80,7 @@ class OrderService {
     String ref, {
     String? customerName,
     String? customerPhone,
+    int? customerId,
     String? dueDate,
     String? dueTime,
     String? deliveryType,
@@ -93,6 +94,7 @@ class OrderService {
     final body = <String, dynamic>{};
     if (customerName != null) body['customerName'] = customerName;
     if (customerPhone != null) body['customerPhone'] = customerPhone;
+    if (customerId != null) body['customerId'] = customerId;
     if (dueDate != null) body['dueDate'] = dueDate;
     if (dueTime != null) body['dueTime'] = dueTime;
     if (deliveryType != null) body['deliveryType'] = deliveryType;

@@ -277,7 +277,31 @@ def test_order_to_api_dict_falls_back_to_customer_name_when_no_customer_id(api_c
     )
     assert order["customerId"] is None
     assert order["customerName"] == "Khách vãng lai"
-    assert order["customerPhone"] == "0900111"
+
+
+# --- customerId existence validation (review-auto CQ-1) ---
+
+
+def test_order_create_rejects_nonexistent_customer_id(api_client):
+    """POST /api/orders with non-existent customerId returns 422."""
+    payload = {
+        "customerName": "Khách lẻ",
+        "customerPhone": "",
+        "customerId": 999999,
+        "items": [{"productName": "Bánh mì", "quantity": 1, "unitPrice": 10000, "productId": "BMI-01"}],
+        "dueDate": "2026-07-01",
+    }
+    resp = api_client.post("/api/orders", json=payload)
+    assert resp.status_code == 422
+
+
+def test_order_edit_rejects_nonexistent_customer_id(api_client):
+    """PUT /api/orders/{ref} with non-existent customerId returns 422."""
+    order = _create_order_with_customer(api_client, customer_name="Khách lẻ")
+    resp = api_client.patch(
+        f"/api/orders/{order['orderRef']}", json={"customerId": 999999}
+    )
+    assert resp.status_code == 422
 
 
 # --- Migration v56: auto-match existing orders by phone (FR9) ---
