@@ -2764,6 +2764,72 @@ def _migrate_v56_customers_and_order_link(conn):
     )
 
 
+def _normalize_phone(phone: str) -> str:
+    """Normalize a phone number for grouping/deduplication.
+
+    Strips whitespace, dots, and dashes. All phones are already in 84-prefix
+    format (no leading "+"), so no prefix normalization is applied here. The
+    normalized form is used only for grouping; the original phone is preserved
+    in the customer record (FR2).
+
+    >>> _normalize_phone("84 912 345 678")
+    '84912345678'
+    >>> _normalize_phone("84-912-345-678")
+    '84912345678'
+    >>> _normalize_phone("84.912.345.678")
+    '84912345678'
+    >>> _normalize_phone("84912345678")
+    '84912345678'
+    >>> _normalize_phone("")
+    ''
+    """
+    if not phone:
+        return ""
+    return phone.replace(" ", "").replace(".", "").replace("-", "")
+
+
+def _pick_most_common_name(names: list[str]) -> str:
+    """Pick the most frequent customer name from a list of name variants.
+
+    Comparison is case-insensitive and trims whitespace (FR3). On a tie, the
+    name that sorts first alphabetically (case-insensitive) wins. The returned
+    name preserves the original casing/whitespace of the first occurrence of
+    the winning normalized form.
+
+    >>> _pick_most_common_name(["Nguyen Van A"])
+    'Nguyen Van A'
+    >>> _pick_most_common_name(["Nguyen Van A", "Nguyen Van A", "Bob"])
+    'Nguyen Van A'
+    >>> _pick_most_common_name(["Nguyen Van A", "nguyen van a", "Bob"])
+    'Nguyen Van A'
+    >>> _pick_most_common_name(["  Nguyen Van A  ", "nguyen van a", "Bob"])
+    'Nguyen Van A'
+    >>> _pick_most_common_name(["Bob", "Alice"])  # tie -> Alice (alphabetical)
+    'Alice'
+    >>> _pick_most_common_name([])
+    ''
+    """
+    if not names:
+        return ""
+
+    # Group original names by their normalized (lowercased, stripped) form,
+    # preserving the first-seen original form within each group (stripped of
+    # surrounding whitespace so the returned name is clean per FR3).
+    groups: dict[str, list[str]] = {}
+    counts: dict[str, int] = {}
+    for name in names:
+        key = (name or "").strip().lower()
+        if key not in groups:
+            groups[key] = []
+        groups[key].append(name)
+        counts[key] = counts.get(key, 0) + 1
+
+    # Highest count wins; ties broken by alphabetical order of the key.
+    best_key = min(counts, key=lambda k: (-counts[k], k))
+    first = groups[best_key][0]
+    return (first or "").strip()
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
