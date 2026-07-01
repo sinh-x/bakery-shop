@@ -428,7 +428,8 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
       final service = ref.read(orderServiceProvider);
       await service.updateWorkTicketPrintedAt(
         order.orderRef,
-        timestampToJson(DateTime.now())!,
+        timestampToJson(DateTime.now()) ??
+            DateTime.now().toUtc().toIso8601String(),
       );
       ref.invalidate(orderDetailProvider(order.orderRef));
       ref.invalidate(orderListProvider);

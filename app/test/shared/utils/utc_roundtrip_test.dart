@@ -194,6 +194,29 @@ void main() {
     });
   });
 
+  group('timestampToJson — fractional seconds handling (review-auto cycle 2 CQ-1)', () {
+    test('strips only .000 immediately preceding Z', () {
+      // Whole-second UTC value: .000Z must be stripped.
+      final whole = DateTime.utc(2026, 6, 30, 8, 6, 0);
+      expect(timestampToJson(whole), '2026-06-30T08:06:00Z');
+    });
+
+    test('preserves non-zero fractional seconds', () {
+      // A DateTime with non-zero microseconds must NOT have its fractional
+      // component mangled by a greedy `.000` match. The previous regex
+      // `\.000` would turn `...00.000123Z` into `...00123Z`.
+      final fractional = DateTime.utc(2026, 6, 30, 8, 6, 0, 0, 123);
+      final wire = timestampToJson(fractional);
+      expect(wire, isNotNull);
+      // The fractional component must still parse back to the same instant.
+      expect(DateTime.parse(wire!).toUtc(), fractional);
+    });
+
+    test('returns null for null input', () {
+      expect(timestampToJson(null), isNull);
+    });
+  });
+
   group('formatApiDate — date-only helper carries no Z (FR8)', () {
     test('produces yyyy-MM-dd with no timezone suffix', () {
       final date = DateTime(2026, 3, 25);

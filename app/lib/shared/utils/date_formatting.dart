@@ -108,5 +108,5 @@ String formatHourMinute(int hour, int minute) {
 String? timestampToJson(DateTime? value) {
   if (value == null) return null;
   final iso = value.toUtc().toIso8601String();
-  return iso.replaceAll(RegExp(r'\.000'), '');
+  return iso.replaceFirst(RegExp(r'\.000(?=Z)'), '');
 }
