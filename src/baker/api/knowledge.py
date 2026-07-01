@@ -301,9 +301,9 @@ async def attach_photo(entry_id: int, file: UploadFile, caption: str = ""):
         next_pos = pos_row["next_pos"]
 
         conn.execute(
-            """INSERT INTO knowledge_entry_photos (entry_id, photo_id, caption, position)
-               VALUES (?, ?, ?, ?)""",
-            (entry_id, photo_id, caption, next_pos),
+            """INSERT INTO knowledge_entry_photos (entry_id, photo_id, caption, position, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (entry_id, photo_id, caption, next_pos, now_utc()),
         )
 
         return {

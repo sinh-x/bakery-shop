@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from baker.config import TIMEZONE
 from baker.db.connection import get_db
+from baker.utils.time import now_utc
 
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -63,8 +64,8 @@ def create_config(config_key: str, body: ConfigValueIn):
             raise HTTPException(status_code=409, detail="Config value already exists")
 
         cursor = conn.execute(
-            "INSERT INTO app_config (config_key, config_value, sort_order) VALUES (?, ?, ?)",
-            (config_key, body.value, body.sort_order),
+            "INSERT INTO app_config (config_key, config_value, sort_order, created_at) VALUES (?, ?, ?, ?)",
+            (config_key, body.value, body.sort_order, now_utc()),
         )
         return {"id": cursor.lastrowid, "config_key": config_key, "value": body.value, "sort_order": body.sort_order}
 

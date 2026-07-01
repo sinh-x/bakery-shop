@@ -228,12 +228,14 @@ class Order:
         cursor = conn.execute(
             """INSERT INTO orders (order_ref, customer_name, customer_phone, items,
                total_price, status, due_date, due_time, delivery_type,
-               delivery_address, notes, amount_paid, source, created_by, shipping_fee, public_order_code)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               delivery_address, notes, amount_paid, source, created_by, shipping_fee, public_order_code,
+               created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (self.order_ref, self.customer_name, self.customer_phone,
               items_json, self.total_price, self.status, self.due_date,
               self.due_time, self.delivery_type, self.delivery_address, self.notes,
-              self.amount_paid, self.source, self.created_by, self.shipping_fee, self.public_order_code),
+              self.amount_paid, self.source, self.created_by, self.shipping_fee, self.public_order_code,
+              now_utc(), now_utc()),
         )
         self.id = cursor.lastrowid
 

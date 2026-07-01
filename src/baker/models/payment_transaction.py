@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Optional
 
 from baker.db.schema import PAYMENT_OUTFLOW_TYPES
+from baker.utils.time import now_utc
 
 
 class TransactionType(str, Enum):
@@ -87,9 +88,9 @@ class PaymentTransaction:
         if self.method not in [m.value for m in PaymentMethod]:
             raise ValueError(f"Invalid payment method: {self.method}")
         cursor = conn.execute(
-            """INSERT INTO payment_transactions (order_id, amount, type, method, note)
-               VALUES (?, ?, ?, ?, ?)""",
-            (self.order_id, self.amount, self.type, self.method, self.note),
+            """INSERT INTO payment_transactions (order_id, amount, type, method, note, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (self.order_id, self.amount, self.type, self.method, self.note, now_utc()),
         )
         self.id = cursor.lastrowid
         return self.id

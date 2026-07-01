@@ -24,9 +24,9 @@ class InventoryItem:
     def save(self, conn) -> int:
         cursor = conn.execute(
             """INSERT INTO inventory (name, category, quantity, unit, low_threshold,
-               cost_per_unit, supplier) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               cost_per_unit, supplier, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (self.name, self.category, self.quantity, self.unit,
-             self.low_threshold, self.cost_per_unit, self.supplier),
+             self.low_threshold, self.cost_per_unit, self.supplier, now_utc()),
         )
         self.id = cursor.lastrowid
         return self.id

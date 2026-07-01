@@ -11,6 +11,7 @@ from PIL import UnidentifiedImageError
 
 import baker.config
 from baker.db.connection import get_db
+from baker.utils.time import now_utc
 
 logger = logging.getLogger("baker.server")
 
@@ -49,8 +50,8 @@ def save_photo(data: bytes, original_name: str = "") -> str:
         ).fetchone()
         if not existing:
             conn.execute(
-                "INSERT INTO photos (hash, original_name) VALUES (?, ?)",
-                (hash_hex, original_name),
+                "INSERT INTO photos (hash, original_name, created_at) VALUES (?, ?, ?)",
+                (hash_hex, original_name, now_utc()),
             )
 
     return hash_hex

@@ -13,6 +13,7 @@ from baker.api.inventory_fifo import (
 )
 from baker.db.connection import get_db
 from baker.models.event import Event
+from baker.utils.time import now_utc
 from baker.models.order import Order, OrderItem
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
@@ -433,13 +434,14 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
 
         session_cursor = conn.execute(
             """INSERT INTO reconciliation_sessions
-               (reconciliation_date, staff_name, payment_method, waste_reason)
-               VALUES (?, ?, ?, ?)""",
+               (reconciliation_date, staff_name, payment_method, waste_reason, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
             (
                 date.today().isoformat(),
                 payload.staff_name.strip(),
                 (payload.payment_method or "").strip(),
                 (payload.waste_reason or "").strip(),
+                now_utc(),
             ),
         )
         session_id = session_cursor.lastrowid
@@ -461,9 +463,9 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
             per_line_reason = (line.waste_reason or "").strip() or (payload.waste_reason or "").strip()
             movement_cursor = conn.execute(
                 """INSERT INTO stock_movements
-                   (product_id, movement_type, quantity, reason, reference_id, price_chip_id)
-                   VALUES (?, 'waste', ?, ?, ?, ?)""",
-                (line.product_id, -line.waste_qty, per_line_reason, f"reconciliation:{session_id}", chip_id),
+                   (product_id, movement_type, quantity, reason, reference_id, price_chip_id, created_at)
+                   VALUES (?, 'waste', ?, ?, ?, ?, ?)""",
+                (line.product_id, -line.waste_qty, per_line_reason, f"reconciliation:{session_id}", chip_id, now_utc()),
             )
             waste_movement_id = movement_cursor.lastrowid
             consume_fifo_items(conn, line.product_id, chip_id, line.waste_qty, waste_movement_id)
@@ -529,8 +531,8 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
             line_cursor = conn.execute(
                 """INSERT INTO reconciliation_lines
                    (session_id, product_id, expected_qty, counted_qty, sale_qty, waste_qty, waste_reason, manual_unit_price,
-                     price_chip_id, linked_order_item_id, linked_stock_movement_sale_id, linked_stock_movement_waste_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                     price_chip_id, linked_order_item_id, linked_stock_movement_sale_id, linked_stock_movement_waste_id, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     line.product_id,
@@ -544,6 +546,7 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
                     linked_order_item_id,
                     linked_sale_movement_id,
                     waste_movement_ids_by_option.get((line.product_id, chip_id)),
+                    now_utc(),
                 ),
             )
             line_id = line_cursor.lastrowid
@@ -552,8 +555,8 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
                 row_link = line_sale_rows[row_index]
                 conn.execute(
                     """INSERT INTO reconciliation_sale_rows
-                       (line_id, quantity, unit_price, payment_method, linked_order_ref, linked_payment_ref)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
+                       (line_id, quantity, unit_price, payment_method, linked_order_ref, linked_payment_ref, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (
                         line_id,
                         sale_row.quantity,
@@ -561,6 +564,7 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
                         sale_row.payment_method,
                         row_link["order_ref"],
                         row_link["payment_ref"],
+                        now_utc(),
                     ),
                 )
 

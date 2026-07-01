@@ -13,6 +13,7 @@ from baker.api.inventory_fifo import (
 )
 from baker.db.connection import get_db
 from baker.models.event import Event
+from baker.utils.time import now_utc
 
 
 router = APIRouter(prefix="/api", tags=["stock"])
@@ -76,9 +77,9 @@ def _log_stock_movement(
     """Insert a stock movement record and log to events table."""
     cursor = conn.execute(
         """INSERT INTO stock_movements
-           (product_id, movement_type, quantity, reason, reference_id, price_chip_id, lot_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (product_id, movement_type, quantity, reason, reference_id, price_chip_id, lot_id),
+           (product_id, movement_type, quantity, reason, reference_id, price_chip_id, lot_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (product_id, movement_type, quantity, reason, reference_id, price_chip_id, lot_id, now_utc()),
     )
     movement_id = cursor.lastrowid
     # Build product name for event summary

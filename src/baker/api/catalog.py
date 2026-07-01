@@ -9,6 +9,7 @@ from pydantic import BaseModel
 import baker.config
 from baker.api.photos import read_image_upload, save_photo
 from baker.db.connection import get_db
+from baker.utils.time import now_utc
 
 
 logger = logging.getLogger("baker.server")
@@ -178,9 +179,9 @@ async def upload_catalog_photo(
 
         cursor = conn.execute(
             "INSERT INTO product_catalog_photos "
-            "(product_id, file_path, caption, tags, position, photo_id) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (product_id, f"photos/{hash_hex}.jpg", caption, tags, next_position, photo_id),
+            "(product_id, file_path, caption, tags, position, photo_id, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (product_id, f"photos/{hash_hex}.jpg", caption, tags, next_position, photo_id, now_utc()),
         )
         new_id = cursor.lastrowid
 

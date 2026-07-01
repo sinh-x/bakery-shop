@@ -101,8 +101,8 @@ def create_template(body: TemplateCreate):
         raise HTTPException(status_code=400, detail="period phải là 'opening' hoặc 'closing'")
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO checklist_templates (name, period, sort_order, active) VALUES (?, ?, ?, ?)",
-            (body.name, body.period, body.sort_order, 1 if body.active else 0),
+            "INSERT INTO checklist_templates (name, period, sort_order, active, created_at) VALUES (?, ?, ?, ?, ?)",
+            (body.name, body.period, body.sort_order, 1 if body.active else 0, now_utc()),
         )
         row = conn.execute(
             "SELECT * FROM checklist_templates WHERE id = ?", (cursor.lastrowid,)

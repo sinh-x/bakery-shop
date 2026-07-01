@@ -168,9 +168,9 @@ class EventUpdate(BaseModel):
 
 def _log_event_history(conn, event_id, action_type, actor="", field_name="", old_value="", new_value=""):
     conn.execute(
-        """INSERT INTO event_history (event_id, action_type, actor, field_name, old_value, new_value)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (event_id, action_type, actor, field_name, old_value, new_value),
+        """INSERT INTO event_history (event_id, action_type, actor, field_name, old_value, new_value, timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (event_id, action_type, actor, field_name, old_value, new_value, now_utc()),
     )
 
 
@@ -448,9 +448,9 @@ async def upload_event_photo(
         next_position = result[0]
 
         cursor = conn.execute(
-            "INSERT INTO event_photos (event_id, photo_id, tags, position) "
-            "VALUES (?, ?, ?, ?)",
-            (event_id, photo_id, tags, next_position),
+            "INSERT INTO event_photos (event_id, photo_id, tags, position, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (event_id, photo_id, tags, next_position, now_utc()),
         )
         new_id = cursor.lastrowid
 

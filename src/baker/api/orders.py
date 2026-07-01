@@ -103,9 +103,9 @@ class PaymentUpdate(BaseModel):
 def _log_order_history(conn, order_id, action_type, field_name="", old_value="", new_value="", changed_by=""):
     """Insert an audit log entry into the order_history table."""
     conn.execute(
-        """INSERT INTO order_history (order_id, action_type, field_name, old_value, new_value, changed_by)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (order_id, action_type, field_name, old_value, new_value, changed_by),
+        """INSERT INTO order_history (order_id, action_type, field_name, old_value, new_value, changed_by, timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (order_id, action_type, field_name, old_value, new_value, changed_by, now_utc()),
     )
 
 

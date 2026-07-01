@@ -4,6 +4,8 @@ import uuid
 
 from fastapi import HTTPException
 
+from baker.utils.time import now_utc
+
 
 def normalize_price_chip(conn, product_id: int, price_chip_id: int | None) -> int | None:
     """Validate chip belongs to product; None means base-price stock."""
@@ -91,15 +93,15 @@ def resolve_price_bucket_option(
 def create_lot_with_items(conn, product_id: int, price_chip_id: int | None, quantity: int) -> int:
     """Create one stock lot and N available inventory items."""
     cursor = conn.execute(
-        """INSERT INTO stock_lots (product_id, price_chip_id, quantity, remaining_qty)
-           VALUES (?, ?, ?, ?)""",
-        (product_id, price_chip_id, quantity, quantity),
+        """INSERT INTO stock_lots (product_id, price_chip_id, quantity, remaining_qty, restocked_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (product_id, price_chip_id, quantity, quantity, now_utc(), now_utc()),
     )
     lot_id = cursor.lastrowid
     conn.executemany(
-        """INSERT INTO inventory_items (lot_id, uuid, status)
-           VALUES (?, ?, 'available')""",
-        [(lot_id, str(uuid.uuid4())) for _ in range(quantity)],
+        """INSERT INTO inventory_items (lot_id, uuid, status, created_at)
+           VALUES (?, ?, 'available', ?)""",
+        [(lot_id, str(uuid.uuid4()), now_utc()) for _ in range(quantity)],
     )
     return lot_id
 

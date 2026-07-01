@@ -80,9 +80,9 @@ def set_paper_mode(body: PaperModeIn):
             )
         else:
             conn.execute(
-                "INSERT INTO app_config (config_key, config_value, sort_order, active)"
-                " VALUES (?, ?, 0, 1)",
-                (usb_printer.PAPER_MODE_CONFIG_KEY, value),
+                "INSERT INTO app_config (config_key, config_value, sort_order, active, created_at)"
+                " VALUES (?, ?, 0, 1, ?)",
+                (usb_printer.PAPER_MODE_CONFIG_KEY, value, now_utc()),
             )
     return {"paperMode": value}
 
@@ -228,9 +228,9 @@ def print_receipt(
     if type == "work_ticket" and order_id is not None:
         with get_db() as conn:
             conn.execute(
-                """INSERT INTO print_log (order_id, item_id, receipt_type, printed_by)
-                   VALUES (?, ?, ?, ?)""",
-                (order_id, item_id, type, normalized_printed_by),
+                """INSERT INTO print_log (order_id, item_id, receipt_type, printed_by, printed_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (order_id, item_id, type, normalized_printed_by, now_utc()),
             )
             inserted = conn.execute(
                 "SELECT printed_at FROM print_log WHERE id = last_insert_rowid()"

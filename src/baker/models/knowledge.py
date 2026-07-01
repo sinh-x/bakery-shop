@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+from baker.utils.time import now_utc
+
 
 VALID_TYPES = {"recipe", "procedure", "equipment", "supplier", "reference", "note"}
 
@@ -25,8 +27,8 @@ class Knowledge:
         """Insert new knowledge entry, set id and timestamps."""
         cursor = conn.execute(
             """INSERT INTO knowledge_entries
-               (title, content, type, tags, source, logged_by)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               (title, content, type, tags, source, logged_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 self.title,
                 self.content,
@@ -34,6 +36,8 @@ class Knowledge:
                 ",".join(self.tags),
                 self.source,
                 self.logged_by,
+                now_utc(),
+                now_utc(),
             ),
         )
         self.id = cursor.lastrowid
