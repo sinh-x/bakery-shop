@@ -55,6 +55,7 @@ class DepositIn(BaseModel):
 class OrderCreate(BaseModel):
     customerName: str
     customerPhone: str = ""
+    customerId: Optional[int] = None
     items: list[OrderItemIn] = []
     dueDate: Optional[str] = None
     dueTime: Optional[str] = None
@@ -72,6 +73,7 @@ class OrderCreate(BaseModel):
 class OrderEdit(BaseModel):
     customerName: Optional[str] = None
     customerPhone: Optional[str] = None
+    customerId: Optional[int] = None
     items: Optional[list[OrderItemIn]] = None
     dueDate: Optional[str] = None
     dueTime: Optional[str] = None
@@ -352,6 +354,7 @@ def create_order(body: OrderCreate, request: Request):
         order = Order(
             customer_name=body.customerName,
             customer_phone=body.customerPhone,
+            customer_id=body.customerId,
             items=[_item_in_to_model(i) for i in body.items],
             due_date=body.dueDate,
             due_time=body.dueTime,
@@ -486,6 +489,7 @@ def edit_order(ref: str, body: OrderEdit):
         field_map = {
             "customerName": "customer_name",
             "customerPhone": "customer_phone",
+            "customerId": "customer_id",
             "dueDate": "due_date",
             "dueTime": "due_time",
             "deliveryType": "delivery_type",
