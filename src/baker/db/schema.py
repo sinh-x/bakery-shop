@@ -2656,6 +2656,7 @@ _TIMESTAMP_COLUMNS_V55 = [
     ("order_photos", "created_at"),
     ("orders", "created_at"),
     ("orders", "updated_at"),
+    ("orders", "work_ticket_printed_at"),
     ("payment_transactions", "created_at"),
     ("payment_transactions", "invalidated_at"),
     ("photos", "created_at"),
