@@ -10,6 +10,8 @@ import '../../data/providers/knowledge_provider.dart';
 import '../../features/categories/category_management_screen.dart';
 import '../../features/checklist/checklist_config_screen.dart';
 import '../../features/checklist/checklist_history_screen.dart';
+import '../../features/customers/customer_detail_screen.dart';
+import '../../features/customers/customer_list_screen.dart';
 import '../../features/checklist/checklist_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/expenses/expense_screen.dart';
@@ -265,6 +267,20 @@ final appRouter = GoRouter(
       path: '/categories/manage',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const CategoryManagementScreen(),
+    ),
+    // Customer management — full-screen (outside shell)
+    GoRoute(
+      path: '/customers',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const CustomerListScreen(),
+    ),
+    GoRoute(
+      path: '/customers/:id',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final id = int.parse(state.pathParameters['id']!);
+        return CustomerDetailScreen(customerId: id);
+      },
     ),
     // Settings — full-screen (outside shell)
     GoRoute(

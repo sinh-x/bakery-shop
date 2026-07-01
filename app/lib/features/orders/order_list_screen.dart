@@ -80,6 +80,9 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
       case 'orders_history':
         context.push('/orders/history');
         return;
+      case 'manage_customers':
+        context.push('/customers');
+        return;
       case 'settings':
         context.push('/settings');
         return;
@@ -232,6 +235,10 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
               PopupMenuItem<String>(
                 value: 'orders_history',
                 child: Text(VN.openOrderHistory),
+              ),
+              PopupMenuItem<String>(
+                value: 'manage_customers',
+                child: Text(VN.openCustomerManagement),
               ),
             ],
           ),
