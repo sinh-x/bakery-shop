@@ -11,14 +11,13 @@ void main() {
         'method': 'cash',
         'amount': 200000.0,
         'note': '',
-        'createdAt': '2026-06-25T10:00:00',
-        'invalidatedAt': '2026-06-25T12:00:00',
+        'createdAt': '2026-06-25T10:00:00Z',
+        'invalidatedAt': '2026-06-25T12:00:00Z',
         'invalidatedBy': 'Sinh',
       });
 
-      expect(txn.invalidatedAt, '2026-06-25T12:00:00');
-      expect(txn.invalidatedBy, 'Sinh');
       expect(txn.invalidatedAt, isNotNull);
+      expect(txn.invalidatedBy, 'Sinh');
     });
 
     test('defaults invalidatedAt to null and invalidatedBy to empty', () {
@@ -29,7 +28,7 @@ void main() {
         'method': 'cash',
         'amount': 100000.0,
         'note': '',
-        'createdAt': '2026-06-25T10:00:00',
+        'createdAt': '2026-06-25T10:00:00Z',
       });
 
       expect(txn.invalidatedAt, isNull);
@@ -37,26 +36,26 @@ void main() {
     });
 
     test('serializes invalidated fields back to JSON', () {
-      const txn = PaymentTransaction(
+      final txn = PaymentTransaction(
         id: '12',
         orderId: '1',
         amount: 50000.0,
-        createdAt: '2026-06-25T10:00:00',
-        invalidatedAt: '2026-06-25T12:00:00',
+        createdAt: DateTime.parse('2026-06-25T10:00:00Z'),
+        invalidatedAt: DateTime.parse('2026-06-25T12:00:00Z'),
         invalidatedBy: 'An',
       );
       final json = txn.toJson();
 
-      expect(json['invalidatedAt'], '2026-06-25T12:00:00');
+      expect(json['invalidatedAt'], '2026-06-25T12:00:00Z');
       expect(json['invalidatedBy'], 'An');
     });
 
     test('isInvalidated is true when invalidatedAt is set', () {
-      const invalidated = PaymentTransaction(
+      final invalidated = PaymentTransaction(
         id: '13',
         orderId: '1',
         amount: 100.0,
-        invalidatedAt: '2026-06-25T12:00:00',
+        invalidatedAt: DateTime.parse('2026-06-25T12:00:00Z'),
       );
       const valid = PaymentTransaction(
         id: '14',

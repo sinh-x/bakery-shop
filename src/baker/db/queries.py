@@ -1,32 +1,36 @@
 """Reusable query helpers."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 def today_range():
-    """Return (start, end) ISO strings for today."""
-    today = datetime.now().strftime("%Y-%m-%d")
-    return f"{today}T00:00:00", f"{today}T23:59:59"
+    """Return (start, end) UTC ISO strings for the current UTC day.
+
+    Bounds are ``Z``-suffixed so they compare correctly against the UTC
+    timestamps stored in the database (DG-202 FR1).
+    """
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return f"{today}T00:00:00Z", f"{today}T23:59:59Z"
 
 
 def week_range():
-    """Return (start, end) ISO strings for the current week (Mon-Sun)."""
-    now = datetime.now()
+    """Return (start, end) UTC ISO strings for the current UTC week (Mon-Sun)."""
+    now = datetime.now(timezone.utc)
     monday = now - timedelta(days=now.weekday())
     sunday = monday + timedelta(days=6)
-    return monday.strftime("%Y-%m-%dT00:00:00"), sunday.strftime("%Y-%m-%dT23:59:59")
+    return monday.strftime("%Y-%m-%dT00:00:00Z"), sunday.strftime("%Y-%m-%dT23:59:59Z")
 
 
 def month_range():
-    """Return (start, end) ISO strings for the current month."""
-    now = datetime.now()
+    """Return (start, end) UTC ISO strings for the current UTC month."""
+    now = datetime.now(timezone.utc)
     start = now.replace(day=1)
     if now.month == 12:
         end = now.replace(year=now.year + 1, month=1, day=1) - timedelta(days=1)
     else:
         end = now.replace(month=now.month + 1, day=1) - timedelta(days=1)
-    return start.strftime("%Y-%m-%dT00:00:00"), end.strftime("%Y-%m-%dT23:59:59")
+    return start.strftime("%Y-%m-%dT00:00:00Z"), end.strftime("%Y-%m-%dT23:59:59Z")
 
 
 def fetch_staff(conn, *, active_only=True):

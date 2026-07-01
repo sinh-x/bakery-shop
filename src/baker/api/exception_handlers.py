@@ -1,10 +1,9 @@
 """Global exception handler for Baker API."""
-from datetime import datetime
-
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from baker.logging import log_to_db, log_to_file, logger
+from baker.utils.time import now_utc
 
 
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -18,7 +17,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     ctx = getattr(request.state, "_log_ctx", {})
 
     entry = {
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": now_utc(),
         "level": "ERROR",
         "method": request.method,
         "path": request.url.path,

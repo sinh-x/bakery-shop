@@ -3,6 +3,7 @@ import click
 from baker.db.connection import get_db
 from baker.models.order import Order, OrderItem, allowed_transitions
 from baker.formatters.tables import console, print_orders_table, print_order_detail
+from baker.utils.time import now_utc
 
 
 @click.group("order")
@@ -174,7 +175,8 @@ def order_edit(ref, notes, due_date, due_time, phone, address):
             console.print("  [dim]Nothing to update[/dim]")
             return
 
-        updates.append("updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')")
+        updates.append("updated_at = ?")
+        params.append(now_utc())
         params.append(row["id"])
 
         conn.execute(f"UPDATE orders SET {', '.join(updates)} WHERE id = ?", params)

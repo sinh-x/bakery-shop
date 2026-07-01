@@ -9,6 +9,7 @@ import '../../data/models/order_photo.dart';
 import '../../data/models/payment_transaction.dart';
 import '../../data/models/work_item.dart';
 import '../../shared/labels/shared.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../events_provider.dart';
 
 class OrderListNotifier extends AsyncNotifier<List<Order>> {
@@ -95,12 +96,7 @@ class OrderHistoryNotifier extends AsyncNotifier<List<Order>> {
     );
   }
 
-  String _formatDate(DateTime date) {
-    final y = date.year.toString().padLeft(4, '0');
-    final m = date.month.toString().padLeft(2, '0');
-    final d = date.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
+  String _formatDate(DateTime date) => formatApiDate(date);
 }
 
 final orderHistoryProvider =

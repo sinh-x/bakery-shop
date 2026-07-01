@@ -296,7 +296,7 @@ as String?,
 /// @nodoc
 mixin _$JournalEntry {
 
- String get id; String get description;@JsonKey(name: 'sourceType') String get sourceType;@JsonKey(name: 'sourceId') String? get sourceId;@JsonKey(name: 'lockedAt') String? get lockedAt;@JsonKey(name: 'lockedBy') String get lockedBy;@JsonKey(name: 'createdAt') String? get createdAt;@JsonKey(name: 'transactionDate') String? get transactionDate; List<JournalLine> get lines;
+ String get id; String get description;@JsonKey(name: 'sourceType') String get sourceType;@JsonKey(name: 'sourceId') String? get sourceId;@JsonKey(name: 'lockedAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? get lockedAt;@JsonKey(name: 'lockedBy') String get lockedBy;@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? get createdAt;@JsonKey(name: 'transactionDate') String? get transactionDate; List<JournalLine> get lines;
 /// Create a copy of JournalEntry
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -329,7 +329,7 @@ abstract mixin class $JournalEntryCopyWith<$Res>  {
   factory $JournalEntryCopyWith(JournalEntry value, $Res Function(JournalEntry) _then) = _$JournalEntryCopyWithImpl;
 @useResult
 $Res call({
- String id, String description,@JsonKey(name: 'sourceType') String sourceType,@JsonKey(name: 'sourceId') String? sourceId,@JsonKey(name: 'lockedAt') String? lockedAt,@JsonKey(name: 'lockedBy') String lockedBy,@JsonKey(name: 'createdAt') String? createdAt,@JsonKey(name: 'transactionDate') String? transactionDate, List<JournalLine> lines
+ String id, String description,@JsonKey(name: 'sourceType') String sourceType,@JsonKey(name: 'sourceId') String? sourceId,@JsonKey(name: 'lockedAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? lockedAt,@JsonKey(name: 'lockedBy') String lockedBy,@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? createdAt,@JsonKey(name: 'transactionDate') String? transactionDate, List<JournalLine> lines
 });
 
 
@@ -353,9 +353,9 @@ as String,description: null == description ? _self.description : description // 
 as String,sourceType: null == sourceType ? _self.sourceType : sourceType // ignore: cast_nullable_to_non_nullable
 as String,sourceId: freezed == sourceId ? _self.sourceId : sourceId // ignore: cast_nullable_to_non_nullable
 as String?,lockedAt: freezed == lockedAt ? _self.lockedAt : lockedAt // ignore: cast_nullable_to_non_nullable
-as String?,lockedBy: null == lockedBy ? _self.lockedBy : lockedBy // ignore: cast_nullable_to_non_nullable
+as DateTime?,lockedBy: null == lockedBy ? _self.lockedBy : lockedBy // ignore: cast_nullable_to_non_nullable
 as String,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
-as String?,transactionDate: freezed == transactionDate ? _self.transactionDate : transactionDate // ignore: cast_nullable_to_non_nullable
+as DateTime?,transactionDate: freezed == transactionDate ? _self.transactionDate : transactionDate // ignore: cast_nullable_to_non_nullable
 as String?,lines: null == lines ? _self.lines : lines // ignore: cast_nullable_to_non_nullable
 as List<JournalLine>,
   ));
@@ -439,7 +439,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String description, @JsonKey(name: 'sourceType')  String sourceType, @JsonKey(name: 'sourceId')  String? sourceId, @JsonKey(name: 'lockedAt')  String? lockedAt, @JsonKey(name: 'lockedBy')  String lockedBy, @JsonKey(name: 'createdAt')  String? createdAt, @JsonKey(name: 'transactionDate')  String? transactionDate,  List<JournalLine> lines)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String description, @JsonKey(name: 'sourceType')  String sourceType, @JsonKey(name: 'sourceId')  String? sourceId, @JsonKey(name: 'lockedAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? lockedAt, @JsonKey(name: 'lockedBy')  String lockedBy, @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'transactionDate')  String? transactionDate,  List<JournalLine> lines)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _JournalEntry() when $default != null:
 return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that.lockedAt,_that.lockedBy,_that.createdAt,_that.transactionDate,_that.lines);case _:
@@ -460,7 +460,7 @@ return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String description, @JsonKey(name: 'sourceType')  String sourceType, @JsonKey(name: 'sourceId')  String? sourceId, @JsonKey(name: 'lockedAt')  String? lockedAt, @JsonKey(name: 'lockedBy')  String lockedBy, @JsonKey(name: 'createdAt')  String? createdAt, @JsonKey(name: 'transactionDate')  String? transactionDate,  List<JournalLine> lines)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String description, @JsonKey(name: 'sourceType')  String sourceType, @JsonKey(name: 'sourceId')  String? sourceId, @JsonKey(name: 'lockedAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? lockedAt, @JsonKey(name: 'lockedBy')  String lockedBy, @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'transactionDate')  String? transactionDate,  List<JournalLine> lines)  $default,) {final _that = this;
 switch (_that) {
 case _JournalEntry():
 return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that.lockedAt,_that.lockedBy,_that.createdAt,_that.transactionDate,_that.lines);}
@@ -477,7 +477,7 @@ return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String description, @JsonKey(name: 'sourceType')  String sourceType, @JsonKey(name: 'sourceId')  String? sourceId, @JsonKey(name: 'lockedAt')  String? lockedAt, @JsonKey(name: 'lockedBy')  String lockedBy, @JsonKey(name: 'createdAt')  String? createdAt, @JsonKey(name: 'transactionDate')  String? transactionDate,  List<JournalLine> lines)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String description, @JsonKey(name: 'sourceType')  String sourceType, @JsonKey(name: 'sourceId')  String? sourceId, @JsonKey(name: 'lockedAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? lockedAt, @JsonKey(name: 'lockedBy')  String lockedBy, @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'transactionDate')  String? transactionDate,  List<JournalLine> lines)?  $default,) {final _that = this;
 switch (_that) {
 case _JournalEntry() when $default != null:
 return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that.lockedAt,_that.lockedBy,_that.createdAt,_that.transactionDate,_that.lines);case _:
@@ -492,16 +492,16 @@ return $default(_that.id,_that.description,_that.sourceType,_that.sourceId,_that
 @JsonSerializable()
 
 class _JournalEntry implements JournalEntry {
-  const _JournalEntry({required this.id, this.description = '', @JsonKey(name: 'sourceType') this.sourceType = '', @JsonKey(name: 'sourceId') this.sourceId, @JsonKey(name: 'lockedAt') this.lockedAt, @JsonKey(name: 'lockedBy') this.lockedBy = '', @JsonKey(name: 'createdAt') this.createdAt, @JsonKey(name: 'transactionDate') this.transactionDate, final  List<JournalLine> lines = const <JournalLine>[]}): _lines = lines;
+  const _JournalEntry({required this.id, this.description = '', @JsonKey(name: 'sourceType') this.sourceType = '', @JsonKey(name: 'sourceId') this.sourceId, @JsonKey(name: 'lockedAt', fromJson: parseApiDateTime, toJson: timestampToJson) this.lockedAt, @JsonKey(name: 'lockedBy') this.lockedBy = '', @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) this.createdAt, @JsonKey(name: 'transactionDate') this.transactionDate, final  List<JournalLine> lines = const <JournalLine>[]}): _lines = lines;
   factory _JournalEntry.fromJson(Map<String, dynamic> json) => _$JournalEntryFromJson(json);
 
 @override final  String id;
 @override@JsonKey() final  String description;
 @override@JsonKey(name: 'sourceType') final  String sourceType;
 @override@JsonKey(name: 'sourceId') final  String? sourceId;
-@override@JsonKey(name: 'lockedAt') final  String? lockedAt;
+@override@JsonKey(name: 'lockedAt', fromJson: parseApiDateTime, toJson: timestampToJson) final  DateTime? lockedAt;
 @override@JsonKey(name: 'lockedBy') final  String lockedBy;
-@override@JsonKey(name: 'createdAt') final  String? createdAt;
+@override@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) final  DateTime? createdAt;
 @override@JsonKey(name: 'transactionDate') final  String? transactionDate;
  final  List<JournalLine> _lines;
 @override@JsonKey() List<JournalLine> get lines {
@@ -544,7 +544,7 @@ abstract mixin class _$JournalEntryCopyWith<$Res> implements $JournalEntryCopyWi
   factory _$JournalEntryCopyWith(_JournalEntry value, $Res Function(_JournalEntry) _then) = __$JournalEntryCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String description,@JsonKey(name: 'sourceType') String sourceType,@JsonKey(name: 'sourceId') String? sourceId,@JsonKey(name: 'lockedAt') String? lockedAt,@JsonKey(name: 'lockedBy') String lockedBy,@JsonKey(name: 'createdAt') String? createdAt,@JsonKey(name: 'transactionDate') String? transactionDate, List<JournalLine> lines
+ String id, String description,@JsonKey(name: 'sourceType') String sourceType,@JsonKey(name: 'sourceId') String? sourceId,@JsonKey(name: 'lockedAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? lockedAt,@JsonKey(name: 'lockedBy') String lockedBy,@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? createdAt,@JsonKey(name: 'transactionDate') String? transactionDate, List<JournalLine> lines
 });
 
 
@@ -568,9 +568,9 @@ as String,description: null == description ? _self.description : description // 
 as String,sourceType: null == sourceType ? _self.sourceType : sourceType // ignore: cast_nullable_to_non_nullable
 as String,sourceId: freezed == sourceId ? _self.sourceId : sourceId // ignore: cast_nullable_to_non_nullable
 as String?,lockedAt: freezed == lockedAt ? _self.lockedAt : lockedAt // ignore: cast_nullable_to_non_nullable
-as String?,lockedBy: null == lockedBy ? _self.lockedBy : lockedBy // ignore: cast_nullable_to_non_nullable
+as DateTime?,lockedBy: null == lockedBy ? _self.lockedBy : lockedBy // ignore: cast_nullable_to_non_nullable
 as String,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
-as String?,transactionDate: freezed == transactionDate ? _self.transactionDate : transactionDate // ignore: cast_nullable_to_non_nullable
+as DateTime?,transactionDate: freezed == transactionDate ? _self.transactionDate : transactionDate // ignore: cast_nullable_to_non_nullable
 as String?,lines: null == lines ? _self._lines : lines // ignore: cast_nullable_to_non_nullable
 as List<JournalLine>,
   ));

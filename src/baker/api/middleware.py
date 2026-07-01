@@ -1,13 +1,13 @@
 """Request logging middleware for Baker API."""
 
 import time
-from datetime import datetime
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
 from baker.logging import log_to_db, log_to_file, logger
+from baker.utils.time import now_utc
 
 
 class LoggingMiddleware(BaseHTTPMiddleware):
@@ -39,7 +39,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             level = "WARNING"
 
         entry = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": now_utc(),
             "level": level,
             "method": request.method,
             "path": request.url.path,

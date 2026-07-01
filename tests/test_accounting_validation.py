@@ -311,7 +311,7 @@ def test_cost_history_sanity_flags_negative_cost():
         ensure_schema(conn)
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (1, -500, "2020-01-01T00:00:00"),
+            (1, -500, "2020-01-01T00:00:00Z"),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "cost_history_sanity")
@@ -326,11 +326,11 @@ def test_cost_history_sanity_flags_duplicate_effective_from():
         ensure_schema(conn)
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (1, 100, "2020-01-01T00:00:00"),
+            (1, 100, "2020-01-01T00:00:00Z"),
         )
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (1, 200, "2020-01-01T00:00:00"),
+            (1, 200, "2020-01-01T00:00:00Z"),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "cost_history_sanity")
@@ -344,13 +344,13 @@ def test_cost_history_sanity_flags_future_effective_from():
         ensure_schema(conn)
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (1, 100, "2999-12-31T00:00:00"),
+            (1, 100, "2999-12-31T00:00:00Z"),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "cost_history_sanity")
     futures = [f for f in check["details"] if f["anomaly"] == "future_effective_from"]
     assert len(futures) == 1
-    assert futures[0]["effective_from"] == "2999-12-31T00:00:00"
+    assert futures[0]["effective_from"] == "2999-12-31T00:00:00Z"
 
 
 def test_cost_history_sanity_passes_on_clean_history():
@@ -358,11 +358,11 @@ def test_cost_history_sanity_passes_on_clean_history():
         ensure_schema(conn)
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (1, 100, "2020-01-01T00:00:00"),
+            (1, 100, "2020-01-01T00:00:00Z"),
         )
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (1, 200, "2021-01-01T00:00:00"),
+            (1, 200, "2021-01-01T00:00:00Z"),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "cost_history_sanity")
@@ -432,13 +432,13 @@ def test_lock_integrity_flags_locked_at_without_locked_by():
             "INSERT INTO journal_entries "
             "(description, source_type, source_id, locked_at, locked_by) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("Partial lock", "manual", None, "2026-06-23T12:00:00", ""),
+            ("Partial lock", "manual", None, "2026-06-23T12:00:00Z", ""),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "lock_integrity")
     assert check["status"] == "fail"
     assert check["issue_count"] == 1
-    assert check["details"][0]["locked_at"] == "2026-06-23T12:00:00"
+    assert check["details"][0]["locked_at"] == "2026-06-23T12:00:00Z"
 
 
 def test_lock_integrity_passes_when_both_set():
@@ -448,7 +448,7 @@ def test_lock_integrity_passes_when_both_set():
             "INSERT INTO journal_entries "
             "(description, source_type, source_id, locked_at, locked_by) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("Full lock", "manual", None, "2026-06-23T12:00:00", "sinh"),
+            ("Full lock", "manual", None, "2026-06-23T12:00:00Z", "sinh"),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "lock_integrity")
@@ -506,13 +506,13 @@ def test_future_dated_entries_flags_future_created_at():
             "INSERT INTO journal_entries "
             "(description, source_type, source_id, created_at) "
             "VALUES (?, ?, ?, ?)",
-            ("Future entry", "manual", None, "2999-12-31T23:59:59"),
+            ("Future entry", "manual", None, "2999-12-31T23:59:59Z"),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "future_dated_entries")
     assert check["status"] == "fail"
     assert check["issue_count"] == 1
-    assert check["details"][0]["created_at"] == "2999-12-31T23:59:59"
+    assert check["details"][0]["created_at"] == "2999-12-31T23:59:59Z"
 
 
 def test_future_dated_entries_passes_on_normal_dates():
@@ -522,7 +522,7 @@ def test_future_dated_entries_passes_on_normal_dates():
             "INSERT INTO journal_entries "
             "(description, source_type, source_id, created_at) "
             "VALUES (?, ?, ?, ?)",
-            ("Normal entry", "manual", None, "2020-01-01T10:00:00"),
+            ("Normal entry", "manual", None, "2020-01-01T10:00:00Z"),
         )
         report = run_validation(conn)
     check = next(c for c in report["checks"] if c["check"] == "future_dated_entries")
@@ -972,3 +972,105 @@ def test_deposit_revenue_integrity_end_to_end_after_journal_sync():
     check = next(c for c in report["checks"] if c["check"] == "deposit_revenue_integrity")
     assert check["status"] == "pass"
     assert check["issue_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Timestamp format (DG-202 TC-3, TC-4)
+# ---------------------------------------------------------------------------
+
+
+def test_locked_at_is_z_suffixed_via_api(api_client):
+    """TC-3: locked_at is Z-suffixed UTC when journal entries are locked via
+    the /api/accounts/journal/lock endpoint."""
+    from datetime import datetime
+
+    # Insert a journal entry with a transaction_date in the lock range.
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO journal_entries "
+            "(description, source_type, source_id, transaction_date) "
+            "VALUES (?, ?, ?, ?)",
+            ("Lock test", "manual", None, "2026-06-01"),
+        )
+        conn.commit()
+
+    resp = api_client.post("/api/accounts/journal/lock", json={
+        "since": "2026-06-01",
+        "until": "2026-06-30",
+        "lockedBy": "sinh",
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["lockedCount"] >= 1
+    locked_at = body["lockedAt"]
+    assert locked_at.endswith("Z")
+    assert "+" not in locked_at
+    datetime.strptime(locked_at, "%Y-%m-%dT%H:%M:%SZ")
+
+    # Verify the stored locked_at in the DB is also Z-suffixed.
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT locked_at FROM journal_entries "
+            "WHERE transaction_date = '2026-06-01' AND locked_at IS NOT NULL "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    assert row is not None
+    assert row["locked_at"].endswith("Z")
+
+
+def test_locked_at_null_when_not_locked():
+    """TC-3 (null case): locked_at is None for an unlocked journal entry."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, ?, ?)",
+            ("Unlocked test", "manual", None),
+        )
+        entry_id = cur.lastrowid
+        row = conn.execute(
+            "SELECT locked_at FROM journal_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+    assert row["locked_at"] is None
+
+
+def test_transaction_date_format_is_set(api_client):
+    """TC-4: transaction_date on journal entries is set (Z-suffix or date-only
+    as appropriate). The journal list API returns transactionDate populated."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO journal_entries "
+            "(description, source_type, source_id, transaction_date) "
+            "VALUES (?, ?, ?, ?)",
+            ("TC-4 entry", "manual", None, "2026-06-15T10:00:00Z"),
+        )
+        conn.commit()
+
+    resp = api_client.get("/api/accounts/journal", params={"source_type": "manual"})
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    entry = next((e for e in items if e["description"] == "TC-4 entry"), None)
+    assert entry is not None
+    td = entry["transactionDate"]
+    assert td is not None
+    assert td == "2026-06-15T10:00:00Z"
+
+
+def test_transaction_date_empty_when_not_set():
+    """TC-4 (null case): transaction_date is empty/None when not explicitly
+    set on a journal entry."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, ?, ?)",
+            ("TC-4 no date", "manual", None),
+        )
+        entry_id = cur.lastrowid
+        row = conn.execute(
+            "SELECT transaction_date FROM journal_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+    # transaction_date may be NULL or empty string.
+    assert row["transaction_date"] is None or row["transaction_date"] == ""

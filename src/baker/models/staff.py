@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Optional
 
+from baker.utils.time import now_utc
+
 # Predefined bakery roles: id → Vietnamese label
 ROLES = {
     "tho-nuong":  "Thợ nướng bánh",    # Baker (phòng nướng)
@@ -47,8 +49,8 @@ class Staff:
 
     def save(self, conn) -> int:
         cursor = conn.execute(
-            "INSERT INTO staff (name, role, phone, active) VALUES (?, ?, ?, ?)",
-            (self.name, self.role, self.phone, int(self.active)),
+            "INSERT INTO staff (name, role, phone, active, created_at) VALUES (?, ?, ?, ?, ?)",
+            (self.name, self.role, self.phone, int(self.active), now_utc()),
         )
         self.id = cursor.lastrowid
         return self.id

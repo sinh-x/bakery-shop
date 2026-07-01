@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/order.dart';
@@ -13,6 +12,7 @@ import '../../providers/config_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/config_parsers.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/order_helpers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/api_error.dart';
@@ -73,11 +73,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _deliveryType = order.deliveryType;
     _shippingFee = order.shippingFee;
     if (order.dueDate != null) {
-      try {
-        _dueDate = DateFormat('yyyy-MM-dd').parse(order.dueDate!);
-      } catch (error, stackTrace) {
-        debugPrint('order_edit: invalid due date "${order.dueDate}": $error');
-        debugPrintStack(stackTrace: stackTrace);
+      final parsed = parseApiDate(order.dueDate);
+      if (parsed != null) {
+        _dueDate = parsed;
+      } else {
+        debugPrint('order_edit: invalid due date "${order.dueDate}"');
       }
     }
     if (order.dueTime != null) {
@@ -93,12 +93,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
   bool get _needsAddress => _deliveryType == 'bus' || _deliveryType == 'door';
 
-  String _formatDateDisplay(DateTime d) => DateFormat('dd/MM/yyyy').format(d);
-
-  String _formatDateApi(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
-
-  String _formatTime(TimeOfDay t) =>
-      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  String _formatTime(TimeOfDay t) => formatHourMinute(t.hour, t.minute);
 
   void _updateShippingFeeForDeliveryType(
     String type, {
@@ -180,7 +175,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final originalOrder = ref.read(orderDetailProvider(widget.orderRef)).value;
-    final newDueDate = _dueDate != null ? _formatDateApi(_dueDate!) : null;
+    final newDueDate = _dueDate != null ? formatApiDate(_dueDate!) : null;
     final dueDateChanged = originalOrder != null && newDueDate != originalOrder.dueDate;
     final shouldAskDateDecision =
         dueDateChanged && (originalOrder.publicOrderCode.trim().isNotEmpty);
@@ -367,7 +362,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         icon: const Icon(Icons.calendar_today, size: 18),
                         label: Text(
                           _dueDate != null
-                              ? _formatDateDisplay(_dueDate!)
+                              ? formatDisplayDate(_dueDate)
                               : VN.dueDate,
                         ),
                         style: OutlinedButton.styleFrom(

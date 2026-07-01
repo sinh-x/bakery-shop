@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from baker.db.connection import get_db
 from baker.models.knowledge import Knowledge
 from baker.api.photos import read_image_upload, save_photo
+from baker.utils.time import now_utc
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
@@ -222,8 +223,6 @@ def delete_knowledge(entry_id: int):
 @router.post("/{entry_id}/pin")
 def pin_knowledge(entry_id: int):
     """Ghim mục tri thức lên đầu danh sách."""
-    import datetime
-
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM knowledge_entries WHERE id = ?", (entry_id,)
@@ -231,7 +230,7 @@ def pin_knowledge(entry_id: int):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy mục tri thức")
 
-        pinned_at = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        pinned_at = now_utc()
         conn.execute(
             "UPDATE knowledge_entries SET pinned = 1, pinned_at = ? WHERE id = ?",
             (pinned_at, entry_id),
@@ -302,9 +301,9 @@ async def attach_photo(entry_id: int, file: UploadFile, caption: str = ""):
         next_pos = pos_row["next_pos"]
 
         conn.execute(
-            """INSERT INTO knowledge_entry_photos (entry_id, photo_id, caption, position)
-               VALUES (?, ?, ?, ?)""",
-            (entry_id, photo_id, caption, next_pos),
+            """INSERT INTO knowledge_entry_photos (entry_id, photo_id, caption, position, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (entry_id, photo_id, caption, next_pos, now_utc()),
         )
 
         return {

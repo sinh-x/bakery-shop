@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/api/order_service.dart';
 import '../../data/api/payment_transaction_service.dart';
@@ -14,6 +13,7 @@ import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/gift_config.dart';
 import '../../shared/utils/config_parsers.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/vnd_units.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
@@ -132,11 +132,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     }
   }
 
-  String _formatDateApi(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
-  String _formatDateDisplay(DateTime d) => DateFormat('dd/MM/yyyy').format(d);
-
-  String _formatTime(TimeOfDay t) =>
-      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  String _formatTime(TimeOfDay t) => formatHourMinute(t.hour, t.minute);
 
   String _deriveSlot(TimeOfDay t) {
     if (t.hour < 12) return VN.timeSlotMorning;
@@ -357,8 +353,8 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
           return m;
         }).toList(),
         shippingFee: _shippingFee,
-        dueDate: _dueDate != null ? _formatDateApi(_dueDate!) : null,
-        dueTime: _dueTime != null ? _formatTime(_dueTime!) : null,
+       dueDate: _dueDate != null ? formatApiDate(_dueDate!) : null,
+       dueTime: _dueTime != null ? _formatTime(_dueTime!) : null,
         deliveryType: _deliveryType,
         deliveryAddress: _addressCtrl.text.trim(),
         notes: _notesCtrl.text.trim(),
@@ -707,7 +703,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
               onPressed: _pickDate,
               icon: const Icon(Icons.calendar_today, size: 18),
               label: Text(
-                _dueDate != null ? _formatDateDisplay(_dueDate!) : VN.dueDate,
+                _dueDate != null ? formatDisplayDate(_dueDate) : VN.dueDate,
               ),
               style: OutlinedButton.styleFrom(alignment: Alignment.centerLeft),
             ),

@@ -27,6 +27,7 @@ from baker.api.receipts import (
 from baker.config import PRINT_IPP_URL
 from baker.db.connection import get_db
 from baker import ipp_client, usb_printer
+from baker.utils.time import now_utc
 
 router = APIRouter(prefix="/api/orders", tags=["printing"])
 
@@ -79,9 +80,9 @@ def set_paper_mode(body: PaperModeIn):
             )
         else:
             conn.execute(
-                "INSERT INTO app_config (config_key, config_value, sort_order, active)"
-                " VALUES (?, ?, 0, 1)",
-                (usb_printer.PAPER_MODE_CONFIG_KEY, value),
+                "INSERT INTO app_config (config_key, config_value, sort_order, active, created_at)"
+                " VALUES (?, ?, 0, 1, ?)",
+                (usb_printer.PAPER_MODE_CONFIG_KEY, value, now_utc()),
             )
     return {"paperMode": value}
 
@@ -227,9 +228,9 @@ def print_receipt(
     if type == "work_ticket" and order_id is not None:
         with get_db() as conn:
             conn.execute(
-                """INSERT INTO print_log (order_id, item_id, receipt_type, printed_by)
-                   VALUES (?, ?, ?, ?)""",
-                (order_id, item_id, type, normalized_printed_by),
+                """INSERT INTO print_log (order_id, item_id, receipt_type, printed_by, printed_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (order_id, item_id, type, normalized_printed_by, now_utc()),
             )
             inserted = conn.execute(
                 "SELECT printed_at FROM print_log WHERE id = last_insert_rowid()"
@@ -237,10 +238,11 @@ def print_receipt(
             if inserted is not None:
                 printed_at = inserted["printed_at"]
 
+            printed_at_value = now_utc()
             conn.execute(
                 """UPDATE orders
                    SET work_ticket_printed_at = CASE
-                           WHEN work_ticket_printed_at IS NULL THEN strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+                           WHEN work_ticket_printed_at IS NULL THEN ?
                            ELSE work_ticket_printed_at
                        END,
                        work_ticket_printed_by = CASE
@@ -250,6 +252,7 @@ def print_receipt(
                        END
                    WHERE id = ?""",
                 (
+                    printed_at_value,
                     normalized_printed_by,
                     normalized_printed_by,
                     normalized_printed_by,

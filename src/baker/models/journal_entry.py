@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Optional
 
+from baker.utils.time import now_utc
+
 
 @dataclass
 class JournalLine:
@@ -71,14 +73,15 @@ class JournalEntry:
     def save(self, conn) -> int:
         cursor = conn.execute(
             "INSERT INTO journal_entries "
-            "(description, source_type, source_id, locked_at, locked_by) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "(description, source_type, source_id, locked_at, locked_by, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 self.description,
                 self.source_type,
                 self.source_id,
                 self.locked_at,
                 self.locked_by,
+                now_utc(),
             ),
         )
         self.id = cursor.lastrowid

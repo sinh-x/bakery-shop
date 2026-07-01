@@ -3,7 +3,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/models/cake_queue_item.dart';
@@ -11,6 +10,7 @@ import '../../data/models/order.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/theme/bakery_theme.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/order_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
@@ -625,12 +625,9 @@ class _CakeQueueCard extends ConsumerWidget {
 
   String _formatDue(String? dueDate, String? dueTime) {
     if (dueDate == null) return '';
-    try {
-      final d = DateFormat('yyyy-MM-dd').parse(dueDate);
-      final dateStr = DateFormat('dd/MM/yyyy').format(d);
-      return dueTime != null ? '$dateStr $dueTime' : dateStr;
-    } catch (_) {
-      return dueTime != null ? '$dueDate $dueTime' : dueDate;
-    }
+    final d = parseApiDate(dueDate);
+    if (d == null) return dueTime != null ? '$dueDate $dueTime' : dueDate;
+    final dateStr = formatDisplayDate(d);
+    return dueTime != null ? '$dateStr $dueTime' : dateStr;
   }
 }

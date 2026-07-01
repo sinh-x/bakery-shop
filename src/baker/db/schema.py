@@ -1,7 +1,7 @@
 INITIAL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
+    timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
     type        TEXT NOT NULL DEFAULT 'note',
     summary     TEXT NOT NULL,
     data        TEXT DEFAULT '{}',
@@ -26,8 +26,8 @@ CREATE TABLE IF NOT EXISTS orders (
     delivery_type   TEXT DEFAULT 'pickup',
     delivery_address TEXT DEFAULT '',
     notes           TEXT DEFAULT '',
-    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
-    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS inventory (
     low_threshold REAL DEFAULT 0,
     cost_per_unit REAL DEFAULT 0,
     supplier    TEXT DEFAULT '',
-    updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE TABLE IF NOT EXISTS products (
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS products (
 
 CREATE TABLE IF NOT EXISTS schema_version (
     version     INTEGER PRIMARY KEY,
-    applied_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
+    applied_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
     description TEXT
 );
 """
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS staff (
     role        TEXT DEFAULT '',
     phone       TEXT DEFAULT '',
     active      INTEGER DEFAULT 1,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE TABLE IF NOT EXISTS event_people (
@@ -252,7 +252,7 @@ CREATE TABLE IF NOT EXISTS product_catalog_photos (
     caption     TEXT DEFAULT '',
     tags        TEXT DEFAULT '',
     position    INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE INDEX IF NOT EXISTS idx_catalog_photos_product ON product_catalog_photos(product_id);
@@ -266,7 +266,7 @@ CREATE TABLE IF NOT EXISTS photos (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     hash        TEXT UNIQUE NOT NULL,
     original_name TEXT DEFAULT '',
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE INDEX IF NOT EXISTS idx_photos_hash ON photos(hash);
@@ -338,7 +338,7 @@ CREATE TABLE IF NOT EXISTS order_photos (
     photo_id    INTEGER NOT NULL REFERENCES photos(id),
     tags        TEXT DEFAULT '',
     position    INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE INDEX IF NOT EXISTS idx_order_photos_order ON order_photos(order_id);
@@ -355,7 +355,7 @@ CREATE TABLE IF NOT EXISTS order_items (
     notes           TEXT DEFAULT '',
     position        INTEGER NOT NULL DEFAULT 0,
     status          TEXT NOT NULL DEFAULT 'pending',
-    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
@@ -367,7 +367,7 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
     type            TEXT NOT NULL DEFAULT 'deposit',
     method          TEXT NOT NULL DEFAULT 'cash',
     note            TEXT DEFAULT '',
-    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE INDEX IF NOT EXISTS idx_payment_transactions_order ON payment_transactions(order_id);
@@ -386,7 +386,7 @@ CREATE TABLE IF NOT EXISTS app_config (
     config_value TEXT NOT NULL,
     sort_order  INTEGER DEFAULT 0,
     active      INTEGER DEFAULT 1,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_app_config_key_value ON app_config(config_key, config_value);
 ALTER TABLE orders ADD COLUMN source TEXT DEFAULT '';
@@ -455,7 +455,7 @@ def _migrate_v12_data(conn):
 SERVER_LOGS_AND_TRIGGERS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS server_logs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000', 'now', 'localtime')),
+    timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000', 'now') || 'Z'),
     level       TEXT NOT NULL DEFAULT 'INFO',
     method      TEXT DEFAULT '',
     path        TEXT DEFAULT '',
@@ -484,7 +484,7 @@ CREATE TABLE IF NOT EXISTS log_triggers (
     active      INTEGER DEFAULT 1,
     cooldown_seconds INTEGER DEFAULT 300,
     last_fired  TEXT DEFAULT NULL,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 """
 
@@ -532,7 +532,7 @@ CREATE TABLE IF NOT EXISTS checklist_templates (
     period      TEXT NOT NULL DEFAULT 'opening',
     sort_order  INTEGER NOT NULL DEFAULT 0,
     active      INTEGER DEFAULT 1,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 CREATE INDEX IF NOT EXISTS idx_checklist_templates_period ON checklist_templates(period);
 
@@ -543,7 +543,7 @@ CREATE TABLE IF NOT EXISTS checklist_entries (
     completed       INTEGER NOT NULL DEFAULT 0,
     completed_by    TEXT DEFAULT '',
     completed_at    TEXT DEFAULT NULL,
-    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_checklist_entries_unique ON checklist_entries(template_id, checklist_date);
 CREATE INDEX IF NOT EXISTS idx_checklist_entries_date ON checklist_entries(checklist_date);
@@ -587,7 +587,7 @@ CREATE TABLE IF NOT EXISTS order_history (
     old_value   TEXT DEFAULT '',
     new_value   TEXT DEFAULT '',
     changed_by  TEXT DEFAULT '',
-    timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 CREATE INDEX IF NOT EXISTS idx_order_history_order ON order_history(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_history_timestamp ON order_history(timestamp);
@@ -634,7 +634,7 @@ CREATE TABLE IF NOT EXISTS print_log (
     item_id      INTEGER,
     receipt_type TEXT NOT NULL,
     printed_by   TEXT NOT NULL DEFAULT '',
-    printed_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    printed_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 CREATE INDEX IF NOT EXISTS idx_print_log_order ON print_log(order_id);
 """
@@ -648,7 +648,7 @@ CREATE TABLE IF NOT EXISTS reconciliation_sessions (
     waste_reason            TEXT DEFAULT '',
     linked_order_ref        TEXT DEFAULT NULL,
     linked_payment_ref      TEXT DEFAULT NULL,
-    created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 CREATE INDEX IF NOT EXISTS idx_reconciliation_sessions_date ON reconciliation_sessions(reconciliation_date);
 
@@ -665,7 +665,7 @@ CREATE TABLE IF NOT EXISTS reconciliation_lines (
     linked_order_item_id         INTEGER DEFAULT NULL,
     linked_stock_movement_sale_id INTEGER DEFAULT NULL,
     linked_stock_movement_waste_id INTEGER DEFAULT NULL,
-    created_at                   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at                   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 CREATE INDEX IF NOT EXISTS idx_reconciliation_lines_session ON reconciliation_lines(session_id);
 CREATE INDEX IF NOT EXISTS idx_reconciliation_lines_product ON reconciliation_lines(product_id);
@@ -680,7 +680,7 @@ CREATE TABLE IF NOT EXISTS reconciliation_sale_rows (
     payment_method      TEXT NOT NULL,
     linked_order_ref    TEXT DEFAULT NULL,
     linked_payment_ref  TEXT DEFAULT NULL,
-    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 CREATE INDEX IF NOT EXISTS idx_reconciliation_sale_rows_line ON reconciliation_sale_rows(line_id);
 """
@@ -708,8 +708,8 @@ CREATE TABLE IF NOT EXISTS stock_lots (
     price_chip_id   INTEGER REFERENCES product_price_chips(id),
     quantity        INTEGER NOT NULL DEFAULT 0,
     remaining_qty   INTEGER NOT NULL DEFAULT 0,
-    restocked_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
-    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    restocked_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 CREATE INDEX IF NOT EXISTS idx_stock_lots_product_chip ON stock_lots(product_id, price_chip_id);
 CREATE INDEX IF NOT EXISTS idx_stock_lots_fifo ON stock_lots(product_id, price_chip_id, restocked_at ASC);
@@ -720,7 +720,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     uuid                        TEXT NOT NULL UNIQUE,
     status                      TEXT NOT NULL DEFAULT 'available',
     consumed_by_movement_id     INTEGER REFERENCES stock_movements(id),
-    created_at                  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at                  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 CREATE INDEX IF NOT EXISTS idx_inventory_items_lot ON inventory_items(lot_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_items_uuid ON inventory_items(uuid);
@@ -740,7 +740,7 @@ CREATE TABLE IF NOT EXISTS event_photos (
     photo_id    INTEGER NOT NULL REFERENCES photos(id),
     tags        TEXT DEFAULT '',
     position    INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE INDEX IF NOT EXISTS idx_event_photos_event ON event_photos(event_id);
@@ -1095,8 +1095,8 @@ CREATE TABLE IF NOT EXISTS knowledge_entries (
     tags        TEXT DEFAULT '',
     logged_by   TEXT DEFAULT '',
     source      TEXT DEFAULT 'app',
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
-    updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_entries_type ON knowledge_entries(type);
@@ -1109,7 +1109,7 @@ CREATE TABLE IF NOT EXISTS knowledge_entry_photos (
     photo_id    INTEGER NOT NULL REFERENCES photos(id),
     caption     TEXT DEFAULT '',
     position    INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_photos_entry ON knowledge_entry_photos(entry_id);
@@ -1142,7 +1142,7 @@ CREATE TABLE IF NOT EXISTS catalog_photo_tags (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     photo_id    INTEGER NOT NULL REFERENCES product_catalog_photos(id),
     tag_key     TEXT NOT NULL,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 CREATE INDEX IF NOT EXISTS idx_catalog_photo_tags_photo ON catalog_photo_tags(photo_id);
 CREATE INDEX IF NOT EXISTS idx_catalog_photo_tags_tag ON catalog_photo_tags(tag_key);
@@ -1230,7 +1230,7 @@ def _migrate_v28_cascade_and_reseed(conn):
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             photo_id    INTEGER NOT NULL REFERENCES product_catalog_photos(id) ON DELETE CASCADE,
             tag_key     TEXT NOT NULL,
-            created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+            created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
         );
         INSERT INTO catalog_photo_tags_new (id, photo_id, tag_key, created_at)
             SELECT id, photo_id, tag_key, created_at FROM catalog_photo_tags;
@@ -1272,7 +1272,7 @@ CREATE TABLE IF NOT EXISTS stock_movements (
     quantity        INTEGER NOT NULL,
     reason          TEXT DEFAULT '',
     reference_id    TEXT DEFAULT '',
-    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_created ON stock_movements(created_at);
@@ -1286,7 +1286,7 @@ CREATE TABLE IF NOT EXISTS product_price_chips (
     label       TEXT NOT NULL,
     price       REAL NOT NULL,
     position    INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE INDEX IF NOT EXISTS idx_product_price_chips_product ON product_price_chips(product_id);
@@ -1408,7 +1408,7 @@ CREATE TABLE IF NOT EXISTS event_history (
     field_name  TEXT DEFAULT '',
     old_value   TEXT DEFAULT '',
     new_value   TEXT DEFAULT '',
-    timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') || '+07:00')
+    timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE INDEX IF NOT EXISTS idx_event_history_event ON event_history(event_id);
@@ -1479,7 +1479,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     type        TEXT NOT NULL,
     parent_id   INTEGER REFERENCES accounts(id),
     is_active   INTEGER NOT NULL DEFAULT 1,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE INDEX IF NOT EXISTS idx_accounts_type ON accounts(type);
@@ -1488,7 +1488,7 @@ CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(parent_id);
 CREATE TABLE IF NOT EXISTS journal_entries (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     description TEXT NOT NULL,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
     source_type TEXT NOT NULL,
     source_id   INTEGER,
     locked_at   TEXT,
@@ -1707,7 +1707,7 @@ def _insert_journal_entry(
 
     if transaction_date is None:
         transaction_date = conn.execute(
-            "SELECT strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')"
+            "SELECT strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'"
         ).fetchone()[0]
 
     # Transition guard: write transaction_date only when the column exists
@@ -2543,8 +2543,8 @@ CREATE TABLE IF NOT EXISTS cost_history (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id      INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     cost            REAL NOT NULL DEFAULT 0,
-    effective_from  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
-    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime'))
+    effective_from  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE INDEX IF NOT EXISTS idx_cost_history_product_effective
@@ -2605,6 +2605,108 @@ def _migrate_v45_cost_history_and_cost_at_sale(conn):
     conn.executescript(COST_HISTORY_SCHEMA)
     _guard_add_column(conn, "order_items", "cost_at_sale", "cost_at_sale REAL DEFAULT 0")
     _backfill_order_items_cost_at_sale(conn)
+
+
+# ---------------------------------------------------------------------------
+# UTC timestamp standardization (migration v55) — DG-202 Phase 2
+# ---------------------------------------------------------------------------
+#
+# Migrates existing timestamp columns from bare/`+07:00` formats to UTC with
+# `Z` suffix. Two patterns:
+#   1. Bare timestamps (no suffix) — append `Z`. Production Docker runs UTC, so
+#      existing bare values are already UTC and only need the suffix.
+#   2. `+07:00`-suffixed timestamps — subtract 7 hours and append `Z`. This
+#      affects `event_history.timestamp` and a small number of `events.timestamp`
+#      rows written by an older code path.
+#
+# Excluded by design (see DG-202 §5 Out of Scope):
+#   - `schema_version.applied_at` — historical migration records.
+#   - `server_logs.timestamp` — 430K+ rows, low value to normalize.
+#   - Date-only columns: `orders.due_date`, `orders.due_time`,
+#     `checklist_entries.checklist_date`, `reconciliation_sessions.reconciliation_date`,
+#     `journal_entries.transaction_date` (mixed date/timestamp; treated as date-only).
+#
+# Idempotent: bare rows already ending in `Z` are skipped; rows already ending in
+# `Z` (post-conversion) are skipped by the `+07:00` matcher. Re-running on a
+# fully-migrated DB is a no-op.
+
+_TIMESTAMP_COLUMNS_V55 = [
+    ("accounts", "created_at"),
+    ("app_config", "created_at"),
+    ("catalog_photo_tags", "created_at"),
+    ("checklist_entries", "created_at"),
+    ("checklist_entries", "completed_at"),
+    ("checklist_templates", "created_at"),
+    ("cost_history", "effective_from"),
+    ("cost_history", "created_at"),
+    ("event_history", "timestamp"),
+    ("event_photos", "created_at"),
+    ("events", "timestamp"),
+    ("events", "deleted_at"),
+    ("inventory", "updated_at"),
+    ("inventory_items", "created_at"),
+    ("journal_entries", "created_at"),
+    ("journal_entries", "locked_at"),
+    ("knowledge_entries", "created_at"),
+    ("knowledge_entries", "updated_at"),
+    ("knowledge_entry_photos", "created_at"),
+    ("log_triggers", "created_at"),
+    ("order_history", "timestamp"),
+    ("order_items", "created_at"),
+    ("order_photos", "created_at"),
+    ("orders", "created_at"),
+    ("orders", "updated_at"),
+    ("orders", "work_ticket_printed_at"),
+    ("payment_transactions", "created_at"),
+    ("payment_transactions", "invalidated_at"),
+    ("photos", "created_at"),
+    ("print_log", "printed_at"),
+    ("product_catalog_photos", "created_at"),
+    ("product_price_chips", "created_at"),
+    ("reconciliation_lines", "created_at"),
+    ("reconciliation_sale_rows", "created_at"),
+    ("reconciliation_sessions", "created_at"),
+    ("staff", "created_at"),
+    ("stock_lots", "restocked_at"),
+    ("stock_lots", "created_at"),
+    ("stock_movements", "created_at"),
+]
+
+
+def _migrate_v55_utc_timestamp_standardization(conn):
+    """Append `Z` to bare timestamps and convert `+07:00`-suffixed timestamps
+    to UTC `Z` across all in-scope timestamp columns (DG-202 Phase 2).
+
+    Runs as a single transaction (the caller wraps migrations in commit/rollback).
+    Idempotent: already-`Z`-suffixed rows are skipped on re-run.
+    """
+    for table, column in _TIMESTAMP_COLUMNS_V55:
+        # 1) Bare timestamps: append 'Z'. Skip rows that already end in 'Z',
+        #    have a '+offset' suffix, or are date-only (no 'T').
+        conn.execute(
+            f"""UPDATE "{table}" SET "{column}" = "{column}" || 'Z'
+                WHERE "{column}" IS NOT NULL
+                  AND "{column}" != ''
+                  AND "{column}" NOT LIKE '%Z'
+                  AND "{column}" NOT LIKE '%+%'
+                  AND "{column}" LIKE '%T%'""",
+        )
+        # 2) +07:00-suffixed timestamps: subtract 7 hours and append 'Z'.
+        #    Preserve fractional seconds when present (re-append the original
+        #    fraction after the strftime, which truncates to whole seconds).
+        #    The CASE keeps the whole-seconds path simple while retaining the
+        #    fraction for rows that carry one.
+        conn.execute(
+            f"""UPDATE "{table}" SET "{column}" =
+                    CASE
+                        WHEN substr("{column}", 20, 1) = '.' THEN
+                            strftime('%Y-%m-%dT%H:%M:%S', substr("{column}", 1, 19), '-7 hours')
+                            || '.' || substr("{column}", 21, length("{column}") - 26) || 'Z'
+                        ELSE
+                            strftime('%Y-%m-%dT%H:%M:%SZ', substr("{column}", 1, 19), '-7 hours')
+                    END
+                WHERE "{column}" LIKE '%+07:00'""",
+        )
 
 
 MIGRATIONS = {
@@ -2861,6 +2963,11 @@ MIGRATIONS = {
          "description": "Ensure account 2400 (Tien Rut Held) exists in chart of accounts — DG-199 Phase 4.2",
          "sql": "",
          "callable": _migrate_v54_add_account_2400,
+     },
+     55: {
+         "description": "UTC timestamp standardization — append Z to bare timestamps, convert +07:00 to UTC Z (DG-202 Phase 2)",
+         "sql": "",
+         "callable": _migrate_v55_utc_timestamp_standardization,
      },
  }
 

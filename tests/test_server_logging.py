@@ -192,7 +192,7 @@ class TestTriggerSystem:
 
         from baker.triggers import evaluate_triggers
         entry = {
-            "timestamp": "2026-03-24T10:00:00",
+            "timestamp": "2026-03-24T10:00:00Z",
             "level": "ERROR",
             "method": "POST",
             "path": "/api/orders",

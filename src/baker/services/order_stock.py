@@ -12,6 +12,7 @@ from baker.api.inventory_fifo import (
     resolve_price_bucket_chip_id,
 )
 from baker.models.event import Event
+from baker.utils.time import now_utc
 
 
 def _order_sale_was_deducted(conn, order_ref: str) -> bool:
@@ -104,9 +105,9 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
 
         movement_cursor = conn.execute(
             """INSERT INTO stock_movements
-               (product_id, movement_type, quantity, reason, reference_id, price_chip_id)
-               VALUES (?, 'sale', ?, ?, ?, ?)""",
-            (product_id, -qty, f"Order {order_ref}", order_ref, chip_id),
+               (product_id, movement_type, quantity, reason, reference_id, price_chip_id, created_at)
+               VALUES (?, 'sale', ?, ?, ?, ?, ?)""",
+            (product_id, -qty, f"Order {order_ref}", order_ref, chip_id, now_utc()),
         )
         movement_id = movement_cursor.lastrowid
         if should_consume_fifo:
@@ -161,9 +162,9 @@ def restore_stock_for_order(conn, order_id: int, order_ref: str) -> None:
 
         restore_cursor = conn.execute(
             """INSERT INTO stock_movements
-               (product_id, movement_type, quantity, reason, reference_id, price_chip_id)
-               VALUES (?, 'restore_sale', ?, ?, ?, ?)""",
-            (movement["product_id"], qty, f"Restore order {order_ref}", order_ref, chip_id),
+               (product_id, movement_type, quantity, reason, reference_id, price_chip_id, created_at)
+               VALUES (?, 'restore_sale', ?, ?, ?, ?, ?)""",
+            (movement["product_id"], qty, f"Restore order {order_ref}", order_ref, chip_id, now_utc()),
         )
         restore_movement_id = restore_cursor.lastrowid
         create_lot_with_items(conn, movement["product_id"], chip_id, qty)

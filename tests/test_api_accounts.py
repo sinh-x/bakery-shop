@@ -491,7 +491,7 @@ def test_delivered_order_cogs_for_product_with_cost(api_client):
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) "
             "VALUES (?, ?, ?)",
-            (pid, 25000, "2020-01-01T00:00:00"),
+            (pid, 25000, "2020-01-01T00:00:00Z"),
         )
     order = _create_order(
         api_client,
@@ -597,15 +597,15 @@ def test_delivered_order_multi_item_cogs_single_entry(api_client):
     with get_db() as conn:
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (pid_a, 10000, "2020-01-01T00:00:00"),
+            (pid_a, 10000, "2020-01-01T00:00:00Z"),
         )
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (pid_b, 8000, "2020-01-01T00:00:00"),
+            (pid_b, 8000, "2020-01-01T00:00:00Z"),
         )
         conn.execute(
             "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
-            (pid_c, 6000, "2020-01-01T00:00:00"),
+            (pid_c, 6000, "2020-01-01T00:00:00Z"),
         )
     order = _create_order(
         api_client,
@@ -800,8 +800,8 @@ def test_journal_lock_locks_entries_in_range(api_client):
             "SELECT transaction_date FROM journal_entries WHERE id = ?", (entry_id,)
         ).fetchone()["transaction_date"]
     # Lock a wide range around transaction_date (FR9: lock filters on transaction_date)
-    since = transaction_date[:10] + "T00:00:00"
-    until = transaction_date[:10] + "T23:59:59"
+    since = transaction_date[:10] + "T00:00:00Z"
+    until = transaction_date[:10] + "T23:59:59Z"
     resp = api_client.post("/api/accounts/journal/lock", json={"since": since, "until": until, "lockedBy": "sinh"})
     assert resp.status_code == 200
     body = resp.json()
@@ -820,8 +820,8 @@ def test_journal_lock_skips_already_locked(api_client):
         transaction_date = conn.execute(
             "SELECT transaction_date FROM journal_entries WHERE id = ?", (entry_id,)
         ).fetchone()["transaction_date"]
-    since = transaction_date[:10] + "T00:00:00"
-    until = transaction_date[:10] + "T23:59:59"
+    since = transaction_date[:10] + "T00:00:00Z"
+    until = transaction_date[:10] + "T23:59:59Z"
     r1 = api_client.post("/api/accounts/journal/lock", json={"since": since, "until": until})
     assert r1.json()["lockedCount"] >= 1
     r2 = api_client.post("/api/accounts/journal/lock", json={"since": since, "until": until})
@@ -1071,3 +1071,43 @@ def test_validate_passes_after_invalidation(api_client):
         "Accounting integrity checks failed after invalidation: "
         + ", ".join(c.get("name", str(c)) for c in failed)
     )
+
+
+# ---------------------------------------------------------------------------
+# Timestamp format (DG-202 TC-9)
+# ---------------------------------------------------------------------------
+
+
+def test_account_created_at_is_z_suffixed(api_client):
+    """TC-9: accounts.created_at is Z-suffixed UTC for seeded accounts."""
+    from datetime import datetime
+
+    resp = api_client.get("/api/accounts")
+    assert resp.status_code == 200
+    accounts = resp.json()
+    assert len(accounts) > 0
+    for account in accounts:
+        created_at = account.get("createdAt")
+        assert created_at is not None, f"Account {account.get('code')} has null createdAt"
+        assert created_at.endswith("Z"), (
+            f"Account {account['code']} createdAt not Z-suffixed: {created_at}"
+        )
+        assert "+" not in created_at
+        datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_account_created_at_z_suffixed_in_db():
+    """TC-9 (DB-level): accounts.created_at in the DB is Z-suffixed UTC."""
+    from datetime import datetime
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        rows = conn.execute("SELECT code, created_at FROM accounts LIMIT 5").fetchall()
+    assert len(rows) > 0
+    for row in rows:
+        created_at = row["created_at"]
+        assert created_at is not None
+        assert created_at.endswith("Z"), (
+            f"Account {row['code']} createdAt not Z-suffixed: {created_at}"
+        )
+        datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")

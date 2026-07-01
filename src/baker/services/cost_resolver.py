@@ -14,6 +14,7 @@ costs can be tracked without seeding baseline rows into ``cost_history``.
 """
 
 from baker.db.schema import PHU_KIEN_CATEGORY, _baseline_cost_for_product
+from baker.utils.time import now_utc
 
 # Return value when a product cannot be resolved (missing product or zero
 # baseline). Downstream COGS logic treats 0 as "no cost" and skips journal
@@ -49,11 +50,11 @@ def resolve_product_cost(conn, product_id: int) -> float:
         SELECT cost
         FROM cost_history
         WHERE product_id = ?
-          AND effective_from <= strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+          AND effective_from <= ?
         ORDER BY effective_from DESC
         LIMIT 1
         """,
-        (int(product_id),),
+        (int(product_id), now_utc()),
     ).fetchone()
     if latest_row is not None:
         # Negative cost_history values are clamped to 0 so downstream cost_at_sale

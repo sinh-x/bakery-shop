@@ -1,9 +1,13 @@
 """App config API routes — general key/value configuration (e.g. order sources)."""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from baker.config import TIMEZONE
 from baker.db.connection import get_db
+from baker.utils.time import now_utc
 
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -18,6 +22,18 @@ class ConfigValueUpdate(BaseModel):
     old_value: str
     new_value: str
     sort_order: int | None = None
+
+
+@router.get("")
+def get_server_config() -> dict:
+    """Trả về cấu hình máy chủ (timezone) để Flutter đồng bộ hiển thị.
+
+    DG-202 FR7/AC6: exposes the configured server timezone so the Flutter client
+    can read it at startup and use the offset for display conversion.
+    """
+    offset = TIMEZONE.utcoffset(datetime.now(timezone.utc))
+    offset_minutes = int(offset.total_seconds() // 60) if offset else 0
+    return {"timezone": str(TIMEZONE), "timezone_offset": offset_minutes}
 
 
 @router.get("/{config_key}")
@@ -48,8 +64,8 @@ def create_config(config_key: str, body: ConfigValueIn):
             raise HTTPException(status_code=409, detail="Config value already exists")
 
         cursor = conn.execute(
-            "INSERT INTO app_config (config_key, config_value, sort_order) VALUES (?, ?, ?)",
-            (config_key, body.value, body.sort_order),
+            "INSERT INTO app_config (config_key, config_value, sort_order, created_at) VALUES (?, ?, ?, ?)",
+            (config_key, body.value, body.sort_order, now_utc()),
         )
         return {"id": cursor.lastrowid, "config_key": config_key, "value": body.value, "sort_order": body.sort_order}
 

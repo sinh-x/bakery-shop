@@ -3,7 +3,7 @@
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
@@ -15,6 +15,7 @@ from baker.db.connection import get_db
 from baker.db.queries import fetch_events, find_staff_by_name, link_event_person
 from baker.models.event import Event
 from baker.models.order import Order
+from baker.utils.time import now_utc
 
 logger = logging.getLogger("baker.server")
 
@@ -167,9 +168,9 @@ class EventUpdate(BaseModel):
 
 def _log_event_history(conn, event_id, action_type, actor="", field_name="", old_value="", new_value=""):
     conn.execute(
-        """INSERT INTO event_history (event_id, action_type, actor, field_name, old_value, new_value)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (event_id, action_type, actor, field_name, old_value, new_value),
+        """INSERT INTO event_history (event_id, action_type, actor, field_name, old_value, new_value, timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (event_id, action_type, actor, field_name, old_value, new_value, now_utc()),
     )
 
 
@@ -183,12 +184,24 @@ def _normalize_timestamp(raw: str | None) -> str | None:
     if not value:
         raise HTTPException(status_code=422, detail="timestamp không được để trống")
     try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="timestamp không đúng định dạng ISO") from exc
     if not _TZ_RE.search(value):
-        return f"{value}+07:00"
-    return value
+        # Treat bare timestamps as UTC and append the Z suffix so all stored
+        # timestamps are UTC (DG-202 FR1). Previously these were assumed to be
+        # +07:00 local time; the database now stores UTC only.
+        return f"{value}Z"
+    # Offset-suffixed timestamps (e.g. ``+07:00``) are converted to UTC ``Z``
+    # so every timestamp stored via the events API is UTC Z-suffixed (DG-202
+    # FR1, review-auto cycle 1 CQ-1). Fractional seconds are preserved when
+    # present to keep sub-second precision.
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    utc_dt = parsed.astimezone(timezone.utc)
+    if utc_dt.microsecond:
+        return utc_dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{utc_dt.microsecond:06d}Z"
+    return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
@@ -340,7 +353,7 @@ def delete_event(event_id: int, deleted_by: str = Query("", description="Ngườ
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
 
-        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S") + "+07:00"
+        now = now_utc()
         conn.execute(
             "UPDATE events SET deleted_at = ?, deleted_by = ? WHERE id = ?",
             (now, deleted_by, event_id),
@@ -435,9 +448,9 @@ async def upload_event_photo(
         next_position = result[0]
 
         cursor = conn.execute(
-            "INSERT INTO event_photos (event_id, photo_id, tags, position) "
-            "VALUES (?, ?, ?, ?)",
-            (event_id, photo_id, tags, next_position),
+            "INSERT INTO event_photos (event_id, photo_id, tags, position, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (event_id, photo_id, tags, next_position, now_utc()),
         )
         new_id = cursor.lastrowid
 

@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Optional
 
+from baker.utils.time import now_utc
+
 
 @dataclass
 class Account:
@@ -14,9 +16,9 @@ class Account:
 
     def save(self, conn) -> int:
         cursor = conn.execute(
-            "INSERT INTO accounts (code, name, type, parent_id, is_active) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (self.code, self.name, self.type, self.parent_id, self.is_active),
+            "INSERT INTO accounts (code, name, type, parent_id, is_active, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (self.code, self.name, self.type, self.parent_id, self.is_active, now_utc()),
         )
         self.id = cursor.lastrowid
         return self.id

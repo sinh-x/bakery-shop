@@ -82,7 +82,50 @@ def test_create_event_with_custom_timestamp(api_client):
         },
     })
     assert resp.status_code == 201
-    assert resp.json()["timestamp"] == "2026-05-23T19:57:00+07:00"
+    assert resp.json()["timestamp"] == "2026-05-23T19:57:00Z"
+
+
+def test_create_event_converts_offset_timestamp_to_utc_z(api_client):
+    # DG-202 review-auto cycle 1 CQ-1: offset-suffixed timestamps must be
+    # converted to UTC Z so all stored timestamps share one format.
+    resp = api_client.post("/api/events", json={
+        "summary": "Sự kiện với timestamp +07:00",
+        "type": "expense",
+        "timestamp": "2026-05-23T19:57:00+07:00",
+        "data": {
+            "amount_vnd": 75000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "NCC A",
+            "note": "Mua đường",
+            "staff_name": "Lan",
+            "paid_by_name": "Phượng",
+        },
+    })
+    assert resp.status_code == 201
+    # +07:00 -> UTC is 12:57:00Z.
+    assert resp.json()["timestamp"] == "2026-05-23T12:57:00Z"
+
+
+def test_create_event_preserves_fractional_seconds_on_offset_timestamp(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Sự kiện với fractional + offset",
+        "type": "expense",
+        "timestamp": "2026-05-23T19:57:00.123456+07:00",
+        "data": {
+            "amount_vnd": 75000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "NCC A",
+            "note": "Mua đường",
+            "staff_name": "Lan",
+            "paid_by_name": "Phượng",
+        },
+    })
+    assert resp.status_code == 201
+    assert resp.json()["timestamp"] == "2026-05-23T12:57:00.123456Z"
 
 
 def test_create_expense_event_rejects_non_integer_amount(api_client):
@@ -861,7 +904,7 @@ def test_patch_expense_event_timestamp(api_client):
     })
     assert resp.status_code == 200
     body = resp.json()
-    assert body["timestamp"] == "2026-05-24T08:15:00+07:00"
+    assert body["timestamp"] == "2026-05-24T08:15:00Z"
 
 
 def test_patch_expense_event_preserves_reimbursed(api_client):
@@ -1194,3 +1237,47 @@ def test_patch_deleted_event_returns_404(api_client):
     api_client.delete(f"/api/events/{event_id}?deleted_by=Sin")
     resp = api_client.patch(f"/api/events/{event_id}", json={"summary": "Nope"})
     assert resp.status_code == 404
+
+
+# ─── Timestamp format (DG-202 TC-11) ────────────────────────────────────────
+
+
+def _make_test_image_bytes(width=100, height=100) -> bytes:
+    """Create a minimal JPEG image for testing photo uploads."""
+    import io
+    from PIL import Image
+    img = Image.new("RGB", (width, height), color="green")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    buf.seek(0)
+    return buf.read()
+
+
+def test_event_photo_created_at_is_z_suffixed(api_client):
+    """TC-11: event_photos.created_at is Z-suffixed UTC."""
+    from datetime import datetime
+
+    create_resp = api_client.post("/api/events", json={"summary": "TC-11 event"})
+    event_id = create_resp.json()["id"]
+
+    image_data = _make_test_image_bytes()
+    resp = api_client.post(
+        f"/api/events/{event_id}/photos",
+        files={"file": ("photo.jpg", image_data, "image/jpeg")},
+        data={"tags": "test"},
+    )
+    assert resp.status_code == 201
+    photo = resp.json()
+    created_at = photo.get("created_at")
+    assert created_at is not None, "event_photo created_at is null"
+    assert created_at.endswith("Z"), f"created_at not Z-suffixed: {created_at}"
+    assert "+" not in created_at
+    datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")
+
+    # Verify via the list endpoint as well.
+    list_resp = api_client.get(f"/api/events/{event_id}/photos")
+    assert list_resp.status_code == 200
+    photos = list_resp.json()
+    assert len(photos) == 1
+    assert photos[0]["created_at"] == created_at
+    assert photos[0]["created_at"].endswith("Z")

@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../shared/utils/date_formatting.dart';
+
 part 'payment_transaction.freezed.dart';
 part 'payment_transaction.g.dart';
 
@@ -12,9 +14,15 @@ sealed class PaymentTransaction with _$PaymentTransaction {
     @Default('cash') String method,
     required double amount,
     @JsonKey(name: 'note') @Default('') String notes,
-    String? createdAt,
-    String? invalidatedAt,
-    @Default('') String invalidatedBy,
+    @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)
+    DateTime? createdAt,
+    @JsonKey(
+      name: 'invalidatedAt',
+      fromJson: parseApiDateTime,
+      toJson: timestampToJson,
+    )
+    DateTime? invalidatedAt,
+    @JsonKey(name: 'invalidatedBy') @Default('') String invalidatedBy,
   }) = _PaymentTransaction;
 
   factory PaymentTransaction.fromJson(Map<String, dynamic> json) =>

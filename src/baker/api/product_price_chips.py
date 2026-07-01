@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Path
 from pydantic import BaseModel
 
 from baker.db.connection import get_db
+from baker.utils.time import now_utc
 
 
 router = APIRouter(prefix="/api", tags=["product-price-chips"])
@@ -94,9 +95,9 @@ def create_product_price_chip(
     with get_db() as conn:
         _ensure_product_exists(conn, product_id)
         cursor = conn.execute(
-            "INSERT INTO product_price_chips (product_id, label, price, position) "
-            "VALUES (?, ?, ?, ?)",
-            (product_id, label, chip.price, chip.position),
+            "INSERT INTO product_price_chips (product_id, label, price, position, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (product_id, label, chip.price, chip.position, now_utc()),
         )
         row = conn.execute(
             "SELECT id, label, price, position FROM product_price_chips WHERE id = ?",

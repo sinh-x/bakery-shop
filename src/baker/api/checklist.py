@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from baker.db.connection import get_db
+from baker.utils.time import now_utc
 
 
 router = APIRouter(prefix="/api/checklist", tags=["checklist"])
@@ -100,8 +101,8 @@ def create_template(body: TemplateCreate):
         raise HTTPException(status_code=400, detail="period phải là 'opening' hoặc 'closing'")
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO checklist_templates (name, period, sort_order, active) VALUES (?, ?, ?, ?)",
-            (body.name, body.period, body.sort_order, 1 if body.active else 0),
+            "INSERT INTO checklist_templates (name, period, sort_order, active, created_at) VALUES (?, ?, ?, ?, ?)",
+            (body.name, body.period, body.sort_order, 1 if body.active else 0, now_utc()),
         )
         row = conn.execute(
             "SELECT * FROM checklist_templates WHERE id = ?", (cursor.lastrowid,)
@@ -201,8 +202,8 @@ def toggle_entry(entry_id: int, body: ToggleRequest):
             # Tick
             conn.execute(
                 "UPDATE checklist_entries SET completed = 1, completed_by = ?, "
-                "completed_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') WHERE id = ?",
-                (body.staff_name, entry_id),
+                "completed_at = ? WHERE id = ?",
+                (body.staff_name, now_utc(), entry_id),
             )
 
         row = conn.execute(
