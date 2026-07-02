@@ -380,7 +380,7 @@ def test_migration_v56_schema_version_is_56():
     with get_db() as conn:
         ensure_schema(conn)
         version = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-        assert version == 57
+        assert version == 58
 
 
 def test_migration_v56_idempotent():

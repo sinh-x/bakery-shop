@@ -2723,6 +2723,20 @@ CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
 """
 
 
+CUSTOMER_PHONES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS customer_phones (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id  INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    phone        TEXT NOT NULL,
+    is_primary   INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_phones_customer_id ON customer_phones(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_phones_phone ON customer_phones(phone);
+"""
+
+
 def _migrate_v56_customers_and_order_link(conn):
     """Create customers table, add customer_id FK to orders, auto-link existing
     orders to customers by phone match (DG-182 Phase 1).
@@ -2985,6 +2999,56 @@ def _migrate_v57_generate_customers_from_orders(conn):
 
     # FR9: summary log.
     logger.info("Đã tạo %d khách hàng, liên kết %d đơn hàng.", customers_created, orders_linked)
+
+
+def _migrate_v58_customer_phones(conn):
+    """Create customer_phones table and migrate existing customers.phone into it.
+
+    DG-205 Phase 1. Creates the normalized ``customer_phones`` table (FR1) and
+    moves each existing non-empty ``customers.phone`` value into a row with
+    ``is_primary=1`` (FR2). The ``customers.phone`` denormalized column is
+    retained as a backward-compatible fallback (NFR4/AC2) — it is NOT modified.
+
+    The migration is idempotent (NFR1): before inserting, it checks whether the
+    customer already has any row in ``customer_phones`` and skips those that do.
+    Re-running v58 therefore never duplicates phone rows (AC1).
+
+    The DDL (table + indexes on ``customer_id`` and ``phone``) is applied via
+    the ``CUSTOMER_PHONES_SCHEMA`` ``sql`` entry in ``MIGRATIONS``; this
+    callable only performs the data backfill, following the v56/v57 pattern of
+    separating schema (``sql``) from data (``callable``).
+    """
+    import logging
+
+    logger = logging.getLogger("baker.db")
+
+    # Idempotency (NFR1): collect customer_ids that already have phone rows.
+    # This covers re-runs of v58 and DBs where phone rows were added by the API
+    # before v58 finished — either way we never insert a duplicate.
+    customers_with_phones = {
+        row[0]
+        for row in conn.execute("SELECT DISTINCT customer_id FROM customer_phones").fetchall()
+    }
+
+    migrated = 0
+    # Move each existing non-empty customers.phone into customer_phones as the
+    # primary phone (FR2). Empty/NULL phones are skipped (no point inserting a
+    # blank primary phone row).
+    for crow in conn.execute(
+        "SELECT id, phone FROM customers WHERE phone IS NOT NULL AND phone != ''"
+    ).fetchall():
+        cust_id = crow["id"]
+        phone = crow["phone"]
+        if cust_id in customers_with_phones:
+            continue
+        conn.execute(
+            "INSERT INTO customer_phones (customer_id, phone, is_primary) VALUES (?, ?, 1)",
+            (cust_id, phone),
+        )
+        customers_with_phones.add(cust_id)
+        migrated += 1
+
+    logger.info("Đã chuyển %d số điện thoại vào customer_phones.", migrated)
 
 
 MIGRATIONS = {
@@ -3256,6 +3320,11 @@ MIGRATIONS = {
         "description": "Generate customer records from existing orders and link orders to them — earliest-order-wins for shared phones, idempotent re-run (DG-204 Phase 2)",
         "sql": "",
         "callable": _migrate_v57_generate_customers_from_orders,
+    },
+    58: {
+        "description": "Customer multi-phone: customer_phones table + migrate existing customers.phone as primary phone, idempotent re-run (DG-205 Phase 1)",
+        "sql": CUSTOMER_PHONES_SCHEMA,
+        "callable": _migrate_v58_customer_phones,
     },
 }
 
