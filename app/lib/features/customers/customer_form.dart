@@ -122,14 +122,30 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
   }
 
   /// Collect validated, trimmed phones for submission. Returns null when the
-  /// form-level phone validation fails.
+  /// form-level phone validation fails. When duplicates are detected, sets
+  /// [_duplicateError] so [_save] can surface the VN label to the user.
+  String? _duplicateError;
+
   List<CustomerPhone>? _collectPhones() {
     // Require at least one non-empty phone.
     final trimmed = _phones
         .map((e) => e.controller.text.trim())
         .toList(growable: false);
     final hasAny = trimmed.any((p) => p.isNotEmpty);
-    if (!hasAny) return null;
+    if (!hasAny) {
+      _duplicateError = null;
+      return null;
+    }
+    // Detect duplicate non-empty phone numbers.
+    final seen = <String>{};
+    for (final phone in trimmed) {
+      if (phone.isEmpty) continue;
+      if (!seen.add(phone)) {
+        _duplicateError = VN.customerPhoneDuplicate;
+        return null;
+      }
+    }
+    _duplicateError = null;
     // Require exactly one primary among the non-empty phones; ensure one is
     // selected automatically if none is.
     if (!_phones.any((e) => e.isPrimary && e.controller.text.trim().isNotEmpty)) {
@@ -153,7 +169,10 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
     if (!_formKey.currentState!.validate()) return;
     final phones = _collectPhones();
     if (phones == null) {
-      showTopSnackBar(context, VN.customerPhoneRequired);
+      showTopSnackBar(
+        context,
+        _duplicateError ?? VN.customerPhoneRequired,
+      );
       return;
     }
     if (!phones.any((p) => p.isPrimary)) {

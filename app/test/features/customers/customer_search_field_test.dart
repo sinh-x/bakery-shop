@@ -16,8 +16,15 @@ class _FakeCustomerService extends CustomerService {
   Future<List<Customer>> listCustomers({String? search}) async {
     if (search == null || search.trim().isEmpty) return List.of(_customers);
     final q = search.trim().toLowerCase();
+    // Match against name, primary phone, or any entry in the phones list
+    // (mirrors the backend search that joins customer_phones).
     return _customers
-        .where((c) => c.name.toLowerCase().contains(q) || c.phone.contains(q))
+        .where(
+          (c) =>
+              c.name.toLowerCase().contains(q) ||
+              c.phone.contains(q) ||
+              c.phones.any((p) => p.phone.contains(q)),
+        )
         .toList();
   }
 }
@@ -120,5 +127,29 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(VN.customerSearchNoMatch), findsOneWidget);
+  });
+
+  // AC10 — searching by a secondary phone surfaces the matching customer.
+  testWidgets('search by secondary phone surfaces matching customer (AC10)',
+      (tester) async {
+    final customers = [
+      const Customer(
+        id: 1,
+        name: 'Sinh',
+        phone: '0901234567',
+        phones: [
+          CustomerPhone(phone: '0901234567', isPrimary: true),
+          CustomerPhone(phone: '0909876543', isPrimary: false),
+        ],
+      ),
+    ];
+    await _pumpField(tester, _FakeCustomerService(customers));
+
+    // Search by the secondary phone (not the primary phone field).
+    await tester.enterText(find.byType(TextField), '0909876543');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sinh'), findsOneWidget);
   });
 }

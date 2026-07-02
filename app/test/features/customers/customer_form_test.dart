@@ -173,4 +173,24 @@ void main() {
     expect(service.lastCreatedPhones!.single.phone, '0901234567');
     expect(service.lastCreatedPhones!.single.isPrimary, isTrue);
   });
+
+  testWidgets('duplicate phone numbers are rejected with VN label',
+      (tester) async {
+    final service = _RecordingCustomerService();
+    await _pumpForm(tester, service);
+
+    // Add a second phone row.
+    await tester.tap(find.text(VN.customerAddPhone));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
+    await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
+    await tester.enterText(find.byType(TextFormField).at(2), '0901234567');
+    await tester.tap(find.text(VN.save));
+    await tester.pumpAndSettle();
+
+    // Save blocked: duplicate snackbar shown, no creation attempted.
+    expect(service.lastCreated, isNull);
+    expect(find.text(VN.customerPhoneDuplicate), findsOneWidget);
+  });
 }
