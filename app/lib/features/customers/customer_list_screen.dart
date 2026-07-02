@@ -155,8 +155,26 @@ class _CustomerTile extends StatelessWidget {
 
   final Customer customer;
 
+  /// Returns the primary phone number to display in the tile subtitle.
+  ///
+  /// Prefers the primary entry in [Customer.phones] (multi-phone support,
+  /// DG-205 Phase 6); falls back to the legacy denormalized [Customer.phone]
+  /// for backward compatibility with pre-v58 data or older API responses.
+  String get _primaryPhone {
+    if (customer.phones.isEmpty) return customer.phone;
+    final primary = customer.phones.firstWhere(
+      (p) => p.isPrimary,
+      orElse: () => customer.phones.first,
+    );
+    return primary.phone;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final subtitleParts = <String>[
+      if (_primaryPhone.isNotEmpty) _primaryPhone,
+      formatDisplayDate(customer.createdAt),
+    ];
     return ListTile(
       leading: CircleAvatar(
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
@@ -164,9 +182,7 @@ class _CustomerTile extends StatelessWidget {
         child: Text(customer.name.isEmpty ? '?' : customer.name[0]),
       ),
       title: Text(customer.name),
-      subtitle: customer.phone.isEmpty
-          ? Text(formatDisplayDate(customer.createdAt))
-          : Text('${customer.phone} • ${formatDisplayDate(customer.createdAt)}'),
+      subtitle: Text(subtitleParts.join(' • ')),
       trailing: const Icon(Icons.chevron_right, color: Colors.grey),
       onTap: () => context.push('/customers/${customer.id}'),
     );

@@ -168,6 +168,58 @@ class _CustomerProfileCard extends StatelessWidget {
 
   final Customer customer;
 
+  /// Builds one line per phone number, falling back to the legacy
+  /// denormalized [Customer.phone] when [Customer.phones] is empty
+  /// (e.g. pre-v58 data or older API responses).
+  ///
+  /// The primary phone is highlighted with a filled star icon and bold text;
+  /// secondary phones use a plain text style (AC9).
+  List<Widget> _buildPhoneLines(ThemeData theme) {
+    final phones = customer.phones;
+    if (phones.isEmpty) {
+      if (customer.phone.isEmpty) return const [];
+      return [
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            const Icon(Icons.star, size: 16),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                customer.phone,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+          ],
+        ),
+      ];
+    }
+    return [
+      for (final entry in phones) ...[
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Icon(
+              entry.isPrimary ? Icons.star : Icons.star_border,
+              size: 16,
+              color: entry.isPrimary ? theme.colorScheme.primary : null,
+            ),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                '${entry.phone}${entry.isPrimary ? ' (${VN.customerPrimaryPhone})' : ''}',
+                style: entry.isPrimary
+                    ? theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.bold)
+                    : theme.textTheme.bodyMedium,
+              ),
+            ),
+          ],
+        ),
+      ],
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -195,13 +247,7 @@ class _CustomerProfileCard extends StatelessWidget {
                     customer.name,
                     style: theme.textTheme.titleMedium,
                   ),
-                  if (customer.phone.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      customer.phone,
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  ],
+                  ..._buildPhoneLines(theme),
                   const SizedBox(height: 4),
                   Text(
                     '${VN.customerCreatedAt}: ${formatDisplayDate(customer.createdAt)}',

@@ -85,4 +85,34 @@ void main() {
     expect(find.text('Sinh'), findsNothing);
     expect(find.text('An'), findsOneWidget);
   });
+
+  testWidgets('list tile shows primary phone from phones list', (tester) async {
+    final customers = [
+      const Customer(
+        id: 1,
+        name: 'Sinh',
+        phone: '0901234567',
+        phones: [
+          CustomerPhone(phone: '0901234567', isPrimary: true),
+          CustomerPhone(phone: '0909876543', isPrimary: false),
+        ],
+      ),
+    ];
+    await _pumpScreen(tester, _FakeCustomerService(customers));
+
+    // The primary phone should be shown in the subtitle; the secondary phone
+    // should NOT appear in the list tile (only on the detail screen).
+    expect(find.textContaining('0901234567'), findsOneWidget);
+    expect(find.textContaining('0909876543'), findsNothing);
+  });
+
+  testWidgets('list tile falls back to legacy phone field when phones empty',
+      (tester) async {
+    final customers = [
+      const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
+    ];
+    await _pumpScreen(tester, _FakeCustomerService(customers));
+
+    expect(find.textContaining('0901234567'), findsOneWidget);
+  });
 }
