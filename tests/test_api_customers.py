@@ -420,3 +420,217 @@ def test_delete_customer_clears_order_links(api_client):
     resp = api_client.delete(f"/api/customers/{customer['id']}")
     assert resp.status_code == 200
     assert resp.json()["linkedOrdersCleared"] == 1
+
+
+# --- Multi-phone support (DG-205 Phase 2) ---
+
+
+def _create_customer_multi_phone(client, name, phones):
+    payload = {"name": name, "phones": phones}
+    resp = client.post("/api/customers", json=payload)
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def test_create_customer_with_phones_array_stores_all(api_client):
+    """AC3 — POST with phones array stores all in customer_phones, first is primary."""
+    body = _create_customer_multi_phone(
+        api_client,
+        name="Khách đa SĐT",
+        phones=[
+            {"phone": "0901111222", "isPrimary": True},
+            {"phone": "0902222333", "isPrimary": False},
+        ],
+    )
+    assert body["phone"] == "0901111222"
+    phones = body["phones"]
+    assert len(phones) == 2
+    assert {"phone": "0901111222", "isPrimary": True} in phones
+    assert {"phone": "0902222333", "isPrimary": False} in phones
+
+
+def test_create_customer_phones_without_primary_rejected(api_client):
+    resp = api_client.post(
+        "/api/customers",
+        json={"name": "X", "phones": [{"phone": "0900", "isPrimary": False}]},
+    )
+    assert resp.status_code == 422
+
+
+def test_create_customer_legacy_phone_field_still_works(api_client):
+    """Backward compat — legacy phone string still accepted and stored."""
+    resp = api_client.post(
+        "/api/customers", json={"name": "Cũ", "phone": "0912345678"}
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["phone"] == "0912345678"
+    assert len(body["phones"]) == 1
+    assert body["phones"][0] == {"phone": "0912345678", "isPrimary": True}
+
+
+def test_create_customer_empty_phone_yields_empty_phones(api_client):
+    resp = api_client.post("/api/customers", json={"name": "Không SĐT", "phone": ""})
+    assert resp.status_code == 201
+    assert resp.json()["phones"] == []
+
+
+def test_get_customer_returns_phones_array(api_client):
+    """AC5 — GET /api/customers/{id} includes phones array alongside legacy phone."""
+    created = _create_customer_multi_phone(
+        api_client,
+        name="Chi tiết đa SĐT",
+        phones=[
+            {"phone": "0903333444", "isPrimary": True},
+            {"phone": "0904444555", "isPrimary": False},
+        ],
+    )
+    resp = api_client.get(f"/api/customers/{created['id']}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["phone"] == "0903333444"
+    assert len(body["phones"]) == 2
+
+
+def test_list_customers_includes_phones_array(api_client):
+    _create_customer_multi_phone(
+        api_client,
+        name="Liệt kê",
+        phones=[{"phone": "0905555666", "isPrimary": True}],
+    )
+    resp = api_client.get("/api/customers")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) == 1
+    assert len(rows[0]["phones"]) == 1
+    assert rows[0]["phones"][0]["phone"] == "0905555666"
+
+
+def test_update_customer_phones_replaces_all(api_client):
+    """AC4 — PATCH with phones array replaces old phone rows."""
+    created = _create_customer_multi_phone(
+        api_client,
+        name="Sửa đa SĐT",
+        phones=[
+            {"phone": "0907777888", "isPrimary": True},
+            {"phone": "0908888999", "isPrimary": False},
+        ],
+    )
+    resp = api_client.patch(
+        f"/api/customers/{created['id']}",
+        json={"phones": [{"phone": "0910000111", "isPrimary": True}]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["phone"] == "0910000111"
+    assert len(body["phones"]) == 1
+    assert body["phones"][0] == {"phone": "0910000111", "isPrimary": True}
+
+
+def test_update_customer_phones_without_primary_rejected(api_client):
+    created = _create_customer(api_client, name="Sửa lỗi", phone="0900")
+    resp = api_client.patch(
+        f"/api/customers/{created['id']}",
+        json={"phones": [{"phone": "0911", "isPrimary": False}]},
+    )
+    assert resp.status_code == 422
+
+
+def test_update_customer_legacy_phone_field_still_works(api_client):
+    created = _create_customer(api_client, name="Cũ", phone="0900")
+    resp = api_client.patch(
+        f"/api/customers/{created['id']}", json={"phone": "0911"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["phone"] == "0911"
+    assert len(body["phones"]) == 1
+    assert body["phones"][0] == {"phone": "0911", "isPrimary": True}
+
+
+def test_search_by_secondary_phone_in_customer_phones(api_client):
+    """AC6 — search matches against customer_phones.phone, not just customers.phone."""
+    _create_customer_multi_phone(
+        api_client,
+        name="Khách phụ",
+        phones=[
+            {"phone": "0901234567", "isPrimary": True},
+            {"phone": "0912999888", "isPrimary": False},
+        ],
+    )
+    resp = api_client.get("/api/customers?search=0912999")
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) == 1
+    assert rows[0]["name"] == "Khách phụ"
+
+
+def test_delete_customer_cascades_to_customer_phones(api_client):
+    """FR9 — deleting customer removes all customer_phones rows."""
+    created = _create_customer_multi_phone(
+        api_client,
+        name="Xóa đa SĐT",
+        phones=[
+            {"phone": "0922111333", "isPrimary": True},
+            {"phone": "0922222444", "isPrimary": False},
+        ],
+    )
+    with get_db() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM customer_phones WHERE customer_id = ?",
+            (created["id"],),
+        ).fetchone()[0]
+        assert count == 2
+
+    resp = api_client.delete(f"/api/customers/{created['id']}")
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM customer_phones WHERE customer_id = ?",
+            (created["id"],),
+        ).fetchone()[0]
+        assert count == 0
+
+
+def test_shared_phone_visibility_uses_customer_phones(api_client):
+    """Shared phone banner should detect phones in customer_phones, not just customers.phone."""
+    _create_customer_multi_phone(
+        api_client,
+        name="Khách A",
+        phones=[{"phone": "0933000111", "isPrimary": True}],
+    )
+    resp = api_client.post(
+        "/api/customers",
+        json={
+            "name": "Khách B",
+            "phones": [{"phone": "0933000111", "isPrimary": True}],
+        },
+    )
+    assert resp.status_code == 201
+    shared = resp.json()["sharedPhoneCustomers"]
+    assert len(shared) == 1
+    assert shared[0]["name"] == "Khách A"
+
+
+def test_primary_phone_synced_to_customers_phone_on_update(api_client):
+    """NFR3 — customers.phone denormalized field stays in sync with primary phone."""
+    created = _create_customer_multi_phone(
+        api_client,
+        name="Đồng bộ",
+        phones=[{"phone": "0944000111", "isPrimary": True}],
+    )
+    api_client.patch(
+        f"/api/customers/{created['id']}",
+        json={
+            "phones": [
+                {"phone": "0944000222", "isPrimary": False},
+                {"phone": "0944000333", "isPrimary": True},
+            ]
+        },
+    )
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT phone FROM customers WHERE id = ?", (created["id"],)
+        ).fetchone()
+        assert row["phone"] == "0944000333"
