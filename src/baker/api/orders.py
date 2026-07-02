@@ -33,6 +33,60 @@ def _day_bounds(date_str: str) -> tuple[str, str]:
     return f"{date_str}T00:00:00", next_day.strftime("%Y-%m-%dT00:00:00")
 
 
+def _resolve_customer_id_by_phone(conn, phone: str) -> Optional[int]:
+    """Resolve a customer_id from a phone number via the ``customer_phones`` table.
+
+    DG-205 Phase 3 (FR8). Matches the normalized phone against every row in
+    ``customer_phones`` (not just the primary), so an order with a secondary
+    phone still links to the owning customer. When several customers share the
+    same phone, the earliest-order-wins rule (consistent with v57) picks the
+    customer whose earliest order has the smallest created_at/id.
+
+    Falls back to the legacy ``customers.phone`` column when ``customer_phones``
+    has no match (e.g. pre-v58 databases or customers created before Phase 1).
+    Returns ``None`` when no customer matches.
+    """
+    from baker.db.schema import _normalize_phone
+
+    nphone = _normalize_phone(phone or "")
+    if not nphone:
+        return None
+
+    # Primary path: match against customer_phones.phone (any row, normalized).
+    # SQLite stores phones as free text; we normalize for comparison, so the
+    # query pulls candidate rows and resolves the winner in Python to apply the
+    # earliest-order-wins tiebreak consistently with v57.
+    rows = conn.execute(
+        "SELECT DISTINCT cp.customer_id FROM customer_phones cp WHERE cp.phone = ?",
+        (nphone,),
+    ).fetchall()
+    if rows:
+        customer_ids = [r["customer_id"] for r in rows]
+        if len(customer_ids) == 1:
+            return customer_ids[0]
+        # FR8: multiple customers share the phone — earliest-order-wins. Pick
+        # the customer whose earliest order has the minimum created_at, then id.
+        placeholders = ",".join("?" for _ in customer_ids)
+        winner = conn.execute(
+            f"SELECT customer_id, MIN(created_at) AS first_at "
+            f"FROM orders WHERE customer_id IN ({placeholders}) "
+            f"GROUP BY customer_id ORDER BY first_at ASC, customer_id ASC LIMIT 1",
+            customer_ids,
+        ).fetchone()
+        if winner is not None:
+            return winner["customer_id"]
+        # No orders yet for any candidate — fall back to the lowest customer_id
+        # for deterministic behavior.
+        return min(customer_ids)
+
+    # Secondary path: legacy customers.phone fallback (pre-v58 / direct writes).
+    legacy = conn.execute(
+        "SELECT id FROM customers WHERE phone = ? ORDER BY id ASC LIMIT 1",
+        (nphone,),
+    ).fetchone()
+    return legacy["id"] if legacy else None
+
+
 class OrderItemIn(BaseModel):
     productId: str = ""
     productName: str
@@ -354,6 +408,12 @@ def create_order(body: OrderCreate, request: Request):
             exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (body.customerId,)).fetchone()
             if not exists:
                 raise HTTPException(status_code=422, detail="Khách hàng không tồn tại")
+        else:
+            # DG-205 Phase 3 (FR8): resolve customer_id from customerPhone via
+            # customer_phones when the caller did not pass an explicit customerId.
+            resolved = _resolve_customer_id_by_phone(conn, body.customerPhone)
+            if resolved is not None:
+                body.customerId = resolved
         public_order_code = _generate_unique_public_order_code(conn, body.dueDate, body.deliveryType)
         order = Order(
             customer_name=body.customerName,
@@ -490,6 +550,13 @@ def edit_order(ref: str, body: OrderEdit):
             exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (data["customerId"],)).fetchone()
             if not exists:
                 raise HTTPException(status_code=422, detail="Khách hàng không tồn tại")
+        elif "customerId" not in data and "customerPhone" in data and data["customerPhone"] is not None:
+            # DG-205 Phase 3 (FR8): phone changed without an explicit customerId —
+            # re-resolve the customer link against customer_phones. An explicit
+            # customerId (including null-to-unlink) is respected as-is.
+            resolved = _resolve_customer_id_by_phone(conn, data["customerPhone"])
+            if resolved is not None:
+                data["customerId"] = resolved
 
         updates = []
         params: list = []
