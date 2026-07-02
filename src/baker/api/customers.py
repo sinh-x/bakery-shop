@@ -6,7 +6,11 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, field_validator, model_validator
 
 from baker.db.connection import get_db
-from baker.models.customer import Customer, _load_customer_phones, _primary_phone
+from baker.models.customer import (
+    Customer,
+    _load_customer_phones_for_many,
+    _primary_phone,
+)
 from baker.models.order import Order
 
 
@@ -132,7 +136,14 @@ def list_customers(search: Optional[str] = Query(None, description="T√¨m theo t√
             rows = conn.execute(
                 "SELECT * FROM customers ORDER BY id DESC"
             ).fetchall()
-        return [Customer.from_row(r, conn).to_api_dict() for r in rows]
+        # Mn-3: batch-load phones for all returned customers in a single query
+        # instead of one query per customer via Customer.from_row(r, conn).
+        customers = [Customer.from_row(r) for r in rows]
+        phones_map = _load_customer_phones_for_many(conn, [c.id for c in customers if c.id is not None])
+        for c in customers:
+            if c.id is not None and c.id in phones_map:
+                c.phones = phones_map[c.id]
+        return [c.to_api_dict() for c in customers]
 
 
 @router.post("", status_code=201)

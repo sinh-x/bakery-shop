@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+import sqlite3
+
 from baker.db.schema import _normalize_phone
 from baker.utils.time import now_utc
 
@@ -79,12 +81,39 @@ def _load_customer_phones(conn, customer_id: int) -> list[dict]:
             "WHERE customer_id = ? ORDER BY is_primary DESC, id ASC",
             (customer_id,),
         ).fetchall()
-    except Exception:
+    except sqlite3.OperationalError:
         return []
     return [
         {"phone": r["phone"], "isPrimary": bool(r["is_primary"])}
         for r in rows
     ]
+
+
+def _load_customer_phones_for_many(conn, customer_ids: list[int]) -> dict[int, list[dict]]:
+    """Batch-load phones for multiple customers in a single query (avoids N+1).
+
+    Returns a mapping customer_id -> list of phone dicts (ordered is_primary DESC, id ASC).
+    Customers without phones map to [].
+    """
+    result: dict[int, list[dict]] = {cid: [] for cid in customer_ids}
+    if not customer_ids:
+        return result
+    try:
+        placeholders = ",".join("?" for _ in customer_ids)
+        rows = conn.execute(
+            f"SELECT customer_id, phone, is_primary FROM customer_phones "
+            f"WHERE customer_id IN ({placeholders}) "
+            f"ORDER BY is_primary DESC, id ASC",
+            tuple(customer_ids),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return result
+    for r in rows:
+        cid = r["customer_id"]
+        result.setdefault(cid, []).append(
+            {"phone": r["phone"], "isPrimary": bool(r["is_primary"])}
+        )
+    return result
 
 
 def _primary_phone(phones: list[dict]) -> str:
