@@ -826,6 +826,14 @@ class VN {
   static const customerSearchNoMatch = 'Không tìm thấy khách';
   static const customerSearchLoading = 'Đang tìm...';
 
+  // Customer form multi-phone (DG-205 Phase 5)
+  static const customerAddPhone = 'Thêm số điện thoại';
+  static const customerRemovePhone = 'Xóa số này';
+  static const customerPrimaryPhone = 'Số chính';
+  static const customerPhoneRequired = 'Cần ít nhất một số điện thoại';
+  static const customerPhonePrimaryRequired = 'Chọn một số làm số chính';
+  static const customerPhoneDuplicate = 'Số điện thoại bị trùng';
+
   // Accounting
   static const accountingTitle = 'Kế toán';
   static const accountingTabAccounts = 'Tài khoản';
