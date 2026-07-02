@@ -26,29 +26,46 @@ class CustomerService {
     return Customer.fromJson(response.data as Map<String, dynamic>);
   }
 
-  /// Create a customer with name (required) and phone (optional). Returns the
-  /// new customer plus other customers sharing the same phone (FR2, FR2a).
+  /// Create a customer with name (required), phone (optional, legacy), and
+  /// phones (optional, multi-phone). When [phones] is provided it is sent as
+  /// the `phones` array; otherwise the legacy [phone] string is sent. Returns
+  /// the new customer plus other customers sharing the same primary phone
+  /// (FR2, FR2a, FR4).
   Future<CustomerMutationResult> createCustomer({
     required String name,
     String phone = '',
+    List<CustomerPhone>? phones,
   }) async {
-    final response = await _dio.post('/api/customers', data: {
-      'name': name,
-      'phone': phone,
-    });
+    final body = <String, dynamic>{'name': name};
+    if (phones != null) {
+      body['phones'] = phones
+          .map((p) => {'phone': p.phone, 'isPrimary': p.isPrimary})
+          .toList();
+    } else {
+      body['phone'] = phone;
+    }
+    final response = await _dio.post('/api/customers', data: body);
     return _parseMutationResult(response.data as Map<String, dynamic>);
   }
 
-  /// Update name and/or phone. Returns the updated customer plus other
-  /// customers sharing the new phone (FR4, FR2a).
+  /// Update name, phone (legacy), and/or phones (multi-phone). When [phones]
+  /// is provided it replaces all existing phone rows (FR5). Returns the updated
+  /// customer plus other customers sharing the new primary phone (FR4, FR2a).
   Future<CustomerMutationResult> updateCustomer(
     int id, {
     String? name,
     String? phone,
+    List<CustomerPhone>? phones,
   }) async {
     final body = <String, dynamic>{};
     if (name != null) body['name'] = name;
-    if (phone != null) body['phone'] = phone;
+    if (phones != null) {
+      body['phones'] = phones
+          .map((p) => {'phone': p.phone, 'isPrimary': p.isPrimary})
+          .toList();
+    } else if (phone != null) {
+      body['phone'] = phone;
+    }
     final response = await _dio.patch('/api/customers/$id', data: body);
     return _parseMutationResult(response.data as Map<String, dynamic>);
   }

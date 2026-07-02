@@ -6,11 +6,23 @@ part 'customer.freezed.dart';
 part 'customer.g.dart';
 
 @freezed
+sealed class CustomerPhone with _$CustomerPhone {
+  const factory CustomerPhone({
+    required String phone,
+    @JsonKey(name: 'isPrimary') @Default(false) bool isPrimary,
+  }) = _CustomerPhone;
+
+  factory CustomerPhone.fromJson(Map<String, dynamic> json) =>
+      _$CustomerPhoneFromJson(json);
+}
+
+@freezed
 sealed class Customer with _$Customer {
   const factory Customer({
     required int id,
     required String name,
     @Default('') String phone,
+    @Default(<CustomerPhone>[]) List<CustomerPhone> phones,
     @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)
     DateTime? createdAt,
     @JsonKey(name: 'updatedAt', fromJson: parseApiDateTime, toJson: timestampToJson)
