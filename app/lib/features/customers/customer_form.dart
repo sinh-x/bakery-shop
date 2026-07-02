@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/customer_service.dart';
 import '../../data/models/customer.dart';
 import '../../providers/customers_provider.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
+import 'widgets/phone_entry_row.dart';
 
 /// Show the add/edit customer bottom sheet.
 ///
@@ -23,16 +23,6 @@ Future<bool?> showCustomerForm(
   );
 }
 
-/// A single editable phone row (controller + primary flag).
-class _PhoneEntry {
-  _PhoneEntry({required this.controller, this.isPrimary = false});
-
-  final TextEditingController controller;
-  bool isPrimary;
-
-  void dispose() => controller.dispose();
-}
-
 class _CustomerForm extends ConsumerStatefulWidget {
   const _CustomerForm({this.customer});
 
@@ -45,7 +35,7 @@ class _CustomerForm extends ConsumerStatefulWidget {
 class _CustomerFormState extends ConsumerState<_CustomerForm> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
-  final List<_PhoneEntry> _phones = [];
+  final List<PhoneEntry> _phones = [];
   bool _saving = false;
   List<Customer> _sharedPhone = const [];
 
@@ -63,7 +53,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
     if (phones.isNotEmpty) {
       for (final p in phones) {
         _phones.add(
-          _PhoneEntry(
+          PhoneEntry(
             controller: TextEditingController(text: p.phone),
             isPrimary: p.isPrimary,
           ),
@@ -72,7 +62,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
     } else {
       final legacy = c?.phone ?? '';
       _phones.add(
-        _PhoneEntry(
+        PhoneEntry(
           controller: TextEditingController(text: legacy),
           isPrimary: legacy.isNotEmpty,
         ),
@@ -96,7 +86,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
 
   void _addPhone() {
     setState(() {
-      _phones.add(_PhoneEntry(controller: TextEditingController()));
+      _phones.add(PhoneEntry(controller: TextEditingController()));
     });
   }
 
@@ -250,7 +240,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
               ),
               const SizedBox(height: 12),
               for (var i = 0; i < _phones.length; i++)
-                _PhoneRow(
+                PhoneEntryRow(
                   key: ValueKey('phone-$i-${_phones.length}'),
                   entry: _phones[i],
                   canRemove: _phones.length > 1,
@@ -295,67 +285,6 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// A single phone row: text field + primary radio + remove button.
-class _PhoneRow extends StatelessWidget {
-  const _PhoneRow({
-    super.key,
-    required this.entry,
-    required this.canRemove,
-    required this.onRemove,
-    required this.onSetPrimary,
-  });
-
-  final _PhoneEntry entry;
-  final bool canRemove;
-  final VoidCallback onRemove;
-  final VoidCallback onSetPrimary;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: TextFormField(
-              controller: entry.controller,
-              keyboardType: TextInputType.phone,
-              inputFormatters: [
-                LengthLimitingTextInputFormatter(20),
-              ],
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                labelText: VN.customerPhoneField,
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Primary radio toggle. Selecting this row deselects all others.
-          Tooltip(
-            message: VN.customerPrimaryPhone,
-            child: IconButton(
-              onPressed: onSetPrimary,
-              icon: Icon(
-                entry.isPrimary ? Icons.star : Icons.star_border,
-              ),
-              color: entry.isPrimary
-                  ? Theme.of(context).colorScheme.primary
-                  : null,
-            ),
-          ),
-          IconButton(
-            onPressed: canRemove ? onRemove : null,
-            tooltip: VN.customerRemovePhone,
-            icon: const Icon(Icons.remove_circle_outline),
-          ),
-        ],
       ),
     );
   }

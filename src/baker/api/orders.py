@@ -80,8 +80,13 @@ def _resolve_customer_id_by_phone(conn, phone: str) -> Optional[int]:
         return min(customer_ids)
 
     # Secondary path: legacy customers.phone fallback (pre-v58 / direct writes).
+    # M-1: normalize the stored column at query time so legacy rows that still
+    # contain separators (dashes/dots/spaces) match the normalized search value.
+    # This mirrors _normalize_phone (strip spaces, dots, dashes) in SQL.
     legacy = conn.execute(
-        "SELECT id FROM customers WHERE phone = ? ORDER BY id ASC LIMIT 1",
+        "SELECT id FROM customers "
+        "WHERE REPLACE(REPLACE(REPLACE(phone, ' ', ''), '.', ''), '-', '') = ? "
+        "ORDER BY id ASC LIMIT 1",
         (nphone,),
     ).fetchone()
     return legacy["id"] if legacy else None

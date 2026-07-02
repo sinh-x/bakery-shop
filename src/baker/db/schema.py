@@ -3041,9 +3041,15 @@ def _migrate_v58_customer_phones(conn):
         phone = crow["phone"]
         if cust_id in customers_with_phones:
             continue
+        # M-1: normalize the backfilled phone so customer_phones rows are
+        # consistent with rows written by _sync_customer_phones (which now
+        # applies _normalize_phone). Legacy customers.phone is left as-is.
+        nphone = _normalize_phone(phone)
+        if not nphone:
+            continue
         conn.execute(
             "INSERT INTO customer_phones (customer_id, phone, is_primary) VALUES (?, ?, 1)",
-            (cust_id, phone),
+            (cust_id, nphone),
         )
         customers_with_phones.add(cust_id)
         migrated += 1

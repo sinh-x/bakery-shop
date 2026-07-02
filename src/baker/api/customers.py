@@ -90,14 +90,20 @@ def _find_customers_sharing_phone(conn, phone: str, exclude_id: int) -> list[dic
     """Return other customers sharing the given phone (excluding exclude_id)."""
     if not phone:
         return []
+    # M-1: stored phones are normalized, so normalize the search value too.
+    from baker.db.schema import _normalize_phone
+
+    nphone = _normalize_phone(phone)
+    if not nphone:
+        return []
     rows = conn.execute(
         "SELECT DISTINCT c.* FROM customers c "
         "JOIN customer_phones cp ON cp.customer_id = c.id "
         "WHERE cp.phone = ? AND cp.phone != '' AND c.id != ? "
         "ORDER BY c.id",
-        (phone, exclude_id),
+        (nphone, exclude_id),
     ).fetchall()
-    return [Customer.from_row(r).to_api_dict() for r in rows]
+    return [Customer.from_row(r, conn).to_api_dict() for r in rows]
 
 
 def _customer_response(conn, customer: Customer) -> dict:

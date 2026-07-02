@@ -2197,3 +2197,45 @@ def test_create_order_legacy_customers_phone_fallback(api_client):
         customerPhone="8499990000",
     )
     assert order["customerId"] == legacy_id
+
+
+def test_create_order_links_customer_when_stored_phone_has_separators(api_client):
+    """M-1 (review-auto) — order matches a customer whose stored phone contains
+    separators (dashes/dots/spaces).
+
+    Before the fix, _resolve_customer_id_by_phone normalized the search value
+    but compared it against the raw (un-normalized) stored value, so phones
+    saved with formatting never matched. Now _sync_customer_phones and
+    Customer.save/update normalize on write, and the legacy fallback query
+    normalizes the stored column at query time.
+    """
+    # Create a customer via the API with a phone containing dashes/spaces.
+    cust = _create_customer_with_phones(
+        api_client,
+        "Tách Dấu",
+        [{"phone": "84-912 345.678", "isPrimary": True}],
+    )
+    # An order with the same digits in a different format must link.
+    order = _create_order(
+        api_client,
+        customer="Tách Dấu",
+        customerPhone="84912345678",
+    )
+    assert order["customerId"] == cust["id"]
+
+
+def test_legacy_fallback_matches_phone_with_separators(api_client):
+    """M-1 (review-auto) — the legacy customers.phone fallback normalizes the
+    stored column at query time so rows written with separators still match."""
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO customers (name, phone, created_at) VALUES (?, ?, ?)",
+            ("Legacy Formatted", "84-999.000 00", "2026-06-01T00:00:00"),
+        )
+        legacy_id = cur.lastrowid
+    order = _create_order(
+        api_client,
+        customer="Legacy Formatted",
+        customerPhone="8499900000",
+    )
+    assert order["customerId"] == legacy_id

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+from baker.db.schema import _normalize_phone
 from baker.utils.time import now_utc
 
 
@@ -14,10 +15,13 @@ class Customer:
     phones: list[dict] = field(default_factory=list)
 
     def save(self, conn) -> int:
+        # M-1: store the normalized phone in the legacy `customers.phone`
+        # column so the fallback query in _resolve_customer_id_by_phone can
+        # match it directly against the normalized search value.
         cursor = conn.execute(
             "INSERT INTO customers (name, phone, created_at, updated_at) "
             "VALUES (?, ?, ?, ?)",
-            (self.name, self.phone, now_utc(), now_utc()),
+            (self.name, _normalize_phone(self.phone), now_utc(), now_utc()),
         )
         self.id = cursor.lastrowid
         _sync_customer_phones(conn, self.id, self.phones)
@@ -39,7 +43,7 @@ class Customer:
             self.phone = _primary_phone(phones) or self.phone
         conn.execute(
             "UPDATE customers SET name = ?, phone = ?, updated_at = ? WHERE id = ?",
-            (self.name, self.phone, now_utc(), self.id),
+            (self.name, _normalize_phone(self.phone), now_utc(), self.id),
         )
         if phones is not None:
             _sync_customer_phones(conn, self.id, phones)
@@ -92,20 +96,24 @@ def _primary_phone(phones: list[dict]) -> str:
 
 def _sync_customer_phones(conn, customer_id: int, phones: list[dict]) -> None:
     # Guard: customer_phones table may not exist yet during pre-v58 migrations.
+    import sqlite3
+
     try:
         conn.execute("SELECT 1 FROM customer_phones LIMIT 1").fetchone()
-    except Exception:
+    except sqlite3.OperationalError:
         return
     conn.execute(
         "DELETE FROM customer_phones WHERE customer_id = ?", (customer_id,)
     )
     for p in phones:
+        # M-1: store the normalized phone so order-customer matching (which
+        # normalizes the search value) can find it regardless of separators.
         conn.execute(
             "INSERT INTO customer_phones (customer_id, phone, is_primary) "
             "VALUES (?, ?, ?)",
             (
                 customer_id,
-                p.get("phone", ""),
+                _normalize_phone(p.get("phone", "")),
                 1 if p.get("isPrimary") else 0,
             ),
         )
