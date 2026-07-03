@@ -8,6 +8,12 @@ from pydantic import BaseModel
 
 import baker.config
 from baker.code_gen import generate_code, get_category_prefix
+
+_BS = "\\"
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("%", _BS + "%").replace("_", _BS + "_")
 from baker.db.connection import get_db
 from baker.api.photos import read_image_upload, save_photo
 
@@ -193,7 +199,7 @@ def list_products(
 
         if code:
             conditions.append("p.product_code LIKE ?")
-            params.append(f"%{code}%")
+            params.append(f"%{_escape_like(code)}%")
 
         joins.append(
             """LEFT JOIN (

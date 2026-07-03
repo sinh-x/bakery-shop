@@ -3,6 +3,12 @@
 import json
 from datetime import datetime, timedelta, timezone
 
+_BS = "\\"
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("%", _BS + "%").replace("_", _BS + "_")
+
 
 def today_range():
     """Return (start, end) UTC ISO strings for the current UTC day.
@@ -112,7 +118,7 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
     if tags:
         for tag in tags:
             conditions.append("(',' || e.tags || ',') LIKE ?")
-            params.append(f"%,{tag},%")
+            params.append(f"%,{_escape_like(tag)},%")
     if since:
         conditions.append("e.timestamp >= ?")
         params.append(since)
@@ -121,7 +127,7 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
         params.append(until)
     if search:
         conditions.append("e.summary LIKE ?")
-        params.append(f"%{search}%")
+        params.append(f"%{_escape_like(search)}%")
     if untagged:
         conditions.append("(e.tags = '' OR e.tags IS NULL)")
     if logged_by:

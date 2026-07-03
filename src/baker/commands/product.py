@@ -6,6 +6,12 @@ from baker.code_gen import generate_code, get_category_prefix
 
 from rich.table import Table
 
+_BS = "\\"
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("%", _BS + "%").replace("_", _BS + "_")
+
 
 @click.group("product")
 def product_cmd():
@@ -58,7 +64,7 @@ def product_list(category, code_filter):
             params.append(category)
         if code_filter:
             conditions.append("product_code LIKE ?")
-            params.append(f"%{code_filter}%")
+            params.append(f"%{_escape_like(code_filter)}%")
 
         where = " AND ".join(conditions)
         rows = conn.execute(

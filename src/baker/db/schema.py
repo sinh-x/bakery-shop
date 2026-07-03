@@ -2956,6 +2956,11 @@ def _migrate_v57_generate_customers_from_orders(conn):
             # Track the new customer so a later phone group can reuse it.
             if phone_assigned:
                 existing_phones[nphone] = cust_id
+            # Also register the name so phone-less orders with the same name
+            # reuse this customer instead of creating a duplicate.
+            name_key = (resolved_name or "Khách").strip().lower()
+            if name_key and name_key not in existing_names:
+                existing_names[name_key] = cust_id
             for oid, _name in gorders:
                 _link_order(conn, oid, cust_id)
 
@@ -2999,6 +3004,64 @@ def _migrate_v57_generate_customers_from_orders(conn):
 
     # FR9: summary log.
     logger.info("Đã tạo %d khách hàng, liên kết %d đơn hàng.", customers_created, orders_linked)
+
+
+def _migrate_v59_deduplicate_customers(conn):
+    """Merge duplicate customers that share the same case-insensitive name.
+
+    DG-205 follow-up. v57 could create duplicate customers when phone-having
+    and phone-less orders shared the same name but the name was not tracked in
+    ``existing_names`` (fixed in v57 itself, but existing DBs may have dupes).
+    This migration groups customers by case-insensitive trimmed name, keeps the
+    one with the most orders (earliest id as tiebreak), reassigns all orders
+    from duplicates to the winner, and deletes the duplicates. Idempotent:
+    re-running when no duplicates exist is a no-op.
+    """
+    import logging
+
+    logger = logging.getLogger("baker.db")
+
+    # Group customers by case-insensitive trimmed name.
+    rows = conn.execute(
+        "SELECT id, name FROM customers ORDER BY id ASC"
+    ).fetchall()
+    name_groups: dict[str, list[int]] = {}
+    for row in rows:
+        key = (row["name"] or "").strip().lower()
+        if not key:
+            continue
+        name_groups.setdefault(key, []).append(row["id"])
+
+    merged = 0
+    for key, ids in name_groups.items():
+        if len(ids) <= 1:
+            continue
+        # Keep the customer with the most orders; earliest id breaks ties.
+        best_id = ids[0]
+        best_count = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (best_id,)
+        ).fetchone()[0]
+        for cid in ids[1:]:
+            cnt = conn.execute(
+                "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (cid,)
+            ).fetchone()[0]
+            if cnt > best_count:
+                best_id = cid
+                best_count = cnt
+        # Reassign orders from duplicates to the winner.
+        for cid in ids:
+            if cid == best_id:
+                continue
+            conn.execute(
+                "UPDATE orders SET customer_id = ? WHERE customer_id = ?",
+                (best_id, cid),
+            )
+            conn.execute("DELETE FROM customer_phones WHERE customer_id = ?", (cid,))
+            conn.execute("DELETE FROM customers WHERE id = ?", (cid,))
+            merged += 1
+
+    if merged:
+        logger.info("Đã gộp %d khách hàng trùng tên.", merged)
 
 
 def _migrate_v58_customer_phones(conn):
@@ -3331,6 +3394,11 @@ MIGRATIONS = {
         "description": "Customer multi-phone: customer_phones table + migrate existing customers.phone as primary phone, idempotent re-run (DG-205 Phase 1)",
         "sql": CUSTOMER_PHONES_SCHEMA,
         "callable": _migrate_v58_customer_phones,
+    },
+    59: {
+        "description": "Deduplicate customers with same case-insensitive name — merge orders, keep most-active, delete dupes (DG-205 follow-up)",
+        "sql": "",
+        "callable": _migrate_v59_deduplicate_customers,
     },
 }
 

@@ -1,6 +1,7 @@
 """Order management API routes."""
 
 import json
+import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -56,10 +57,13 @@ def _resolve_customer_id_by_phone(conn, phone: str) -> Optional[int]:
     # SQLite stores phones as free text; we normalize for comparison, so the
     # query pulls candidate rows and resolves the winner in Python to apply the
     # earliest-order-wins tiebreak consistently with v57.
-    rows = conn.execute(
-        "SELECT DISTINCT cp.customer_id FROM customer_phones cp WHERE cp.phone = ?",
-        (nphone,),
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT cp.customer_id FROM customer_phones cp WHERE cp.phone = ?",
+            (nphone,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
     if rows:
         customer_ids = [r["customer_id"] for r in rows]
         if len(customer_ids) == 1:

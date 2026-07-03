@@ -3,6 +3,12 @@
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+
+_BS = "\\"
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("%", _BS + "%").replace("_", _BS + "_")
 from pydantic import BaseModel, field_validator, model_validator
 
 from baker.db.connection import get_db
@@ -124,7 +130,8 @@ def list_customers(search: Optional[str] = Query(None, description="Tìm theo t�
     """Danh sách khách hàng, hỗ trợ tìm kiếm partial theo tên/SĐT (FR1, FR7)."""
     with get_db() as conn:
         if search and search.strip():
-            like = f"%{search.strip()}%"
+            escaped = _escape_like(search.strip())
+            like = f"%{escaped}%"
             rows = conn.execute(
                 "SELECT DISTINCT c.* FROM customers c "
                 "LEFT JOIN customer_phones cp ON cp.customer_id = c.id "

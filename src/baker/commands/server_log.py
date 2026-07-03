@@ -8,6 +8,12 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+_BS = "\\"
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("%", _BS + "%").replace("_", _BS + "_")
+
 from baker.db.connection import get_db
 
 console = Console()
@@ -47,7 +53,7 @@ def list_logs(
         params.append(level.upper())
     if path_filter:
         conditions.append("path LIKE ?")
-        params.append(f"%{path_filter}%")
+        params.append(f"%{_escape_like(path_filter)}%")
     if status_code is not None:
         conditions.append("status_code = ?")
         params.append(status_code)
@@ -62,7 +68,7 @@ def list_logs(
         params.append(ref_id)
     if device:
         conditions.append("device_model LIKE ?")
-        params.append(f"%{device}%")
+        params.append(f"%{_escape_like(device)}%")
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -154,12 +160,13 @@ def tail_logs(interval: float):
 @click.option("--limit", default=50, help="Max results")
 def search_logs(query: str, limit: int):
     """Full-text search across log messages and details."""
+    escaped = _escape_like(query)
     with get_db() as conn:
         rows = conn.execute(
             "SELECT * FROM server_logs "
             "WHERE message LIKE ? OR detail LIKE ? "
             "ORDER BY id DESC LIMIT ?",
-            (f"%{query}%", f"%{query}%", limit),
+            (f"%{escaped}%", f"%{escaped}%", limit),
         ).fetchall()
 
     if not rows:
