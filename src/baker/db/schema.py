@@ -1,3 +1,6 @@
+from typing import Optional
+
+
 INITIAL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3120,6 +3123,92 @@ def _migrate_v58_customer_phones(conn):
     logger.info("Đã chuyển %d số điện thoại vào customer_phones.", migrated)
 
 
+CUSTOMER_YEAR_SUMMARY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS customer_year_summary (
+    customer_id  INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    year         INTEGER NOT NULL,
+    order_count  INTEGER NOT NULL DEFAULT 0,
+    total_volume REAL    NOT NULL DEFAULT 0,
+    PRIMARY KEY (customer_id, year)
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_year_summary_customer
+    ON customer_year_summary(customer_id);
+"""
+
+
+def _order_year(created_at: str) -> Optional[int]:
+    """Extract the calendar year from an orders.created_at timestamp.
+
+    created_at is stored as ISO-8601 UTC ('YYYY-MM-DDTHH:MM:SS...Z'). Returns
+    ``None`` when the value is empty or malformed.
+    """
+    if not created_at:
+        return None
+    # The year is the first 4 chars of the ISO timestamp; validate it is numeric.
+    year_str = created_at[:4]
+    if len(year_str) != 4 or not year_str.isdigit():
+        return None
+    return int(year_str)
+
+
+def _recompute_customer_year_summary(conn, customer_id, year) -> None:
+    """Recompute one (customer_id, year) row from scratch.
+
+    Counts orders and sums total_price for the given customer and year. The
+    row is deleted then re-inserted so it always reflects the current state of
+    ``orders``. Safe to call inside an existing order transaction (NFR2: a
+    single UPSERT within the same transaction adds negligible latency).
+    """
+    if customer_id is None or year is None:
+        return
+    conn.execute(
+        "DELETE FROM customer_year_summary WHERE customer_id = ? AND year = ?",
+        (customer_id, year),
+    )
+    row = conn.execute(
+        "SELECT COUNT(*) AS c, COALESCE(SUM(total_price), 0) AS v "
+        "FROM orders WHERE customer_id = ? "
+        "  AND CAST(strftime('%Y', created_at) AS INTEGER) = ?",
+        (customer_id, int(year)),
+    ).fetchone()
+    order_count = int(row["c"] or 0)
+    total_volume = float(row["v"] or 0)
+    conn.execute(
+        "INSERT INTO customer_year_summary (customer_id, year, order_count, total_volume) "
+        "VALUES (?, ?, ?, ?)",
+        (int(customer_id), int(year), order_count, total_volume),
+    )
+
+
+def _migrate_v60_customer_year_summary(conn):
+    """Create ``customer_year_summary`` and backfill it from existing orders.
+
+    DG-206 Phase 1 (FR6, NFR2). The table stores one row per
+    (customer_id, year) with the order count and total volume. Idempotent:
+    re-running on an already-backfilled DB is a no-op (CREATE TABLE IF NOT
+    EXISTS plus a guarded backfill that only inserts when the row is absent).
+    """
+    # Backfill: one pass over orders grouped by (customer_id, year) where the
+    # summary row does not yet exist. Guard with NOT EXISTS so a partial run
+    # does not double-count.
+    conn.execute(
+        """
+        INSERT INTO customer_year_summary (customer_id, year, order_count, total_volume)
+        SELECT o.customer_id,
+               CAST(strftime('%Y', o.created_at) AS INTEGER) AS year,
+               COUNT(*)   AS order_count,
+               COALESCE(SUM(o.total_price), 0) AS total_volume
+        FROM orders o
+        WHERE o.customer_id IS NOT NULL
+          AND o.created_at IS NOT NULL
+          AND o.created_at != ''
+        GROUP BY o.customer_id, year
+        ON CONFLICT(customer_id, year) DO NOTHING
+        """
+    )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -3399,6 +3488,11 @@ MIGRATIONS = {
         "description": "Deduplicate customers with same case-insensitive name — merge orders, keep most-active, delete dupes (DG-205 follow-up)",
         "sql": "",
         "callable": _migrate_v59_deduplicate_customers,
+    },
+    60: {
+        "description": "Customer yearly summary table (customer_year_summary) for order count + total volume per year, backfill from existing orders (DG-206 Phase 1)",
+        "sql": CUSTOMER_YEAR_SUMMARY_SCHEMA,
+        "callable": _migrate_v60_customer_year_summary,
     },
 }
 

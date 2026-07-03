@@ -16,6 +16,7 @@ from baker.models.customer import (
     Customer,
     _load_customer_phones_for_many,
     _primary_phone,
+    load_year_summary,
 )
 from baker.models.order import Order
 
@@ -168,12 +169,18 @@ def create_customer(body: CustomerCreate):
 
 @router.get("/{customer_id}")
 def get_customer(customer_id: int):
-    """Chi tiết một khách hàng (FR3, FR6)."""
+    """Chi tiết một khách hàng (FR3, FR6, FR7 — includes yearSummary)."""
     with get_db() as conn:
         row = conn.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy khách hàng")
-        return Customer.from_row(row, conn).to_api_dict()
+        customer = Customer.from_row(row, conn)
+        # DG-206 FR7/AC5: include the current year's order count + total volume.
+        from datetime import datetime, timezone
+
+        current_year = datetime.now(timezone.utc).year
+        customer.year_summary = load_year_summary(conn, customer_id, current_year)
+        return customer.to_api_dict()
 
 
 @router.patch("/{customer_id}")

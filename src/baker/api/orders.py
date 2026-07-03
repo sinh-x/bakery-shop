@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
+from baker.db.schema import _order_year, _recompute_customer_year_summary
 from baker.logging import log_context, logger
 from baker.models.order import (
     PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN,
@@ -503,6 +504,12 @@ def create_order(body: OrderCreate, request: Request):
             )
 
         log_context(request, ref_type="order", ref_id=order.id)
+        # DG-206 FR6/NFR2: keep customer_year_summary in sync within the same
+        # order transaction (single UPSERT-equivalent recompute, <50ms overhead).
+        if body.customerId is not None:
+            _recompute_customer_year_summary(
+                conn, body.customerId, _order_year(order.created_at or now_utc())
+            )
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
         return _order_detail(conn, row)
 
@@ -740,6 +747,32 @@ def edit_order(ref: str, body: OrderEdit):
                 public_code_update["currentCode"],
                 changed_by,
             )
+
+        # DG-206 FR6/NFR2: recompute customer_year_summary when the order's
+        # customer link or total volume may have changed. Recompute both the
+        # old and new (customer_id, year) rows within the same transaction.
+        old_customer_id = row["customer_id"]
+        old_year = _order_year(row["created_at"] or "")
+        new_customer_id = data.get("customerId", old_customer_id)
+        # customerId may be sent as null to unlink — treat absent as unchanged.
+        if "customerId" not in data:
+            new_customer_id = old_customer_id
+        # Recompute the affected rows. items/shipping_fee changes affect the
+        # order's own (customer_id, year) row; a customer_id change affects both
+        # the old and new customer rows for the order's year.
+        if (
+            items_changed
+            or shipping_fee_changed
+            or ("customerId" in data)
+        ):
+            if old_customer_id is not None and old_year is not None:
+                _recompute_customer_year_summary(conn, old_customer_id, old_year)
+            if (
+                new_customer_id is not None
+                and new_customer_id != old_customer_id
+                and old_year is not None
+            ):
+                _recompute_customer_year_summary(conn, new_customer_id, old_year)
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         response = _order_detail(conn, updated)

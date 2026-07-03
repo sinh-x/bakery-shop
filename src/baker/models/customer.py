@@ -15,6 +15,10 @@ class Customer:
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     phones: list[dict] = field(default_factory=list)
+    # DG-206 FR7: per-year order count + total volume for the current year.
+    # Populated by GET /api/customers/:id (or other callers with a conn) via
+    # ``load_year_summary``; left as None when not requested.
+    year_summary: Optional[dict] = None
 
     def save(self, conn) -> int:
         # M-1: store the normalized phone in the legacy `customers.phone`
@@ -64,7 +68,7 @@ class Customer:
         return customer
 
     def to_api_dict(self) -> dict:
-        return {
+        result = {
             "id": self.id,
             "name": self.name,
             "phone": self.phone,
@@ -72,6 +76,9 @@ class Customer:
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
         }
+        if self.year_summary is not None:
+            result["yearSummary"] = self.year_summary
+        return result
 
 
 def _load_customer_phones(conn, customer_id: int) -> list[dict]:
@@ -87,6 +94,29 @@ def _load_customer_phones(conn, customer_id: int) -> list[dict]:
         {"phone": r["phone"], "isPrimary": bool(r["is_primary"])}
         for r in rows
     ]
+
+
+def load_year_summary(conn, customer_id: int, year: int) -> dict:
+    """Load the (customer_id, year) row from ``customer_year_summary``.
+
+    DG-206 FR7. Returns ``{"year": <year>, "orderCount": N, "totalVolume": X}``
+    with zeros when no row exists yet (e.g. a fresh customer with no orders).
+    """
+    try:
+        row = conn.execute(
+            "SELECT order_count, total_volume FROM customer_year_summary "
+            "WHERE customer_id = ? AND year = ?",
+            (customer_id, int(year)),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        row = None
+    if row is None:
+        return {"year": int(year), "orderCount": 0, "totalVolume": 0.0}
+    return {
+        "year": int(year),
+        "orderCount": int(row["order_count"] or 0),
+        "totalVolume": float(row["total_volume"] or 0),
+    }
 
 
 def _load_customer_phones_for_many(conn, customer_ids: list[int]) -> dict[int, list[dict]]:
