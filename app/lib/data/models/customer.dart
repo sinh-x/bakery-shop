@@ -16,6 +16,23 @@ sealed class CustomerPhone with _$CustomerPhone {
       _$CustomerPhoneFromJson(json);
 }
 
+/// Per-customer per-year order summary (DG-206 FR7).
+///
+/// Returned by `GET /api/customers/:id` as the `yearSummary` field. Contains
+/// the current year's order count and total volume for display in customer
+/// cards across order screens.
+@freezed
+sealed class CustomerYearSummary with _$CustomerYearSummary {
+  const factory CustomerYearSummary({
+    required int year,
+    @JsonKey(name: 'orderCount') @Default(0) int orderCount,
+    @JsonKey(name: 'totalVolume') @Default(0.0) double totalVolume,
+  }) = _CustomerYearSummary;
+
+  factory CustomerYearSummary.fromJson(Map<String, dynamic> json) =>
+      _$CustomerYearSummaryFromJson(json);
+}
+
 @freezed
 sealed class Customer with _$Customer {
   const factory Customer({
@@ -27,6 +44,10 @@ sealed class Customer with _$Customer {
     DateTime? createdAt,
     @JsonKey(name: 'updatedAt', fromJson: parseApiDateTime, toJson: timestampToJson)
     DateTime? updatedAt,
+    /// Per-year order summary from backend `customer_year_summary` table
+    /// (DG-206 Phase 1). Only populated by `GET /api/customers/:id`; list
+    /// responses do not include it.
+    @JsonKey(name: 'yearSummary') CustomerYearSummary? yearSummary,
   }) = _Customer;
 
   factory Customer.fromJson(Map<String, dynamic> json) =>
