@@ -19,6 +19,7 @@ class CustomerSearchField extends ConsumerStatefulWidget {
     super.key,
     this.onSelected,
     this.initialCustomer,
+    this.controller,
     this.labelText,
     this.hintText,
   });
@@ -29,6 +30,12 @@ class CustomerSearchField extends ConsumerStatefulWidget {
 
   /// Pre-selected customer (used when editing an existing order).
   final Customer? initialCustomer;
+
+  /// Optional external controller. When provided, the field uses this
+  /// controller instead of an internal one so the parent can read the typed
+  /// text (e.g. for the walk-in name in order create). When null, an internal
+  /// controller is created and disposed with the widget.
+  final TextEditingController? controller;
 
   /// Optional label override; defaults to the shared VN label.
   final String? labelText;
@@ -42,7 +49,8 @@ class CustomerSearchField extends ConsumerStatefulWidget {
 }
 
 class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
-  final TextEditingController _ctrl = TextEditingController();
+  late final TextEditingController _ctrl =
+      widget.controller ?? TextEditingController();
   final FocusNode _focus = FocusNode();
   final LayerLink _layerLink = LayerLink();
   OverlayEntry? _overlay;
@@ -67,7 +75,11 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
   void dispose() {
     _debounce?.cancel();
     _hideOverlay();
-    _ctrl.dispose();
+    // Only dispose the internal controller; external controllers are owned by
+    // the parent widget.
+    if (widget.controller == null) {
+      _ctrl.dispose();
+    }
     _focus.dispose();
     super.dispose();
   }

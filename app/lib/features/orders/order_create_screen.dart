@@ -8,6 +8,7 @@ import '../../data/api/payment_transaction_service.dart';
 import '../../data/api/work_item_service.dart';
 import '../../data/models/customer.dart';
 import '../../data/models/product.dart';
+import '../../features/customers/widgets/customer_profile_card.dart';
 import '../../features/customers/widgets/customer_search_field.dart';
 import '../../providers/config_provider.dart';
 import '../../providers/events_provider.dart';
@@ -549,6 +550,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: CustomerSearchField(
+                controller: _nameCtrl,
                 onSelected: (c) => setState(() {
                   _selectedCustomer = c;
                   if (c != null) {
@@ -558,19 +560,16 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                 }),
               ),
             ),
-            TextFormField(
-              controller: _nameCtrl,
-              decoration: const InputDecoration(
-                labelText: VN.customerName,
-                border: OutlineInputBorder(),
+            if (_selectedCustomer != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: CustomerProfileCard(
+                  customer: _selectedCustomer!,
+                  mode: CustomerProfileCardMode.compact,
+                  onTap: () =>
+                      context.push('/customers/${_selectedCustomer!.id}'),
+                ),
               ),
-              textCapitalization: TextCapitalization.words,
-              onChanged: (_) {
-                if (_selectedCustomer != null) {
-                  setState(() => _selectedCustomer = null);
-                }
-              },
-            ),
             const SizedBox(height: 20),
 
             // ── Products ──────────────────────────────────────────────
