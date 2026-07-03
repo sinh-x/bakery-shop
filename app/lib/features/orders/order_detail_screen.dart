@@ -15,6 +15,7 @@ import '../../data/models/order_photo.dart';
 import '../../data/models/payment_transaction.dart';
 import '../../data/models/product.dart';
 import '../../data/models/work_item.dart';
+import '../../providers/customers_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
@@ -30,6 +31,7 @@ import 'widgets/enum_attribute_display.dart';
 import 'widgets/order_photo_section.dart';
 import 'widgets/section_header.dart';
 import 'widgets/rut_tien_section.dart';
+import '../customers/widgets/customer_profile_card.dart';
 
 const _workItemStatusColors = {
   'pending': Colors.grey,
@@ -590,69 +592,73 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             publicOrderCode: order.publicOrderCode,
           ),
         ),
-        _InfoRow(
-          icon: Icons.person_outline,
-          label: VN.customerName,
-          value: order.customerName,
-        ),
+        if (order.customerId != null)
+          _CustomerCard(customerId: order.customerId!)
+        else ...[
+          _InfoRow(
+            icon: Icons.person_outline,
+            label: VN.customerName,
+            value: order.customerName,
+          ),
+          if (order.customerPhone.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.phone_outlined,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 96,
+                    child: Text(
+                      VN.customerPhone,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        final digits = order.customerPhone.replaceAll(
+                          RegExp(r'\D'),
+                          '',
+                        );
+                        launchUrl(Uri.parse('tel:$digits'));
+                      },
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            formatPhone(order.customerPhone),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.phone,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
         if (order.source.isNotEmpty)
           _InfoRow(
             icon: Icons.campaign_outlined,
             label: VN.orderSource,
             value: order.source,
-          ),
-        if (order.customerPhone.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.phone_outlined,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: 96,
-                  child: Text(
-                    VN.customerPhone,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      final digits = order.customerPhone.replaceAll(
-                        RegExp(r'\D'),
-                        '',
-                      );
-                      launchUrl(Uri.parse('tel:$digits'));
-                    },
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          formatPhone(order.customerPhone),
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          Icons.phone,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ),
         if (order.dueDate != null)
           _InfoRow(
@@ -1081,6 +1087,48 @@ class _InfoRow extends StatelessWidget {
           ),
           Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
         ],
+      ),
+    );
+  }
+}
+
+/// Customer profile card section for the order detail screen (DG-206 FR1/FR5).
+///
+/// When [Order.customerId] is set, fetches the full [Customer] record from the
+/// API via [customerProvider] and renders a tappable [CustomerProfileCard] that
+/// navigates to `/customers/:id`. Uses [AsyncValue.when] so the fetch does not
+/// block screen render: a loading skeleton is shown while the request is in
+/// flight, and a silent `SizedBox.shrink()` is rendered on error.
+class _CustomerCard extends ConsumerWidget {
+  const _CustomerCard({required this.customerId});
+
+  final int customerId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final customerAsync = ref.watch(customerProvider(customerId));
+    return customerAsync.when(
+      loading: () => Card(
+        margin: const EdgeInsets.all(16),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+          ),
+        ),
+      ),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (customer) => CustomerProfileCard(
+        customer: customer,
+        mode: CustomerProfileCardMode.full,
+        onTap: () => context.push('/customers/$customerId'),
       ),
     );
   }
