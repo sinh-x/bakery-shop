@@ -207,6 +207,10 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             source: _source.isEmpty ? null : _source,
             customerName: _nameCtrl.text.trim(),
             customerId: _selectedCustomer?.id,
+            // OPS-1: when the user touched the customer selection (including
+            // clearing it), always send customerId to the backend so an unlink
+            // (null) propagates instead of being omitted as "unchanged".
+            customerTouched: _customerTouched,
             shippingFee: _shippingFee,
             publicCodeDateChangeDecision: publicCodeDateChangeDecision,
           );

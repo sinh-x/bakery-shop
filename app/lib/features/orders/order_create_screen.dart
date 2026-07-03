@@ -358,8 +358,8 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
           return m;
         }).toList(),
         shippingFee: _shippingFee,
-       dueDate: _dueDate != null ? formatApiDate(_dueDate!) : null,
-       dueTime: _dueTime != null ? _formatTime(_dueTime!) : null,
+        dueDate: _dueDate != null ? formatApiDate(_dueDate!) : null,
+        dueTime: _dueTime != null ? _formatTime(_dueTime!) : null,
         deliveryType: _deliveryType,
         deliveryAddress: _addressCtrl.text.trim(),
         notes: _notesCtrl.text.trim(),

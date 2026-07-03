@@ -81,6 +81,7 @@ class OrderService {
     String? customerName,
     String? customerPhone,
     int? customerId,
+    bool customerTouched = false,
     String? dueDate,
     String? dueTime,
     String? deliveryType,
@@ -94,7 +95,13 @@ class OrderService {
     final body = <String, dynamic>{};
     if (customerName != null) body['customerName'] = customerName;
     if (customerPhone != null) body['customerPhone'] = customerPhone;
-    if (customerId != null) body['customerId'] = customerId;
+    // OPS-1: when the customer was explicitly touched (selected or cleared) in
+    // the edit screen, always send customerId — including null to unlink.
+    if (customerTouched) {
+      body['customerId'] = customerId;
+    } else if (customerId != null) {
+      body['customerId'] = customerId;
+    }
     if (dueDate != null) body['dueDate'] = dueDate;
     if (dueTime != null) body['dueTime'] = dueTime;
     if (deliveryType != null) body['deliveryType'] = deliveryType;

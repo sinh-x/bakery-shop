@@ -155,8 +155,6 @@ def _primary_phone(phones: list[dict]) -> str:
 
 def _sync_customer_phones(conn, customer_id: int, phones: list[dict]) -> None:
     # Guard: customer_phones table may not exist yet during pre-v58 migrations.
-    import sqlite3
-
     try:
         conn.execute("SELECT 1 FROM customer_phones LIMIT 1").fetchone()
     except sqlite3.OperationalError:
