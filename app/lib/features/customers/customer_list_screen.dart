@@ -7,6 +7,7 @@ import '../../providers/customers_provider.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
+import 'widgets/phone_count_badge.dart';
 import 'customer_form.dart';
 
 /// Customer management screen (FR12).
@@ -176,10 +177,16 @@ class _CustomerTile extends StatelessWidget {
       formatDisplayDate(customer.createdAt),
     ];
     return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
-        child: Text(customer.name.isEmpty ? '?' : customer.name[0]),
+      leading: Stack(
+        alignment: Alignment.bottomRight,
+        children: [
+          CircleAvatar(
+            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+            child: Text(customer.name.isEmpty ? '?' : customer.name[0]),
+          ),
+          PhoneCountBadge(phoneCount: customer.phones.length),
+        ],
       ),
       title: Text(customer.name),
       subtitle: Text(subtitleParts.join(' • ')),
