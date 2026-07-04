@@ -2717,12 +2717,14 @@ CREATE TABLE IF NOT EXISTS customers (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL,
     phone       TEXT DEFAULT '',
+    search_name TEXT DEFAULT '',
     created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
     updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
 CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
 CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
+CREATE INDEX IF NOT EXISTS idx_customers_search_name ON customers(search_name);
 """
 
 
@@ -2779,6 +2781,20 @@ def _migrate_v56_customers_and_order_link(conn):
           )
         """
     )
+
+
+import unicodedata
+
+
+def _strip_diacritics(text: str) -> str:
+    """Remove Vietnamese diacritics for case-insensitive search.
+
+    Converts 'Nguyễn Văn Đức' → 'nguyen van duc' so searching for
+    'duc' or 'Đức' or 'đức' all match.
+    """
+    nfkd = unicodedata.normalize('NFKD', text)
+    ascii_form = ''.join(ch for ch in nfkd if not unicodedata.combining(ch))
+    return ascii_form.lower().replace('đ', 'd').replace('Đ', 'd')
 
 
 def _normalize_phone(phone: str) -> str:
@@ -3209,6 +3225,26 @@ def _migrate_v60_customer_year_summary(conn):
     )
 
 
+def _migrate_v61_customer_search_name(conn):
+    """Add ``search_name`` column and backfill for all existing customers.
+
+    DG-206 follow-up: adds diacritic-insensitive search. For fresh DBs the
+    column already exists via CUSTOMERS_SCHEMA; for existing DBs we add it
+    with ALTER TABLE. Then backfills ``_strip_diacritics(name)`` for every
+    customer row. Idempotent: re-running overwrites existing values with
+    the same result.
+    """
+    cols = [r["name"] for r in conn.execute("PRAGMA table_info(customers)").fetchall()]
+    if "search_name" not in cols:
+        conn.execute("ALTER TABLE customers ADD COLUMN search_name TEXT DEFAULT ''")
+    rows = conn.execute("SELECT id, name FROM customers").fetchall()
+    for row in rows:
+        conn.execute(
+            "UPDATE customers SET search_name = ? WHERE id = ?",
+            (_strip_diacritics(row["name"]), row["id"]),
+        )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -3493,6 +3529,11 @@ MIGRATIONS = {
         "description": "Customer yearly summary table (customer_year_summary) for order count + total volume per year, backfill from existing orders (DG-206 Phase 1)",
         "sql": CUSTOMER_YEAR_SUMMARY_SCHEMA,
         "callable": _migrate_v60_customer_year_summary,
+    },
+    61: {
+        "description": "Add search_name column to customers for diacritic-insensitive search, backfill from existing names (DG-206 follow-up)",
+        "sql": "",
+        "callable": _migrate_v61_customer_search_name,
     },
 }
 

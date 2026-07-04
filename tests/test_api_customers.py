@@ -117,10 +117,12 @@ def test_search_by_name_partial(api_client):
     resp = api_client.get("/api/customers?search=An")
     assert resp.status_code == 200
     rows = resp.json()
-    assert len(rows) == 2
+    # Diacritic-insensitive: "Trần" → "tran" also matches "an"
+    assert len(rows) == 3
     names = {r["name"] for r in rows}
     assert "Nguyễn Văn An" in names
     assert "Lê Văn An" in names
+    assert "Trần Thị Bình" in names
 
 
 def test_search_by_phone_partial(api_client):

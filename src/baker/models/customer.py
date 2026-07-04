@@ -3,7 +3,7 @@ from typing import Optional
 
 import sqlite3
 
-from baker.db.schema import _normalize_phone
+from baker.db.schema import _normalize_phone, _strip_diacritics
 from baker.utils.time import now_utc
 
 
@@ -25,9 +25,9 @@ class Customer:
         # column so the fallback query in _resolve_customer_id_by_phone can
         # match it directly against the normalized search value.
         cursor = conn.execute(
-            "INSERT INTO customers (name, phone, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?)",
-            (self.name, _normalize_phone(self.phone), now_utc(), now_utc()),
+            "INSERT INTO customers (name, phone, search_name, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (self.name, _normalize_phone(self.phone), _strip_diacritics(self.name), now_utc(), now_utc()),
         )
         self.id = cursor.lastrowid
         _sync_customer_phones(conn, self.id, self.phones)
@@ -48,8 +48,8 @@ class Customer:
             self.phones = phones
             self.phone = _primary_phone(phones) or self.phone
         conn.execute(
-            "UPDATE customers SET name = ?, phone = ?, updated_at = ? WHERE id = ?",
-            (self.name, _normalize_phone(self.phone), now_utc(), self.id),
+            "UPDATE customers SET name = ?, phone = ?, search_name = ?, updated_at = ? WHERE id = ?",
+            (self.name, _normalize_phone(self.phone), _strip_diacritics(self.name), now_utc(), self.id),
         )
         if phones is not None:
             _sync_customer_phones(conn, self.id, phones)

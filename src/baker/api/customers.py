@@ -12,6 +12,7 @@ def _escape_like(value: str) -> str:
 from pydantic import BaseModel, field_validator, model_validator
 
 from baker.db.connection import get_db
+from baker.db.schema import _strip_diacritics
 from baker.models.customer import (
     Customer,
     _load_customer_phones_for_many,
@@ -133,12 +134,13 @@ def list_customers(search: Optional[str] = Query(None, description="T√¨m theo t√
         if search and search.strip():
             escaped = _escape_like(search.strip())
             like = f"%{escaped}%"
+            search_like = f"%{_strip_diacritics(escaped)}%"
             rows = conn.execute(
                 "SELECT DISTINCT c.* FROM customers c "
                 "LEFT JOIN customer_phones cp ON cp.customer_id = c.id "
-                "WHERE c.name LIKE ? OR c.phone LIKE ? OR cp.phone LIKE ? "
+                "WHERE c.search_name LIKE ? OR c.phone LIKE ? OR cp.phone LIKE ? "
                 "ORDER BY c.id DESC",
-                (like, like, like),
+                (search_like, like, like),
             ).fetchall()
         else:
             rows = conn.execute(
