@@ -15,6 +15,7 @@ sealed class Order with _$Order {
     @Default('') String publicOrderCode,
     required String customerName,
     @Default('') String customerPhone,
+    int? customerId,
     required List<OrderItem> items,
     required double totalPrice,
     @Default('new') String status,

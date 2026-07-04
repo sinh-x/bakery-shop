@@ -146,6 +146,8 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
     String? source,
     String? publicCodeDateChangeDecision,
     String? customerName,
+    int? customerId,
+    bool customerTouched = false,
     double? shippingFee,
   }) async {
     final service = ref.read(orderServiceProvider);
@@ -161,6 +163,8 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
       source: source,
       publicCodeDateChangeDecision: publicCodeDateChangeDecision,
       customerName: customerName,
+      customerId: customerId,
+      customerTouched: customerTouched,
       changedBy: changedBy,
       shippingFee: shippingFee,
     );

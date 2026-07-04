@@ -191,6 +191,7 @@ class Order:
     created_by: str = ""
     shipping_fee: float = 0.0
     public_order_code: str = ""
+    customer_id: Optional[int] = None
     id: Optional[int] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -229,13 +230,13 @@ class Order:
             """INSERT INTO orders (order_ref, customer_name, customer_phone, items,
                total_price, status, due_date, due_time, delivery_type,
                delivery_address, notes, amount_paid, source, created_by, shipping_fee, public_order_code,
-               created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               customer_id, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (self.order_ref, self.customer_name, self.customer_phone,
               items_json, self.total_price, self.status, self.due_date,
               self.due_time, self.delivery_type, self.delivery_address, self.notes,
               self.amount_paid, self.source, self.created_by, self.shipping_fee, self.public_order_code,
-              now_utc(), now_utc()),
+              self.customer_id, now_utc(), now_utc()),
         )
         self.id = cursor.lastrowid
 
@@ -307,6 +308,7 @@ class Order:
             created_by=row["created_by"] if "created_by" in row.keys() else "",
             shipping_fee=row["shipping_fee"] if "shipping_fee" in row.keys() else 0.0,
             public_order_code=row["public_order_code"] if "public_order_code" in row.keys() else "",
+            customer_id=row["customer_id"] if "customer_id" in row.keys() else None,
             created_at=row["created_at"], updated_at=row["updated_at"],
             work_ticket_printed_at=row["work_ticket_printed_at"] if "work_ticket_printed_at" in row.keys() else None,
             work_ticket_printed_by=row["work_ticket_printed_by"] if "work_ticket_printed_by" in row.keys() else "",
@@ -332,6 +334,7 @@ class Order:
             "amountPaid": self.amount_paid,
             "shippingFee": self.shipping_fee,
             "publicOrderCode": self.public_order_code,
+            "customerId": self.customer_id,
             "isPaid": self.amount_paid > 0 and self.amount_paid >= self.total_price,
             "packingChecklist": [],
             "createdAt": self.created_at,

@@ -793,6 +793,47 @@ class VN {
   static const khongTheTaiAnh = 'Không thể tải ảnh';
   static const khongTheChiaSe = 'Không thể chia sẻ';
 
+  // Customer management (DG-182 Phase 3)
+  static const manageCustomers = 'Quản lý khách hàng';
+  static const addCustomer = 'Thêm khách hàng';
+  static const editCustomer = 'Sửa khách hàng';
+  static const customerListTitle = 'Khách hàng';
+  static const searchCustomers = 'Tìm theo tên hoặc số điện thoại...';
+  static const noCustomers = 'Chưa có khách hàng';
+  static const noCustomersMatch = 'Không tìm thấy khách phù hợp';
+  static const customerCreated = 'Đã thêm khách hàng';
+  static const customerUpdated = 'Đã cập nhật khách hàng';
+  static const customerDeleted = 'Đã xóa khách hàng';
+  static const deleteCustomer = 'Xóa khách hàng';
+  static const deleteCustomerConfirm =
+      'Xóa khách hàng này? Đơn hàng liên kết sẽ bỏ khách hàng.';
+  static const customerOrderHistory = 'Lịch sử đơn hàng';
+  static const customerNoOrders = 'Chưa có đơn hàng';
+  static const customerOrderCountSuffix = 'đơn';
+  static const customerSharedPhoneTitle = 'Cùng số điện thoại';
+  static const customerSharedPhoneHint =
+      'Khách hàng khác dùng chung số này:';
+  static const customerPhoneField = 'Số điện thoại (tùy chọn)';
+  static const customerNameField = 'Tên khách hàng';
+  static const openCustomerManagement = 'Khách hàng';
+  static const customerCreatedAt = 'Ngày tạo';
+
+  // Customer search in order flows (DG-182 Phase 4)
+  static const customerSearchHint = 'Tìm khách theo tên hoặc SĐT...';
+  static const customerSearchLinked = 'Đã chọn: {name}';
+  static const customerSearchChange = 'Đổi khách';
+  static const customerSearchClear = 'Bỏ chọn khách';
+  static const customerSearchNoMatch = 'Không tìm thấy khách';
+  static const customerSearchLoading = 'Đang tìm...';
+
+  // Customer form multi-phone (DG-205 Phase 5)
+  static const customerAddPhone = 'Thêm số điện thoại';
+  static const customerRemovePhone = 'Xóa số này';
+  static const customerPrimaryPhone = 'Số chính';
+  static const customerPhoneRequired = 'Cần ít nhất một số điện thoại';
+  static const customerPhonePrimaryRequired = 'Chọn một số làm số chính';
+  static const customerPhoneDuplicate = 'Số điện thoại bị trùng';
+
   // Accounting
   static const accountingTitle = 'Kế toán';
   static const accountingTabAccounts = 'Tài khoản';

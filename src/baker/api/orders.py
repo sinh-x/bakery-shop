@@ -1,6 +1,7 @@
 """Order management API routes."""
 
 import json
+import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -8,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
+from baker.db.schema import _order_year, _recompute_customer_year_summary
 from baker.logging import log_context, logger
 from baker.models.order import (
     PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN,
@@ -33,6 +35,68 @@ def _day_bounds(date_str: str) -> tuple[str, str]:
     return f"{date_str}T00:00:00", next_day.strftime("%Y-%m-%dT00:00:00")
 
 
+def _resolve_customer_id_by_phone(conn, phone: str) -> Optional[int]:
+    """Resolve a customer_id from a phone number via the ``customer_phones`` table.
+
+    DG-205 Phase 3 (FR8). Matches the normalized phone against every row in
+    ``customer_phones`` (not just the primary), so an order with a secondary
+    phone still links to the owning customer. When several customers share the
+    same phone, the earliest-order-wins rule (consistent with v57) picks the
+    customer whose earliest order has the smallest created_at/id.
+
+    Falls back to the legacy ``customers.phone`` column when ``customer_phones``
+    has no match (e.g. pre-v58 databases or customers created before Phase 1).
+    Returns ``None`` when no customer matches.
+    """
+    from baker.db.schema import _normalize_phone
+
+    nphone = _normalize_phone(phone or "")
+    if not nphone:
+        return None
+
+    # Primary path: match against customer_phones.phone (any row, normalized).
+    # SQLite stores phones as free text; we normalize for comparison, so the
+    # query pulls candidate rows and resolves the winner in Python to apply the
+    # earliest-order-wins tiebreak consistently with v57.
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT cp.customer_id FROM customer_phones cp WHERE cp.phone = ?",
+            (nphone,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    if rows:
+        customer_ids = [r["customer_id"] for r in rows]
+        if len(customer_ids) == 1:
+            return customer_ids[0]
+        # FR8: multiple customers share the phone — earliest-order-wins. Pick
+        # the customer whose earliest order has the minimum created_at, then id.
+        placeholders = ",".join("?" for _ in customer_ids)
+        winner = conn.execute(
+            f"SELECT customer_id, MIN(created_at) AS first_at "
+            f"FROM orders WHERE customer_id IN ({placeholders}) "
+            f"GROUP BY customer_id ORDER BY first_at ASC, customer_id ASC LIMIT 1",
+            customer_ids,
+        ).fetchone()
+        if winner is not None:
+            return winner["customer_id"]
+        # No orders yet for any candidate — fall back to the lowest customer_id
+        # for deterministic behavior.
+        return min(customer_ids)
+
+    # Secondary path: legacy customers.phone fallback (pre-v58 / direct writes).
+    # M-1: normalize the stored column at query time so legacy rows that still
+    # contain separators (dashes/dots/spaces) match the normalized search value.
+    # This mirrors _normalize_phone (strip spaces, dots, dashes) in SQL.
+    legacy = conn.execute(
+        "SELECT id FROM customers "
+        "WHERE REPLACE(REPLACE(REPLACE(phone, ' ', ''), '.', ''), '-', '') = ? "
+        "ORDER BY id ASC LIMIT 1",
+        (nphone,),
+    ).fetchone()
+    return legacy["id"] if legacy else None
+
+
 class OrderItemIn(BaseModel):
     productId: str = ""
     productName: str
@@ -55,6 +119,7 @@ class DepositIn(BaseModel):
 class OrderCreate(BaseModel):
     customerName: str
     customerPhone: str = ""
+    customerId: Optional[int] = None
     items: list[OrderItemIn] = []
     dueDate: Optional[str] = None
     dueTime: Optional[str] = None
@@ -72,6 +137,7 @@ class OrderCreate(BaseModel):
 class OrderEdit(BaseModel):
     customerName: Optional[str] = None
     customerPhone: Optional[str] = None
+    customerId: Optional[int] = None
     items: Optional[list[OrderItemIn]] = None
     dueDate: Optional[str] = None
     dueTime: Optional[str] = None
@@ -348,10 +414,21 @@ def create_order(body: OrderCreate, request: Request):
         raise HTTPException(status_code=422, detail="Vui lòng chọn ngày nhận/giao bánh")
 
     with get_db() as conn:
+        if body.customerId is not None:
+            exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (body.customerId,)).fetchone()
+            if not exists:
+                raise HTTPException(status_code=422, detail="Khách hàng không tồn tại")
+        else:
+            # DG-205 Phase 3 (FR8): resolve customer_id from customerPhone via
+            # customer_phones when the caller did not pass an explicit customerId.
+            resolved = _resolve_customer_id_by_phone(conn, body.customerPhone)
+            if resolved is not None:
+                body.customerId = resolved
         public_order_code = _generate_unique_public_order_code(conn, body.dueDate, body.deliveryType)
         order = Order(
             customer_name=body.customerName,
             customer_phone=body.customerPhone,
+            customer_id=body.customerId,
             items=[_item_in_to_model(i) for i in body.items],
             due_date=body.dueDate,
             due_time=body.dueTime,
@@ -427,6 +504,12 @@ def create_order(body: OrderCreate, request: Request):
             )
 
         log_context(request, ref_type="order", ref_id=order.id)
+        # DG-206 FR6/NFR2: keep customer_year_summary in sync within the same
+        # order transaction (single UPSERT-equivalent recompute, <50ms overhead).
+        if body.customerId is not None:
+            _recompute_customer_year_summary(
+                conn, body.customerId, _order_year(order.created_at or now_utc())
+            )
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
         return _order_detail(conn, row)
 
@@ -479,6 +562,18 @@ def edit_order(ref: str, body: OrderEdit):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 
+        if "customerId" in data and data["customerId"] is not None:
+            exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (data["customerId"],)).fetchone()
+            if not exists:
+                raise HTTPException(status_code=422, detail="Khách hàng không tồn tại")
+        elif "customerId" not in data and "customerPhone" in data and data["customerPhone"] is not None:
+            # DG-205 Phase 3 (FR8): phone changed without an explicit customerId —
+            # re-resolve the customer link against customer_phones. An explicit
+            # customerId (including null-to-unlink) is respected as-is.
+            resolved = _resolve_customer_id_by_phone(conn, data["customerPhone"])
+            if resolved is not None:
+                data["customerId"] = resolved
+
         updates = []
         params: list = []
         public_code_update = None
@@ -486,6 +581,7 @@ def edit_order(ref: str, body: OrderEdit):
         field_map = {
             "customerName": "customer_name",
             "customerPhone": "customer_phone",
+            "customerId": "customer_id",
             "dueDate": "due_date",
             "dueTime": "due_time",
             "deliveryType": "delivery_type",
@@ -651,6 +747,32 @@ def edit_order(ref: str, body: OrderEdit):
                 public_code_update["currentCode"],
                 changed_by,
             )
+
+        # DG-206 FR6/NFR2: recompute customer_year_summary when the order's
+        # customer link or total volume may have changed. Recompute both the
+        # old and new (customer_id, year) rows within the same transaction.
+        old_customer_id = row["customer_id"]
+        old_year = _order_year(row["created_at"] or "")
+        new_customer_id = data.get("customerId", old_customer_id)
+        # customerId may be sent as null to unlink — treat absent as unchanged.
+        if "customerId" not in data:
+            new_customer_id = old_customer_id
+        # Recompute the affected rows. items/shipping_fee changes affect the
+        # order's own (customer_id, year) row; a customer_id change affects both
+        # the old and new customer rows for the order's year.
+        if (
+            items_changed
+            or shipping_fee_changed
+            or ("customerId" in data)
+        ):
+            if old_customer_id is not None and old_year is not None:
+                _recompute_customer_year_summary(conn, old_customer_id, old_year)
+            if (
+                new_customer_id is not None
+                and new_customer_id != old_customer_id
+                and old_year is not None
+            ):
+                _recompute_customer_year_summary(conn, new_customer_id, old_year)
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         response = _order_detail(conn, updated)

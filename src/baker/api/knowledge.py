@@ -8,6 +8,12 @@ from pydantic import BaseModel
 
 from baker.db.connection import get_db
 from baker.models.knowledge import Knowledge
+
+_BS = "\\"
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("%", _BS + "%").replace("_", _BS + "_")
 from baker.api.photos import read_image_upload, save_photo
 from baker.utils.time import now_utc
 
@@ -115,12 +121,13 @@ def list_knowledge(
 
         if tag:
             conditions.append("tags LIKE ?")
-            params.append(f"%{tag}%")
+            params.append(f"%{_escape_like(tag)}%")
 
         if search:
+            escaped = _escape_like(search)
             conditions.append("(title LIKE ? OR content LIKE ?)")
-            params.append(f"%{search}%")
-            params.append(f"%{search}%")
+            params.append(f"%{escaped}%")
+            params.append(f"%{escaped}%")
 
         query = f"""
             SELECT * FROM knowledge_entries

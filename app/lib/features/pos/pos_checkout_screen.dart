@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/order_service.dart';
+import '../../data/models/customer.dart';
+import '../../features/customers/widgets/customer_search_field.dart';
 import '../../features/pos/utils/pos_cart_item_display.dart';
 import '../../features/pos/widgets/pos_checkout_cart_item_tile.dart';
 import '../../features/pos/widgets/pos_checkout_dialogs.dart';
@@ -44,6 +46,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   bool _navigatingAfterCheckout = false;
   bool _isReviewStep = false;
   String _selectedPaymentMethod = 'cash'; // 'cash' or 'transfer'
+  Customer? _selectedCustomer; // null => walk-in "Khách lẻ" (NFR2)
 
   void _onPaymentMethodChanged(String paymentMethod) {
     if (_selectedPaymentMethod == paymentMethod) {
@@ -117,7 +120,8 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
       final orderService = ref.read(orderServiceProvider);
       final order = await orderService.createOrder(
-        customerName: VN.khachLe,
+        customerName: _selectedCustomer?.name ?? VN.khachLe,
+        customerId: _selectedCustomer?.id,
         source: VN.taiTiemPOS,
         dueDate: dueDate,
         deliveryType: 'pickup',
@@ -173,7 +177,8 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
       final orderService = ref.read(orderServiceProvider);
       final order = await orderService.createOrder(
-        customerName: VN.khachLe,
+        customerName: _selectedCustomer?.name ?? VN.khachLe,
+        customerId: _selectedCustomer?.id,
         source: VN.taiTiemPOS,
         dueDate: dueDate,
         deliveryType: 'pickup',
@@ -257,6 +262,12 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
               ),
             )
           else ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+              child: CustomerSearchField(
+                onSelected: (c) => setState(() => _selectedCustomer = c),
+              ),
+            ),
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),

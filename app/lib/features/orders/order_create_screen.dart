@@ -6,7 +6,10 @@ import 'package:go_router/go_router.dart';
 import '../../data/api/order_service.dart';
 import '../../data/api/payment_transaction_service.dart';
 import '../../data/api/work_item_service.dart';
+import '../../data/models/customer.dart';
 import '../../data/models/product.dart';
+import '../../features/customers/widgets/customer_profile_card.dart';
+import '../../features/customers/widgets/customer_search_field.dart';
 import '../../providers/config_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
@@ -48,6 +51,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
   final List<DraftOrderItem> _items = [];
   bool _submitting = false;
   bool _submitted = false;
+  Customer? _selectedCustomer; // null => free-text name (walk-in compatible)
 
   // Shipping fee state
   double _shippingFee = 0.0;
@@ -333,6 +337,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       final newOrder = await service.createOrder(
         customerName: customerName,
         customerPhone: _phoneCtrl.text.trim(),
+        customerId: _selectedCustomer?.id,
         items: _items.map((i) {
           final m = <String, dynamic>{
             'productId': i.product.id.toString(),
@@ -353,8 +358,8 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
           return m;
         }).toList(),
         shippingFee: _shippingFee,
-       dueDate: _dueDate != null ? formatApiDate(_dueDate!) : null,
-       dueTime: _dueTime != null ? _formatTime(_dueTime!) : null,
+        dueDate: _dueDate != null ? formatApiDate(_dueDate!) : null,
+        dueTime: _dueTime != null ? _formatTime(_dueTime!) : null,
         deliveryType: _deliveryType,
         deliveryAddress: _addressCtrl.text.trim(),
         notes: _notesCtrl.text.trim(),
@@ -542,14 +547,29 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
 
             // ── Customer ──────────────────────────────────────────────
             const _SectionHeader(VN.customer),
-            TextFormField(
-              controller: _nameCtrl,
-              decoration: const InputDecoration(
-                labelText: VN.customerName,
-                border: OutlineInputBorder(),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: CustomerSearchField(
+                controller: _nameCtrl,
+                onSelected: (c) => setState(() {
+                  _selectedCustomer = c;
+                  if (c != null) {
+                    _nameCtrl.text = c.name;
+                    if (c.phone.isNotEmpty) _phoneCtrl.text = c.phone;
+                  }
+                }),
               ),
-              textCapitalization: TextCapitalization.words,
             ),
+            if (_selectedCustomer != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: CustomerProfileCard(
+                  customer: _selectedCustomer!,
+                  mode: CustomerProfileCardMode.compact,
+                  onTap: () =>
+                      context.push('/customers/${_selectedCustomer!.id}'),
+                ),
+              ),
             const SizedBox(height: 20),
 
             // ── Products ──────────────────────────────────────────────

@@ -15,5 +15,6 @@ prod/data/
 samples/
 # Generated CSV exports and local databases
 /*.csv
+/*.txt
 /baker.db
 /.claude/ai-sessions.md

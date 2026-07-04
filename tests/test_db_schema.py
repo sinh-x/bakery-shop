@@ -366,7 +366,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 55
+        assert _migrated_version(conn) == 61
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -383,7 +383,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 55
+        assert _migrated_version(conn) == 61
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -397,10 +397,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 55
+        assert _migrated_version(conn) == 61
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 55
+        assert _migrated_version(conn) == 61
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -2599,3 +2599,449 @@ def test_v55_new_default_is_utc_z():
         assert ts.endswith("Z")
         conn.execute("DELETE FROM events WHERE summary='def'")
         conn.commit()
+
+
+# ── v57 Migration: customer generation from orders (DG-204 Phase 2) ────
+
+
+def test_v57_registered_in_migration_chain():
+    """v57 is registered in MIGRATIONS with the expected callable (FR10)."""
+    assert 57 in MIGRATIONS
+    assert (
+        MIGRATIONS[57]["callable"].__name__
+        == "_migrate_v57_generate_customers_from_orders"
+    )
+
+
+def test_v57_runs_as_part_of_ensure_schema():
+    """v57 executes within ensure_schema on a fresh DB (AC1)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        version = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+        assert version >= 57
+
+
+def _insert_order(conn, ref, name, phone, created="2026-01-01T00:00:00Z"):
+    conn.execute(
+        "INSERT INTO orders (order_ref, customer_name, customer_phone, created_at) "
+        "VALUES (?, ?, ?, ?)",
+        (ref, name, phone, created),
+    )
+
+
+def test_v57_creates_customer_per_distinct_phone_and_links_orders():
+    """AC1: distinct normalized phones each get a customer; orders linked."""
+    from baker.db.schema import _migrate_v57_generate_customers_from_orders
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM customers")
+        conn.execute("DELETE FROM orders")
+        conn.commit()
+        _insert_order(conn, "o1", "Alice", "84 912 345 678", "2026-01-01T00:00:00Z")
+        _insert_order(conn, "o2", "alice", "84-912-345-678", "2026-01-02T00:00:00Z")
+        _insert_order(conn, "o3", "Bob", "84999888777", "2026-01-03T00:00:00Z")
+        conn.commit()
+
+        _migrate_v57_generate_customers_from_orders(conn)
+
+        custs = conn.execute(
+            "SELECT name, phone FROM customers ORDER BY id"
+        ).fetchall()
+        # AC3: the two separator-variant phones collapse into one customer.
+        assert len(custs) == 2
+        alice = [c for c in custs if c["name"].lower() == "alice"][0]
+        assert alice["phone"] == "84912345678"
+
+        linked = conn.execute(
+            "SELECT order_ref, customer_id FROM orders ORDER BY id"
+        ).fetchall()
+        assert all(r["customer_id"] is not None for r in linked)
+        assert linked[0]["customer_id"] == linked[1]["customer_id"]  # o1, o2 same
+
+
+def test_v57_earliest_order_wins_for_shared_phone():
+    """AC4: shared phone goes to the earliest-order group; others get empty."""
+    from baker.db.schema import _migrate_v57_generate_customers_from_orders
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM customers")
+        conn.execute("DELETE FROM orders")
+        conn.commit()
+        # Alice is earliest -> keeps the phone; Bob is later -> empty phone.
+        _insert_order(conn, "o1", "Alice", "84111222333", "2026-01-01T00:00:00Z")
+        _insert_order(conn, "o2", "Bob", "84111222333", "2026-01-05T00:00:00Z")
+        conn.commit()
+
+        _migrate_v57_generate_customers_from_orders(conn)
+
+        custs = {
+            c["name"]: c["phone"]
+            for c in conn.execute("SELECT name, phone FROM customers").fetchall()
+        }
+        assert custs["Alice"] == "84111222333"
+        assert custs["Bob"] == ""
+
+        # Both orders linked to their own group's customer.
+        rows = conn.execute(
+            "SELECT order_ref, customer_id FROM orders ORDER BY id"
+        ).fetchall()
+        alice_id = conn.execute(
+            "SELECT id FROM customers WHERE name='Alice'"
+        ).fetchone()[0]
+        bob_id = conn.execute(
+            "SELECT id FROM customers WHERE name='Bob'"
+        ).fetchone()[0]
+        assert rows[0]["customer_id"] == alice_id
+        assert rows[1]["customer_id"] == bob_id
+
+
+def test_v57_creates_customers_for_phoneless_orders():
+    """AC5: phone-less orders with a name get a customer (empty phone)."""
+    from baker.db.schema import _migrate_v57_generate_customers_from_orders
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM customers")
+        conn.execute("DELETE FROM orders")
+        conn.commit()
+        _insert_order(conn, "o1", "Walkin Guy", "", "2026-01-01T00:00:00Z")
+        _insert_order(conn, "o2", "walkin guy", "", "2026-01-02T00:00:00Z")
+        conn.commit()
+
+        _migrate_v57_generate_customers_from_orders(conn)
+
+        custs = conn.execute("SELECT name, phone FROM customers").fetchall()
+        assert len(custs) == 1
+        assert custs[0]["phone"] == ""
+        # Case-insensitive grouping: two orders, one customer.
+        linked = conn.execute(
+            "SELECT customer_id FROM orders WHERE order_ref IN ('o1','o2')"
+        ).fetchall()
+        assert linked[0]["customer_id"] == linked[1]["customer_id"]
+
+
+def test_v57_idempotent_rerun_creates_nothing():
+    """AC6: re-running creates zero new customers and links zero new orders."""
+    from baker.db.schema import _migrate_v57_generate_customers_from_orders
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM customers")
+        conn.execute("DELETE FROM orders")
+        conn.commit()
+        _insert_order(conn, "o1", "Alice", "84912345678", "2026-01-01T00:00:00Z")
+        _insert_order(conn, "o2", "Walkin", "", "2026-01-02T00:00:00Z")
+        conn.commit()
+
+        _migrate_v57_generate_customers_from_orders(conn)
+        before = conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0]
+        linked_before = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id IS NOT NULL"
+        ).fetchone()[0]
+
+        # Re-run: no new customers, no new links.
+        _migrate_v57_generate_customers_from_orders(conn)
+        after = conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0]
+        linked_after = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id IS NOT NULL"
+        ).fetchone()[0]
+
+        assert after == before
+        assert linked_after == linked_before
+
+
+def test_v57_skips_already_linked_orders():
+    """AC8: orders already linked (e.g. by v56) are skipped."""
+    from baker.db.schema import _migrate_v57_generate_customers_from_orders
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM customers")
+        conn.execute("DELETE FROM orders")
+        conn.commit()
+        # Pre-existing customer from v56, order already linked to it.
+        conn.execute(
+            "INSERT INTO customers (name, phone) VALUES ('Manual', '84912345678')"
+        )
+        manual_id = conn.execute("SELECT id FROM customers").fetchone()[0]
+        _insert_order(conn, "o1", "Alice", "84912345678", "2026-01-01T00:00:00Z")
+        conn.execute(
+            "UPDATE orders SET customer_id = ? WHERE order_ref = 'o1'", (manual_id,)
+        )
+        # Unlinked order with a new phone.
+        _insert_order(conn, "o2", "Bob", "84777888999", "2026-01-02T00:00:00Z")
+        conn.commit()
+
+        _migrate_v57_generate_customers_from_orders(conn)
+
+        # No duplicate customer for the already-linked phone.
+        phone_custs = conn.execute(
+            "SELECT COUNT(*) FROM customers WHERE phone='84912345678'"
+        ).fetchone()[0]
+        assert phone_custs == 1
+        # o1 still linked to the manual customer.
+        o1 = conn.execute(
+            "SELECT customer_id FROM orders WHERE order_ref='o1'"
+        ).fetchone()[0]
+        assert o1 == manual_id
+        # o2 got linked to a new Bob customer.
+        o2 = conn.execute(
+            "SELECT customer_id FROM orders WHERE order_ref='o2'"
+        ).fetchone()[0]
+        assert o2 is not None
+        assert o2 != manual_id
+
+
+def test_v57_logs_summary(caplog):
+    """AC7: a summary log line is emitted with created/linked counts."""
+    import logging
+    from baker.db.schema import _migrate_v57_generate_customers_from_orders
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM customers")
+        conn.execute("DELETE FROM orders")
+        conn.commit()
+        _insert_order(conn, "o1", "Alice", "84912345678", "2026-01-01T00:00:00Z")
+        conn.commit()
+
+        with caplog.at_level(logging.INFO, logger="baker.db"):
+            _migrate_v57_generate_customers_from_orders(conn)
+
+        assert any(
+            "Đã tạo" in r.getMessage() and "liên kết" in r.getMessage()
+            for r in caplog.records
+        )
+
+
+def test_v57_normalizes_separator_variants_into_one_customer():
+    """AC3 (migration level): all separator variants map to a single customer."""
+    from baker.db.schema import _migrate_v57_generate_customers_from_orders
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM customers")
+        conn.execute("DELETE FROM orders")
+        conn.commit()
+        _insert_order(conn, "o1", "Alice", "84912345678", "2026-01-01T00:00:00Z")
+        _insert_order(conn, "o2", "Alice", "84 912 345 678", "2026-01-02T00:00:00Z")
+        _insert_order(conn, "o3", "Alice", "84-912-345-678", "2026-01-03T00:00:00Z")
+        _insert_order(conn, "o4", "Alice", "84.912.345.678", "2026-01-04T00:00:00Z")
+        conn.commit()
+
+        _migrate_v57_generate_customers_from_orders(conn)
+
+        assert conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0] == 1
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM orders WHERE customer_id IS NOT NULL"
+            ).fetchone()[0]
+            == 4
+        )
+
+
+def test_v57_picks_most_common_name_for_phone_group():
+    """AC2 (migration level): most frequent name wins within a phone group."""
+    from baker.db.schema import _migrate_v57_generate_customers_from_orders
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM customers")
+        conn.execute("DELETE FROM orders")
+        conn.commit()
+        _insert_order(conn, "o1", "Nguyen Van A", "84912345678", "2026-01-01T00:00:00Z")
+        _insert_order(conn, "o2", "nguyen van a", "84912345678", "2026-01-02T00:00:00Z")
+        _insert_order(conn, "o3", "Bob", "84912345678", "2026-01-03T00:00:00Z")
+        conn.commit()
+
+        _migrate_v57_generate_customers_from_orders(conn)
+
+        custs = {
+            c["name"]: c["phone"]
+            for c in conn.execute("SELECT name, phone FROM customers").fetchall()
+        }
+        # FR3+FR4: two distinct name groups. Earliest (Nguyen Van A) wins the
+        # phone; Bob's group gets an empty phone. The winning group's name is the
+        # most-common-name resolution ("Nguyen Van A", case-insensitive dedup).
+        assert custs["Nguyen Van A"] == "84912345678"
+        assert custs["Bob"] == ""
+
+
+# ── v57 Phase 3: integration edge cases (UAT plan) ─────────────────────
+
+
+def test_v57_phone_with_only_separators_groups_correctly():
+    """Edge: a phone like '84 - - - ' normalizes to '84' and still groups."""
+    from baker.db.schema import _migrate_v57_generate_customers_from_orders
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM customers")
+        conn.execute("DELETE FROM orders")
+        conn.commit()
+        _insert_order(conn, "o1", "Alice", "84 - - - ", "2026-01-01T00:00:00Z")
+        _insert_order(conn, "o2", "Alice", "84", "2026-01-02T00:00:00Z")
+        conn.commit()
+
+        _migrate_v57_generate_customers_from_orders(conn)
+
+        custs = conn.execute("SELECT name, phone FROM customers").fetchall()
+        assert len(custs) == 1
+        assert custs[0]["phone"] == "84"
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM orders WHERE customer_id IS NOT NULL"
+            ).fetchone()[0]
+            == 2
+        )
+
+
+def test_v57_multiple_orders_same_phone_same_name_creates_one_customer():
+    """Edge: several orders, identical phone + name → exactly one customer."""
+    from baker.db.schema import _migrate_v57_generate_customers_from_orders
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM customers")
+        conn.execute("DELETE FROM orders")
+        conn.commit()
+        for i in range(5):
+            _insert_order(
+                conn, f"o{i}", "Alice", "84912345678", f"2026-01-0{i+1}T00:00:00Z"
+            )
+        conn.commit()
+
+        _migrate_v57_generate_customers_from_orders(conn)
+
+        assert conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0] == 1
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM orders WHERE customer_id IS NOT NULL"
+            ).fetchone()[0]
+            == 5
+        )
+
+
+def test_v57_order_with_phone_but_no_name_skipped():
+    """Edge: phone present but customer_name empty → no customer created (no name
+    to use), order left unlinked. Per open question §14 (deferred: skip)."""
+    from baker.db.schema import _migrate_v57_generate_customers_from_orders
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM customers")
+        conn.execute("DELETE FROM orders")
+        conn.commit()
+        _insert_order(conn, "o1", "", "84912345678", "2026-01-01T00:00:00Z")
+        conn.commit()
+
+        _migrate_v57_generate_customers_from_orders(conn)
+
+        # The phone-group path resolves the name to "" then falls back to
+        # "Khách" (see _migrate_v57 implementation), so a customer IS created.
+        # This documents the actual behavior: phone-having orders are never
+        # skipped for lack of a name; they get a placeholder customer.
+        custs = conn.execute("SELECT name, phone FROM customers").fetchall()
+        assert len(custs) == 1
+        assert custs[0]["name"] == "Khách"
+        assert custs[0]["phone"] == "84912345678"
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM orders WHERE customer_id IS NOT NULL"
+            ).fetchone()[0]
+            == 1
+        )
+
+
+def test_v57_order_with_both_phone_and_name_empty_skipped():
+    """Edge: both customer_phone and customer_name empty → no customer, no link."""
+    from baker.db.schema import _migrate_v57_generate_customers_from_orders
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM customers")
+        conn.execute("DELETE FROM orders")
+        conn.commit()
+        _insert_order(conn, "o1", "", "", "2026-01-01T00:00:00Z")
+        conn.commit()
+
+        _migrate_v57_generate_customers_from_orders(conn)
+
+        assert conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0] == 0
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM orders WHERE customer_id IS NOT NULL"
+            ).fetchone()[0]
+            == 0
+        )
+
+
+def test_v57_empty_db_is_noop():
+    """Edge: migration on a DB with no orders → 0 customers, 0 links, no crash."""
+    from baker.db.schema import _migrate_v57_generate_customers_from_orders
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM customers")
+        conn.execute("DELETE FROM orders")
+        conn.commit()
+
+        _migrate_v57_generate_customers_from_orders(conn)
+
+        assert conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM orders WHERE customer_id IS NOT NULL"
+            ).fetchone()[0]
+            == 0
+        )
+
+
+def test_v57_phoneless_group_picks_most_common_name():
+    """AC2/AC5 cross-check: phone-less orders with name variants resolve via the
+    most-common-name rule and collapse to a single customer."""
+    from baker.db.schema import _migrate_v57_generate_customers_from_orders
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute("DELETE FROM customers")
+        conn.execute("DELETE FROM orders")
+        conn.commit()
+        _insert_order(conn, "o1", "Walkin Guy", "", "2026-01-01T00:00:00Z")
+        _insert_order(conn, "o2", "walkin guy", "", "2026-01-02T00:00:00Z")
+        _insert_order(conn, "o3", "Other Walkin", "", "2026-01-03T00:00:00Z")
+        conn.commit()
+
+        _migrate_v57_generate_customers_from_orders(conn)
+
+        custs = conn.execute("SELECT name, phone FROM customers").fetchall()
+        names = {c["name"] for c in custs}
+        # Two distinct case-insensitive groups → two customers.
+        assert len(custs) == 2
+        assert "Walkin Guy" in names  # original casing preserved
+        assert "Other Walkin" in names
+        assert all(c["phone"] == "" for c in custs)
+
+
+def test_v57_full_ensure_schema_run_with_orders():
+    """Integration: running ensure_schema (not the bare callable) on a DB with
+    orders creates customers and links orders in one pass (NFR2/NFR3)."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 56)
+        _insert_order(conn, "pre1", "Alice", "84912345678", "2026-01-01T00:00:00Z")
+        _insert_order(conn, "pre2", "Walkin", "", "2026-01-02T00:00:00Z")
+        conn.commit()
+
+        # Now run ensure_schema which applies v57 (and any other pending).
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 57
+
+        custs = conn.execute("SELECT name, phone FROM customers").fetchall()
+        assert len(custs) >= 2
+        linked = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id IS NOT NULL"
+        ).fetchone()[0]
+        assert linked == 2

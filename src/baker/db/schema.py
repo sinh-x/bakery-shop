@@ -1,3 +1,6 @@
+from typing import Optional
+
+
 INITIAL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2709,6 +2712,539 @@ def _migrate_v55_utc_timestamp_standardization(conn):
         )
 
 
+CUSTOMERS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS customers (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    phone       TEXT DEFAULT '',
+    search_name TEXT DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
+CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
+CREATE INDEX IF NOT EXISTS idx_customers_search_name ON customers(search_name);
+"""
+
+
+CUSTOMER_PHONES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS customer_phones (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id  INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    phone        TEXT NOT NULL,
+    is_primary   INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_phones_customer_id ON customer_phones(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_phones_phone ON customer_phones(phone);
+"""
+
+
+def _migrate_v56_customers_and_order_link(conn):
+    """Create customers table, add customer_id FK to orders, auto-link existing
+    orders to customers by phone match (DG-182 Phase 1).
+
+    Phone is NOT unique — multiple customers may share a phone (NFR4). Auto-match
+    links each existing order to the first customer (lowest id) sharing that
+    phone. Orders with no phone or no matching customer remain customer_id=NULL.
+    """
+    # 1) Add customer_id column to orders (nullable FK)
+    _guard_add_column(conn, "orders", "customer_id", "customer_id INTEGER REFERENCES customers(id)")
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id)"
+    )
+
+    # 2) Auto-link existing orders to customers by phone match.
+    #    For each distinct phone that matches at least one customer, link orders
+    #    with that phone to the lowest-id customer sharing the phone. Only link
+    #    non-empty phones to avoid matching all walk-in orders together.
+    conn.execute(
+        """
+        UPDATE orders
+        SET customer_id = (
+            SELECT MIN(c.id) FROM customers c
+            WHERE c.phone = orders.customer_phone
+              AND c.phone != ''
+              AND c.phone IS NOT NULL
+        )
+        WHERE customer_id IS NULL
+          AND customer_phone != ''
+          AND customer_phone IS NOT NULL
+          AND EXISTS (
+              SELECT 1 FROM customers c
+              WHERE c.phone = orders.customer_phone
+                AND c.phone != ''
+                AND c.phone IS NOT NULL
+          )
+        """
+    )
+
+
+import unicodedata
+
+
+def _strip_diacritics(text: str) -> str:
+    """Remove Vietnamese diacritics for case-insensitive search.
+
+    Converts 'Nguyễn Văn Đức' → 'nguyen van duc' so searching for
+    'duc' or 'Đức' or 'đức' all match.
+    """
+    nfkd = unicodedata.normalize('NFKD', text)
+    ascii_form = ''.join(ch for ch in nfkd if not unicodedata.combining(ch))
+    return ascii_form.lower().replace('đ', 'd').replace('Đ', 'd')
+
+
+def _normalize_phone(phone: str) -> str:
+    """Normalize a phone number for grouping/deduplication.
+
+    Strips whitespace, dots, and dashes. All phones are already in 84-prefix
+    format (no leading "+"), so no prefix normalization is applied here. The
+    normalized form is used only for grouping; the original phone is preserved
+    in the customer record (FR2).
+
+    >>> _normalize_phone("84 912 345 678")
+    '84912345678'
+    >>> _normalize_phone("84-912-345-678")
+    '84912345678'
+    >>> _normalize_phone("84.912.345.678")
+    '84912345678'
+    >>> _normalize_phone("84912345678")
+    '84912345678'
+    >>> _normalize_phone("")
+    ''
+    """
+    if not phone:
+        return ""
+    return phone.replace(" ", "").replace(".", "").replace("-", "")
+
+
+def _pick_most_common_name(names: list[str]) -> str:
+    """Pick the most frequent customer name from a list of name variants.
+
+    Comparison is case-insensitive and trims whitespace (FR3). On a tie, the
+    name that sorts first alphabetically (case-insensitive) wins. The returned
+    name preserves the original casing/whitespace of the first occurrence of
+    the winning normalized form.
+
+    >>> _pick_most_common_name(["Nguyen Van A"])
+    'Nguyen Van A'
+    >>> _pick_most_common_name(["Nguyen Van A", "Nguyen Van A", "Bob"])
+    'Nguyen Van A'
+    >>> _pick_most_common_name(["Nguyen Van A", "nguyen van a", "Bob"])
+    'Nguyen Van A'
+    >>> _pick_most_common_name(["  Nguyen Van A  ", "nguyen van a", "Bob"])
+    'Nguyen Van A'
+    >>> _pick_most_common_name(["Bob", "Alice"])  # tie -> Alice (alphabetical)
+    'Alice'
+    >>> _pick_most_common_name([])
+    ''
+    """
+    if not names:
+        return ""
+
+    # Group original names by their normalized (lowercased, stripped) form,
+    # preserving the first-seen original form within each group (stripped of
+    # surrounding whitespace so the returned name is clean per FR3).
+    groups: dict[str, list[str]] = {}
+    counts: dict[str, int] = {}
+    for name in names:
+        key = (name or "").strip().lower()
+        if key not in groups:
+            groups[key] = []
+        groups[key].append(name)
+        counts[key] = counts.get(key, 0) + 1
+
+    # Highest count wins; ties broken by alphabetical order of the key.
+    best_key = min(counts, key=lambda k: (-counts[k], k))
+    first = groups[best_key][0]
+    return (first or "").strip()
+
+
+def _migrate_v57_generate_customers_from_orders(conn):
+    """Generate customer records from existing orders and link orders to them.
+
+    DG-204 Phase 2. Scans all orders that have no customer_id yet, groups them
+    by normalized phone (FR1/FR2), resolves a single customer name per group via
+    the most-common-name rule (FR3), applies the earliest-order-wins rule for a
+    phone shared by distinct name groups (FR4), inserts customer records via
+    direct SQLite (FR5), links matching orders via customer_id (FR6), and also
+    creates customers for phone-less orders using customer_name (FR8). The
+    migration is idempotent (FR7): orders already linked and phones that already
+    have a matching customer are skipped. A summary line is logged (FR9).
+
+    Reusing `_normalize_phone()` and `_pick_most_common_name()` from Phase 1 and
+    `Customer.save(conn)` for inserts, following the v56 migration-callable
+    pattern (direct SQL, no API round-trips — NFR1/NFR3). The whole callable
+    runs within the `ensure_schema` migration transaction (NFR2).
+    """
+    import logging
+
+    from baker.models.customer import Customer
+
+    logger = logging.getLogger("baker.db")
+
+    # Existing customer phones (normalized) for idempotency — FR7/NFR4.
+    existing_phones: dict[str, int] = {}
+    for crow in conn.execute("SELECT id, phone FROM customers").fetchall():
+        nphone = _normalize_phone(crow["phone"])
+        if nphone and nphone not in existing_phones:
+            existing_phones[nphone] = crow["id"]
+
+    # Existing customers keyed by case-insensitive name (for phone-less links).
+    existing_names: dict[str, int] = {}
+    for crow in conn.execute("SELECT id, name FROM customers").fetchall():
+        key = (crow["name"] or "").strip().lower()
+        if key and key not in existing_names:
+            existing_names[key] = crow["id"]
+
+    customers_created = 0
+    orders_linked = 0
+
+    def _link_order(conn, oid: int, cust_id: int) -> None:
+        nonlocal orders_linked
+        cur = conn.execute(
+            "UPDATE orders SET customer_id = ? WHERE id = ? AND customer_id IS NULL",
+            (cust_id, oid),
+        )
+        if cur.rowcount > 0:
+            orders_linked += 1
+
+    # ── Phone-having orders (FR1–FR7) ─────────────────────────────────────
+    # Scan orders with non-empty customer_phone where customer_id IS NULL,
+    # ordered so the first row per phone is the earliest order.
+    phone_rows = conn.execute(
+        """
+        SELECT id, customer_name, customer_phone, created_at
+        FROM orders
+        WHERE customer_id IS NULL
+          AND customer_phone IS NOT NULL
+          AND customer_phone != ''
+        ORDER BY created_at ASC, id ASC
+        """
+    ).fetchall()
+
+    # Group orders by normalized phone (FR1/FR2).
+    phone_groups: dict[str, list[tuple[int, str]]] = {}
+    for orow in phone_rows:
+        nphone = _normalize_phone(orow["customer_phone"])
+        if not nphone:
+            continue
+        phone_groups.setdefault(nphone, []).append(
+            (orow["id"], orow["customer_name"] or "")
+        )
+
+    for nphone, orders in phone_groups.items():
+        # Idempotency (FR7): phone already has a customer — link its orders.
+        if nphone in existing_phones:
+            cust_id = existing_phones[nphone]
+            for oid, _name in orders:
+                _link_order(conn, oid, cust_id)
+            continue
+
+        # Partition orders into distinct name groups (FR4). The group key uses
+        # the same case-insensitive, trimmed rule as _pick_most_common_name so
+        # name variants collapse into one group (FR3).
+        name_to_orders: dict[str, list[tuple[int, str]]] = {}
+        for oid, name in orders:
+            gkey = (name or "").strip().lower()
+            name_to_orders.setdefault(gkey, []).append((oid, name))
+
+        # Resolve a representative name per group and capture each group's
+        # earliest order. `orders` is already ASC by created_at/id, and we
+        # appended in that order, so the first entry per group is earliest.
+        group_info: list[tuple[str, list[tuple[int, str]], str]] = []
+        for gkey, gorders in name_to_orders.items():
+            resolved_name = _pick_most_common_name([o[1] for o in gorders])
+            group_info.append((gkey, gorders, resolved_name))
+
+        if not group_info:
+            continue
+
+        # FR4: earliest-order-wins. `orders` was ordered by created_at ASC,
+        # id ASC, and `name_to_orders` preserved that insertion order, so the
+        # first group seen has the earliest order and wins the phone. Iterate
+        # in insertion order; idx 0 keeps the phone, later groups get "".
+        for idx, (_gkey, gorders, resolved_name) in enumerate(group_info):
+            phone_assigned = nphone if idx == 0 else ""
+            cust = Customer(name=resolved_name or "Khách", phone=phone_assigned)
+            cust_id = cust.save(conn)
+            customers_created += 1
+            # Track the new customer so a later phone group can reuse it.
+            if phone_assigned:
+                existing_phones[nphone] = cust_id
+            # Also register the name so phone-less orders with the same name
+            # reuse this customer instead of creating a duplicate.
+            name_key = (resolved_name or "Khách").strip().lower()
+            if name_key and name_key not in existing_names:
+                existing_names[name_key] = cust_id
+            for oid, _name in gorders:
+                _link_order(conn, oid, cust_id)
+
+    # ── Phone-less orders with a name (FR8) ───────────────────────────────
+    nameless_rows = conn.execute(
+        """
+        SELECT id, customer_name
+        FROM orders
+        WHERE customer_id IS NULL
+          AND (customer_phone IS NULL OR customer_phone = '')
+          AND customer_name IS NOT NULL
+          AND customer_name != ''
+        """
+    ).fetchall()
+
+    # Group phone-less orders by case-insensitive name so a single customer is
+    # created per distinct name, not per order.
+    nameless_groups: dict[str, list[int]] = {}
+    nameless_names: dict[str, list[str]] = {}
+    for orow in nameless_rows:
+        key = (orow["customer_name"] or "").strip().lower()
+        if not key:
+            continue
+        nameless_groups.setdefault(key, []).append(orow["id"])
+        nameless_names.setdefault(key, []).append(orow["customer_name"])
+
+    for key, oids in nameless_groups.items():
+        # Idempotency (FR7): name already has a customer — link its orders.
+        if key in existing_names:
+            cust_id = existing_names[key]
+            for oid in oids:
+                _link_order(conn, oid, cust_id)
+            continue
+        resolved = _pick_most_common_name(nameless_names[key])
+        cust = Customer(name=resolved, phone="")
+        cust_id = cust.save(conn)
+        customers_created += 1
+        existing_names[key] = cust_id
+        for oid in oids:
+            _link_order(conn, oid, cust_id)
+
+    # FR9: summary log.
+    logger.info("Đã tạo %d khách hàng, liên kết %d đơn hàng.", customers_created, orders_linked)
+
+
+def _migrate_v59_deduplicate_customers(conn):
+    """Merge duplicate customers that share the same case-insensitive name.
+
+    DG-205 follow-up. v57 could create duplicate customers when phone-having
+    and phone-less orders shared the same name but the name was not tracked in
+    ``existing_names`` (fixed in v57 itself, but existing DBs may have dupes).
+    This migration groups customers by case-insensitive trimmed name, keeps the
+    one with the most orders (earliest id as tiebreak), reassigns all orders
+    from duplicates to the winner, and deletes the duplicates. Idempotent:
+    re-running when no duplicates exist is a no-op.
+    """
+    import logging
+
+    logger = logging.getLogger("baker.db")
+
+    # Group customers by case-insensitive trimmed name.
+    rows = conn.execute(
+        "SELECT id, name FROM customers ORDER BY id ASC"
+    ).fetchall()
+    name_groups: dict[str, list[int]] = {}
+    for row in rows:
+        key = (row["name"] or "").strip().lower()
+        if not key:
+            continue
+        name_groups.setdefault(key, []).append(row["id"])
+
+    merged = 0
+    for key, ids in name_groups.items():
+        if len(ids) <= 1:
+            continue
+        # Keep the customer with the most orders; earliest id breaks ties.
+        best_id = ids[0]
+        best_count = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (best_id,)
+        ).fetchone()[0]
+        for cid in ids[1:]:
+            cnt = conn.execute(
+                "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (cid,)
+            ).fetchone()[0]
+            if cnt > best_count:
+                best_id = cid
+                best_count = cnt
+        # Reassign orders from duplicates to the winner.
+        for cid in ids:
+            if cid == best_id:
+                continue
+            conn.execute(
+                "UPDATE orders SET customer_id = ? WHERE customer_id = ?",
+                (best_id, cid),
+            )
+            conn.execute("DELETE FROM customer_phones WHERE customer_id = ?", (cid,))
+            conn.execute("DELETE FROM customers WHERE id = ?", (cid,))
+            merged += 1
+
+    if merged:
+        logger.info("Đã gộp %d khách hàng trùng tên.", merged)
+
+
+def _migrate_v58_customer_phones(conn):
+    """Create customer_phones table and migrate existing customers.phone into it.
+
+    DG-205 Phase 1. Creates the normalized ``customer_phones`` table (FR1) and
+    moves each existing non-empty ``customers.phone`` value into a row with
+    ``is_primary=1`` (FR2). The ``customers.phone`` denormalized column is
+    retained as a backward-compatible fallback (NFR4/AC2) — it is NOT modified.
+
+    The migration is idempotent (NFR1): before inserting, it checks whether the
+    customer already has any row in ``customer_phones`` and skips those that do.
+    Re-running v58 therefore never duplicates phone rows (AC1).
+
+    The DDL (table + indexes on ``customer_id`` and ``phone``) is applied via
+    the ``CUSTOMER_PHONES_SCHEMA`` ``sql`` entry in ``MIGRATIONS``; this
+    callable only performs the data backfill, following the v56/v57 pattern of
+    separating schema (``sql``) from data (``callable``).
+    """
+    import logging
+
+    logger = logging.getLogger("baker.db")
+
+    # Idempotency (NFR1): collect customer_ids that already have phone rows.
+    # This covers re-runs of v58 and DBs where phone rows were added by the API
+    # before v58 finished — either way we never insert a duplicate.
+    customers_with_phones = {
+        row[0]
+        for row in conn.execute("SELECT DISTINCT customer_id FROM customer_phones").fetchall()
+    }
+
+    migrated = 0
+    # Move each existing non-empty customers.phone into customer_phones as the
+    # primary phone (FR2). Empty/NULL phones are skipped (no point inserting a
+    # blank primary phone row).
+    for crow in conn.execute(
+        "SELECT id, phone FROM customers WHERE phone IS NOT NULL AND phone != ''"
+    ).fetchall():
+        cust_id = crow["id"]
+        phone = crow["phone"]
+        if cust_id in customers_with_phones:
+            continue
+        # M-1: normalize the backfilled phone so customer_phones rows are
+        # consistent with rows written by _sync_customer_phones (which now
+        # applies _normalize_phone). Legacy customers.phone is left as-is.
+        nphone = _normalize_phone(phone)
+        if not nphone:
+            continue
+        conn.execute(
+            "INSERT INTO customer_phones (customer_id, phone, is_primary) VALUES (?, ?, 1)",
+            (cust_id, nphone),
+        )
+        customers_with_phones.add(cust_id)
+        migrated += 1
+
+    logger.info("Đã chuyển %d số điện thoại vào customer_phones.", migrated)
+
+
+CUSTOMER_YEAR_SUMMARY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS customer_year_summary (
+    customer_id  INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    year         INTEGER NOT NULL,
+    order_count  INTEGER NOT NULL DEFAULT 0,
+    total_volume REAL    NOT NULL DEFAULT 0,
+    PRIMARY KEY (customer_id, year)
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_year_summary_customer
+    ON customer_year_summary(customer_id);
+"""
+
+
+def _order_year(created_at: str) -> Optional[int]:
+    """Extract the calendar year from an orders.created_at timestamp.
+
+    created_at is stored as ISO-8601 UTC ('YYYY-MM-DDTHH:MM:SS...Z'). Returns
+    ``None`` when the value is empty or malformed.
+    """
+    if not created_at:
+        return None
+    # The year is the first 4 chars of the ISO timestamp; validate it is numeric.
+    year_str = created_at[:4]
+    if len(year_str) != 4 or not year_str.isdigit():
+        return None
+    return int(year_str)
+
+
+def _recompute_customer_year_summary(conn, customer_id, year) -> None:
+    """Recompute one (customer_id, year) row from scratch.
+
+    Counts orders and sums total_price for the given customer and year. The
+    row is deleted then re-inserted so it always reflects the current state of
+    ``orders``. Safe to call inside an existing order transaction (NFR2: a
+    single UPSERT within the same transaction adds negligible latency).
+    """
+    if customer_id is None or year is None:
+        return
+    conn.execute(
+        "DELETE FROM customer_year_summary WHERE customer_id = ? AND year = ?",
+        (customer_id, year),
+    )
+    row = conn.execute(
+        "SELECT COUNT(*) AS c, COALESCE(SUM(total_price), 0) AS v "
+        "FROM orders WHERE customer_id = ? "
+        "  AND CAST(strftime('%Y', created_at) AS INTEGER) = ?",
+        (customer_id, int(year)),
+    ).fetchone()
+    order_count = int(row["c"] or 0)
+    total_volume = float(row["v"] or 0)
+    conn.execute(
+        "INSERT INTO customer_year_summary (customer_id, year, order_count, total_volume) "
+        "VALUES (?, ?, ?, ?)",
+        (int(customer_id), int(year), order_count, total_volume),
+    )
+
+
+def _migrate_v60_customer_year_summary(conn):
+    """Create ``customer_year_summary`` and backfill it from existing orders.
+
+    DG-206 Phase 1 (FR6, NFR2). The table stores one row per
+    (customer_id, year) with the order count and total volume. Idempotent:
+    re-running on an already-backfilled DB is a no-op (CREATE TABLE IF NOT
+    EXISTS plus a guarded backfill that only inserts when the row is absent).
+    """
+    # Backfill: one pass over orders grouped by (customer_id, year) where the
+    # summary row does not yet exist. Guard with NOT EXISTS so a partial run
+    # does not double-count.
+    conn.execute(
+        """
+        INSERT INTO customer_year_summary (customer_id, year, order_count, total_volume)
+        SELECT o.customer_id,
+               CAST(strftime('%Y', o.created_at) AS INTEGER) AS year,
+               COUNT(*)   AS order_count,
+               COALESCE(SUM(o.total_price), 0) AS total_volume
+        FROM orders o
+        WHERE o.customer_id IS NOT NULL
+          AND o.created_at IS NOT NULL
+          AND o.created_at != ''
+        GROUP BY o.customer_id, year
+        ON CONFLICT(customer_id, year) DO NOTHING
+        """
+    )
+
+
+def _migrate_v61_customer_search_name(conn):
+    """Add ``search_name`` column and backfill for all existing customers.
+
+    DG-206 follow-up: adds diacritic-insensitive search. For fresh DBs the
+    column already exists via CUSTOMERS_SCHEMA; for existing DBs we add it
+    with ALTER TABLE. Then backfills ``_strip_diacritics(name)`` for every
+    customer row. Idempotent: re-running overwrites existing values with
+    the same result.
+    """
+    cols = [r["name"] for r in conn.execute("PRAGMA table_info(customers)").fetchall()]
+    if "search_name" not in cols:
+        conn.execute("ALTER TABLE customers ADD COLUMN search_name TEXT DEFAULT ''")
+    rows = conn.execute("SELECT id, name FROM customers").fetchall()
+    for row in rows:
+        conn.execute(
+            "UPDATE customers SET search_name = ? WHERE id = ?",
+            (_strip_diacritics(row["name"]), row["id"]),
+        )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -2969,7 +3505,37 @@ MIGRATIONS = {
          "sql": "",
          "callable": _migrate_v55_utc_timestamp_standardization,
      },
- }
+    56: {
+        "description": "Customer management foundation: customers table, customer_id FK on orders, auto-match existing orders by phone (DG-182 Phase 1)",
+        "sql": CUSTOMERS_SCHEMA,
+        "callable": _migrate_v56_customers_and_order_link,
+    },
+    57: {
+        "description": "Generate customer records from existing orders and link orders to them — earliest-order-wins for shared phones, idempotent re-run (DG-204 Phase 2)",
+        "sql": "",
+        "callable": _migrate_v57_generate_customers_from_orders,
+    },
+    58: {
+        "description": "Customer multi-phone: customer_phones table + migrate existing customers.phone as primary phone, idempotent re-run (DG-205 Phase 1)",
+        "sql": CUSTOMER_PHONES_SCHEMA,
+        "callable": _migrate_v58_customer_phones,
+    },
+    59: {
+        "description": "Deduplicate customers with same case-insensitive name — merge orders, keep most-active, delete dupes (DG-205 follow-up)",
+        "sql": "",
+        "callable": _migrate_v59_deduplicate_customers,
+    },
+    60: {
+        "description": "Customer yearly summary table (customer_year_summary) for order count + total volume per year, backfill from existing orders (DG-206 Phase 1)",
+        "sql": CUSTOMER_YEAR_SUMMARY_SCHEMA,
+        "callable": _migrate_v60_customer_year_summary,
+    },
+    61: {
+        "description": "Add search_name column to customers for diacritic-insensitive search, backfill from existing names (DG-206 follow-up)",
+        "sql": "",
+        "callable": _migrate_v61_customer_search_name,
+    },
+}
 
 
 def ensure_schema(conn):

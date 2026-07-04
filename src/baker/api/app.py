@@ -10,6 +10,7 @@ from baker.api.catalog import router as catalog_router
 from baker.api.checklist import router as checklist_router
 from baker.api.categories import router as categories_router
 from baker.api.config import router as config_router
+from baker.api.customers import router as customers_router
 from baker.api.events import router as events_router
 from baker.api.exception_handlers import global_exception_handler
 from baker.api.knowledge import router as knowledge_router
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(catalog_router)
     app.include_router(categories_router)
     app.include_router(config_router)
+    app.include_router(customers_router)
     app.include_router(events_router)
     app.include_router(knowledge_router)
     app.include_router(orders_router)

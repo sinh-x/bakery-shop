@@ -1971,3 +1971,271 @@ def test_receipt_total_excludes_invalidated_transaction(api_client):
         _invalidate_payment_txn(conn, txn_id)
         # After invalidation the receipt total excludes the invalidated deposit.
         assert PaymentTransaction.total_paid_excl_outflows(conn, order_id) == 0.0
+
+
+# --- DG-205 Phase 3: order-customer phone matching via customer_phones (FR8/AC7) ---
+
+
+def _create_customer_with_phones(api_client, name, phones):
+    """Create a customer with a phones array and return the API response."""
+    resp = api_client.post(
+        "/api/customers",
+        json={"name": name, "phones": phones},
+    )
+    assert resp.status_code == 201
+    return resp.json()
+
+
+def test_create_order_links_customer_by_secondary_phone(api_client):
+    """AC7 — order customerPhone matches a secondary phone in customer_phones."""
+    cust = _create_customer_with_phones(
+        api_client,
+        "Trần Thị B",
+        [
+            {"phone": "8490111222", "isPrimary": True},
+            {"phone": "8499888777", "isPrimary": False},
+        ],
+    )
+    # Order with the secondary phone and no explicit customerId.
+    order = _create_order(
+        api_client,
+        customer="Trần Thị B",
+        customerPhone="8499888777",
+    )
+    assert order["customerId"] == cust["id"]
+
+
+def test_create_order_links_customer_by_primary_phone(api_client):
+    """AC7 — order customerPhone matches the primary phone in customer_phones."""
+    cust = _create_customer_with_phones(
+        api_client,
+        "Lê Văn C",
+        [{"phone": "8491234567", "isPrimary": True}],
+    )
+    order = _create_order(
+        api_client,
+        customer="Lê Văn C",
+        customerPhone="8491234567",
+    )
+    assert order["customerId"] == cust["id"]
+
+
+def test_create_order_phone_normalized_for_matching(api_client):
+    """AC7 — phone matching normalizes whitespace/dashes/dots before compare."""
+    cust = _create_customer_with_phones(
+        api_client,
+        "Phạm Văn D",
+        [{"phone": "84988776655", "isPrimary": True}],
+    )
+    # Same phone but with formatting; should still link.
+    order = _create_order(
+        api_client,
+        customer="Phạm Văn D",
+        customerPhone="849887 766-55",
+    )
+    assert order["customerId"] == cust["id"]
+
+
+def test_create_order_no_match_leaves_customer_id_null(api_client):
+    """AC7 — unknown phone does not link to any customer (customerId stays null)."""
+    _create_customer_with_phones(
+        api_client,
+        "Ngô Thị E",
+        [{"phone": "8490000000", "isPrimary": True}],
+    )
+    order = _create_order(
+        api_client,
+        customer="Walk-in",
+        customerPhone="84999999999",
+    )
+    assert order["customerId"] is None
+
+
+def test_create_order_explicit_customer_id_wins_over_phone(api_client):
+    """AC7 — explicit customerId is respected; phone does not override it."""
+    cust_a = _create_customer_with_phones(
+        api_client,
+        "A",
+        [{"phone": "8491111111", "isPrimary": True}],
+    )
+    cust_b = _create_customer_with_phones(
+        api_client,
+        "B",
+        [{"phone": "8492222222", "isPrimary": True}],
+    )
+    # Pass cust_b.id explicitly with cust_a's phone — explicit id must win.
+    order = _create_order(
+        api_client,
+        customer="B",
+        customerPhone="8491111111",
+        customerId=cust_b["id"],
+    )
+    assert order["customerId"] == cust_b["id"]
+    assert cust_b["id"] != cust_a["id"]
+
+
+def test_edit_order_relinks_when_phone_changes(api_client):
+    """AC7 — editing customerPhone re-resolves the customer link."""
+    cust_a = _create_customer_with_phones(
+        api_client,
+        "A",
+        [{"phone": "8493333333", "isPrimary": True}],
+    )
+    cust_b = _create_customer_with_phones(
+        api_client,
+        "B",
+        [{"phone": "8494444444", "isPrimary": True}],
+    )
+    order = _create_order(
+        api_client,
+        customer="A",
+        customerPhone="8493333333",
+    )
+    assert order["customerId"] == cust_a["id"]
+    # Change phone to cust_b's — should re-link to cust_b.
+    resp = api_client.patch(
+        f"/api/orders/{order['orderRef']}",
+        json={"customerPhone": "8494444444"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["customerId"] == cust_b["id"]
+
+
+def test_edit_order_explicit_null_customer_id_not_overridden_by_phone(api_client):
+    """AC7 — explicit customerId=null (unlink) is respected; phone does not re-resolve."""
+    cust = _create_customer_with_phones(
+        api_client,
+        "C",
+        [{"phone": "8495555555", "isPrimary": True}],
+    )
+    order = _create_order(
+        api_client,
+        customer="C",
+        customerPhone="8495555555",
+    )
+    assert order["customerId"] == cust["id"]
+    # Explicit null + new phone — should keep customerId null (no re-resolve).
+    resp = api_client.patch(
+        f"/api/orders/{order['orderRef']}",
+        json={"customerId": None, "customerPhone": "8496666666"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["customerId"] is None
+
+
+def test_create_order_shared_phone_earliest_order_wins(api_client):
+    """FR8 — when multiple customers share the phone, earliest order links."""
+    cust_a = _create_customer_with_phones(
+        api_client,
+        "Shared A",
+        [{"phone": "8497777777", "isPrimary": True}],
+    )
+    cust_b = _create_customer_with_phones(
+        api_client,
+        "Shared B",
+        [{"phone": "8497777777", "isPrimary": True}],
+    )
+    # First order to that phone — should link to the earliest customer by id.
+    order = _create_order(
+        api_client,
+        customer="Walk-in",
+        customerPhone="8497777777",
+    )
+    # Both customers share the phone; no orders exist for either yet, so the
+    # fallback (lowest customer_id) applies. cust_a was created first.
+    assert order["customerId"] in (cust_a["id"], cust_b["id"])
+    # Sanity: with no prior orders, the deterministic pick is the lowest id.
+    assert order["customerId"] == min(cust_a["id"], cust_b["id"])
+
+
+def test_create_order_shared_phone_existing_order_tiebreak(api_client):
+    """FR8 — earliest-order-wins tiebreak uses existing order created_at."""
+    cust_a = _create_customer_with_phones(
+        api_client,
+        "Shared A",
+        [{"phone": "8498888888", "isPrimary": True}],
+    )
+    cust_b = _create_customer_with_phones(
+        api_client,
+        "Shared B",
+        [{"phone": "8498888888", "isPrimary": True}],
+    )
+    # Give cust_b an earlier order via direct DB insert so it should win.
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, customer_phone, items, "
+            "total_price, status, due_date, customer_id, created_at) "
+            "VALUES ('EARLY-1', 'Shared B', '8498888888', '[]', 0, 'new', "
+            "'2026-01-01', ?, '2026-01-01T00:00:00')",
+            (cust_b["id"],),
+        )
+    order = _create_order(
+        api_client,
+        customer="Walk-in",
+        customerPhone="8498888888",
+    )
+    assert order["customerId"] == cust_b["id"]
+
+
+def test_create_order_legacy_customers_phone_fallback(api_client):
+    """AC7 — falls back to customers.phone when customer_phones has no match.
+
+    Covers pre-v58 databases or customers whose phone was written directly to
+    the denormalized column without a corresponding customer_phones row.
+    """
+    # Create a customer with only the legacy phone column populated (no
+    # customer_phones rows) by inserting directly into the DB.
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO customers (name, phone, created_at) VALUES (?, ?, ?)",
+            ("Legacy Only", "8499990000", "2026-06-01T00:00:00"),
+        )
+        legacy_id = cur.lastrowid
+    order = _create_order(
+        api_client,
+        customer="Legacy Only",
+        customerPhone="8499990000",
+    )
+    assert order["customerId"] == legacy_id
+
+
+def test_create_order_links_customer_when_stored_phone_has_separators(api_client):
+    """M-1 (review-auto) — order matches a customer whose stored phone contains
+    separators (dashes/dots/spaces).
+
+    Before the fix, _resolve_customer_id_by_phone normalized the search value
+    but compared it against the raw (un-normalized) stored value, so phones
+    saved with formatting never matched. Now _sync_customer_phones and
+    Customer.save/update normalize on write, and the legacy fallback query
+    normalizes the stored column at query time.
+    """
+    # Create a customer via the API with a phone containing dashes/spaces.
+    cust = _create_customer_with_phones(
+        api_client,
+        "Tách Dấu",
+        [{"phone": "84-912 345.678", "isPrimary": True}],
+    )
+    # An order with the same digits in a different format must link.
+    order = _create_order(
+        api_client,
+        customer="Tách Dấu",
+        customerPhone="84912345678",
+    )
+    assert order["customerId"] == cust["id"]
+
+
+def test_legacy_fallback_matches_phone_with_separators(api_client):
+    """M-1 (review-auto) — the legacy customers.phone fallback normalizes the
+    stored column at query time so rows written with separators still match."""
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO customers (name, phone, created_at) VALUES (?, ?, ?)",
+            ("Legacy Formatted", "84-999.000 00", "2026-06-01T00:00:00"),
+        )
+        legacy_id = cur.lastrowid
+    order = _create_order(
+        api_client,
+        customer="Legacy Formatted",
+        customerPhone="8499900000",
+    )
+    assert order["customerId"] == legacy_id
