@@ -1,6 +1,5 @@
 import 'package:bakery_app/data/api/paper_mode_service.dart';
 import 'package:bakery_app/features/settings/widgets/settings_sections.dart';
-import 'package:bakery_app/providers/paper_mode_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -10,14 +9,12 @@ import 'package:flutter_test/flutter_test.dart';
 class _FakePaperModeService extends PaperModeService {
   _FakePaperModeService({
     PaperModeStatus? status,
-    this.setStatus,
     this.setThrows,
   })  : _status = status ??
             const PaperModeStatus(paperMode: 'label', defaultMode: 'label'),
         super(Dio());
 
   final PaperModeStatus _status;
-  String? setStatus;
   Object? setThrows;
   List<String> setCalls = [];
 
