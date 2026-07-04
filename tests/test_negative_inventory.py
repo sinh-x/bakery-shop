@@ -448,3 +448,62 @@ def test_negative_sale_no_cogs_when_cost_zero_ac8(api_client):
         assert neg is not None
         entries = _negative_sale_cogs_entries(conn, neg["id"])
         assert len(entries) == 0
+
+
+def test_stock_overview_returns_net_negative_position(api_client):
+    """DG-200 Phase 5 / FR-7 / NFR-2: stock_overview endpoint surfaces net
+    position (available - negative_balance) so the Flutter stock screen can
+    display negative quantities with a distinct indicator (AC-10)."""
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "Net Chip", 22000)
+
+    # No stock, POS order for 4 → negative_balance.qty = 4.
+    _create_pos_order(
+        api_client,
+        items=[{
+            "productId": "1",
+            "productName": "Bánh kem",
+            "quantity": 4,
+            "unitPrice": 22000,
+            "priceChipId": chip_id,
+        }],
+    )
+
+    resp = api_client.get("/api/stock/overview")
+    assert resp.status_code == 200
+    item = next(row for row in resp.json() if row["product_id"] == 1)
+    assert item["quantity"] == -4
+
+    chip_bucket = next(
+        b for b in item["per_chip"] if b["price_chip_id"] == chip_id
+    )
+    assert chip_bucket["quantity"] == -4
+
+
+def test_stock_overview_offsets_negative_after_partial_restock(api_client):
+    """DG-200 Phase 5: net position reflects partial offset when available
+    items exist alongside a negative balance for the same chip."""
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "Partial Chip", 22000)
+
+    # Start with 2 available, sell 5 → consume 2, negative balance = 3.
+    api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 2, "price_chip_id": chip_id},
+    )
+    _create_pos_order(
+        api_client,
+        items=[{
+            "productId": "1",
+            "productName": "Bánh kem",
+            "quantity": 5,
+            "unitPrice": 22000,
+            "priceChipId": chip_id,
+        }],
+    )
+
+    resp = api_client.get("/api/stock/overview")
+    assert resp.status_code == 200
+    item = next(row for row in resp.json() if row["product_id"] == 1)
+    # Net = available(0) - negative(3) = -3.
+    assert item["quantity"] == -3

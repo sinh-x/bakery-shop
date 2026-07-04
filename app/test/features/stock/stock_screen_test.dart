@@ -121,4 +121,61 @@ void main() {
     expect(find.byIcon(Icons.remove), findsWidgets);
     expect(find.byIcon(Icons.edit), findsWidgets);
   });
+
+  // DG-200 Phase 5 — AC-10: negative stock display
+  testWidgets('displays negative stock with minus sign and Âm N label', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final stockService = _FakeStockService([
+      StockOverviewItem(
+        productId: 10,
+        productName: 'Bánh âm',
+        category: 'banh_kem',
+        quantity: -5,
+        basePrice: 100000,
+        perChip: [
+          StockOverviewOption(
+            normalizedPrice: 100000,
+            quantity: -5,
+            chipLabels: ['Giá gốc'],
+            chipLabel: 'Giá gốc',
+          ),
+        ],
+      ),
+    ]);
+    final categoryService = _FakeCategoryService(const [
+      Category(
+        id: 2,
+        slug: 'banh_kem',
+        name: 'Bánh kem',
+        codePrefix: 'BK',
+        active: 1,
+        position: 2,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          stockServiceProvider.overrideWithValue(stockService),
+          categoryServiceProvider.overrideWithValue(categoryService),
+        ],
+        child: MaterialApp.router(routerConfig: buildRouter()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Bánh kem'));
+    await tester.pumpAndSettle();
+
+    // Quantity text shows the negative number (minus sign).
+    expect(find.text('-5'), findsOneWidget);
+    // Negative-aware VN label "Âm 5".
+    expect(find.text(VN.negativeStockLabel(-5)), findsOneWidget);
+    // Per-chip line reflects the negative net position.
+    expect(find.textContaining('Giá gốc (100000): -5'), findsOneWidget);
+  });
 }

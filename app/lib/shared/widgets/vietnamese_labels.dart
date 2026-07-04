@@ -700,6 +700,15 @@ class VN {
 
   static const outOfStock = 'Hết hàng';
 
+  // Negative stock display (DG-200 Phase 5, FR-8, AC-10)
+  /// Label for products with a negative net stock position.
+  /// `Âm N` reads as `Âm <N>` where N is the absolute quantity.
+  static String negativeStockLabel(int qty) {
+    assert(qty < 0, 'negativeStockLabel expects a negative quantity');
+    return 'Âm ${qty.abs()}';
+  }
+  static const negativeStockLabelPrefix = 'Âm';
+
   // Stock management
   static const quanLyTonKho = 'Quản lý tồn kho';
   static const nhapHang = 'Nhập hàng';
