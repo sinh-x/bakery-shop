@@ -71,14 +71,16 @@ bool hasReconciliationOptionIssue({
   if (counted < 0 || sale < 0 || waste < 0) {
     return true;
   }
-  if (counted > option.expectedQty) {
-    return true;
-  }
 
   final missing = option.expectedQty - counted;
+
+  // Surplus case (counted > expected): backend converts the surplus into a
+  // restock inflow after netting any negative balance. Sale and waste rows
+  // must be empty because there is no "missing" stock to account for.
   if (missing < 0) {
-    return true;
+    return sale > 0 || waste > 0;
   }
+
   if (waste > missing) {
     return true;
   }
@@ -136,18 +138,21 @@ ReconciliationValidationResult? validateReconciliationState(
       if (counted < 0 || sale < 0 || waste < 0) {
         return ReconciliationValidationResult('Số lượng không được âm');
       }
-      if (counted > option.expectedQty) {
-        productErrors[optionKey] =
-            'Số đếm thực tế không được lớn hơn số tồn dự kiến';
+
+      final missing = option.expectedQty - counted;
+
+      // Surplus case (counted > expected): backend converts the surplus into a
+      // restock inflow. Sale and waste rows must be empty — there is no missing
+      // stock to split between sale and waste.
+      if (missing < 0) {
+        if (sale > 0 || waste > 0) {
+          productErrors[optionKey] =
+              'Số đếm lớn hơn tồn dự kiến sẽ tự nhập bù. Vui lòng xoá dòng bán và hao hụt.';
+          continue;
+        }
         continue;
       }
 
-      final missing = option.expectedQty - counted;
-      if (missing < 0) {
-        productErrors[optionKey] =
-            'Số đếm thực tế không được lớn hơn số tồn dự kiến';
-        continue;
-      }
       if (waste > missing) {
         productErrors[optionKey] =
             'Số hao hụt vượt quá số thiếu. Vui lòng vào màn hình \'Nhập hàng\' để bổ sung tồn kho trước.';

@@ -771,6 +771,15 @@ class VN {
   static const trangThaiCoLoi = 'Có lỗi';
   static const themDongBan = 'Thêm dòng bán';
   static const soLuongChenhLech = 'Số lượng chênh lệch';
+
+  // Reconciliation surplus / restock inflow (DG-200 Phase 6, FR-9, AC-11)
+  /// Label for the surplus inflow quantity (counted - expected, when > 0).
+  /// Reads as `Số lượng bù: +N`.
+  static const soLuongBu = 'Số lượng bù';
+  /// Restock indicator title shown next to a surplus option.
+  static const nhapBuTonKho = 'Nhập bù tồn kho';
+  /// Hint explaining that surplus will auto-create a restock inflow.
+  static const nhapBuHint = 'Số dư sẽ tự nhập bù vào kho khi gửi đối soát';
   static const dongBan = 'Dòng bán';
   static const nhanChip = 'Nhãn chip';
   static const giam = 'Giảm';

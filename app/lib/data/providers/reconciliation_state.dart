@@ -89,6 +89,21 @@ class ReconciliationState {
   );
   bool get hasWaste => wasteQtyByOption.values.any((value) => value > 0);
 
+  /// Surplus inflow quantity for an option (counted - expected, or 0 when not a surplus).
+  ///
+  /// Surplus is the amount that exceeds the system-expected stock and will be
+  /// converted into a `restock` inflow by the reconciliation backend (after
+  /// netting any negative balance). Returns 0 when counted <= expected.
+  int surplusQtyFor(String optionKey, int expectedQty) {
+    final counted = countedQtyByOption[optionKey] ?? 0;
+    final surplus = counted - expectedQty;
+    return surplus > 0 ? surplus : 0;
+  }
+
+  /// True when an option has surplus inflow (counted > expected).
+  bool hasSurplusFor(String optionKey, int expectedQty) =>
+      surplusQtyFor(optionKey, expectedQty) > 0;
+
   ReconciliationState copyWith({
     bool? isLoading,
     bool? isSubmitting,
