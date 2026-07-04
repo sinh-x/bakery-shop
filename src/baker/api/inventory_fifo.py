@@ -112,8 +112,20 @@ def consume_fifo_items(
     price_chip_id: int | None,
     quantity: int,
     consumed_by_movement_id: int,
-) -> None:
-    """Consume available inventory using lot-first then item-first FIFO."""
+    *,
+    allow_negative: bool = False,
+) -> int:
+    """Consume available inventory using lot-first then item-first FIFO.
+
+    When ``allow_negative`` is ``False`` (default), raises ``HTTPException``
+    with status 422 if available stock is insufficient — preserving the
+    historical behaviour required by waste/adjust callers (NFR-3).
+
+    When ``allow_negative`` is ``True``, consumes all available items and
+    returns the remaining deficit (a non-negative ``int``) without raising.
+    The caller is responsible for recording the deficit as a negative balance
+    entry (DG-200 Phase 2 handles that upsert).
+    """
     remaining = quantity
     lots = conn.execute(
         """SELECT id
@@ -155,7 +167,10 @@ def consume_fifo_items(
         remaining -= consumed_count
 
     if remaining > 0:
+        if allow_negative:
+            return remaining
         raise HTTPException(status_code=422, detail="Không đủ tồn kho")
+    return 0
 
 
 def available_quantity(conn, product_id: int, price_chip_id: int | None) -> int:

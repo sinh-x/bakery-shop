@@ -2541,6 +2541,30 @@ def _migrate_v54_add_account_2400(conn):
     _seed_chart_of_accounts(conn)
 
 
+NEGATIVE_BALANCE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS negative_balance (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id      INTEGER NOT NULL REFERENCES products(id),
+    price_chip_id   INTEGER REFERENCES product_price_chips(id),
+    qty             INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_negative_balance_product_chip
+    ON negative_balance(product_id, price_chip_id);
+"""
+
+
+def _migrate_v62_negative_balance(conn):
+    """Create negative_balance table for tracking oversold stock (DG-200 Phase 1).
+
+    Idempotent: uses CREATE TABLE IF NOT EXISTS and CREATE INDEX IF NOT EXISTS,
+    so re-running on an already-migrated DB is a no-op.
+    """
+    conn.executescript(NEGATIVE_BALANCE_SCHEMA)
+
+
 COST_HISTORY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS cost_history (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3534,6 +3558,11 @@ MIGRATIONS = {
         "description": "Add search_name column to customers for diacritic-insensitive search, backfill from existing names (DG-206 follow-up)",
         "sql": "",
         "callable": _migrate_v61_customer_search_name,
+    },
+    62: {
+        "description": "Negative inventory: negative_balance table tracking oversold qty per (product_id, price_chip_id) (DG-200 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v62_negative_balance,
     },
 }
 
