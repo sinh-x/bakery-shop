@@ -273,3 +273,178 @@ def test_restore_order_with_negative_sale_reduces_negative_balance(api_client):
             (chip_id,),
         ).fetchone()["c"]
         assert available == 2
+
+
+# ---------------------------------------------------------------------------
+# DG-200 Phase 4 — Accounting Entries (AC-8: COGS journal for negative sales)
+# ---------------------------------------------------------------------------
+
+
+def _negative_sale_cogs_entries(conn, movement_id: int):
+    return conn.execute(
+        "SELECT * FROM journal_entries WHERE source_type = 'negative_sale_cogs' "
+        "AND source_id = ? ORDER BY id",
+        (movement_id,),
+    ).fetchall()
+
+
+def _entry_lines(conn, entry_id: int):
+    return conn.execute(
+        "SELECT * FROM journal_lines WHERE journal_entry_id = ? ORDER BY id",
+        (entry_id,),
+    ).fetchall()
+
+
+def test_negative_sale_creates_cogs_journal_entry_ac8(api_client):
+    """AC-8: a negative sale produces a COGS journal entry debiting 5900 and
+    crediting 1300 for the oversold quantity (baseline cost)."""
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "AC8 Chip", 15000)
+
+    order = _create_pos_order(
+        api_client,
+        items=[{
+            "productId": "1",
+            "productName": "Bánh mì trắng",
+            "quantity": 3,
+            "unitPrice": 15000,
+            "priceChipId": chip_id,
+        }],
+    )
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        neg = conn.execute(
+            """SELECT id FROM stock_movements
+               WHERE reference_id = ? AND movement_type = 'negative_sale'
+                 AND product_id = 1 AND price_chip_id = ?""",
+            (ref, chip_id),
+        ).fetchone()
+        assert neg is not None
+        movement_id = neg["id"]
+
+        entries = _negative_sale_cogs_entries(conn, movement_id)
+        assert len(entries) == 1
+
+        lines = _entry_lines(conn, entries[0]["id"])
+        debit_line = next(l for l in lines if l["debit"] > 0)
+        credit_line = next(l for l in lines if l["credit"] > 0)
+        cogs_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id = ?", (debit_line["account_id"],)
+        ).fetchone()
+        inv_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id = ?", (credit_line["account_id"],)
+        ).fetchone()
+        assert cogs_acc["code"] == "5900"
+        assert inv_acc["code"] == "1300"
+        # Product 1 base_price=10000 → baseline 30% = 3000 × 3 = 9000
+        assert debit_line["debit"] == 9000.0
+        assert credit_line["credit"] == 9000.0
+
+
+def test_negative_sale_cogs_uses_cost_history_when_present_ac8(api_client):
+    """AC-8: when a cost_history row exists, it overrides the baseline cost."""
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "AC8b Chip", 17000)
+
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
+            (1, 25000, "2020-01-01T00:00:00Z"),
+        )
+
+    order = _create_pos_order(
+        api_client,
+        items=[{
+            "productId": "1",
+            "productName": "Bánh mì trắng",
+            "quantity": 2,
+            "unitPrice": 17000,
+            "priceChipId": chip_id,
+        }],
+    )
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        neg = conn.execute(
+            """SELECT id FROM stock_movements
+               WHERE reference_id = ? AND movement_type = 'negative_sale'
+                 AND product_id = 1 AND price_chip_id = ?""",
+            (ref, chip_id),
+        ).fetchone()
+        movement_id = neg["id"]
+        entries = _negative_sale_cogs_entries(conn, movement_id)
+        assert len(entries) == 1
+        lines = _entry_lines(conn, entries[0]["id"])
+        debit_line = next(l for l in lines if l["debit"] > 0)
+        # cost_history cost 25000 × qty 2 = 50000
+        assert debit_line["debit"] == 50000.0
+
+
+def test_negative_sale_cogs_idempotent_ac8(api_client):
+    """AC-8: re-invoking the sync helper directly must not duplicate entries."""
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "AC8c Chip", 19000)
+
+    order = _create_pos_order(
+        api_client,
+        items=[{
+            "productId": "1",
+            "productName": "Bánh mì trắng",
+            "quantity": 2,
+            "unitPrice": 19000,
+            "priceChipId": chip_id,
+        }],
+    )
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        neg = conn.execute(
+            """SELECT id FROM stock_movements
+               WHERE reference_id = ? AND movement_type = 'negative_sale'
+                 AND product_id = 1 AND price_chip_id = ?""",
+            (ref, chip_id),
+        ).fetchone()
+        movement_id = neg["id"]
+
+        from baker.services.journal_sync import _sync_negative_sale_cogs_journal
+
+        _sync_negative_sale_cogs_journal(conn, 1, movement_id, 2)
+        entries = _negative_sale_cogs_entries(conn, movement_id)
+        assert len(entries) == 1
+
+
+def test_negative_sale_no_cogs_when_cost_zero_ac8(api_client):
+    """AC-8 edge: a product with zero base_price and no cost_history produces
+    no negative_sale_cogs entry."""
+    prod = api_client.post(
+        "/api/products",
+        json={"name": "AC8 Zero", "category": "cake", "base_price": 0, "cost": 0},
+    )
+    assert prod.status_code == 201
+    pid = prod.json()["id"]
+    _ensure_trung_bay(pid)
+    chip_id = _create_chip(api_client, pid, "AC8z Chip", 5000)
+
+    order = _create_pos_order(
+        api_client,
+        items=[{
+            "productId": str(pid),
+            "productName": "AC8 Zero",
+            "quantity": 1,
+            "unitPrice": 5000,
+            "priceChipId": chip_id,
+        }],
+    )
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        neg = conn.execute(
+            """SELECT id FROM stock_movements
+               WHERE reference_id = ? AND movement_type = 'negative_sale'
+                 AND product_id = ? AND price_chip_id = ?""",
+            (ref, pid, chip_id),
+        ).fetchone()
+        assert neg is not None
+        entries = _negative_sale_cogs_entries(conn, neg["id"])
+        assert len(entries) == 0

@@ -160,6 +160,23 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
                 },
             ).save(conn)
 
+            # DG-200 Phase 4, AC-8: COGS journal entry for the oversold
+            # quantity. Mirrors the waste COGS sync pattern (DR COGS / CR
+            # Inventory). Fire-and-forget: accounting failures never block
+            # the primary sale operation (NFR1).
+            from baker.services.journal_sync import (
+                _sync_negative_sale_cogs_journal,
+                run_journal_sync,
+            )
+
+            run_journal_sync(
+                _sync_negative_sale_cogs_journal,
+                conn, product_id, negative_movement_id, deficit,
+                log_label=(
+                    f"negative sale cogs sync for movement {negative_movement_id}"
+                ),
+            )
+
         Event(
             summary=f"Ban hang -{qty} {item['product_name']}",
             type="inventory",

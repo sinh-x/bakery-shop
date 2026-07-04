@@ -1338,3 +1338,173 @@ def test_draft_surfaces_net_position_when_negative_balance_exists(api_client):
     product = next(p for p in resp.json()["products"] if p["product_id"] == 1)
     # net = 3 available - 5 negative = -2
     assert product["expected_qty"] == -2
+
+
+# ---------------------------------------------------------------------------
+# DG-200 Phase 4 — Accounting Entries (AC-9: Inventory debit for restock inflow)
+# ---------------------------------------------------------------------------
+
+
+def _restock_inflow_entries(conn, movement_id: int):
+    return conn.execute(
+        "SELECT * FROM journal_entries WHERE source_type = 'restock_inflow' "
+        "AND source_id = ? ORDER BY id",
+        (movement_id,),
+    ).fetchall()
+
+
+def _entry_lines(conn, entry_id: int):
+    return conn.execute(
+        "SELECT * FROM journal_lines WHERE journal_entry_id = ? ORDER BY id",
+        (entry_id,),
+    ).fetchall()
+
+
+def test_surplus_restock_creates_inventory_debit_journal_ac9(api_client):
+    """AC-9: reconciliation surplus inflow creates a journal entry debiting
+    Inventory (1300) and crediting COGS (5900) for the restocked quantity
+    (baseline cost)."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 10)
+
+    resp = _submit_surplus(api_client, 1, expected_qty=10, counted_qty=15)
+    assert resp.status_code == 201
+    session_id = resp.json()["id"]
+
+    with get_db() as conn:
+        restock_row = conn.execute(
+            """SELECT id FROM stock_movements
+               WHERE movement_type = 'restock' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (f"reconciliation:{session_id}",),
+        ).fetchone()
+        assert restock_row is not None
+        movement_id = restock_row["id"]
+
+        entries = _restock_inflow_entries(conn, movement_id)
+        assert len(entries) == 1
+
+        lines = _entry_lines(conn, entries[0]["id"])
+        debit_line = next(l for l in lines if l["debit"] > 0)
+        credit_line = next(l for l in lines if l["credit"] > 0)
+        inv_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id = ?", (debit_line["account_id"],)
+        ).fetchone()
+        cogs_acc = conn.execute(
+            "SELECT code FROM accounts WHERE id = ?", (credit_line["account_id"],)
+        ).fetchone()
+        assert inv_acc["code"] == "1300"
+        assert cogs_acc["code"] == "5900"
+        # Product 1 base_price=10000 → baseline 30% = 3000 × 5 = 15000
+        assert debit_line["debit"] == 15000.0
+        assert credit_line["credit"] == 15000.0
+
+
+def test_surplus_restock_inflow_uses_cost_history_ac9(api_client):
+    """AC-9: cost_history overrides baseline when present."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 4)
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) VALUES (?, ?, ?)",
+            (1, 25000, "2020-01-01T00:00:00Z"),
+        )
+
+    resp = _submit_surplus(api_client, 1, expected_qty=4, counted_qty=7)
+    assert resp.status_code == 201
+    session_id = resp.json()["id"]
+
+    with get_db() as conn:
+        restock_row = conn.execute(
+            """SELECT id FROM stock_movements
+               WHERE movement_type = 'restock' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (f"reconciliation:{session_id}",),
+        ).fetchone()
+        movement_id = restock_row["id"]
+        entries = _restock_inflow_entries(conn, movement_id)
+        assert len(entries) == 1
+        lines = _entry_lines(conn, entries[0]["id"])
+        debit_line = next(l for l in lines if l["debit"] > 0)
+        # cost_history cost 25000 × qty 3 = 75000
+        assert debit_line["debit"] == 75000.0
+
+
+def test_surplus_restock_inflow_idempotent_ac9(api_client):
+    """AC-9: re-invoking the sync helper directly must not duplicate entries."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 5)
+
+    resp = _submit_surplus(api_client, 1, expected_qty=5, counted_qty=8)
+    assert resp.status_code == 201
+    session_id = resp.json()["id"]
+
+    with get_db() as conn:
+        restock_row = conn.execute(
+            """SELECT id FROM stock_movements
+               WHERE movement_type = 'restock' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (f"reconciliation:{session_id}",),
+        ).fetchone()
+        movement_id = restock_row["id"]
+
+        from baker.services.journal_sync import _sync_restock_inflow_journal
+
+        _sync_restock_inflow_journal(conn, 1, movement_id, 3)
+        entries = _restock_inflow_entries(conn, movement_id)
+        assert len(entries) == 1
+
+
+def test_surplus_netting_only_no_inflow_journal_ac9(api_client):
+    """AC-9: when surplus fully offsets a negative balance (no restock), no
+    restock_inflow journal entry is created."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 0)
+        _set_negative_balance(conn, 1, None, 5)
+
+    resp = _submit_surplus(api_client, 1, expected_qty=-5, counted_qty=2)
+    assert resp.status_code == 201
+    session_id = resp.json()["id"]
+
+    with get_db() as conn:
+        # No restock movement at all, so no restock_inflow journal entry.
+        inflow_count = conn.execute(
+            """SELECT COUNT(*) AS c FROM journal_entries je
+               JOIN stock_movements sm ON sm.id = je.source_id
+               WHERE je.source_type = 'restock_inflow'
+                 AND sm.reference_id = ?""",
+            (f"reconciliation:{session_id}",),
+        ).fetchone()["c"]
+        assert inflow_count == 0
+
+
+def test_surplus_restock_inflow_no_cogs_when_cost_zero_ac9(api_client):
+    """AC-9 edge: zero-cost product produces no restock_inflow journal entry."""
+    prod = api_client.post(
+        "/api/products",
+        json={"name": "AC9 Zero", "category": "cake", "base_price": 0, "cost": 0},
+    )
+    assert prod.status_code == 201
+    pid = prod.json()["id"]
+
+    with get_db() as conn:
+        _mark_product_display(conn, pid, "true")
+        _set_stock(conn, pid, 3)
+
+    resp = _submit_surplus(api_client, pid, expected_qty=3, counted_qty=6)
+    assert resp.status_code == 201
+    session_id = resp.json()["id"]
+
+    with get_db() as conn:
+        restock_row = conn.execute(
+            """SELECT id FROM stock_movements
+               WHERE movement_type = 'restock' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (f"reconciliation:{session_id}",),
+        ).fetchone()
+        assert restock_row is not None
+        entries = _restock_inflow_entries(conn, restock_row["id"])
+        assert len(entries) == 0

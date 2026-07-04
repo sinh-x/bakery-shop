@@ -504,6 +504,23 @@ def _process_surplus_inflow(
             },
         ).save(conn)
 
+        # DG-200 Phase 4, AC-9: Inventory debit journal entry for the
+        # restocked surplus. Mirrors the waste COGS sync pattern (DR
+        # Inventory / CR COGS). Fire-and-forget: accounting failures never
+        # block the reconciliation submit (NFR1).
+        from baker.services.journal_sync import (
+            _sync_restock_inflow_journal,
+            run_journal_sync,
+        )
+
+        run_journal_sync(
+            _sync_restock_inflow_journal,
+            conn, line.product_id, restock_movement_id, restock_qty,
+            log_label=(
+                f"restock inflow journal sync for movement {restock_movement_id}"
+            ),
+        )
+
     return {
         "surplus": surplus,
         "offset_qty": offset_qty,
