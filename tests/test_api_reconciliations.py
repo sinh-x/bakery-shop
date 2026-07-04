@@ -1126,3 +1126,215 @@ def test_reconciliation_session_created_at_is_z_suffixed(api_client):
     assert detail.status_code == 200
     assert detail.json()["created_at"] == created_at
     assert detail.json()["created_at"].endswith("Z")
+
+
+# ---------------------------------------------------------------------------
+# DG-200 Phase 3 — Reconciliation Surplus Inflow (AC-3, AC-4, AC-5, AC-7)
+# ---------------------------------------------------------------------------
+
+
+def _set_negative_balance(conn, product_id: int, chip_id, qty: int) -> None:
+    """Seed a negative_balance row directly for surplus-netting tests."""
+    conn.execute(
+        """INSERT INTO negative_balance (product_id, price_chip_id, qty, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(product_id, price_chip_id) DO UPDATE
+           SET qty = excluded.qty, updated_at = excluded.updated_at""",
+        (product_id, chip_id, qty, "2026-07-05T00:00:00Z", "2026-07-05T00:00:00Z"),
+    )
+
+
+def _available_qty(conn, product_id: int, chip_id) -> int:
+    row = conn.execute(
+        """SELECT COUNT(*) AS c FROM inventory_items ii
+           JOIN stock_lots sl ON sl.id = ii.lot_id
+           WHERE sl.product_id = ? AND sl.price_chip_id IS NOT DISTINCT FROM ?
+             AND ii.status = 'available'""",
+        (product_id, chip_id),
+    ).fetchone()
+    return int(row["c"])
+
+
+def _neg_qty(conn, product_id: int, chip_id) -> int:
+    row = conn.execute(
+        "SELECT qty FROM negative_balance WHERE product_id = ? AND price_chip_id IS NOT DISTINCT FROM ?",
+        (product_id, chip_id),
+    ).fetchone()
+    return int(row["qty"]) if row else 0
+
+
+def _submit_surplus(client, product_id: int, expected_qty: int, counted_qty: int):
+    return client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "lines": [
+                {
+                    "product_id": product_id,
+                    "expected_qty": expected_qty,
+                    "counted_qty": counted_qty,
+                    "sale_qty": 0,
+                    "waste_qty": 0,
+                }
+            ],
+        },
+    )
+
+
+def test_surplus_offsets_negative_balance_no_restock_ac3(api_client):
+    """AC-3: product with -5 negative balance, zero available, counted=2 →
+    negative balance reduces to -3, no restock created."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 0)
+        _set_negative_balance(conn, 1, None, 5)
+
+    resp = _submit_surplus(api_client, 1, expected_qty=-5, counted_qty=2)
+    assert resp.status_code == 201
+    session_id = resp.json()["id"]
+
+    with get_db() as conn:
+        assert _neg_qty(conn, 1, None) == 3
+        assert _available_qty(conn, 1, None) == 0
+        restock = conn.execute(
+            """SELECT COUNT(*) AS c FROM stock_movements
+               WHERE movement_type = 'restock' AND reference_id = ?""",
+            (f"reconciliation:{session_id}",),
+        ).fetchone()["c"]
+        assert restock == 0
+
+
+def test_surplus_clears_negative_then_restocks_ac4(api_client):
+    """AC-4: product with -3 negative balance, zero available, counted=8 →
+    negative cleared to 0, 5 items restocked as restock movement."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 0)
+        _set_negative_balance(conn, 1, None, 3)
+
+    resp = _submit_surplus(api_client, 1, expected_qty=-3, counted_qty=8)
+    assert resp.status_code == 201
+    session_id = resp.json()["id"]
+
+    with get_db() as conn:
+        assert _neg_qty(conn, 1, None) == 0
+        assert _available_qty(conn, 1, None) == 5
+        restock_row = conn.execute(
+            """SELECT id, quantity, lot_id FROM stock_movements
+               WHERE movement_type = 'restock' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (f"reconciliation:{session_id}",),
+        ).fetchone()
+        assert restock_row is not None
+        assert restock_row["quantity"] == 5
+        assert restock_row["lot_id"] is not None
+
+
+def test_surplus_no_negative_creates_restock_ac5(api_client):
+    """AC-5: product with 10 available (no negative), counted=15 → 5 items
+    restocked, stock shows 15."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 10)
+
+    resp = _submit_surplus(api_client, 1, expected_qty=10, counted_qty=15)
+    assert resp.status_code == 201
+    session_id = resp.json()["id"]
+
+    with get_db() as conn:
+        assert _neg_qty(conn, 1, None) == 0
+        assert _available_qty(conn, 1, None) == 15
+        restock_row = conn.execute(
+            """SELECT id, quantity FROM stock_movements
+               WHERE movement_type = 'restock' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (f"reconciliation:{session_id}",),
+        ).fetchone()
+        assert restock_row is not None
+        assert restock_row["quantity"] == 5
+
+
+def test_surplus_restock_logs_event_and_movement_ac7(api_client):
+    """AC-7: reconciliation surplus inflow logs a stock_movement with type
+    'restock', correct reference_id, qty=+S, and an Event is created."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 4)
+
+    resp = _submit_surplus(api_client, 1, expected_qty=4, counted_qty=7)
+    assert resp.status_code == 201
+    session_id = resp.json()["id"]
+    reference_id = f"reconciliation:{session_id}"
+
+    with get_db() as conn:
+        movement = conn.execute(
+            """SELECT id, product_id, movement_type, quantity, reference_id, price_chip_id
+               FROM stock_movements
+               WHERE movement_type = 'restock' AND reference_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (reference_id,),
+        ).fetchone()
+        assert movement is not None
+        assert movement["product_id"] == 1
+        assert movement["movement_type"] == "restock"
+        assert movement["quantity"] == 3
+        assert movement["reference_id"] == reference_id
+
+        event = conn.execute(
+            """SELECT id, summary, type, data FROM events
+               WHERE type = 'inventory' AND data LIKE ?""",
+            (f'%"movement_type": "restock"%',),
+        ).fetchone()
+        assert event is not None
+        assert event["type"] == "inventory"
+        import json
+        data = json.loads(event["data"])
+        assert data["movement_type"] == "restock"
+        assert data["quantity"] == 3
+        assert data["reference_id"] == reference_id
+        assert data["product_id"] == 1
+
+
+def test_surplus_rejects_sale_or_waste_on_surplus_line(api_client):
+    """Surplus line (counted > expected) must not carry sale_qty or waste_qty."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 5)
+
+    resp = api_client.post(
+        "/api/reconciliations/submit",
+        json={
+            "staff_name": "An",
+            "payment_method": "cash",
+            "lines": [
+                {
+                    "product_id": 1,
+                    "expected_qty": 5,
+                    "counted_qty": 8,
+                    "sale_qty": 1,
+                    "waste_qty": 0,
+                    "manual_unit_price": 12000,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 422
+    assert "thừa" in resp.json()["detail"]
+
+    with get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM reconciliation_sessions").fetchone()[0] == 0
+
+
+def test_draft_surfaces_net_position_when_negative_balance_exists(api_client):
+    """FR-4: reconciliation draft expected_qty reflects net position
+    (available - negative_balance)."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 3)
+        _set_negative_balance(conn, 1, None, 5)
+
+    resp = api_client.get("/api/reconciliations/draft")
+    assert resp.status_code == 200
+    product = next(p for p in resp.json()["products"] if p["product_id"] == 1)
+    # net = 3 available - 5 negative = -2
+    assert product["expected_qty"] == -2
