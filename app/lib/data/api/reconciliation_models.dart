@@ -50,6 +50,12 @@ class ReconciliationDraftOption {
   /// (falls back to expectedQty).
   final int? grossAvailableQty;
 
+  /// Default counted quantity for this option when no explicit counted value
+  /// has been recorded. Negative expected quantities (net position from a
+  /// negative_balance) fall back to 0 so counted_qty stays non-negative
+  /// (DG-200 Phase 5.6-c3-fix, Mn-1).
+  int get defaultCountedQty => expectedQty < 0 ? 0 : expectedQty;
+
   String get chipLabelMetadata {
     if (sourceChipLabels.isEmpty) {
       return chipLabel;

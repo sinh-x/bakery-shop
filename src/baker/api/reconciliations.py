@@ -174,7 +174,7 @@ def _load_display_products(conn) -> list[dict]:
                 }
             )
     else:
-        gross_available_by_option = {}
+        gross_available_by_option: dict[tuple[int, int | None], int] = {}
 
     products: list[dict] = []
     for row in rows:
