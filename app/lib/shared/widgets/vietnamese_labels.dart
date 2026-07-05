@@ -700,6 +700,15 @@ class VN {
 
   static const outOfStock = 'Hết hàng';
 
+  // Negative stock display (DG-200 Phase 5, FR-8, AC-10)
+  /// Label for products with a negative net stock position.
+  /// `Âm N` reads as `Âm <N>` where N is the absolute quantity.
+  static String negativeStockLabel(int qty) {
+    assert(qty < 0, 'negativeStockLabel expects a negative quantity');
+    return 'Âm ${qty.abs()}';
+  }
+  static const negativeStockLabelPrefix = 'Âm';
+
   // Stock management
   static const quanLyTonKho = 'Quản lý tồn kho';
   static const nhapHang = 'Nhập hàng';
@@ -762,6 +771,15 @@ class VN {
   static const trangThaiCoLoi = 'Có lỗi';
   static const themDongBan = 'Thêm dòng bán';
   static const soLuongChenhLech = 'Số lượng chênh lệch';
+
+  // Reconciliation surplus / restock inflow (DG-200 Phase 6, FR-9, AC-11)
+  /// Label for the surplus inflow quantity (counted - expected, when > 0).
+  /// Reads as `Số lượng bù: +N`.
+  static const soLuongBu = 'Số lượng bù';
+  /// Restock indicator title shown next to a surplus option.
+  static const nhapBuTonKho = 'Nhập bù tồn kho';
+  /// Hint explaining that surplus will auto-create a restock inflow.
+  static const nhapBuHint = 'Số dư sẽ tự nhập bù vào kho khi gửi đối soát';
   static const dongBan = 'Dòng bán';
   static const nhanChip = 'Nhãn chip';
   static const giam = 'Giảm';

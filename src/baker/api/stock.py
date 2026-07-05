@@ -312,6 +312,17 @@ def stock_overview():
         for sr in stock_rows:
             stock_map[(sr["product_id"], sr["price_chip_id"])] = int(sr["quantity"] or 0)
 
+        # Get per-chip negative balances (DG-200 Phase 5, FR-7, NFR-2).
+        # Net position = available items - negative_balance per (product_id,
+        # price_chip_id). A single JOIN-equivalent query keeps this within the
+        # 200ms P95 target for 500 trưng_bày products with 50+ lots each.
+        neg_rows = conn.execute(
+            """SELECT product_id, price_chip_id, qty FROM negative_balance""",
+        ).fetchall()
+        neg_map: dict[tuple[int, int | None], int] = {}
+        for nr in neg_rows:
+            neg_map[(nr["product_id"], nr["price_chip_id"])] = int(nr["qty"] or 0)
+
         # Get all configured price chips for these products
         all_chips = conn.execute(
             """SELECT pc.product_id, pc.id AS chip_id, pc.label, pc.price, pc.position
@@ -337,7 +348,7 @@ def stock_overview():
             buckets: dict[int, dict] = {}
 
             base_price = normalize_price_value(p["base_price"])
-            base_qty = stock_map.get((pid, None), 0)
+            base_qty = stock_map.get((pid, None), 0) - neg_map.get((pid, None), 0)
             buckets[base_price] = {
                 "normalized_price": base_price,
                 "price_chip_id": None,
@@ -347,7 +358,9 @@ def stock_overview():
             }
 
             for c in chips_map.get(pid, []):
-                qty = stock_map.get((pid, c["chip_id"]), 0)
+                qty = stock_map.get((pid, c["chip_id"]), 0) - neg_map.get(
+                    (pid, c["chip_id"]), 0
+                )
                 normalized_price = normalize_price_value(c["price"])
                 bucket = buckets.get(normalized_price)
                 if bucket is None:

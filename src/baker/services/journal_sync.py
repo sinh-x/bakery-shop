@@ -1129,3 +1129,107 @@ def _sync_waste_cogs_journal(
         ],
         transaction_date=transaction_date,
     )
+
+
+def _sync_negative_sale_cogs_journal(
+    conn, product_id: int, movement_id: int, quantity: int
+) -> None:
+    """Create a COGS journal entry for a negative (oversold) sale.
+
+    DG-200 Phase 4, AC-8. Mirrors :func:`_sync_waste_cogs_journal`: debits
+    COGS (5900) and credits Inventory (1300) for the cost of the oversold
+    quantity. Cost is resolved via :func:`resolve_product_cost`
+    (cost_history → baseline fallback). When the resolved cost is zero, no
+    entry is created (consistent with sale/waste COGS behaviour for
+    zero-cost items).
+
+    Idempotent: skips when a ``negative_sale_cogs`` entry already exists for
+    the given stock movement. The stock movement's ``created_at`` is used as
+    the business event date (FR4-style).
+    """
+    if quantity <= 0:
+        return
+
+    existing = conn.execute(
+        "SELECT 1 FROM journal_entries WHERE source_type = 'negative_sale_cogs' "
+        "AND source_id = ?",
+        (movement_id,),
+    ).fetchone()
+    if existing:
+        return
+
+    unit_cost = resolve_product_cost(conn, product_id)
+    total = unit_cost * quantity
+    if total <= 0:
+        return
+
+    movement_row = conn.execute(
+        "SELECT created_at FROM stock_movements WHERE id = ?", (movement_id,)
+    ).fetchone()
+    transaction_date = movement_row["created_at"] if movement_row else None
+
+    cogs_account_id = _account_id_by_code(conn, COGS_CODE)
+    inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
+    _insert_journal_entry(
+        conn,
+        description=f"Negative sale COGS: movement #{movement_id} product {product_id}",
+        source_type="negative_sale_cogs",
+        source_id=movement_id,
+        lines=[
+            (cogs_account_id, float(total), 0.0, "Giá vốn bán âm"),
+            (inventory_account_id, 0.0, float(total), "Xuất kho bán âm"),
+        ],
+        transaction_date=transaction_date,
+    )
+
+
+def _sync_restock_inflow_journal(
+    conn, product_id: int, movement_id: int, quantity: int
+) -> None:
+    """Create an Inventory debit journal entry for a reconciliation surplus inflow.
+
+    DG-200 Phase 4, AC-9. The mirror of :func:`_sync_waste_cogs_journal` /
+    :func:`_sync_negative_sale_cogs_journal`: debits Inventory (1300) and
+    credits COGS (5900) for the cost of the restocked quantity. Cost is
+    resolved via :func:`resolve_product_cost` (cost_history → baseline
+    fallback). When the resolved cost is zero, no entry is created
+    (consistent with the other COGS flows).
+
+    Idempotent: skips when a ``restock_inflow`` entry already exists for the
+    given stock movement. The stock movement's ``created_at`` is used as the
+    business event date.
+    """
+    if quantity <= 0:
+        return
+
+    existing = conn.execute(
+        "SELECT 1 FROM journal_entries WHERE source_type = 'restock_inflow' "
+        "AND source_id = ?",
+        (movement_id,),
+    ).fetchone()
+    if existing:
+        return
+
+    unit_cost = resolve_product_cost(conn, product_id)
+    total = unit_cost * quantity
+    if total <= 0:
+        return
+
+    movement_row = conn.execute(
+        "SELECT created_at FROM stock_movements WHERE id = ?", (movement_id,)
+    ).fetchone()
+    transaction_date = movement_row["created_at"] if movement_row else None
+
+    cogs_account_id = _account_id_by_code(conn, COGS_CODE)
+    inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
+    _insert_journal_entry(
+        conn,
+        description=f"Restock inflow: movement #{movement_id} product {product_id}",
+        source_type="restock_inflow",
+        source_id=movement_id,
+        lines=[
+            (inventory_account_id, float(total), 0.0, "Nhập kho thừa kiểm kê"),
+            (cogs_account_id, 0.0, float(total), "Hoàn giá vốn nhập lại"),
+        ],
+        transaction_date=transaction_date,
+    )

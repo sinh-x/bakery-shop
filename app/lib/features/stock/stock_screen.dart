@@ -38,15 +38,24 @@ class StockOverviewNotifier extends AsyncNotifier<List<StockOverviewItem>> {
 }
 
 /// Stock status colors based on quantity.
+///
+/// Negative stock (DG-200 Phase 5, FR-8, AC-10) uses a distinct darker red
+/// shade (`Colors.red.shade900`) so cashiers can visually distinguish an
+/// oversold position from a merely out-of-stock (zero) product.
 Color stockStatusColor(int quantity) {
-  if (quantity <= 0) return Colors.red;
+  if (quantity < 0) return Colors.red.shade900;
+  if (quantity == 0) return Colors.red;
   if (quantity <= 3) return Colors.orange;
   return Colors.green;
 }
 
 /// Stock status label based on quantity.
+///
+/// Negative stock returns the VN label "Âm N" (where N is the absolute
+/// quantity) per FR-8 / AC-10. Zero stock returns "Hết hàng".
 String stockStatusLabel(int quantity) {
-  if (quantity <= 0) return 'Hết hàng';
+  if (quantity < 0) return VN.negativeStockLabel(quantity);
+  if (quantity == 0) return VN.outOfStock;
   if (quantity <= 3) return 'Sắp hết';
   return 'Còn hàng';
 }

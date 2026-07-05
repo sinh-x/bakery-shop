@@ -112,8 +112,20 @@ def consume_fifo_items(
     price_chip_id: int | None,
     quantity: int,
     consumed_by_movement_id: int,
-) -> None:
-    """Consume available inventory using lot-first then item-first FIFO."""
+    *,
+    allow_negative: bool = False,
+) -> int:
+    """Consume available inventory using lot-first then item-first FIFO.
+
+    When ``allow_negative`` is ``False`` (default), raises ``HTTPException``
+    with status 422 if available stock is insufficient — preserving the
+    historical behaviour required by waste/adjust callers (NFR-3).
+
+    When ``allow_negative`` is ``True``, consumes all available items and
+    returns the remaining deficit (a non-negative ``int``) without raising.
+    The caller is responsible for recording the deficit as a negative balance
+    entry (DG-200 Phase 2 handles that upsert).
+    """
     remaining = quantity
     lots = conn.execute(
         """SELECT id
@@ -155,7 +167,10 @@ def consume_fifo_items(
         remaining -= consumed_count
 
     if remaining > 0:
+        if allow_negative:
+            return remaining
         raise HTTPException(status_code=422, detail="Không đủ tồn kho")
+    return 0
 
 
 def available_quantity(conn, product_id: int, price_chip_id: int | None) -> int:
@@ -170,3 +185,46 @@ def available_quantity(conn, product_id: int, price_chip_id: int | None) -> int:
         (product_id, price_chip_id, price_chip_id),
     ).fetchone()
     return int(row["qty"] if row else 0)
+
+
+def _negative_balance_qty(conn, product_id: int, price_chip_id: int | None) -> int:
+    """Return current negative balance qty for (product_id, price_chip_id)."""
+    row = conn.execute(
+        """SELECT qty FROM negative_balance
+           WHERE product_id = ? AND price_chip_id IS NOT DISTINCT FROM ?""",
+        (product_id, price_chip_id),
+    ).fetchone()
+    return int(row["qty"]) if row else 0
+
+
+def net_available_quantity(conn, product_id: int, price_chip_id: int | None) -> int:
+    """Net stock position = available items - negative balance (DG-200 Phase 2, FR-4).
+
+    Returns a possibly-negative int. Used by stock overview and reconciliation
+    draft so negative positions surface to staff instead of being hidden by the
+    available-only count.
+    """
+    return available_quantity(conn, product_id, price_chip_id) - _negative_balance_qty(
+        conn, product_id, price_chip_id
+    )
+
+
+def upsert_negative_balance(
+    conn, product_id: int, price_chip_id: int | None, deficit: int
+) -> None:
+    """Insert or increment the negative_balance row for (product_id, price_chip_id).
+
+    ``deficit`` is a non-negative int representing additional oversold units.
+    Stores qty as INTEGER (NFR-4). Must be called inside the same transaction
+    as the FIFO consume that produced the deficit (NFR-1).
+    """
+    if deficit <= 0:
+        return
+    conn.execute(
+        """INSERT INTO negative_balance (product_id, price_chip_id, qty, updated_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(product_id, price_chip_id) DO UPDATE
+           SET qty = qty + excluded.qty,
+               updated_at = excluded.updated_at""",
+        (product_id, price_chip_id, int(deficit), now_utc()),
+    )

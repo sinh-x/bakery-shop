@@ -89,6 +89,40 @@ class ReconciliationState {
   );
   bool get hasWaste => wasteQtyByOption.values.any((value) => value > 0);
 
+  /// Surplus inflow quantity for an option (counted - gross available, or 0
+  /// when not a surplus).
+  ///
+  /// Surplus is the amount that exceeds the system's gross available stock
+  /// (before netting negative balance) and will be converted into a `restock`
+  /// inflow by the reconciliation backend (after netting any negative
+  /// balance). Returns 0 when counted <= gross available.
+  ///
+  /// [expectedQty] is the net position (available - negative_balance) shown
+  /// to staff. [grossAvailableQty] is the available items count before
+  /// subtracting negative_balance; the backend computes surplus as
+  /// `counted_qty - available_quantity` (gross), so the indicator must use the
+  /// same basis to avoid inflating the displayed surplus when a negative
+  /// balance exists (DG-200 Phase 5.6-c1-fix, M-1). When [grossAvailableQty] is
+  /// null it falls back to [expectedQty] (legacy behaviour).
+  int surplusQtyFor(
+    String optionKey,
+    int expectedQty, {
+    int? grossAvailableQty,
+  }) {
+    final counted = countedQtyByOption[optionKey] ?? 0;
+    final basis = grossAvailableQty ?? expectedQty;
+    final surplus = counted - basis;
+    return surplus > 0 ? surplus : 0;
+  }
+
+  /// True when an option has surplus inflow (counted > gross available).
+  bool hasSurplusFor(
+    String optionKey,
+    int expectedQty, {
+    int? grossAvailableQty,
+  }) =>
+      surplusQtyFor(optionKey, expectedQty, grossAvailableQty: grossAvailableQty) > 0;
+
   ReconciliationState copyWith({
     bool? isLoading,
     bool? isSubmitting,
