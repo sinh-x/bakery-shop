@@ -1034,7 +1034,8 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
     if existing_cogs:
         return
     items = conn.execute(
-        "SELECT oi.id AS item_id, oi.product_id, oi.quantity, oi.cost_at_sale "
+        "SELECT oi.id AS item_id, oi.product_id, oi.quantity, oi.cost_at_sale, "
+        "oi.unit_price "
         "FROM order_items oi "
         "WHERE oi.order_id = ? AND oi.is_extra = 0 AND oi.is_gift = 0",
         (order_id,),
@@ -1047,7 +1048,10 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
         cost_at_sale = float(irow["cost_at_sale"] or 0)
         if cost_at_sale == 0:
             # Populate cost_at_sale at delivery time using cost_history with
-            # baseline fallback. Skip re-population when already set.
+            # baseline fallback. Skip re-population when already set. The
+            # actual selling price (unit_price) is passed as the baseline anchor
+            # so custom-priced orders compute COGS from the sale value rather
+            # than the catalog base_price (DG-208 Phase 1, FR1/FR2).
             product_id = irow["product_id"]
             if product_id is None:
                 continue
@@ -1055,7 +1059,8 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
                 pid = int(product_id)
             except (TypeError, ValueError):
                 continue
-            cost_at_sale = resolve_product_cost(conn, pid)
+            selling_price = float(irow["unit_price"] or 0) or None
+            cost_at_sale = resolve_product_cost(conn, pid, selling_price=selling_price)
             if cost_at_sale > 0:
                 conn.execute(
                     "UPDATE order_items SET cost_at_sale = ? WHERE id = ?",

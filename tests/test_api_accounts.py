@@ -553,6 +553,86 @@ def test_delivered_order_cogs_uses_baseline_fallback(api_client):
         assert debit_line.debit == 30000.0
 
 
+def test_delivered_order_cogs_uses_selling_price_when_custom_priced(api_client):
+    """AC1 (DG-208 Phase 1): order with custom pricing (unit_price >
+    base_price) and no cost_history → COGS = unit_price × 0.30 (not
+    base_price × 0.30).
+
+    The base_price is 150000 (would give 45000 COGS) but the item sells for
+    800000, so cost_at_sale must be 240000 (= 800000 × 0.30).
+    """
+    product = _create_product(api_client, name="Bánh cưới", cost=0, base_price=150000)
+    pid = int(product["id"])
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productName": "Bánh cưới",
+                "quantity": 1,
+                "unitPrice": 800000,
+                "productId": str(pid),
+            }
+        ],
+    )
+    ref = order["orderRef"]
+    _create_txn(api_client, ref, amount=800000, type="payment", method="cash")
+    order_id = int(order["id"])
+
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "delivered"})
+    assert resp.status_code == 200
+    with get_db() as conn:
+        oi = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE order_id = ?", (order_id,)
+        ).fetchone()
+        # 30% of unit_price 800000 = 240000 (NOT 30% of base_price 150000 = 45000)
+        assert float(oi["cost_at_sale"] or 0) == 240000.0
+        cogs_entries = _journal_for_source(conn, "order_cogs", order_id)
+        assert len(cogs_entries) == 1
+        lines = _lines_for_entry(conn, cogs_entries[0].id)
+        debit_line = next(l for l in lines if l.debit > 0)
+        assert debit_line.debit == 240000.0
+
+
+def test_delivered_order_cogs_standard_price_unchanged(api_client):
+    """AC2 (DG-208 Phase 1): order with standard pricing (unit_price ==
+    base_price) and no cost_history → COGS = base_price × 0.30 (unchanged).
+
+    Guards the backward-compatible path: when unit_price equals base_price the
+    selling-price anchor produces the same result as the old base_price anchor.
+    """
+    product = _create_product(api_client, name="Bánh sinh nhật", cost=0, base_price=100000)
+    pid = int(product["id"])
+    order = _create_order(
+        api_client,
+        items=[
+            {
+                "productName": "Bánh sinh nhật",
+                "quantity": 2,
+                "unitPrice": 100000,
+                "productId": str(pid),
+            }
+        ],
+    )
+    ref = order["orderRef"]
+    _create_txn(api_client, ref, amount=200000, type="payment", method="cash")
+    order_id = int(order["id"])
+
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "delivered"})
+    assert resp.status_code == 200
+    with get_db() as conn:
+        oi = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE order_id = ?", (order_id,)
+        ).fetchone()
+        # 30% of 100000 = 30000 — same as before the fix.
+        assert float(oi["cost_at_sale"] or 0) == 30000.0
+        cogs_entries = _journal_for_source(conn, "order_cogs", order_id)
+        assert len(cogs_entries) == 1
+        lines = _lines_for_entry(conn, cogs_entries[0].id)
+        debit_line = next(l for l in lines if l.debit > 0)
+        # cost_at_sale 30000 × qty 2 = 60000
+        assert debit_line.debit == 60000.0
+
+
 def test_delivered_order_no_cogs_when_product_cost_zero(api_client):
     """AC4: product with cost=0 AND base_price=0 → baseline resolves to 0 →
     cost_at_sale stays 0 → no COGS entry.

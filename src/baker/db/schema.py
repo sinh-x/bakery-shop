@@ -2559,11 +2559,22 @@ CREATE INDEX IF NOT EXISTS idx_cost_history_product_effective
 PHU_KIEN_CATEGORY = "phu_kien"
 
 
-def _baseline_cost_for_product(category: str, base_price: float) -> float:
-    """Baseline cost: 30% of base_price for non-phụ-kiện, 100% for phụ kiện."""
+def _baseline_cost_for_product(
+    category: str, base_price: float, *, price_override: Optional[float] = None
+) -> float:
+    """Baseline cost: 30% of the anchor price for non-phụ-kiện, 100% for phụ kiện.
+
+    The anchor is ``price_override`` when provided (the actual selling price),
+    otherwise ``base_price``. Phụ kiện always uses ``base_price`` regardless of
+    ``price_override`` — the 100% rule is intentional and unchanged (Non-Goal:
+    do not change how phụ kiện COGS works). The 30% non-phụ-kiện rule shifts to
+    the selling price when available so COGS reflects the actual sale value
+    rather than the catalog base price (DG-208 Phase 1, FR1).
+    """
     if category == PHU_KIEN_CATEGORY:
         return float(base_price)
-    return round(float(base_price) * 0.30, 2)
+    anchor = float(price_override) if price_override is not None else float(base_price)
+    return round(anchor * 0.30, 2)
 
 
 def _backfill_order_items_cost_at_sale(conn) -> None:
