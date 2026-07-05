@@ -265,6 +265,13 @@ def test_restore_order_with_negative_sale_reduces_negative_balance(api_client):
     with get_db() as conn:
         # Negative balance should be back to 0 after restore.
         assert _negative_balance_qty(conn, 1, chip_id) == 0
+        # DG-200 Phase 5.6-c2-fix, Mn-2: the negative_balance row must be
+        # deleted (not left as a stale zero-qty row) after a full restore.
+        row = conn.execute(
+            "SELECT 1 FROM negative_balance WHERE product_id = 1 AND price_chip_id IS NOT DISTINCT FROM ?",
+            (chip_id,),
+        ).fetchone()
+        assert row is None
         # FIFO-consumed 2 items should have been restored as available.
         available = conn.execute(
             """SELECT COUNT(*) AS c FROM inventory_items ii

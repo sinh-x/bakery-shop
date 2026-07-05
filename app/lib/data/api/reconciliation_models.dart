@@ -50,8 +50,6 @@ class ReconciliationDraftOption {
   /// (falls back to expectedQty).
   final int? grossAvailableQty;
 
-  int get effectiveGrossAvailableQty => grossAvailableQty ?? expectedQty;
-
   String get chipLabelMetadata {
     if (sourceChipLabels.isEmpty) {
       return chipLabel;

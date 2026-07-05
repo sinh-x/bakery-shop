@@ -251,6 +251,16 @@ def restore_stock_for_order(conn, order_id: int, order_ref: str) -> None:
                    WHERE product_id = ? AND price_chip_id IS NOT DISTINCT FROM ?""",
                 (deficit, now_utc(), product_id, chip_id),
             )
+            # Remove the negative_balance row entirely when the restore
+            # brings it back to zero or below, matching the cleanup pattern
+            # in _process_surplus_inflow (reconciliations.py). Prevents
+            # stale zero-qty rows from lingering (DG-200 Phase 5.6-c2-fix, Mn-2).
+            conn.execute(
+                """DELETE FROM negative_balance
+                   WHERE product_id = ? AND price_chip_id IS NOT DISTINCT FROM ?
+                     AND qty <= 0""",
+                (product_id, chip_id),
+            )
 
         Event(
             summary=f"Hoan hang +{qty} (order {order_ref})",
