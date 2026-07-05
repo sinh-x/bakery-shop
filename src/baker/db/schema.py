@@ -2579,7 +2579,14 @@ def _baseline_cost_for_product(
 
 def _backfill_order_items_cost_at_sale(conn) -> None:
     """Populate cost_at_sale on existing delivered order_items using the
-    baseline rule (30% non-phụ-kiện / 100% phụ-kiện of base_price).
+    baseline rule (30% non-phụ-kiện / 100% phụ-kiện).
+
+    The anchor is the actual selling price (``unit_price``) when available,
+    falling back to ``base_price`` otherwise (DG-208 Phase 2, FR2/NFR2). For
+    items whose product cannot be resolved (e.g. custom-product codes like
+    ``BKS-DG-01`` that have no matching ``products`` row), the 30% non-phụ-kiện
+    baseline is applied to ``unit_price`` — phụ kiện is a real product category
+    that is always resolvable, so unresolvable items are never phụ kiện.
 
     Idempotent: only updates order_items whose cost_at_sale is 0. Cost_history
     is not consulted at backfill time because historical cost records do not
@@ -2587,11 +2594,12 @@ def _backfill_order_items_cost_at_sale(conn) -> None:
     """
     rows = conn.execute(
         """
-        SELECT oi.id AS item_id, p.category, p.base_price
+        SELECT oi.id AS item_id, oi.unit_price,
+               p.category, p.base_price
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
         LEFT JOIN products p ON CAST(oi.product_id AS INTEGER) = p.id
-        WHERE o.status = 'delivered'
+        WHERE o.status IN ('delivered', 'completed')
           AND oi.is_extra = 0
           AND oi.is_gift = 0
           AND (oi.cost_at_sale IS NULL OR oi.cost_at_sale = 0)
@@ -2599,8 +2607,15 @@ def _backfill_order_items_cost_at_sale(conn) -> None:
     ).fetchall()
     for row in rows:
         category = row["category"] if row["category"] is not None else ""
+        unit_price = float(row["unit_price"] or 0)
         base_price = float(row["base_price"] or 0)
-        cost = _baseline_cost_for_product(category, base_price)
+        # Anchor on the actual selling price (unit_price) when available, else
+        # base_price. Unresolvable products (no products row, e.g. custom
+        # codes like BKS-DG-01) are never phụ kiện — phụ kiện is always a real
+        # resolvable category — so they correctly fall through the 30% non-
+        # phụ-kiện branch (DG-208 Phase 2, fixes Order #1091 missing COGS).
+        anchor = unit_price if unit_price > 0 else base_price
+        cost = _baseline_cost_for_product(category, base_price, price_override=anchor)
         if cost > 0:
             conn.execute(
                 "UPDATE order_items SET cost_at_sale = ? WHERE id = ?",
@@ -3256,6 +3271,46 @@ def _migrate_v61_customer_search_name(conn):
         )
 
 
+def _migrate_v63_repair_zero_cogs_and_missing_entries(conn):
+    """Repair zero-cost order_items and missing order_cogs journal entries.
+
+    DG-208 Phase 2. After Phase 1 changed the baseline anchor from base_price
+    to unit_price, historical order_items with cost_at_sale=0 needed repair:
+    - 117 delivered/completed order_items had cost_at_sale=0 (some because the
+      product code like 'BKS-DG-01' has no products row, others because v45
+      backfill ran before unit_price was used as the anchor).
+    - 95 delivered/completed orders had no order_cogs journal entry (including
+      Order #1091) — these items were never populated because the old resolver
+      returned 0 and _sync_delivered_order_journal skipped journal insertion
+      when total_cogs was 0.
+
+    This migration:
+      1. Re-runs _backfill_order_items_cost_at_sale() — now unit_price-anchored
+         — to repair the 117 zero-cost order_items (FR2, NFR2).
+      2. Re-runs _sync_delivered_order_journal() for every delivered/completed
+         order to create the missing order_cogs entries (AC4 — Order #1091).
+
+    Idempotent: the backfill only updates rows where cost_at_sale is still 0;
+    _sync_delivered_order_journal skips orders that already have an order_cogs
+    entry.
+    """
+    _seed_chart_of_accounts(conn)
+    from baker.services.journal_sync import _sync_delivered_order_journal
+
+    _backfill_order_items_cost_at_sale(conn)
+
+    orders = conn.execute(
+        """
+        SELECT id, order_ref
+        FROM orders
+        WHERE status IN ('delivered', 'completed')
+        ORDER BY id
+        """
+    ).fetchall()
+    for o in orders:
+        _sync_delivered_order_journal(conn, int(o["id"]), o["order_ref"])
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -3545,6 +3600,11 @@ MIGRATIONS = {
         "description": "Add search_name column to customers for diacritic-insensitive search, backfill from existing names (DG-206 follow-up)",
         "sql": "",
         "callable": _migrate_v61_customer_search_name,
+    },
+    63: {
+        "description": "Repair zero-cost order_items (unit_price anchor) and missing order_cogs journal entries — DG-208 Phase 2",
+        "sql": "",
+        "callable": _migrate_v63_repair_zero_cogs_and_missing_entries,
     },
 }
 

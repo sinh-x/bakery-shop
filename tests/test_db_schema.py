@@ -366,7 +366,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 61
+        assert _migrated_version(conn) == 63
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -383,7 +383,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 61
+        assert _migrated_version(conn) == 63
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -397,10 +397,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 61
+        assert _migrated_version(conn) == 63
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 61
+        assert _migrated_version(conn) == 63
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -1408,11 +1408,13 @@ def test_v45_idempotent():
         )
         _migrate_to_version(conn, 45)
         assert _migrated_version(conn) == 45
-        # Capture backfilled cost
+        # Capture backfilled cost. _seed_order_with_item sets unit_price=50000,
+        # and DG-208 Phase 2 anchors the baseline on unit_price, so 30% of
+        # 50000 = 15000 (not 30% of base_price 10000 = 3000).
         cost_after_first = conn.execute(
             "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
         ).fetchone()["cost_at_sale"]
-        assert float(cost_after_first) == 3000.0  # 30% of 10000
+        assert float(cost_after_first) == 15000.0  # 30% of unit_price 50000
 
         # Re-run the v45 callable directly (simulates re-migration)
         from baker.db.schema import _migrate_v45_cost_history_and_cost_at_sale
@@ -1426,7 +1428,7 @@ def test_v45_idempotent():
         cost_after_second = conn.execute(
             "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
         ).fetchone()["cost_at_sale"]
-        assert float(cost_after_second) == 3000.0
+        assert float(cost_after_second) == 15000.0
         # cost_history table exists but no rows inserted by backfill (baseline is query-time)
         ch_count = conn.execute("SELECT COUNT(*) FROM cost_history").fetchone()[0]
         assert ch_count == 0
@@ -1448,8 +1450,8 @@ def test_v45_backfill_non_phu_kien_30_percent():
         cost = conn.execute(
             "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
         ).fetchone()["cost_at_sale"]
-        # 30% of 20000 = 6000
-        assert float(cost) == 6000.0
+        # 30% of unit_price 50000 = 15000 (DG-208 Phase 2 anchors on unit_price)
+        assert float(cost) == 15000.0
 
 
 def test_v45_backfill_phu_kien_100_percent():
@@ -1468,7 +1470,7 @@ def test_v45_backfill_phu_kien_100_percent():
         cost = conn.execute(
             "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
         ).fetchone()["cost_at_sale"]
-        # 100% of 15000 for phụ kiện
+        # 100% of base_price for phụ kiện (phụ kiện ignores unit_price anchor)
         assert float(cost) == 15000.0
 
 
@@ -1534,6 +1536,11 @@ def test_v45_backfill_zero_base_price_skips():
             qty=2,
             status="delivered",
         )
+        # Force unit_price to 0 so both anchor candidates are 0 (DG-208 Phase 2
+        # changed the anchor to unit_price; base_price=0 alone no longer skips
+        # when unit_price > 0).
+        conn.execute("UPDATE order_items SET unit_price = 0 WHERE id = ?", (item_id,))
+        conn.commit()
         _migrate_to_version(conn, 45)
 
         cost = conn.execute(
@@ -1584,6 +1591,194 @@ def test_v45_preserves_existing_cost_at_sale():
         ).fetchone()["cost_at_sale"]
         # Pre-existing non-zero cost_at_sale is not overwritten (backfill guard)
         assert float(cost) == 7777.0
+
+
+# ---------------------------------------------------------------------------
+# v63 — repair zero-cost order_items + missing order_cogs entries (DG-208 P2)
+# ---------------------------------------------------------------------------
+
+
+def test_v63_registered_in_migration_chain():
+    assert 63 in MIGRATIONS
+    assert (
+        MIGRATIONS[63]["callable"].__name__
+        == "_migrate_v63_repair_zero_cogs_and_missing_entries"
+    )
+
+
+def test_v63_repairs_zero_cost_items_with_unit_price_anchor():
+    """A delivered order with cost_at_sale=0 (pre-Phase-2 backfill missed it)
+    gets cost_at_sale = unit_price × 30% after v63 runs."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 45)
+        _, product_id, item_id = _seed_order_with_item(
+            conn,
+            product_cost=0,
+            product_category="banh_kem",
+            base_price=150000,
+            qty=1,
+            status="delivered",
+            order_ref="ORD-V63-ZERO-001",
+        )
+        # _seed_order_with_item sets unit_price=50000; force a custom price
+        # to mirror the real-world custom-priced orders.
+        conn.execute(
+            "UPDATE order_items SET unit_price = 800000 WHERE id = ?", (item_id,)
+        )
+        conn.commit()
+        assert float(
+            conn.execute(
+                "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+            ).fetchone()["cost_at_sale"]
+        ) == 0.0
+
+        _migrate_to_version(conn, 63)
+
+        cost = float(
+            conn.execute(
+                "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+            ).fetchone()["cost_at_sale"]
+        )
+        # 30% of unit_price 800000 = 240000 (not 30% of base_price 150000)
+        assert cost == 240000.0
+
+
+def test_v63_creates_missing_order_cogs_journal_entry():
+    """A delivered order with no order_cogs entry gets one after v63 runs
+    (mirrors Order #1091 missing COGS entirely)."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 45)
+        _, product_id, item_id = _seed_order_with_item(
+            conn,
+            product_cost=0,
+            product_category="banh_kem",
+            base_price=150000,
+            qty=1,
+            status="delivered",
+            order_ref="ORD-V63-COGS-001",
+        )
+        conn.execute(
+            "UPDATE order_items SET unit_price = 130000 WHERE id = ?", (item_id,)
+        )
+        conn.commit()
+        # No order_cogs entry yet (v45 backfill ran with old base_price anchor
+        # → cost_at_sale = 30% of 150000 = 45000, but no journal entry was
+        # created by v45 — that's _sync_delivered_order_journal's job, which
+        # only runs on delivery).
+        # Force cost_at_sale back to 0 to simulate the unfixed zero-cost state.
+        conn.execute("UPDATE order_items SET cost_at_sale = 0 WHERE id = ?", (item_id,))
+        conn.commit()
+
+        _migrate_to_version(conn, 63)
+
+        # cost_at_sale repaired
+        cost = float(
+            conn.execute(
+                "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+            ).fetchone()["cost_at_sale"]
+        )
+        assert cost == 39000.0  # 30% of unit_price 130000
+
+        # order_cogs journal entry created
+        order_id = conn.execute(
+            "SELECT order_id FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()[0]
+        entry = conn.execute(
+            "SELECT 1 FROM journal_entries WHERE source_type = 'order_cogs' "
+            "AND source_id = ?",
+            (order_id,),
+        ).fetchone()
+        assert entry is not None
+
+
+def test_v63_idempotent():
+    """Re-running v63 produces no new changes — backfill guard skips set
+    cost_at_sale; _sync_delivered_order_journal skips orders with existing
+    order_cogs entries."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 45)
+        _, _, item_id = _seed_order_with_item(
+            conn,
+            product_cost=0,
+            product_category="banh_kem",
+            base_price=150000,
+            qty=1,
+            status="delivered",
+            order_ref="ORD-V63-IDEM-001",
+        )
+        conn.execute(
+            "UPDATE order_items SET unit_price = 200000 WHERE id = ?", (item_id,)
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 63)
+        cost_first = float(
+            conn.execute(
+                "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+            ).fetchone()["cost_at_sale"]
+        )
+        cogs_count_first = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type = 'order_cogs'"
+        ).fetchone()[0]
+
+        # Re-run the v63 callable directly (simulates re-migration)
+        from baker.db.schema import _migrate_v63_repair_zero_cogs_and_missing_entries
+
+        _migrate_v63_repair_zero_cogs_and_missing_entries(conn)
+
+        cost_second = float(
+            conn.execute(
+                "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+            ).fetchone()["cost_at_sale"]
+        )
+        cogs_count_second = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type = 'order_cogs'"
+        ).fetchone()[0]
+
+        assert cost_first == cost_second == 60000.0  # 30% of 200000
+        assert cogs_count_first == cogs_count_second  # no duplicate entries
+
+
+def test_v63_handles_unresolvable_product_id():
+    """An order_item whose product_id has no matching products row (e.g.
+    custom codes like 'BKS-DG-01') still gets backfilled using unit_price —
+    phụ kiện is always a real resolvable category, so unresolvable items are
+    never phụ kiện (DG-208 Phase 2, fixes Order #1091)."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 45)
+        cursor = conn.execute(
+            "INSERT INTO orders "
+            "(order_ref, customer_name, items, total_price, status) "
+            "VALUES ('ORD-V63-UNRES-001', 'Khách v63', '[]', 130000, 'delivered')"
+        )
+        order_id = int(cursor.lastrowid)
+        # Custom product code with no matching products row
+        conn.execute(
+            "INSERT INTO order_items "
+            "(order_id, product_id, product_name, quantity, unit_price, position, is_extra, is_gift) "
+            "VALUES (?, 'BKS-DG-01', 'Bánh Kem Theo Yêu Cầu', 1, 130000, 0, 0, 0)",
+            (order_id,),
+        )
+        conn.commit()
+
+        _migrate_to_version(conn, 63)
+
+        cost = float(
+            conn.execute(
+                "SELECT cost_at_sale FROM order_items WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()["cost_at_sale"]
+        )
+        # 30% of unit_price 130000 = 39000 (unresolvable → non-phụ-kiện 30%)
+        assert cost == 39000.0
+
+        # order_cogs entry created
+        entry = conn.execute(
+            "SELECT 1 FROM journal_entries WHERE source_type = 'order_cogs' "
+            "AND source_id = ?",
+            (order_id,),
+        ).fetchone()
+        assert entry is not None
 
 
 # ---------------------------------------------------------------------------
