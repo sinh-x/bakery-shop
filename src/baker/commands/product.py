@@ -1,10 +1,9 @@
 import click
-from datetime import datetime
 
 from baker.db.connection import get_db
 from baker.formatters.tables import console
 from baker.code_gen import generate_code, get_category_prefix
-from baker.utils.time import now_utc
+from baker.utils.time import InvalidEffectiveFrom, format_effective_from
 
 from rich.table import Table
 
@@ -206,18 +205,10 @@ def _normalize_effective_from(date_str):
     Accepts YYYY-MM-DD (treated as start-of-day UTC) or a full ISO-8601 string.
     Raises click.BadParameter on invalid formats.
     """
-    if date_str is None:
-        return now_utc()
     try:
-        parsed = datetime.strptime(date_str, "%Y-%m-%d")
-    except ValueError:
-        try:
-            parsed = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        except ValueError:
-            raise click.BadParameter(
-                f"--effective-from phải có dạng YYYY-MM-DD (nhận được '{date_str}')"
-            )
-    return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+        return format_effective_from(date_str)
+    except InvalidEffectiveFrom as exc:
+        raise click.BadParameter(str(exc))
 
 
 @product_cmd.command("set-cost")

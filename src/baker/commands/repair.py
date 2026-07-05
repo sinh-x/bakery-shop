@@ -244,11 +244,16 @@ def _process_cogs_order(conn, order_id: int, *, dry_run: bool) -> dict:
                 "expected_cogs": expected,
                 "action": "will-backfill",
             }
-        # Populate cost_at_sale and create the missing COGS entry.
-        _compute_order_cogs_total(
+        # Populate cost_at_sale and create the missing COGS entry in a single
+        # compute pass — the resolved total is passed to _sync_order_cogs_entry
+        # via total_cogs_override so it does not re-scan order_items
+        # (DG-208 review finding CQ-3).
+        actual_total = _compute_order_cogs_total(
             conn, order_id, populate_cost_at_sale=True
         )
-        _sync_order_cogs_entry(conn, order_id, order_ref)
+        _sync_order_cogs_entry(
+            conn, order_id, order_ref, total_cogs_override=actual_total
+        )
         return {
             "order_id": order_id,
             "order_ref": order_ref,
@@ -285,8 +290,16 @@ def _process_cogs_order(conn, order_id: int, *, dry_run: bool) -> dict:
         }
 
     # Delete the stale COGS entry and recreate with the current total.
+    # Populate cost_at_sale once and pass the computed total via
+    # total_cogs_override so _sync_order_cogs_entry skips its internal
+    # re-scan of order_items (DG-208 review finding CQ-3).
     _delete_journal_entry_cascade(conn, entry_id)
-    _sync_order_cogs_entry(conn, order_id, order_ref)
+    actual_total = _compute_order_cogs_total(
+        conn, order_id, populate_cost_at_sale=True
+    )
+    _sync_order_cogs_entry(
+        conn, order_id, order_ref, total_cogs_override=actual_total
+    )
     return {
         "order_id": order_id,
         "order_ref": order_ref,

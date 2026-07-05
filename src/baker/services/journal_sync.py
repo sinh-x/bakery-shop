@@ -28,6 +28,7 @@ from baker.db.schema import (
     REVENUE_UPDATE_TOLERANCE,
     TIEN_RUT_HELD_CODE,
     _account_id_by_code,
+    _baseline_cost_for_product,
     _ensure_staff_payable_sub_account,
     _insert_journal_entry,
 )
@@ -1052,14 +1053,30 @@ def _compute_order_cogs_total(
         cost_at_sale = float(irow["cost_at_sale"] or 0)
         if cost_at_sale == 0:
             product_id = irow["product_id"]
-            if product_id is None:
-                continue
-            try:
-                pid = int(product_id)
-            except (TypeError, ValueError):
-                continue
+            pid: int | None = None
+            if product_id is not None:
+                try:
+                    pid = int(product_id)
+                except (TypeError, ValueError):
+                    pid = None
             selling_price = float(irow["unit_price"] or 0) or None
-            cost_at_sale = resolve_product_cost(conn, pid, selling_price=selling_price)
+            if pid is None:
+                # Unresolvable product_id (e.g. custom codes like BKS-DG-01
+                # with no products row). Apply the 30% non-phụ-kiện baseline
+                # directly to unit_price — mirrors the v45 backfill fallback
+                # in _backfill_order_items_cost_at_sale so the live delivery
+                # path no longer silently contributes 0 to COGS
+                # (DG-208 review finding CQ-2). Unresolvable products are
+                # never phụ kiện (phụ kiện is always a resolvable category).
+                anchor = selling_price if (selling_price and selling_price > 0) else 0.0
+                if anchor > 0:
+                    cost_at_sale = _baseline_cost_for_product(
+                        "", 0.0, price_override=anchor
+                    )
+                else:
+                    cost_at_sale = 0.0
+            else:
+                cost_at_sale = resolve_product_cost(conn, pid, selling_price=selling_price)
             if cost_at_sale > 0 and populate_cost_at_sale:
                 conn.execute(
                     "UPDATE order_items SET cost_at_sale = ? WHERE id = ?",
@@ -1093,13 +1110,26 @@ def _order_cogs_entry(conn, order_id: int) -> tuple:
     return int(row["entry_id"]), float(row["cogs_debit"])
 
 
-def _sync_order_cogs_entry(conn, order_id: int, order_ref: str) -> None:
+def _sync_order_cogs_entry(
+    conn,
+    order_id: int,
+    order_ref: str,
+    *,
+    total_cogs_override: Optional[float] = None,
+) -> None:
     """Create the ``order_cogs`` journal entry for a delivered order if absent.
 
     Computes the total COGS via :func:`_compute_order_cogs_total` (populating
     ``cost_at_sale`` for any zero-cost items using the current cost_history /
     baseline rule with ``unit_price`` as the anchor), then inserts a single
     ``order_cogs`` journal entry (DR COGS 5900 / CR Inventory 1300).
+
+    When ``total_cogs_override`` is provided, the internal
+    :func:`_compute_order_cogs_total` call is skipped and the supplied total
+    is used directly. The caller MUST ensure the override was computed with
+    ``populate_cost_at_sale=True`` (so ``cost_at_sale`` rows are already
+    written) — this avoids a redundant re-scan of ``order_items``
+    (DG-208 review finding CQ-3, used by the COGS stale-entry repair path).
 
     Idempotent: skips when an ``order_cogs`` entry already exists for the
     order. The COGS entry is created once per order with the accumulated
@@ -1113,7 +1143,10 @@ def _sync_order_cogs_entry(conn, order_id: int, order_ref: str) -> None:
     if existing_cogs:
         return
 
-    total_cogs = _compute_order_cogs_total(conn, order_id, populate_cost_at_sale=True)
+    if total_cogs_override is not None:
+        total_cogs = float(total_cogs_override)
+    else:
+        total_cogs = _compute_order_cogs_total(conn, order_id, populate_cost_at_sale=True)
     if total_cogs <= 0:
         return
 

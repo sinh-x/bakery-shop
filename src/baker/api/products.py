@@ -1,7 +1,6 @@
 """Product CRUD API routes."""
 
 import json
-from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from PIL import UnidentifiedImageError
@@ -9,7 +8,7 @@ from pydantic import BaseModel
 
 import baker.config
 from baker.code_gen import generate_code, get_category_prefix
-from baker.utils.time import now_utc
+from baker.utils.time import InvalidEffectiveFrom, format_effective_from
 
 _BS = "\\"
 
@@ -493,19 +492,13 @@ def _normalize_effective_from(date_str: str | None) -> str:
 
     Raises HTTPException(422) on invalid input.
     """
-    if date_str is None or date_str == "":
-        return now_utc()
     try:
-        parsed = datetime.strptime(date_str, "%Y-%m-%d")
-    except ValueError:
-        try:
-            parsed = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        except ValueError:
-            raise HTTPException(
-                status_code=422,
-                detail="effective_from phải có dạng YYYY-MM-DD",
-            )
-    return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+        return format_effective_from(date_str)
+    except InvalidEffectiveFrom:
+        raise HTTPException(
+            status_code=422,
+            detail="effective_from phải có dạng YYYY-MM-DD",
+        )
 
 
 @router.get("/{product_id}/cost")
