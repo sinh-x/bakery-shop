@@ -1013,26 +1013,30 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
         log_label=f"bus shipping release sync for order {order_id} ({order_ref})",
     )
 
-    inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
-    cogs_account_id = _account_id_by_code(conn, COGS_CODE)
-    # FR4/FR11: order COGS uses the order's due_date (fallback created_at).
-    order_date_row = conn.execute(
-        "SELECT due_date, created_at FROM orders WHERE id = ?", (order_id,)
-    ).fetchone()
-    order_transaction_date = (
-        order_date_row["due_date"] or order_date_row["created_at"] or None
-        if order_date_row else None
-    )
-    # COGS: one entry per order summing cost_at_sale*qty for items with a
-    # resolved cost > 0. cost_at_sale is populated at delivery time from
-    # cost_history (via resolve_product_cost), applying the documented baseline
-    # fallback when no historical cost is in effect.
-    existing_cogs = conn.execute(
-        "SELECT 1 FROM journal_entries WHERE source_type = 'order_cogs' AND source_id = ?",
-        (order_id,),
-    ).fetchone()
-    if existing_cogs:
-        return
+    _sync_order_cogs_entry(conn, order_id, order_ref)
+
+
+def _compute_order_cogs_total(
+    conn, order_id: int, *, populate_cost_at_sale: bool = True
+) -> float:
+    """Compute the expected total COGS for an order (DG-208 Phase 5).
+
+    Iterates the order's non-extra/non-gift items. For each item:
+
+    - When ``cost_at_sale > 0`` the snapshotted value is used as-is (historical
+      cost is preserved — review finding from the requirements risk register:
+      "Backfill only touches orders where COGS is missing or cost_at_sale = 0;
+      existing non-zero cost_at_sale is preserved").
+    - When ``cost_at_sale == 0`` the cost is resolved via
+      :func:`resolve_product_cost` using ``unit_price`` as the baseline anchor
+      (DG-208 Phase 1, FR1/FR2). When ``populate_cost_at_sale`` is True the
+      resolved value is also written back to ``order_items.cost_at_sale``
+      (delivery-time snapshot behaviour). When False the row is left untouched
+      — used by the COGS repair to compute the *expected* total without side
+      effects before deciding whether to mutate.
+
+    Returns the summed ``cost * qty`` as a non-negative ``float``.
+    """
     items = conn.execute(
         "SELECT oi.id AS item_id, oi.product_id, oi.quantity, oi.cost_at_sale, "
         "oi.unit_price "
@@ -1047,11 +1051,6 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
             continue
         cost_at_sale = float(irow["cost_at_sale"] or 0)
         if cost_at_sale == 0:
-            # Populate cost_at_sale at delivery time using cost_history with
-            # baseline fallback. Skip re-population when already set. The
-            # actual selling price (unit_price) is passed as the baseline anchor
-            # so custom-priced orders compute COGS from the sale value rather
-            # than the catalog base_price (DG-208 Phase 1, FR1/FR2).
             product_id = irow["product_id"]
             if product_id is None:
                 continue
@@ -1061,29 +1060,84 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
                 continue
             selling_price = float(irow["unit_price"] or 0) or None
             cost_at_sale = resolve_product_cost(conn, pid, selling_price=selling_price)
-            if cost_at_sale > 0:
+            if cost_at_sale > 0 and populate_cost_at_sale:
                 conn.execute(
                     "UPDATE order_items SET cost_at_sale = ? WHERE id = ?",
                     (cost_at_sale, int(irow["item_id"])),
                 )
         if cost_at_sale > 0:
             total_cogs += cost_at_sale * qty
-    # COGS entry is created once per order with the accumulated total_cogs
-    # from all items (out of the per-item loop). Inserting inside the loop
-    # produced duplicate entries with partial/incorrect totals for multi-item
-    # orders (review finding C-1).
-    if total_cogs > 0:
-        _insert_journal_entry(
-            conn,
-            description=f"Order COGS: {order_ref}",
-            source_type="order_cogs",
-            source_id=order_id,
-            lines=[
-                (cogs_account_id, total_cogs, 0.0, "Giá vốn hàng bán"),
-                (inventory_account_id, 0.0, total_cogs, "Xuất kho"),
-            ],
-            transaction_date=order_transaction_date,
-        )
+    return total_cogs
+
+
+def _order_cogs_entry(conn, order_id: int) -> tuple:
+    """Return ``(entry_id, cogs_debit_total)`` for the order's order_cogs entry.
+
+    Looks up the ``source_type = 'order_cogs'`` entry and sums the debit on the
+    COGS (5900) account. Returns ``(None, 0.0)`` when the order has no
+    order_cogs entry or the entry has no COGS debit line.
+    """
+    row = conn.execute(
+        """
+        SELECT je.id AS entry_id, COALESCE(SUM(jl.debit), 0) AS cogs_debit
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'order_cogs' AND je.source_id = ? AND a.code = ?
+        GROUP BY je.id
+        """,
+        (order_id, COGS_CODE),
+    ).fetchone()
+    if row is None:
+        return None, 0.0
+    return int(row["entry_id"]), float(row["cogs_debit"])
+
+
+def _sync_order_cogs_entry(conn, order_id: int, order_ref: str) -> None:
+    """Create the ``order_cogs`` journal entry for a delivered order if absent.
+
+    Computes the total COGS via :func:`_compute_order_cogs_total` (populating
+    ``cost_at_sale`` for any zero-cost items using the current cost_history /
+    baseline rule with ``unit_price`` as the anchor), then inserts a single
+    ``order_cogs`` journal entry (DR COGS 5900 / CR Inventory 1300).
+
+    Idempotent: skips when an ``order_cogs`` entry already exists for the
+    order. The COGS entry is created once per order with the accumulated
+    total from all items (inserting inside the per-item loop previously
+    produced duplicate entries with partial totals — review finding C-1).
+    """
+    existing_cogs = conn.execute(
+        "SELECT 1 FROM journal_entries WHERE source_type = 'order_cogs' AND source_id = ?",
+        (order_id,),
+    ).fetchone()
+    if existing_cogs:
+        return
+
+    total_cogs = _compute_order_cogs_total(conn, order_id, populate_cost_at_sale=True)
+    if total_cogs <= 0:
+        return
+
+    cogs_account_id = _account_id_by_code(conn, COGS_CODE)
+    inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
+    # FR4/FR11: order COGS uses the order's due_date (fallback created_at).
+    order_date_row = conn.execute(
+        "SELECT due_date, created_at FROM orders WHERE id = ?", (order_id,)
+    ).fetchone()
+    order_transaction_date = (
+        order_date_row["due_date"] or order_date_row["created_at"] or None
+        if order_date_row else None
+    )
+    _insert_journal_entry(
+        conn,
+        description=f"Order COGS: {order_ref}",
+        source_type="order_cogs",
+        source_id=order_id,
+        lines=[
+            (cogs_account_id, total_cogs, 0.0, "Giá vốn hàng bán"),
+            (inventory_account_id, 0.0, total_cogs, "Xuất kho"),
+        ],
+        transaction_date=order_transaction_date,
+    )
 
 
 def _sync_waste_cogs_journal(
