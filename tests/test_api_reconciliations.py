@@ -1508,3 +1508,71 @@ def test_surplus_restock_inflow_no_cogs_when_cost_zero_ac9(api_client):
         assert restock_row is not None
         entries = _restock_inflow_entries(conn, restock_row["id"])
         assert len(entries) == 0
+
+
+# ---------------------------------------------------------------------------
+# DG-200 Phase 5.6-c1-fix — Surplus indicator gross basis + negative-balance
+# clearing when staff confirm zero count.
+# ---------------------------------------------------------------------------
+
+
+def test_draft_includes_gross_available_qty_per_option(api_client):
+    """M-1: draft option rows include gross_available_qty (available items
+    before subtracting negative_balance) so the Flutter surplus indicator
+    matches the backend gross surplus calculation."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 3)
+        _set_negative_balance(conn, 1, None, 5)
+
+    resp = api_client.get("/api/reconciliations/draft")
+    assert resp.status_code == 200
+    product = next(p for p in resp.json()["products"] if p["product_id"] == 1)
+    option = product["options"][0]
+    # gross = 3 available items (before negative balance); net expected = -2
+    assert option["gross_available_qty"] == 3
+    assert option["expected_qty"] == -2
+
+
+def test_submit_counted_zero_clears_negative_balance_sinh1(api_client):
+    """Sinh-1: product with negative balance (expected_qty < 0) and
+    counted_qty == 0 → backend clears the negative_balance row (staff
+    confirmed the negative was a data error)."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 0)
+        _set_negative_balance(conn, 1, None, 5)
+
+    resp = _submit_surplus(api_client, 1, expected_qty=-5, counted_qty=0)
+    assert resp.status_code == 201
+    session_id = resp.json()["id"]
+
+    with get_db() as conn:
+        assert _neg_qty(conn, 1, None) == 0
+        assert _available_qty(conn, 1, None) == 0
+        clear_event = conn.execute(
+            """SELECT data FROM events
+               WHERE type = 'inventory'
+                 AND data LIKE '%"movement_type": "negative_balance_clear"%'
+                 AND data LIKE ?
+               ORDER BY id DESC LIMIT 1""",
+            (f'%"reference_id": "reconciliation:{session_id}"%',),
+        ).fetchone()
+        assert clear_event is not None
+
+
+def test_submit_counted_nonzero_does_not_clear_negative_balance(api_client):
+    """Sinh-1 guard: when expected_qty < 0 but counted_qty > 0, the negative
+    balance is reduced via surplus netting (not cleared by the zero-count
+    path). Verifies the clearing only triggers on counted == 0."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 0)
+        _set_negative_balance(conn, 1, None, 5)
+
+    resp = _submit_surplus(api_client, 1, expected_qty=-5, counted_qty=2)
+    assert resp.status_code == 201
+
+    with get_db() as conn:
+        # Netting reduced negative from 5 to 3; clearing path did not run.
+        assert _neg_qty(conn, 1, None) == 3

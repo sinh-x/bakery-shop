@@ -21,7 +21,7 @@ List<ReconciliationSubmitLine> buildSubmitLines(ReconciliationState state) {
   }
 
   return draft.products.expand((product) {
-    return product.options.where((option) => option.expectedQty > 0).map((
+    return product.options.where((option) => option.expectedQty != 0).map((
       option,
     ) {
       final optionKey = reconciliationOptionKey(

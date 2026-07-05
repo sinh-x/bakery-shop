@@ -37,7 +37,7 @@ class _ReconciliationProductCardState
         widget.product.productId,
         option.normalizedPrice,
       );
-      final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
+      final counted = state.countedQtyByOption[optionKey] ?? (option.expectedQty < 0 ? 0 : option.expectedQty);
       final waste = state.wasteQtyByOption[optionKey] ?? 0;
       final wasteReason = state.wasteReasonByOption[optionKey] ?? '';
       _countedControllers[optionKey] = TextEditingController(text: '$counted');
@@ -67,7 +67,7 @@ class _ReconciliationProductCardState
     final state = ref.watch(reconciliationProvider);
     final notifier = ref.read(reconciliationProvider.notifier);
     final visibleOptions = widget.product.options
-        .where((option) => option.expectedQty > 0)
+        .where((option) => option.expectedQty != 0)
         .toList();
     final autoExpandSingleOption =
         widget.product.priceChips.isEmpty && visibleOptions.length == 1;
@@ -84,7 +84,7 @@ class _ReconciliationProductCardState
         widget.product.productId,
         option.normalizedPrice,
       );
-      final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
+      final counted = state.countedQtyByOption[optionKey] ?? (option.expectedQty < 0 ? 0 : option.expectedQty);
       final rows =
           state.saleRowsByOption[optionKey] ??
           const <ReconciliationSaleRowInput>[];
@@ -223,7 +223,7 @@ class _ReconciliationProductCardState
     required bool canCollapse,
   }) {
     final optionKey = _optionKey(option);
-    final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
+    final counted = state.countedQtyByOption[optionKey] ?? (option.expectedQty < 0 ? 0 : option.expectedQty);
     final saleRows =
         state.saleRowsByOption[optionKey] ??
         const <ReconciliationSaleRowInput>[];
@@ -231,7 +231,11 @@ class _ReconciliationProductCardState
     final waste = state.wasteQtyByOption[optionKey] ?? 0;
     final wasteReason = state.wasteReasonByOption[optionKey] ?? '';
     final variance = option.expectedQty - counted - saleQty - waste;
-    final surplus = state.surplusQtyFor(optionKey, option.expectedQty);
+    final surplus = state.surplusQtyFor(
+      optionKey,
+      option.expectedQty,
+      grossAvailableQty: option.grossAvailableQty,
+    );
     final saleRowErrors =
         state.saleRowErrorsByOption[optionKey] ??
         const <ReconciliationSaleRowError>[];
@@ -294,7 +298,7 @@ class _ReconciliationProductCardState
   }
 
   String _visibleChipLabelsForOption(ReconciliationDraftOption option) {
-    if (option.expectedQty <= 0) {
+    if (option.expectedQty == 0) {
       return '';
     }
 
@@ -337,7 +341,7 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
       product.productId,
       option.normalizedPrice,
     );
-    final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
+    final counted = state.countedQtyByOption[optionKey] ?? (option.expectedQty < 0 ? 0 : option.expectedQty);
     final saleRows =
         state.saleRowsByOption[optionKey] ??
         const <ReconciliationSaleRowInput>[];
@@ -345,7 +349,11 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
     final saleQty = saleRows.fold<int>(0, (sum, row) => sum + row.quantity);
     final missing = option.expectedQty - counted;
     final variance = option.expectedQty - counted - saleQty - waste;
-    final surplus = state.surplusQtyFor(optionKey, option.expectedQty);
+    final surplus = state.surplusQtyFor(
+      optionKey,
+      option.expectedQty,
+      grossAvailableQty: option.grossAvailableQty,
+    );
     final optionError = state.optionErrors[optionKey];
     final saleRowErrors =
         state.saleRowErrorsByOption[optionKey] ??

@@ -134,6 +134,16 @@ def _load_display_products(conn) -> list[dict]:
                 stock_row["quantity"] or 0
             )
 
+        # Gross available quantities per option (available items only, before
+        # subtracting negative_balance). Surfaced to the Flutter client so the
+        # surplus indicator matches the backend's gross surplus calculation
+        # (counted_qty - available_quantity) instead of the net position
+        # (counted_qty - expected_qty), which would inflate the displayed
+        # surplus when a negative balance exists (DG-200 Phase 5.6-c1-fix, M-1).
+        gross_available_by_option: dict[tuple[int, int | None], int] = {
+            key: value for key, value in expected_by_option.items()
+        }
+
         # Apply net position: subtract negative_balance per option (DG-200
         # Phase 3, FR-4). Draft surfaces negative positions to staff instead
         # of hiding them behind the available-only count.
@@ -163,6 +173,8 @@ def _load_display_products(conn) -> list[dict]:
                     "position": chip["position"],
                 }
             )
+    else:
+        gross_available_by_option = {}
 
     products: list[dict] = []
     for row in rows:
@@ -171,6 +183,7 @@ def _load_display_products(conn) -> list[dict]:
         option_rows: list[dict] = []
         if chips:
             for chip in chips:
+                chip_key = (product_id, chip["id"])
                 option_rows.append(
                     {
                         "product_id": product_id,
@@ -178,11 +191,14 @@ def _load_display_products(conn) -> list[dict]:
                         "price_chip_id": chip["id"],
                         "chip_label": chip["label"],
                         "source_chip_ids": [chip["id"]],
-                        "expected_qty": expected_by_option.get((product_id, chip["id"]), 0),
+                        "expected_qty": expected_by_option.get(chip_key, 0),
+                        "gross_available_qty": gross_available_by_option.get(chip_key, 0),
                     }
                 )
-            base_qty = expected_by_option.get((product_id, None), 0)
-            if base_qty > 0:
+            base_key = (product_id, None)
+            base_qty = expected_by_option.get(base_key, 0)
+            base_gross = gross_available_by_option.get(base_key, 0)
+            if base_qty != 0:
                 option_rows.append(
                     {
                         "product_id": product_id,
@@ -191,9 +207,11 @@ def _load_display_products(conn) -> list[dict]:
                         "chip_label": "Giá gốc",
                         "source_chip_ids": [],
                         "expected_qty": base_qty,
+                        "gross_available_qty": base_gross,
                     }
                 )
         else:
+            no_chip_key = (product_id, None)
             option_rows.append(
                 {
                     "product_id": product_id,
@@ -201,7 +219,8 @@ def _load_display_products(conn) -> list[dict]:
                     "price_chip_id": None,
                     "chip_label": "Giá gốc",
                     "source_chip_ids": [],
-                    "expected_qty": expected_by_option.get((product_id, None), 0),
+                    "expected_qty": expected_by_option.get(no_chip_key, 0),
+                    "gross_available_qty": gross_available_by_option.get(no_chip_key, 0),
                 }
             )
 
@@ -508,6 +527,13 @@ def _process_surplus_inflow(
         # restocked surplus. Mirrors the waste COGS sync pattern (DR
         # Inventory / CR COGS). Fire-and-forget: accounting failures never
         # block the reconciliation submit (NFR1).
+        #
+        # Inline import (not module-level) is intentional: journal_sync
+        # imports from baker.api.inventory_fifo, which is already a module-level
+        # dependency of this file. Keeping journal_sync inline at call-site
+        # preserves the same circular-dependency avoidance pattern used in
+        # order_stock.py and limits the accounting coupling to the operation
+        # that needs it (DG-200 Phase 5.6-c1-fix, Mn-1).
         from baker.services.journal_sync import (
             _sync_restock_inflow_journal,
             run_journal_sync,
@@ -612,6 +638,8 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
             waste_movement_id = movement_cursor.lastrowid
             consume_fifo_items(conn, line.product_id, chip_id, line.waste_qty, waste_movement_id)
 
+            # Inline import: same circular-dependency avoidance pattern as the
+            # restock and negative-sale journal syncs (DG-200 Phase 5.6-c1-fix, Mn-1).
             from baker.services.journal_sync import _sync_waste_cogs_journal, run_journal_sync
 
             run_journal_sync(
@@ -661,6 +689,50 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
             surplus_info = _process_surplus_inflow(conn, line, chip_id, session_id)
             if surplus_info is not None:
                 surplus_by_option[(line.product_id, chip_id)] = surplus_info
+
+        # --- Negative-balance clearing (DG-200 Phase 5.6-c1-fix, Sinh-1) ---
+        # When a product has a negative balance (expected_qty < 0) and staff
+        # submit counted_qty == 0, they confirm the negative was a data error.
+        # Clear the negative_balance row so the system position resets to
+        # zero. This runs after surplus inflow (which may have already reduced
+        # the negative balance via netting).
+        for line in payload.lines:
+            if line.expected_qty >= 0 or line.counted_qty != 0:
+                continue
+            chip_id = _resolve_line_chip_id(conn, line)
+            neg_row = conn.execute(
+                """SELECT id, qty FROM negative_balance
+                   WHERE product_id = ? AND price_chip_id IS NOT DISTINCT FROM ?""",
+                (line.product_id, chip_id),
+            ).fetchone()
+            if neg_row and neg_row["qty"] > 0:
+                conn.execute(
+                    "DELETE FROM negative_balance WHERE id = ?",
+                    (neg_row["id"],),
+                )
+                product_name_row = conn.execute(
+                    "SELECT name FROM products WHERE id = ?",
+                    (line.product_id,),
+                ).fetchone()
+                product_name = (
+                    product_name_row["name"]
+                    if product_name_row
+                    else f"product_id={line.product_id}"
+                )
+                Event(
+                    summary=f"Xoá âm tồn {product_name}",
+                    type="inventory",
+                    data={
+                        "product_id": line.product_id,
+                        "product_name": product_name,
+                        "movement_type": "negative_balance_clear",
+                        "quantity": 0,
+                        "reason": "reconciliation confirmed zero count",
+                        "reference_id": f"reconciliation:{session_id}",
+                        "price_chip_id": chip_id,
+                        "cleared_negative_qty": int(neg_row["qty"]),
+                    },
+                ).save(conn)
 
         first_sale_row = next(
             (sale_row for line_rows in sale_rows_by_line for sale_row in line_rows),

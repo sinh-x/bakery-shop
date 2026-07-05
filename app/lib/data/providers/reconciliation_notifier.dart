@@ -35,7 +35,7 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
         for (final option in product.options) {
           final key = reconciliationOptionKey(option.productId, option.normalizedPrice);
           _draftOptionsByKey[key] = option;
-          counted[key] = option.expectedQty;
+          counted[key] = option.expectedQty < 0 ? 0 : option.expectedQty;
           waste[key] = 0;
           wasteReasons[key] = '';
           saleRows[key] = <ReconciliationSaleRowInput>[];

@@ -181,7 +181,7 @@ class _StockReconciliationScreenState
     }
 
     final filteredProducts = draft.products
-        .where((product) => product.expectedQty > 0)
+        .where((product) => product.expectedQty != 0)
         .toList(growable: false);
 
     return Column(
