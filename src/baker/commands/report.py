@@ -229,7 +229,11 @@ def income_statement_cmd(since, until):
     operating_expenses = total_expense - cogs_amount
 
     click.echo(f"{'Revenue':<40}{revenue:>20,.2f}")
-    click.echo(f"{'Cost of Goods Sold (5900)':<40}{cogs_amount:>20,.2f}")
+    cogs_ratio = (cogs_amount / revenue * 100.0) if revenue > 0 else 0.0
+    click.echo(
+        f"{'Cost of Goods Sold (5900)':<40}{cogs_amount:>20,.2f}"
+        f"  ({cogs_ratio:.1f}%)"
+    )
     click.echo(f"{'Gross Profit':<40}{(revenue - cogs_amount):>20,.2f}")
     click.echo("")
     click.echo(f"{'Operating Expenses':<40}{operating_expenses:>20,.2f}")

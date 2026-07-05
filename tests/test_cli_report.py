@@ -313,6 +313,83 @@ def test_income_statement_empty_db():
     assert "0.00" in result.output
 
 
+def test_income_statement_shows_cogs_ratio_alongside_amount():
+    """AC7: COGS line shows the ratio alongside the amount (FR10)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_known_dataset(conn)
+    result = _invoke(["report", "income-statement", "--since", "2026-06-01", "--until", "2026-06-30"])
+    assert result.exit_code == 0, result.output
+    # The COGS line must show the amount AND a parenthesized percentage.
+    assert "Cost of Goods Sold (5900)" in result.output
+    assert "80,000.00" in result.output
+    # Revenue 200000, COGS 80000 → 40.0%
+    assert "(40.0%)" in result.output
+
+
+def test_income_statement_cogs_ratio_zero_revenue_no_division_error():
+    """AC7: zero revenue must not crash the ratio display (shows 0.0%)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Seed COGS only — no revenue → revenue == 0
+        cogs = _account_id(conn, "5900")
+        inventory = _account_id(conn, "1300")
+        ts = "2026-06-15T10:00:00Z"
+        _insert_entry(
+            conn,
+            debit_account_id=cogs,
+            credit_account_id=inventory,
+            amount=50000.0,
+            source_type="order_cogs",
+            source_id=99,
+            description="COGS without revenue",
+            created_at=ts,
+        )
+    result = _invoke(["report", "income-statement", "--since", "2026-06-01", "--until", "2026-06-30"])
+    assert result.exit_code == 0, result.output
+    assert "Cost of Goods Sold (5900)" in result.output
+    assert "(0.0%)" in result.output
+
+
+def test_income_statement_cogs_ratio_reflects_selling_price_fix():
+    """AC7 regression: after the selling-price fix, ratio reflects actual
+    COGS (not the old base_price baseline). Seeds revenue 800000 with COGS
+    240000 (30% of 800000 selling price) → 30.0% ratio. The pre-fix formula
+    would have produced COGS 45000 (30% of 150000 base_price) → 5.6%."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cash = _account_id(conn, "1100")
+        revenue_acc = _account_id(conn, "4100")
+        cogs = _account_id(conn, "5900")
+        inventory = _account_id(conn, "1300")
+        ts = "2026-06-15T10:00:00Z"
+        _insert_entry(
+            conn,
+            debit_account_id=cash,
+            credit_account_id=revenue_acc,
+            amount=800000.0,
+            source_type="order",
+            source_id=7,
+            description="Custom-priced sale",
+            created_at=ts,
+        )
+        _insert_entry(
+            conn,
+            debit_account_id=cogs,
+            credit_account_id=inventory,
+            amount=240000.0,
+            source_type="order_cogs",
+            source_id=7,
+            description="COGS (selling-price anchored)",
+            created_at=ts,
+        )
+    result = _invoke(["report", "income-statement", "--since", "2026-06-01", "--until", "2026-06-30"])
+    assert result.exit_code == 0, result.output
+    assert "800,000.00" in result.output
+    assert "240,000.00" in result.output
+    assert "(30.0%)" in result.output
+
+
 # ---------------------------------------------------------------------------
 # balance-sheet
 # ---------------------------------------------------------------------------
