@@ -1,5 +1,105 @@
 # Changelog
 
+## [0.7.0+79] — 2026-07-06
+
+> **Release summary:** This release bundles all features from v0.6.1 through v0.6.13 (approximately 178 commits across 18 milestone features), including double-entry accounting (DG-175, DG-189–199), customer management (DG-182, DG-204–206), negative inventory flow (DG-200), UTC timestamp standardization (DG-202), printing module (DG-186), expense events (DG-185), printer paper mode (DG-183), and COGS audit/cost_history (DG-208). See the entries below for the full delta.
+- feat(DG-208): core COGS formula fix, cost_history CRUD, COGS audit + backfill commands
+- feat(DG-209): 4 new business-health metric categories with severity classification
+- feat(reports): COGS ratio in income statement with regression tests
+- feat(DG-209): pre/post-migration DB validation procedure
+- chore(release): bump version 0.6.13+78 → 0.7.0+79
+
+## [0.6.13+78] — 2026-07-05
+- feat(inventory): DG-200 negative inventory POS flow (negative_balance table, allow_negative FIFO, surplus inflow netting, accounting entries, Flutter stock/reconciliation negative display, integration tests)
+- chore(release): bump patch version to 0.6.13+78
+
+## [0.6.12+77] — 2026-07-04
+- feat(time): DG-202 UTC timestamp standardization (now_utc() utility, v55 migration, Z-suffix round-trip, timezone endpoint, Flutter date formatting)
+- feat(customers): DG-204 customer generation from orders (phone normalization, name dedup, v57 migration)
+- feat(customers): DG-205 multi-phone support + customer management foundation (v58 customer_phones table, Flutter multi-phone UI, order-customer phone matching, name dedup v59)
+- feat(orders): DG-206 customer search + card in order create/edit/detail flows (CustomerProfileCard, PhoneCountBadge, diacritic-insensitive search_name, customer_year_summary)
+- feat(customers): DG-182 Flutter UI for customer management + detail screens with search in order flows
+- feat(accounting): DG-175 double-entry accounting (chart of accounts, journal auto-gen hooks, Flutter accounting UI, COGS journal entries, cost_history, cost_at_sale)
+- feat(accounting): DG-189 accounting validation module (6 new validation checks, CLI reports, Flutter review remediation)
+- feat(accounting): DG-190 delivered-order revenue updates + repair-order-revenue CLI (pipeline visibility, refund handling)
+- feat(accounting): DG-191 bus shipping revenue (COA held account 2200, payment journal split, backfill v49, Flutter VN labels)
+- feat(accounting): DG-192 transaction_date on journal entries (model + Flutter data layer, report/API/lock filters, backfill + live-sync)
+- feat(accounting): DG-196 PaymentTransaction invalidation (v53 migration, invalidate/restore endpoints, Flutter UI, downstream exclusion)
+- feat(accounting): DG-198 tien_rut routing to account 2400 Tien Rut Held (deposit-revenue integrity checks, guardrail, backfill)
+- feat(accounting): DG-199 journal sync remediation + production verification docs (v54 migration, rollback procedure)
+- feat(printing): DG-186 CUPS/IPP printer module (IPP client, BAKER_PRINT_IPP_URL env, NixOS CUPS module)
+- feat(events): DG-185 expense auto-staff, payer confirmation, audit log (v43 event_history, soft-delete, loggedBy attribution)
+- feat(printer): DG-183 printer paper mode (PAPER_MODE env, Flutter settings dropdown, conditional TSPL GAP)
+- feat(print): DG-184 receipt print trailing space & tear indicator for roll paper
+- fix(tests): DG-207 rewrite event_test timezone assertions
+- chore(release): bump patch version to 0.6.12+77
+
+## [0.6.11+73] — 2026-06-19
+- feat(expenses): staff dropdown + paid_by role separation (WAL checkpoint, paid_by_name validation, Flutter UI)
+- feat(auto-refresh): DG-181 AutoRefreshMixin for data-list screens (ExpenseScreen, EventListScreen, shared mixin)
+- chore(release): bump patch version to 0.6.11+73
+
+## [0.6.10+72] — 2026-06-17
+- feat(expenses): DG-176 payment source (payment_source validation + filter, Flutter UI form/history/filter, reimbursed support)
+- chore(release): bump patch version to 0.6.10+72
+
+## [0.6.9+71] — 2026-06-12
+- refactor(orders): extract rut_tien widgets from order_detail_screen and expandable_item_card
+- chore(release): bump patch version to 0.6.9+71
+
+## [0.6.8+70] — 2026-05-25
+- feat(deps): DG-172 replace 5 KGP-warning plugins with patched forks (pin git deps to commit SHAs)
+- feat(orders): DG-066 per-order incident linking with photo attachments
+- chore(release): bump patch version to 0.6.8+70
+
+## [0.6.7+69] — 2026-05-24
+- feat(expenses): operation expenses note (Chi phi list filters, editable timestamps, local-day filtering, staff chip filters)
+- chore(release): bump patch version to 0.6.7+69
+
+## [0.6.6+68] — 2026-05-23
+- feat(orders): phu_kien accessory draft support + integrate phu_kien extras in create/edit, bind gifts to phu_kien catalog products
+- feat(settings): deprecate legacy extras management
+- chore(release): bump patch version to 0.6.6+68
+
+## [0.6.5+67] — 2026-05-22
+- feat(orders): customer-facing public order code (persistence, generation, edit rules, receipt surfaces, Flutter UI)
+- feat(receipts): remove non-customer pickup label, apply DG-164 receipt feedback
+- chore(release): bump patch version to 0.6.5+67
+
+## [0.6.4+66] — 2026-05-22
+- feat(app): DG-165 flutter kotlin warnings remediation (upgrade warning-related plugins, preserve Android share flows)
+- chore(release): bump patch version to 0.6.4+66
+
+## [0.6.3+65] — 2026-05-22
+- feat(deps): DG-162 flutter SDK dependency alignment (nix flutter + CI pin, lockfile alignment, docs)
+- chore(release): bump patch version to 0.6.3+65
+
+## [0.6.2+64] — 2026-05-22
+- feat(orders): default trung bay inventory off (require explicit useInventory opt-in, preserve FIFO regression behavior)
+- chore(release): bump patch version to 0.6.2+64
+
+## [0.6.1+63] — 2026-05-21
+- feat(pos): POS sales workflow UX (checkout edit/payment state refinement, local finalization guard, receipt print skip flow, regression verification)
+- feat(orders): order status error messaging (backend status-rejection diagnostics, improved 422 failure messaging)
+- feat(orders): POS order history UI (persist quick-sale dueDate, backend due-date history query)
+- feat(pos): POS appbar menu stock filter (inventory crowded appbars, overflow action menus, stock visibility switch, VN menu labels)
+- ci: auto bump patch version after develop CI (wait for develop CI before patch bump)
+- chore(release): bump patch version to 0.6.1+63
+
+## [0.6.0] — 2026-05-17
+- feat(reconciliation): DG-121 reconciliation screen improvements (auto-create sales rows, product filtering, sale editor reorder)
+- feat(stock): reconciliation chip stock filter (hide zero-stock chips, remove price shortcuts, category grouping cleanup)
+- feat(linting): DG-120 coding standards audit (12 lint rules activated, const suppression audit, widget extraction)
+- feat(orders): active order visibility (active_only API parameter, Kanban grouping for column correctness)
+- feat(stock): POS stock collapsible categories (reusable category grouping sections, order extras to product-backed accessories)
+- feat(stock): DG-144 improve reconciliation UX (icon regression coverage, mutable Flutter web asset revalidation)
+- feat(stock): DG-112 inventory choice (useInventory toggle, FIFO consumption gating for Trung bay items, idempotent deduction + restore on cancel)
+- feat(refactor): DG-120 refactor bundle (split reconciliation/order providers, domain import split, widget extraction)
+- feat(products): promote catalog photo as canonical product photo (API fallback, Flutter refresh state)
+- feat(products): DG-143 product reactivation + category visibility (inactive data path, reactivation UI, edit-sheet visibility switch)
+- feat(app): DG-156 server code-fingerprint mismatch warning (backend fingerprint metadata, Flutter comparison state, all-route warning strip)
+- chore(release): bump version to 0.6.0
+
 ## [0.5.5+58] — 2026-04-22
 - chore(release): bump version to 0.5.5+57
 
