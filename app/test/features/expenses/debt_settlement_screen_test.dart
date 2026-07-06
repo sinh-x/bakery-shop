@@ -1,9 +1,12 @@
+import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/debt_settlement_screen.dart';
+import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 BakeryEvent _debtEvent({
   required int id,
@@ -76,27 +79,35 @@ void main() {
       final event = _debtEvent(id: 7, amount: 500000);
       Map<String, dynamic>? captured;
 
+      SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+      final prefs = await SharedPreferences.getInstance();
+
       await tester.pumpWidget(
-        MaterialApp(
-          home: DebtSettlementScreen(
-            eventId: 7,
-            loadEvent: (id, ref) async => event,
-            submitSettlement: ({
-              required eventId,
-              required amount,
-              required paymentMethod,
-              required paymentSource,
-              required note,
-            }) async {
-              captured = {
-                'eventId': eventId,
-                'amount': amount,
-                'paymentMethod': paymentMethod,
-                'paymentSource': paymentSource,
-                'note': note,
-              };
-              return {'status': 'partial', 'remaining': 200000};
-            },
+        ProviderScope(
+          overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+          child: MaterialApp(
+            home: DebtSettlementScreen(
+              eventId: 7,
+              loadEvent: (id, ref) async => event,
+              submitSettlement: ({
+                required eventId,
+                required amount,
+                required paymentMethod,
+                required paymentSource,
+                required note,
+                required settledBy,
+              }) async {
+                captured = {
+                  'eventId': eventId,
+                  'amount': amount,
+                  'paymentMethod': paymentMethod,
+                  'paymentSource': paymentSource,
+                  'note': note,
+                  'settledBy': settledBy,
+                };
+                return {'status': 'partial', 'remaining': 200000};
+              },
+            ),
           ),
         ),
       );
@@ -117,6 +128,8 @@ void main() {
       expect(captured!['amount'], 300000);
       expect(captured!['paymentMethod'], VN.methodCash);
       expect(captured!['paymentSource'], VN.paymentSourceShopCash);
+      // settledBy is sourced from loggedByProvider (saved staff name).
+      expect(captured!['settledBy'], 'Lan');
     },
   );
 
@@ -132,21 +145,28 @@ void main() {
       );
       bool submitted = false;
 
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+
       await tester.pumpWidget(
-        MaterialApp(
-          home: DebtSettlementScreen(
-            eventId: 7,
-            loadEvent: (id, ref) async => event,
-            submitSettlement: ({
-              required eventId,
-              required amount,
-              required paymentMethod,
-              required paymentSource,
-              required note,
-            }) async {
-              submitted = true;
-              return {'status': 'paid'};
-            },
+        ProviderScope(
+          overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+          child: MaterialApp(
+            home: DebtSettlementScreen(
+              eventId: 7,
+              loadEvent: (id, ref) async => event,
+              submitSettlement: ({
+                required eventId,
+                required amount,
+                required paymentMethod,
+                required paymentSource,
+                required note,
+                required settledBy,
+              }) async {
+                submitted = true;
+                return {'status': 'paid'};
+              },
+            ),
           ),
         ),
       );
@@ -167,18 +187,25 @@ void main() {
     (tester) async {
       final event = _debtEvent(id: 7, amount: 500000);
 
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+
       await tester.pumpWidget(
-        MaterialApp(
-          home: DebtSettlementScreen(
-            eventId: 7,
-            loadEvent: (id, ref) async => event,
-            submitSettlement: ({
-              required eventId,
-              required amount,
-              required paymentMethod,
-              required paymentSource,
-              required note,
-            }) async => {'status': 'paid'},
+        ProviderScope(
+          overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+          child: MaterialApp(
+            home: DebtSettlementScreen(
+              eventId: 7,
+              loadEvent: (id, ref) async => event,
+              submitSettlement: ({
+                required eventId,
+                required amount,
+                required paymentMethod,
+                required paymentSource,
+                required note,
+                required settledBy,
+              }) async => {'status': 'paid'},
+            ),
           ),
         ),
       );

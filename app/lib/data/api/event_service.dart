@@ -150,9 +150,12 @@ class EventService {
   /// Settle a debt expense (DG-212 Phase 4 — FR4).
   ///
   /// POST /api/expenses/{id}/settle with [amount], [paymentMethod],
-  /// [paymentSource], optional [note] and [timestamp]. Returns the parsed
-  /// settlement response: ``event_id``, ``settlement_id``, ``amount``,
-  /// ``settled_amount``, ``remaining``, ``status``, ``accounting_sync``.
+  /// [paymentSource], optional [note] and [timestamp]. The [settledBy]
+  /// value is sent as the ``settled_by`` query parameter so the backend can
+  /// record the audit actor on the settlement's event history entry.
+  /// Returns the parsed settlement response: ``event_id``,
+  /// ``settlement_id``, ``amount``, ``settled_amount``, ``remaining``,
+  /// ``status``, ``accounting_sync``.
   Future<Map<String, dynamic>> settleDebt({
     required int eventId,
     required int amount,
@@ -160,6 +163,7 @@ class EventService {
     required String paymentSource,
     String note = '',
     DateTime? timestamp,
+    String settledBy = '',
   }) async {
     final body = <String, dynamic>{
       'amount': amount,
@@ -173,6 +177,7 @@ class EventService {
     final response = await _dio.post(
       '/api/expenses/$eventId/settle',
       data: body,
+      queryParameters: {'settled_by': settledBy},
     );
     return response.data as Map<String, dynamic>;
   }

@@ -1,6 +1,7 @@
 import 'package:bakery_app/data/api/event_service.dart';
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/expense_constants.dart';
+import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -34,14 +35,15 @@ class DebtSettlementScreen extends ConsumerStatefulWidget {
   final Future<BakeryEvent> Function(int eventId, WidgetRef ref)? loadEvent;
 
   /// Optional override for submitting the settlement. Receives [eventId],
-  /// [amount], [paymentMethod], [paymentSource], [note]. Returns the
-  /// parsed backend response.
+  /// [amount], [paymentMethod], [paymentSource], [note], [settledBy]. Returns
+  /// the parsed backend response.
   final Future<Map<String, dynamic>> Function({
     required int eventId,
     required int amount,
     required String paymentMethod,
     required String paymentSource,
     required String note,
+    required String settledBy,
   })?
       submitSettlement;
 
@@ -130,6 +132,7 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
     if (!mounted) return;
     setState(() => _submitting = true);
     try {
+      final settledBy = ref.read(loggedByProvider);
       final submit = widget.submitSettlement;
       if (submit != null) {
         await submit(
@@ -138,6 +141,7 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
           paymentMethod: _paymentMethod,
           paymentSource: _paymentSource,
           note: _noteCtrl.text.trim(),
+          settledBy: settledBy,
         );
       } else {
         await ref.read(eventServiceProvider).settleDebt(
@@ -146,6 +150,7 @@ class _DebtSettlementScreenState extends ConsumerState<DebtSettlementScreen> {
               paymentMethod: _paymentMethod,
               paymentSource: _paymentSource,
               note: _noteCtrl.text.trim(),
+              settledBy: settledBy,
             );
       }
       if (!mounted) return;
