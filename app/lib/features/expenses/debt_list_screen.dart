@@ -1,3 +1,5 @@
+import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
+import 'package:bakery_app/features/expenses/widgets/debt_status_chip.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_filter_card.dart';
 import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
@@ -240,7 +242,7 @@ class _DebtRow extends StatelessWidget {
     final amount = (debt['amount_vnd'] as num?)?.toDouble() ?? 0.0;
     final settled = (debt['settled_amount'] as num?)?.toDouble() ?? 0.0;
     final remaining = (debt['remaining'] as num?)?.toDouble() ?? 0.0;
-    final status = '${debt['status'] ?? ''}';
+    final status = _parseDebtStatus('${debt['status'] ?? ''}');
     final timestamp = debt['timestamp'] as String?;
     final summary = '${debt['summary'] ?? ''}';
     final theme = Theme.of(context);
@@ -266,7 +268,7 @@ class _DebtRow extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              _StatusChip(status: status),
+              DebtStatusChip(status: status),
               const SizedBox(height: 4),
               if (remaining > 0)
                 FilledButton.tonal(
@@ -281,23 +283,15 @@ class _DebtRow extends StatelessWidget {
   }
 }
 
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
-
-  final String status;
-
-  @override
-  Widget build(BuildContext context) {
-    final (label, color) = switch (status) {
-      'paid' => (VN.debtStatusPaid, Colors.green.shade100),
-      'partial' => (VN.debtStatusPartial, Colors.amber.shade100),
-      _ => (VN.debtStatusUnpaid, Colors.orange.shade100),
-    };
-    return Chip(
-      label: Text(label),
-      backgroundColor: color,
-      side: BorderSide.none,
-      visualDensity: VisualDensity.compact,
-    );
+ExpenseDebtStatus _parseDebtStatus(String value) {
+  switch (value) {
+    case 'paid':
+      return ExpenseDebtStatus.paid;
+    case 'partial':
+      return ExpenseDebtStatus.partial;
+    case 'unpaid':
+      return ExpenseDebtStatus.unpaid;
+    default:
+      return ExpenseDebtStatus.none;
   }
 }

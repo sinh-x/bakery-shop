@@ -1,5 +1,6 @@
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/data/models/event.dart';
+import 'package:bakery_app/features/expenses/widgets/debt_status_chip.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
@@ -42,7 +43,11 @@ class ExpenseHistoryCard extends StatelessWidget {
               '${VN.expenseLoggedByLabel}: ${event.loggedBy.isNotEmpty ? event.loggedBy : '—'} • ${VN.expensePaidByNameLabel}: ${data.paidByName.isNotEmpty ? data.paidByName : '—'}',
             ),
             Text(formattedTimestamp),
-            if (data.isDebt) _buildDebtStatusChip(data),
+            if (data.isDebt)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: DebtStatusChip(status: data.debtStatus),
+              ),
             if (data.reimbursed)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
@@ -84,30 +89,4 @@ class ExpenseHistoryCard extends StatelessWidget {
     );
   }
 
-  Widget _buildDebtStatusChip(ExpenseEventData data) {
-    final String label;
-    final Color color;
-    switch (data.debtStatus) {
-      case ExpenseDebtStatus.paid:
-        label = VN.debtStatusPaid;
-        color = Colors.green.shade100;
-      case ExpenseDebtStatus.partial:
-        label = VN.debtStatusPartial;
-        color = Colors.amber.shade100;
-      case ExpenseDebtStatus.unpaid:
-        label = VN.debtStatusUnpaid;
-        color = Colors.orange.shade100;
-      case ExpenseDebtStatus.none:
-        return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Chip(
-        label: Text(label),
-        backgroundColor: color,
-        side: BorderSide.none,
-        visualDensity: VisualDensity.compact,
-      ),
-    );
-  }
 }
