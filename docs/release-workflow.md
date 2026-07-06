@@ -156,7 +156,10 @@ Run every CI-equivalent check before the merge. Mirrors `.github/workflows/ci.ym
    ```
 5. Create the GitHub release with the CHANGELOG section as the body:
    ```bash
-   gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <(awk '/## \[X.Y.Z\]/{f=1} /## \[/{if(f && $2!="[X.Y.Z]") exit} f' CHANGELOG.md)
+   gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <(awk '/## \[X\.Y\.Z[+ \]]/{f=1} /## \[/{if(f && $2 !~ /^\[X\.Y\.Z/) exit} f' CHANGELOG.md)
+   # NOTE: the awk pattern matches the build-number suffix format used in
+   # CHANGELOG headers (e.g. [0.7.0+79]). Replace X.Y.Z with the exact version
+   # (e.g. 0.7.0) — the pattern matches "[X.Y.Z]" and "[X.Y.Z+N]" alike.
    ```
    - Alternatively, paste the matching `## [X.Y.Z] — …` section of `CHANGELOG.md` into `--notes`.
 
@@ -232,6 +235,22 @@ If the deploy fails or production breaks:
 - Logs a `rollback` entry to `deploy-history/deploy-history.log` on lily.
 
 Note: rollback swaps `web-build/` only; the backend image is rebuilt with the current commit. A transient client/server fingerprint mismatch can appear until a subsequent normal deploy re-aligns both artifacts. See `docs/migration-rollback.md` for DB migration rollback.
+
+### Backend rollback
+
+The `--rollback` flag above only restores the previous `web-build/` snapshot; it does not revert the backend to a prior release commit. If the backend regression is the issue, roll back the backend explicitly:
+
+```bash
+# Option A — roll back to the previous release tag:
+git checkout v<previous>          # e.g. v0.6.13
+./scripts/deploy-lily.sh
+
+# Option B — roll back to a specific prior commit:
+git checkout <previous-commit-sha>
+./scripts/deploy-lily.sh
+```
+
+This checks out the prior backend source on `main` and redeploys, restoring both the backend image and (after the deploy syncs `web-build/`) the frontend to that release. To resume forward development afterwards, `git checkout main` (or the relevant release branch) and redeploy once the fix is committed.
 
 ---
 

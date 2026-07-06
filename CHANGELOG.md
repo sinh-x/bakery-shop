@@ -1,6 +1,8 @@
 # Changelog
 
 ## [0.7.0+79] — 2026-07-06
+
+> **Release summary:** This release bundles all features from v0.6.1 through v0.6.13 (approximately 178 commits across 18 milestone features), including double-entry accounting (DG-175, DG-189–199), customer management (DG-182, DG-204–206), negative inventory flow (DG-200), UTC timestamp standardization (DG-202), printing module (DG-186), expense events (DG-185), printer paper mode (DG-183), and COGS audit/cost_history (DG-208). See the entries below for the full delta.
 - feat(DG-208): core COGS formula fix, cost_history CRUD, COGS audit + backfill commands
 - feat(DG-209): 4 new business-health metric categories with severity classification
 - feat(reports): COGS ratio in income statement with regression tests
