@@ -3,6 +3,7 @@ import click
 from baker.db.connection import get_db
 from baker.formatters.tables import console
 from baker.code_gen import generate_code, get_category_prefix
+from baker.utils.time import InvalidEffectiveFrom, format_effective_from
 
 from rich.table import Table
 
@@ -174,3 +175,103 @@ def product_edit(identifier, base_price, cost, recipe_notes, category, product_c
         conn.execute(f"UPDATE products SET {', '.join(updates)} WHERE id = ?", params)
         display = row["product_code"] or row["name"]
         console.print(f"  [green]Updated[/green] {display}")
+
+
+def _resolve_product(conn, identifier: str):
+    """Resolve a product row by id, product_code, or name. Returns the row or None."""
+    # Try numeric id first
+    if identifier.isdigit():
+        row = conn.execute(
+            "SELECT * FROM products WHERE id = ?", (int(identifier),)
+        ).fetchone()
+        if row:
+            return row
+    # Then product_code
+    row = conn.execute(
+        "SELECT * FROM products WHERE product_code = ?", (identifier,)
+    ).fetchone()
+    if row:
+        return row
+    # Then name
+    row = conn.execute(
+        "SELECT * FROM products WHERE name = ?", (identifier,)
+    ).fetchone()
+    return row
+
+
+def _normalize_effective_from(date_str):
+    """Normalize a YYYY-MM-DD effective_from into a comparable UTC timestamp.
+
+    Accepts YYYY-MM-DD (treated as start-of-day UTC) or a full ISO-8601 string.
+    Raises click.BadParameter on invalid formats.
+    """
+    try:
+        return format_effective_from(date_str)
+    except InvalidEffectiveFrom as exc:
+        raise click.BadParameter(str(exc))
+
+
+@product_cmd.command("set-cost")
+@click.argument("identifier")
+@click.argument("cost", type=float)
+@click.option(
+    "--effective-from",
+    "effective_from",
+    default=None,
+    help="Ngày hiệu lực (YYYY-MM-DD). Mặc định: hiện tại.",
+)
+def product_set_cost(identifier, cost, effective_from):
+    """Đặt chi phí sản phẩm (cost_history CRUD).
+
+    IDENTIFIER là product id, product code, hoặc tên sản phẩm.
+    COST là chi phí sản xuất (VND).
+
+    Idempotent: chạy lại với cùng --effective-from sẽ cập nhật chi phí
+    thay vì tạo dòng mới. Bỏ --effective-from để tạo bản ghi tại thời điểm hiện tại.
+    """
+    if cost < 0:
+        console.print("  [red]Chi phí không được âm[/red]")
+        raise click.Abort()
+
+    effective_ts = _normalize_effective_from(effective_from)
+
+    with get_db() as conn:
+        row = _resolve_product(conn, identifier)
+        if not row:
+            console.print(
+                f"  [red]Không tìm thấy sản phẩm '{identifier}'[/red]"
+            )
+            raise click.Abort()
+
+        product_id = row["id"]
+        # Idempotent upsert: same (product_id, effective_from) → update cost.
+        existing = conn.execute(
+            "SELECT id FROM cost_history "
+            "WHERE product_id = ? AND effective_from = ?",
+            (product_id, effective_ts),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE cost_history SET cost = ? WHERE id = ?",
+                (cost, existing["id"]),
+            )
+            action = "Updated"
+        else:
+            conn.execute(
+                "INSERT INTO cost_history (product_id, cost, effective_from) "
+                "VALUES (?, ?, ?)",
+                (product_id, cost, effective_ts),
+            )
+            action = "Created"
+
+        display = row["product_code"] or row["name"]
+        console.print(
+            f"  [green]{action}[/green] cost_history for {display} "
+            f"(id={product_id}): cost={cost:.2f} effective_from={effective_ts}"
+        )
+
+        # Show current effective cost for confirmation.
+        from baker.services.cost_resolver import resolve_product_cost
+
+        current = resolve_product_cost(conn, product_id)
+        console.print(f"  [dim]Current effective cost: {current:.2f}[/dim]")

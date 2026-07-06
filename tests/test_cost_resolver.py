@@ -102,3 +102,68 @@ def test_is_phu_kien_helper():
     assert is_phu_kien("phu_kien") is True
     assert is_phu_kien("banh_mi") is False
     assert is_phu_kien(None) is False
+
+
+# --- DG-208 Phase 1: selling_price baseline anchor --------------------------
+#
+# FR1: resolve_product_cost() accepts an optional selling_price that replaces
+# base_price as the 30% baseline anchor when no cost_history row is in effect.
+# Callers without selling_price keep the historical base_price × 30% behaviour.
+
+
+def test_baseline_uses_selling_price_when_provided(db):
+    """AC1 (Phase 1): custom pricing → COGS = selling_price × 0.30."""
+    pid = _insert_product(db, category="banh_mi", base_price=150000)
+    # selling_price 800000 → 30% = 240000 (not 150000 × 0.30 = 45000)
+    assert resolve_product_cost(db, pid, selling_price=800000.0) == pytest.approx(
+        240000.0
+    )
+
+
+def test_baseline_falls_back_to_base_price_without_selling_price(db):
+    """AC2 (Phase 1): no selling_price → unchanged base_price × 0.30."""
+    pid = _insert_product(db, category="banh_mi", base_price=100000)
+    assert resolve_product_cost(db, pid) == pytest.approx(30000.0)
+    # Explicit None is equivalent to omitting it.
+    assert resolve_product_cost(db, pid, selling_price=None) == pytest.approx(30000.0)
+
+
+def test_baseline_selling_price_zero_treated_as_not_provided(db):
+    """A 0 selling_price is clamped to None so zero-priced orders do not
+    accidentally zero out COGS — they fall back to the base_price anchor."""
+    pid = _insert_product(db, category="banh_mi", base_price=100000)
+    assert resolve_product_cost(db, pid, selling_price=0.0) == pytest.approx(30000.0)
+
+
+def test_baseline_phu_kien_ignores_selling_price(db):
+    """FR3: phụ kiện baseline is always 100% of base_price regardless of
+    selling_price — the 100% rule is intentional and unchanged (Non-Goal)."""
+    pid = _insert_product(db, category="phu_kien", base_price=20000)
+    # selling_price 50000 would be 30% = 15000 for non-phu-kien, but phu_kien
+    # ignores it and returns base_price (20000).
+    assert resolve_product_cost(db, pid, selling_price=50000.0) == pytest.approx(
+        20000.0
+    )
+
+
+def test_cost_history_wins_over_selling_price(db):
+    """AC3 (partial — Phase 1 verifies the precedence only): when a
+    cost_history row is in effect, it wins over both selling_price and
+    base_price; selling_price never overrides an explicit cost record."""
+    pid = _insert_product(db, category="banh_mi", base_price=100000)
+    _insert_cost_history(db, pid, 28000.0, effective_from="2020-01-01T00:00:00Z")
+    assert resolve_product_cost(db, pid, selling_price=800000.0) == pytest.approx(
+        28000.0
+    )
+
+
+def test_future_cost_history_falls_back_to_selling_price(db):
+    """When the only cost_history row is future-dated, the baseline runs with
+    selling_price as the anchor (mirrors test_future_effective_from_falls_back_to_baseline
+    but with the new selling_price parameter)."""
+    pid = _insert_product(db, category="banh_mi", base_price=100000)
+    _insert_cost_history(db, pid, 9999.0, effective_from="9999-12-31T00:00:00Z")
+    # No currently-effective cost_history → baseline = selling_price × 0.30
+    assert resolve_product_cost(db, pid, selling_price=200000.0) == pytest.approx(
+        60000.0
+    )
