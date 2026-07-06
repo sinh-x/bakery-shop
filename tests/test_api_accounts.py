@@ -462,6 +462,29 @@ def _create_debt_expense(client, amount=500000, vendor="Nhà cung cấp A",
     return resp.json()
 
 
+def test_settle_debt_records_actor_in_history(api_client):
+    """CQ-1: POST /api/expenses/{id}/settle?settled_by=X records X as the audit actor."""
+    expense = _create_debt_expense(api_client, amount=200000)
+    eid = int(expense["id"])
+    resp = api_client.post(
+        f"/api/expenses/{eid}/settle?settled_by=Phuong",
+        json={
+            "amount": 200000,
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+        },
+    )
+    assert resp.status_code == 200
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT actor, action_type FROM event_history "
+            "WHERE event_id = ? AND action_type = 'settle' ORDER BY id DESC",
+            (eid,),
+        ).fetchall()
+        assert len(rows) >= 1
+        assert rows[0]["actor"] == "Phuong"
+
+
 def test_settle_debt_full_creates_journal_entry(api_client):
     """FR4: POST /api/expenses/{id}/settle creates DR 2500 / CR Asset journal."""
     expense = _create_debt_expense(api_client, amount=500000)

@@ -549,6 +549,7 @@ class DebtSettleRequest(BaseModel):
     payment_source: str
     note: str = ""
     timestamp: str | None = None
+    settled_by: str = ""
 
 
 @expenses_router.get("/debts")
@@ -587,7 +588,11 @@ def list_outstanding_debts(
 
 
 @expenses_router.post("/{event_id}/settle")
-def settle_debt(event_id: int, body: DebtSettleRequest):
+def settle_debt(
+    event_id: int,
+    body: DebtSettleRequest,
+    settled_by: str = Query("", description="Người ghi nhận thanh toán (audit actor)"),
+):
     """Thanh toán một phần hoặc toàn bộ công nợ (FR4, FR8).
 
     Accepts ``amount``, ``payment_method``, ``payment_source``. Records the
@@ -659,7 +664,7 @@ def settle_debt(event_id: int, body: DebtSettleRequest):
             (json.dumps(data), event_id),
         )
         _log_event_history(
-            conn, event_id, "settle", actor="",
+            conn, event_id, "settle", actor=settled_by or body.settled_by,
             field_name="settlement",
             old_value=str(settled_so_far),
             new_value=str(settled_so_far + body.amount),
