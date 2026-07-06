@@ -34,12 +34,15 @@ class ExpenseHistoryCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '${data.category} • ${data.paymentMethod} • ${data.paymentSource}',
+              data.isDebt
+                  ? '${data.category} • ${data.paymentMethod} • ${VN.expenseCreditorLabel}: ${data.creditorName}'
+                  : '${data.category} • ${data.paymentMethod} • ${data.paymentSource}',
             ),
             Text(
               '${VN.expenseLoggedByLabel}: ${event.loggedBy.isNotEmpty ? event.loggedBy : '—'} • ${VN.expensePaidByNameLabel}: ${data.paidByName.isNotEmpty ? data.paidByName : '—'}',
             ),
             Text(formattedTimestamp),
+            if (data.isDebt) _buildDebtStatusChip(data),
             if (data.reimbursed)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
@@ -50,7 +53,8 @@ class ExpenseHistoryCard extends StatelessWidget {
                   visualDensity: VisualDensity.compact,
                 ),
               )
-            else if (data.paymentSource == VN.paymentSourceStaffAdvance)
+            else if (!data.isDebt &&
+                data.paymentSource == VN.paymentSourceStaffAdvance)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Chip(
@@ -76,6 +80,33 @@ class ExpenseHistoryCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDebtStatusChip(ExpenseEventData data) {
+    final String label;
+    final Color color;
+    switch (data.debtStatus) {
+      case ExpenseDebtStatus.paid:
+        label = VN.debtStatusPaid;
+        color = Colors.green.shade100;
+      case ExpenseDebtStatus.partial:
+        label = VN.debtStatusPartial;
+        color = Colors.amber.shade100;
+      case ExpenseDebtStatus.unpaid:
+        label = VN.debtStatusUnpaid;
+        color = Colors.orange.shade100;
+      case ExpenseDebtStatus.none:
+        return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Chip(
+        label: Text(label),
+        backgroundColor: color,
+        side: BorderSide.none,
+        visualDensity: VisualDensity.compact,
       ),
     );
   }

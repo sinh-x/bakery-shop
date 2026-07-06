@@ -204,3 +204,21 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
 final eventsProvider = AsyncNotifierProvider<EventsNotifier, List<BakeryEvent>>(
   EventsNotifier.new,
 );
+
+/// Provider that returns distinct, non-empty vendor names from recent
+/// expense events. Used by the expense form for creditor/vendor
+/// autocomplete (DG-212 Phase 3 — FR2).
+final expenseVendorSuggestionsProvider =
+    FutureProvider<List<String>>((ref) async {
+  final service = ref.read(eventServiceProvider);
+  final events = await service.listEvents(type: expenseType, limit: 500);
+  final names = events
+      .map(ExpenseEventMapper.fromEvent)
+      .whereType<ExpenseEventData>()
+      .map((e) => e.vendor.trim())
+      .where((name) => name.isNotEmpty)
+      .toSet()
+      .toList()
+    ..sort();
+  return names;
+});

@@ -2,7 +2,7 @@ import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
 
-class ExpenseFormCard extends StatelessWidget {
+class ExpenseFormCard extends StatefulWidget {
   const ExpenseFormCard({
     super.key,
     required this.formKey,
@@ -29,6 +29,7 @@ class ExpenseFormCard extends StatelessWidget {
     required this.onCancelEdit,
     required this.onSave,
     required this.amountValidator,
+    this.vendorSuggestions = const <String>[],
   });
 
   final GlobalKey<FormState> formKey;
@@ -56,111 +57,140 @@ class ExpenseFormCard extends StatelessWidget {
   final VoidCallback onSave;
   final String? Function(String?) amountValidator;
 
+  /// Autocomplete options for the vendor field, sourced from previously
+  /// recorded expense vendors (DG-212 Phase 3 — FR2).
+  final List<String> vendorSuggestions;
+
+  @override
+  State<ExpenseFormCard> createState() => _ExpenseFormCardState();
+}
+
+class _ExpenseFormCardState extends State<ExpenseFormCard> {
+  late final FocusNode _vendorFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _vendorFocusNode = FocusNode();
+  }
+
+  @override
+  void dispose() {
+    _vendorFocusNode.dispose();
+    super.dispose();
+  }
+
+  bool get _isDebt => widget.paymentMethod == VN.methodDebt;
+
   @override
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Form(
-          key: formKey,
+          key: widget.formKey,
           child: Column(
             children: [
               TextFormField(
-                controller: amountCtrl,
+                controller: widget.amountCtrl,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                   labelText: VN.expenseAmountLabel,
                   border: OutlineInputBorder(),
                 ),
-                validator: amountValidator,
+                validator: widget.amountValidator,
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                initialValue: category,
+                initialValue: widget.category,
                 decoration: const InputDecoration(
                   labelText: VN.expenseCategoryLabel,
                   hintText: VN.expenseCategoryHint,
                   border: OutlineInputBorder(),
                 ),
-                items: categories
+                items: widget.categories
                     .map(
                       (item) =>
                           DropdownMenuItem(value: item, child: Text(item)),
                     )
                     .toList(),
-                onChanged: onCategoryChanged,
+                onChanged: widget.onCategoryChanged,
                 validator: (value) =>
                     (value == null || value.isEmpty) ? VN.fieldRequired : null,
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                initialValue: paymentMethod,
+                initialValue: widget.paymentMethod,
                 decoration: const InputDecoration(
                   labelText: VN.expensePaymentMethodLabel,
                   border: OutlineInputBorder(),
                 ),
-                items: paymentMethods
+                items: widget.paymentMethods
                     .map(
                       (item) =>
                           DropdownMenuItem(value: item, child: Text(item)),
                     )
                     .toList(),
-                onChanged: onPaymentMethodChanged,
+                onChanged: widget.onPaymentMethodChanged,
               ),
               const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                initialValue: paymentSource,
-                decoration: const InputDecoration(
-                  labelText: VN.expensePaymentSourceLabel,
-                  border: OutlineInputBorder(),
+              if (!_isDebt)
+                DropdownButtonFormField<String>(
+                  initialValue: widget.paymentSource,
+                  decoration: const InputDecoration(
+                    labelText: VN.expensePaymentSourceLabel,
+                    border: OutlineInputBorder(),
+                  ),
+                  items: widget.paymentSources
+                      .map(
+                        (item) =>
+                            DropdownMenuItem(value: item, child: Text(item)),
+                      )
+                      .toList(),
+                  onChanged: widget.onPaymentSourceChanged,
+                  validator: (value) =>
+                      (value == null || value.isEmpty) ? VN.fieldRequired : null,
                 ),
-                items: paymentSources
-                    .map(
-                      (item) =>
-                          DropdownMenuItem(value: item, child: Text(item)),
-                    )
-                    .toList(),
-                onChanged: onPaymentSourceChanged,
-                validator: (value) =>
-                    (value == null || value.isEmpty) ? VN.fieldRequired : null,
-              ),
               const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: onPickDate,
+                      onPressed: widget.onPickDate,
                       icon: const Icon(Icons.event),
                       label: Text(
                         '${VN.expenseDateLabel}: '
-                        '${formatDisplayDate(eventDateTime)}',
+                        '${formatDisplayDate(widget.eventDateTime)}',
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: onPickTime,
+                      onPressed: widget.onPickTime,
                       icon: const Icon(Icons.schedule),
                       label: Text(
                         '${VN.expenseTimeLabel}: '
-                        '${formatDisplayTime(eventDateTime)}',
+                        '${formatDisplayTime(widget.eventDateTime)}',
                       ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
-              TextFormField(
-                controller: vendorCtrl,
-                decoration: const InputDecoration(
-                  labelText: VN.expenseVendorLabel,
-                  border: OutlineInputBorder(),
+              if (_isDebt)
+                _buildCreditorField()
+              else
+                TextFormField(
+                  controller: widget.vendorCtrl,
+                  decoration: const InputDecoration(
+                    labelText: VN.expenseVendorLabel,
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
               const SizedBox(height: 8),
               TextFormField(
-                controller: noteCtrl,
+                controller: widget.noteCtrl,
                 maxLines: 2,
                 decoration: const InputDecoration(
                   labelText: VN.expenseNoteLabel,
@@ -169,36 +199,38 @@ class ExpenseFormCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                initialValue: staffList.contains(selectedPaidByName)
-                    ? selectedPaidByName
+                initialValue: widget.staffList.contains(widget.selectedPaidByName)
+                    ? widget.selectedPaidByName
                     : null,
                 decoration: const InputDecoration(
                   labelText: VN.expensePaidByNameLabel,
                   border: OutlineInputBorder(),
                 ),
-                items: staffList
+                items: widget.staffList
                     .map(
                       (item) =>
                           DropdownMenuItem(value: item, child: Text(item)),
                     )
                     .toList(),
-                onChanged: onPaidByNameChanged,
+                onChanged: widget.onPaidByNameChanged,
               ),
               const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: editing ? onCancelEdit : null,
+                      onPressed: widget.editing ? widget.onCancelEdit : null,
                       child: const Text(VN.expenseCancelEditAction),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: FilledButton(
-                      onPressed: loading ? null : onSave,
+                      onPressed: widget.loading ? null : widget.onSave,
                       child: Text(
-                        editing ? VN.expenseUpdateAction : VN.expenseSaveAction,
+                        widget.editing
+                            ? VN.expenseUpdateAction
+                            : VN.expenseSaveAction,
                       ),
                     ),
                   ),
@@ -208,6 +240,60 @@ class ExpenseFormCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildCreditorField() {
+    return RawAutocomplete<String>(
+      textEditingController: widget.vendorCtrl,
+      focusNode: _vendorFocusNode,
+      optionsBuilder: (textEditingValue) {
+        final query = textEditingValue.text.trim().toLowerCase();
+        if (query.isEmpty) return widget.vendorSuggestions.take(20);
+        return widget.vendorSuggestions
+            .where((name) => name.toLowerCase().contains(query))
+            .take(20);
+      },
+      fieldViewBuilder:
+          (context, controller, focusNode, onFieldSubmitted) {
+        return TextFormField(
+          controller: controller,
+          focusNode: focusNode,
+          decoration: const InputDecoration(
+            labelText: VN.expenseCreditorLabel,
+            hintText: VN.expenseVendorAutocompleteHint,
+            border: OutlineInputBorder(),
+          ),
+          validator: (value) =>
+              (value == null || value.trim().isEmpty)
+                  ? VN.expenseDebtVendorRequired
+                  : null,
+          onFieldSubmitted: (_) => onFieldSubmitted(),
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 200),
+              child: ListView(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                children: options
+                    .map((option) => ListTile(
+                          dense: true,
+                          title: Text(option),
+                          onTap: () => onSelected(option),
+                        ))
+                    .toList(),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -24,6 +24,7 @@ BakeryEvent _expenseEvent({
   String paidByName = '',
   String loggedBy = '',
   bool reimbursed = false,
+  List<Map<String, dynamic>> settlements = const [],
 }) {
   return BakeryEvent(
     id: id,
@@ -41,6 +42,7 @@ BakeryEvent _expenseEvent({
       'staff_name': staff,
       'paid_by_name': paidByName,
       'reimbursed': reimbursed,
+      'settlements': settlements,
     },
   );
 }
@@ -1054,4 +1056,248 @@ void main() {
 
     expect(find.text(VN.expenseEmptyStaffWarning), findsOneWidget);
   });
+
+  testWidgets(
+    'history card shows Chưa trả chip for unpaid debt expense',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 1920));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final event = _expenseEvent(
+        id: 1,
+        amount: 500000,
+        category: VN.expenseCategoryIngredient,
+        paymentMethod: VN.methodDebt,
+        vendor: 'Nhà cung cấp A',
+        staff: 'Lan',
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: ExpenseScreen(
+              loadHistory:
+                  ({
+                    since,
+                    until,
+                    category,
+                    paymentMethod,
+                    paymentSource,
+                    staffName,
+                    paidByName,
+                    loggedBy,
+                    searchText,
+                  }) async => [event],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(VN.debtStatusUnpaid), findsOneWidget);
+      expect(find.text(VN.debtStatusPaid), findsNothing);
+      expect(find.text(VN.debtStatusPartial), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'history card shows Đã trả chip for fully settled debt expense',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 1920));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final event = _expenseEvent(
+        id: 1,
+        amount: 500000,
+        category: VN.expenseCategoryIngredient,
+        paymentMethod: VN.methodDebt,
+        vendor: 'Nhà cung cấp A',
+        staff: 'Lan',
+        settlements: [
+          {'id': 1, 'amount': 500000},
+        ],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: ExpenseScreen(
+              loadHistory:
+                  ({
+                    since,
+                    until,
+                    category,
+                    paymentMethod,
+                    paymentSource,
+                    staffName,
+                    paidByName,
+                    loggedBy,
+                    searchText,
+                  }) async => [event],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(VN.debtStatusPaid), findsOneWidget);
+      expect(find.text(VN.debtStatusUnpaid), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'history card shows Trả một phần chip for partially settled debt',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 1920));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final event = _expenseEvent(
+        id: 1,
+        amount: 500000,
+        category: VN.expenseCategoryIngredient,
+        paymentMethod: VN.methodDebt,
+        vendor: 'Nhà cung cấp A',
+        staff: 'Lan',
+        settlements: [
+          {'id': 1, 'amount': 300000},
+        ],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: ExpenseScreen(
+              loadHistory:
+                  ({
+                    since,
+                    until,
+                    category,
+                    paymentMethod,
+                    paymentSource,
+                    staffName,
+                    paidByName,
+                    loggedBy,
+                    searchText,
+                  }) async => [event],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(VN.debtStatusPartial), findsOneWidget);
+      expect(find.text(VN.debtStatusPaid), findsNothing);
+      expect(find.text(VN.debtStatusUnpaid), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'history card shows no debt status chip for cash expenses',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 1920));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final event = _expenseEvent(
+        id: 1,
+        amount: 120000,
+        category: VN.expenseCategoryIngredient,
+        paymentMethod: VN.methodCash,
+        staff: 'Lan',
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: ExpenseScreen(
+              loadHistory:
+                  ({
+                    since,
+                    until,
+                    category,
+                    paymentMethod,
+                    paymentSource,
+                    staffName,
+                    paidByName,
+                    loggedBy,
+                    searchText,
+                  }) async => [event],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(VN.debtStatusUnpaid), findsNothing);
+      expect(find.text(VN.debtStatusPaid), findsNothing);
+      expect(find.text(VN.debtStatusPartial), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'form screen hides payment source dropdown when Nợ selected',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+      final prefs = await SharedPreferences.getInstance();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+          child: const MaterialApp(home: ExpenseFormScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Initially cash method — payment source visible.
+      expect(find.text(VN.expensePaymentSourceLabel), findsOneWidget);
+
+      // Select Nợ payment method (second DropdownButtonFormField).
+      await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(VN.methodDebt).last);
+      await tester.pumpAndSettle();
+
+      // Payment source dropdown hidden, creditor label visible.
+      expect(find.text(VN.expensePaymentSourceLabel), findsNothing);
+      expect(find.text(VN.expenseCreditorLabel), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'form screen shows vendor required validation when Nợ selected and vendor empty',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+      final prefs = await SharedPreferences.getInstance();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+          child: const MaterialApp(home: ExpenseFormScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Enter amount.
+      await tester.enterText(find.byType(TextFormField).first, '50000');
+
+      // Select category.
+      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(VN.expenseCategoryIngredient).last);
+      await tester.pumpAndSettle();
+
+      // Select Nợ.
+      await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(VN.methodDebt).last);
+      await tester.pumpAndSettle();
+
+      // Tap save — vendor (creditor) empty should trigger validation.
+      await tester.tap(find.text(VN.expenseSaveAction));
+      await tester.pumpAndSettle();
+
+      expect(find.text(VN.expenseDebtVendorRequired), findsOneWidget);
+      // No payer confirm dialog because debt bypasses it.
+      expect(find.text(VN.expensePayerConfirmTitle), findsNothing);
+    },
+  );
 }

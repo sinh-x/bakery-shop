@@ -366,6 +366,7 @@ class VN {
   static const txnTypeRutTien = 'Tiền rút';
   static const methodCash = 'Tiền mặt';
   static const methodTransfer = 'Chuyển khoản';
+  static const methodDebt = 'Nợ';
   static const addPayment = 'Thêm thanh toán';
   static const depositSection = 'Đặt cọc ngay';
   static const depositAmount = 'Số tiền đặt cọc';
@@ -645,6 +646,14 @@ class VN {
   // Reimbursed
   static const reimbursedYes = 'Đã hoàn lại';
   static const reimbursedNo = 'Chưa hoàn lại';
+
+  // Expense debt status (DG-212 Phase 3)
+  static const debtStatusUnpaid = 'Chưa trả';
+  static const debtStatusPaid = 'Đã trả';
+  static const debtStatusPartial = 'Trả một phần';
+  static const expenseCreditorLabel = 'Chủ nợ';
+  static const expenseVendorAutocompleteHint = 'Chọn từ nhà cung cấp đã dùng';
+  static const expenseDebtVendorRequired = 'Chủ nợ là bắt buộc khi chọn phương thức Nợ';
 
   // Shipping fee & extras
   static const shippingFee = 'Phí giao hàng';
@@ -1018,6 +1027,8 @@ String paymentMethodLabel(String method) {
       return VN.methodCash;
     case 'transfer':
       return VN.methodTransfer;
+    case 'debt':
+      return VN.methodDebt;
     default:
       return method;
   }
