@@ -3,6 +3,8 @@
 import json
 from datetime import datetime, timedelta, timezone
 
+from baker.db.schema import EXPENSE_DEBT_PAYMENT_METHOD
+
 _BS = "\\"
 
 
@@ -100,8 +102,14 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
                  expense_category=None, expense_payment_method=None,
                  expense_staff_name=None, expense_paid_by_name=None,
                  expense_payment_source=None,
-                 expense_search=None, limit=50):
-    """Fetch events with optional filters."""
+                 expense_search=None, debt_status=None, limit=50):
+    """Fetch events with optional filters.
+
+    ``debt_status`` filters debt (``payment_method = 'Nợ'``) expenses by
+    settlement state. Values: ``all`` (default — no filter applied), ``unpaid``
+    (no settlements yet), ``paid`` (fully settled), ``partial`` (partially
+    settled). Non-debt expenses are unaffected by this filter.
+    """
     joins = []
     conditions = ["e.deleted_at IS NULL"]
     params = []
@@ -173,6 +181,44 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
         like = f"%{expense_search}%"
         params.extend([like, like, like, like, like, like])
 
+    if debt_status and debt_status != "all":
+        # Debt status filter (FR7, DG-212 Phase 2). Only applies to expenses
+        # whose payment_method is "Nợ" — non-debt expenses always pass through.
+        # Status is derived from the ``settlements`` array stored in the
+        # expense data JSON: remaining = amount_vnd − sum(settlement amounts).
+        debt_method = EXPENSE_DEBT_PAYMENT_METHOD
+        if debt_status == "unpaid":
+            # No settlements recorded yet (settlements array missing/empty)
+            # AND payment_method = "Nợ".
+            conditions.append(
+                "(COALESCE(json_extract(e.data, '$.payment_method'), '') = ? "
+                " AND (json_extract(e.data, '$.settlements') IS NULL "
+                "      OR json_array_length(json_extract(e.data, '$.settlements')) = 0))"
+            )
+            params.append(debt_method)
+        elif debt_status == "paid":
+            # Fully settled: settlements exist and remaining <= 0.
+            conditions.append(
+                "(COALESCE(json_extract(e.data, '$.payment_method'), '') = ? "
+                " AND json_array_length(json_extract(e.data, '$.settlements')) > 0 "
+                " AND CAST(json_extract(e.data, '$.amount_vnd') AS REAL) "
+                "     - COALESCE((SELECT SUM(CAST(json_extract(value, '$.amount') AS REAL) "
+                "                  FROM json_each(json_extract(e.data, '$.settlements'))), 0) "
+                "     <= 0)"
+            )
+            params.append(debt_method)
+        elif debt_status == "partial":
+            # Partial: settlements exist but remaining > 0.
+            conditions.append(
+                "(COALESCE(json_extract(e.data, '$.payment_method'), '') = ? "
+                " AND json_array_length(json_extract(e.data, '$.settlements')) > 0 "
+                " AND CAST(json_extract(e.data, '$.amount_vnd') AS REAL) "
+                "     - COALESCE((SELECT SUM(CAST(json_extract(value, '$.amount') AS REAL) "
+                "                  FROM json_each(json_extract(e.data, '$.settlements'))), 0) "
+                "     > 0)"
+            )
+            params.append(debt_method)
+
     where = " AND ".join(conditions) if conditions else "1=1"
     join_clause = " ".join(joins)
     query = f"SELECT DISTINCT e.* FROM events e {join_clause} WHERE {where} ORDER BY e.timestamp DESC LIMIT ?"
@@ -214,3 +260,77 @@ def sum_sales(conn, since=None, until=None):
     ), 0) as total FROM events WHERE {where}"""
     row = conn.execute(query, params).fetchone()
     return row[0] if row else 0
+
+
+def fetch_debts(conn, *, creditor=None, since=None, until=None, status=None):
+    """Fetch outstanding debt expenses (FR5, DG-212 Phase 2).
+
+    Returns a list of dicts with: ``event_id``, ``summary``, ``vendor``
+    (creditor), ``amount_vnd``, ``settled_amount`` (sum of settlements),
+    ``remaining`` (amount_vnd − settled), ``status`` (``unpaid`` /
+    ``partial`` / ``paid``), and ``timestamp``.
+
+    Optional filters:
+      - ``creditor``: case-insensitive exact match on ``data.vendor``.
+      - ``since`` / ``until``: timestamp range bounds (ISO strings).
+      - ``status``: ``all`` (default — no filter), ``unpaid``, ``paid``,
+        ``partial``.
+
+    Only non-deleted expense events with ``payment_method = 'Nợ'`` are
+    considered. Settlements are accumulated from the ``settlements`` array
+    stored in the expense data JSON (each entry has an ``amount`` field).
+    """
+    conditions = [
+        "e.type = 'expense'",
+        "e.deleted_at IS NULL",
+        "COALESCE(json_extract(e.data, '$.payment_method'), '') = ?",
+    ]
+    params: list = [EXPENSE_DEBT_PAYMENT_METHOD]
+    if creditor:
+        conditions.append(
+            "LOWER(COALESCE(json_extract(e.data, '$.vendor'), '')) = LOWER(?)"
+        )
+        params.append(creditor)
+    if since:
+        conditions.append("e.timestamp >= ?")
+        params.append(since)
+    if until:
+        conditions.append("e.timestamp <= ?")
+        params.append(until)
+
+    where = " AND ".join(conditions)
+    query = (
+        f"SELECT e.id AS event_id, e.summary, e.timestamp, "
+        f"CAST(json_extract(e.data, '$.amount_vnd') AS REAL) AS amount_vnd, "
+        f"COALESCE(json_extract(e.data, '$.vendor'), '') AS vendor, "
+        f"COALESCE((SELECT SUM(CAST(json_extract(value, '$.amount') AS REAL)) "
+        f"          FROM json_each(json_extract(e.data, '$.settlements'))), 0) "
+        f"  AS settled_amount "
+        f"FROM events e WHERE {where} "
+        f"ORDER BY e.timestamp DESC, e.id DESC"
+    )
+    rows = conn.execute(query, params).fetchall()
+    debts = []
+    for r in rows:
+        amount = float(r["amount_vnd"] or 0)
+        settled = float(r["settled_amount"] or 0)
+        remaining = max(0.0, amount - settled)
+        if remaining <= 0:
+            row_status = "paid"
+        elif settled > 0:
+            row_status = "partial"
+        else:
+            row_status = "unpaid"
+        if status and status != "all" and row_status != status:
+            continue
+        debts.append({
+            "event_id": int(r["event_id"]),
+            "summary": r["summary"],
+            "vendor": r["vendor"],
+            "amount_vnd": amount,
+            "settled_amount": settled,
+            "remaining": remaining,
+            "status": row_status,
+            "timestamp": r["timestamp"],
+        })
+    return debts
