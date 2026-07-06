@@ -320,6 +320,122 @@ def test_expense_non_expense_type_no_journal(api_client):
 
 
 # ---------------------------------------------------------------------------
+# Auto journal: debt expense (DG-212 Phase 1 — FR1, FR2, FR3, AC2)
+# ---------------------------------------------------------------------------
+
+
+def test_debt_expense_creates_journal_entry_crediting_2500(api_client):
+    """AC2 (DG-212): expense with payment_method='Nợ', vendor='Nhà cung cấp A'
+    → debit expense account, credit 2500 (Accounts Payable)."""
+    resp = api_client.post("/api/events", json={
+        "summary": "Nợ bột mì",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 200000,
+            "category": "Vận chuyển",
+            "payment_method": "Nợ",
+            "payment_source": "",
+            "vendor": "Nhà cung cấp A",
+            "note": "ghi nợ",
+            "paid_by_name": "",
+        },
+    })
+    assert resp.status_code == 201
+    eid = int(resp.json()["id"])
+    with get_db() as conn:
+        entries = _journal_for_source(conn, "expense", eid)
+        assert len(entries) == 1
+        lines = _lines_for_entry(conn, entries[0].id)
+        assert len(lines) == 2
+        debit_line = next(l for l in lines if l.debit > 0)
+        credit_line = next(l for l in lines if l.credit > 0)
+        assert debit_line.debit == 200000.0
+        assert credit_line.credit == 200000.0
+        # "Vận chuyển" is a non-inventory expense → debit 5300 (Delivery/Shipping)
+        expense_acc = Account.get_by_id(conn, debit_line.account_id)
+        assert expense_acc.code == "5300"
+        # Credit must hit Accounts Payable (2500)
+        ap_acc = Account.get_by_id(conn, credit_line.account_id)
+        assert ap_acc.code == "2500"
+
+
+def test_debt_expense_inventory_category_debits_inventory_credits_2500(api_client):
+    """Debt expense for an inventory-purchase category (Nguyên liệu) debits
+    Inventory (1300) and credits Accounts Payable (2500)."""
+    resp = api_client.post("/api/events", json={
+        "summary": "Nợ nguyên liệu",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 150000,
+            "category": "Nguyên liệu",
+            "payment_method": "Nợ",
+            "payment_source": "",
+            "vendor": "Nhà cung cấp B",
+            "note": "ghi nợ",
+            "paid_by_name": "",
+        },
+    })
+    assert resp.status_code == 201
+    eid = int(resp.json()["id"])
+    with get_db() as conn:
+        entries = _journal_for_source(conn, "expense", eid)
+        assert len(entries) == 1
+        lines = _lines_for_entry(conn, entries[0].id)
+        debit_line = next(l for l in lines if l.debit > 0)
+        credit_line = next(l for l in lines if l.credit > 0)
+        inventory_acc = Account.get_by_id(conn, debit_line.account_id)
+        assert inventory_acc.code == "1300"
+        ap_acc = Account.get_by_id(conn, credit_line.account_id)
+        assert ap_acc.code == "2500"
+
+
+def test_debt_expense_omits_payment_source(api_client):
+    """FR2: payment_source is not required when payment_method is 'Nợ'."""
+    resp = api_client.post("/api/events", json={
+        "summary": "Nợ tiền",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50000,
+            "category": "Khác",
+            "payment_method": "Nợ",
+            "vendor": "Nhà cung cấp C",
+            "note": "ghi nợ",
+            "paid_by_name": "",
+        },
+    })
+    assert resp.status_code == 201
+
+
+def test_debt_expense_rejects_empty_vendor(api_client):
+    """FR2: vendor (creditor) is required when payment_method is 'Nợ'."""
+    resp = api_client.post("/api/events", json={
+        "summary": "Nợ không có chủ nợ",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50000,
+            "category": "Khác",
+            "payment_method": "Nợ",
+            "payment_source": "",
+            "vendor": "  ",
+            "note": "ghi nợ",
+            "paid_by_name": "",
+        },
+    })
+    assert resp.status_code == 422
+    assert "vendor" in resp.json()["detail"]
+
+
+def test_accounts_payable_2500_seeded(api_client):
+    """DG-212: account 2500 'Phải trả người bán (Accounts Payable)' is seeded."""
+    resp = api_client.get("/api/accounts")
+    assert resp.status_code == 200
+    tree = resp.json()
+    liability_group = next(a for a in tree if a["code"] == "2000")
+    child_codes = {c["code"] for c in liability_group["children"]}
+    assert "2500" in child_codes
+
+
+# ---------------------------------------------------------------------------
 # Auto journal: payment_transaction (FR4, AC2)
 # ---------------------------------------------------------------------------
 

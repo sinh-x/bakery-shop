@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from baker.api.photos import read_image_upload, save_photo
 from baker.db.connection import get_db
 from baker.db.queries import fetch_events, find_staff_by_name, link_event_person
+from baker.db.schema import EXPENSE_DEBT_PAYMENT_METHOD
 from baker.models.event import Event
 from baker.models.order import Order
 from baker.utils.time import now_utc
@@ -212,7 +213,6 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
         "amount_vnd",
         "category",
         "payment_method",
-        "payment_source",
         "vendor",
         "note",
         "paid_by_name",
@@ -227,6 +227,25 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
     amount_vnd = data.get("amount_vnd")
     if not isinstance(amount_vnd, int) or amount_vnd <= 0:
         raise HTTPException(status_code=422, detail="amount_vnd phải là số nguyên lớn hơn 0")
+
+    payment_method = data.get("payment_method", "")
+    is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
+
+    # For non-debt payment methods, payment_source is required (FR2: debt
+    # expenses hide/ignore payment_source).
+    if not is_debt and not data.get("payment_source", ""):
+        raise HTTPException(
+            status_code=422,
+            detail="payment_source là bắt buộc khi không chọn phương thức 'Nợ'",
+        )
+
+    # FR2: when payment_method is "Nợ", the vendor field is the creditor
+    # identifier and must be non-empty.
+    if is_debt and not str(data.get("vendor", "")).strip():
+        raise HTTPException(
+            status_code=422,
+            detail="vendor (chủ nợ) là bắt buộc khi chọn phương thức 'Nợ'",
+        )
 
     payment_source = data.get("payment_source", "")
     if payment_source == STAFF_ADVANCE_PAYMENT_SOURCE and not data.get("paid_by_name", "").strip():

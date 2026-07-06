@@ -1529,6 +1529,7 @@ SEED_CHART_OF_ACCOUNTS = [
     ("2200", "Tiền ship bus giữ hộ (Bus Shipping Held)", "liability", "2000"),
     ("2300", "Phải trả nhân viên (Staff Payables)", "liability", "2000"),
     ("2400", "Tiền rút tạm giữ (Tien Rut Held)", "liability", "2000"),
+    ("2500", "Phải trả người bán (Accounts Payable)", "liability", "2000"),
     # Equity
     ("3000", "Vốn chủ sở hữu", "equity", None),
     ("3100", "Vốn chủ sở hữu (Owner's Equity)", "equity", "3000"),
@@ -1583,6 +1584,17 @@ PAYMENT_METHOD_TO_ASSET_CODE = {
     "card": "1100",
     "transfer": "1200",
 }
+
+# Expense debt payment method — records an expense as unpaid debt (FR1, DG-212).
+# When ``events.data.payment_method`` equals this value, the expense's vendor
+# field serves as the creditor identifier (FR2) and the journal entry debits
+# the expense/inventory account and credits the Accounts Payable account 2500
+# (FR3) instead of an asset account.
+EXPENSE_DEBT_PAYMENT_METHOD = "Nợ"
+
+# Accounts Payable account code — credited when a debt expense is created and
+# debited when the debt is settled (Phase 2).
+ACCOUNTS_PAYABLE_CODE = "2500"
 
 # payment_transactions.type values that represent cash flowing back to the
 # customer (negative deposit). These are recorded as debit Customer Deposits,

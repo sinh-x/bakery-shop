@@ -14,11 +14,13 @@ import logging
 from typing import Any, Callable, Optional
 
 from baker.db.schema import (
+    ACCOUNTS_PAYABLE_CODE,
     ACCOUNTS_RECEIVABLE_CODE,
     BUS_SHIPPING_HELD_CODE,
     COGS_CODE,
     CUSTOMER_DEPOSITS_CODE,
     EXPENSE_CATEGORY_TO_ACCOUNT_CODE,
+    EXPENSE_DEBT_PAYMENT_METHOD,
     EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
     INVENTORY_CODE,
     INVENTORY_PURCHASE_CATEGORIES,
@@ -164,18 +166,26 @@ def _build_expense_journal_lines(
     amount = data.get("amount_vnd")
     category = data.get("category")
     payment_source = data.get("payment_source")
+    payment_method = data.get("payment_method", "")
     if not isinstance(amount, (int, float)) or amount <= 0:
         return None
     if not isinstance(category, str) or not category:
         return None
-    if not isinstance(payment_source, str) or not payment_source:
+
+    is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
+    if not is_debt and (not isinstance(payment_source, str) or not payment_source):
         return None
 
     expense_code = EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category)
     if not expense_code:
         return None
 
-    if payment_source == STAFF_ADVANCE_PAYMENT_SOURCE:
+    if is_debt:
+        # FR3 (DG-212): debt expenses credit Accounts Payable (2500) instead
+        # of an asset account. The vendor field serves as creditor identifier
+        # but does not create a per-creditor sub-account in this phase.
+        payment_account_id = _account_id_by_code(conn, ACCOUNTS_PAYABLE_CODE)
+    elif payment_source == STAFF_ADVANCE_PAYMENT_SOURCE:
         staff_name = (data.get("paid_by_name") or "").strip()
         if not staff_name:
             return None
