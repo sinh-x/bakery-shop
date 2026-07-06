@@ -13,6 +13,8 @@ COGS journal entry generation (order delivery, waste/disposal) so that historica
 costs can be tracked without seeding baseline rows into ``cost_history``.
 """
 
+from typing import Optional
+
 from baker.db.schema import PHU_KIEN_CATEGORY, _baseline_cost_for_product
 from baker.utils.time import now_utc
 
@@ -22,18 +24,28 @@ from baker.utils.time import now_utc
 UNRESOLVED_COST = 0.0
 
 
-def resolve_product_cost(conn, product_id: int) -> float:
+def resolve_product_cost(
+    conn, product_id: int, *, selling_price: Optional[float] = None
+) -> float:
     """Resolve the effective cost for ``product_id`` at the current time.
 
     Resolution order:
       1. Latest ``cost_history`` row whose ``effective_from`` is on or before
          the current localtime. Future-dated records are skipped.
       2. Baseline rule derived from ``products.base_price`` and ``category``:
-         100% of ``base_price`` for phụ kiện, 30% otherwise.
+         100% of ``base_price`` for phụ kiện (unchanged), 30% of the anchor
+         price otherwise. The anchor is ``selling_price`` when provided, else
+         ``base_price`` — so custom-priced orders compute COGS from the actual
+         sale price rather than the catalog price (DG-208 Phase 1, FR1).
 
     Args:
         conn: SQLite DB connection (row factory expected to support indexing).
         product_id: Product primary key.
+        selling_price: Optional actual selling price used as the baseline anchor
+            when no ``cost_history`` row is in effect. When ``None`` (the
+            default) the baseline falls back to ``base_price × 30%``, preserving
+            the historical behaviour for callers that do not supply it (FR1
+            backward-compatibility requirement).
 
     Returns:
         Resolved cost as a non-negative ``float``. Returns ``0.0`` when the
@@ -70,7 +82,10 @@ def resolve_product_cost(conn, product_id: int) -> float:
 
     category = product_row["category"] if product_row["category"] is not None else ""
     base_price = float(product_row["base_price"] or 0)
-    return _baseline_cost_for_product(category, base_price)
+    # A zero/negative selling_price is treated as "not provided" so zero-priced
+    # orders fall back to the base_price anchor rather than zeroing out COGS.
+    anchor = selling_price if (selling_price is not None and selling_price > 0) else None
+    return _baseline_cost_for_product(category, base_price, price_override=anchor)
 
 
 def is_phu_kien(category) -> bool:

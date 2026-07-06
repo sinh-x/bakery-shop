@@ -14,6 +14,12 @@ the net deposits are skipped.
 Modes:
 - ``--order-id <id>`` — repair a single order
 - ``--all``           — repair every delivered/completed order with a stale entry
+- ``--cogs``          — repair/backfill the ``order_cogs`` journal entry instead
+  of the revenue (2100) entry. With ``--cogs --all`` the backfill is scoped to
+  delivered/completed orders whose COGS entry is missing or stale; with
+  ``--cogs --order-id <id>`` a single order is processed. Idempotent — entries
+  within ``REVENUE_UPDATE_TOLERANCE`` (0.005 VND) of the expected total are
+  skipped (DG-208 Phase 5, FR8/FR9, NFR1/NFR5, AC6).
 - ``--dry-run``       — show what would change without mutating the database
   (works with both ``--order-id`` and ``--all``)
 
@@ -39,10 +45,13 @@ from baker.db.schema import (
 from baker.formatters import format_vnd_amount
 from baker.models.payment_transaction import PaymentTransaction
 from baker.services.journal_sync import (
+    _compute_order_cogs_total,
     _delete_journal_entry_cascade,
     _is_locked,
+    _order_cogs_entry,
     _reconcile_order_revenue_entry,
     _sync_delivered_order_journal,
+    _sync_order_cogs_entry,
     _sync_payment_journal,
 )
 
@@ -163,12 +172,213 @@ _ACTION_LABELS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# ``baker repair-order-revenue --cogs`` — DG-208 Phase 5 COGS backfill
+# (FR8, FR9, NFR1, NFR5, AC6)
+# ---------------------------------------------------------------------------
+
+
+def _delivered_orders_with_cogs(conn):
+    """Return ids of all delivered/completed orders (FR8 ``--cogs --all`` scan).
+
+    The COGS repair scans every delivered/completed order and reports its
+    action (``repaired`` / ``backfilled`` / ``skipped`` / ``locked`` /
+    ``not-applicable``). This mirrors the revenue repair's ``--all``
+    semantics and is required for AC6: the second idempotent run must
+    report every order as ``skipped`` rather than returning an empty list.
+    Orders without an ``order_cogs`` entry are also included so a missing
+    COGS entry is backfilled on the first run.
+    """
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT o.id AS order_id
+        FROM orders o
+        WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
+        ORDER BY o.id ASC
+        """,
+        list(DELIVERED_STATUSES),
+    ).fetchall()
+    return [int(r["order_id"]) for r in rows]
+
+
+def _process_cogs_order(conn, order_id: int, *, dry_run: bool) -> dict:
+    """Evaluate and optionally repair one order's COGS entry (FR8/FR9).
+
+    Idempotent delete-and-recreate pattern (mirrors the revenue repair):
+      1. Compute the expected COGS total via :func:`_compute_order_cogs_total`
+         (writing back ``cost_at_sale`` for zero-cost items using the current
+         cost_history / baseline rule with ``unit_price`` as the anchor).
+      2. Look up the existing ``order_cogs`` entry. When none exists and the
+         expected total > 0, create it (action ``backfilled``).
+      3. When an entry exists and its COGS debit is within
+         ``MISMATCH_TOLERANCE`` of the expected total, skip (action
+         ``skipped`` — idempotent no-op, AC6).
+      4. When an entry exists but is locked, report ``locked`` (do not mutate).
+      5. When an entry exists and is stale, delete it and re-run
+         :func:`_sync_order_cogs_entry` to recreate with the current total
+         (action ``repaired`` / ``will-repair`` in dry-run).
+
+    Returns a result dict with keys: order_id, order_ref, old_cogs,
+    expected_cogs, action.
+    """
+    order_ref = _order_ref(conn, order_id)
+    entry_id, old_cogs = _order_cogs_entry(conn, order_id)
+    expected = _compute_order_cogs_total(
+        conn, order_id, populate_cost_at_sale=False
+    )
+
+    if entry_id is None:
+        if expected <= 0:
+            return {
+                "order_id": order_id,
+                "order_ref": order_ref,
+                "old_cogs": old_cogs,
+                "expected_cogs": expected,
+                "action": "not-applicable",
+            }
+        if dry_run:
+            return {
+                "order_id": order_id,
+                "order_ref": order_ref,
+                "old_cogs": old_cogs,
+                "expected_cogs": expected,
+                "action": "will-backfill",
+            }
+        # Populate cost_at_sale and create the missing COGS entry in a single
+        # compute pass — the resolved total is passed to _sync_order_cogs_entry
+        # via total_cogs_override so it does not re-scan order_items
+        # (DG-208 review finding CQ-3).
+        actual_total = _compute_order_cogs_total(
+            conn, order_id, populate_cost_at_sale=True
+        )
+        _sync_order_cogs_entry(
+            conn, order_id, order_ref, total_cogs_override=actual_total
+        )
+        return {
+            "order_id": order_id,
+            "order_ref": order_ref,
+            "old_cogs": old_cogs,
+            "expected_cogs": expected,
+            "action": "backfilled",
+        }
+
+    if abs(old_cogs - expected) <= MISMATCH_TOLERANCE:
+        return {
+            "order_id": order_id,
+            "order_ref": order_ref,
+            "old_cogs": old_cogs,
+            "expected_cogs": expected,
+            "action": "skipped",
+        }
+
+    if _is_locked(conn, entry_id):
+        return {
+            "order_id": order_id,
+            "order_ref": order_ref,
+            "old_cogs": old_cogs,
+            "expected_cogs": expected,
+            "action": "locked",
+        }
+
+    if dry_run:
+        return {
+            "order_id": order_id,
+            "order_ref": order_ref,
+            "old_cogs": old_cogs,
+            "expected_cogs": expected,
+            "action": "will-repair",
+        }
+
+    # Delete the stale COGS entry and recreate with the current total.
+    # Populate cost_at_sale once and pass the computed total via
+    # total_cogs_override so _sync_order_cogs_entry skips its internal
+    # re-scan of order_items (DG-208 review finding CQ-3).
+    _delete_journal_entry_cascade(conn, entry_id)
+    actual_total = _compute_order_cogs_total(
+        conn, order_id, populate_cost_at_sale=True
+    )
+    _sync_order_cogs_entry(
+        conn, order_id, order_ref, total_cogs_override=actual_total
+    )
+    return {
+        "order_id": order_id,
+        "order_ref": order_ref,
+        "old_cogs": old_cogs,
+        "expected_cogs": expected,
+        "action": "repaired",
+    }
+
+
+def _run_cogs_repair(conn, *, order_id, repair_all, dry_run):
+    """Drive the COGS repair for either a single order or all delivered orders.
+
+    Mirrors the revenue repair's ``--all`` semantics: every
+    delivered/completed order is scanned and reported with its action
+    (``repaired`` / ``backfilled`` / ``skipped`` / ``locked`` /
+    ``not-applicable``). This is required for AC6 — the second idempotent
+    run must report every order as ``skipped`` rather than an empty list.
+    """
+    if repair_all:
+        order_ids = _delivered_orders_with_cogs(conn)
+    else:
+        # Single order: process it unconditionally so the user gets a status
+        # row (skipped / repaired / not-applicable). This matches the revenue
+        # repair's single-order behaviour.
+        order_ids = [order_id]
+    return [
+        _process_cogs_order(conn, oid, dry_run=dry_run) for oid in order_ids
+    ]
+
+
+def _print_cogs_report(results, *, dry_run):
+    """Print the COGS repair report table and summary."""
+    click.echo("Sửa bút toán giá vốn hàng bán (COGS)")
+    click.echo("=" * 40)
+    click.echo("")
+    click.echo(
+        f"{'Mã đơn':<20}{'COGS cũ':>16}{'COGS dự kiến':>18}{'Hành động':<16}"
+    )
+    click.echo("-" * 70)
+    for r in results:
+        click.echo(
+            f"{r['order_ref'][:19]:<20}"
+            f"{_vn_amount(r['old_cogs']):>16}"
+            f"{_vn_amount(r['expected_cogs']):>18}"
+            f"{_ACTION_LABELS.get(r['action'], r['action']):<16}"
+        )
+    click.echo("-" * 70)
+
+    repaired = sum(1 for r in results if r["action"] == "repaired")
+    backfilled = sum(1 for r in results if r["action"] == "backfilled")
+    will_repair = sum(1 for r in results if r["action"] == "will-repair")
+    will_backfill = sum(1 for r in results if r["action"] == "will-backfill")
+    skipped = sum(1 for r in results if r["action"] == "skipped")
+    not_applicable = sum(1 for r in results if r["action"] == "not-applicable")
+    locked = sum(1 for r in results if r["action"] == "locked")
+
+    parts = []
+    if dry_run:
+        parts.append(f"sẽ sửa: {will_repair + will_backfill}")
+    else:
+        parts.append(f"đã sửa: {repaired + backfilled}")
+    parts.append(f"bỏ qua: {skipped}")
+    parts.append(f"không áp dụng: {not_applicable}")
+    if locked:
+        parts.append(f"khoá: {locked}")
+    click.echo(f"Tổng: {len(results)} đơn  |  " + ", ".join(parts))
+
+
 @click.command("repair-order-revenue")
 @click.option("--order-id", "order_id", type=int, default=None, help="ID đơn hàng cần sửa.")
 @click.option("--all", "repair_all", is_flag=True, default=False, help="Sửa tất cả đơn đã giao có bút toán lệch.")
+@click.option("--cogs", "repair_cogs", is_flag=True, default=False, help="Sửa/bổ sung bút toán giá vốn (COGS) thay vì doanh thu.")
 @click.option("--dry-run", is_flag=True, default=False, help="Xem trước thay đổi, không ghi vào CSDL.")
-def repair_order_revenue_cmd(order_id, repair_all, dry_run):
-    """Sửa bút toán doanh thu đơn hàng bị lệch (nợ 2100 ≠ cọc thực tế)."""
+def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, dry_run):
+    """Sửa bút toán doanh thu đơn hàng bị lệch (nợ 2100 ≠ cọc thực tế).
+
+    Với ``--cogs``, sửa/bổ sung bút toán giá vốn (COGS) cho đơn đã giao:
+    bỏ qua đơn đã có bút toán COGS khớp với chi phí dự kiến (idempotent).
+    """
     if order_id is None and not repair_all:
         click.echo("Cần chỉ định --order-id <id> hoặc --all.", err=True)
         raise SystemExit(1)
@@ -178,7 +388,11 @@ def repair_order_revenue_cmd(order_id, repair_all, dry_run):
 
     try:
         with get_db() as conn:
-            if repair_all:
+            if repair_cogs:
+                results = _run_cogs_repair(
+                    conn, order_id=order_id, repair_all=repair_all, dry_run=dry_run
+                )
+            elif repair_all:
                 rows = conn.execute(
                     f"""
                     SELECT DISTINCT je.source_id AS order_id
@@ -194,12 +408,12 @@ def repair_order_revenue_cmd(order_id, repair_all, dry_run):
                     [CUSTOMER_DEPOSITS_CODE, *DELIVERED_STATUSES],
                 ).fetchall()
                 order_ids = [int(r["order_id"]) for r in rows]
+                results = [
+                    _process_order(conn, oid, dry_run=dry_run) for oid in order_ids
+                ]
             else:
-                order_ids = [order_id]
+                results = [_process_order(conn, order_id, dry_run=dry_run)]
 
-            results = []
-            for oid in order_ids:
-                results.append(_process_order(conn, oid, dry_run=dry_run))
             if not dry_run:
                 conn.commit()
     except Exception as exc:  # noqa: BLE001 — top-level CLI guard
@@ -212,6 +426,10 @@ def repair_order_revenue_cmd(order_id, repair_all, dry_run):
 
     if not results:
         click.echo("(không có đơn hàng nào để kiểm tra)")
+        return
+
+    if repair_cogs:
+        _print_cogs_report(results, dry_run=dry_run)
         return
 
     click.echo("Sửa bút toán doanh thu đơn hàng")

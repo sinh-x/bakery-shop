@@ -11,6 +11,7 @@ from baker.db.schema import MIGRATIONS
 runner = CliRunner()
 
 LATEST_VERSION = max(MIGRATIONS.keys())
+PENDING_COUNT = len(MIGRATIONS)
 
 
 def test_db_status_fresh_db():
@@ -20,7 +21,7 @@ def test_db_status_fresh_db():
     assert result.exit_code == 0
     assert "Current schema version : 0" in result.output
     assert f"Latest available       : {LATEST_VERSION}" in result.output
-    assert f"Pending migrations     : {LATEST_VERSION}" in result.output
+    assert f"Pending migrations     : {PENDING_COUNT}" in result.output
 
 
 def test_db_status_after_ensure_schema():
