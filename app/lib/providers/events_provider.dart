@@ -119,6 +119,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     String? paidByName,
     String? loggedBy,
     String? searchText,
+    String? debtStatus,
     int limit = expenseMaxHistoryLimit,
   }) async {
     final service = ref.read(eventServiceProvider);
@@ -131,6 +132,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
       loggedBy: loggedBy ?? staffName,
       expensePaidByName: paidByName,
       expenseSearch: searchText,
+      expenseDebtStatus: debtStatus,
       limit: safeLimit,
     );
     final sinceLocal = _parseLocalDateTimeOrNull(since);
@@ -222,3 +224,38 @@ final expenseVendorSuggestionsProvider =
     ..sort();
   return names;
 });
+
+/// Notifier that loads outstanding debts grouped by creditor (DG-212 Phase
+/// 4 — FR5). Wraps [EventService.listDebts] and exposes the raw decoded
+/// response so the debts list screen can render grouped creditors.
+class DebtsNotifier extends AsyncNotifier<Map<String, dynamic>> {
+  @override
+  Future<Map<String, dynamic>> build() async => const <String, dynamic>{
+        'creditors': <Map<String, dynamic>>[],
+        'total_owed': 0.0,
+        'count': 0,
+      };
+
+  /// Reload debts with optional filters. Returns the parsed response.
+  Future<Map<String, dynamic>> reload({
+    String? creditor,
+    String? since,
+    String? until,
+    String? status,
+  }) async {
+    final service = ref.read(eventServiceProvider);
+    final data = await service.listDebts(
+      creditor: creditor,
+      since: since,
+      until: until,
+      status: status,
+    );
+    state = AsyncData(data);
+    return data;
+  }
+}
+
+final debtsProvider =
+    AsyncNotifierProvider<DebtsNotifier, Map<String, dynamic>>(
+  DebtsNotifier.new,
+);

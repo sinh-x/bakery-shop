@@ -57,6 +57,7 @@ Future<List<BakeryEvent>> _emptyHistory({
   String? paidByName,
   String? loggedBy,
   String? searchText,
+  String? debtStatus,
 }) async => const [];
 
 void main() {
@@ -81,6 +82,7 @@ void main() {
               paidByName,
               loggedBy,
               searchText,
+              debtStatus,
             }) async {
               capturedSince = since;
                   capturedUntil = until;
@@ -164,6 +166,7 @@ void main() {
                   paidByName,
                   loggedBy,
                   searchText,
+                  debtStatus,
                 }) async => [event],
           ),
         ),
@@ -253,6 +256,7 @@ void main() {
                   paidByName,
                   loggedBy,
                   searchText,
+                  debtStatus,
                 }) async => [event],
           ),
         ),
@@ -288,6 +292,7 @@ void main() {
                   paidByName,
                   loggedBy,
                   searchText,
+                  debtStatus,
                 }) async {
                   loads += 1;
                   return const [];
@@ -350,6 +355,7 @@ void main() {
                   paidByName,
                   loggedBy,
                   searchText,
+                  debtStatus,
                 }) async => events,
           ),
         ),
@@ -422,6 +428,7 @@ void main() {
                   paidByName,
                   loggedBy,
                   searchText,
+                  debtStatus,
                 }) async {
                   capturedCategory = category;
                   capturedPaidByName = paidByName;
@@ -473,6 +480,7 @@ void main() {
                   paidByName,
                   loggedBy,
                   searchText,
+                  debtStatus,
                 }) async {
                   capturedCategory = category;
                   return events;
@@ -494,6 +502,14 @@ void main() {
       const ProviderScope(
         child: MaterialApp(home: ExpenseScreen(loadHistory: _emptyHistory)),
       ),
+    );
+    await tester.pumpAndSettle();
+    // The empty-history card may sit below the fold once the debt status
+    // filter strip is present; scroll it into view before asserting.
+    await tester.scrollUntilVisible(
+      find.text(VN.expenseNoHistory),
+      200,
+      scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
     expect(find.text(VN.expenseNoHistory), findsOneWidget);
@@ -528,6 +544,7 @@ void main() {
                   paidByName,
                   loggedBy,
                   searchText,
+                  debtStatus,
                 }) async => [event],
           ),
         ),
@@ -570,6 +587,7 @@ void main() {
                     paidByName,
                     loggedBy,
                     searchText,
+                    debtStatus,
                   }) async => [event],
             ),
           ),
@@ -613,6 +631,7 @@ void main() {
                     paidByName,
                     loggedBy,
                     searchText,
+                    debtStatus,
                   }) async => [event],
             ),
           ),
@@ -655,6 +674,7 @@ void main() {
                   paidByName,
                   loggedBy,
                   searchText,
+                  debtStatus,
                 }) async => [event],
           ),
         ),
@@ -722,6 +742,7 @@ void main() {
                   paidByName,
                   loggedBy,
                   searchText,
+                  debtStatus,
                 }) async {
                   capturedPaymentSource = paymentSource;
                   return events;
@@ -776,6 +797,7 @@ void main() {
                   paidByName,
                   loggedBy,
                   searchText,
+                  debtStatus,
                 }) async => events,
           ),
         ),
@@ -859,6 +881,7 @@ void main() {
                   paidByName,
                   loggedBy,
                   searchText,
+                  debtStatus,
                 }) async => [event],
           ),
         ),
@@ -899,6 +922,7 @@ void main() {
                   paidByName,
                   loggedBy,
                   searchText,
+                  debtStatus,
                 }) async => [event],
           ),
         ),
@@ -1087,6 +1111,7 @@ void main() {
                     paidByName,
                     loggedBy,
                     searchText,
+                    debtStatus,
                   }) async => [event],
             ),
           ),
@@ -1094,9 +1119,19 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.debtStatusUnpaid), findsOneWidget);
-      expect(find.text(VN.debtStatusPaid), findsNothing);
-      expect(find.text(VN.debtStatusPartial), findsNothing);
+      final card = find.byType(ExpenseHistoryCard);
+      expect(
+        find.descendant(of: card, matching: find.text(VN.debtStatusUnpaid)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text(VN.debtStatusPaid)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text(VN.debtStatusPartial)),
+        findsNothing,
+      );
     },
   );
 
@@ -1133,6 +1168,7 @@ void main() {
                     paidByName,
                     loggedBy,
                     searchText,
+                    debtStatus,
                   }) async => [event],
             ),
           ),
@@ -1140,8 +1176,15 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.debtStatusPaid), findsOneWidget);
-      expect(find.text(VN.debtStatusUnpaid), findsNothing);
+      final card = find.byType(ExpenseHistoryCard);
+      expect(
+        find.descendant(of: card, matching: find.text(VN.debtStatusPaid)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text(VN.debtStatusUnpaid)),
+        findsNothing,
+      );
     },
   );
 
@@ -1178,6 +1221,7 @@ void main() {
                     paidByName,
                     loggedBy,
                     searchText,
+                    debtStatus,
                   }) async => [event],
             ),
           ),
@@ -1185,9 +1229,19 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.debtStatusPartial), findsOneWidget);
-      expect(find.text(VN.debtStatusPaid), findsNothing);
-      expect(find.text(VN.debtStatusUnpaid), findsNothing);
+      final card = find.byType(ExpenseHistoryCard);
+      expect(
+        find.descendant(of: card, matching: find.text(VN.debtStatusPartial)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text(VN.debtStatusPaid)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text(VN.debtStatusUnpaid)),
+        findsNothing,
+      );
     },
   );
 
@@ -1220,6 +1274,7 @@ void main() {
                     paidByName,
                     loggedBy,
                     searchText,
+                    debtStatus,
                   }) async => [event],
             ),
           ),
@@ -1227,9 +1282,19 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(VN.debtStatusUnpaid), findsNothing);
-      expect(find.text(VN.debtStatusPaid), findsNothing);
-      expect(find.text(VN.debtStatusPartial), findsNothing);
+      final card = find.byType(ExpenseHistoryCard);
+      expect(
+        find.descendant(of: card, matching: find.text(VN.debtStatusUnpaid)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text(VN.debtStatusPaid)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text(VN.debtStatusPartial)),
+        findsNothing,
+      );
     },
   );
 
@@ -1298,6 +1363,111 @@ void main() {
       expect(find.text(VN.expenseDebtVendorRequired), findsOneWidget);
       // No payer confirm dialog because debt bypasses it.
       expect(find.text(VN.expensePayerConfirmTitle), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'debt status filter chip strip is rendered when callback is wired',
+    (tester) async {
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(
+            home: ExpenseScreen(loadHistory: _emptyHistory),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The debt status strip renders a label + 4 status chips (all/unpaid/
+      // partial/paid). Use the label as the anchor to prove the strip is
+      // present; the chip text may collide with history card chips so we
+      // count FilterChip widgets whose label text matches.
+      expect(find.text(VN.debtListFilterStatusLabel), findsOneWidget);
+      final unpaidChips = find.widgetWithText(
+        FilterChip,
+        VN.debtStatusUnpaid,
+      );
+      expect(unpaidChips, findsOneWidget);
+      expect(
+        find.widgetWithText(FilterChip, VN.debtStatusPartial),
+        findsOneWidget,
+      );
+      expect(
+        find.widgetWithText(FilterChip, VN.debtStatusPaid),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'selecting unpaid debt status filter reloads history with debtStatus=unpaid',
+    (tester) async {
+      String? capturedDebtStatus;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: ExpenseScreen(
+              loadHistory: ({
+                since,
+                until,
+                category,
+                paymentMethod,
+                paymentSource,
+                staffName,
+                paidByName,
+                loggedBy,
+                searchText,
+                debtStatus,
+              }) async {
+                capturedDebtStatus = debtStatus;
+                return const [];
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Initial load — no debt status filter.
+      expect(capturedDebtStatus, isNull);
+
+      // Tap "Chưa trả" filter chip (the one in the debt status strip).
+      // There may be multiple widgets with this text (e.g. history cards);
+      // find the FilterChip with this label.
+      final unpaidChip = find.ancestor(
+        of: find.text(VN.debtStatusUnpaid),
+        matching: find.byType(FilterChip),
+      );
+      await tester.ensureVisible(unpaidChip.first);
+      await tester.tap(unpaidChip.first);
+      await tester.pumpAndSettle();
+
+      expect(capturedDebtStatus, 'unpaid');
+    },
+  );
+
+  testWidgets(
+    'app bar shows debts action button when onOpenDebts is wired',
+    (tester) async {
+      bool tapped = false;
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: ExpenseScreen(
+              loadHistory: _emptyHistory,
+              onOpenDebts: () => tapped = true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final debtsBtn = find.byTooltip(VN.debtListTitle);
+      expect(debtsBtn, findsOneWidget);
+      await tester.tap(debtsBtn);
+      await tester.pumpAndSettle();
+      expect(tapped, isTrue);
     },
   );
 }

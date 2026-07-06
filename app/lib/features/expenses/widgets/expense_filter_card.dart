@@ -3,6 +3,41 @@ import 'package:flutter/material.dart';
 
 enum ExpenseDateFilterMode { single, range }
 
+/// Debt status filter values (DG-212 Phase 4 — FR7). Match backend
+/// ``debt_status`` query parameter values. ``all`` clears the filter.
+enum ExpenseDebtStatusFilter { all, unpaid, partial, paid }
+
+/// Returns the VN display label for [status].
+String expenseDebtStatusFilterLabel(ExpenseDebtStatusFilter status) {
+  switch (status) {
+    case ExpenseDebtStatusFilter.all:
+      return VN.debtListFilterAll;
+    case ExpenseDebtStatusFilter.unpaid:
+      return VN.debtStatusUnpaid;
+    case ExpenseDebtStatusFilter.partial:
+      return VN.debtStatusPartial;
+    case ExpenseDebtStatusFilter.paid:
+      return VN.debtStatusPaid;
+  }
+}
+
+/// Backend ``debt_status`` value for [status] (``all``/``unpaid``/``paid``/
+/// ``partial``). Returns an empty string for [ExpenseDebtStatusFilter.all] so
+/// callers can pass it directly to the API without sending a redundant
+/// ``all`` param.
+String expenseDebtStatusFilterApiValue(ExpenseDebtStatusFilter status) {
+  switch (status) {
+    case ExpenseDebtStatusFilter.all:
+      return '';
+    case ExpenseDebtStatusFilter.unpaid:
+      return 'unpaid';
+    case ExpenseDebtStatusFilter.partial:
+      return 'partial';
+    case ExpenseDebtStatusFilter.paid:
+      return 'paid';
+  }
+}
+
 class ExpenseFilterCard extends StatelessWidget {
   const ExpenseFilterCard({
     super.key,
@@ -27,6 +62,8 @@ class ExpenseFilterCard extends StatelessWidget {
     required this.onClearFilters,
     required this.onApplyFilters,
     required this.formatDate,
+    this.filterDebtStatus = ExpenseDebtStatusFilter.all,
+    this.onFilterDebtStatusChanged,
   });
 
   final TextEditingController searchCtrl;
@@ -50,6 +87,15 @@ class ExpenseFilterCard extends StatelessWidget {
   final VoidCallback onClearFilters;
   final VoidCallback onApplyFilters;
   final String Function(DateTime) formatDate;
+
+  /// Current debt status filter (DG-212 Phase 4 — FR7). Defaults to
+  /// [ExpenseDebtStatusFilter.all] (no filter) for backward compatibility.
+  final ExpenseDebtStatusFilter filterDebtStatus;
+
+  /// Optional callback for debt status chip changes. When ``null``, the
+  /// debt status chip strip is not rendered (preserves existing screen
+  /// behavior for callers that did not opt in).
+  final ValueChanged<ExpenseDebtStatusFilter>? onFilterDebtStatusChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -206,6 +252,21 @@ class ExpenseFilterCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (onFilterDebtStatusChanged != null) ...[
+              const SizedBox(height: 4),
+              _FilterChipStrip(
+                label: VN.debtListFilterStatusLabel,
+                chips: [
+                  for (final status in ExpenseDebtStatusFilter.values)
+                    FilterChip(
+                      label: Text(expenseDebtStatusFilterLabel(status)),
+                      selected: filterDebtStatus == status,
+                      onSelected: (_) => onFilterDebtStatusChanged!(status),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+            ],
             const SizedBox(height: 10),
             Row(
               children: [
