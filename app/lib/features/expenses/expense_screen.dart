@@ -5,6 +5,8 @@ import 'package:bakery_app/features/expenses/widgets/expense_filter_card.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_history_card.dart';
 import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/shared/labels/events.dart';
+import 'package:bakery_app/shared/mixins/auto_refresh_mixin.dart';
+import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +23,8 @@ class ExpenseScreen extends ConsumerStatefulWidget {
     String? paymentMethod,
     String? paymentSource,
     String? staffName,
+    String? paidByName,
+    String? loggedBy,
     String? searchText,
   })?
   loadHistory;
@@ -29,7 +33,8 @@ class ExpenseScreen extends ConsumerStatefulWidget {
   ConsumerState<ExpenseScreen> createState() => _ExpenseScreenState();
 }
 
-class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
+class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
+    with WidgetsBindingObserver, AutoRefreshMixin {
   final _searchCtrl = TextEditingController();
   bool _deleting = false;
   bool _initialHistoryLoading = true;
@@ -37,17 +42,32 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
   DateTime? _until;
   ExpenseDateFilterMode _dateFilterMode = ExpenseDateFilterMode.range;
   String _filterCategory = '';
-  String _filterStaffName = '';
+  String _filterPaidByName = '';
+  String _filterLoggedByName = '';
   String _filterPaymentSource = '';
   List<BakeryEvent> _history = <BakeryEvent>[];
 
   @override
+  String screenRoutePath() => '/expenses';
+
+  @override
+  void invalidateProviders() {}
+
+  @override
   void initState() {
     super.initState();
+    onAutoRefresh = _refreshHistory;
     final today = DateTime.now();
     _until = DateTime(today.year, today.month, today.day);
     _since = _until!.subtract(const Duration(days: 6));
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshHistory());
+    initAutoRefresh();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    setupAutoRefreshRouteListener();
   }
 
   void _setDeleting(bool value) {
@@ -75,7 +95,8 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
       _until = null;
       _dateFilterMode = ExpenseDateFilterMode.range;
       _filterCategory = '';
-      _filterStaffName = '';
+      _filterPaidByName = '';
+      _filterLoggedByName = '';
       _filterPaymentSource = '';
       _searchCtrl.clear();
     });
@@ -83,22 +104,39 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
 
   @override
   void dispose() {
+    disposeAutoRefresh();
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  List<String> _staffFilterOptions() {
+  List<String> _paidByFilterOptions() {
     final names =
         _history
             .map(ExpenseEventMapper.fromEvent)
             .whereType<ExpenseEventData>()
-            .map((event) => event.staffName.trim())
+            .map((event) => event.paidByName.trim())
             .where((name) => name.isNotEmpty)
             .toSet()
             .toList()
           ..sort();
-    if (_filterStaffName.isNotEmpty && !names.contains(_filterStaffName)) {
-      names.insert(0, _filterStaffName);
+    if (_filterPaidByName.isNotEmpty && !names.contains(_filterPaidByName)) {
+      names.insert(0, _filterPaidByName);
+    }
+    return names;
+  }
+
+  List<String> _loggedByFilterOptions() {
+    final names =
+        _history
+            .map(ExpenseEventMapper.fromEvent)
+            .whereType<ExpenseEventData>()
+            .map((event) => event.loggedBy.trim())
+            .where((name) => name.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+    if (_filterLoggedByName.isNotEmpty && !names.contains(_filterLoggedByName)) {
+      names.insert(0, _filterLoggedByName);
     }
     return names;
   }
@@ -127,10 +165,12 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
             dateFilterMode: _dateFilterMode,
             categories: expenseCategories,
             paymentSources: expensePaymentSources,
-            staffNames: _staffFilterOptions(),
+            paidByNames: _paidByFilterOptions(),
+            loggedByNames: _loggedByFilterOptions(),
             filterCategory: _filterCategory,
             filterPaymentSource: _filterPaymentSource,
-            filterStaffName: _filterStaffName,
+            filterPaidByName: _filterPaidByName,
+            filterLoggedByName: _filterLoggedByName,
             onDateFilterModeChanged: (value) => setState(() {
               _dateFilterMode = value;
               if (value == ExpenseDateFilterMode.single && _since != null) {
@@ -146,8 +186,12 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
               setState(() => _filterPaymentSource = value);
               _refreshHistory();
             },
-            onFilterStaffChanged: (value) {
-              setState(() => _filterStaffName = value);
+            onFilterPaidByNameChanged: (value) {
+              setState(() => _filterPaidByName = value);
+              _refreshHistory();
+            },
+            onFilterLoggedByNameChanged: (value) {
+              setState(() => _filterLoggedByName = value);
               _refreshHistory();
             },
             onClearFilters: _clearFilters,
@@ -210,7 +254,8 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
               category: _filterCategory,
               paymentMethod: null,
               paymentSource: _filterPaymentSource,
-              staffName: _filterStaffName,
+              paidByName: _filterPaidByName,
+              loggedBy: _filterLoggedByName,
               searchText: _searchCtrl.text.trim(),
             )
           : ref
@@ -221,7 +266,8 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
                   category: _filterCategory,
                   paymentMethod: null,
                   paymentSource: _filterPaymentSource,
-                  staffName: _filterStaffName,
+                  paidByName: _filterPaidByName,
+                  loggedBy: _filterLoggedByName,
                   searchText: _searchCtrl.text.trim(),
                 ));
       _setHistory(events);
@@ -263,7 +309,8 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
       if (custom != null) {
         await custom(id);
       } else {
-        await ref.read(eventsProvider.notifier).deleteEvent(id);
+        final deletedBy = ref.read(loggedByProvider);
+        await ref.read(eventsProvider.notifier).deleteEvent(id, deletedBy: deletedBy);
       }
       await _refreshHistory();
       if (mounted) showTopSnackBar(context, VN.eventDeleted);
@@ -316,8 +363,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen> {
     });
   }
 
-  String _isoDate(DateTime input) =>
-      '${input.year.toString().padLeft(4, '0')}-${input.month.toString().padLeft(2, '0')}-${input.day.toString().padLeft(2, '0')}';
+  String _isoDate(DateTime input) => formatApiDate(input);
 
   String _localDayStartIso(DateTime input) {
     final start = DateTime(input.year, input.month, input.day);

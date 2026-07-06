@@ -359,50 +359,54 @@ def _create_order_with_tien_rut_item(client, cash_amount=200000):
 
 
 def test_tien_rut_txn_creation(api_client):
-    """Create a tien_rut transaction on an order with tien_rut items."""
+    """Create a tien_rut transaction on an order with tien_rut items.
+
+    DG-198 reversal: tien_rut is a deposit inflow (customer gives cash to the
+    shop for safekeeping), no longer guarded by available deposits.
+    """
     order = _create_order_with_tien_rut_item(api_client, cash_amount=200000)
     ref = order["orderRef"]
 
-    # Create tien_rut transaction (cash-back to customer)
+    # Create tien_rut transaction (customer gives cash for safekeeping).
     txn = _create_txn(api_client, ref, amount=200000, type="tien_rut")
     assert txn["type"] == "tien_rut"
     assert txn["amount"] == 200000
 
 
-def test_tien_rut_excluded_from_total_paid(api_client):
-    """tien_rut transactions are excluded from payment total (amountPaid)."""
+def test_tien_rut_included_in_total_paid(api_client):
+    """tien_rut is a deposit inflow (DG-198 reversal), so it IS included in
+    amountPaid (total_paid_excl_outflows). Only refund is excluded."""
     order = _create_order_with_tien_rut_item(api_client, cash_amount=200000)
     ref = order["orderRef"]
 
     # Customer pays 350000 for the cake
     _create_txn(api_client, ref, amount=350000, type="payment")
-    # Customer receives 200000 cash-back
+    # Customer gives 200000 cash for safekeeping (tien_rut deposit inflow)
     _create_txn(api_client, ref, amount=200000, type="tien_rut")
 
     detail = api_client.get(f"/api/orders/{ref}").json()
-    # amountPaid should be 350000 (payment only), NOT 550000
-    assert detail["amountPaid"] == 350000
+    # amountPaid = 350000 + 200000 = 550000 (tien_rut is included)
+    assert detail["amountPaid"] == 550000
 
 
-def test_tien_rut_excluded_from_receipt_total_paid(api_client):
-    """Receipt total_paid should not include tien_rut in the balance calculation.
+def test_tien_rut_included_in_receipt_total_paid(api_client):
+    """Receipt total_paid includes tien_rut (DG-198 reversal: deposit inflow).
 
-    The receipt rendering uses total_paid_excl_tien_rut() for the balance math.
-    We verify this indirectly: amountPaid on order detail (which receipts use)
-    should exclude tien_rut, and completion guard should work correctly.
+    The receipt rendering uses total_paid_excl_outflows() for the balance math,
+    which now includes tien_rut. Verified indirectly via amountPaid on order
+    detail (which receipts use).
     """
     order = _create_order_with_tien_rut_item(api_client, cash_amount=200000)
     ref = order["orderRef"]
 
     # Customer pays full amount
     _create_txn(api_client, ref, amount=350000, type="payment")
-    # tien_rut cash-back recorded
+    # tien_rut cash given for safekeeping
     _create_txn(api_client, ref, amount=200000, type="tien_rut")
 
     detail = api_client.get(f"/api/orders/{ref}").json()
-    # amountPaid should be 350000 (payment only), NOT 550000
-    # This confirms receipts will show correct balance since they use the same method
-    assert detail["amountPaid"] == 350000
+    # amountPaid = 350000 + 200000 = 550000 (tien_rut included)
+    assert detail["amountPaid"] == 550000
 
 
 def test_completion_guard_with_tien_rut(api_client):
@@ -426,20 +430,364 @@ def test_completion_guard_with_tien_rut(api_client):
 
 
 def test_completion_guard_premature_without_payment(api_client):
-    """Completion guard blocks completion when payment doesn't cover total."""
+    """Completion guard blocks completion when payment doesn't cover total.
+
+    DG-198 reversal: tien_rut is now a deposit inflow (counted in amountPaid),
+    so an order with 200k payment + 200k tien_rut (total 370k) has amountPaid
+    = 400k and SHOULD complete. This test now uses a refund (true outflow) to
+    verify the guard still blocks when the net is insufficient.
+    """
     order = _create_order_with_tien_rut_item(api_client, cash_amount=200000)
     ref = order["orderRef"]
 
     # Order total = 350000 (cake) + 20000 (cash_fee) = 370000
-    # Customer only pays partial amount (200000 < 370000)
+    # Customer pays 200000, then a 200000 refund is issued (outflow).
+    # Net deposits = 200000 - 200000 = 0 < 370000 → completion blocked.
     _create_txn(api_client, ref, amount=200000, type="payment")
-    # tien_rut cash-back given
-    _create_txn(api_client, ref, amount=200000, type="tien_rut")
+    _create_txn(api_client, ref, amount=200000, type="refund")
 
-    # Completion should be blocked: 200000 paid vs 370000 total
+    # Completion should be blocked: 0 net paid vs 370000 total
     resp = api_client.post(f"/api/orders/{ref}/status", json={
         "status": "completed",
         "reason": "Hoàn tất đơn hàng",
     })
     assert resp.status_code == 422
     assert "thiếu" in resp.json()["detail"]
+
+
+# --- DG-198 reversal — guardrail removed (tien_rut is an inflow) ---
+
+
+def test_tien_rut_no_deposit_required_succeeds(api_client):
+    """DG-198 reversal: tien_rut is a deposit inflow, so the API no longer
+    requires available deposits before creation. A 600k tien_rut with zero
+    deposits is accepted (the customer is giving cash to the shop)."""
+    order = _create_order(api_client, total=600000)
+    ref = order["orderRef"]
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 600000, "type": "tien_rut"},
+    )
+    assert resp.status_code == 201
+    txn = resp.json()
+    assert txn["type"] == "tien_rut"
+    assert txn["amount"] == 600000
+
+
+def test_tien_rut_exceeds_deposits_succeeds(api_client):
+    """DG-198 reversal: the guardrail that rejected tien_rut > available is
+    removed. 500k deposit + 600k tien_rut is accepted (no 422)."""
+    order = _create_order(api_client, total=600000)
+    ref = order["orderRef"]
+    _create_txn(api_client, ref, amount=500000, type="payment")
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 600000, "type": "tien_rut"},
+    )
+    assert resp.status_code == 201
+
+
+def test_tien_rut_guardrail_does_not_affect_other_types(api_client):
+    """tien_rut and deposit/payment all succeed regardless of prior deposits."""
+    order = _create_order(api_client, total=600000)
+    ref = order["orderRef"]
+    # A deposit/payment with no prior deposits must succeed (not guarded).
+    resp = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": 500000, "type": "payment"},
+    )
+    assert resp.status_code == 201
+
+
+# --- Invalidate / Restore endpoints (DG-196 Phase 2) ---
+
+
+def _invalidate(client, ref, txn_id, invalidated_by="sinh", reason=""):
+    return client.post(
+        f"/api/orders/{ref}/transactions/{txn_id}/invalidate",
+        json={"invalidatedBy": invalidated_by, "reason": reason},
+    )
+
+
+def _restore(client, ref, txn_id):
+    return client.post(f"/api/orders/{ref}/transactions/{txn_id}/restore")
+
+
+def _journal_entries_for_txn(conn, txn_id):
+    """Return all journal_entries rows for a payment_transaction source."""
+    return conn.execute(
+        "SELECT * FROM journal_entries "
+        "WHERE source_type = 'payment_transaction' AND source_id = ? "
+        "ORDER BY id",
+        (txn_id,),
+    ).fetchall()
+
+
+def _journal_lines_sum(conn, entry_id, account_code):
+    """Return net (debit - credit) for an account code on a journal entry."""
+    row = conn.execute(
+        "SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS net "
+        "FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id "
+        "WHERE jl.journal_entry_id = ? AND a.code = ?",
+        (entry_id, account_code),
+    ).fetchone()
+    return float(row["net"] or 0)
+
+
+def test_invalidate_sets_fields_and_reverses_journal(api_client):
+    """AC1/AC2: invalidate sets invalidated_at/by and reverses (unlocked) journal."""
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000)
+    txn_id = txn["id"]
+
+    # Confirm a journal entry exists before invalidation.
+    with get_db() as conn:
+        entries = _journal_entries_for_txn(conn, int(txn_id))
+        assert len(entries) == 1
+
+    resp = _invalidate(api_client, ref, txn_id, invalidated_by="sinh",
+                       reason="nhập nhầm")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["invalidatedAt"] is not None
+    assert data["invalidatedBy"] == "sinh"
+
+    # AC2: unlocked entry → deleted (reversal preserves original date, but
+    # _sync_payment_journal(deleted=True) on an unlocked entry deletes it).
+    with get_db() as conn:
+        entries = _journal_entries_for_txn(conn, int(txn_id))
+        assert len(entries) == 0
+
+
+def test_invalidate_idempotent_rejected(api_client):
+    """Invalidating an already-invalidated txn returns 422."""
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000)
+    txn_id = txn["id"]
+
+    resp = _invalidate(api_client, ref, txn_id)
+    assert resp.status_code == 200
+    resp2 = _invalidate(api_client, ref, txn_id)
+    assert resp2.status_code == 422
+
+
+def test_invalidate_txn_not_found(api_client):
+    """Invalidating a non-existent txn returns 404."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = _invalidate(api_client, ref, 9999)
+    assert resp.status_code == 404
+
+
+def test_invalidate_wrong_order(api_client):
+    """Invalidating a txn from another order returns 404."""
+    order1 = _create_order(api_client, customer="A")
+    order2 = _create_order(api_client, customer="B")
+    txn = _create_txn(api_client, order1["orderRef"])
+    resp = _invalidate(api_client, order2["orderRef"], txn["id"])
+    assert resp.status_code == 404
+
+
+def test_invalidate_logs_order_history(api_client):
+    """FR10: invalidation is recorded in order_history with action_type='invalidate'."""
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000)
+    _invalidate(api_client, ref, txn["id"], invalidated_by="sinh")
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM order_history WHERE order_id = ? AND action_type = 'invalidate'",
+            (order["id"],),
+        ).fetchone()
+    assert row is not None
+    assert row["field_name"] == "payment_transaction"
+
+
+def test_invalidate_locked_journal_creates_reversal_with_current_timestamp(api_client):
+    """AC3: locked journal entry → new reversal entry preserving original
+    transaction_date (same-timestamp reversal via _reverse_journal_entry)."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000)
+    txn_id = int(txn["id"])
+
+    # Lock the journal entry directly to simulate a reconciled period.
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "UPDATE journal_entries SET locked_at = '2026-06-25T00:00:00' "
+            "WHERE source_type = 'payment_transaction' AND source_id = ?",
+            (txn_id,),
+        )
+        orig = conn.execute(
+            "SELECT id, transaction_date FROM journal_entries "
+            "WHERE source_type = 'payment_transaction' AND source_id = ?",
+            (txn_id,),
+        ).fetchone()
+        assert orig is not None
+        orig_id = orig["id"]
+        orig_date = orig["transaction_date"]
+
+    resp = _invalidate(api_client, ref, txn["id"])
+    assert resp.status_code == 200
+
+    # AC3: the original locked entry remains, and a reversal entry is created
+    # with the SAME transaction_date as the original (same-timestamp reversal).
+    with get_db() as conn:
+        entries = _journal_entries_for_txn(conn, txn_id)
+        # original (locked) + reversal
+        assert len(entries) == 2
+        reversal = entries[-1]
+        assert reversal["id"] != orig_id
+        assert reversal["transaction_date"] == orig_date
+        assert "Reversal" in reversal["description"]
+
+
+def test_restore_clears_fields_and_recreates_journal(api_client):
+    """AC4: restore clears invalidation and re-creates journal entry with
+    the original created_at as transaction_date."""
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000)
+    txn_id = int(txn["id"])
+
+    # Capture original created_at + journal transaction_date before invalidation.
+    with get_db() as conn:
+        orig_txn = conn.execute(
+            "SELECT created_at FROM payment_transactions WHERE id = ?", (txn_id,)
+        ).fetchone()
+        orig_created_at = orig_txn["created_at"]
+
+    _invalidate(api_client, ref, txn["id"])
+    # Journal entry deleted (unlocked path).
+    with get_db() as conn:
+        assert len(_journal_entries_for_txn(conn, txn_id)) == 0
+
+    resp = _restore(api_client, ref, txn["id"])
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["invalidatedAt"] is None
+    assert data["invalidatedBy"] == ""
+
+    # AC4: journal entry re-created with original created_at as transaction_date.
+    with get_db() as conn:
+        entries = _journal_entries_for_txn(conn, txn_id)
+        assert len(entries) == 1
+        assert entries[0]["transaction_date"] == orig_created_at
+
+
+def test_restore_not_invalidated_rejected(api_client):
+    """Restoring a txn that was never invalidated returns 422."""
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000)
+    resp = _restore(api_client, ref, txn["id"])
+    assert resp.status_code == 422
+
+
+def test_restore_txn_not_found(api_client):
+    """Restoring a non-existent txn returns 404."""
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = _restore(api_client, ref, 9999)
+    assert resp.status_code == 404
+
+
+def test_restore_logs_order_history(api_client):
+    """FR10: restore is recorded in order_history with action_type='restore'."""
+    from baker.db.connection import get_db
+
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000)
+    _invalidate(api_client, ref, txn["id"], invalidated_by="sinh")
+    _restore(api_client, ref, txn["id"])
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM order_history WHERE order_id = ? AND action_type = 'restore'",
+            (order["id"],),
+        ).fetchone()
+    assert row is not None
+
+
+def test_invalidate_then_restore_roundtrip_totals(api_client):
+    """Invalidation removes the txn from totals; restore brings it back."""
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000)
+    txn_id = txn["id"]
+
+    # Before invalidation: amountPaid == 200000.
+    assert api_client.get(f"/api/orders/{ref}").json()["amountPaid"] == 200000
+
+    _invalidate(api_client, ref, txn_id)
+    # After invalidation: amountPaid == 0 (invalidated excluded).
+    assert api_client.get(f"/api/orders/{ref}").json()["amountPaid"] == 0
+
+    _restore(api_client, ref, txn_id)
+    # After restore: amountPaid == 200000 again.
+    assert api_client.get(f"/api/orders/{ref}").json()["amountPaid"] == 200000
+
+
+def test_invalidate_visible_in_list_with_fields(api_client):
+    """AC7: invalidated txn still appears in GET list with invalidatedAt/By."""
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000)
+    _invalidate(api_client, ref, txn["id"], invalidated_by="sinh")
+
+    resp = api_client.get(f"/api/orders/{ref}/transactions")
+    assert resp.status_code == 200
+    txns = resp.json()
+    assert len(txns) == 1
+    assert txns[0]["invalidatedAt"] is not None
+    assert txns[0]["invalidatedBy"] == "sinh"
+
+
+def test_invalidate_journal_failure_does_not_block_api(api_client, monkeypatch):
+    """NFR2: journal sync failure does not block the invalidation response."""
+    from baker.services import journal_sync
+
+    def _boom(*a, **kw):
+        raise RuntimeError("journal down")
+
+    monkeypatch.setattr(journal_sync, "_sync_payment_journal", _boom)
+
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000)
+    resp = _invalidate(api_client, ref, txn["id"])
+    assert resp.status_code == 200
+    assert resp.json()["invalidatedAt"] is not None
+
+
+def test_restore_journal_failure_does_not_block_api(api_client, monkeypatch):
+    """NFR2: journal sync failure does not block the restore response."""
+    from baker.services import journal_sync
+
+    def _boom(*a, **kw):
+        raise RuntimeError("journal down")
+
+    monkeypatch.setattr(journal_sync, "_sync_payment_journal", _boom)
+
+    order = _create_order(api_client, total=200000)
+    ref = order["orderRef"]
+    txn = _create_txn(api_client, ref, amount=200000)
+    _invalidate(api_client, ref, txn["id"])
+    # Restore with broken journal sync — should still succeed.
+    resp = _restore(api_client, ref, txn["id"])
+    assert resp.status_code == 200
+    assert resp.json()["invalidatedAt"] is None

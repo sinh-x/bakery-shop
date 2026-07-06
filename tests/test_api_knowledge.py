@@ -354,3 +354,50 @@ def test_detach_photo_not_found(api_client):
     entry_id = create_resp.json()["id"]
     resp = api_client.delete(f"/api/knowledge/{entry_id}/photos/9999")
     assert resp.status_code == 404
+
+
+# ─── Timestamp format (DG-202 TC-1) ──────────────────────────────────────────
+
+
+def test_pinned_at_is_z_suffixed_when_set(api_client):
+    """TC-1: pinned_at is Z-suffixed UTC when a knowledge entry is pinned."""
+    from datetime import datetime, timezone
+
+    create_resp = api_client.post("/api/knowledge", json={"title": "Ghim test"})
+    entry_id = create_resp.json()["id"]
+
+    resp = api_client.post(f"/api/knowledge/{entry_id}/pin")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["pinned"] is True
+    pinned_at = body["pinned_at"]
+    assert pinned_at is not None
+    assert pinned_at.endswith("Z")
+    assert "+" not in pinned_at
+    datetime.strptime(pinned_at, "%Y-%m-%dT%H:%M:%SZ")
+
+    # GET list should also return Z-suffixed pinned_at.
+    listed = api_client.get("/api/knowledge")
+    assert listed.status_code == 200
+    entry = next(e for e in listed.json() if e["id"] == entry_id)
+    assert entry["pinned_at"] == pinned_at
+    assert entry["pinned_at"].endswith("Z")
+
+
+def test_pinned_at_null_when_not_pinned(api_client):
+    """TC-1 (null case): pinned_at is null before pinning."""
+    create_resp = api_client.post("/api/knowledge", json={"title": "Chưa ghim"})
+    entry_id = create_resp.json()["id"]
+    resp = api_client.get(f"/api/knowledge/{entry_id}")
+    assert resp.status_code == 200
+    assert resp.json()["pinned_at"] is None
+
+
+def test_unpin_clears_pinned_at(api_client):
+    """TC-1 (unpin case): unpinning sets pinned_at back to null."""
+    create_resp = api_client.post("/api/knowledge", json={"title": "Sẽ bỏ ghim"})
+    entry_id = create_resp.json()["id"]
+    api_client.post(f"/api/knowledge/{entry_id}/pin")
+    resp = api_client.delete(f"/api/knowledge/{entry_id}/pin")
+    assert resp.status_code == 200
+    assert resp.json()["pinned_at"] is None

@@ -17,12 +17,10 @@ _KnowledgeEntry _$KnowledgeEntryFromJson(Map<String, dynamic> json) =>
           const <String>[],
       loggedBy: json['logged_by'] as String? ?? '',
       source: json['source'] as String? ?? 'app',
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      createdAt: parseApiDateTimeRequired(json['created_at'] as String),
+      updatedAt: parseApiDateTimeRequired(json['updated_at'] as String),
       pinned: json['pinned'] as bool? ?? false,
-      pinnedAt: json['pinned_at'] == null
-          ? null
-          : DateTime.parse(json['pinned_at'] as String),
+      pinnedAt: parseApiDateTime(json['pinned_at'] as String?),
       photos:
           (json['photos'] as List<dynamic>?)
               ?.map((e) => KnowledgePhoto.fromJson(e as Map<String, dynamic>))
@@ -39,10 +37,10 @@ Map<String, dynamic> _$KnowledgeEntryToJson(_KnowledgeEntry instance) =>
       'tags': instance.tags,
       'logged_by': instance.loggedBy,
       'source': instance.source,
-      'created_at': instance.createdAt.toIso8601String(),
-      'updated_at': instance.updatedAt.toIso8601String(),
+      'created_at': timestampToJson(instance.createdAt),
+      'updated_at': timestampToJson(instance.updatedAt),
       'pinned': instance.pinned,
-      'pinned_at': instance.pinnedAt?.toIso8601String(),
+      'pinned_at': timestampToJson(instance.pinnedAt),
       'photos': instance.photos,
     };
 

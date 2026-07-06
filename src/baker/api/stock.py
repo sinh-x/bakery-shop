@@ -13,6 +13,7 @@ from baker.api.inventory_fifo import (
 )
 from baker.db.connection import get_db
 from baker.models.event import Event
+from baker.utils.time import now_utc
 
 
 router = APIRouter(prefix="/api", tags=["stock"])
@@ -76,9 +77,9 @@ def _log_stock_movement(
     """Insert a stock movement record and log to events table."""
     cursor = conn.execute(
         """INSERT INTO stock_movements
-           (product_id, movement_type, quantity, reason, reference_id, price_chip_id, lot_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (product_id, movement_type, quantity, reason, reference_id, price_chip_id, lot_id),
+           (product_id, movement_type, quantity, reason, reference_id, price_chip_id, lot_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (product_id, movement_type, quantity, reason, reference_id, price_chip_id, lot_id, now_utc()),
     )
     movement_id = cursor.lastrowid
     # Build product name for event summary
@@ -216,6 +217,14 @@ def waste_stock(product_id: int, body: WasteRequest):
         )
         consume_fifo_items(conn, product_id, chip_id, body.quantity, movement_id)
 
+        from baker.services.journal_sync import _sync_waste_cogs_journal, run_journal_sync
+
+        run_journal_sync(
+            _sync_waste_cogs_journal,
+            conn, product_id, movement_id, body.quantity,
+            log_label=f"waste cogs sync for movement {movement_id}",
+        )
+
         option_qty = available_quantity(conn, product_id, chip_id)
 
         return {
@@ -303,6 +312,17 @@ def stock_overview():
         for sr in stock_rows:
             stock_map[(sr["product_id"], sr["price_chip_id"])] = int(sr["quantity"] or 0)
 
+        # Get per-chip negative balances (DG-200 Phase 5, FR-7, NFR-2).
+        # Net position = available items - negative_balance per (product_id,
+        # price_chip_id). A single JOIN-equivalent query keeps this within the
+        # 200ms P95 target for 500 trưng_bày products with 50+ lots each.
+        neg_rows = conn.execute(
+            """SELECT product_id, price_chip_id, qty FROM negative_balance""",
+        ).fetchall()
+        neg_map: dict[tuple[int, int | None], int] = {}
+        for nr in neg_rows:
+            neg_map[(nr["product_id"], nr["price_chip_id"])] = int(nr["qty"] or 0)
+
         # Get all configured price chips for these products
         all_chips = conn.execute(
             """SELECT pc.product_id, pc.id AS chip_id, pc.label, pc.price, pc.position
@@ -328,7 +348,7 @@ def stock_overview():
             buckets: dict[int, dict] = {}
 
             base_price = normalize_price_value(p["base_price"])
-            base_qty = stock_map.get((pid, None), 0)
+            base_qty = stock_map.get((pid, None), 0) - neg_map.get((pid, None), 0)
             buckets[base_price] = {
                 "normalized_price": base_price,
                 "price_chip_id": None,
@@ -338,7 +358,9 @@ def stock_overview():
             }
 
             for c in chips_map.get(pid, []):
-                qty = stock_map.get((pid, c["chip_id"]), 0)
+                qty = stock_map.get((pid, c["chip_id"]), 0) - neg_map.get(
+                    (pid, c["chip_id"]), 0
+                )
                 normalized_price = normalize_price_value(c["price"])
                 bucket = buckets.get(normalized_price)
                 if bucket is None:

@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$PaymentTransaction {
 
- String get id; String get orderId; String get type; String get method; double get amount;@JsonKey(name: 'note') String get notes; String? get createdAt;
+ String get id; String get orderId; String get type; String get method; double get amount;@JsonKey(name: 'note') String get notes;@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? get createdAt;@JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? get invalidatedAt;@JsonKey(name: 'invalidatedBy') String get invalidatedBy;
 /// Create a copy of PaymentTransaction
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $PaymentTransactionCopyWith<PaymentTransaction> get copyWith => _$PaymentTransac
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PaymentTransaction&&(identical(other.id, id) || other.id == id)&&(identical(other.orderId, orderId) || other.orderId == orderId)&&(identical(other.type, type) || other.type == type)&&(identical(other.method, method) || other.method == method)&&(identical(other.amount, amount) || other.amount == amount)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PaymentTransaction&&(identical(other.id, id) || other.id == id)&&(identical(other.orderId, orderId) || other.orderId == orderId)&&(identical(other.type, type) || other.type == type)&&(identical(other.method, method) || other.method == method)&&(identical(other.amount, amount) || other.amount == amount)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.invalidatedAt, invalidatedAt) || other.invalidatedAt == invalidatedAt)&&(identical(other.invalidatedBy, invalidatedBy) || other.invalidatedBy == invalidatedBy));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,orderId,type,method,amount,notes,createdAt);
+int get hashCode => Object.hash(runtimeType,id,orderId,type,method,amount,notes,createdAt,invalidatedAt,invalidatedBy);
 
 @override
 String toString() {
-  return 'PaymentTransaction(id: $id, orderId: $orderId, type: $type, method: $method, amount: $amount, notes: $notes, createdAt: $createdAt)';
+  return 'PaymentTransaction(id: $id, orderId: $orderId, type: $type, method: $method, amount: $amount, notes: $notes, createdAt: $createdAt, invalidatedAt: $invalidatedAt, invalidatedBy: $invalidatedBy)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $PaymentTransactionCopyWith<$Res>  {
   factory $PaymentTransactionCopyWith(PaymentTransaction value, $Res Function(PaymentTransaction) _then) = _$PaymentTransactionCopyWithImpl;
 @useResult
 $Res call({
- String id, String orderId, String type, String method, double amount,@JsonKey(name: 'note') String notes, String? createdAt
+ String id, String orderId, String type, String method, double amount,@JsonKey(name: 'note') String notes,@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? createdAt,@JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? invalidatedAt,@JsonKey(name: 'invalidatedBy') String invalidatedBy
 });
 
 
@@ -65,7 +65,7 @@ class _$PaymentTransactionCopyWithImpl<$Res>
 
 /// Create a copy of PaymentTransaction
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? orderId = null,Object? type = null,Object? method = null,Object? amount = null,Object? notes = null,Object? createdAt = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? orderId = null,Object? type = null,Object? method = null,Object? amount = null,Object? notes = null,Object? createdAt = freezed,Object? invalidatedAt = freezed,Object? invalidatedBy = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,orderId: null == orderId ? _self.orderId : orderId // ignore: cast_nullable_to_non_nullable
@@ -74,7 +74,9 @@ as String,method: null == method ? _self.method : method // ignore: cast_nullabl
 as String,amount: null == amount ? _self.amount : amount // ignore: cast_nullable_to_non_nullable
 as double,notes: null == notes ? _self.notes : notes // ignore: cast_nullable_to_non_nullable
 as String,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
-as String?,
+as DateTime?,invalidatedAt: freezed == invalidatedAt ? _self.invalidatedAt : invalidatedAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,invalidatedBy: null == invalidatedBy ? _self.invalidatedBy : invalidatedBy // ignore: cast_nullable_to_non_nullable
+as String,
   ));
 }
 
@@ -156,10 +158,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String orderId,  String type,  String method,  double amount, @JsonKey(name: 'note')  String notes,  String? createdAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String orderId,  String type,  String method,  double amount, @JsonKey(name: 'note')  String notes, @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? invalidatedAt, @JsonKey(name: 'invalidatedBy')  String invalidatedBy)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PaymentTransaction() when $default != null:
-return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_that.notes,_that.createdAt);case _:
+return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_that.notes,_that.createdAt,_that.invalidatedAt,_that.invalidatedBy);case _:
   return orElse();
 
 }
@@ -177,10 +179,10 @@ return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_tha
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String orderId,  String type,  String method,  double amount, @JsonKey(name: 'note')  String notes,  String? createdAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String orderId,  String type,  String method,  double amount, @JsonKey(name: 'note')  String notes, @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? invalidatedAt, @JsonKey(name: 'invalidatedBy')  String invalidatedBy)  $default,) {final _that = this;
 switch (_that) {
 case _PaymentTransaction():
-return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_that.notes,_that.createdAt);}
+return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_that.notes,_that.createdAt,_that.invalidatedAt,_that.invalidatedBy);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -194,10 +196,10 @@ return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_tha
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String orderId,  String type,  String method,  double amount, @JsonKey(name: 'note')  String notes,  String? createdAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String orderId,  String type,  String method,  double amount, @JsonKey(name: 'note')  String notes, @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? invalidatedAt, @JsonKey(name: 'invalidatedBy')  String invalidatedBy)?  $default,) {final _that = this;
 switch (_that) {
 case _PaymentTransaction() when $default != null:
-return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_that.notes,_that.createdAt);case _:
+return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_that.notes,_that.createdAt,_that.invalidatedAt,_that.invalidatedBy);case _:
   return null;
 
 }
@@ -209,7 +211,7 @@ return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_tha
 @JsonSerializable()
 
 class _PaymentTransaction implements PaymentTransaction {
-  const _PaymentTransaction({required this.id, required this.orderId, this.type = 'deposit', this.method = 'cash', required this.amount, @JsonKey(name: 'note') this.notes = '', this.createdAt});
+  const _PaymentTransaction({required this.id, required this.orderId, this.type = 'deposit', this.method = 'cash', required this.amount, @JsonKey(name: 'note') this.notes = '', @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) this.createdAt, @JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson) this.invalidatedAt, @JsonKey(name: 'invalidatedBy') this.invalidatedBy = ''});
   factory _PaymentTransaction.fromJson(Map<String, dynamic> json) => _$PaymentTransactionFromJson(json);
 
 @override final  String id;
@@ -218,7 +220,9 @@ class _PaymentTransaction implements PaymentTransaction {
 @override@JsonKey() final  String method;
 @override final  double amount;
 @override@JsonKey(name: 'note') final  String notes;
-@override final  String? createdAt;
+@override@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) final  DateTime? createdAt;
+@override@JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson) final  DateTime? invalidatedAt;
+@override@JsonKey(name: 'invalidatedBy') final  String invalidatedBy;
 
 /// Create a copy of PaymentTransaction
 /// with the given fields replaced by the non-null parameter values.
@@ -233,16 +237,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PaymentTransaction&&(identical(other.id, id) || other.id == id)&&(identical(other.orderId, orderId) || other.orderId == orderId)&&(identical(other.type, type) || other.type == type)&&(identical(other.method, method) || other.method == method)&&(identical(other.amount, amount) || other.amount == amount)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PaymentTransaction&&(identical(other.id, id) || other.id == id)&&(identical(other.orderId, orderId) || other.orderId == orderId)&&(identical(other.type, type) || other.type == type)&&(identical(other.method, method) || other.method == method)&&(identical(other.amount, amount) || other.amount == amount)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.invalidatedAt, invalidatedAt) || other.invalidatedAt == invalidatedAt)&&(identical(other.invalidatedBy, invalidatedBy) || other.invalidatedBy == invalidatedBy));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,orderId,type,method,amount,notes,createdAt);
+int get hashCode => Object.hash(runtimeType,id,orderId,type,method,amount,notes,createdAt,invalidatedAt,invalidatedBy);
 
 @override
 String toString() {
-  return 'PaymentTransaction(id: $id, orderId: $orderId, type: $type, method: $method, amount: $amount, notes: $notes, createdAt: $createdAt)';
+  return 'PaymentTransaction(id: $id, orderId: $orderId, type: $type, method: $method, amount: $amount, notes: $notes, createdAt: $createdAt, invalidatedAt: $invalidatedAt, invalidatedBy: $invalidatedBy)';
 }
 
 
@@ -253,7 +257,7 @@ abstract mixin class _$PaymentTransactionCopyWith<$Res> implements $PaymentTrans
   factory _$PaymentTransactionCopyWith(_PaymentTransaction value, $Res Function(_PaymentTransaction) _then) = __$PaymentTransactionCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String orderId, String type, String method, double amount,@JsonKey(name: 'note') String notes, String? createdAt
+ String id, String orderId, String type, String method, double amount,@JsonKey(name: 'note') String notes,@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? createdAt,@JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? invalidatedAt,@JsonKey(name: 'invalidatedBy') String invalidatedBy
 });
 
 
@@ -270,7 +274,7 @@ class __$PaymentTransactionCopyWithImpl<$Res>
 
 /// Create a copy of PaymentTransaction
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? orderId = null,Object? type = null,Object? method = null,Object? amount = null,Object? notes = null,Object? createdAt = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? orderId = null,Object? type = null,Object? method = null,Object? amount = null,Object? notes = null,Object? createdAt = freezed,Object? invalidatedAt = freezed,Object? invalidatedBy = null,}) {
   return _then(_PaymentTransaction(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,orderId: null == orderId ? _self.orderId : orderId // ignore: cast_nullable_to_non_nullable
@@ -279,7 +283,9 @@ as String,method: null == method ? _self.method : method // ignore: cast_nullabl
 as String,amount: null == amount ? _self.amount : amount // ignore: cast_nullable_to_non_nullable
 as double,notes: null == notes ? _self.notes : notes // ignore: cast_nullable_to_non_nullable
 as String,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
-as String?,
+as DateTime?,invalidatedAt: freezed == invalidatedAt ? _self.invalidatedAt : invalidatedAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,invalidatedBy: null == invalidatedBy ? _self.invalidatedBy : invalidatedBy // ignore: cast_nullable_to_non_nullable
+as String,
   ));
 }
 

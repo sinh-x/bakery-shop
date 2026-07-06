@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/reconciliation_service.dart';
 import '../../../data/providers/reconciliation_provider.dart';
 import '../../../shared/labels/shared.dart';
+import 'reconciliation_surplus_indicator.dart';
 import 'reconciliation_variance_indicator.dart';
 
 class ReconciliationProductCard extends ConsumerStatefulWidget {
@@ -36,7 +37,7 @@ class _ReconciliationProductCardState
         widget.product.productId,
         option.normalizedPrice,
       );
-      final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
+      final counted = state.countedQtyByOption[optionKey] ?? option.defaultCountedQty;
       final waste = state.wasteQtyByOption[optionKey] ?? 0;
       final wasteReason = state.wasteReasonByOption[optionKey] ?? '';
       _countedControllers[optionKey] = TextEditingController(text: '$counted');
@@ -66,7 +67,7 @@ class _ReconciliationProductCardState
     final state = ref.watch(reconciliationProvider);
     final notifier = ref.read(reconciliationProvider.notifier);
     final visibleOptions = widget.product.options
-        .where((option) => option.expectedQty > 0)
+        .where((option) => option.expectedQty != 0)
         .toList();
     final autoExpandSingleOption =
         widget.product.priceChips.isEmpty && visibleOptions.length == 1;
@@ -75,6 +76,7 @@ class _ReconciliationProductCardState
     var missingTotal = 0;
     var saleTotal = 0;
     var wasteTotal = 0;
+    var surplusTotal = 0;
     var hasAnyError = false;
 
     for (final option in widget.product.options) {
@@ -82,7 +84,7 @@ class _ReconciliationProductCardState
         widget.product.productId,
         option.normalizedPrice,
       );
-      final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
+      final counted = state.countedQtyByOption[optionKey] ?? option.defaultCountedQty;
       final rows =
           state.saleRowsByOption[optionKey] ??
           const <ReconciliationSaleRowInput>[];
@@ -93,6 +95,8 @@ class _ReconciliationProductCardState
       countedTotal += counted;
       if (missing > 0) {
         missingTotal += missing;
+      } else if (missing < 0) {
+        surplusTotal += -missing;
       }
       saleTotal += rows.fold<int>(0, (sum, row) => sum + row.quantity);
       wasteTotal += waste;
@@ -157,6 +161,8 @@ class _ReconciliationProductCardState
                 _SummaryChip(label: VN.tonDuKien, value: expectedTotal),
                 _SummaryChip(label: VN.tonDaDem, value: countedTotal),
                 _SummaryChip(label: VN.soLuongThieu, value: missingTotal),
+                if (surplusTotal > 0)
+                  _SummaryChip(label: VN.soLuongBu, value: surplusTotal),
                 _SummaryChip(label: VN.soLuongBan, value: saleTotal),
                 _SummaryChip(label: VN.soLuongHaoHut, value: wasteTotal),
                 _StatusChip(hasError: hasAnyError),
@@ -217,7 +223,7 @@ class _ReconciliationProductCardState
     required bool canCollapse,
   }) {
     final optionKey = _optionKey(option);
-    final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
+    final counted = state.countedQtyByOption[optionKey] ?? option.defaultCountedQty;
     final saleRows =
         state.saleRowsByOption[optionKey] ??
         const <ReconciliationSaleRowInput>[];
@@ -225,6 +231,11 @@ class _ReconciliationProductCardState
     final waste = state.wasteQtyByOption[optionKey] ?? 0;
     final wasteReason = state.wasteReasonByOption[optionKey] ?? '';
     final variance = option.expectedQty - counted - saleQty - waste;
+    final surplus = state.surplusQtyFor(
+      optionKey,
+      option.expectedQty,
+      grossAvailableQty: option.grossAvailableQty,
+    );
     final saleRowErrors =
         state.saleRowErrorsByOption[optionKey] ??
         const <ReconciliationSaleRowError>[];
@@ -247,6 +258,7 @@ class _ReconciliationProductCardState
       saleQty: saleQty,
       wasteQty: waste,
       variance: variance,
+      surplus: surplus,
       hasError: hasError,
       canCollapse: canCollapse,
       isExpanded: !canCollapse || _expandedOptionKeys.contains(optionKey),
@@ -286,7 +298,7 @@ class _ReconciliationProductCardState
   }
 
   String _visibleChipLabelsForOption(ReconciliationDraftOption option) {
-    if (option.expectedQty <= 0) {
+    if (option.expectedQty == 0) {
       return '';
     }
 
@@ -329,7 +341,7 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
       product.productId,
       option.normalizedPrice,
     );
-    final counted = state.countedQtyByOption[optionKey] ?? option.expectedQty;
+    final counted = state.countedQtyByOption[optionKey] ?? option.defaultCountedQty;
     final saleRows =
         state.saleRowsByOption[optionKey] ??
         const <ReconciliationSaleRowInput>[];
@@ -337,6 +349,11 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
     final saleQty = saleRows.fold<int>(0, (sum, row) => sum + row.quantity);
     final missing = option.expectedQty - counted;
     final variance = option.expectedQty - counted - saleQty - waste;
+    final surplus = state.surplusQtyFor(
+      optionKey,
+      option.expectedQty,
+      grossAvailableQty: option.grossAvailableQty,
+    );
     final optionError = state.optionErrors[optionKey];
     final saleRowErrors =
         state.saleRowErrorsByOption[optionKey] ??
@@ -361,6 +378,17 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
           },
           onIncrement: () => notifier.setCountedQty(optionKey, counted + 1),
         ),
+        if (surplus > 0) ...[
+          const SizedBox(height: 8),
+          ReconciliationSurplusIndicator(surplus: surplus),
+          const SizedBox(height: 4),
+          Text(
+            VN.nhapBuHint,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Colors.teal[700],
+            ),
+          ),
+        ],
         if (showSaleEditor) ...[
           const SizedBox(height: 8),
           Wrap(
@@ -396,7 +424,7 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
               onRemove: () => notifier.removeSaleRow(optionKey, rowIndex),
             ),
         ],
-        if (missing > 0) ...[
+        if (missing > 0 && surplus == 0) ...[
           const SizedBox(height: 8),
           _QuantityStepperField(
             label: VN.soLuongHaoHut,
@@ -525,6 +553,7 @@ class _OptionInventorySection extends StatelessWidget {
     required this.saleQty,
     required this.wasteQty,
     required this.variance,
+    required this.surplus,
     required this.hasError,
     required this.canCollapse,
     required this.isExpanded,
@@ -539,6 +568,7 @@ class _OptionInventorySection extends StatelessWidget {
   final int saleQty;
   final int wasteQty;
   final int variance;
+  final int surplus;
   final bool hasError;
   final bool canCollapse;
   final bool isExpanded;
@@ -564,6 +594,7 @@ class _OptionInventorySection extends StatelessWidget {
                 saleQty: saleQty,
                 wasteQty: wasteQty,
                 variance: variance,
+                surplus: surplus,
                 hasError: hasError,
                 trailing: Icon(
                   isExpanded
@@ -584,6 +615,7 @@ class _OptionInventorySection extends StatelessWidget {
               saleQty: saleQty,
               wasteQty: wasteQty,
               variance: variance,
+              surplus: surplus,
               hasError: hasError,
             ),
           ),
@@ -602,6 +634,7 @@ class _OptionInventoryHeader extends StatelessWidget {
     required this.saleQty,
     required this.wasteQty,
     required this.variance,
+    required this.surplus,
     required this.hasError,
     this.trailing,
   });
@@ -613,6 +646,7 @@ class _OptionInventoryHeader extends StatelessWidget {
   final int saleQty;
   final int wasteQty;
   final int variance;
+  final int surplus;
   final bool hasError;
   final Widget? trailing;
 
@@ -639,6 +673,8 @@ class _OptionInventoryHeader extends StatelessWidget {
                   _SummaryChip(label: VN.soLuongBan, value: saleQty),
                   _SummaryChip(label: VN.soLuongHaoHut, value: wasteQty),
                   ReconciliationVarianceIndicator(variance: variance),
+                  if (surplus > 0)
+                    ReconciliationSurplusIndicator(surplus: surplus),
                   _StatusChip(hasError: hasError),
                 ],
               ),

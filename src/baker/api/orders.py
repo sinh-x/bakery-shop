@@ -1,6 +1,7 @@
 """Order management API routes."""
 
 import json
+import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -8,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
+from baker.db.schema import _order_year, _recompute_customer_year_summary
 from baker.logging import log_context, logger
 from baker.models.order import (
     PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN,
@@ -21,6 +23,7 @@ from baker.models.order import (
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
 from baker.services.order_stock import auto_decrement_stock, restore_stock_for_order
+from baker.utils.time import now_utc
 
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -30,6 +33,68 @@ def _day_bounds(date_str: str) -> tuple[str, str]:
     day = datetime.strptime(date_str, "%Y-%m-%d")
     next_day = day + timedelta(days=1)
     return f"{date_str}T00:00:00", next_day.strftime("%Y-%m-%dT00:00:00")
+
+
+def _resolve_customer_id_by_phone(conn, phone: str) -> Optional[int]:
+    """Resolve a customer_id from a phone number via the ``customer_phones`` table.
+
+    DG-205 Phase 3 (FR8). Matches the normalized phone against every row in
+    ``customer_phones`` (not just the primary), so an order with a secondary
+    phone still links to the owning customer. When several customers share the
+    same phone, the earliest-order-wins rule (consistent with v57) picks the
+    customer whose earliest order has the smallest created_at/id.
+
+    Falls back to the legacy ``customers.phone`` column when ``customer_phones``
+    has no match (e.g. pre-v58 databases or customers created before Phase 1).
+    Returns ``None`` when no customer matches.
+    """
+    from baker.db.schema import _normalize_phone
+
+    nphone = _normalize_phone(phone or "")
+    if not nphone:
+        return None
+
+    # Primary path: match against customer_phones.phone (any row, normalized).
+    # SQLite stores phones as free text; we normalize for comparison, so the
+    # query pulls candidate rows and resolves the winner in Python to apply the
+    # earliest-order-wins tiebreak consistently with v57.
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT cp.customer_id FROM customer_phones cp WHERE cp.phone = ?",
+            (nphone,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    if rows:
+        customer_ids = [r["customer_id"] for r in rows]
+        if len(customer_ids) == 1:
+            return customer_ids[0]
+        # FR8: multiple customers share the phone — earliest-order-wins. Pick
+        # the customer whose earliest order has the minimum created_at, then id.
+        placeholders = ",".join("?" for _ in customer_ids)
+        winner = conn.execute(
+            f"SELECT customer_id, MIN(created_at) AS first_at "
+            f"FROM orders WHERE customer_id IN ({placeholders}) "
+            f"GROUP BY customer_id ORDER BY first_at ASC, customer_id ASC LIMIT 1",
+            customer_ids,
+        ).fetchone()
+        if winner is not None:
+            return winner["customer_id"]
+        # No orders yet for any candidate — fall back to the lowest customer_id
+        # for deterministic behavior.
+        return min(customer_ids)
+
+    # Secondary path: legacy customers.phone fallback (pre-v58 / direct writes).
+    # M-1: normalize the stored column at query time so legacy rows that still
+    # contain separators (dashes/dots/spaces) match the normalized search value.
+    # This mirrors _normalize_phone (strip spaces, dots, dashes) in SQL.
+    legacy = conn.execute(
+        "SELECT id FROM customers "
+        "WHERE REPLACE(REPLACE(REPLACE(phone, ' ', ''), '.', ''), '-', '') = ? "
+        "ORDER BY id ASC LIMIT 1",
+        (nphone,),
+    ).fetchone()
+    return legacy["id"] if legacy else None
 
 
 class OrderItemIn(BaseModel):
@@ -54,6 +119,7 @@ class DepositIn(BaseModel):
 class OrderCreate(BaseModel):
     customerName: str
     customerPhone: str = ""
+    customerId: Optional[int] = None
     items: list[OrderItemIn] = []
     dueDate: Optional[str] = None
     dueTime: Optional[str] = None
@@ -71,6 +137,7 @@ class OrderCreate(BaseModel):
 class OrderEdit(BaseModel):
     customerName: Optional[str] = None
     customerPhone: Optional[str] = None
+    customerId: Optional[int] = None
     items: Optional[list[OrderItemIn]] = None
     dueDate: Optional[str] = None
     dueTime: Optional[str] = None
@@ -102,9 +169,9 @@ class PaymentUpdate(BaseModel):
 def _log_order_history(conn, order_id, action_type, field_name="", old_value="", new_value="", changed_by=""):
     """Insert an audit log entry into the order_history table."""
     conn.execute(
-        """INSERT INTO order_history (order_id, action_type, field_name, old_value, new_value, changed_by)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (order_id, action_type, field_name, old_value, new_value, changed_by),
+        """INSERT INTO order_history (order_id, action_type, field_name, old_value, new_value, changed_by, timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (order_id, action_type, field_name, old_value, new_value, changed_by, now_utc()),
     )
 
 
@@ -347,10 +414,21 @@ def create_order(body: OrderCreate, request: Request):
         raise HTTPException(status_code=422, detail="Vui lòng chọn ngày nhận/giao bánh")
 
     with get_db() as conn:
+        if body.customerId is not None:
+            exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (body.customerId,)).fetchone()
+            if not exists:
+                raise HTTPException(status_code=422, detail="Khách hàng không tồn tại")
+        else:
+            # DG-205 Phase 3 (FR8): resolve customer_id from customerPhone via
+            # customer_phones when the caller did not pass an explicit customerId.
+            resolved = _resolve_customer_id_by_phone(conn, body.customerPhone)
+            if resolved is not None:
+                body.customerId = resolved
         public_order_code = _generate_unique_public_order_code(conn, body.dueDate, body.deliveryType)
         order = Order(
             customer_name=body.customerName,
             customer_phone=body.customerPhone,
+            customer_id=body.customerId,
             items=[_item_in_to_model(i) for i in body.items],
             due_date=body.dueDate,
             due_time=body.dueTime,
@@ -417,7 +495,21 @@ def create_order(body: OrderCreate, request: Request):
                                "new", "delivered", body.createdBy)
             auto_decrement_stock(conn, order.id, order.order_ref)
 
+            # Auto-generate revenue conversion + COGS journal entries (DG-175).
+            from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync
+            run_journal_sync(
+                _sync_delivered_order_journal,
+                conn, order.id, order.order_ref,
+                log_label=f"delivered order journal sync for order {order.id}",
+            )
+
         log_context(request, ref_type="order", ref_id=order.id)
+        # DG-206 FR6/NFR2: keep customer_year_summary in sync within the same
+        # order transaction (single UPSERT-equivalent recompute, <50ms overhead).
+        if body.customerId is not None:
+            _recompute_customer_year_summary(
+                conn, body.customerId, _order_year(order.created_at or now_utc())
+            )
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
         return _order_detail(conn, row)
 
@@ -470,6 +562,18 @@ def edit_order(ref: str, body: OrderEdit):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 
+        if "customerId" in data and data["customerId"] is not None:
+            exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (data["customerId"],)).fetchone()
+            if not exists:
+                raise HTTPException(status_code=422, detail="Khách hàng không tồn tại")
+        elif "customerId" not in data and "customerPhone" in data and data["customerPhone"] is not None:
+            # DG-205 Phase 3 (FR8): phone changed without an explicit customerId —
+            # re-resolve the customer link against customer_phones. An explicit
+            # customerId (including null-to-unlink) is respected as-is.
+            resolved = _resolve_customer_id_by_phone(conn, data["customerPhone"])
+            if resolved is not None:
+                data["customerId"] = resolved
+
         updates = []
         params: list = []
         public_code_update = None
@@ -477,6 +581,7 @@ def edit_order(ref: str, body: OrderEdit):
         field_map = {
             "customerName": "customer_name",
             "customerPhone": "customer_phone",
+            "customerId": "customer_id",
             "dueDate": "due_date",
             "dueTime": "due_time",
             "deliveryType": "delivery_type",
@@ -597,12 +702,33 @@ def edit_order(ref: str, body: OrderEdit):
         if not updates:
             raise HTTPException(status_code=400, detail="Không có gì để cập nhật")
 
-        updates.append("updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')")
+        updates.append("updated_at = ?")
+        params.append(now_utc())
         params.append(row["id"])
         conn.execute(
             f"UPDATE orders SET {', '.join(updates)} WHERE id = ?",
             params,
         )
+
+        # Re-sync payment journal entries when shipping_fee changes on a bus order (DG-191 Phase 4).
+        if (shipping_fee_changed or delivery_type_changed) and row["delivery_type"] == "bus":
+            from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
+
+            txn_rows = conn.execute(
+                "SELECT id, amount, type, method FROM payment_transactions WHERE order_id = ?",
+                (row["id"],),
+            ).fetchall()
+            for txn_row in txn_rows:
+                run_journal_sync(
+                    _sync_payment_journal,
+                    conn,
+                    txn_row["id"],
+                    float(txn_row["amount"]),
+                    txn_row["type"],
+                    txn_row["method"],
+                    order_id=row["id"],
+                    log_label=f"payment journal re-sync for order {row['id']} after shipping_fee edit",
+                )
 
         # Log each changed field with old/new values
         changed_by = data.get("changedBy", "")
@@ -621,6 +747,32 @@ def edit_order(ref: str, body: OrderEdit):
                 public_code_update["currentCode"],
                 changed_by,
             )
+
+        # DG-206 FR6/NFR2: recompute customer_year_summary when the order's
+        # customer link or total volume may have changed. Recompute both the
+        # old and new (customer_id, year) rows within the same transaction.
+        old_customer_id = row["customer_id"]
+        old_year = _order_year(row["created_at"] or "")
+        new_customer_id = data.get("customerId", old_customer_id)
+        # customerId may be sent as null to unlink — treat absent as unchanged.
+        if "customerId" not in data:
+            new_customer_id = old_customer_id
+        # Recompute the affected rows. items/shipping_fee changes affect the
+        # order's own (customer_id, year) row; a customer_id change affects both
+        # the old and new customer rows for the order's year.
+        if (
+            items_changed
+            or shipping_fee_changed
+            or ("customerId" in data)
+        ):
+            if old_customer_id is not None and old_year is not None:
+                _recompute_customer_year_summary(conn, old_customer_id, old_year)
+            if (
+                new_customer_id is not None
+                and new_customer_id != old_customer_id
+                and old_year is not None
+            ):
+                _recompute_customer_year_summary(conn, new_customer_id, old_year)
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         response = _order_detail(conn, updated)
@@ -661,7 +813,7 @@ def transition_status(ref: str, body: StatusTransition):
 
         # Block completion if not fully paid
         if body.status == "completed":
-            total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, row["id"])
+            total_paid = PaymentTransaction.total_paid_excl_outflows(conn, row["id"])
             total_price = float(row["total_price"])
             if total_paid < total_price:
                 remaining = total_price - total_paid
@@ -692,6 +844,15 @@ def transition_status(ref: str, body: StatusTransition):
             )
 
         _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, body.changedBy)
+
+        # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
+        if body.status == "delivered" and row["status"] != "delivered":
+            from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync
+            run_journal_sync(
+                _sync_delivered_order_journal,
+                conn, row["id"], row["order_ref"],
+                log_label=f"delivered order journal sync for order {row['id']}",
+            )
 
         # Auto-cascade confirmed order status to main items (non-extra, non-gift) at pending (F5)
         if body.status == "confirmed":
@@ -724,7 +885,7 @@ def update_payment_method(ref: str, body: PaymentMethodUpdate):
 
         # Update the latest payment transaction's method
         txn_row = conn.execute(
-            "SELECT id FROM payment_transactions WHERE order_id = ? ORDER BY id DESC LIMIT 1",
+            "SELECT id, amount, type FROM payment_transactions WHERE order_id = ? ORDER BY id DESC LIMIT 1",
             (row["id"],),
         ).fetchone()
         if not txn_row:
@@ -735,6 +896,15 @@ def update_payment_method(ref: str, body: PaymentMethodUpdate):
             (body.method, txn_row["id"]),
         )
         _log_order_history(conn, row["id"], "field_edit", "payment_method", "", body.method, "")
+
+        from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
+
+        run_journal_sync(
+            _sync_payment_journal,
+            conn, txn_row["id"], txn_row["amount"], txn_row["type"], body.method,
+            order_id=row["id"],
+            log_label=f"payment journal re-sync after method change for txn {txn_row['id']}",
+        )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         return _order_detail(conn, updated)

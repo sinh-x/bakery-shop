@@ -12,6 +12,7 @@ _Order _$OrderFromJson(Map<String, dynamic> json) => _Order(
   publicOrderCode: json['publicOrderCode'] as String? ?? '',
   customerName: json['customerName'] as String,
   customerPhone: json['customerPhone'] as String? ?? '',
+  customerId: (json['customerId'] as num?)?.toInt(),
   items: (json['items'] as List<dynamic>)
       .map((e) => OrderItem.fromJson(e as Map<String, dynamic>))
       .toList(),
@@ -34,8 +35,8 @@ _Order _$OrderFromJson(Map<String, dynamic> json) => _Order(
       const [],
   workTicketPrintedAt: json['workTicketPrintedAt'] as String?,
   workTicketPrintedBy: json['workTicketPrintedBy'] as String?,
-  createdAt: DateTime.parse(json['createdAt'] as String),
-  updatedAt: DateTime.parse(json['updatedAt'] as String),
+  createdAt: parseApiDateTimeRequired(json['createdAt'] as String),
+  updatedAt: parseApiDateTimeRequired(json['updatedAt'] as String),
 );
 
 Map<String, dynamic> _$OrderToJson(_Order instance) => <String, dynamic>{
@@ -44,6 +45,7 @@ Map<String, dynamic> _$OrderToJson(_Order instance) => <String, dynamic>{
   'publicOrderCode': instance.publicOrderCode,
   'customerName': instance.customerName,
   'customerPhone': instance.customerPhone,
+  'customerId': instance.customerId,
   'items': instance.items,
   'totalPrice': instance.totalPrice,
   'status': instance.status,
@@ -60,6 +62,6 @@ Map<String, dynamic> _$OrderToJson(_Order instance) => <String, dynamic>{
   'packingChecklist': instance.packingChecklist,
   'workTicketPrintedAt': instance.workTicketPrintedAt,
   'workTicketPrintedBy': instance.workTicketPrintedBy,
-  'createdAt': instance.createdAt.toIso8601String(),
-  'updatedAt': instance.updatedAt.toIso8601String(),
+  'createdAt': timestampToJson(instance.createdAt),
+  'updatedAt': timestampToJson(instance.updatedAt),
 };

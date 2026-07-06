@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 from baker.db.connection import get_db
 from baker.formatters import format_phone
 from baker.models.payment_transaction import PaymentTransaction
+from baker.usb_printer import get_paper_mode
 
 router = APIRouter(prefix="/api/orders", tags=["receipts"])
 
@@ -159,6 +160,49 @@ def _thick(draw, y):
     y += 14  # padding above
     draw.line([(MARGIN, y), (RECEIPT_WIDTH - MARGIN, y)], fill=(0, 0, 0), width=3)
     return y + 16  # padding below
+
+
+def _add_tear_indicator(img, draw, y, paper_mode):
+    """Add horizontal dashed tear indicator line for continuous roll paper.
+
+    When paper_mode is "roll", adds a visual gap (>=64 dots / 8mm) below the
+    last content line and draws a dashed horizontal line spanning CONTENT_WIDTH.
+    Returns the new y position after the tear indicator area. When paper_mode
+    is not "roll", returns y unchanged (label mode = no tear indicator).
+
+    Args:
+        img: PIL Image (unused, kept for API consistency).
+        draw: PIL ImageDraw.
+        y: Current y position (bottom of last content line).
+        paper_mode: "label" or "roll".
+
+    Returns:
+        New y position after tear indicator area (or unchanged y for label mode).
+    """
+    if paper_mode != "roll":
+        return y
+    gap = 64  # 8mm vertical gap (NFR2: >=8mm = >=64 dots)
+    y += gap
+    dash = 4
+    space = 4
+    color = (100, 100, 100)
+    x = MARGIN
+    end_x = RECEIPT_WIDTH - MARGIN
+    while x < end_x:
+        x2 = min(x + dash, end_x)
+        draw.line([(x, y), (x2, y)], fill=color, width=1)
+        x += dash + space
+    return y
+
+
+def _find_content_bottom(img):
+    """Find the y-coordinate just after the bottommost non-white pixel.
+
+    Returns 0 if the image is entirely white.
+    """
+    inverted = img.point(lambda p: 255 - p)
+    bbox = inverted.getbbox()
+    return bbox[3] + 1 if bbox else 0
 
 
 def _dots(draw, y, x_start, x_end, font, color=(180, 180, 180)):
@@ -453,7 +497,7 @@ def _header(draw, y, cfg):
 
 # --- Receipt renderers ---
 
-def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image:
+def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="label") -> Image.Image:
     """Internal receipt (Phiếu Nội Bộ) for production staff — single item per receipt.
 
     New layout: delivery on top, product info BIG, notes prominent, bottom boxes for
@@ -626,7 +670,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
     if main_count == 1:
         total_price = float(order.get("totalPrice", 0) or order.get("total_price", 0))
         order_id = order.get("id")
-        total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) if order_id else 0.0
+        total_paid = PaymentTransaction.total_paid_excl_outflows(conn, order_id) if order_id else 0.0
         remaining = total_price - total_paid
 
         y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
@@ -729,10 +773,13 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn) -> Image.Image
 
     y += MARGIN
 
+    # Tear indicator for roll mode (DG-184 Phase 2)
+    y = _add_tear_indicator(img, draw, y, paper_mode)
+
     return img.crop((0, 0, RECEIPT_WIDTH, y))
 
 
-def _render_bus_label(order, cfg) -> Image.Image:
+def _render_bus_label(order, cfg, paper_mode="label") -> Image.Image:
     """Bus shipping label — landscape layout for 76×128mm label paper.
 
     Draws text in virtual landscape (1024×576), then rotates 90° CCW
@@ -845,6 +892,26 @@ def _render_bus_label(order, cfg) -> Image.Image:
 
     # Rotate 90° CCW → 576 wide × 1024 tall (matches printer paper)
     rotated = img.transpose(Image.Transpose.ROTATE_90)
+
+    if paper_mode == "roll":
+        content_bottom = _find_content_bottom(rotated)
+        tear_draw = ImageDraw.Draw(rotated)
+        gap = 64
+        y_tear = content_bottom + gap
+        dash = 4
+        space = 4
+        color = (100, 100, 100)
+        x = MARGIN
+        end_x = RECEIPT_WIDTH - MARGIN
+        while x < end_x:
+            x2 = min(x + dash, end_x)
+            tear_draw.line([(x, y_tear), (x2, y_tear)], fill=color, width=1)
+            x += dash + space
+        new_height = y_tear + 20
+        if new_height > rotated.height:
+            extended = Image.new("RGB", (rotated.width, new_height), "white")
+            extended.paste(rotated, (0, 0))
+            rotated = extended
 
     return rotated
 
@@ -963,7 +1030,7 @@ def _render_financial_summary(draw, y, order, conn, fbb, fb) -> int:
         rut_recv = _tien_rut_received(conn, order_id)
         rut_color = (0, 100, 0) if rut_recv >= rut_target else (200, 0, 0)
         y = _row(draw, y, "Tiền rút đã nhận:", f"{_format_vnd_full(rut_recv)} / {_format_vnd_full(rut_target)}", fb, color_v=rut_color)
-    total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) if order_id else 0.0
+    total_paid = PaymentTransaction.total_paid_excl_outflows(conn, order_id) if order_id else 0.0
     remaining = total_price - total_paid
 
     y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
@@ -975,7 +1042,7 @@ def _render_financial_summary(draw, y, order, conn, fbb, fb) -> int:
     return y
 
 
-def _render_shop_receipt(order, cfg, conn) -> Image.Image:
+def _render_shop_receipt(order, cfg, conn, paper_mode="label") -> Image.Image:
     """Shop receipt (Phiếu giao hàng) — internal order summary for pickup verification."""
     work_items = order.get("workItems", [])
 
@@ -1047,10 +1114,12 @@ def _render_shop_receipt(order, cfg, conn) -> Image.Image:
         for ln in _wrap(order_notes, fb, CONTENT_WIDTH):
             y = _left_mixed(draw, y, ln, fb, (80, 80, 80))
 
-    return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
+    y += MARGIN
+    y = _add_tear_indicator(img, draw, y, paper_mode)
+    return img.crop((0, 0, RECEIPT_WIDTH, y))
 
 
-def _render_delivery_receipt(order, cfg, conn) -> Image.Image:
+def _render_delivery_receipt(order, cfg, conn, paper_mode="label") -> Image.Image:
     """Delivery receipt (Phiếu giao tận nơi) — internal delivery summary with prominent address."""
     work_items = order.get("workItems", [])
 
@@ -1136,10 +1205,12 @@ def _render_delivery_receipt(order, cfg, conn) -> Image.Image:
         for ln in _wrap(order_notes, fb, CONTENT_WIDTH):
             y = _left_mixed(draw, y, ln, fb, (80, 80, 80))
 
-    return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
+    y += MARGIN
+    y = _add_tear_indicator(img, draw, y, paper_mode)
+    return img.crop((0, 0, RECEIPT_WIDTH, y))
 
 
-def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
+def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="label") -> Image.Image:
     """Customer receipt ('BIÊN NHẬN') — full details with photos per item."""
     work_items = order.get("workItems", [])
     order_id = order.get("id")
@@ -1328,7 +1399,7 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
         rut_recv = _tien_rut_received(conn, order_id)
         rut_color = (0, 100, 0) if rut_recv >= rut_target else (200, 0, 0)
         y = _row(draw, y, "Tiền rút đã nhận:", f"{_format_vnd_full(rut_recv)} / {_format_vnd_full(rut_target)}", fb, color_v=rut_color)
-    total_paid = PaymentTransaction.total_paid_excl_tien_rut(conn, order_id) if order_id else 0.0
+    total_paid = PaymentTransaction.total_paid_excl_outflows(conn, order_id) if order_id else 0.0
     remaining = total_price - total_paid
 
     y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
@@ -1378,7 +1449,9 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True) -> Image.Image:
     y = _double(draw, y)
     y = _center(draw, y, "Cảm ơn quý khách!", fb, (100, 100, 100))
 
-    return img.crop((0, 0, RECEIPT_WIDTH, y + MARGIN))
+    y += MARGIN
+    y = _add_tear_indicator(img, draw, y, paper_mode)
+    return img.crop((0, 0, RECEIPT_WIDTH, y))
 
 
 # --- Order detail builder ---
@@ -1448,6 +1521,7 @@ def get_receipt(
 
         detail = _order_detail(conn, row)
         cfg = _shop_config(conn)
+        paper_mode = get_paper_mode(conn)
 
         if type == "work_ticket":
             # Single-item work ticket (Phiếu Nội Bộ)
@@ -1468,15 +1542,15 @@ def get_receipt(
                 ).fetchone()
                 if cat_row and cat_row["category"] in ("cake", "banh_kem"):
                     photo = _get_photo(conn, row["id"], item_id)
-            img = _render_work_ticket(detail, work_item, cfg, photo, conn)
+            img = _render_work_ticket(detail, work_item, cfg, photo, conn, paper_mode=paper_mode)
         elif type == "customer":
-            img = _render_customer_receipt(detail, cfg, conn, show_photos=photos)
+            img = _render_customer_receipt(detail, cfg, conn, show_photos=photos, paper_mode=paper_mode)
         elif type == "bus_label":
-            img = _render_bus_label(detail, cfg)
+            img = _render_bus_label(detail, cfg, paper_mode=paper_mode)
         elif type == "shop":
-            img = _render_shop_receipt(detail, cfg, conn)
+            img = _render_shop_receipt(detail, cfg, conn, paper_mode=paper_mode)
         elif type == "delivery":
-            img = _render_delivery_receipt(detail, cfg, conn)
+            img = _render_delivery_receipt(detail, cfg, conn, paper_mode=paper_mode)
         else:
             raise HTTPException(status_code=400, detail="Invalid type: work_ticket, customer, bus_label, shop, or delivery")
 

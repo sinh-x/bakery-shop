@@ -344,3 +344,30 @@ def test_dedup_per_item_photo(api_client):
     assert first.status_code == 201
     assert second.status_code == 201
     assert first.json()["id"] == second.json()["id"]
+
+
+# ─── Timestamp format (DG-202 TC-12) ────────────────────────────────────────
+
+
+def test_order_photo_created_at_is_z_suffixed(api_client):
+    """TC-12: order_photos.created_at is Z-suffixed UTC."""
+    from datetime import datetime
+
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    resp = _upload_photo(api_client, ref, tags="TC-12")
+    assert resp.status_code == 201
+    photo = resp.json()
+    created_at = photo.get("created_at")
+    assert created_at is not None, "order_photo created_at is null"
+    assert created_at.endswith("Z"), f"created_at not Z-suffixed: {created_at}"
+    assert "+" not in created_at
+    datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")
+
+    # Verify via the list endpoint as well.
+    list_resp = api_client.get(f"/api/orders/{ref}/photos")
+    assert list_resp.status_code == 200
+    photos = list_resp.json()
+    assert len(photos) == 1
+    assert photos[0]["created_at"] == created_at
+    assert photos[0]["created_at"].endswith("Z")

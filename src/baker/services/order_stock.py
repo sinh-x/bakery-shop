@@ -10,8 +10,10 @@ from baker.api.inventory_fifo import (
     normalize_price_value,
     normalize_price_chip,
     resolve_price_bucket_chip_id,
+    upsert_negative_balance,
 )
 from baker.models.event import Event
+from baker.utils.time import now_utc
 
 
 def _order_sale_was_deducted(conn, order_ref: str) -> bool:
@@ -101,16 +103,24 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
         is_reconciliation_order = item["source"] == "reconciliation"
         default_consume_sources = is_pos_order or is_reconciliation_order
         should_consume_fifo = use_inventory_enabled if has_use_inventory else default_consume_sources
+        # POS and reconciliation sources allow negative stock: oversold qty
+        # is tracked in negative_balance (DG-200 Phase 2, FR-3). Non-POS
+        # sources keep the historical FIFO-blocks-at-zero behaviour (NFR-3).
+        allow_negative = is_pos_order or is_reconciliation_order
 
         movement_cursor = conn.execute(
             """INSERT INTO stock_movements
-               (product_id, movement_type, quantity, reason, reference_id, price_chip_id)
-               VALUES (?, 'sale', ?, ?, ?, ?)""",
-            (product_id, -qty, f"Order {order_ref}", order_ref, chip_id),
+               (product_id, movement_type, quantity, reason, reference_id, price_chip_id, created_at)
+               VALUES (?, 'sale', ?, ?, ?, ?, ?)""",
+            (product_id, -qty, f"Order {order_ref}", order_ref, chip_id, now_utc()),
         )
         movement_id = movement_cursor.lastrowid
+        deficit = 0
         if should_consume_fifo:
-            consume_fifo_items(conn, product_id, chip_id, qty, movement_id)
+            deficit = consume_fifo_items(
+                conn, product_id, chip_id, qty, movement_id,
+                allow_negative=allow_negative,
+            )
 
         if should_consume_fifo:
             lot_row = conn.execute(
@@ -122,6 +132,57 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
                     "UPDATE stock_movements SET lot_id = ? WHERE id = ?",
                     (lot_row["lot_id"], movement_id),
                 )
+
+        # When a deficit remains, record a negative_sale movement and upsert
+        # the negative_balance row. The 'sale' movement above captures the
+        # full sold qty (FIFO-consumed portion); the 'negative_sale' movement
+        # captures the oversold portion (AC-6).
+        if deficit > 0:
+            negative_movement_cursor = conn.execute(
+                """INSERT INTO stock_movements
+                   (product_id, movement_type, quantity, reason, reference_id, price_chip_id, created_at)
+                   VALUES (?, 'negative_sale', ?, ?, ?, ?, ?)""",
+                (product_id, -deficit, f"Order {order_ref} (negative)", order_ref, chip_id, now_utc()),
+            )
+            negative_movement_id = negative_movement_cursor.lastrowid
+            upsert_negative_balance(conn, product_id, chip_id, deficit)
+            Event(
+                summary=f"Ban am -{deficit} {item['product_name']}",
+                type="inventory",
+                data={
+                    "product_id": product_id,
+                    "product_name": item["product_name"],
+                    "movement_type": "negative_sale",
+                    "quantity": -deficit,
+                    "reference_id": order_ref,
+                    "price_chip_id": chip_id,
+                    "movement_id": negative_movement_id,
+                },
+            ).save(conn)
+
+            # DG-200 Phase 4, AC-8: COGS journal entry for the oversold
+            # quantity. Mirrors the waste COGS sync pattern (DR COGS / CR
+            # Inventory). Fire-and-forget: accounting failures never block
+            # the primary sale operation (NFR1).
+            #
+            # Inline import (not module-level) is intentional: journal_sync
+            # imports from baker.api.inventory_fifo, which would create a
+            # circular dependency if imported at module load time here.
+            # Deferring the import to call-site avoids the cycle while keeping
+            # the accounting coupling local to the operation that needs it
+            # (DG-200 Phase 5.6-c1-fix, Mn-1).
+            from baker.services.journal_sync import (
+                _sync_negative_sale_cogs_journal,
+                run_journal_sync,
+            )
+
+            run_journal_sync(
+                _sync_negative_sale_cogs_journal,
+                conn, product_id, negative_movement_id, deficit,
+                log_label=(
+                    f"negative sale cogs sync for movement {negative_movement_id}"
+                ),
+            )
 
         Event(
             summary=f"Ban hang -{qty} {item['product_name']}",
@@ -151,28 +212,61 @@ def restore_stock_for_order(conn, order_id: int, order_ref: str) -> None:
     for movement in sale_movements:
         qty = -movement["quantity"]
         chip_id = movement["price_chip_id"]
+        product_id = movement["product_id"]
 
         already_restored = conn.execute(
             "SELECT 1 FROM stock_movements WHERE reference_id = ? AND movement_type = 'restore_sale' AND product_id = ? AND price_chip_id IS NOT DISTINCT FROM ? LIMIT 1",
-            (order_ref, movement["product_id"], chip_id),
+            (order_ref, product_id, chip_id),
         ).fetchone()
         if already_restored:
             continue
 
+        # If a matching negative_sale exists, only the FIFO-consumed portion
+        # was taken from lots; the deficit portion was recorded as negative
+        # balance and must be reversed by reducing negative_balance (not by
+        # creating new lot items, which would inflate stock).
+        negative_row = conn.execute(
+            """SELECT id, quantity FROM stock_movements
+               WHERE reference_id = ? AND movement_type = 'negative_sale'
+                 AND product_id = ? AND price_chip_id IS NOT DISTINCT FROM ?
+               LIMIT 1""",
+            (order_ref, product_id, chip_id),
+        ).fetchone()
+        deficit = -int(negative_row["quantity"]) if negative_row else 0
+        fifo_consumed_qty = qty - deficit
+
         restore_cursor = conn.execute(
             """INSERT INTO stock_movements
-               (product_id, movement_type, quantity, reason, reference_id, price_chip_id)
-               VALUES (?, 'restore_sale', ?, ?, ?, ?)""",
-            (movement["product_id"], qty, f"Restore order {order_ref}", order_ref, chip_id),
+               (product_id, movement_type, quantity, reason, reference_id, price_chip_id, created_at)
+               VALUES (?, 'restore_sale', ?, ?, ?, ?, ?)""",
+            (product_id, qty, f"Restore order {order_ref}", order_ref, chip_id, now_utc()),
         )
         restore_movement_id = restore_cursor.lastrowid
-        create_lot_with_items(conn, movement["product_id"], chip_id, qty)
+        if fifo_consumed_qty > 0:
+            create_lot_with_items(conn, product_id, chip_id, fifo_consumed_qty)
+        if deficit > 0:
+            conn.execute(
+                """UPDATE negative_balance
+                   SET qty = qty - ?, updated_at = ?
+                   WHERE product_id = ? AND price_chip_id IS NOT DISTINCT FROM ?""",
+                (deficit, now_utc(), product_id, chip_id),
+            )
+            # Remove the negative_balance row entirely when the restore
+            # brings it back to zero or below, matching the cleanup pattern
+            # in _process_surplus_inflow (reconciliations.py). Prevents
+            # stale zero-qty rows from lingering (DG-200 Phase 5.6-c2-fix, Mn-2).
+            conn.execute(
+                """DELETE FROM negative_balance
+                   WHERE product_id = ? AND price_chip_id IS NOT DISTINCT FROM ?
+                     AND qty <= 0""",
+                (product_id, chip_id),
+            )
 
         Event(
             summary=f"Hoan hang +{qty} (order {order_ref})",
             type="inventory",
             data={
-                "product_id": movement["product_id"],
+                "product_id": product_id,
                 "movement_type": "restore_sale",
                 "quantity": qty,
                 "reference_id": order_ref,

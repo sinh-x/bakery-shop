@@ -22,6 +22,7 @@ class _FakeEventService extends EventService {
       timestamp: DateTime(2026, 5, 23, 9, 0),
       type: expenseType,
       summary: 'Chi phi bot',
+      loggedBy: 'Lan',
       data: const {
         'amount_vnd': 120000,
         'category': 'Nguyên liệu',
@@ -30,6 +31,7 @@ class _FakeEventService extends EventService {
         'vendor': 'NCC A',
         'note': 'Bột mì',
         'staff_name': 'Lan',
+        'paid_by_name': 'Lan',
         'reimbursed': false,
       },
     ),
@@ -38,6 +40,7 @@ class _FakeEventService extends EventService {
       timestamp: DateTime(2026, 5, 23, 11, 0),
       type: expenseType,
       summary: 'Chi phi van chuyen',
+      loggedBy: 'Minh',
       data: const {
         'amount_vnd': 80000,
         'category': 'Vận chuyển',
@@ -46,6 +49,24 @@ class _FakeEventService extends EventService {
         'vendor': 'NCC B',
         'note': 'Xe giao hàng',
         'staff_name': 'Minh',
+        'paid_by_name': 'Phượng',
+        'reimbursed': false,
+      },
+    ),
+    BakeryEvent(
+      id: 3,
+      timestamp: DateTime(2026, 5, 23, 14, 0),
+      type: expenseType,
+      summary: 'Chi phi sua chua',
+      loggedBy: 'Lan',
+      data: const {
+        'amount_vnd': 50000,
+        'category': 'Bảo trì',
+        'payment_method': 'Tiền mặt',
+        'payment_source': 'Shop tiền mặt',
+        'vendor': 'NCC C',
+        'note': 'Sửa máy',
+        'staff_name': 'Lan',
         'reimbursed': false,
       },
     ),
@@ -97,6 +118,7 @@ class _FakeEventService extends EventService {
     String? expensePaymentMethod,
     String? expensePaymentSource,
     String? expenseStaffName,
+    String? expensePaidByName,
     String? expenseSearch,
     int limit = 50,
   }) async {
@@ -132,6 +154,15 @@ class _FakeEventService extends EventService {
       );
     }
     if (applyRemoteFilters &&
+        expensePaidByName != null &&
+        expensePaidByName.isNotEmpty) {
+      final query = expensePaidByName.toLowerCase();
+      items = items.where(
+        (item) =>
+            '${item.data['paid_by_name'] ?? ''}'.toLowerCase().contains(query),
+      );
+    }
+    if (applyRemoteFilters &&
         expenseSearch != null &&
         expenseSearch.isNotEmpty) {
       final query = expenseSearch.toLowerCase();
@@ -141,6 +172,7 @@ class _FakeEventService extends EventService {
           '${item.data['vendor'] ?? ''}',
           '${item.data['note'] ?? ''}',
           '${item.data['staff_name'] ?? ''}',
+          '${item.data['paid_by_name'] ?? ''}',
         ].join(' ').toLowerCase();
         return haystack.contains(query);
       });
@@ -170,7 +202,7 @@ class _FakeEventService extends EventService {
   }
 
   @override
-  Future<void> deleteEvent(int id) async {
+  Future<void> deleteEvent(int id, {String deletedBy = ''}) async {
     _store.removeWhere((item) => item.id == id);
   }
 }
@@ -187,7 +219,7 @@ void main() {
     final results = await notifier.loadExpenseHistory(
       category: 'Vận chuyển',
       paymentMethod: 'Chuyển khoản',
-      staffName: 'Minh',
+      loggedBy: 'Minh',
       searchText: 'xe',
     );
 
@@ -212,7 +244,7 @@ void main() {
   );
 
   test(
-    'loadExpenseHistory applies staff filter locally when API ignores it',
+    'loadExpenseHistory applies loggedBy filter locally when API ignores it',
     () async {
       final service = _FakeEventService()..applyRemoteFilters = false;
       final container = ProviderContainer(
@@ -222,7 +254,7 @@ void main() {
 
       final notifier = container.read(eventsProvider.notifier);
       final results = await notifier.loadExpenseHistory(
-        staffName: 'Không khớp',
+        loggedBy: 'Không khớp',
       );
 
       expect(results, isEmpty);
@@ -385,4 +417,68 @@ void main() {
       expect(results, isEmpty);
     },
   );
+
+  test('loadExpenseHistory filters by paidByName', () async {
+    final service = _FakeEventService();
+    final container = ProviderContainer(
+      overrides: [eventServiceProvider.overrideWithValue(service)],
+    );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(eventsProvider.notifier);
+    final results = await notifier.loadExpenseHistory(paidByName: 'Phượng');
+
+    expect(results, hasLength(1));
+    expect(results.first.id, 2);
+    expect(results.first.data['paid_by_name'], 'Phượng');
+  });
+
+  test(
+    'loadExpenseHistory applies paidByName filter locally when API ignores it',
+    () async {
+      final service = _FakeEventService()..applyRemoteFilters = false;
+      final container = ProviderContainer(
+        overrides: [eventServiceProvider.overrideWithValue(service)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(eventsProvider.notifier);
+      final results = await notifier.loadExpenseHistory(
+        paidByName: 'Không khớp',
+      );
+
+      expect(results, isEmpty);
+    },
+  );
+
+  test(
+    'loadExpenseHistory falls back paidByName to staffName for old expenses',
+    () async {
+      final service = _FakeEventService()..applyRemoteFilters = false;
+      final container = ProviderContainer(
+        overrides: [eventServiceProvider.overrideWithValue(service)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(eventsProvider.notifier);
+      final results = await notifier.loadExpenseHistory(paidByName: 'Lan');
+
+      expect(results, hasLength(2));
+      expect(results.map((e) => e.id), containsAll([1, 3]));
+    },
+  );
+
+  test('loadExpenseHistory search includes paidByName in haystack', () async {
+    final service = _FakeEventService();
+    final container = ProviderContainer(
+      overrides: [eventServiceProvider.overrideWithValue(service)],
+    );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(eventsProvider.notifier);
+    final results = await notifier.loadExpenseHistory(searchText: 'Phượng');
+
+    expect(results, hasLength(1));
+    expect(results.first.id, 2);
+  });
 }

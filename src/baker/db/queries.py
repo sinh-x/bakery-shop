@@ -1,32 +1,42 @@
 """Reusable query helpers."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+_BS = "\\"
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("%", _BS + "%").replace("_", _BS + "_")
 
 
 def today_range():
-    """Return (start, end) ISO strings for today."""
-    today = datetime.now().strftime("%Y-%m-%d")
-    return f"{today}T00:00:00", f"{today}T23:59:59"
+    """Return (start, end) UTC ISO strings for the current UTC day.
+
+    Bounds are ``Z``-suffixed so they compare correctly against the UTC
+    timestamps stored in the database (DG-202 FR1).
+    """
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return f"{today}T00:00:00Z", f"{today}T23:59:59Z"
 
 
 def week_range():
-    """Return (start, end) ISO strings for the current week (Mon-Sun)."""
-    now = datetime.now()
+    """Return (start, end) UTC ISO strings for the current UTC week (Mon-Sun)."""
+    now = datetime.now(timezone.utc)
     monday = now - timedelta(days=now.weekday())
     sunday = monday + timedelta(days=6)
-    return monday.strftime("%Y-%m-%dT00:00:00"), sunday.strftime("%Y-%m-%dT23:59:59")
+    return monday.strftime("%Y-%m-%dT00:00:00Z"), sunday.strftime("%Y-%m-%dT23:59:59Z")
 
 
 def month_range():
-    """Return (start, end) ISO strings for the current month."""
-    now = datetime.now()
+    """Return (start, end) UTC ISO strings for the current UTC month."""
+    now = datetime.now(timezone.utc)
     start = now.replace(day=1)
     if now.month == 12:
         end = now.replace(year=now.year + 1, month=1, day=1) - timedelta(days=1)
     else:
         end = now.replace(month=now.month + 1, day=1) - timedelta(days=1)
-    return start.strftime("%Y-%m-%dT00:00:00"), end.strftime("%Y-%m-%dT23:59:59")
+    return start.strftime("%Y-%m-%dT00:00:00Z"), end.strftime("%Y-%m-%dT23:59:59Z")
 
 
 def fetch_staff(conn, *, active_only=True):
@@ -59,8 +69,9 @@ def fetch_events_by_person(conn, staff_name, *, limit=50):
         """SELECT DISTINCT e.* FROM events e
            LEFT JOIN event_people ep ON e.id = ep.event_id
            LEFT JOIN staff s ON ep.staff_id = s.id
-           WHERE LOWER(e.logged_by) = LOWER(?)
-              OR LOWER(s.name) = LOWER(?)
+           WHERE (LOWER(e.logged_by) = LOWER(?)
+              OR LOWER(s.name) = LOWER(?))
+             AND e.deleted_at IS NULL
            ORDER BY e.timestamp DESC LIMIT ?""",
         (staff_name, staff_name, limit),
     ).fetchall()
@@ -68,7 +79,7 @@ def fetch_events_by_person(conn, staff_name, *, limit=50):
 
 def count_events_by_logger(conn, since=None, until=None):
     """Count events grouped by logged_by within a time range."""
-    conditions = ["logged_by != ''"]
+    conditions = ["logged_by != ''", "deleted_at IS NULL"]
     params = []
     if since:
         conditions.append("timestamp >= ?")
@@ -87,11 +98,12 @@ def count_events_by_logger(conn, since=None, until=None):
 def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
                  search=None, untagged=False, logged_by=None, involving=None,
                  expense_category=None, expense_payment_method=None,
-                 expense_staff_name=None, expense_payment_source=None,
+                 expense_staff_name=None, expense_paid_by_name=None,
+                 expense_payment_source=None,
                  expense_search=None, limit=50):
     """Fetch events with optional filters."""
     joins = []
-    conditions = []
+    conditions = ["e.deleted_at IS NULL"]
     params = []
 
     if involving:
@@ -106,7 +118,7 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
     if tags:
         for tag in tags:
             conditions.append("(',' || e.tags || ',') LIKE ?")
-            params.append(f"%,{tag},%")
+            params.append(f"%,{_escape_like(tag)},%")
     if since:
         conditions.append("e.timestamp >= ?")
         params.append(since)
@@ -115,7 +127,7 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
         params.append(until)
     if search:
         conditions.append("e.summary LIKE ?")
-        params.append(f"%{search}%")
+        params.append(f"%{_escape_like(search)}%")
     if untagged:
         conditions.append("(e.tags = '' OR e.tags IS NULL)")
     if logged_by:
@@ -134,9 +146,14 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
         params.append(expense_payment_method)
     if expense_staff_name:
         conditions.append(
-            "LOWER(COALESCE(json_extract(e.data, '$.staff_name'), '')) = LOWER(?)"
+            "LOWER(COALESCE(e.logged_by, '')) = LOWER(?)"
         )
         params.append(expense_staff_name)
+    if expense_paid_by_name:
+        conditions.append(
+            "LOWER(COALESCE(json_extract(e.data, '$.paid_by_name'), '')) = LOWER(?)"
+        )
+        params.append(expense_paid_by_name)
     if expense_payment_source:
         conditions.append(
             "LOWER(COALESCE(json_extract(e.data, '$.payment_source'), '')) = LOWER(?)"
@@ -146,14 +163,15 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
         conditions.append(
             "("
             "LOWER(e.summary) LIKE LOWER(?) OR "
+            "LOWER(COALESCE(e.logged_by, '')) LIKE LOWER(?) OR "
             "LOWER(COALESCE(json_extract(e.data, '$.vendor'), '')) LIKE LOWER(?) OR "
             "LOWER(COALESCE(json_extract(e.data, '$.note'), '')) LIKE LOWER(?) OR "
-            "LOWER(COALESCE(json_extract(e.data, '$.staff_name'), '')) LIKE LOWER(?) OR "
+            "LOWER(COALESCE(json_extract(e.data, '$.paid_by_name'), '')) LIKE LOWER(?) OR "
             "LOWER(COALESCE(json_extract(e.data, '$.payment_source'), '')) LIKE LOWER(?)"
             ")"
         )
         like = f"%{expense_search}%"
-        params.extend([like, like, like, like, like])
+        params.extend([like, like, like, like, like, like])
 
     where = " AND ".join(conditions) if conditions else "1=1"
     join_clause = " ".join(joins)
@@ -165,7 +183,7 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
 
 def count_events_by_type(conn, since=None, until=None):
     """Count events grouped by type within a time range."""
-    conditions = []
+    conditions = ["deleted_at IS NULL"]
     params = []
     if since:
         conditions.append("timestamp >= ?")
@@ -181,7 +199,7 @@ def count_events_by_type(conn, since=None, until=None):
 
 def sum_sales(conn, since=None, until=None):
     """Sum up sale amounts from event data JSON."""
-    conditions = ["type = 'sale'"]
+    conditions = ["type = 'sale'", "deleted_at IS NULL"]
     params = []
     if since:
         conditions.append("timestamp >= ?")

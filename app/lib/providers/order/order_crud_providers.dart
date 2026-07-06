@@ -9,6 +9,7 @@ import '../../data/models/order_photo.dart';
 import '../../data/models/payment_transaction.dart';
 import '../../data/models/work_item.dart';
 import '../../shared/labels/shared.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../events_provider.dart';
 
 class OrderListNotifier extends AsyncNotifier<List<Order>> {
@@ -95,12 +96,7 @@ class OrderHistoryNotifier extends AsyncNotifier<List<Order>> {
     );
   }
 
-  String _formatDate(DateTime date) {
-    final y = date.year.toString().padLeft(4, '0');
-    final m = date.month.toString().padLeft(2, '0');
-    final d = date.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
+  String _formatDate(DateTime date) => formatApiDate(date);
 }
 
 final orderHistoryProvider =
@@ -150,6 +146,8 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
     String? source,
     String? publicCodeDateChangeDecision,
     String? customerName,
+    int? customerId,
+    bool customerTouched = false,
     double? shippingFee,
   }) async {
     final service = ref.read(orderServiceProvider);
@@ -165,6 +163,8 @@ class OrderDetailNotifier extends AsyncNotifier<Order> {
       source: source,
       publicCodeDateChangeDecision: publicCodeDateChangeDecision,
       customerName: customerName,
+      customerId: customerId,
+      customerTouched: customerTouched,
       changedBy: changedBy,
       shippingFee: shippingFee,
     );
@@ -432,6 +432,33 @@ class OrderPaymentTransactionsNotifier
     final current = state.value ?? [];
     state = AsyncData(current.where((t) => t.id != txnId).toList());
     ref.read(orderDetailProvider(orderRef).notifier).refresh();
+  }
+
+  Future<PaymentTransaction> invalidate(
+    String txnId, {
+    String reason = '',
+  }) async {
+    final service = ref.read(paymentTransactionServiceProvider);
+    final invalidatedBy = ref.read(loggedByProvider);
+    final updated = await service.invalidateTransaction(
+      orderRef,
+      txnId,
+      invalidatedBy: invalidatedBy,
+      reason: reason,
+    );
+    final current = state.value ?? [];
+    state = AsyncData(current.map((t) => t.id == txnId ? updated : t).toList());
+    ref.read(orderDetailProvider(orderRef).notifier).refresh();
+    return updated;
+  }
+
+  Future<PaymentTransaction> restore(String txnId) async {
+    final service = ref.read(paymentTransactionServiceProvider);
+    final updated = await service.restoreTransaction(orderRef, txnId);
+    final current = state.value ?? [];
+    state = AsyncData(current.map((t) => t.id == txnId ? updated : t).toList());
+    ref.read(orderDetailProvider(orderRef).notifier).refresh();
+    return updated;
   }
 }
 

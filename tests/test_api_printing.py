@@ -30,9 +30,14 @@ def _print_work_ticket(client, order_ref: str, item_id: int, printed_by=None):
     return client.post(f"/api/orders/{order_ref}/print", params=params)
 
 
-@patch("baker.api.printing.usb_printer.print_receipt")
-def test_work_ticket_print_inserts_log_and_sets_first_print(mock_print, api_client):
-    mock_print.return_value = None
+@patch("baker.api.printing.os.close")
+@patch("baker.api.printing.os.write")
+@patch("baker.api.printing.usb_printer.open_printer")
+@patch("baker.api.printing.usb_printer.png_to_tspl")
+def test_work_ticket_print_inserts_log_and_sets_first_print(mock_tspl, mock_open, mock_write, mock_close, api_client):
+    mock_tspl.return_value = b"FAKE_TSPL_DATA"
+    mock_open.return_value = 3
+    mock_write.return_value = len(b"FAKE_TSPL_DATA")
     order = _create_order(api_client)
     order_ref = order["orderRef"]
     item_id = _first_work_item_id(api_client, order_ref)
@@ -57,9 +62,14 @@ def test_work_ticket_print_inserts_log_and_sets_first_print(mock_print, api_clie
     assert order_detail["workTicketPrintedBy"] == "An"
 
 
-@patch("baker.api.printing.usb_printer.print_receipt")
-def test_second_print_appends_log_without_overwriting_first_print_fields(mock_print, api_client):
-    mock_print.return_value = None
+@patch("baker.api.printing.os.close")
+@patch("baker.api.printing.os.write")
+@patch("baker.api.printing.usb_printer.open_printer")
+@patch("baker.api.printing.usb_printer.png_to_tspl")
+def test_second_print_appends_log_without_overwriting_first_print_fields(mock_tspl, mock_open, mock_write, mock_close, api_client):
+    mock_tspl.return_value = b"FAKE_TSPL_DATA"
+    mock_open.return_value = 3
+    mock_write.return_value = len(b"FAKE_TSPL_DATA")
     order = _create_order(api_client)
     order_ref = order["orderRef"]
     item_id = _first_work_item_id(api_client, order_ref)
@@ -85,16 +95,21 @@ def test_second_print_appends_log_without_overwriting_first_print_fields(mock_pr
     assert order_detail["workTicketPrintedBy"] == "An"
 
 
-@patch("baker.api.printing.usb_printer.print_receipt")
-def test_print_fills_missing_printed_by_when_legacy_timestamp_exists(mock_print, api_client):
-    mock_print.return_value = None
+@patch("baker.api.printing.os.close")
+@patch("baker.api.printing.os.write")
+@patch("baker.api.printing.usb_printer.open_printer")
+@patch("baker.api.printing.usb_printer.png_to_tspl")
+def test_print_fills_missing_printed_by_when_legacy_timestamp_exists(mock_tspl, mock_open, mock_write, mock_close, api_client):
+    mock_tspl.return_value = b"FAKE_TSPL_DATA"
+    mock_open.return_value = 3
+    mock_write.return_value = len(b"FAKE_TSPL_DATA")
     order = _create_order(api_client)
     order_ref = order["orderRef"]
     item_id = _first_work_item_id(api_client, order_ref)
 
     detail_before = api_client.get(f"/api/orders/{order_ref}").json()
     order_id = detail_before["id"]
-    legacy_ts = "2026-04-01T08:30:00"
+    legacy_ts = "2026-04-01T08:30:00Z"
 
     from baker.db.connection import get_db
     with get_db() as conn:
@@ -111,11 +126,18 @@ def test_print_fills_missing_printed_by_when_legacy_timestamp_exists(mock_print,
     assert order_detail["workTicketPrintedBy"] == "Ngân"
 
 
-@patch("baker.api.printing.usb_printer.print_receipt", side_effect=FileNotFoundError)
+@patch("baker.api.printing.os.close")
+@patch("baker.api.printing.os.write")
+@patch("baker.api.printing.usb_printer.open_printer", side_effect=FileNotFoundError)
+@patch("baker.api.printing.usb_printer.png_to_tspl")
 def test_print_failure_returns_503_and_does_not_write_logs_or_first_print(
-    _mock_print,
+    mock_tspl,
+    _mock_open_printer,
+    _mock_write,
+    _mock_close,
     api_client,
 ):
+    mock_tspl.return_value = b"FAKE_TSPL_DATA"
     order = _create_order(api_client)
     order_ref = order["orderRef"]
     item_id = _first_work_item_id(api_client, order_ref)
@@ -132,9 +154,14 @@ def test_print_failure_returns_503_and_does_not_write_logs_or_first_print(
     assert order_detail["workTicketPrintedBy"] == ""
 
 
-@patch("baker.api.printing.usb_printer.print_receipt")
-def test_print_with_empty_staff_name_succeeds_and_records_empty_string(mock_print, api_client):
-    mock_print.return_value = None
+@patch("baker.api.printing.os.close")
+@patch("baker.api.printing.os.write")
+@patch("baker.api.printing.usb_printer.open_printer")
+@patch("baker.api.printing.usb_printer.png_to_tspl")
+def test_print_with_empty_staff_name_succeeds_and_records_empty_string(mock_tspl, mock_open, mock_write, mock_close, api_client):
+    mock_tspl.return_value = b"FAKE_TSPL_DATA"
+    mock_open.return_value = 3
+    mock_write.return_value = len(b"FAKE_TSPL_DATA")
     order = _create_order(api_client)
     order_ref = order["orderRef"]
     item_id = _first_work_item_id(api_client, order_ref)
@@ -151,3 +178,142 @@ def test_print_with_empty_staff_name_succeeds_and_records_empty_string(mock_prin
 def test_print_log_returns_404_when_order_missing(api_client):
     resp = api_client.get("/api/orders/ORD-NOT-FOUND/print-log")
     assert resp.status_code == 404
+
+
+class TestPrintStatusPaperMode:
+    """Test GET /api/orders/print/status includes paperMode (FR3, AC4)."""
+
+    def test_status_includes_paper_mode_field(self, api_client):
+        """print/status response includes paperMode with effective value."""
+        resp = api_client.get("/api/orders/print/status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "paperMode" in body
+        assert body["paperMode"] in ("label", "roll")
+        # Default when no env/DB override is "label" (AC1/AC8 backward compat)
+        assert body["paperMode"] == "label"
+
+    def test_status_preserves_printer_and_device_fields(self, api_client):
+        """Existing printer/device fields remain present (no regression)."""
+        resp = api_client.get("/api/orders/print/status")
+        body = resp.json()
+        assert "status" in body
+        assert "printer" in body
+        assert "device" in body
+
+    def test_status_reflects_db_override(self, api_client):
+        """DB override for paper_mode is reflected in status (AC6)."""
+        set_resp = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": "roll"}
+        )
+        assert set_resp.status_code == 200
+
+        resp = api_client.get("/api/orders/print/status")
+        assert resp.json()["paperMode"] == "roll"
+
+
+class TestPaperModeGetSet:
+    """Test GET/PUT /api/orders/print/paper-mode (FR3, AC5 backend, AC6)."""
+
+    def test_get_returns_default_label_when_unset(self, api_client):
+        """GET returns label by default (backward compat, AC1)."""
+        resp = api_client.get("/api/orders/print/paper-mode")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["paperMode"] == "label"
+        assert body["default"] == "label"
+
+    def test_set_roll_persists_and_reads_back(self, api_client):
+        """PUT roll persists to app_config and subsequent GET reads it (AC6)."""
+        set_resp = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": "roll"}
+        )
+        assert set_resp.status_code == 200
+        assert set_resp.json()["paperMode"] == "roll"
+
+        get_resp = api_client.get("/api/orders/print/paper-mode")
+        assert get_resp.status_code == 200
+        assert get_resp.json()["paperMode"] == "roll"
+
+    def test_set_label_overrides_prior_roll(self, api_client):
+        """Setting label after roll overrides the prior DB value."""
+        api_client.put("/api/orders/print/paper-mode", json={"paperMode": "roll"})
+        set_resp = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": "label"}
+        )
+        assert set_resp.status_code == 200
+        assert set_resp.json()["paperMode"] == "label"
+
+        get_resp = api_client.get("/api/orders/print/paper-mode")
+        assert get_resp.json()["paperMode"] == "label"
+
+    def test_set_invalid_value_rejected_400(self, api_client):
+        """Invalid paperMode value is rejected with 400 (FR2)."""
+        resp = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": "garbage"}
+        )
+        assert resp.status_code == 400
+
+    def test_set_empty_string_rejected_400(self, api_client):
+        """Empty paperMode is rejected."""
+        resp = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": ""}
+        )
+        assert resp.status_code == 400
+
+    def test_set_whitespace_value_rejected_400(self, api_client):
+        """Whitespace-only paperMode is rejected after trim."""
+        resp = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": "   "}
+        )
+        assert resp.status_code == 400
+
+    def test_set_trims_surrounding_whitespace(self, api_client):
+        """Surrounding whitespace is trimmed before validation/persistence."""
+        resp = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": "  roll  "}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["paperMode"] == "roll"
+
+    def test_set_is_idempotent(self, api_client):
+        """Setting the same value twice does not duplicate the row."""
+        api_client.put("/api/orders/print/paper-mode", json={"paperMode": "roll"})
+        second = api_client.put(
+            "/api/orders/print/paper-mode", json={"paperMode": "roll"}
+        )
+        assert second.status_code == 200
+        assert second.json()["paperMode"] == "roll"
+
+        # Verify only one active row exists for paper_mode
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT config_value FROM app_config WHERE config_key = 'paper_mode'"
+            ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["config_value"] == "roll"
+
+
+class TestPaperModeBackwardCompat:
+    """Test backward compatibility with existing printer tests (AC8)."""
+
+    def test_existing_print_flow_unaffected_by_paper_mode(self, api_client):
+        """Print request succeeds regardless of paper mode setting (AC8)."""
+        with patch("baker.api.printing.usb_printer.png_to_tspl") as mock_tspl, \
+             patch("baker.api.printing.usb_printer.open_printer") as mock_open, \
+             patch("baker.api.printing.os.write") as mock_write, \
+             patch("baker.api.printing.os.close") as mock_close:
+            mock_tspl.return_value = b"FAKE_TSPL_DATA"
+            mock_open.return_value = 3
+            mock_write.return_value = len(b"FAKE_TSPL_DATA")
+            order = _create_order(api_client)
+            order_ref = order["orderRef"]
+            item_id = _first_work_item_id(api_client, order_ref)
+
+            # Set roll mode, then print — should still succeed
+            api_client.put("/api/orders/print/paper-mode", json={"paperMode": "roll"})
+            resp = _print_work_ticket(api_client, order_ref, item_id, printed_by="An")
+            assert resp.status_code == 200
+            assert resp.json()["status"] == "ok"
+            mock_tspl.assert_called_once()

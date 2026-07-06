@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/services/printer_service.dart';
+import 'paper_mode_provider.dart';
 
 /// Printer connection state.
 enum PrinterState {
@@ -85,18 +86,22 @@ class PrinterNotifier extends AsyncNotifier<PrinterStatus> {
     final currentState = state.value;
     if (currentState == null) return false;
 
-    // If not connected, show message that printer needs to be set up
+    // If not connected, check actual service state (may have been connected externally)
     if (currentState.state == PrinterState.disconnected) {
-      state = AsyncValue.data( // ignore: prefer_const_constructors
-        const PrinterStatus(
-          state: PrinterState.error,
-          errorMessage: 'Máy in chưa kết nối. Vui lòng kết nối máy in trong Cài đặt.',
-        ),
-      );
-      // Reset to disconnected after showing error
-      await Future.delayed(const Duration(seconds: 3));
-      state = const AsyncValue.data(PrinterStatus.disconnected);
-      return false;
+      if (_printerService.isConnected) {
+        state = const AsyncValue.data(PrinterStatus.connected);
+      } else {
+        state = AsyncValue.data( // ignore: prefer_const_constructors
+          const PrinterStatus(
+            state: PrinterState.error,
+            errorMessage: 'Máy in chưa kết nối. Vui lòng kết nối máy in trong Cài đặt.',
+          ),
+        );
+        // Reset to disconnected after showing error
+        await Future.delayed(const Duration(seconds: 3));
+        state = const AsyncValue.data(PrinterStatus.disconnected);
+        return false;
+      }
     }
 
     // If already printing, don't start another print
@@ -109,7 +114,11 @@ class PrinterNotifier extends AsyncNotifier<PrinterStatus> {
     state = const AsyncValue.data(PrinterStatus.printing);
 
     try {
-      await _printerService.printImage(imageBytes);
+      final settings = ref.read(paperSettingsProvider).asData?.value ?? const PaperSettings();
+      final paperMode = settings.paperMode;
+      final trailMm = settings.trailMm;
+      await _printerService.printImage(imageBytes,
+          paperMode: paperMode, trailMm: trailMm);
       state = const AsyncValue.data(PrinterStatus.connected);
       return true;
     } on PrinterException catch (e) {

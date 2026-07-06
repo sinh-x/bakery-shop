@@ -57,6 +57,7 @@ def test_create_expense_event_with_structured_data(api_client):
             "vendor": "Chợ Bình Tây",
             "note": "Bột mì đa dụng",
             "staff_name": "Lan",
+            "paid_by_name": "Phượng",
         },
     })
     assert resp.status_code == 201
@@ -77,10 +78,54 @@ def test_create_event_with_custom_timestamp(api_client):
             "vendor": "NCC A",
             "note": "Mua đường",
             "staff_name": "Lan",
+            "paid_by_name": "Phượng",
         },
     })
     assert resp.status_code == 201
-    assert resp.json()["timestamp"] == "2026-05-23T19:57:00"
+    assert resp.json()["timestamp"] == "2026-05-23T19:57:00Z"
+
+
+def test_create_event_converts_offset_timestamp_to_utc_z(api_client):
+    # DG-202 review-auto cycle 1 CQ-1: offset-suffixed timestamps must be
+    # converted to UTC Z so all stored timestamps share one format.
+    resp = api_client.post("/api/events", json={
+        "summary": "Sự kiện với timestamp +07:00",
+        "type": "expense",
+        "timestamp": "2026-05-23T19:57:00+07:00",
+        "data": {
+            "amount_vnd": 75000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "NCC A",
+            "note": "Mua đường",
+            "staff_name": "Lan",
+            "paid_by_name": "Phượng",
+        },
+    })
+    assert resp.status_code == 201
+    # +07:00 -> UTC is 12:57:00Z.
+    assert resp.json()["timestamp"] == "2026-05-23T12:57:00Z"
+
+
+def test_create_event_preserves_fractional_seconds_on_offset_timestamp(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Sự kiện với fractional + offset",
+        "type": "expense",
+        "timestamp": "2026-05-23T19:57:00.123456+07:00",
+        "data": {
+            "amount_vnd": 75000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "NCC A",
+            "note": "Mua đường",
+            "staff_name": "Lan",
+            "paid_by_name": "Phượng",
+        },
+    })
+    assert resp.status_code == 201
+    assert resp.json()["timestamp"] == "2026-05-23T12:57:00.123456Z"
 
 
 def test_create_expense_event_rejects_non_integer_amount(api_client):
@@ -95,6 +140,7 @@ def test_create_expense_event_rejects_non_integer_amount(api_client):
             "vendor": "Cửa hàng A",
             "note": "Sữa tươi",
             "staff_name": "Lan",
+            "paid_by_name": "Phượng",
         },
     })
     assert resp.status_code == 422
@@ -125,13 +171,14 @@ def test_create_expense_event_rejects_missing_payment_source(api_client):
             "vendor": "NCC A",
             "note": "Đường",
             "staff_name": "Lan",
+            "paid_by_name": "Phượng",
         },
     })
     assert resp.status_code == 422
     assert "payment_source" in resp.json()["detail"]
 
 
-def test_create_expense_event_rejects_nhan_vien_ung_truoc_without_staff_name(api_client):
+def test_create_expense_event_rejects_nhan_vien_ung_truoc_without_paid_by_name(api_client):
     resp = api_client.post("/api/events", json={
         "summary": "Chi tiền ứng trước",
         "type": "expense",
@@ -142,14 +189,14 @@ def test_create_expense_event_rejects_nhan_vien_ung_truoc_without_staff_name(api
             "payment_source": "Nhân viên ứng trước",
             "vendor": "NCC A",
             "note": "Mua hàng",
-            "staff_name": "",
+            "paid_by_name": "",
         },
     })
     assert resp.status_code == 422
     assert "Nhân viên ứng trước" in resp.json()["detail"]
 
 
-def test_create_expense_event_accepts_nhan_vien_ung_truoc_with_staff_name(api_client):
+def test_create_expense_event_accepts_nhan_vien_ung_truoc_with_paid_by_name(api_client):
     resp = api_client.post("/api/events", json={
         "summary": "Chi tiền ứng trước",
         "type": "expense",
@@ -160,10 +207,32 @@ def test_create_expense_event_accepts_nhan_vien_ung_truoc_with_staff_name(api_cl
             "payment_source": "Nhân viên ứng trước",
             "vendor": "NCC A",
             "note": "Mua hàng",
-            "staff_name": "Lan",
+            "paid_by_name": "Phượng",
         },
     })
     assert resp.status_code == 201
+
+
+def test_create_expense_event_success_without_staff_name(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền mua bột mì",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 125000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "Chợ Bình Tây",
+            "note": "Bột mì đa dụng",
+            "paid_by_name": "",
+        },
+        "logged_by": "Lan",
+    })
+    assert resp.status_code == 201
+    ev = resp.json()
+    assert ev["type"] == "expense"
+    assert ev["logged_by"] == "Lan"
+    assert "staff_name" not in ev["data"]
 
 
 def test_create_expense_event_persists_reimbursed(api_client):
@@ -178,6 +247,7 @@ def test_create_expense_event_persists_reimbursed(api_client):
             "vendor": "NCC A",
             "note": "Mua hàng",
             "staff_name": "Lan",
+            "paid_by_name": "Phượng",
             "reimbursed": True,
         },
     })
@@ -199,6 +269,7 @@ def test_create_expense_event_defaults_reimbursed_false(api_client):
             "vendor": "NCC A",
             "note": "Mua hàng",
             "staff_name": "Lan",
+            "paid_by_name": "Phượng",
         },
     })
     assert resp.status_code == 201
@@ -326,6 +397,7 @@ def test_list_events_expense_filter_by_category(api_client):
             "vendor": "Chợ Bình Tây",
             "note": "Bột mì số 8",
             "staff_name": "Lan",
+            "paid_by_name": "Phượng",
         },
     })
     api_client.post("/api/events", json={
@@ -339,6 +411,7 @@ def test_list_events_expense_filter_by_category(api_client):
             "vendor": "Nhà cung cấp A",
             "note": "Ly 16oz",
             "staff_name": "Diễm",
+            "paid_by_name": "Ngân",
         },
     })
 
@@ -364,6 +437,7 @@ def test_list_events_expense_filter_by_payment_method(api_client):
             "vendor": "Cửa hàng B",
             "note": "Đường cát",
             "staff_name": "Hoa",
+            "paid_by_name": "Tân",
         },
     })
     api_client.post("/api/events", json={
@@ -377,6 +451,7 @@ def test_list_events_expense_filter_by_payment_method(api_client):
             "vendor": "NCC C",
             "note": "Túi giấy",
             "staff_name": "Lan",
+            "paid_by_name": "Phượng",
         },
     })
 
@@ -394,6 +469,7 @@ def test_list_events_expense_filter_by_staff_name(api_client):
     api_client.post("/api/events", json={
         "summary": "Mua trứng",
         "type": "expense",
+        "logged_by": "Ngọc Lan",
         "data": {
             "amount_vnd": 90000,
             "category": "Nguyên liệu",
@@ -401,12 +477,13 @@ def test_list_events_expense_filter_by_staff_name(api_client):
             "payment_source": "Shop tiền mặt",
             "vendor": "NCC Trứng",
             "note": "30 quả",
-            "staff_name": "Ngọc Lan",
+            "paid_by_name": "Phượng",
         },
     })
     api_client.post("/api/events", json={
         "summary": "Mua hộp",
         "type": "expense",
+        "logged_by": "Diễm",
         "data": {
             "amount_vnd": 60000,
             "category": "Bao bì",
@@ -414,7 +491,7 @@ def test_list_events_expense_filter_by_staff_name(api_client):
             "payment_source": "Shop tiền mặt",
             "vendor": "NCC Hộp",
             "note": "Hộp bánh",
-            "staff_name": "Diễm",
+            "paid_by_name": "Ngân",
         },
     })
 
@@ -425,7 +502,7 @@ def test_list_events_expense_filter_by_staff_name(api_client):
     assert resp.status_code == 200
     events = resp.json()
     assert len(events) == 1
-    assert events[0]["data"]["staff_name"] == "Ngọc Lan"
+    assert events[0]["logged_by"] == "Ngọc Lan"
 
 
 def test_list_events_expense_search_applies_before_limit(api_client):
@@ -441,6 +518,7 @@ def test_list_events_expense_search_applies_before_limit(api_client):
                 "vendor": "NCC thường",
                 "note": "Giao dịch thường",
                 "staff_name": "Lan",
+                "paid_by_name": "Phượng",
             },
         })
 
@@ -455,6 +533,7 @@ def test_list_events_expense_search_applies_before_limit(api_client):
             "vendor": "NCC mục tiêu",
             "note": "hoadon-target",
             "staff_name": "Hoa",
+            "paid_by_name": "Tân",
         },
     })
 
@@ -469,6 +548,7 @@ def test_list_events_expense_search_applies_before_limit(api_client):
             "vendor": "NCC mới",
             "note": "bản ghi mới",
             "staff_name": "Diễm",
+            "paid_by_name": "Ngân",
         },
     })
 
@@ -495,6 +575,7 @@ def test_list_events_expense_filter_by_payment_source(api_client):
             "vendor": "Chợ Bình Tây",
             "note": "Bột mì số 8",
             "staff_name": "Lan",
+            "paid_by_name": "Phượng",
         },
     })
     api_client.post("/api/events", json={
@@ -508,6 +589,7 @@ def test_list_events_expense_filter_by_payment_source(api_client):
             "vendor": "Nhà cung cấp A",
             "note": "Ly 16oz",
             "staff_name": "Diễm",
+            "paid_by_name": "Ngân",
         },
     })
 
@@ -519,6 +601,144 @@ def test_list_events_expense_filter_by_payment_source(api_client):
     events = resp.json()
     assert len(events) == 1
     assert events[0]["data"]["payment_source"] == "TK Phượng VCB"
+
+
+def test_create_expense_event_rejects_missing_paid_by_name(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền mua đường",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 10000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "NCC A",
+            "note": "Đường",
+            "staff_name": "Lan",
+        },
+    })
+    assert resp.status_code == 422
+    assert "paid_by_name" in resp.json()["detail"]
+
+
+def test_create_expense_event_rejects_invalid_paid_by_name(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền mua đường",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 10000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "NCC A",
+            "note": "Đường",
+            "staff_name": "Lan",
+            "paid_by_name": "Người Lạ Không Tồn Tại",
+        },
+    })
+    assert resp.status_code == 422
+    assert "paid_by_name" in resp.json()["detail"]
+    assert "không khớp" in resp.json()["detail"]
+
+
+def test_create_expense_event_accepts_empty_paid_by_name(api_client):
+    resp = api_client.post("/api/events", json={
+        "summary": "Chi tiền mua đường",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 10000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "NCC A",
+            "note": "Đường",
+            "staff_name": "Lan",
+            "paid_by_name": "",
+        },
+    })
+    assert resp.status_code == 201
+    ev = resp.json()
+    assert ev["data"]["paid_by_name"] == ""
+
+
+def test_list_events_expense_filter_by_paid_by_name(api_client):
+    api_client.post("/api/events", json={
+        "summary": "Mua bột mì",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 120000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "Chợ Bình Tây",
+            "note": "Bột mì số 8",
+            "staff_name": "Lan",
+            "paid_by_name": "Phượng",
+        },
+    })
+    api_client.post("/api/events", json={
+        "summary": "Mua ly giấy",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50000,
+            "category": "Bao bì",
+            "payment_method": "Chuyển khoản",
+            "payment_source": "TK Phượng VCB",
+            "vendor": "Nhà cung cấp A",
+            "note": "Ly 16oz",
+            "staff_name": "Diễm",
+            "paid_by_name": "Ngân",
+        },
+    })
+
+    resp = api_client.get("/api/events", params={
+        "type": "expense",
+        "expense_paid_by_name": "Phượng",
+    })
+    assert resp.status_code == 200
+    events = resp.json()
+    assert len(events) == 1
+    assert events[0]["data"]["paid_by_name"] == "Phượng"
+
+
+def test_list_events_expense_search_includes_paid_by_name(api_client):
+    api_client.post("/api/events", json={
+        "summary": "Mua bột mì",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 120000,
+            "category": "Nguyên liệu",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "Chợ Bình Tây",
+            "note": "Bột mì số 8",
+            "staff_name": "Lan",
+            "paid_by_name": "Ân",
+        },
+    })
+    api_client.post("/api/events", json={
+        "summary": "Mua ly giấy",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 50000,
+            "category": "Bao bì",
+            "payment_method": "Chuyển khoản",
+            "payment_source": "TK Ngân VCB",
+            "vendor": "Nhà cung cấp A",
+            "note": "Ly 16oz",
+            "staff_name": "Diễm",
+            "paid_by_name": "Ngân",
+        },
+    })
+
+    resp = api_client.get("/api/events", params={
+        "type": "expense",
+        "expense_search": "Ân",
+    })
+    assert resp.status_code == 200
+    events = resp.json()
+    assert len(events) == 1
+    assert events[0]["data"]["paid_by_name"] == "Ân"
 
 
 # --- GET /api/events/{id} ---
@@ -636,6 +856,7 @@ def test_patch_expense_event_data(api_client):
             "vendor": "Nhà cung cấp A",
             "note": "Ly giấy",
             "staff_name": "Diễm",
+            "paid_by_name": "Ngân",
         },
     })
     event_id = create_resp.json()["id"]
@@ -651,6 +872,7 @@ def test_patch_expense_event_data(api_client):
             "vendor": "Nhà cung cấp A",
             "note": "Ly giấy và nắp",
             "staff_name": "Diễm",
+            "paid_by_name": "Ngân",
         },
     })
     assert resp.status_code == 200
@@ -672,6 +894,7 @@ def test_patch_expense_event_timestamp(api_client):
             "vendor": "Nhà cung cấp A",
             "note": "Ly giấy",
             "staff_name": "Diễm",
+            "paid_by_name": "Ngân",
         },
     })
     event_id = create_resp.json()["id"]
@@ -681,7 +904,7 @@ def test_patch_expense_event_timestamp(api_client):
     })
     assert resp.status_code == 200
     body = resp.json()
-    assert body["timestamp"] == "2026-05-24T08:15:00"
+    assert body["timestamp"] == "2026-05-24T08:15:00Z"
 
 
 def test_patch_expense_event_preserves_reimbursed(api_client):
@@ -696,6 +919,7 @@ def test_patch_expense_event_preserves_reimbursed(api_client):
             "vendor": "NCC A",
             "note": "Mua hàng",
             "staff_name": "Lan",
+            "paid_by_name": "Phượng",
             "reimbursed": True,
         },
     })
@@ -710,6 +934,7 @@ def test_patch_expense_event_preserves_reimbursed(api_client):
             "vendor": "NCC A",
             "note": "Mua hàng cập nhật",
             "staff_name": "Lan",
+            "paid_by_name": "Phượng",
             "reimbursed": True,
         },
     })
@@ -731,6 +956,7 @@ def test_patch_expense_event_rejects_invalid_amount(api_client):
             "vendor": "EVN",
             "note": "Tiền điện",
             "staff_name": "Lan",
+            "paid_by_name": "Phượng",
         },
     })
     event_id = create_resp.json()["id"]
@@ -744,6 +970,7 @@ def test_patch_expense_event_rejects_invalid_amount(api_client):
             "vendor": "EVN",
             "note": "Tiền điện",
             "staff_name": "Lan",
+            "paid_by_name": "Phượng",
         },
     })
     assert resp.status_code == 422
@@ -767,3 +994,290 @@ def test_delete_event(api_client):
 def test_delete_event_not_found(api_client):
     resp = api_client.delete("/api/events/9999")
     assert resp.status_code == 404
+
+
+# --- Audit log: POST /api/events ---
+
+
+def test_create_event_audit_log_with_logged_by(api_client):
+    from baker.db.connection import get_db
+
+    resp = api_client.post("/api/events", json={
+        "summary": "Audit test", "type": "note", "logged_by": "Lan",
+    })
+    assert resp.status_code == 201
+    event_id = resp.json()["id"]
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'create'",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["actor"] == "Lan"
+    assert rows[0]["field_name"] == ""
+    assert rows[0]["old_value"] == ""
+    assert rows[0]["new_value"] == ""
+
+
+def test_create_event_audit_log_with_cli_source(api_client):
+    from baker.db.connection import get_db
+
+    resp = api_client.post("/api/events", json={
+        "summary": "CLI event", "source": "cli",
+    })
+    assert resp.status_code == 201
+    event_id = resp.json()["id"]
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'create'",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["actor"] == "CLI"
+
+
+def test_create_event_audit_log_no_logged_by_app_source(api_client):
+    from baker.db.connection import get_db
+
+    resp = api_client.post("/api/events", json={
+        "summary": "App event", "source": "app",
+    })
+    assert resp.status_code == 201
+    event_id = resp.json()["id"]
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'create'",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["actor"] == ""
+
+
+# --- Audit log: PATCH /api/events ---
+
+
+def test_patch_event_audit_log_field_edit(api_client):
+    from baker.db.connection import get_db
+
+    create_resp = api_client.post("/api/events", json={
+        "summary": "Original", "type": "note",
+    })
+    event_id = create_resp.json()["id"]
+
+    resp = api_client.patch(f"/api/events/{event_id}", json={
+        "summary": "Updated", "type": "equipment",
+    })
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'edit' ORDER BY id",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 2
+
+    summaries = {(r["field_name"], r["old_value"], r["new_value"]) for r in rows}
+    assert ("summary", "Original", "Updated") in summaries
+    assert ("type", "note", "equipment") in summaries
+
+
+def test_patch_event_audit_log_no_change_no_entry(api_client):
+    from baker.db.connection import get_db
+
+    create_resp = api_client.post("/api/events", json={
+        "summary": "Same", "type": "note",
+    })
+    event_id = create_resp.json()["id"]
+
+    resp = api_client.patch(f"/api/events/{event_id}", json={
+        "summary": "Same",
+    })
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'edit'",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 0
+
+
+def test_patch_event_audit_log_tags_change(api_client):
+    from baker.db.connection import get_db
+
+    create_resp = api_client.post("/api/events", json={
+        "summary": "Tag test", "tags": ["a"],
+    })
+    event_id = create_resp.json()["id"]
+
+    resp = api_client.patch(f"/api/events/{event_id}", json={
+        "tags": ["b", "c"],
+    })
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'edit'",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["field_name"] == "tags"
+    assert rows[0]["old_value"] == "a"
+    assert rows[0]["new_value"] == "b,c"
+
+
+def test_patch_event_audit_log_data_change(api_client):
+    from baker.db.connection import get_db
+
+    create_resp = api_client.post("/api/events", json={
+        "summary": "Data test",
+        "data": {"key": "old"},
+    })
+    event_id = create_resp.json()["id"]
+
+    resp = api_client.patch(f"/api/events/{event_id}", json={
+        "data": {"key": "new"},
+    })
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'edit'",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["field_name"] == "data"
+    import json
+    assert json.loads(rows[0]["old_value"]) == {"key": "old"}
+    assert json.loads(rows[0]["new_value"]) == {"key": "new"}
+
+
+# --- Audit log / Soft-delete: DELETE /api/events ---
+
+
+def test_delete_event_audit_log(api_client):
+    from baker.db.connection import get_db
+
+    create_resp = api_client.post("/api/events", json={"summary": "Delete me"})
+    event_id = create_resp.json()["id"]
+
+    delete_resp = api_client.delete(f"/api/events/{event_id}?deleted_by=Sin")
+    assert delete_resp.status_code == 204
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? AND action_type = 'delete'",
+            (event_id,),
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["actor"] == "Sin"
+
+
+def test_delete_event_soft_delete_preserves_row(api_client):
+    from baker.db.connection import get_db
+
+    create_resp = api_client.post("/api/events", json={"summary": "Soft delete test"})
+    event_id = create_resp.json()["id"]
+
+    api_client.delete(f"/api/events/{event_id}?deleted_by=Sin")
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM events WHERE id = ?", (event_id,),
+        ).fetchone()
+    assert row is not None
+    assert row["deleted_at"] is not None
+    assert row["deleted_by"] == "Sin"
+
+
+def test_delete_event_returns_404_after_soft_delete(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Gone"})
+    event_id = create_resp.json()["id"]
+
+    api_client.delete(f"/api/events/{event_id}?deleted_by=Sin")
+
+    get_resp = api_client.get(f"/api/events/{event_id}")
+    assert get_resp.status_code == 404
+
+
+# --- GET /api/events excludes soft-deleted ---
+
+
+def test_list_events_excludes_soft_deleted(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Keep"})
+    keep_id = create_resp.json()["id"]
+
+    del_resp = api_client.post("/api/events", json={"summary": "Remove"})
+    del_id = del_resp.json()["id"]
+    api_client.delete(f"/api/events/{del_id}?deleted_by=Sin")
+
+    resp = api_client.get("/api/events")
+    assert resp.status_code == 200
+    events = resp.json()
+    assert len(events) == 1
+    assert events[0]["id"] == keep_id
+
+
+def test_delete_already_deleted_event_returns_404(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Once"})
+    event_id = create_resp.json()["id"]
+
+    api_client.delete(f"/api/events/{event_id}?deleted_by=Sin")
+    resp = api_client.delete(f"/api/events/{event_id}?deleted_by=Sin")
+    assert resp.status_code == 404
+
+
+def test_patch_deleted_event_returns_404(api_client):
+    create_resp = api_client.post("/api/events", json={"summary": "Patch me"})
+    event_id = create_resp.json()["id"]
+
+    api_client.delete(f"/api/events/{event_id}?deleted_by=Sin")
+    resp = api_client.patch(f"/api/events/{event_id}", json={"summary": "Nope"})
+    assert resp.status_code == 404
+
+
+# ─── Timestamp format (DG-202 TC-11) ────────────────────────────────────────
+
+
+def _make_test_image_bytes(width=100, height=100) -> bytes:
+    """Create a minimal JPEG image for testing photo uploads."""
+    import io
+    from PIL import Image
+    img = Image.new("RGB", (width, height), color="green")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    buf.seek(0)
+    return buf.read()
+
+
+def test_event_photo_created_at_is_z_suffixed(api_client):
+    """TC-11: event_photos.created_at is Z-suffixed UTC."""
+    from datetime import datetime
+
+    create_resp = api_client.post("/api/events", json={"summary": "TC-11 event"})
+    event_id = create_resp.json()["id"]
+
+    image_data = _make_test_image_bytes()
+    resp = api_client.post(
+        f"/api/events/{event_id}/photos",
+        files={"file": ("photo.jpg", image_data, "image/jpeg")},
+        data={"tags": "test"},
+    )
+    assert resp.status_code == 201
+    photo = resp.json()
+    created_at = photo.get("created_at")
+    assert created_at is not None, "event_photo created_at is null"
+    assert created_at.endswith("Z"), f"created_at not Z-suffixed: {created_at}"
+    assert "+" not in created_at
+    datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")
+
+    # Verify via the list endpoint as well.
+    list_resp = api_client.get(f"/api/events/{event_id}/photos")
+    assert list_resp.status_code == 200
+    photos = list_resp.json()
+    assert len(photos) == 1
+    assert photos[0]["created_at"] == created_at
+    assert photos[0]["created_at"].endswith("Z")

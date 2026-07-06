@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +6,7 @@ import '../../data/api/api_client.dart';
 import '../../data/api/stock_service.dart';
 import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
+import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/category_grouping.dart';
 import '../../shared/utils/product_photo_url.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
@@ -39,15 +38,24 @@ class StockOverviewNotifier extends AsyncNotifier<List<StockOverviewItem>> {
 }
 
 /// Stock status colors based on quantity.
+///
+/// Negative stock (DG-200 Phase 5, FR-8, AC-10) uses a distinct darker red
+/// shade (`Colors.red.shade900`) so cashiers can visually distinguish an
+/// oversold position from a merely out-of-stock (zero) product.
 Color stockStatusColor(int quantity) {
-  if (quantity <= 0) return Colors.red;
+  if (quantity < 0) return Colors.red.shade900;
+  if (quantity == 0) return Colors.red;
   if (quantity <= 3) return Colors.orange;
   return Colors.green;
 }
 
 /// Stock status label based on quantity.
+///
+/// Negative stock returns the VN label "Âm N" (where N is the absolute
+/// quantity) per FR-8 / AC-10. Zero stock returns "Hết hàng".
 String stockStatusLabel(int quantity) {
-  if (quantity <= 0) return 'Hết hàng';
+  if (quantity < 0) return VN.negativeStockLabel(quantity);
+  if (quantity == 0) return VN.outOfStock;
   if (quantity <= 3) return 'Sắp hết';
   return 'Còn hàng';
 }
@@ -61,52 +69,34 @@ class StockScreen extends ConsumerStatefulWidget {
 }
 
 class _StockScreenState extends ConsumerState<StockScreen>
-    with WidgetsBindingObserver {
-  bool _wasNavigatedAway = false;
-  GoRouter? _goRouter;
+    with WidgetsBindingObserver, AutoRefreshMixin {
   final CategorySectionExpansionController _categoryExpansionController =
       CategorySectionExpansionController();
 
   @override
+  String screenRoutePath() => '/stock';
+
+  @override
+  void invalidateProviders() {
+    ref.invalidate(stockOverviewProvider);
+  }
+
+  @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
+    initAutoRefresh();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final router = GoRouter.of(context);
-    if (_goRouter != router) {
-      _goRouter?.routerDelegate.removeListener(_onRouteChange);
-      _goRouter = router;
-      _goRouter?.routerDelegate.addListener(_onRouteChange);
-    }
+    setupAutoRefreshRouteListener();
   }
 
   @override
   void dispose() {
-    _goRouter?.routerDelegate.removeListener(_onRouteChange);
-    WidgetsBinding.instance.removeObserver(this);
+    disposeAutoRefresh();
     super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      ref.invalidate(stockOverviewProvider);
-    }
-  }
-
-  void _onRouteChange() {
-    if (!mounted) return;
-    final path = GoRouterState.of(context).uri.path;
-    if (path == '/stock' && _wasNavigatedAway) {
-      _wasNavigatedAway = false;
-      ref.invalidate(stockOverviewProvider);
-    } else if (path != '/stock') {
-      _wasNavigatedAway = true;
-    }
   }
 
   void _onAppBarMenuSelected(String value) {

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,7 +7,9 @@ import '../../../data/models/product.dart';
 import '../../../providers/categories_provider.dart';
 import '../../../providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import '../../../shared/mixins/auto_refresh_mixin.dart';
 import '../../../shared/utils/category_grouping.dart';
+import '../../../shared/utils/date_formatting.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../../shared/widgets/collapsible_category_sections.dart';
 import 'widgets/pos_cart_bar.dart';
@@ -25,15 +25,28 @@ class PosScreen extends ConsumerStatefulWidget {
 }
 
 class _PosScreenState extends ConsumerState<PosScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, AutoRefreshMixin {
   String _searchQuery = '';
   bool _showOutOfStockProducts = false;
-  Timer? _stockPollingTimer;
-  bool _wasNavigatedAway = false;
-  GoRouter? _goRouter;
   DateTime _lastStockRefreshAt = DateTime.now();
   final CategorySectionExpansionController _sectionExpansionController =
       CategorySectionExpansionController();
+
+  @override
+  String screenRoutePath() => '/pos';
+
+  @override
+  void invalidateProviders() {
+    ref.invalidate(productsProvider);
+  }
+
+  @override
+  void onAutoRefreshTriggered() {
+    super.onAutoRefreshTriggered();
+    if (mounted) {
+      setState(() => _lastStockRefreshAt = DateTime.now());
+    }
+  }
 
   List<Product> _visibleProducts(List<Product> products) {
     var result = products.where((p) => p.active == 1).toList();
@@ -103,62 +116,27 @@ class _PosScreenState extends ConsumerState<PosScreen>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _stockPollingTimer = Timer.periodic(
-      const Duration(seconds: 60),
-      (_) => _refreshStock(),
-    );
+    initAutoRefresh();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final router = GoRouter.of(context);
-    if (_goRouter != router) {
-      _goRouter?.routerDelegate.removeListener(_onRouteChange);
-      _goRouter = router;
-      _goRouter?.routerDelegate.addListener(_onRouteChange);
-    }
+    setupAutoRefreshRouteListener();
   }
 
   @override
   void dispose() {
-    _goRouter?.routerDelegate.removeListener(_onRouteChange);
-    _stockPollingTimer?.cancel();
-    WidgetsBinding.instance.removeObserver(this);
+    disposeAutoRefresh();
     super.dispose();
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _refreshStock();
-    }
-  }
-
   void _refreshStock() {
-    ref.invalidate(productsProvider);
-    if (mounted) {
-      setState(() => _lastStockRefreshAt = DateTime.now());
-    }
+    onAutoRefreshTriggered();
   }
 
   String _refreshLabel() {
-    final ts = _lastStockRefreshAt;
-    final hh = ts.hour.toString().padLeft(2, '0');
-    final mm = ts.minute.toString().padLeft(2, '0');
-    return VN.stockUpdatedAt('$hh:$mm');
-  }
-
-  void _onRouteChange() {
-    if (!mounted) return;
-    final path = GoRouterState.of(context).uri.path;
-    if (path == '/pos' && _wasNavigatedAway) {
-      _wasNavigatedAway = false;
-      _refreshStock();
-    } else if (path != '/pos') {
-      _wasNavigatedAway = true;
-    }
+    return VN.stockUpdatedAt(formatDisplayTime(_lastStockRefreshAt));
   }
 
   void _onPosAppBarMenuSelected(String value) {

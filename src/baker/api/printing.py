@@ -8,9 +8,11 @@ POST /api/orders/{ref}/print triggers server-side thermal printing:
 
 import io
 import os
+import socket
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 from PIL import Image
 
 from baker.api.receipts import (
@@ -22,13 +24,67 @@ from baker.api.receipts import (
     _render_work_ticket,
     _shop_config,
 )
+from baker.config import PRINT_IPP_URL
 from baker.db.connection import get_db
-from baker import usb_printer
+from baker import ipp_client, usb_printer
+from baker.utils.time import now_utc
 
 router = APIRouter(prefix="/api/orders", tags=["printing"])
 
 # USB printer device path from env (default: /dev/usb/lp0)
 USB_PRINTER_DEVICE = os.environ.get("USB_PRINTER_DEVICE", "/dev/usb/lp0")
+
+
+class PaperModeIn(BaseModel):
+    paperMode: str
+
+
+@router.get("/print/paper-mode")
+def get_paper_mode():
+    """Return the effective printer paper mode.
+
+    DB override (app_config.paper_mode) takes precedence over the PAPER_MODE
+    env var default. Returns "label" or "roll".
+    """
+    with get_db() as conn:
+        mode = usb_printer.get_paper_mode(conn)
+        trail_mm = usb_printer.get_trail_mm(conn)
+    return {
+        "paperMode": mode,
+        "default": usb_printer.PAPER_MODE_DEFAULT,
+        "trailMm": trail_mm,
+    }
+
+
+@router.put("/print/paper-mode")
+def set_paper_mode(body: PaperModeIn):
+    """Set the printer paper mode runtime override (persists to app_config).
+
+    Selection takes effect on the next print/status call (no restart required).
+    """
+    value = body.paperMode.strip()
+    if value not in usb_printer.PAPER_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid paperMode: must be one of {list(usb_printer.PAPER_MODES)}",
+        )
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM app_config WHERE config_key = ?",
+            (usb_printer.PAPER_MODE_CONFIG_KEY,),
+        ).fetchone()
+        if existing is not None:
+            conn.execute(
+                "UPDATE app_config SET config_value = ?, active = 1 WHERE config_key = ?",
+                (value, usb_printer.PAPER_MODE_CONFIG_KEY),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO app_config (config_key, config_value, sort_order, active, created_at)"
+                " VALUES (?, ?, 0, 1, ?)",
+                (usb_printer.PAPER_MODE_CONFIG_KEY, value, now_utc()),
+            )
+    return {"paperMode": value}
 
 
 def _render_to_png(img: Image.Image) -> bytes:
@@ -81,6 +137,11 @@ def print_receipt(
         detail = _order_detail(conn, row)
         cfg = _shop_config(conn)
 
+        # Resolve paper mode and trail BEFORE renderers so the tear
+        # indicator visual appears in the USB print path (CQ-1).
+        paper_mode = usb_printer.get_paper_mode(conn)
+        trail_mm = usb_printer.get_trail_mm(conn)
+
         if type == "work_ticket":
             # Single-item work ticket (Phiếu Nội Bộ) — no photo for thermal print
             work_item = None
@@ -91,16 +152,19 @@ def print_receipt(
             if not work_item:
                 raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
-            img = _render_work_ticket(detail, work_item, cfg, None, conn)
+            img = _render_work_ticket(detail, work_item, cfg, None, conn,
+                                      paper_mode=paper_mode)
 
         elif type == "customer":
-            img = _render_customer_receipt(detail, cfg, conn, show_photos=False)
+            img = _render_customer_receipt(detail, cfg, conn,
+                                           show_photos=False,
+                                           paper_mode=paper_mode)
         elif type == "bus_label":
-            img = _render_bus_label(detail, cfg)
+            img = _render_bus_label(detail, cfg, paper_mode=paper_mode)
         elif type == "shop":
-            img = _render_shop_receipt(detail, cfg, conn)
+            img = _render_shop_receipt(detail, cfg, conn, paper_mode=paper_mode)
         elif type == "delivery":
-            img = _render_delivery_receipt(detail, cfg, conn)
+            img = _render_delivery_receipt(detail, cfg, conn, paper_mode=paper_mode)
         else:
             raise HTTPException(
                 status_code=400,
@@ -109,36 +173,64 @@ def print_receipt(
 
         png_bytes = _render_to_png(img)
 
-    # Send to USB printer
-    try:
-        usb_printer.print_receipt(
-            device_path=USB_PRINTER_DEVICE,
-            png_bytes=png_bytes,
-        )
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Printer not found at {USB_PRINTER_DEVICE}. Is the USB cable connected?",
-        )
-    except PermissionError:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Permission denied accessing {USB_PRINTER_DEVICE}. "
-            "Check printer permissions or add user to 'lp' group.",
-        )
-    except OSError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Print failed: {e}",
-        )
+    # Convert PNG to TSPL once — shared by both transport paths
+    tspl_data = usb_printer.png_to_tspl(png_bytes, paper_mode=paper_mode, trail_mm=trail_mm)
+
+    if PRINT_IPP_URL:
+        # IPP transport: send pre-rendered TSPL to CUPS endpoint
+        try:
+            with usb_printer.print_lock:
+                ipp_client.send_tspl_to_ipp(tspl_data, PRINT_IPP_URL)
+        except ipp_client.IppConnectionError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Cannot connect to IPP printer: {e}",
+            )
+        except ipp_client.IppHttpError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"IPP printer HTTP error {e.http_status}",
+            )
+        except ipp_client.IppError as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"IPP printer error: {e}",
+            )
+    else:
+        # USB transport: write TSPL directly to /dev/usb/lp0 (backward compatible)
+        try:
+            with usb_printer.print_lock:
+                fd = None
+                try:
+                    fd = usb_printer.open_printer(USB_PRINTER_DEVICE)
+                    os.write(fd, tspl_data)
+                finally:
+                    if fd is not None:
+                        os.close(fd)
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Printer not found at {USB_PRINTER_DEVICE}. Is the USB cable connected?",
+            )
+        except PermissionError:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Permission denied accessing {USB_PRINTER_DEVICE}. "
+                "Check printer permissions or add user to 'lp' group.",
+            )
+        except OSError as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Print failed: {e}",
+            )
 
     printed_at: Optional[str] = None
     if type == "work_ticket" and order_id is not None:
         with get_db() as conn:
             conn.execute(
-                """INSERT INTO print_log (order_id, item_id, receipt_type, printed_by)
-                   VALUES (?, ?, ?, ?)""",
-                (order_id, item_id, type, normalized_printed_by),
+                """INSERT INTO print_log (order_id, item_id, receipt_type, printed_by, printed_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (order_id, item_id, type, normalized_printed_by, now_utc()),
             )
             inserted = conn.execute(
                 "SELECT printed_at FROM print_log WHERE id = last_insert_rowid()"
@@ -146,10 +238,11 @@ def print_receipt(
             if inserted is not None:
                 printed_at = inserted["printed_at"]
 
+            printed_at_value = now_utc()
             conn.execute(
                 """UPDATE orders
                    SET work_ticket_printed_at = CASE
-                           WHEN work_ticket_printed_at IS NULL THEN strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')
+                           WHEN work_ticket_printed_at IS NULL THEN ?
                            ELSE work_ticket_printed_at
                        END,
                        work_ticket_printed_by = CASE
@@ -159,6 +252,7 @@ def print_receipt(
                        END
                    WHERE id = ?""",
                 (
+                    printed_at_value,
                     normalized_printed_by,
                     normalized_printed_by,
                     normalized_printed_by,
@@ -205,14 +299,42 @@ def get_print_log(ref: str):
 
 @router.get("/print/status")
 def print_status():
-    """Check if the USB printer is accessible."""
+    """Check if the USB printer is accessible and return effective paper mode.
+
+    When PRINT_IPP_URL is configured, also probes the IPP endpoint via
+    TCP connectivity check.
+    """
     available = usb_printer.check_printer_status(USB_PRINTER_DEVICE)
-    if available:
-        return {"status": "ok", "printer": "available", "device": USB_PRINTER_DEVICE}
+    with get_db() as conn:
+        paper_mode = usb_printer.get_paper_mode(conn)
+    base = {
+        "printer": "available" if available else "unavailable",
+        "device": USB_PRINTER_DEVICE,
+        "paperMode": paper_mode,
+    }
+    if PRINT_IPP_URL:
+        ipp_available = False
+        ipp_host = None
+        ipp_port = None
+        try:
+            parsed = ipp_client._parse_url(PRINT_IPP_URL)
+            ipp_host, ipp_port = parsed[0], parsed[1]
+            sock = socket.create_connection((ipp_host, ipp_port), timeout=3.0)
+            sock.close()
+            ipp_available = True
+        except (ValueError, OSError):
+            pass
+        base["ippPrinter"] = "available" if ipp_available else "unavailable"
+        if ipp_host:
+            base["ippUrl"] = PRINT_IPP_URL
+    if available or (PRINT_IPP_URL and base.get("ippPrinter") == "available"):
+        return {"status": "ok", **base}
     else:
+        detail = "Printer device not found or not accessible"
+        if PRINT_IPP_URL and base.get("ippPrinter") == "unavailable":
+            detail += f"; IPP endpoint unreachable at {PRINT_IPP_URL}"
         return {
             "status": "error",
-            "printer": "unavailable",
-            "device": USB_PRINTER_DEVICE,
-            "detail": "Printer device not found or not accessible",
+            **base,
+            "detail": detail,
         }

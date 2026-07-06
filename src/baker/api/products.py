@@ -1,13 +1,20 @@
 """Product CRUD API routes."""
 
 import json
-from fastapi import APIRouter, HTTPException, Query, UploadFile
+from fastapi import APIRouter, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from PIL import UnidentifiedImageError
 from pydantic import BaseModel
 
 import baker.config
 from baker.code_gen import generate_code, get_category_prefix
+from baker.utils.time import InvalidEffectiveFrom, format_effective_from
+
+_BS = "\\"
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("%", _BS + "%").replace("_", _BS + "_")
 from baker.db.connection import get_db
 from baker.api.photos import read_image_upload, save_photo
 
@@ -193,7 +200,7 @@ def list_products(
 
         if code:
             conditions.append("p.product_code LIKE ?")
-            params.append(f"%{code}%")
+            params.append(f"%{_escape_like(code)}%")
 
         joins.append(
             """LEFT JOIN (
@@ -465,3 +472,108 @@ def get_photo(product_id: int):
     if not photo_file.exists():
         raise HTTPException(status_code=404, detail="Chưa có ảnh cho sản phẩm này")
     return FileResponse(str(photo_file), media_type="image/jpeg")
+
+
+# --- cost_history CRUD (DG-208 Phase 4, FR5/FR6/FR7) -------------------------
+#
+# Endpoints for managing real product costs via the cost_history table. The
+# cost_resolver falls back to baseline (30% of selling/base price) when no
+# cost_history row is in effect, so these endpoints are how Sinh records the
+# actual production cost for a product. Idempotent on (product_id, effective_from).
+
+
+class CostHistoryCreate(BaseModel):
+    cost: float
+    effective_from: str | None = None
+
+
+def _normalize_effective_from(date_str: str | None) -> str:
+    """Normalize YYYY-MM-DD or ISO-8601 into a comparable UTC timestamp.
+
+    Raises HTTPException(422) on invalid input.
+    """
+    try:
+        return format_effective_from(date_str)
+    except InvalidEffectiveFrom:
+        raise HTTPException(
+            status_code=422,
+            detail="effective_from phải có dạng YYYY-MM-DD",
+        )
+
+
+@router.get("/{product_id}/cost")
+def get_product_cost(product_id: int):
+    """Lấy chi phí hiện tại và lịch sử chi phí của sản phẩm (FR6)."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM products WHERE id = ?", (product_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
+
+        history_rows = conn.execute(
+            "SELECT id, product_id, cost, effective_from, created_at "
+            "FROM cost_history WHERE product_id = ? "
+            "ORDER BY effective_from DESC, id DESC",
+            (product_id,),
+        ).fetchall()
+        history = [dict(r) for r in history_rows]
+
+        from baker.services.cost_resolver import resolve_product_cost
+
+        current_cost = resolve_product_cost(conn, product_id)
+        return {
+            "product_id": product_id,
+            "current_cost": current_cost,
+            "cost_history": history,
+        }
+
+
+@router.post("/{product_id}/cost")
+def set_product_cost(product_id: int, payload: CostHistoryCreate):
+    """Tạo hoặc cập nhật chi phí sản phẩm (FR7). Idempotent trên effective_from."""
+    if payload.cost < 0:
+        raise HTTPException(status_code=422, detail="Chi phí không được âm")
+
+    effective_ts = _normalize_effective_from(payload.effective_from)
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM products WHERE id = ?", (product_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
+
+        existing = conn.execute(
+            "SELECT id FROM cost_history "
+            "WHERE product_id = ? AND effective_from = ?",
+            (product_id, effective_ts),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE cost_history SET cost = ? WHERE id = ?",
+                (payload.cost, existing["id"]),
+            )
+            new_id = existing["id"]
+            status_code = 200
+        else:
+            cursor = conn.execute(
+                "INSERT INTO cost_history (product_id, cost, effective_from) "
+                "VALUES (?, ?, ?)",
+                (product_id, payload.cost, effective_ts),
+            )
+            new_id = cursor.lastrowid
+            status_code = 201
+
+        result_row = conn.execute(
+            "SELECT id, product_id, cost, effective_from, created_at "
+            "FROM cost_history WHERE id = ?",
+            (new_id,),
+        ).fetchone()
+        body = dict(result_row)
+        body["status"] = "updated" if status_code == 200 else "created"
+        return Response(
+            content=json.dumps(body),
+            media_type="application/json",
+            status_code=status_code,
+        )

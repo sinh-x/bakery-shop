@@ -1,3 +1,4 @@
+import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
 
@@ -8,19 +9,21 @@ class ExpenseFormCard extends StatelessWidget {
     required this.amountCtrl,
     required this.vendorCtrl,
     required this.noteCtrl,
-    required this.staffCtrl,
     required this.eventDateTime,
     required this.categories,
     required this.paymentMethods,
     required this.paymentSources,
+    required this.staffList,
     required this.category,
     required this.paymentMethod,
     required this.paymentSource,
+    required this.selectedPaidByName,
     required this.loading,
     required this.editing,
     required this.onCategoryChanged,
     required this.onPaymentMethodChanged,
     required this.onPaymentSourceChanged,
+    required this.onPaidByNameChanged,
     required this.onPickDate,
     required this.onPickTime,
     required this.onCancelEdit,
@@ -32,19 +35,21 @@ class ExpenseFormCard extends StatelessWidget {
   final TextEditingController amountCtrl;
   final TextEditingController vendorCtrl;
   final TextEditingController noteCtrl;
-  final TextEditingController staffCtrl;
   final DateTime eventDateTime;
   final List<String> categories;
   final List<String> paymentMethods;
   final List<String> paymentSources;
+  final List<String> staffList;
   final String? category;
   final String paymentMethod;
   final String paymentSource;
+  final String? selectedPaidByName;
   final bool loading;
   final bool editing;
   final ValueChanged<String?> onCategoryChanged;
   final ValueChanged<String?> onPaymentMethodChanged;
   final ValueChanged<String?> onPaymentSourceChanged;
+  final ValueChanged<String?> onPaidByNameChanged;
   final VoidCallback onPickDate;
   final VoidCallback onPickTime;
   final VoidCallback onCancelEdit;
@@ -128,9 +133,7 @@ class ExpenseFormCard extends StatelessWidget {
                       icon: const Icon(Icons.event),
                       label: Text(
                         '${VN.expenseDateLabel}: '
-                        '${eventDateTime.day.toString().padLeft(2, '0')}/'
-                        '${eventDateTime.month.toString().padLeft(2, '0')}/'
-                        '${eventDateTime.year}',
+                        '${formatDisplayDate(eventDateTime)}',
                       ),
                     ),
                   ),
@@ -141,8 +144,7 @@ class ExpenseFormCard extends StatelessWidget {
                       icon: const Icon(Icons.schedule),
                       label: Text(
                         '${VN.expenseTimeLabel}: '
-                        '${eventDateTime.hour.toString().padLeft(2, '0')}:'
-                        '${eventDateTime.minute.toString().padLeft(2, '0')}',
+                        '${formatDisplayTime(eventDateTime)}',
                       ),
                     ),
                   ),
@@ -166,12 +168,21 @@ class ExpenseFormCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              TextFormField(
-                controller: staffCtrl,
+              DropdownButtonFormField<String>(
+                initialValue: staffList.contains(selectedPaidByName)
+                    ? selectedPaidByName
+                    : null,
                 decoration: const InputDecoration(
-                  labelText: VN.expenseStaffNameLabel,
+                  labelText: VN.expensePaidByNameLabel,
                   border: OutlineInputBorder(),
                 ),
+                items: staffList
+                    .map(
+                      (item) =>
+                          DropdownMenuItem(value: item, child: Text(item)),
+                    )
+                    .toList(),
+                onChanged: onPaidByNameChanged,
               ),
               const SizedBox(height: 12),
               Row(

@@ -11,6 +11,8 @@ services:
       - "2108:2108"
     volumes:
       - ./prod/data:/var/lib/baker
+    # When BAKER_PRINT_IPP_URL is set (IPP mode), the /dev/usb/lp0 device mount
+    # is not needed and can be removed for cloud deployments.
     devices:
       - "${BAKER_PRINTER_DEVICE:-/dev/usb/lp0}:/dev/usb/lp0"
     group_add:
@@ -18,6 +20,17 @@ services:
     environment:
       BAKER_DATA_DIR: /var/lib/baker
       BAKER_BUILD_FINGERPRINT: ${BAKER_BUILD_FINGERPRINT:-unknown}
+      # Printer paper type server default ("label" | "roll"); runtime override via Settings screen.
+      # Unset defaults to "label" (backward compatible); invalid values fail fast at startup.
+      PAPER_MODE: ${PAPER_MODE:-label}
+      BAKER_PRINT_IPP_URL: ${BAKER_PRINT_IPP_URL:-}
+      # IPP transport uses plain HTTP to the CUPS endpoint (no TLS).
+      # When the endpoint is on the Tailscale tailnet (default deployment),
+      # WireGuard provides transport encryption between baker-prod and Lily.
+      # Non-Tailscale deployments MUST use a VPN tunnel or reverse proxy with TLS
+      # termination — plain HTTP over untrusted networks exposes print jobs in
+      # cleartext.
+      TRAIL_MM: ${TRAIL_MM:-20}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2108/api/health')"]
@@ -61,10 +74,27 @@ services:
       - "2312:2312"
     volumes:
       - ./data:/var/lib/baker
+    # When BAKER_PRINT_IPP_URL is set (IPP mode), the /dev/usb/lp0 device mount
+    # is not needed and can be removed for cloud deployments.
+    devices:
+      - "${BAKER_PRINTER_DEVICE:-/dev/usb/lp0}:/dev/usb/lp0"
+    group_add:
+      - "20"  # host GID 'lp' grants access to /dev/usb/lp0
     environment:
       BAKER_DATA_DIR: /var/lib/baker
       BAKER_PORT: 2312
       BAKER_BUILD_FINGERPRINT: ${BAKER_BUILD_FINGERPRINT:-unknown}
+      # Printer paper type server default ("label" | "roll"); runtime override via Settings screen.
+      # Unset defaults to "label" (backward compatible); invalid values fail fast at startup.
+      PAPER_MODE: ${PAPER_MODE:-label}
+      BAKER_PRINT_IPP_URL: ${BAKER_PRINT_IPP_URL:-}
+      # IPP transport uses plain HTTP to the CUPS endpoint (no TLS).
+      # When the endpoint is on the Tailscale tailnet (default deployment),
+      # WireGuard provides transport encryption between baker-dev and Lily.
+      # Non-Tailscale deployments MUST use a VPN tunnel or reverse proxy with TLS
+      # termination — plain HTTP over untrusted networks exposes print jobs in
+      # cleartext.
+      TRAIL_MM: ${TRAIL_MM:-20}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2312/api/health')"]

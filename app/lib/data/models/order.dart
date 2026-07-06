@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../shared/utils/date_formatting.dart';
 import 'order_item.dart';
 import 'packing_item.dart';
 
@@ -14,6 +15,7 @@ sealed class Order with _$Order {
     @Default('') String publicOrderCode,
     required String customerName,
     @Default('') String customerPhone,
+    int? customerId,
     required List<OrderItem> items,
     required double totalPrice,
     @Default('new') String status,
@@ -30,7 +32,9 @@ sealed class Order with _$Order {
     @Default([]) List<PackingItem> packingChecklist,
     String? workTicketPrintedAt,
     String? workTicketPrintedBy,
+    @JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)
     required DateTime createdAt,
+    @JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)
     required DateTime updatedAt,
   }) = _Order;
 

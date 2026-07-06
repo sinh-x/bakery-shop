@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../data/models/event.dart';
 import '../../../providers/events_provider.dart';
+import '../../../shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 
 enum _DateRange { today, week, month, all }
@@ -110,9 +111,7 @@ class _EventHistoryListState extends ConsumerState<EventHistoryList> {
       case _DateRange.all:
         return null;
     }
-    return '${base.year.toString().padLeft(4, '0')}-'
-        '${base.month.toString().padLeft(2, '0')}-'
-        '${base.day.toString().padLeft(2, '0')}';
+    return formatApiDate(base);
   }
 
   void _applyFilters() {
@@ -325,7 +324,7 @@ class _EventCard extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      _formatTime(event.timestamp),
+                      formatDisplayTime(event.timestamp),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -382,12 +381,5 @@ class _EventCard extends StatelessWidget {
       ),
     ),
     );
-  }
-
-  String _formatTime(DateTime dt) {
-    final local = dt.toLocal();
-    final h = local.hour.toString().padLeft(2, '0');
-    final m = local.minute.toString().padLeft(2, '0');
-    return '$h:$m';
   }
 }

@@ -35,6 +35,7 @@ class _FakeOrderService extends OrderService {
   Future<Order> createOrder({
     required String customerName,
     String customerPhone = '',
+    int? customerId,
     List<Map<String, dynamic>> items = const [],
     String? dueDate,
     String? dueTime,

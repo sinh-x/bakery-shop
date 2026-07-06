@@ -10,6 +10,8 @@ import '../../data/providers/knowledge_provider.dart';
 import '../../features/categories/category_management_screen.dart';
 import '../../features/checklist/checklist_config_screen.dart';
 import '../../features/checklist/checklist_history_screen.dart';
+import '../../features/customers/customer_detail_screen.dart';
+import '../../features/customers/customer_list_screen.dart';
 import '../../features/checklist/checklist_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/expenses/expense_screen.dart';
@@ -23,6 +25,7 @@ import '../../features/orders/order_detail_screen.dart';
 import '../../features/orders/order_edit_screen.dart';
 import '../../features/orders/order_list_screen.dart';
 import '../../features/orders/order_history_screen.dart';
+import '../../features/accounting/accounting_screen.dart';
 import '../../features/orders/receipt_preview_screen.dart';
 import '../../features/knowledge/knowledge_detail_screen.dart';
 import '../../features/knowledge/knowledge_form_screen.dart';
@@ -265,6 +268,20 @@ final appRouter = GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const CategoryManagementScreen(),
     ),
+    // Customer management — full-screen (outside shell)
+    GoRoute(
+      path: '/customers',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const CustomerListScreen(),
+    ),
+    GoRoute(
+      path: '/customers/:id',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final id = int.parse(state.pathParameters['id']!);
+        return CustomerDetailScreen(customerId: id);
+      },
+    ),
     // Settings — full-screen (outside shell)
     GoRoute(
       path: '/settings',
@@ -309,6 +326,12 @@ final appRouter = GoRouter(
         final sessionId = int.parse(state.pathParameters['id']!);
         return StockReconciliationHistoryDetailScreen(sessionId: sessionId);
       },
+    ),
+    // Accounting — full-screen (outside shell)
+    GoRoute(
+      path: '/accounting',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const AccountingScreen(),
     ),
     // Knowledge — full-screen (outside shell)
     GoRoute(

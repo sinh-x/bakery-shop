@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/models/event.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 
@@ -112,7 +113,7 @@ class EventDetailScreen extends StatelessWidget {
                 children: [
                   Text(typeLabel, style: theme.textTheme.titleMedium),
                   Text(
-                    _formatDateTime(event.timestamp),
+                    formatDisplay(event.timestamp),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -179,14 +180,5 @@ class EventDetailScreen extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  String _formatDateTime(DateTime dt) {
-    final local = dt.toLocal();
-    final day = local.day.toString().padLeft(2, '0');
-    final month = local.month.toString().padLeft(2, '0');
-    final hour = local.hour.toString().padLeft(2, '0');
-    final minute = local.minute.toString().padLeft(2, '0');
-    return '$day/$month/${local.year} $hour:$minute';
   }
 }

@@ -234,6 +234,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               InfoRow(label: VN.serverVersion, value: _serverVersion),
               const SizedBox(height: 16),
 
+              // Printer paper mode (DG-183 Phase 2)
+              const PaperModeSection(),
+              const SizedBox(height: 16),
+
               // Server URL
               Text(VN.apiUrlLabel,
                   style: Theme.of(context).textTheme.titleSmall),

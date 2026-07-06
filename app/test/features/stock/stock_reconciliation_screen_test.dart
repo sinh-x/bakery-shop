@@ -1150,4 +1150,211 @@ void main() {
       await tester.pumpAndSettle();
     },
   );
+
+  // DG-200 Phase 6 — surplus (counted > expected) inflow display (FR-9, AC-11)
+  testWidgets(
+    'surplus displays inflow quantity and restock indicator and hides sale/waste editors',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+      final prefs = await SharedPreferences.getInstance();
+      final service = _FakeService(
+        ReconciliationDraft(
+          date: '2026-07-05',
+          products: [
+            ReconciliationDraftProduct(
+              productId: 1,
+              name: 'Bánh kem dâu',
+              category: 'banh_kem',
+              expectedQty: 5,
+              basePrice: 100000,
+              priceChips: const [],
+            ),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            reconciliationServiceProvider.overrideWithValue(service),
+          ],
+          child: MaterialApp.router(routerConfig: buildRouter()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await expandFirstCategory(tester);
+      await tester.tap(find.text('Bánh kem dâu'));
+      await tester.pumpAndSettle();
+      await expandOptionInventory(tester);
+
+      // Counted > expected (8 > 5) creates a surplus of 3.
+      await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '8');
+      await tester.pumpAndSettle();
+
+      final summary = optionSummary('1:100000');
+      // Surplus inflow indicator visible with restock label.
+      expect(
+        find.descendant(
+          of: summary,
+          matching: find.textContaining('${VN.soLuongBu}: +3'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: summary,
+          matching: find.text(VN.nhapBuTonKho),
+        ),
+        findsOneWidget,
+      );
+      // Status is OK (no sale/waste for surplus).
+      expect(
+        find.descendant(
+          of: summary,
+          matching: find.text('${VN.trangThai}: ${VN.trangThaiOn}'),
+        ),
+        findsOneWidget,
+      );
+      // Sale row editor and waste editor are hidden for surplus.
+      expect(find.text(VN.themDongBan), findsNothing);
+      expect(find.text(VN.lyDoHaoHut), findsNothing);
+      // Surplus hint is shown in the editor area.
+      expect(find.text(VN.nhapBuHint), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'surplus submit review succeeds when counted > expected and no sale/waste',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+      final prefs = await SharedPreferences.getInstance();
+      final service = _FakeService(
+        ReconciliationDraft(
+          date: '2026-07-05',
+          products: [
+            ReconciliationDraftProduct(
+              productId: 1,
+              name: 'Bánh kem dâu',
+              category: 'banh_kem',
+              expectedQty: 5,
+              basePrice: 100000,
+              priceChips: const [],
+            ),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            reconciliationServiceProvider.overrideWithValue(service),
+          ],
+          child: MaterialApp.router(routerConfig: buildRouter()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await expandFirstCategory(tester);
+      await tester.tap(find.text('Bánh kem dâu'));
+      await tester.pumpAndSettle();
+      await expandOptionInventory(tester);
+
+      await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '8');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(FilledButton, VN.guiDoiSoat));
+      await tester.pumpAndSettle();
+      // No unresolved issues → confirm button enabled.
+      final confirmButton = tester.widget<FilledButton>(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.widgetWithText(FilledButton, VN.guiDoiSoat),
+        ),
+      );
+      expect(confirmButton.onPressed, isNotNull);
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.widgetWithText(FilledButton, VN.guiDoiSoat),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(service.submitCalls, 1);
+      expect(service.lastSubmitRequest!.lines.first.countedQty, 8);
+      expect(service.lastSubmitRequest!.lines.first.expectedQty, 5);
+      expect(service.lastSubmitRequest!.lines.first.saleQty, 0);
+      expect(service.lastSubmitRequest!.lines.first.wasteQty, 0);
+    },
+  );
+
+  testWidgets(
+    'surplus with leftover sale row blocks submit and shows error',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+      final prefs = await SharedPreferences.getInstance();
+      final service = _FakeService(
+        ReconciliationDraft(
+          date: '2026-07-05',
+          products: [
+            ReconciliationDraftProduct(
+              productId: 1,
+              name: 'Bánh kem dâu',
+              category: 'banh_kem',
+              expectedQty: 5,
+              basePrice: 100000,
+              priceChips: const [],
+            ),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            reconciliationServiceProvider.overrideWithValue(service),
+          ],
+          child: MaterialApp.router(routerConfig: buildRouter()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await expandFirstCategory(tester);
+      await tester.tap(find.text('Bánh kem dâu'));
+      await tester.pumpAndSettle();
+      await expandOptionInventory(tester);
+
+      // First create a missing scenario to seed a sale row, then push counted above expected.
+      await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '4');
+      await tester.pumpAndSettle();
+      await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
+      await tester.pumpAndSettle();
+
+      // Now push counted above expected while a sale row remains.
+      await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '8');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(FilledButton, VN.guiDoiSoat));
+      await tester.pumpAndSettle();
+
+      final confirmButton = tester.widget<FilledButton>(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.widgetWithText(FilledButton, VN.guiDoiSoat),
+        ),
+      );
+      expect(confirmButton.onPressed, isNull);
+      expect(service.submitCalls, 0);
+      expect(
+        find.textContaining('tự nhập bù'),
+        findsWidgets,
+      );
+    },
+  );
 }

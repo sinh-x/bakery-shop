@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from baker.db.connection import get_db
 from baker.models.order import is_backward_transition
 from baker.models.work_item import WorkItem, WorkItemStatus
+from baker.utils.time import now_utc
 
 router = APIRouter(prefix="/api/orders", tags=["work-items"])
 
@@ -297,8 +298,8 @@ def delete_work_item(ref: str, item_id: int):
         # Recalculate total_price and sync orders.items JSON after deletion
         _sync_order_items_json(conn, order_id)
         conn.execute(
-            "UPDATE orders SET updated_at = strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') WHERE id = ?",
-            (order_id,),
+            "UPDATE orders SET updated_at = ? WHERE id = ?",
+            (now_utc(), order_id),
         )
 
 
@@ -356,9 +357,9 @@ def transition_work_item_status(ref: str, item_id: int, body: WorkItemStatusTran
 
                 # Log auto-sync in order_history (F6)
                 conn.execute(
-                    """INSERT INTO order_history (order_id, action_type, field_name, old_value, new_value, changed_by)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (order_row["id"], "auto_sync", "status", order_row["status"], derived_order_status, _AUTO_SYNC_REASON),
+                    """INSERT INTO order_history (order_id, action_type, field_name, old_value, new_value, changed_by, timestamp)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (order_row["id"], "auto_sync", "status", order_row["status"], derived_order_status, _AUTO_SYNC_REASON, now_utc()),
                 )
                 # Sync extras/gifts to match the new order status (F4, F5)
                 sync_extras_to_order_status(conn, order_id, derived_order_status)

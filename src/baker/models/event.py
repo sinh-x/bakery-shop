@@ -2,6 +2,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Optional
 
+from baker.utils.time import now_utc
+
 TYPE_ALIASES = {
     "prod": "production",
     "inv": "inventory",
@@ -22,6 +24,8 @@ class Event:
     id: Optional[int] = None
     timestamp: Optional[str] = None
     order_id: Optional[int] = None
+    deleted_at: Optional[str] = None
+    deleted_by: str = ""
 
     def __post_init__(self):
         self.type = TYPE_ALIASES.get(self.type, self.type)
@@ -34,10 +38,11 @@ class Event:
                  ",".join(self.tags), self.source, self.logged_by, self.timestamp, self.order_id),
             )
         else:
+            self.timestamp = now_utc()
             cursor = conn.execute(
-                "INSERT INTO events (type, summary, data, tags, source, logged_by, order_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO events (type, summary, data, tags, source, logged_by, timestamp, order_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (self.type, self.summary, json.dumps(self.data),
-                 ",".join(self.tags), self.source, self.logged_by, self.order_id),
+                 ",".join(self.tags), self.source, self.logged_by, self.timestamp, self.order_id),
             )
         self.id = cursor.lastrowid
         return self.id
@@ -55,4 +60,6 @@ class Event:
             source=row["source"],
             logged_by=row["logged_by"] if "logged_by" in row.keys() else "",
             order_id=row["order_id"] if "order_id" in row.keys() else None,
+            deleted_at=row["deleted_at"] if "deleted_at" in row.keys() else None,
+            deleted_by=row["deleted_by"] if "deleted_by" in row.keys() else "",
         )

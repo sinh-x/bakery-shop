@@ -6,6 +6,7 @@ import '../data/api/api_client.dart';
 import '../data/api/event_service.dart';
 import '../data/mappers/expense_event_mapper.dart';
 import '../data/models/event.dart';
+import '../shared/utils/date_formatting.dart';
 
 const kLoggedByKey = 'logged_by_name';
 
@@ -100,9 +101,9 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     );
   }
 
-  Future<void> deleteEvent(int id) async {
+  Future<void> deleteEvent(int id, {String deletedBy = ''}) async {
     final service = ref.read(eventServiceProvider);
-    await service.deleteEvent(id);
+    await service.deleteEvent(id, deletedBy: deletedBy);
     state = state.whenData(
       (events) => events.where((e) => e.id != id).toList(),
     );
@@ -115,6 +116,8 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     String? paymentMethod,
     String? paymentSource,
     String? staffName,
+    String? paidByName,
+    String? loggedBy,
     String? searchText,
     int limit = expenseMaxHistoryLimit,
   }) async {
@@ -125,7 +128,8 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
       expenseCategory: category,
       expensePaymentMethod: paymentMethod,
       expensePaymentSource: paymentSource,
-      expenseStaffName: staffName,
+      loggedBy: loggedBy ?? staffName,
+      expensePaidByName: paidByName,
       expenseSearch: searchText,
       limit: safeLimit,
     );
@@ -140,6 +144,8 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
             paymentMethod: paymentMethod,
             paymentSource: paymentSource,
             staffName: staffName,
+            paidByName: paidByName,
+            loggedBy: loggedBy,
             searchText: searchText,
           ) &&
           _matchesLocalDateRange(
@@ -158,7 +164,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     DateTime? since,
     DateTime? until,
   }) {
-    final local = timestamp.toLocal();
+    final local = ServerTimezone.toServerLocal(timestamp);
     if (since != null && local.isBefore(since)) {
       return false;
     }
@@ -168,12 +174,10 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     return true;
   }
 
-  DateTime? _parseLocalDateTimeOrNull(String? iso) {
-    if (iso == null || iso.trim().isEmpty) {
-      return null;
-    }
-    return DateTime.tryParse(iso)?.toLocal();
-  }
+  DateTime? _parseLocalDateTimeOrNull(String? iso) =>
+      parseApiDateTime(iso) == null
+          ? null
+          : ServerTimezone.toServerLocal(parseApiDateTime(iso)!);
 
   Future<void> refresh({
     String? type,
@@ -194,12 +198,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     );
   }
 
-  String _todayIso() {
-    final now = DateTime.now();
-    return '${now.year.toString().padLeft(4, '0')}-'
-        '${now.month.toString().padLeft(2, '0')}-'
-        '${now.day.toString().padLeft(2, '0')}';
-  }
+  String _todayIso() => formatApiDate(DateTime.now());
 }
 
 final eventsProvider = AsyncNotifierProvider<EventsNotifier, List<BakeryEvent>>(

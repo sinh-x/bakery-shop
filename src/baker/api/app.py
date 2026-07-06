@@ -3,12 +3,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from baker.api.accounts import router as accounts_router
 from baker.api.cake_queue import router as cake_queue_router
 from baker.api.catalog import catalog_router as catalog_browse_router
 from baker.api.catalog import router as catalog_router
 from baker.api.checklist import router as checklist_router
 from baker.api.categories import router as categories_router
 from baker.api.config import router as config_router
+from baker.api.customers import router as customers_router
 from baker.api.events import router as events_router
 from baker.api.exception_handlers import global_exception_handler
 from baker.api.knowledge import router as knowledge_router
@@ -28,6 +30,7 @@ from baker.api.staff import router as staff_router
 from baker.api.stock import router as stock_router
 from baker.api.work_items import router as work_items_router
 from baker.config import BUILD_FINGERPRINT, VERSION
+from baker.db.connection import checkpoint_wal
 from baker.logging import setup_logging
 
 
@@ -41,6 +44,10 @@ def create_app() -> FastAPI:
 
     # Initialize logging
     setup_logging()
+
+    @app.on_event("shutdown")
+    def _shutdown_wal_checkpoint():
+        checkpoint_wal()
 
     # Register global exception handler
     app.add_exception_handler(Exception, global_exception_handler)
@@ -69,14 +76,23 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "version": VERSION, "fingerprint": BUILD_FINGERPRINT}
+        from baker.services.journal_sync import journal_sync_failures
+
+        return {
+            "status": "ok",
+            "version": VERSION,
+            "fingerprint": BUILD_FINGERPRINT,
+            "journalSyncFailures": journal_sync_failures,
+        }
 
     app.include_router(photos_router)
     app.include_router(products_router)
+    app.include_router(accounts_router)
     app.include_router(catalog_browse_router)
     app.include_router(catalog_router)
     app.include_router(categories_router)
     app.include_router(config_router)
+    app.include_router(customers_router)
     app.include_router(events_router)
     app.include_router(knowledge_router)
     app.include_router(orders_router)

@@ -12,15 +12,18 @@ class ExpenseFilterCard extends StatelessWidget {
     required this.dateFilterMode,
     required this.categories,
     required this.paymentSources,
-    required this.staffNames,
+    required this.paidByNames,
+    required this.loggedByNames,
     required this.filterCategory,
     required this.filterPaymentSource,
-    required this.filterStaffName,
+    required this.filterPaidByName,
+    required this.filterLoggedByName,
     required this.onDateFilterModeChanged,
     required this.onPickDate,
     required this.onFilterCategoryChanged,
     required this.onFilterPaymentSourceChanged,
-    required this.onFilterStaffChanged,
+    required this.onFilterPaidByNameChanged,
+    required this.onFilterLoggedByNameChanged,
     required this.onClearFilters,
     required this.onApplyFilters,
     required this.formatDate,
@@ -32,15 +35,18 @@ class ExpenseFilterCard extends StatelessWidget {
   final ExpenseDateFilterMode dateFilterMode;
   final List<String> categories;
   final List<String> paymentSources;
-  final List<String> staffNames;
+  final List<String> paidByNames;
+  final List<String> loggedByNames;
   final String filterCategory;
   final String filterPaymentSource;
-  final String filterStaffName;
+  final String filterPaidByName;
+  final String filterLoggedByName;
   final ValueChanged<ExpenseDateFilterMode> onDateFilterModeChanged;
   final VoidCallback onPickDate;
   final ValueChanged<String> onFilterCategoryChanged;
   final ValueChanged<String> onFilterPaymentSourceChanged;
-  final ValueChanged<String> onFilterStaffChanged;
+  final ValueChanged<String> onFilterPaidByNameChanged;
+  final ValueChanged<String> onFilterLoggedByNameChanged;
   final VoidCallback onClearFilters;
   final VoidCallback onApplyFilters;
   final String Function(DateTime) formatDate;
@@ -162,19 +168,39 @@ class ExpenseFilterCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             _FilterChipStrip(
-              label: VN.expenseFilterStaffLabel,
+              label: VN.expensePaidByNameLabel,
               chips: [
                 FilterChip(
                   label: const Text(VN.filterAll),
-                  selected: filterStaffName.isEmpty,
-                  onSelected: (_) => onFilterStaffChanged(''),
+                  selected: filterPaidByName.isEmpty,
+                  onSelected: (_) => onFilterPaidByNameChanged(''),
                   visualDensity: VisualDensity.compact,
                 ),
-                ...staffNames.map(
-                  (staffName) => FilterChip(
-                    label: Text(staffName),
-                    selected: filterStaffName == staffName,
-                    onSelected: (_) => onFilterStaffChanged(staffName),
+                ...paidByNames.map(
+                  (name) => FilterChip(
+                    label: Text(name),
+                    selected: filterPaidByName == name,
+                    onSelected: (_) => onFilterPaidByNameChanged(name),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            _FilterChipStrip(
+              label: VN.expenseLoggedByLabel,
+              chips: [
+                FilterChip(
+                  label: const Text(VN.filterAll),
+                  selected: filterLoggedByName.isEmpty,
+                  onSelected: (_) => onFilterLoggedByNameChanged(''),
+                  visualDensity: VisualDensity.compact,
+                ),
+                ...loggedByNames.map(
+                  (name) => FilterChip(
+                    label: Text(name),
+                    selected: filterLoggedByName == name,
+                    onSelected: (_) => onFilterLoggedByNameChanged(name),
                     visualDensity: VisualDensity.compact,
                   ),
                 ),

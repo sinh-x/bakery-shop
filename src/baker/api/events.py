@@ -2,7 +2,8 @@
 
 import json
 import logging
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
@@ -14,6 +15,7 @@ from baker.db.connection import get_db
 from baker.db.queries import fetch_events, find_staff_by_name, link_event_person
 from baker.models.event import Event
 from baker.models.order import Order
+from baker.utils.time import now_utc
 
 logger = logging.getLogger("baker.server")
 
@@ -49,6 +51,8 @@ def _row_to_dict(row) -> dict:
     else:
         d["orderId"] = None
     d.pop("order_id", None)
+    d.pop("deleted_at", None)
+    d.pop("deleted_by", None)
     return d
 
 
@@ -79,11 +83,24 @@ def create_event(body: EventCreate):
     with get_db() as conn:
         event_id = event.save(conn)
 
+        actor = body.logged_by if body.logged_by else ("CLI" if body.source == "cli" else "")
+        _log_event_history(conn, event_id, "create", actor=actor)
+
         # Link logger to event_people if they exist in staff table
         if body.logged_by:
             staff = find_staff_by_name(conn, body.logged_by)
             if staff:
                 link_event_person(conn, event_id, staff["id"], "logged_by")
+
+        # Auto-generate double-entry journal for expense events (DG-175).
+        # Accounting failure must never block the primary business operation.
+        if body.type == "expense":
+            from baker.services.journal_sync import _sync_expense_journal, run_journal_sync
+            run_journal_sync(
+                _sync_expense_journal,
+                conn, event_id, body.data, body.summary,
+                log_label=f"expense journal sync for event {event_id}",
+            )
 
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return _row_to_dict(row)
@@ -100,8 +117,9 @@ def list_events(
     expense_category: str | None = Query(None, description="Lọc chi phí theo danh mục"),
     expense_payment_method: str | None = Query(None, description="Lọc chi phí theo phương thức thanh toán"),
     expense_staff_name: str | None = Query(None, description="Lọc chi phí theo nhân viên"),
+    expense_paid_by_name: str | None = Query(None, description="Lọc chi phí theo người trả"),
     expense_payment_source: str | None = Query(None, description="Lọc chi phí theo nguồn tiền"),
-    expense_search: str | None = Query(None, description="Tìm kiếm chi phí trong tóm tắt, NCC, ghi chú, nhân viên, nguồn tiền"),
+    expense_search: str | None = Query(None, description="Tìm kiếm chi phí trong tóm tắt, NCC, ghi chú, nhân viên, người trả, nguồn tiền"),
     limit: int = Query(50, ge=1, le=500, description="Số kết quả tối đa"),
 ):
     """Danh sách sự kiện với bộ lọc."""
@@ -119,6 +137,7 @@ def list_events(
             expense_category=expense_category,
             expense_payment_method=expense_payment_method,
             expense_staff_name=expense_staff_name,
+            expense_paid_by_name=expense_paid_by_name,
             expense_payment_source=expense_payment_source,
             expense_search=expense_search,
             limit=limit,
@@ -130,7 +149,9 @@ def list_events(
 def get_event(event_id: int):
     """Chi tiết một sự kiện."""
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM events WHERE id = ? AND deleted_at IS NULL", (event_id,)
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
         return _row_to_dict(row)
@@ -145,6 +166,17 @@ class EventUpdate(BaseModel):
     timestamp: str | None = None
 
 
+def _log_event_history(conn, event_id, action_type, actor="", field_name="", old_value="", new_value=""):
+    conn.execute(
+        """INSERT INTO event_history (event_id, action_type, actor, field_name, old_value, new_value, timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (event_id, action_type, actor, field_name, old_value, new_value, now_utc()),
+    )
+
+
+_TZ_RE = re.compile(r'(Z|[+-]\d{2}:?\d{2})$')
+
+
 def _normalize_timestamp(raw: str | None) -> str | None:
     if raw is None:
         return None
@@ -152,10 +184,24 @@ def _normalize_timestamp(raw: str | None) -> str | None:
     if not value:
         raise HTTPException(status_code=422, detail="timestamp không được để trống")
     try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="timestamp không đúng định dạng ISO") from exc
-    return value
+    if not _TZ_RE.search(value):
+        # Treat bare timestamps as UTC and append the Z suffix so all stored
+        # timestamps are UTC (DG-202 FR1). Previously these were assumed to be
+        # +07:00 local time; the database now stores UTC only.
+        return f"{value}Z"
+    # Offset-suffixed timestamps (e.g. ``+07:00``) are converted to UTC ``Z``
+    # so every timestamp stored via the events API is UTC Z-suffixed (DG-202
+    # FR1, review-auto cycle 1 CQ-1). Fractional seconds are preserved when
+    # present to keep sub-second precision.
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    utc_dt = parsed.astimezone(timezone.utc)
+    if utc_dt.microsecond:
+        return utc_dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{utc_dt.microsecond:06d}Z"
+    return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
@@ -169,7 +215,7 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
         "payment_source",
         "vendor",
         "note",
-        "staff_name",
+        "paid_by_name",
     }
     missing_keys = [key for key in required_keys if key not in data]
     if missing_keys:
@@ -183,18 +229,30 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
         raise HTTPException(status_code=422, detail="amount_vnd phải là số nguyên lớn hơn 0")
 
     payment_source = data.get("payment_source", "")
-    if payment_source == STAFF_ADVANCE_PAYMENT_SOURCE and not data.get("staff_name", "").strip():
+    if payment_source == STAFF_ADVANCE_PAYMENT_SOURCE and not data.get("paid_by_name", "").strip():
         raise HTTPException(
             status_code=422,
-            detail="Tên nhân viên là bắt buộc khi chọn Nhân viên ứng trước",
+            detail="Tên người nhận là bắt buộc khi chọn Nhân viên ứng trước",
         )
+
+    paid_by_name = data.get("paid_by_name", "")
+    if paid_by_name.strip():
+        with get_db() as conn:
+            staff = find_staff_by_name(conn, paid_by_name.strip())
+            if not staff:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"paid_by_name '{paid_by_name}' không khớp với nhân viên nào trong hệ thống",
+                )
 
 
 @router.patch("/{event_id}")
 def update_event(event_id: int, body: EventUpdate):
     """Cập nhật sự kiện (summary, type, tags, logged_by, data)."""
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM events WHERE id = ? AND deleted_at IS NULL", (event_id,)
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
 
@@ -241,27 +299,92 @@ def update_event(event_id: int, body: EventUpdate):
             fields.append("data = ?")
             values.append(json.dumps(data["data"]))
 
+        # Log edit entries for each changed field before executing the update
+        actor = data.get("logged_by", "")
+        for field_name, new_val in data.items():
+            if field_name == "data":
+                old_json = row["data"] or ""
+                new_json = json.dumps(data["data"])
+                if old_json != new_json:
+                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
+                                       old_value=old_json, new_value=new_json)
+            elif field_name == "tags":
+                old_tags = row["tags"] or ""
+                new_tags = ",".join(data["tags"])
+                if old_tags != new_tags:
+                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
+                                       old_value=old_tags, new_value=new_tags)
+            elif field_name == "timestamp":
+                old_ts = row["timestamp"] or ""
+                new_ts = _normalize_timestamp(data["timestamp"]) or ""
+                if old_ts != new_ts:
+                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
+                                       old_value=old_ts, new_value=new_ts)
+            else:
+                old_val = str(row[field_name]) if row[field_name] is not None else ""
+                new_val = str(new_val) if new_val is not None else ""
+                if old_val != new_val:
+                    _log_event_history(conn, event_id, "edit", actor=actor, field_name=field_name,
+                                       old_value=old_val, new_value=new_val)
+
         values.append(event_id)
         conn.execute(f"UPDATE events SET {', '.join(fields)} WHERE id = ?", values)
+
+        # Re-sync double-entry journal if this is an expense event (DG-175).
+        if next_type == "expense":
+            from baker.services.journal_sync import _sync_expense_journal, run_journal_sync
+            run_journal_sync(
+                _sync_expense_journal,
+                conn, event_id, next_data, str(row["summary"] if "summary" not in data else data["summary"]),
+                log_label=f"expense journal re-sync for event {event_id}",
+            )
 
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return _row_to_dict(row)
 
 
 @router.delete("/{event_id}", status_code=204)
-def delete_event(event_id: int):
-    """Xóa sự kiện theo id."""
+def delete_event(event_id: int, deleted_by: str = Query("", description="Người thực hiện xóa")):
+    """Xóa mềm sự kiện theo id."""
     with get_db() as conn:
-        row = conn.execute("SELECT id FROM events WHERE id = ?", (event_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM events WHERE id = ? AND deleted_at IS NULL", (event_id,)
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
 
-        conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+        now = now_utc()
+        conn.execute(
+            "UPDATE events SET deleted_at = ?, deleted_by = ? WHERE id = ?",
+            (now, deleted_by, event_id),
+        )
+        _log_event_history(conn, event_id, "delete", actor=deleted_by)
+
+        # On soft-delete of an expense event, reverse/delete its journal entry (DG-175).
+        if row["type"] == "expense":
+            from baker.services.journal_sync import _sync_expense_journal, run_journal_sync
+            run_journal_sync(
+                _sync_expense_journal,
+                conn, event_id, {}, str(row["summary"]), deleted=True,
+                log_label=f"expense journal delete-sync for event {event_id}",
+            )
+
+
+@router.get("/{event_id}/history")
+def get_event_history(event_id: int):
+    """Lịch sử thay đổi của sự kiện (audit trail)."""
+    with get_db() as conn:
+        _get_event_or_404(conn, event_id)
+        rows = conn.execute(
+            "SELECT * FROM event_history WHERE event_id = ? ORDER BY timestamp DESC, id DESC",
+            (event_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def _get_event_or_404(conn, event_id: int):
     row = conn.execute(
-        "SELECT * FROM events WHERE id = ?", (event_id,)
+        "SELECT * FROM events WHERE id = ? AND deleted_at IS NULL", (event_id,)
     ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
@@ -325,9 +448,9 @@ async def upload_event_photo(
         next_position = result[0]
 
         cursor = conn.execute(
-            "INSERT INTO event_photos (event_id, photo_id, tags, position) "
-            "VALUES (?, ?, ?, ?)",
-            (event_id, photo_id, tags, next_position),
+            "INSERT INTO event_photos (event_id, photo_id, tags, position, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (event_id, photo_id, tags, next_position, now_utc()),
         )
         new_id = cursor.lastrowid
 

@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$ChecklistEntry {
 
- int get id;@JsonKey(name: 'template_id') int get templateId;@JsonKey(name: 'checklist_date') String get checklistDate; bool get completed;@JsonKey(name: 'completed_by') String get completedBy;@JsonKey(name: 'completed_at') String? get completedAt;@JsonKey(name: 'created_at') String? get createdAt;@JsonKey(name: 'template_name') String? get templateName;@JsonKey(name: 'template_period') String? get templatePeriod;@JsonKey(name: 'template_sort_order') int? get templateSortOrder;
+ int get id;@JsonKey(name: 'template_id') int get templateId;@JsonKey(name: 'checklist_date') String get checklistDate; bool get completed;@JsonKey(name: 'completed_by') String get completedBy;@JsonKey(name: 'completed_at', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? get completedAt;@JsonKey(name: 'created_at', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? get createdAt;@JsonKey(name: 'template_name') String? get templateName;@JsonKey(name: 'template_period') String? get templatePeriod;@JsonKey(name: 'template_sort_order') int? get templateSortOrder;
 /// Create a copy of ChecklistEntry
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -48,7 +48,7 @@ abstract mixin class $ChecklistEntryCopyWith<$Res>  {
   factory $ChecklistEntryCopyWith(ChecklistEntry value, $Res Function(ChecklistEntry) _then) = _$ChecklistEntryCopyWithImpl;
 @useResult
 $Res call({
- int id,@JsonKey(name: 'template_id') int templateId,@JsonKey(name: 'checklist_date') String checklistDate, bool completed,@JsonKey(name: 'completed_by') String completedBy,@JsonKey(name: 'completed_at') String? completedAt,@JsonKey(name: 'created_at') String? createdAt,@JsonKey(name: 'template_name') String? templateName,@JsonKey(name: 'template_period') String? templatePeriod,@JsonKey(name: 'template_sort_order') int? templateSortOrder
+ int id,@JsonKey(name: 'template_id') int templateId,@JsonKey(name: 'checklist_date') String checklistDate, bool completed,@JsonKey(name: 'completed_by') String completedBy,@JsonKey(name: 'completed_at', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? completedAt,@JsonKey(name: 'created_at', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? createdAt,@JsonKey(name: 'template_name') String? templateName,@JsonKey(name: 'template_period') String? templatePeriod,@JsonKey(name: 'template_sort_order') int? templateSortOrder
 });
 
 
@@ -73,8 +73,8 @@ as int,checklistDate: null == checklistDate ? _self.checklistDate : checklistDat
 as String,completed: null == completed ? _self.completed : completed // ignore: cast_nullable_to_non_nullable
 as bool,completedBy: null == completedBy ? _self.completedBy : completedBy // ignore: cast_nullable_to_non_nullable
 as String,completedAt: freezed == completedAt ? _self.completedAt : completedAt // ignore: cast_nullable_to_non_nullable
-as String?,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
-as String?,templateName: freezed == templateName ? _self.templateName : templateName // ignore: cast_nullable_to_non_nullable
+as DateTime?,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,templateName: freezed == templateName ? _self.templateName : templateName // ignore: cast_nullable_to_non_nullable
 as String?,templatePeriod: freezed == templatePeriod ? _self.templatePeriod : templatePeriod // ignore: cast_nullable_to_non_nullable
 as String?,templateSortOrder: freezed == templateSortOrder ? _self.templateSortOrder : templateSortOrder // ignore: cast_nullable_to_non_nullable
 as int?,
@@ -159,7 +159,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'template_id')  int templateId, @JsonKey(name: 'checklist_date')  String checklistDate,  bool completed, @JsonKey(name: 'completed_by')  String completedBy, @JsonKey(name: 'completed_at')  String? completedAt, @JsonKey(name: 'created_at')  String? createdAt, @JsonKey(name: 'template_name')  String? templateName, @JsonKey(name: 'template_period')  String? templatePeriod, @JsonKey(name: 'template_sort_order')  int? templateSortOrder)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'template_id')  int templateId, @JsonKey(name: 'checklist_date')  String checklistDate,  bool completed, @JsonKey(name: 'completed_by')  String completedBy, @JsonKey(name: 'completed_at', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? completedAt, @JsonKey(name: 'created_at', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'template_name')  String? templateName, @JsonKey(name: 'template_period')  String? templatePeriod, @JsonKey(name: 'template_sort_order')  int? templateSortOrder)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ChecklistEntry() when $default != null:
 return $default(_that.id,_that.templateId,_that.checklistDate,_that.completed,_that.completedBy,_that.completedAt,_that.createdAt,_that.templateName,_that.templatePeriod,_that.templateSortOrder);case _:
@@ -180,7 +180,7 @@ return $default(_that.id,_that.templateId,_that.checklistDate,_that.completed,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'template_id')  int templateId, @JsonKey(name: 'checklist_date')  String checklistDate,  bool completed, @JsonKey(name: 'completed_by')  String completedBy, @JsonKey(name: 'completed_at')  String? completedAt, @JsonKey(name: 'created_at')  String? createdAt, @JsonKey(name: 'template_name')  String? templateName, @JsonKey(name: 'template_period')  String? templatePeriod, @JsonKey(name: 'template_sort_order')  int? templateSortOrder)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id, @JsonKey(name: 'template_id')  int templateId, @JsonKey(name: 'checklist_date')  String checklistDate,  bool completed, @JsonKey(name: 'completed_by')  String completedBy, @JsonKey(name: 'completed_at', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? completedAt, @JsonKey(name: 'created_at', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'template_name')  String? templateName, @JsonKey(name: 'template_period')  String? templatePeriod, @JsonKey(name: 'template_sort_order')  int? templateSortOrder)  $default,) {final _that = this;
 switch (_that) {
 case _ChecklistEntry():
 return $default(_that.id,_that.templateId,_that.checklistDate,_that.completed,_that.completedBy,_that.completedAt,_that.createdAt,_that.templateName,_that.templatePeriod,_that.templateSortOrder);}
@@ -197,7 +197,7 @@ return $default(_that.id,_that.templateId,_that.checklistDate,_that.completed,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id, @JsonKey(name: 'template_id')  int templateId, @JsonKey(name: 'checklist_date')  String checklistDate,  bool completed, @JsonKey(name: 'completed_by')  String completedBy, @JsonKey(name: 'completed_at')  String? completedAt, @JsonKey(name: 'created_at')  String? createdAt, @JsonKey(name: 'template_name')  String? templateName, @JsonKey(name: 'template_period')  String? templatePeriod, @JsonKey(name: 'template_sort_order')  int? templateSortOrder)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id, @JsonKey(name: 'template_id')  int templateId, @JsonKey(name: 'checklist_date')  String checklistDate,  bool completed, @JsonKey(name: 'completed_by')  String completedBy, @JsonKey(name: 'completed_at', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? completedAt, @JsonKey(name: 'created_at', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'template_name')  String? templateName, @JsonKey(name: 'template_period')  String? templatePeriod, @JsonKey(name: 'template_sort_order')  int? templateSortOrder)?  $default,) {final _that = this;
 switch (_that) {
 case _ChecklistEntry() when $default != null:
 return $default(_that.id,_that.templateId,_that.checklistDate,_that.completed,_that.completedBy,_that.completedAt,_that.createdAt,_that.templateName,_that.templatePeriod,_that.templateSortOrder);case _:
@@ -212,7 +212,7 @@ return $default(_that.id,_that.templateId,_that.checklistDate,_that.completed,_t
 @JsonSerializable()
 
 class _ChecklistEntry implements ChecklistEntry {
-  const _ChecklistEntry({required this.id, @JsonKey(name: 'template_id') required this.templateId, @JsonKey(name: 'checklist_date') required this.checklistDate, this.completed = false, @JsonKey(name: 'completed_by') this.completedBy = '', @JsonKey(name: 'completed_at') this.completedAt, @JsonKey(name: 'created_at') this.createdAt, @JsonKey(name: 'template_name') this.templateName, @JsonKey(name: 'template_period') this.templatePeriod, @JsonKey(name: 'template_sort_order') this.templateSortOrder});
+  const _ChecklistEntry({required this.id, @JsonKey(name: 'template_id') required this.templateId, @JsonKey(name: 'checklist_date') required this.checklistDate, this.completed = false, @JsonKey(name: 'completed_by') this.completedBy = '', @JsonKey(name: 'completed_at', fromJson: parseApiDateTime, toJson: timestampToJson) this.completedAt, @JsonKey(name: 'created_at', fromJson: parseApiDateTime, toJson: timestampToJson) this.createdAt, @JsonKey(name: 'template_name') this.templateName, @JsonKey(name: 'template_period') this.templatePeriod, @JsonKey(name: 'template_sort_order') this.templateSortOrder});
   factory _ChecklistEntry.fromJson(Map<String, dynamic> json) => _$ChecklistEntryFromJson(json);
 
 @override final  int id;
@@ -220,8 +220,8 @@ class _ChecklistEntry implements ChecklistEntry {
 @override@JsonKey(name: 'checklist_date') final  String checklistDate;
 @override@JsonKey() final  bool completed;
 @override@JsonKey(name: 'completed_by') final  String completedBy;
-@override@JsonKey(name: 'completed_at') final  String? completedAt;
-@override@JsonKey(name: 'created_at') final  String? createdAt;
+@override@JsonKey(name: 'completed_at', fromJson: parseApiDateTime, toJson: timestampToJson) final  DateTime? completedAt;
+@override@JsonKey(name: 'created_at', fromJson: parseApiDateTime, toJson: timestampToJson) final  DateTime? createdAt;
 @override@JsonKey(name: 'template_name') final  String? templateName;
 @override@JsonKey(name: 'template_period') final  String? templatePeriod;
 @override@JsonKey(name: 'template_sort_order') final  int? templateSortOrder;
@@ -259,7 +259,7 @@ abstract mixin class _$ChecklistEntryCopyWith<$Res> implements $ChecklistEntryCo
   factory _$ChecklistEntryCopyWith(_ChecklistEntry value, $Res Function(_ChecklistEntry) _then) = __$ChecklistEntryCopyWithImpl;
 @override @useResult
 $Res call({
- int id,@JsonKey(name: 'template_id') int templateId,@JsonKey(name: 'checklist_date') String checklistDate, bool completed,@JsonKey(name: 'completed_by') String completedBy,@JsonKey(name: 'completed_at') String? completedAt,@JsonKey(name: 'created_at') String? createdAt,@JsonKey(name: 'template_name') String? templateName,@JsonKey(name: 'template_period') String? templatePeriod,@JsonKey(name: 'template_sort_order') int? templateSortOrder
+ int id,@JsonKey(name: 'template_id') int templateId,@JsonKey(name: 'checklist_date') String checklistDate, bool completed,@JsonKey(name: 'completed_by') String completedBy,@JsonKey(name: 'completed_at', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? completedAt,@JsonKey(name: 'created_at', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? createdAt,@JsonKey(name: 'template_name') String? templateName,@JsonKey(name: 'template_period') String? templatePeriod,@JsonKey(name: 'template_sort_order') int? templateSortOrder
 });
 
 
@@ -284,8 +284,8 @@ as int,checklistDate: null == checklistDate ? _self.checklistDate : checklistDat
 as String,completed: null == completed ? _self.completed : completed // ignore: cast_nullable_to_non_nullable
 as bool,completedBy: null == completedBy ? _self.completedBy : completedBy // ignore: cast_nullable_to_non_nullable
 as String,completedAt: freezed == completedAt ? _self.completedAt : completedAt // ignore: cast_nullable_to_non_nullable
-as String?,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
-as String?,templateName: freezed == templateName ? _self.templateName : templateName // ignore: cast_nullable_to_non_nullable
+as DateTime?,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,templateName: freezed == templateName ? _self.templateName : templateName // ignore: cast_nullable_to_non_nullable
 as String?,templatePeriod: freezed == templatePeriod ? _self.templatePeriod : templatePeriod // ignore: cast_nullable_to_non_nullable
 as String?,templateSortOrder: freezed == templateSortOrder ? _self.templateSortOrder : templateSortOrder // ignore: cast_nullable_to_non_nullable
 as int?,

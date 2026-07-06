@@ -14,7 +14,9 @@ _PaymentTransaction _$PaymentTransactionFromJson(Map<String, dynamic> json) =>
       method: json['method'] as String? ?? 'cash',
       amount: (json['amount'] as num).toDouble(),
       notes: json['note'] as String? ?? '',
-      createdAt: json['createdAt'] as String?,
+      createdAt: parseApiDateTime(json['createdAt'] as String?),
+      invalidatedAt: parseApiDateTime(json['invalidatedAt'] as String?),
+      invalidatedBy: json['invalidatedBy'] as String? ?? '',
     );
 
 Map<String, dynamic> _$PaymentTransactionToJson(_PaymentTransaction instance) =>
@@ -25,5 +27,7 @@ Map<String, dynamic> _$PaymentTransactionToJson(_PaymentTransaction instance) =>
       'method': instance.method,
       'amount': instance.amount,
       'note': instance.notes,
-      'createdAt': instance.createdAt,
+      'createdAt': timestampToJson(instance.createdAt),
+      'invalidatedAt': timestampToJson(instance.invalidatedAt),
+      'invalidatedBy': instance.invalidatedBy,
     };

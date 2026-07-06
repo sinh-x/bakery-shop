@@ -295,6 +295,18 @@ class VN {
       'Cảnh báo: máy chủ chưa cung cấp mã phiên bản, có thể đang chạy bản cũ';
   static const createdBy = 'Người tạo';
 
+  // Printer paper mode (DG-183 Phase 2)
+  static const paperModeLabel = 'Loại giấy in';
+  static const paperModeHelp =
+      'Cấu hình chỉ ghi nhận loại giấy — không đổi lệnh TSPL';
+  static const paperModeLabelOption = 'Nhãn (có khe)';
+  static const paperModeRollOption = 'Cuộn (liên tục)';
+  static const paperModeLoading = 'Đang tải...';
+  static const paperModeLoadError = 'Không tải được loại giấy in';
+  static const paperModeSaved = 'Đã lưu loại giấy in';
+  static const paperModeSaveFailed = 'Không thể lưu loại giấy in';
+  static const paperModeInvalid = 'Loại giấy không hợp lệ';
+
   // Delivery types (detailed)
   static const deliveryBus = 'Giao xe khách';
   static const deliveryDoor = 'Giao tận nơi';
@@ -370,6 +382,24 @@ class VN {
   static const paymentNotes = 'Ghi chú (tùy chọn)';
   static const paymentAmountLabel = 'Số tiền';
   static const txnType = 'Loại thanh toán';
+
+  // Payment transaction invalidation (DG-196)
+  static const txnInvalidatedBadge = 'Đã hủy';
+  static const txnInvalidatedAtLabel = 'Ngày hủy';
+  static const txnInvalidatedByLabel = 'Người hủy';
+  static const invalidatePayment = 'Hủy giao dịch';
+  static const restorePayment = 'Khôi phục giao dịch';
+  static const invalidateConfirmTitle = 'Hủy giao dịch?';
+  static const invalidateConfirmMessage =
+      'Giao dịch sẽ bị hủy và không tính vào tổng thanh toán. '
+      'Bút toán kế toán sẽ được đảo.';
+  static const restoreConfirmTitle = 'Khôi phục giao dịch?';
+  static const restoreConfirmMessage =
+      'Giao dịch sẽ được khôi phục và tính lại vào tổng thanh toán.';
+  static const paymentInvalidated = 'Đã hủy giao dịch';
+  static const paymentRestored = 'Đã khôi phục giao dịch';
+  static const invalidateReasonLabel = 'Lý do hủy (tùy chọn)';
+  static const invalidateReasonHint = 'Nhập lý do hủy giao dịch...';
 
   // Work item statuses
   static const workItemPending = 'Chờ xử lý';
@@ -568,7 +598,9 @@ class VN {
   static const expensePaymentMethodLabel = 'Phương thức thanh toán';
   static const expenseVendorLabel = 'Nhà cung cấp';
   static const expenseNoteLabel = 'Ghi chú';
-  static const expenseStaffNameLabel = 'Tên nhân viên';
+  static const expenseStaffNameLabel = 'Nhân viên';
+  static const expensePaidByNameLabel = 'Người chi trả';
+  static const expenseLoggedByLabel = 'Người ghi nhận';
   static const expenseCategoryIngredient = 'Nguyên liệu';
   static const expenseCategoryPackaging = 'Bao bì';
   static const expenseCategoryDelivery = 'Vận chuyển';
@@ -584,17 +616,24 @@ class VN {
   static const expenseApplyFiltersAction = 'Áp dụng lọc';
   static const expenseResetFiltersAction = 'Xóa lọc';
   static const expenseSearchLabel =
-      'Tìm theo nội dung, nhà cung cấp, nhân viên';
+      'Tìm theo nội dung, nhà cung cấp, người ghi, người trả';
   static const expenseSinceLabel = 'Từ ngày';
   static const expenseUntilLabel = 'Đến ngày';
   static const expenseDateLabel = 'Ngày chi';
   static const expenseTimeLabel = 'Giờ chi';
-  static const expenseFilterStaffLabel = 'Lọc theo nhân viên';
   static const expenseNoHistory = 'Chưa có chi phí phù hợp bộ lọc';
   static const expenseAmountValidationMessage =
       'Số tiền phải là số nguyên VND lớn hơn 0';
   static const expenseStaffNameRequiredForAdvance =
       'Tên nhân viên là bắt buộc khi chọn Nhân viên ứng trước';
+  static const expensePayerConfirmTitle = 'Xác nhận người chi trả';
+  static const expensePayerConfirmPrompt =
+      'Bạn chưa chọn Người chi trả. Dùng tên nhân viên làm người chi trả?';
+  static const expensePayerUseStaff = 'Dùng tên nhân viên';
+  static const expensePayerEnterCustom = 'Nhập tên khác';
+  static const expensePayerCustomHint = 'Nhập tên người chi trả';
+  static const expenseEmptyStaffWarning =
+      'Vui lòng cài đặt tên nhân viên trong Cài đặt trước khi nhập chi phí.';
 
   // Payment sources
   static const expensePaymentSourceLabel = 'Nguồn tiền chi';
@@ -661,6 +700,15 @@ class VN {
 
   static const outOfStock = 'Hết hàng';
 
+  // Negative stock display (DG-200 Phase 5, FR-8, AC-10)
+  /// Label for products with a negative net stock position.
+  /// `Âm N` reads as `Âm <N>` where N is the absolute quantity.
+  static String negativeStockLabel(int qty) {
+    assert(qty < 0, 'negativeStockLabel expects a negative quantity');
+    return 'Âm ${qty.abs()}';
+  }
+  static const negativeStockLabelPrefix = 'Âm';
+
   // Stock management
   static const quanLyTonKho = 'Quản lý tồn kho';
   static const nhapHang = 'Nhập hàng';
@@ -723,6 +771,15 @@ class VN {
   static const trangThaiCoLoi = 'Có lỗi';
   static const themDongBan = 'Thêm dòng bán';
   static const soLuongChenhLech = 'Số lượng chênh lệch';
+
+  // Reconciliation surplus / restock inflow (DG-200 Phase 6, FR-9, AC-11)
+  /// Label for the surplus inflow quantity (counted - expected, when > 0).
+  /// Reads as `Số lượng bù: +N`.
+  static const soLuongBu = 'Số lượng bù';
+  /// Restock indicator title shown next to a surplus option.
+  static const nhapBuTonKho = 'Nhập bù tồn kho';
+  /// Hint explaining that surplus will auto-create a restock inflow.
+  static const nhapBuHint = 'Số dư sẽ tự nhập bù vào kho khi gửi đối soát';
   static const dongBan = 'Dòng bán';
   static const nhanChip = 'Nhãn chip';
   static const giam = 'Giảm';
@@ -753,6 +810,118 @@ class VN {
   static const taiNAnh = 'Đã tải {count} ảnh';
   static const khongTheTaiAnh = 'Không thể tải ảnh';
   static const khongTheChiaSe = 'Không thể chia sẻ';
+
+  // Customer management (DG-182 Phase 3)
+  static const manageCustomers = 'Quản lý khách hàng';
+  static const addCustomer = 'Thêm khách hàng';
+  static const editCustomer = 'Sửa khách hàng';
+  static const customerListTitle = 'Khách hàng';
+  static const searchCustomers = 'Tìm theo tên hoặc số điện thoại...';
+  static const noCustomers = 'Chưa có khách hàng';
+  static const noCustomersMatch = 'Không tìm thấy khách phù hợp';
+  static const customerCreated = 'Đã thêm khách hàng';
+  static const customerUpdated = 'Đã cập nhật khách hàng';
+  static const customerDeleted = 'Đã xóa khách hàng';
+  static const deleteCustomer = 'Xóa khách hàng';
+  static const deleteCustomerConfirm =
+      'Xóa khách hàng này? Đơn hàng liên kết sẽ bỏ khách hàng.';
+  static const customerOrderHistory = 'Lịch sử đơn hàng';
+  static const customerNoOrders = 'Chưa có đơn hàng';
+  static const customerOrderCountSuffix = 'đơn';
+  static const customerSharedPhoneTitle = 'Cùng số điện thoại';
+  static const customerSharedPhoneHint =
+      'Khách hàng khác dùng chung số này:';
+  static const customerPhoneField = 'Số điện thoại (tùy chọn)';
+  static const customerNameField = 'Tên khách hàng';
+  static const openCustomerManagement = 'Khách hàng';
+  static const customerCreatedAt = 'Ngày tạo';
+
+  // Customer search in order flows (DG-182 Phase 4)
+  static const customerSearchHint = 'Tìm khách theo tên hoặc SĐT...';
+  static const customerSearchLinked = 'Đã chọn: {name}';
+  static const customerSearchChange = 'Đổi khách';
+  static const customerSearchClear = 'Bỏ chọn khách';
+  static const customerSearchNoMatch = 'Không tìm thấy khách';
+  static const customerSearchLoading = 'Đang tìm...';
+
+  // Customer form multi-phone (DG-205 Phase 5)
+  static const customerAddPhone = 'Thêm số điện thoại';
+  static const customerRemovePhone = 'Xóa số này';
+  static const customerPrimaryPhone = 'Số chính';
+  static const customerPhoneRequired = 'Cần ít nhất một số điện thoại';
+  static const customerPhonePrimaryRequired = 'Chọn một số làm số chính';
+  static const customerPhoneDuplicate = 'Số điện thoại bị trùng';
+
+  // Accounting
+  static const accountingTitle = 'Kế toán';
+  static const accountingTabAccounts = 'Tài khoản';
+  static const accountingTabJournal = 'Sổ nhật ký';
+  static const accountingTabBalances = 'Số dư';
+  static const accountingLockJournal = 'Khóa sổ';
+  static const accountingLockConfirm = 'Khóa tất cả bút toán trong khoảng này?';
+  static const accountingLockSuccess = 'Đã khóa sổ';
+  static const accountingFilterSince = 'Từ ngày';
+  static const accountingFilterUntil = 'Đến ngày';
+  static const accountingFilterAccount = 'Tài khoản';
+  static const accountingFilterSourceType = 'Loại giao dịch';
+  static const accountingNoEntries = 'Không có bút toán nào';
+  static const accountingDebit = 'Nợ';
+  static const accountingCredit = 'Có';
+  static const accountingBalance = 'Số dư';
+  static const accountingOwnerCapital = 'Vốn chủ sở hữu vào';
+  static const accountingOwnerDraw = 'Rút vốn';
+  static const accountingStaffReimburse = 'Hoàn ứng';
+  static const accountingLocked = 'Đã khóa';
+  static const accountingUnlocked = 'Chưa khóa';
+  static const accountingLoadMore = 'Tải thêm';
+  static const accountingNoAccounts = 'Không có tài khoản';
+  static const accountingNoBalances = 'Không có số dư';
+  static const accountingSourceTypeAll = 'Tất cả';
+  static const accountingSourceTypeExpense = 'Chi phí';
+  static const accountingSourceTypePayment = 'Thanh toán';
+  static const accountingSourceTypeOrder = 'Đơn hàng';
+  static const accountingSourceTypeCogs = 'Giá vốn';
+  static const accountingSourceTypeShippingHold = 'Ship bus giữ hộ';
+  static const accountingSourceTypeShippingRelease = 'Trả ship bus';
+
+  /// Map a journal entry ``sourceType`` to a Vietnamese label.
+  ///
+  /// Falls back to the raw ``sourceType`` when no mapping exists so unknown
+  /// source types remain visible rather than blank.
+  static String accountingSourceTypeLabel(String sourceType) {
+    switch (sourceType) {
+      case 'expense':
+        return accountingSourceTypeExpense;
+      case 'payment_transaction':
+        return accountingSourceTypePayment;
+      case 'order':
+        return accountingSourceTypeOrder;
+      case 'order_cogs':
+        return accountingSourceTypeCogs;
+      case 'order_shipping_hold':
+        return accountingSourceTypeShippingHold;
+      case 'order_shipping_release':
+        return accountingSourceTypeShippingRelease;
+      case 'owner_capital':
+        return accountingOwnerCapital;
+      case 'owner_draw':
+        return accountingOwnerDraw;
+      case 'staff_reimburse':
+        return accountingStaffReimburse;
+      default:
+        return sourceType;
+    }
+  }
+
+  // Account type labels (account_type_helper.dart)
+  static const accountingTypeAsset = 'Tài sản';
+  static const accountingTypeLiability = 'Nợ phải trả';
+  static const accountingTypeEquity = 'Vốn chủ sở hữu';
+  static const accountingTypeIncome = 'Doanh thu';
+  static const accountingTypeExpense = 'Chi phí';
+
+  static String accountingLockResult(int count) =>
+      'Đã khóa $count bút toán';
 
   // Bulk selection
   static const chonAnh = 'Chọn';

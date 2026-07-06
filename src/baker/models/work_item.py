@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+from baker.utils.time import now_utc
+
 
 class WorkItemStatus(str, Enum):
     PENDING = "pending"
@@ -36,8 +38,8 @@ class WorkItem:
         attrs_json = json.dumps(self.attributes)
         cursor = conn.execute(
             """INSERT INTO order_items
-               (order_id, product_id, product_name, quantity, unit_price, notes, position, status, is_birthday, age, is_extra, is_gift, attributes, price_chip_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (order_id, product_id, product_name, quantity, unit_price, notes, position, status, is_birthday, age, is_extra, is_gift, attributes, price_chip_id, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 self.order_id,
                 self.product_id,
@@ -53,6 +55,7 @@ class WorkItem:
                 1 if self.is_gift else 0,
                 attrs_json,
                 self.price_chip_id,
+                now_utc(),
             ),
         )
         self.id = cursor.lastrowid

@@ -30,6 +30,7 @@ class ReconciliationDraftOption {
     required this.sourceChipLabels,
     required this.expectedQty,
     this.priceChipId,
+    this.grossAvailableQty,
   });
 
   final int productId;
@@ -39,6 +40,21 @@ class ReconciliationDraftOption {
   final List<int> sourceChipIds;
   final List<String> sourceChipLabels;
   final int expectedQty;
+
+  /// Gross available quantity (available items before subtracting
+  /// negative_balance). Used by the surplus indicator so it matches the
+  /// backend's gross surplus calculation (counted - available) instead of
+  /// the net position (counted - expected), which would inflate the
+  /// displayed surplus when a negative balance exists
+  /// (DG-200 Phase 5.6-c1-fix, M-1). Null when the backend did not provide it
+  /// (falls back to expectedQty).
+  final int? grossAvailableQty;
+
+  /// Default counted quantity for this option when no explicit counted value
+  /// has been recorded. Negative expected quantities (net position from a
+  /// negative_balance) fall back to 0 so counted_qty stays non-negative
+  /// (DG-200 Phase 5.6-c3-fix, Mn-1).
+  int get defaultCountedQty => expectedQty < 0 ? 0 : expectedQty;
 
   String get chipLabelMetadata {
     if (sourceChipLabels.isEmpty) {
@@ -69,6 +85,7 @@ class ReconciliationDraftOption {
           .toList(),
       sourceChipLabels: chipLabels,
       expectedQty: (json['expected_qty'] as num).toInt(),
+      grossAvailableQty: (json['gross_available_qty'] as num?)?.toInt(),
     );
   }
 }
@@ -145,11 +162,11 @@ List<ReconciliationDraftOption> mergeOptionsByNormalizedPrice(
     }
     final chipIdSet = <int>{};
     final labels = <String>[];
-    if (existing.expectedQty > 0) {
+    if (existing.expectedQty != 0) {
       chipIdSet.addAll(existing.sourceChipIds);
       labels.addAll(stockedOptionLabels(existing));
     }
-    if (option.expectedQty > 0) {
+    if (option.expectedQty != 0) {
       chipIdSet.addAll(option.sourceChipIds);
       for (final label in stockedOptionLabels(option)) {
         if (!labels.contains(label)) {
@@ -165,6 +182,9 @@ List<ReconciliationDraftOption> mergeOptionsByNormalizedPrice(
       sourceChipIds: chipIdSet.toList()..sort(),
       sourceChipLabels: labels,
       expectedQty: existing.expectedQty + option.expectedQty,
+      grossAvailableQty:
+          (existing.grossAvailableQty ?? existing.expectedQty) +
+          (option.grossAvailableQty ?? option.expectedQty),
     );
   }
   return order.map((price) => merged[price]!).toList();
@@ -181,10 +201,10 @@ int? _mergePriceChipId(
   ReconciliationDraftOption existing,
   ReconciliationDraftOption option,
 ) {
-  if (existing.expectedQty <= 0) {
-    return option.expectedQty > 0 ? _singleChipId(option) : null;
+  if (existing.expectedQty == 0) {
+    return option.expectedQty != 0 ? _singleChipId(option) : null;
   }
-  if (option.expectedQty <= 0) {
+  if (option.expectedQty == 0) {
     return _singleChipId(existing);
   }
 

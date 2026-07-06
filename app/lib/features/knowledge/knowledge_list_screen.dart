@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/knowledge_entry.dart';
 import '../../data/providers/knowledge_provider.dart';
+import '../../shared/mixins/auto_refresh_mixin.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
@@ -27,19 +29,36 @@ class KnowledgeListScreen extends ConsumerStatefulWidget {
       _KnowledgeListScreenState();
 }
 
-class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen> {
+class _KnowledgeListScreenState extends ConsumerState<KnowledgeListScreen>
+    with WidgetsBindingObserver, AutoRefreshMixin {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
   late String? _selectedType;
 
   @override
+  String screenRoutePath() => '/knowledge';
+
+  @override
+  void invalidateProviders() {
+    ref.invalidate(knowledgeEntriesProvider);
+  }
+
+  @override
   void initState() {
     super.initState();
     _selectedType = widget.initialType;
+    initAutoRefresh();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    setupAutoRefreshRouteListener();
   }
 
   @override
   void dispose() {
+    disposeAutoRefresh();
     _searchCtrl.dispose();
     _debounce?.cancel();
     super.dispose();
@@ -340,7 +359,7 @@ class _KnowledgeEntryCard extends StatelessWidget {
               ],
               const SizedBox(height: 4),
               Text(
-                _formatDate(entry.updatedAt),
+                formatDisplayDate(entry.updatedAt),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -350,12 +369,5 @@ class _KnowledgeEntryCard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _formatDate(DateTime dt) {
-    final day = dt.day.toString().padLeft(2, '0');
-    final month = dt.month.toString().padLeft(2, '0');
-    final year = dt.year;
-    return '$day/$month/$year';
   }
 }

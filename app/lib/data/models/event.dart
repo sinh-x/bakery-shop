@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../shared/utils/date_formatting.dart';
+
 part 'event.freezed.dart';
 part 'event.g.dart';
 
@@ -7,7 +9,7 @@ part 'event.g.dart';
 sealed class BakeryEvent with _$BakeryEvent {
   const factory BakeryEvent({
     required int id,
-    @JsonKey(fromJson: _timestampFromJson)
+    @JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson)
     required DateTime timestamp,
     @Default('note') String type,
     required String summary,
@@ -20,16 +22,4 @@ sealed class BakeryEvent with _$BakeryEvent {
 
   factory BakeryEvent.fromJson(Map<String, dynamic> json) =>
       _$BakeryEventFromJson(json);
-}
-
-DateTime _timestampFromJson(String value) {
-  return DateTime.parse(_normalizeApiTimestamp(value));
-}
-
-String _normalizeApiTimestamp(String value) {
-  final hasExplicitTimezone = RegExp(r'(Z|[+-]\d{2}:?\d{2})$').hasMatch(value);
-  if (!hasExplicitTimezone) {
-    return '${value}Z';
-  }
-  return value;
 }

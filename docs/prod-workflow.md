@@ -215,6 +215,96 @@ When adding a new schema change:
 
 ---
 
+## 7. Pre/Post-Migration Validation
+
+The `scripts/db-validate.sh` script (and `baker db validate` CLI) captures database state before and after migrations, diffs the two snapshots, and reports anomalies. This replaces ad-hoc manual checks with a repeatable, auditable process.
+
+### What it captures (8 metric categories)
+
+1. **Row counts** — per user table (excluding `server_logs`)
+2. **Financial lump sums** — orders total/by year/by month, delivered orders, deposits, expenses
+3. **Stock position** — total remaining qty + available inventory items
+4. **Journal trial balance** — per-account debit/credit totals
+5. **Order status distribution** — count per status
+6. **Event type distribution** — count per event type
+7. **Journal totals** — total debit = total credit check
+8. **Counts** — customer count + active product count
+
+Plus: schema version and `PRAGMA integrity_check`.
+
+### Step-by-step test workflow
+
+```bash
+# === 1. Pre-migration snapshot ===
+./scripts/db-validate.sh snapshot --db-path ./data/baker.db --output /tmp/pre.json
+
+# Verify snapshot is valid JSON with all 8 categories
+python3 -c "import json; d=json.load(open('/tmp/pre.json')); \
+  print('Schema:', d['schema_version']); \
+  print('Tables:', len(d['metrics']['row_counts'])); \
+  print('Integrity:', d['integrity_check'])"
+
+# === 2. Run migration (or simulate) ===
+baker db migrate --dry-run
+# or: baker db migrate
+
+# === 3. Post-migration snapshot ===
+./scripts/db-validate.sh snapshot --db-path ./data/baker.db --output /tmp/post.json
+
+# === 4. Diff and report ===
+./scripts/db-validate.sh diff --pre /tmp/pre.json --post /tmp/post.json
+# Exit 0 = clean, no anomalies
+# Exit 1 = anomalies detected (printed to stderr)
+
+# === 5. Test anomaly detection ===
+# Simulate a bad migration by editing the post snapshot:
+python3 -c "
+import json; d=json.load(open('/tmp/pre.json'))
+for r in d['metrics']['row_counts']:
+    if r['tbl']=='orders': r['cnt']=1000
+json.dump(d, open('/tmp/bad.json','w'), indent=2)
+"
+./scripts/db-validate.sh diff --pre /tmp/pre.json --post /tmp/bad.json
+echo "Exit code: $?"  # Should be 1
+
+# === 6. Python CLI (same output) ===
+baker db validate --db-path ./data/baker.db --output /tmp/cli.json
+baker db validate --pre /tmp/pre.json --post /tmp/pre.json
+
+# === 7. Full prod workflow dry-run ===
+./scripts/prod-update.sh --dry-run
+# Shows validation steps in correct order:
+#   pre-snapshot → integrity check → stop service → migrate → post-snapshot → diff → restart
+```
+
+### Anomaly types detected
+
+| Anomaly | Trigger |
+|---------|---------|
+| Row count decrease | Any table has fewer rows after migration |
+| Financial value decrease | Order count/value, deposits, or expenses drop |
+| Stock position decrease | Remaining qty or available items drop |
+| Balance drift | Any account debit/credit changes by > 0.01 VND |
+| Distribution decrease | Order status or event type counts drop |
+| Journal imbalance | Total debit ≠ total credit by > 0.01 VND |
+| Count decrease | Customer or active product count drops |
+| Schema version decrease | Version went backward |
+| Integrity failure | `PRAGMA integrity_check` returns non-ok |
+
+### Docker path
+
+```bash
+# Inside container or with mounted volume:
+./scripts/db-validate.sh snapshot --db-path /var/lib/baker/baker.db --output /tmp/docker-snap.json
+```
+
+### Integration in prod-update.sh
+
+The `prod-update.sh` script now runs validation automatically:
+
+1. **Pre-migration:** Takes snapshot, checks integrity. If integrity fails → **aborts** (migration blocked).
+2. **Post-migration:** Takes snapshot, runs diff. Anomalies reported but migration is **not rolled back** — Sinh decides.
+
 ## Quick Reference
 
 | Command | What it does |
@@ -225,4 +315,7 @@ When adding a new schema change:
 | `baker db migrate` | Apply pending migrations (auto-backup first) |
 | `baker db migrate --no-backup` | Apply without backup (not recommended for prod) |
 | `./scripts/prod-update.sh --dry-run` | Full prod workflow preview |
-| `./scripts/prod-update.sh` | Full prod update: stop → backup → migrate → verify → restart |
+| `./scripts/prod-update.sh` | Full prod update: validate → stop → backup → migrate → verify → restart |
+| `./scripts/db-validate.sh snapshot` | Capture DB metrics snapshot to JSON |
+| `./scripts/db-validate.sh diff` | Compare two snapshots, report anomalies |
+| `baker db validate` | Same validation from Python CLI |

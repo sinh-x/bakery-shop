@@ -3,21 +3,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/api/api_client.dart';
+import '../../data/models/customer.dart';
 import '../../data/models/order.dart';
 import '../../data/models/product.dart';
 import '../../data/models/work_item.dart';
 import '../../providers/config_provider.dart';
+import '../../providers/customers_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/config_parsers.dart';
+import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/order_helpers.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import '../customers/widgets/customer_profile_card.dart';
+import '../customers/widgets/customer_search_field.dart';
 import 'utils/trung_bay_inventory_extensions.dart';
 import 'widgets/hour_picker.dart';
 import 'widgets/order_photo_section.dart';
@@ -50,6 +54,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   double _shippingFee = 0.0;
   bool _saving = false;
   bool _initialized = false;
+  Customer? _selectedCustomer;
+  int? _linkedCustomerId;
+  bool _customerTouched = false;
 
   final _pendingNewItems = <DraftOrderItem>[];
 
@@ -72,12 +79,13 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _source = order.source;
     _deliveryType = order.deliveryType;
     _shippingFee = order.shippingFee;
+    _linkedCustomerId = order.customerId;
     if (order.dueDate != null) {
-      try {
-        _dueDate = DateFormat('yyyy-MM-dd').parse(order.dueDate!);
-      } catch (error, stackTrace) {
-        debugPrint('order_edit: invalid due date "${order.dueDate}": $error');
-        debugPrintStack(stackTrace: stackTrace);
+      final parsed = parseApiDate(order.dueDate);
+      if (parsed != null) {
+        _dueDate = parsed;
+      } else {
+        debugPrint('order_edit: invalid due date "${order.dueDate}"');
       }
     }
     if (order.dueTime != null) {
@@ -93,12 +101,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
   bool get _needsAddress => _deliveryType == 'bus' || _deliveryType == 'door';
 
-  String _formatDateDisplay(DateTime d) => DateFormat('dd/MM/yyyy').format(d);
-
-  String _formatDateApi(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
-
-  String _formatTime(TimeOfDay t) =>
-      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  String _formatTime(TimeOfDay t) => formatHourMinute(t.hour, t.minute);
 
   void _updateShippingFeeForDeliveryType(
     String type, {
@@ -180,7 +183,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final originalOrder = ref.read(orderDetailProvider(widget.orderRef)).value;
-    final newDueDate = _dueDate != null ? _formatDateApi(_dueDate!) : null;
+    final newDueDate = _dueDate != null ? formatApiDate(_dueDate!) : null;
     final dueDateChanged = originalOrder != null && newDueDate != originalOrder.dueDate;
     final shouldAskDateDecision =
         dueDateChanged && (originalOrder.publicOrderCode.trim().isNotEmpty);
@@ -203,6 +206,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             deliveryType: _deliveryType,
             source: _source.isEmpty ? null : _source,
             customerName: _nameCtrl.text.trim(),
+            customerId: _selectedCustomer?.id,
+            // OPS-1: when the user touched the customer selection (including
+            // clearing it), always send customerId to the backend so an unlink
+            // (null) propagates instead of being omitted as "unchanged".
+            customerTouched: _customerTouched,
             shippingFee: _shippingFee,
             publicCodeDateChangeDecision: publicCodeDateChangeDecision,
           );
@@ -335,25 +343,26 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
                 // ── Customer info ─────────────────────────────────────
                 const _SectionHeader(VN.customer),
-                TextFormField(
-                  controller: _nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: VN.customerName,
-                    border: OutlineInputBorder(),
-                  ),
-                  textCapitalization: TextCapitalization.words,
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _phoneCtrl,
-                  decoration: const InputDecoration(
-                    labelText: VN.customerPhone,
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.phone,
-                  inputFormatters: [PhoneInputFormatter()],
+                _CustomerSection(
+                  linkedCustomerId: _linkedCustomerId,
+                  selectedCustomer: _selectedCustomer,
+                  customerTouched: _customerTouched,
+                  onSelected: (c) => setState(() {
+                    _selectedCustomer = c;
+                    _customerTouched = true;
+                    if (c != null) {
+                      _nameCtrl.text = c.name;
+                      if (c.phone.isNotEmpty) _phoneCtrl.text = c.phone;
+                    }
+                  }),
+                  onClearSelection: () => setState(() {
+                    if (_selectedCustomer != null) {
+                      _selectedCustomer = null;
+                      _customerTouched = true;
+                    }
+                  }),
+                  nameCtrl: _nameCtrl,
+                  phoneCtrl: _phoneCtrl,
                 ),
                 const SizedBox(height: 20),
 
@@ -367,7 +376,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         icon: const Icon(Icons.calendar_today, size: 18),
                         label: Text(
                           _dueDate != null
-                              ? _formatDateDisplay(_dueDate!)
+                              ? formatDisplayDate(_dueDate)
                               : VN.dueDate,
                         ),
                         style: OutlinedButton.styleFrom(
@@ -520,6 +529,81 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+/// Customer search + profile card section for the order edit screen
+/// (DG-206 Phase 6 / FR3 / AC3).
+///
+/// Renders a [CustomerSearchField] pre-populated with the order's linked
+/// customer (when `linkedCustomerId` is set and the user has not yet
+/// changed the selection) and, once a customer is selected, a compact
+/// [CustomerProfileCard] below it. The name/phone text fields are kept for
+/// the walk-in/free-text fallback path.
+class _CustomerSection extends ConsumerWidget {
+  const _CustomerSection({
+    required this.linkedCustomerId,
+    required this.selectedCustomer,
+    required this.customerTouched,
+    required this.onSelected,
+    required this.onClearSelection,
+    required this.nameCtrl,
+    required this.phoneCtrl,
+  });
+
+  final int? linkedCustomerId;
+  final Customer? selectedCustomer;
+  final bool customerTouched;
+  final ValueChanged<Customer?> onSelected;
+  final VoidCallback onClearSelection;
+  final TextEditingController nameCtrl;
+  final TextEditingController phoneCtrl;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final customer = selectedCustomer ??
+        (customerTouched || linkedCustomerId == null
+            ? null
+            : ref.watch(customerProvider(linkedCustomerId!)).value);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        CustomerSearchField(
+          initialCustomer: customer,
+          onSelected: onSelected,
+        ),
+        if (customer != null) ...[
+          const SizedBox(height: 8),
+          CustomerProfileCard(
+            customer: customer,
+            mode: CustomerProfileCardMode.compact,
+            onTap: () => context.push('/customers/${customer.id}'),
+          ),
+        ],
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: nameCtrl,
+          decoration: const InputDecoration(
+            labelText: VN.customerName,
+            border: OutlineInputBorder(),
+          ),
+          textCapitalization: TextCapitalization.words,
+          validator: (v) =>
+              (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
+          onChanged: (_) => onClearSelection(),
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: phoneCtrl,
+          decoration: const InputDecoration(
+            labelText: VN.customerPhone,
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.phone,
+          inputFormatters: [PhoneInputFormatter()],
+        ),
+      ],
     );
   }
 }

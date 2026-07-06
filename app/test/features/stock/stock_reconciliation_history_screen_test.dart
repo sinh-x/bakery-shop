@@ -18,7 +18,7 @@ class _FakeHistoryDetailService extends ReconciliationService {
       wasteReason: '',
       linkedOrderRef: 'ORD-TOP',
       linkedPaymentRef: 'PAY-TOP',
-      createdAt: '2026-05-04T10:00:00',
+      createdAt: '2026-05-04T10:00:00Z',
       lines: [
         ReconciliationHistoryLine(
           id: 1,
