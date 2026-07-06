@@ -103,7 +103,18 @@ if [[ -x "$VALIDATE_SCRIPT" && -f "$PRE_SNAP" ]]; then
     echo "Post-migration snapshot saved: $POST_SNAP"
     echo ""
     echo "--- Migration Diff Report ---"
-    "$VALIDATE_SCRIPT" diff --pre "$PRE_SNAP" --post "$POST_SNAP" || true
+    set +e
+    "$VALIDATE_SCRIPT" diff --pre "$PRE_SNAP" --post "$POST_SNAP"
+    DIFF_EXIT=$?
+    set -e
+
+    case $DIFF_EXIT in
+      0) echo "Validation: Clean — no anomalies detected." ;;
+      1) echo "Validation: Minor/Info anomalies detected — migration OK." ;;
+      2) echo "WARNING: Major anomalies detected — review diff report above." ;;
+      3) echo "CRITICAL: Critical anomalies detected — review diff report above immediately." ;;
+      *) echo "Validation: Unknown exit code $DIFF_EXIT" ;;
+    esac
   else
     echo "WARNING: Post-migration snapshot failed"
   fi
