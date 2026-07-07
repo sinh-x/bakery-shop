@@ -178,16 +178,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                 ],
               ),
               const SizedBox(height: 8),
-              if (_isDebt)
-                _buildCreditorField()
-              else
-                TextFormField(
-                  controller: widget.vendorCtrl,
-                  decoration: const InputDecoration(
-                    labelText: VN.expenseVendorLabel,
-                    border: OutlineInputBorder(),
-                  ),
-                ),
+              _buildVendorField(),
               const SizedBox(height: 8),
               TextFormField(
                 controller: widget.noteCtrl,
@@ -243,7 +234,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
     );
   }
 
-  Widget _buildCreditorField() {
+  Widget _buildVendorField() {
     return RawAutocomplete<String>(
       textEditingController: widget.vendorCtrl,
       focusNode: _vendorFocusNode,
@@ -259,15 +250,19 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
         return TextFormField(
           controller: controller,
           focusNode: focusNode,
-          decoration: const InputDecoration(
-            labelText: VN.expenseCreditorLabel,
+          decoration: InputDecoration(
+            labelText: _isDebt
+                ? VN.expenseCreditorLabel
+                : VN.expenseVendorLabel,
             hintText: VN.expenseVendorAutocompleteHint,
-            border: OutlineInputBorder(),
+            border: const OutlineInputBorder(),
           ),
-          validator: (value) =>
-              (value == null || value.trim().isEmpty)
-                  ? VN.expenseDebtVendorRequired
-                  : null,
+          validator: _isDebt
+              ? (value) =>
+                  (value == null || value.trim().isEmpty)
+                      ? VN.expenseDebtVendorRequired
+                      : null
+              : null,
           onFieldSubmitted: (_) => onFieldSubmitted(),
         );
       },
