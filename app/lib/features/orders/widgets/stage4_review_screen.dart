@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/order/order_create_state_provider.dart';
-import '../../../shared/utils/order_helpers.dart';
-import 'section_header.dart';
+import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class Stage4ReviewScreen extends ConsumerWidget {
@@ -21,22 +20,7 @@ class Stage4ReviewScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(orderCreateStateProvider);
-    final data = state.wizardData;
     final theme = Theme.of(context);
-
-    final regularItems = state.items.where((i) => !i.isExtra).toList();
-    final extraItems = state.items.where((i) => i.isExtra).toList();
-    final total = regularItems.fold<double>(
-      0,
-      (sum, i) => sum + i.unitPrice * i.quantity,
-    );
-
-    final dateStr = state.dueDate != null
-        ? '${state.dueDate!.day}/${state.dueDate!.month}/${state.dueDate!.year}'
-        : '—';
-    final timeStr = state.dueTime != null
-        ? '${state.dueTime!.hour.toString().padLeft(2, '0')}:${state.dueTime!.minute.toString().padLeft(2, '0')}'
-        : '—';
 
     return Column(
       children: [
@@ -60,91 +44,22 @@ class Stage4ReviewScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-
-                const SectionHeader(OrdersLabels.stage1Label),
-                _buildReviewRow(theme, VN.products, '${regularItems.length} sản phẩm'),
-                if (regularItems.isNotEmpty)
-                  ...regularItems.map(
-                    (item) => Padding(
-                      padding: const EdgeInsets.only(left: 16, bottom: 2),
-                      child: Text(
-                        '${item.product.name} x${item.quantity} — ${formatVND(item.unitPrice * item.quantity)}',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ),
-                  ),
-                if (extraItems.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  _buildReviewRow(theme, VN.extras, '${extraItems.length} phụ kiện'),
-                  ...extraItems.map(
-                    (item) => Padding(
-                      padding: const EdgeInsets.only(left: 16, bottom: 2),
-                      child: Text(
-                        '${item.product.name} x${item.quantity}${item.isGift ? ' (${VN.tangKem})' : ''}',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ),
-                  ),
-                ],
-                _buildReviewRow(theme, VN.total, formatVND(total)),
-                const SizedBox(height: 16),
-
-                const SectionHeader(OrdersLabels.stage2Label),
-                _buildReviewRow(theme, VN.customerName, data.customerName.isNotEmpty ? data.customerName : '—'),
-                if (data.customerPhone.isNotEmpty)
-                  _buildReviewRow(theme, VN.customerPhone, data.customerPhone),
-                _buildReviewRow(theme, VN.orderSource, state.source.isNotEmpty ? state.source : '—'),
-                const SizedBox(height: 16),
-
-                const SectionHeader(OrdersLabels.stage3Label),
-                _buildReviewRow(theme, VN.deliveryType, deliveryTypeLabel(data.deliveryType)),
-                if (data.needsAddress) ...[
-                  if (data.deliveryPhone.isNotEmpty)
-                    _buildReviewRow(theme, OrdersLabels.deliveryPhone, data.deliveryPhone),
-                  if (data.deliveryAddress.isNotEmpty)
-                    _buildReviewRow(theme, VN.deliveryAddress, data.deliveryAddress),
-                ],
-                if (data.deliveryType == 'bus' || data.deliveryType == 'door')
-                  _buildReviewRow(
-                    theme,
-                    VN.shippingFee,
-                    data.shippingFee > 0 ? formatVND(data.shippingFee) : VN.shippingFree,
-                  ),
-                if (data.notes.isNotEmpty)
-                  _buildReviewRow(theme, VN.notes, data.notes),
-                _buildReviewRow(theme, VN.dueDate, '$dateStr — $timeStr'),
+                StageSummaryCard(
+                  items: state.items,
+                  wizardData: state.wizardData,
+                  source: state.source,
+                  dueDate: state.dueDate,
+                  dueTime: state.dueTime,
+                  showProducts: true,
+                  showCustomer: true,
+                  showDelivery: true,
+                ),
               ],
             ),
           ),
         ),
         _buildNavigation(),
       ],
-    );
-  }
-
-  Widget _buildReviewRow(ThemeData theme, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              '$label:',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: theme.textTheme.bodyMedium,
-            ),
-          ),
-        ],
-      ),
     );
   }
 

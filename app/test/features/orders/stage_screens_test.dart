@@ -268,4 +268,114 @@ void main() {
     expect(find.text('Khách hàng'), findsWidgets);
     expect(find.text('Nguồn đặt hàng'), findsNothing);
   });
+
+  testWidgets('Stage2CustomerInfoScreen shows Stage 1 product summary',
+      (tester) async {
+    final testState = OrderCreateState(
+      wizardData: const OrderWizardData(
+        customerName: 'Test Customer',
+        customerPhone: '0123456789',
+      ),
+      source: 'Online',
+      items: [
+        DraftOrderItem(
+          product: Product(
+            id: 1,
+            name: 'Test Cake',
+            category: 'banh_kem',
+            basePrice: 150000,
+          ),
+          quantity: 2,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(buildTestWidget(
+      Stage2CustomerInfoScreen(onBack: () {}, onContinue: () {}),
+      state: testState,
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tóm tắt bước trước'), findsOneWidget);
+    expect(find.text('Sản phẩm'), findsWidgets);
+    expect(find.text('Test Cake x2 — 300.000đ'), findsOneWidget);
+  });
+
+  testWidgets('Stage3DeliveryOptionsScreen shows Stage 1+2 summary',
+      (tester) async {
+    final testState = OrderCreateState(
+      wizardData: const OrderWizardData(
+        customerName: 'Nguyen Van A',
+        customerPhone: '0987654321',
+        deliveryType: 'pickup',
+      ),
+      source: 'Online',
+      items: [
+        DraftOrderItem(
+          product: Product(
+            id: 2,
+            name: 'Bánh mì',
+            category: 'banh_mi',
+            basePrice: 15000,
+          ),
+          quantity: 3,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(buildTestWidget(
+      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      state: testState,
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tóm tắt bước trước'), findsOneWidget);
+    expect(find.text('Bánh mì x3 — 45.000đ'), findsOneWidget);
+    expect(find.text('Nguyen Van A'), findsOneWidget);
+    expect(find.text('0987654321'), findsOneWidget);
+    expect(find.text('Online'), findsOneWidget);
+  });
+
+  testWidgets('Stage4ReviewScreen shows all-stage summary card',
+      (tester) async {
+    final testState = OrderCreateState(
+      wizardData: const OrderWizardData(
+        customerName: 'Test Customer',
+        customerPhone: '0123456789',
+        deliveryType: 'door',
+        deliveryAddress: '123 Test St',
+        deliveryPhone: '0987654321',
+        shippingFee: 20000,
+        notes: 'Test notes',
+        source: 'Online',
+      ),
+      source: 'Online',
+      items: [
+        DraftOrderItem(
+          product: Product(
+            id: 1,
+            name: 'Test Cake',
+            category: 'banh_kem',
+            basePrice: 150000,
+          ),
+          quantity: 2,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(buildTestWidget(
+      Stage4ReviewScreen(onBack: () {}, onSubmit: () {}),
+      state: testState,
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Tóm tắt đơn hàng'), findsOneWidget);
+    expect(find.text('Tóm tắt bước trước'), findsOneWidget);
+    expect(find.text('Test Cake x2 — 300.000đ'), findsOneWidget);
+    expect(find.text('Test Customer'), findsOneWidget);
+    expect(find.text('Giao tận nơi'), findsOneWidget);
+    expect(find.text('123 Test St'), findsOneWidget);
+    expect(find.text('20.000đ'), findsOneWidget);
+    expect(find.text('Tạo đơn hàng'), findsOneWidget);
+  });
 }

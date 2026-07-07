@@ -6,6 +6,7 @@ import '../../../providers/order/order_create_state_provider.dart';
 import '../../../shared/utils/config_parsers.dart';
 import '../../../shared/utils/phone_formatter.dart';
 import 'section_header.dart';
+import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class Stage3DeliveryOptionsScreen extends ConsumerStatefulWidget {
@@ -197,6 +198,13 @@ class _Stage3DeliveryOptionsScreenState
                 const SizedBox(height: 20),
                 const SectionHeader(VN.dueDate),
                 _buildDatePickerRow(context, state.dueDate, state.dueTime),
+                StageSummaryCard(
+                  items: state.items,
+                  wizardData: state.wizardData,
+                  source: state.source,
+                  showProducts: true,
+                  showCustomer: true,
+                ),
               ],
             ),
           ),

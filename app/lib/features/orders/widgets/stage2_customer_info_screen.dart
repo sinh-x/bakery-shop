@@ -7,6 +7,7 @@ import '../../../shared/utils/phone_formatter.dart';
 import '../../customers/widgets/customer_profile_card.dart';
 import '../../customers/widgets/customer_search_field.dart';
 import 'section_header.dart';
+import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 const _sourceOptions = [
@@ -138,6 +139,12 @@ class _Stage2CustomerInfoScreenState
                     },
                   ),
                 ],
+                StageSummaryCard(
+                  items: state.items,
+                  wizardData: state.wizardData,
+                  source: state.source,
+                  showProducts: true,
+                ),
               ],
             ),
           ),

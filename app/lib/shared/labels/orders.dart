@@ -29,4 +29,7 @@ class OrdersLabels {
   // Stage 4
   static const reviewSummary = 'Tóm tắt đơn hàng';
   static const reviewCreateOrder = 'Tạo đơn hàng';
+
+  // Stage summary cards (DG-211 Phase 4)
+  static const previousStagesSummary = 'Tóm tắt bước trước';
 }
