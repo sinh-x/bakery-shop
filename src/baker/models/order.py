@@ -301,7 +301,7 @@ class Order:
         return Order(
             id=row["id"], order_ref=row["order_ref"],
             customer_name=row["customer_name"], customer_phone=row["customer_phone"],
-            delivery_phone=row["delivery_phone"] if "delivery_phone" in row.keys() else "",
+            delivery_phone=(row["delivery_phone"] if "delivery_phone" in row.keys() and row["delivery_phone"] is not None else ""),
             items=items, total_price=row["total_price"], status=row["status"],
             due_date=row["due_date"], due_time=row["due_time"],
             delivery_type=row["delivery_type"], delivery_address=row["delivery_address"],

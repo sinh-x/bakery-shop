@@ -2239,3 +2239,66 @@ def test_legacy_fallback_matches_phone_with_separators(api_client):
         customerPhone="8499900000",
     )
     assert order["customerId"] == legacy_id
+
+
+# --- DG-211 Phase 1: delivery_phone NULL handling + migration v64 ---
+
+
+def test_create_order_with_delivery_phone_succeeds(api_client):
+    """AC6: Creating an order with deliveryPhone returns 201 (not 500).
+
+    Verifies migration v64 has been applied (delivery_phone column exists)
+    and the order creation flow handles delivery_phone end-to-end.
+    """
+    resp = api_client.post(
+        "/api/orders",
+        json={
+            "customerName": "DG211 Delivery Phone",
+            "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}],
+            "dueDate": "2026-03-25",
+            "deliveryPhone": "0912345678",
+        },
+    )
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    body = resp.json()
+    assert body["deliveryPhone"] == "0912345678"
+
+
+def test_create_order_without_delivery_phone_succeeds(api_client):
+    """AC6 complement: order creation without deliveryPhone still succeeds
+    (column has DEFAULT '' from migration v64)."""
+    resp = api_client.post(
+        "/api/orders",
+        json={
+            "customerName": "DG211 No Delivery Phone",
+            "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}],
+            "dueDate": "2026-03-25",
+        },
+    )
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    body = resp.json()
+    assert body["deliveryPhone"] == ""
+
+
+def test_get_order_with_null_delivery_phone_returns_empty_string(api_client):
+    """AC3 (API surface): an order stored with NULL delivery_phone must
+    serialize as "" in the API response, not None."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        cur = conn.execute(
+            """INSERT INTO orders (order_ref, customer_name, customer_phone, items,
+                                      total_price, status, delivery_phone)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            ("ORD-NULL-001", "Null Delivery", "0123456789", "[]", 0, "new", None),
+        )
+        order_id = cur.lastrowid
+        conn.commit()
+
+    resp = api_client.get(f"/api/orders/{order_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["deliveryPhone"] == ""
+    assert body["deliveryPhone"] is not None
