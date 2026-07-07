@@ -1,4 +1,5 @@
 // EXEMPT: 300-line threshold exceeded because DG-150 blocker: continued extraction from Phase 6 would alter edit-form state synchronization and submit guards without dedicated regression window. Reviewed 2026-05-29.
+// DG-211 Phase 5: converted to 4-stage PageView wizard matching OrderCreateScreen pattern.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,7 +24,10 @@ import 'utils/trung_bay_inventory_extensions.dart';
 import 'widgets/hour_picker.dart';
 import 'widgets/order_customer_section.dart';
 import 'widgets/order_photo_section.dart';
+import 'widgets/order_stage_indicator.dart';
+import 'widgets/order_wizard.dart';
 import 'widgets/product_picker_page.dart';
+import 'widgets/stage_summary_card.dart';
 
 part 'order_edit/widgets/edit_extras_section.dart';
 part 'order_edit/widgets/work_item_edit_card.dart';
@@ -45,6 +49,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   final _addressCtrl = TextEditingController();
   final _deliveryPhoneCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+  late final PageController _pageController;
 
   String _source = '';
   DateTime? _dueDate;
@@ -56,8 +61,15 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   Customer? _selectedCustomer;
   int? _linkedCustomerId;
   bool _customerTouched = false;
+  int _currentStage = 1;
 
   final _pendingNewItems = <DraftOrderItem>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: 0);
+  }
 
   @override
   void dispose() {
@@ -66,6 +78,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _addressCtrl.dispose();
     _deliveryPhoneCtrl.dispose();
     _notesCtrl.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -181,6 +194,15 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     }
   }
 
+  void _goToStage(int stage) {
+    setState(() => _currentStage = stage);
+    _pageController.animateToPage(
+      stage - 1,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final originalOrder = ref.read(orderDetailProvider(widget.orderRef)).value;
@@ -266,6 +288,18 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     );
   }
 
+  OrderWizardData get _wizardSnapshot => OrderWizardData(
+        customerName: _nameCtrl.text,
+        customerPhone: _phoneCtrl.text,
+        selectedCustomer: _selectedCustomer,
+        deliveryType: _deliveryType,
+        deliveryAddress: _addressCtrl.text,
+        deliveryPhone: _deliveryPhoneCtrl.text,
+        shippingFee: _shippingFee,
+        notes: _notesCtrl.text,
+        source: _source,
+      );
+
   @override
   Widget build(BuildContext context) {
     final orderAsync = ref.watch(orderDetailProvider(widget.orderRef));
@@ -288,7 +322,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         title: const Text(VN.editOrder),
         actions: [
           TextButton(
-            onPressed: _saving ? null : _save,
+            onPressed: _saving ? null : () => _goToStage(4),
             child: _saving
                 ? const SizedBox(
                     height: 18,
@@ -307,10 +341,99 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
           _initFrom(order);
           return Form(
             key: _formKey,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
               children: [
-                // ── Source (F1) ───────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: OrderStageIndicator(currentStage: _currentStage),
+                ),
+                Expanded(
+                  child: PageView(
+                    controller: _pageController,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: [
+                      _buildStage1Product(order),
+                      _buildStage2Customer(sourcesAsync),
+                      _buildStage3Delivery(
+                        shippingBusDefault,
+                        shippingDoorDefault,
+                      ),
+                      _buildStage4Review(order),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ── Stage 1: Product (work items + extras) ──────────────────────────
+  Widget _buildStage1Product(Order order) {
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _SectionHeader(VN.workItemsSection),
+                _WorkItemsSection(
+                  orderRef: widget.orderRef,
+                  onAddTap: _openProductPicker,
+                ),
+                const SizedBox(height: 20),
+                _EditExtrasSection(orderRef: widget.orderRef),
+                const SizedBox(height: 80),
+              ],
+            ),
+          ),
+        ),
+        _buildStageNavigation(
+          onBack: null,
+          onContinue: () => _goToStage(2),
+          continueLabel: OrdersLabels.continueLabel,
+        ),
+      ],
+    );
+  }
+
+  // ── Stage 2: Customer (name, phone, source) ─────────────────────────
+  Widget _buildStage2Customer(AsyncValue<List<String>> sourcesAsync) {
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _SectionHeader(VN.customer),
+                OrderCustomerSection(
+                  linkedCustomerId: _linkedCustomerId,
+                  selectedCustomer: _selectedCustomer,
+                  customerTouched: _customerTouched,
+                  onSelected: (c) => setState(() {
+                    _selectedCustomer = c;
+                    _customerTouched = true;
+                    if (c != null) {
+                      _nameCtrl.text = c.name;
+                      if (c.phone.isNotEmpty) _phoneCtrl.text = c.phone;
+                    }
+                  }),
+                  onClearSelection: () => setState(() {
+                    if (_selectedCustomer != null) {
+                      _selectedCustomer = null;
+                      _customerTouched = true;
+                    }
+                  }),
+                  nameCtrl: _nameCtrl,
+                  phoneCtrl: _phoneCtrl,
+                ),
+                const SizedBox(height: 20),
                 const _SectionHeader(VN.orderSource),
                 sourcesAsync.when(
                   data: (sources) => Wrap(
@@ -341,77 +464,39 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   loading: () => const SizedBox.shrink(),
                   error: (e, st) => const SizedBox.shrink(),
                 ),
-                const SizedBox(height: 12),
-
-                // ── Customer info ─────────────────────────────────────
-                const _SectionHeader(VN.customer),
-                OrderCustomerSection(
-                  linkedCustomerId: _linkedCustomerId,
-                  selectedCustomer: _selectedCustomer,
-                  customerTouched: _customerTouched,
-                  onSelected: (c) => setState(() {
-                    _selectedCustomer = c;
-                    _customerTouched = true;
-                    if (c != null) {
-                      _nameCtrl.text = c.name;
-                      if (c.phone.isNotEmpty) _phoneCtrl.text = c.phone;
-                    }
-                  }),
-                  onClearSelection: () => setState(() {
-                    if (_selectedCustomer != null) {
-                      _selectedCustomer = null;
-                      _customerTouched = true;
-                    }
-                  }),
-                  nameCtrl: _nameCtrl,
-                  phoneCtrl: _phoneCtrl,
+                StageSummaryCard(
+                  items: const [],
+                  wizardData: _wizardSnapshot,
+                  source: _source,
+                  showProducts: false,
+                  showCustomer: false,
                 ),
-                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        ),
+        _buildStageNavigation(
+          onBack: () => _goToStage(1),
+          onContinue: () => _goToStage(3),
+          continueLabel: OrdersLabels.continueLabel,
+        ),
+      ],
+    );
+  }
 
-                // ── Schedule ──────────────────────────────────────────
-                const _SectionHeader(VN.dueDate),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _pickDate,
-                        icon: const Icon(Icons.calendar_today, size: 18),
-                        label: Text(
-                          _dueDate != null
-                              ? formatDisplayDate(_dueDate)
-                              : VN.dueDate,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          alignment: Alignment.centerLeft,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _pickTime,
-                        icon: const Icon(Icons.schedule, size: 18),
-                        label: Text(
-                          _dueTime != null
-                              ? _formatTime(_dueTime!)
-                              : VN.dueTime,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          alignment: Alignment.centerLeft,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                // F5: preset time chips
-                HourPresetChips(
-                  selectedTime: _dueTime,
-                  onSelected: (t) => setState(() => _dueTime = t),
-                ),
-                const SizedBox(height: 20),
-
-                // ── Delivery ──────────────────────────────────────────
+  // ── Stage 3: Delivery (type, address, phone, shipping fee, notes, due date) ──
+  Widget _buildStage3Delivery(
+    double shippingBusDefault,
+    double shippingDoorDefault,
+  ) {
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 const _SectionHeader(VN.deliveryType),
                 SegmentedButton<String>(
                   segments: const [
@@ -463,8 +548,6 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   ),
                 ],
                 const SizedBox(height: 20),
-
-                // ── Shipping Fee ───────────────────────────────────────────
                 if (_deliveryType == 'bus' || _deliveryType == 'door') ...[
                   const _SectionHeader(VN.shippingFee),
                   Row(
@@ -493,8 +576,6 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   ),
                   const SizedBox(height: 16),
                 ],
-
-                // ── Notes ─────────────────────────────────────────────
                 TextFormField(
                   controller: _notesCtrl,
                   decoration: const InputDecoration(
@@ -505,41 +586,150 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   maxLines: 3,
                 ),
                 const SizedBox(height: 20),
+                const _SectionHeader(VN.dueDate),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickDate,
+                        icon: const Icon(Icons.calendar_today, size: 18),
+                        label: Text(
+                          _dueDate != null
+                              ? formatDisplayDate(_dueDate)
+                              : VN.dueDate,
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          alignment: Alignment.centerLeft,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickTime,
+                        icon: const Icon(Icons.schedule, size: 18),
+                        label: Text(
+                          _dueTime != null
+                              ? _formatTime(_dueTime!)
+                              : VN.dueTime,
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          alignment: Alignment.centerLeft,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                HourPresetChips(
+                  selectedTime: _dueTime,
+                  onSelected: (t) => setState(() => _dueTime = t),
+                ),
+                StageSummaryCard(
+                  items: const [],
+                  wizardData: _wizardSnapshot,
+                  source: _source,
+                  showProducts: false,
+                  showCustomer: true,
+                ),
+              ],
+            ),
+          ),
+        ),
+        _buildStageNavigation(
+          onBack: () => _goToStage(2),
+          onContinue: () => _goToStage(4),
+          continueLabel: OrdersLabels.continueLabel,
+        ),
+      ],
+    );
+  }
 
-                // ── Work items ────────────────────────────────────────
-                const _SectionHeader(VN.workItemsSection),
-                _WorkItemsSection(
-                  orderRef: widget.orderRef,
-                  onAddTap: _openProductPicker,
+  // ── Stage 4: Review (summary + order photos + save) ─────────────────
+  Widget _buildStage4Review(Order order) {
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  OrdersLabels.reviewSummary,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  OrdersLabels.checkoutReviewHint,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                ),
+                const SizedBox(height: 16),
+                StageSummaryCard(
+                  items: const [],
+                  wizardData: _wizardSnapshot,
+                  source: _source,
+                  dueDate: _dueDate,
+                  dueTime: _dueTime,
+                  showProducts: false,
+                  showCustomer: true,
+                  showDelivery: true,
                 ),
                 const SizedBox(height: 20),
-
-                // ── Extras section ────────────────────────────────────
-                _EditExtrasSection(orderRef: widget.orderRef),
-                const SizedBox(height: 20),
-
-                // ── Order-level photos ────────────────────────────────
+                const _SectionHeader(VN.orderPhotos),
                 OrderPhotoSection(
                   orderRef: widget.orderRef,
                   baseUrl: ref.watch(apiBaseUrlProvider),
                   orderLevelOnly: true,
                 ),
-                const SizedBox(height: 24),
-
-                FilledButton(
-                  onPressed: _saving ? null : _save,
-                  child: _saving
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text(VN.save),
-                ),
+                const SizedBox(height: 80),
               ],
             ),
-          );
-        },
+          ),
+        ),
+        _buildStageNavigation(
+          onBack: () => _goToStage(3),
+          onContinue: _save,
+          continueLabel: VN.save,
+          isProcessing: _saving,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStageNavigation({
+    VoidCallback? onBack,
+    VoidCallback? onContinue,
+    required String continueLabel,
+    bool isProcessing = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          if (onBack != null)
+            OutlinedButton(
+              onPressed: onBack,
+              child: const Text(OrdersLabels.backLabel),
+            )
+          else
+            const SizedBox(width: 0),
+          const Spacer(),
+          FilledButton(
+            onPressed: isProcessing ? null : onContinue,
+            child: isProcessing
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(continueLabel),
+          ),
+        ],
       ),
     );
   }
