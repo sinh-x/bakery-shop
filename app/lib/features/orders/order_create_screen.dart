@@ -109,7 +109,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     if (_submitting) return;
     final state = ref.read(orderCreateStateProvider);
     if (state.items.isEmpty) {
-      showTopSnackBar(context, 'Vui lòng chọn ít nhất một sản phẩm');
+      showTopSnackBar(context, OrdersLabels.validationSelectAtLeastOneProduct);
       return;
     }
 

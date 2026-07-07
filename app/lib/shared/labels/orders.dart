@@ -32,4 +32,20 @@ class OrdersLabels {
 
   // Stage summary cards (DG-211 Phase 4)
   static const previousStagesSummary = 'Tóm tắt bước trước';
+
+  // Order source options (DG-211 review cycle 1 — CQ-1)
+  static const sourceTaiTiem = 'Tại tiệm';
+  static const sourceOnline = 'Online';
+  static const sourceDienThoai = 'Điện thoại';
+
+  // Generic placeholder for unselected values (DG-211 review cycle 1 — CQ-3)
+  static const notSelected = 'Chưa chọn';
+
+  // Validation messages (DG-211 review cycle 1 — CQ-4)
+  static const validationSelectAtLeastOneProduct =
+      'Vui lòng chọn ít nhất một sản phẩm';
+
+  // Product/extras count strings (DG-211 review cycle 1 — CQ-2)
+  static String productCount(int count) => '$count sản phẩm';
+  static String extraCount(int count) => '$count phụ kiện';
 }

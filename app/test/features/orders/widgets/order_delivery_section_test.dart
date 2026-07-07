@@ -8,7 +8,7 @@ void main() {
   testWidgets('OrderDeliverySection readOnly pickup renders only delivery type row',
       (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
+      const MaterialApp(
         home: Scaffold(
           body: OrderDeliverySection(
             deliveryType: 'pickup',
@@ -26,7 +26,7 @@ void main() {
   testWidgets('OrderDeliverySection readOnly door renders address, phone, shipping fee',
       (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
+      const MaterialApp(
         home: Scaffold(
           body: OrderDeliverySection(
             deliveryType: 'door',

@@ -85,7 +85,7 @@ Widget buildStage1TestWidget(Widget child, {
         () => _FakeApiBaseUrlNotifier('http://test.local'),
       ),
       productPhotoRefreshTickProvider.overrideWith(
-        () => _FakePhotoRefreshTickNotifier(),
+        _FakePhotoRefreshTickNotifier.new,
       ),
       if (state != null)
         orderCreateStateProvider.overrideWith(
@@ -102,7 +102,7 @@ void main() {
   testWidgets('OrderStageIndicator renders 4 stages with currentStage=1',
       (tester) async {
     await tester.pumpWidget(
-        MaterialApp(home: Scaffold(body: OrderStageIndicator(currentStage: 1))));
+        const MaterialApp(home: Scaffold(body: OrderStageIndicator(currentStage: 1))));
 
     expect(find.text('Sản phẩm'), findsOneWidget);
     expect(find.text('Khách hàng'), findsOneWidget);
@@ -113,7 +113,7 @@ void main() {
   testWidgets('OrderStageIndicator renders 4 stages with currentStage=4',
       (tester) async {
     await tester.pumpWidget(
-        MaterialApp(home: Scaffold(body: OrderStageIndicator(currentStage: 4))));
+        const MaterialApp(home: Scaffold(body: OrderStageIndicator(currentStage: 4))));
 
     expect(find.byIcon(Icons.check), findsNWidgets(3));
     expect(find.text('4'), findsOneWidget);
@@ -149,7 +149,7 @@ void main() {
   testWidgets('Stage4ReviewScreen renders review summary',
       (tester) async {
     final testState = OrderCreateState(
-      wizardData: OrderWizardData(
+      wizardData: const OrderWizardData(
         customerName: 'Test Customer',
         customerPhone: '0123456789',
         deliveryType: 'door',
@@ -162,7 +162,7 @@ void main() {
       source: 'Online',
       items: [
         DraftOrderItem(
-          product: Product(
+          product: const Product(
             id: 1,
             name: 'Test Cake',
             category: 'banh_kem',
@@ -187,7 +187,7 @@ void main() {
 
   testWidgets('Stage1ProductSelectionScreen renders product grid',
       (tester) async {
-    final testProduct = Product(
+    const testProduct = Product(
       id: 1,
       name: 'Bánh mì',
       category: 'banh_mi',
@@ -205,13 +205,13 @@ void main() {
 
   testWidgets('Stage1ProductSelectionScreen shows category chips when provided',
       (tester) async {
-    final testProduct = Product(
+    const testProduct = Product(
       id: 1,
       name: 'Bánh mì',
       category: 'banh_mi',
       basePrice: 15000,
     );
-    final testCategory = const Category(
+    const testCategory = Category(
       id: 1,
       slug: 'banh_mi',
       name: 'Bánh mì',
@@ -230,7 +230,7 @@ void main() {
 
   testWidgets('Stage3DeliveryOptionsScreen shows address fields for door delivery',
       (tester) async {
-    final testState = OrderCreateState(
+    const testState = OrderCreateState(
       wizardData: OrderWizardData(deliveryType: 'door'),
     );
     await tester.pumpWidget(buildTestWidget(
@@ -279,7 +279,7 @@ void main() {
       source: 'Online',
       items: [
         DraftOrderItem(
-          product: Product(
+          product: const Product(
             id: 1,
             name: 'Test Cake',
             category: 'banh_kem',
@@ -312,7 +312,7 @@ void main() {
       source: 'Online',
       items: [
         DraftOrderItem(
-          product: Product(
+          product: const Product(
             id: 2,
             name: 'Bánh mì',
             category: 'banh_mi',
@@ -352,7 +352,7 @@ void main() {
       source: 'Online',
       items: [
         DraftOrderItem(
-          product: Product(
+          product: const Product(
             id: 1,
             name: 'Test Cake',
             category: 'banh_kem',

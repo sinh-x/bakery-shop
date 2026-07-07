@@ -43,7 +43,7 @@ class OrderCreateState {
 class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
   @override
   OrderCreateState build() =>
-      OrderCreateState(wizardData: OrderWizardData());
+      const OrderCreateState(wizardData: OrderWizardData());
 
   void updateItems(List<DraftOrderItem> items) {
     state = state.copyWith(items: items);
@@ -70,7 +70,7 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
   }
 
   void reset() {
-    state = OrderCreateState(wizardData: OrderWizardData());
+    state = const OrderCreateState(wizardData: OrderWizardData());
   }
 }
 

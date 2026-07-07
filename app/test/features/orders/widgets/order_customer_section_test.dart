@@ -10,7 +10,7 @@ void main() {
   testWidgets('OrderCustomerSection readOnly renders customer name and phone info rows',
       (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
+      const MaterialApp(
         home: Scaffold(
           body: OrderCustomerSection(
             mode: OrderCustomerSectionMode.readOnly,
@@ -28,13 +28,13 @@ void main() {
 
   testWidgets('OrderCustomerSection readOnly renders CustomerProfileCard when customer provided',
       (tester) async {
-    final customer = Customer(
+    const customer = Customer(
       id: 7,
       name: 'Trần Thị B',
       phone: '0901234567',
     );
     await tester.pumpWidget(
-      ProviderScope(
+      const ProviderScope(
         child: MaterialApp(
           home: Scaffold(
             body: OrderCustomerSection(
@@ -77,5 +77,6 @@ void main() {
     expect(find.text(VN.customerPhone), findsOneWidget);
     expect(find.text('Lê Minh C'), findsOneWidget);
     expect(find.text('0912345678'), findsOneWidget);
+    expect(picked, isNull);
   });
 }

@@ -51,7 +51,7 @@ void main() {
   testWidgets('RutTienSection renders section header + totals when rut_tien item present',
       (tester) async {
     final items = [
-      WorkItem(
+      const WorkItem(
         id: 'w1',
         orderId: '100',
         productName: 'Bánh rút tiền',

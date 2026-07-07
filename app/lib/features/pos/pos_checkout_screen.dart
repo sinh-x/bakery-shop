@@ -56,7 +56,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
   void _initPosState() {
     final notifier = ref.read(orderCreateStateProvider.notifier);
-    final wizardData = OrderWizardData(
+    const wizardData = OrderWizardData(
       customerName: VN.khachLe,
       source: VN.taiTiemPOS,
     );

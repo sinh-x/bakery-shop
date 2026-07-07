@@ -222,10 +222,10 @@ class _Stage3DeliveryOptionsScreenState
     final notifier = ref.read(orderCreateStateProvider.notifier);
     final dateStr = dueDate != null
         ? '${dueDate.day}/${dueDate.month}/${dueDate.year}'
-        : 'Chưa chọn';
+        : OrdersLabels.notSelected;
     final timeStr = dueTime != null
         ? '${dueTime.hour.toString().padLeft(2, '0')}:${dueTime.minute.toString().padLeft(2, '0')}'
-        : 'Chưa chọn';
+        : OrdersLabels.notSelected;
 
     return Row(
       children: [

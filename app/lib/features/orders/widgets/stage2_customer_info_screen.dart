@@ -10,10 +10,10 @@ import 'section_header.dart';
 import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
-const _sourceOptions = [
-  'Tại tiệm',
-  'Online',
-  'Điện thoại',
+const _sourceOptions = <String>[
+  OrdersLabels.sourceTaiTiem,
+  OrdersLabels.sourceOnline,
+  OrdersLabels.sourceDienThoai,
 ];
 
 class Stage2CustomerInfoScreen extends ConsumerStatefulWidget {
@@ -131,7 +131,9 @@ class _Stage2CustomerInfoScreenState
                               label: Text(s),
                             ))
                         .toList(),
-                    selected: {state.source.isNotEmpty ? state.source : 'Tại tiệm'},
+                    selected: {
+                      state.source.isNotEmpty ? state.source : OrdersLabels.sourceTaiTiem,
+                    },
                     onSelectionChanged: (s) {
                       ref
                           .read(orderCreateStateProvider.notifier)

@@ -8,7 +8,7 @@ void main() {
   testWidgets('OrderPaymentSection readOnly renders unpaid status when nothing paid',
       (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
+      const MaterialApp(
         home: Scaffold(
           body: OrderPaymentSection(
             amountPaid: 0,
@@ -30,7 +30,7 @@ void main() {
   testWidgets('OrderPaymentSection shows paid status when fully paid',
       (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
+      const MaterialApp(
         home: Scaffold(
           body: OrderPaymentSection(
             amountPaid: 150000,

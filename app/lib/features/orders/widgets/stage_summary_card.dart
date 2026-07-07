@@ -95,7 +95,7 @@ class StageSummaryCard extends StatelessWidget {
         _buildRow(
           theme,
           VN.products,
-          '${regularItems.length + extraItems.length} sản phẩm',
+          OrdersLabels.productCount(regularItems.length + extraItems.length),
         ),
         ...regularItems.map(
           (item) => Padding(
@@ -108,7 +108,7 @@ class StageSummaryCard extends StatelessWidget {
         ),
         if (extraItems.isNotEmpty) ...[
           const SizedBox(height: 4),
-          _buildRow(theme, VN.extras, '${extraItems.length} phụ kiện'),
+          _buildRow(theme, VN.extras, OrdersLabels.extraCount(extraItems.length)),
           ...extraItems.map(
             (item) => Padding(
               padding: const EdgeInsets.only(left: 16, bottom: 2),

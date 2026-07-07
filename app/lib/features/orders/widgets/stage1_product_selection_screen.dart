@@ -50,7 +50,7 @@ class _Stage1ProductSelectionScreenState
     return Expanded(
           child: productsAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text(VN.apiError)),
+            error: (e, _) => const Center(child: Text(VN.apiError)),
             data: (products) => categoriesAsync.when(
               loading: () => _buildContent(
                 items,
