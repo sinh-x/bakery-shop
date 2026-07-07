@@ -42,6 +42,7 @@ class OrderService {
   Future<Order> createOrder({
     required String customerName,
     String customerPhone = '',
+    String deliveryPhone = '',
     int? customerId,
     List<Map<String, dynamic>> items = const [],
     String? dueDate,
@@ -58,6 +59,7 @@ class OrderService {
     final body = <String, dynamic>{
       'customerName': customerName,
       'customerPhone': customerPhone,
+      'deliveryPhone': deliveryPhone,
       'items': items,
       'deliveryType': deliveryType,
       'deliveryAddress': deliveryAddress,

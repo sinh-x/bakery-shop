@@ -135,6 +135,7 @@ class DraftPendingPhoto {
 class OrderDraft {
   final String customerName;
   final String customerPhone;
+  final String deliveryPhone;
   final List<DraftOrderItem> items;
   final DateTime? dueDate;
   final TimeOfDay? dueTime;
@@ -146,10 +147,12 @@ class OrderDraft {
   final String depositMethod;
   final List<DraftPendingPhoto> pendingPhotos;
   final String source;
+  final int currentStage;
 
   OrderDraft({
     this.customerName = '',
     this.customerPhone = '',
+    this.deliveryPhone = '',
     List<DraftOrderItem>? items,
     this.dueDate,
     this.dueTime,
@@ -161,12 +164,14 @@ class OrderDraft {
     this.depositMethod = 'cash',
     List<DraftPendingPhoto>? pendingPhotos,
     this.source = '',
+    this.currentStage = 1,
   }) : items = items ?? [],
        pendingPhotos = pendingPhotos ?? [];
 
   bool get isNotEmpty =>
       customerName.isNotEmpty ||
       customerPhone.isNotEmpty ||
+      deliveryPhone.isNotEmpty ||
       items.isNotEmpty ||
       dueDate != null ||
       dueTime != null ||
@@ -176,5 +181,6 @@ class OrderDraft {
       depositEnabled ||
       depositAmount.isNotEmpty ||
       pendingPhotos.isNotEmpty ||
-      source.isNotEmpty;
+      source.isNotEmpty ||
+      currentStage != 1;
 }

@@ -22,6 +22,7 @@ class CustomerSearchField extends ConsumerStatefulWidget {
     this.controller,
     this.labelText,
     this.hintText,
+    this.clearOnFocus = false,
   });
 
   /// Called whenever the selection changes. Receives `null` when the user
@@ -43,6 +44,10 @@ class CustomerSearchField extends ConsumerStatefulWidget {
   /// Optional hint override; defaults to the shared VN search hint.
   final String? hintText;
 
+  /// When true, on first focus, clears the pre-filled text and selected
+  /// customer so the staff can search freely (POS auto-clear behavior).
+  final bool clearOnFocus;
+
   @override
   ConsumerState<CustomerSearchField> createState() =>
       _CustomerSearchFieldState();
@@ -60,6 +65,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
   bool _loading = false;
   bool _showing = false;
   Customer? _selected;
+  bool _clearedOnFocus = false;
 
   @override
   void initState() {
@@ -85,6 +91,12 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
   }
 
   void _onFocusChange() {
+    if (_focus.hasFocus && widget.clearOnFocus && !_clearedOnFocus) {
+      _clearedOnFocus = true;
+      _selected = null;
+      _ctrl.clear();
+      widget.onSelected?.call(null);
+    }
     if (_focus.hasFocus && _ctrl.text.isNotEmpty && !_showing) {
       _showResults();
     } else if (!_focus.hasFocus && _showing) {

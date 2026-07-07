@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS orders (
     order_ref       TEXT UNIQUE NOT NULL,
     customer_name   TEXT NOT NULL,
     customer_phone  TEXT DEFAULT '',
+    delivery_phone  TEXT DEFAULT '',
     items           TEXT NOT NULL DEFAULT '[]',
     total_price     REAL DEFAULT 0,
     status          TEXT NOT NULL DEFAULT 'new',
@@ -3347,6 +3348,13 @@ def _migrate_v63_repair_zero_cogs_and_missing_entries(conn):
         _sync_delivered_order_journal(conn, int(o["id"]), o["order_ref"])
 
 
+def _migrate_v64_delivery_phone(conn):
+    """Add delivery_phone column to orders table — DG-211 Phase 4.1."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(orders)").fetchall()]
+    if "delivery_phone" not in cols:
+        conn.execute("ALTER TABLE orders ADD COLUMN delivery_phone TEXT DEFAULT ''")
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -3646,6 +3654,11 @@ MIGRATIONS = {
         "description": "Repair zero-cost order_items (unit_price anchor) and missing order_cogs journal entries — DG-208 Phase 2",
         "sql": "",
         "callable": _migrate_v63_repair_zero_cogs_and_missing_entries,
+    },
+    64: {
+        "description": "Add delivery_phone column to orders table — DG-211 Phase 4.1",
+        "sql": "",
+        "callable": _migrate_v64_delivery_phone,
     },
 }
 

@@ -10,20 +10,17 @@ import '../../data/models/order.dart';
 import '../../data/models/product.dart';
 import '../../data/models/work_item.dart';
 import '../../providers/config_provider.dart';
-import '../../providers/customers_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/config_parsers.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/order_helpers.dart';
-import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-import '../customers/widgets/customer_profile_card.dart';
-import '../customers/widgets/customer_search_field.dart';
 import 'utils/trung_bay_inventory_extensions.dart';
 import 'widgets/hour_picker.dart';
+import 'widgets/order_customer_section.dart';
 import 'widgets/order_photo_section.dart';
 import 'widgets/product_picker_page.dart';
 
@@ -343,7 +340,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
 
                 // ── Customer info ─────────────────────────────────────
                 const _SectionHeader(VN.customer),
-                _CustomerSection(
+                OrderCustomerSection(
                   linkedCustomerId: _linkedCustomerId,
                   selectedCustomer: _selectedCustomer,
                   customerTouched: _customerTouched,
@@ -529,81 +526,6 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
           );
         },
       ),
-    );
-  }
-}
-
-/// Customer search + profile card section for the order edit screen
-/// (DG-206 Phase 6 / FR3 / AC3).
-///
-/// Renders a [CustomerSearchField] pre-populated with the order's linked
-/// customer (when `linkedCustomerId` is set and the user has not yet
-/// changed the selection) and, once a customer is selected, a compact
-/// [CustomerProfileCard] below it. The name/phone text fields are kept for
-/// the walk-in/free-text fallback path.
-class _CustomerSection extends ConsumerWidget {
-  const _CustomerSection({
-    required this.linkedCustomerId,
-    required this.selectedCustomer,
-    required this.customerTouched,
-    required this.onSelected,
-    required this.onClearSelection,
-    required this.nameCtrl,
-    required this.phoneCtrl,
-  });
-
-  final int? linkedCustomerId;
-  final Customer? selectedCustomer;
-  final bool customerTouched;
-  final ValueChanged<Customer?> onSelected;
-  final VoidCallback onClearSelection;
-  final TextEditingController nameCtrl;
-  final TextEditingController phoneCtrl;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final customer = selectedCustomer ??
-        (customerTouched || linkedCustomerId == null
-            ? null
-            : ref.watch(customerProvider(linkedCustomerId!)).value);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        CustomerSearchField(
-          initialCustomer: customer,
-          onSelected: onSelected,
-        ),
-        if (customer != null) ...[
-          const SizedBox(height: 8),
-          CustomerProfileCard(
-            customer: customer,
-            mode: CustomerProfileCardMode.compact,
-            onTap: () => context.push('/customers/${customer.id}'),
-          ),
-        ],
-        const SizedBox(height: 12),
-        TextFormField(
-          controller: nameCtrl,
-          decoration: const InputDecoration(
-            labelText: VN.customerName,
-            border: OutlineInputBorder(),
-          ),
-          textCapitalization: TextCapitalization.words,
-          validator: (v) =>
-              (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
-          onChanged: (_) => onClearSelection(),
-        ),
-        const SizedBox(height: 12),
-        TextFormField(
-          controller: phoneCtrl,
-          decoration: const InputDecoration(
-            labelText: VN.customerPhone,
-            border: OutlineInputBorder(),
-          ),
-          keyboardType: TextInputType.phone,
-          inputFormatters: [PhoneInputFormatter()],
-        ),
-      ],
     );
   }
 }

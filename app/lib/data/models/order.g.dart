@@ -12,6 +12,7 @@ _Order _$OrderFromJson(Map<String, dynamic> json) => _Order(
   publicOrderCode: json['publicOrderCode'] as String? ?? '',
   customerName: json['customerName'] as String,
   customerPhone: json['customerPhone'] as String? ?? '',
+  deliveryPhone: json['deliveryPhone'] as String? ?? '',
   customerId: (json['customerId'] as num?)?.toInt(),
   items: (json['items'] as List<dynamic>)
       .map((e) => OrderItem.fromJson(e as Map<String, dynamic>))
@@ -45,6 +46,7 @@ Map<String, dynamic> _$OrderToJson(_Order instance) => <String, dynamic>{
   'publicOrderCode': instance.publicOrderCode,
   'customerName': instance.customerName,
   'customerPhone': instance.customerPhone,
+  'deliveryPhone': instance.deliveryPhone,
   'customerId': instance.customerId,
   'items': instance.items,
   'totalPrice': instance.totalPrice,

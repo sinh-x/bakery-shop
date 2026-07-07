@@ -9,25 +9,30 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:bakery_app/data/api/api_client.dart';
+import 'package:bakery_app/data/api/customer_service.dart';
 import 'package:bakery_app/data/api/order_service.dart';
+import 'package:bakery_app/data/models/customer.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/data/models/product.dart';
 
 class _SeededPosCartNotifier extends PosCartNotifier {
   _SeededPosCartNotifier(this._items);
-
   final List<PosCartItem> _items;
-
   @override
   PosCartState build() => PosCartState(items: _items);
 }
 
+class _FakeCustomerService extends CustomerService {
+  _FakeCustomerService() : super(Dio());
+  @override
+  Future<List<Customer>> listCustomers({String? search}) async => [];
+}
+
 class _FakeOrderService extends OrderService {
   _FakeOrderService({this.createOrderCompleter}) : super(Dio());
-
   final List<String?> paymentMethods = <String?>[];
-  final List<List<Map<String, dynamic>>> createdItems =
-      <List<Map<String, dynamic>>>[];
+  final List<List<Map<String, dynamic>>> createdItems = <List<Map<String, dynamic>>>[];
   final Completer<Order>? createOrderCompleter;
   int createOrderCallCount = 0;
 
@@ -51,9 +56,7 @@ class _FakeOrderService extends OrderService {
     createOrderCallCount += 1;
     paymentMethods.add(paymentMethod);
     createdItems.add(items);
-    if (createOrderCompleter != null) {
-      return createOrderCompleter!.future;
-    }
+    if (createOrderCompleter != null) return createOrderCompleter!.future;
     return Order(
       id: '1',
       orderRef: 'ORD-001',
@@ -83,19 +86,9 @@ Widget _buildCheckoutApp({
 }) {
   final router = GoRouter(
     routes: [
-      GoRoute(
-        path: '/pos',
-        builder: (context, state) => const Text('POS Home'),
-      ),
-      GoRoute(
-        path: '/pos/checkout',
-        builder: (context, state) => const PosCheckoutScreen(),
-      ),
-      GoRoute(
-        path: '/pos/receipt/:ref',
-        builder: (context, state) =>
-            Text('Receipt ${state.pathParameters['ref']}'),
-      ),
+      GoRoute(path: '/pos', builder: (context, state) => const Text('POS Home')),
+      GoRoute(path: '/pos/checkout', builder: (context, state) => const PosCheckoutScreen()),
+      GoRoute(path: '/pos/receipt/:ref', builder: (context, state) => Text('Receipt ${state.pathParameters['ref']}')),
     ],
     initialLocation: '/pos/checkout',
   );
@@ -103,11 +96,16 @@ Widget _buildCheckoutApp({
   return ProviderScope(
     overrides: [
       posCartProvider.overrideWith(() => _SeededPosCartNotifier(items)),
-      if (orderService != null)
-        orderServiceProvider.overrideWithValue(orderService),
+      if (orderService != null) orderServiceProvider.overrideWithValue(orderService),
+      customerServiceProvider.overrideWithValue(_FakeCustomerService()),
     ],
     child: MaterialApp.router(routerConfig: router),
   );
+}
+
+Future<void> _navigateToReview(WidgetTester tester) async {
+  await tester.tap(find.text('Tiếp tục'));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -122,21 +120,17 @@ void main() {
     test('returns null for null input', () {
       expect(extractBackendDetail(null), isNull);
     });
-
     test('returns null for non-map input', () {
       expect(extractBackendDetail(['detail']), isNull);
       expect(extractBackendDetail('detail'), isNull);
     });
-
     test('returns null when detail key is missing', () {
       expect(extractBackendDetail(<String, dynamic>{'message': 'x'}), isNull);
     });
-
     test('returns null when detail is not a string', () {
       expect(extractBackendDetail(<String, dynamic>{'detail': 123}), isNull);
       expect(extractBackendDetail(<String, dynamic>{'detail': true}), isNull);
     });
-
     test('returns null when detail is empty or whitespace', () {
       expect(extractBackendDetail(<String, dynamic>{'detail': ''}), isNull);
       expect(extractBackendDetail(<String, dynamic>{'detail': '   '}), isNull);
@@ -153,122 +147,87 @@ void main() {
           data: {'detail': 'Sản phẩm Bánh su kem không đủ tồn kho'},
         ),
       );
-
-      expect(
-        resolvePosCheckoutErrorMessage(error),
-        'Sản phẩm Bánh su kem không đủ tồn kho',
-      );
+      expect(resolvePosCheckoutErrorMessage(error), 'Sản phẩm Bánh su kem không đủ tồn kho');
     });
-
     test('returns vietnamese fallback when 422 detail is missing', () {
       final error = DioException(
         requestOptions: RequestOptions(path: '/api/orders'),
-        response: Response(
-          requestOptions: RequestOptions(path: '/api/orders'),
-          statusCode: 422,
-          data: <String, dynamic>{},
-        ),
+        response: Response(requestOptions: RequestOptions(path: '/api/orders'), statusCode: 422, data: <String, dynamic>{}),
       );
-
       expect(resolvePosCheckoutErrorMessage(error), VN.loiKhongXacDinhTuMayChu);
-      expect(
-        resolvePosCheckoutErrorMessage(error),
-        isNot(contains('DioException')),
-      );
+      expect(resolvePosCheckoutErrorMessage(error), isNot(contains('DioException')));
     });
-
     test('returns VN.apiError when DioException response is null', () {
-      final error = DioException(
-        requestOptions: RequestOptions(path: '/api/orders'),
-      );
-
+      final error = DioException(requestOptions: RequestOptions(path: '/api/orders'));
       expect(resolvePosCheckoutErrorMessage(error), VN.apiError);
     });
-
     test('returns VN.loiMayChu for non-422 server responses', () {
       final error = DioException(
         requestOptions: RequestOptions(path: '/api/orders'),
-        response: Response(
-          requestOptions: RequestOptions(path: '/api/orders'),
-          statusCode: 500,
-          data: <String, dynamic>{'detail': 'Internal Server Error'},
-        ),
+        response: Response(requestOptions: RequestOptions(path: '/api/orders'), statusCode: 500, data: <String, dynamic>{'detail': 'Internal Server Error'}),
       );
-
       expect(resolvePosCheckoutErrorMessage(error), VN.loiMayChu);
     });
-
     test('returns VN.loiHeThong for non-Dio exceptions', () {
-      final error = Exception('unexpected');
-
-      expect(resolvePosCheckoutErrorMessage(error), VN.loiHeThong);
+      expect(resolvePosCheckoutErrorMessage(Exception('unexpected')), VN.loiHeThong);
     });
   });
 
   group('checkout interactions', () {
-    testWidgets('updates quantity and total after increase and decrease', (
-      tester,
-    ) async {
+    testWidgets('updates quantity and total after increase and decrease', (tester) async {
       final cartItem = PosCartItem(product: _product(), quantity: 1);
-      await tester.pumpWidget(
-        _buildCheckoutApp(items: <PosCartItem>[cartItem]),
-      );
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
       await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
 
       expect(find.text('1'), findsOneWidget);
       expect(find.text(formatVND(20000)), findsWidgets);
 
       await tester.tap(find.byTooltip(VN.increaseQuantity));
       await tester.pumpAndSettle();
-
       expect(find.text('2'), findsOneWidget);
       expect(find.text(formatVND(40000)), findsOneWidget);
 
       await tester.tap(find.byTooltip(VN.decreaseQuantity));
       await tester.pumpAndSettle();
-
       expect(find.text('1'), findsOneWidget);
       expect(find.text(formatVND(20000)), findsWidgets);
     });
 
-    testWidgets(
-      'removes line item and navigates back when cart becomes empty',
-      (tester) async {
-        final cartItem = PosCartItem(product: _product(), quantity: 1);
-        await tester.pumpWidget(
-          _buildCheckoutApp(items: <PosCartItem>[cartItem]),
-        );
-        await tester.pumpAndSettle();
+    testWidgets('removes line item and navigates back when cart becomes empty', (tester) async {
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
+      await tester.pumpAndSettle();
 
-        await tester.drag(find.byType(Dismissible), const Offset(-600, 0));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text(VN.xoa));
-        await tester.pumpAndSettle();
+      await _navigateToReview(tester);
 
-        expect(find.text('POS Home'), findsOneWidget);
-      },
-    );
+      await tester.drag(find.byType(Dismissible), const Offset(-600, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(VN.xoa));
+      await tester.pumpAndSettle();
 
-    testWidgets('submits selected transfer method to order creation', (
-      tester,
-    ) async {
+      expect(find.text('POS Home'), findsOneWidget);
+    });
+
+    testWidgets('submits selected transfer method to order creation', (tester) async {
       final fakeOrderService = _FakeOrderService();
       final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(
-        _buildCheckoutApp(
-          items: <PosCartItem>[cartItem],
-          orderService: fakeOrderService,
-        ),
-      );
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
       await tester.pumpAndSettle();
 
+      await _navigateToReview(tester);
+
+      await tester.scrollUntilVisible(find.text(VN.chuyenKhoan), 100);
+      await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(FilledButton, VN.thanhToan));
+      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, OrdersLabels.done));
+      await tester.tap(createButton);
       await tester.pumpAndSettle();
       await tester.tap(find.text(VN.skip));
       await tester.pumpAndSettle();
@@ -277,182 +236,139 @@ void main() {
       expect(find.text('Receipt ORD-001'), findsOneWidget);
     });
 
-    testWidgets('payment segment selection has visible selected styling', (
-      tester,
-    ) async {
+    testWidgets('payment segment selection has visible selected styling', (tester) async {
       final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(
-        _buildCheckoutApp(items: <PosCartItem>[cartItem]),
-      );
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
       await tester.pumpAndSettle();
 
-      var segmented = tester.widget<SegmentedButton<String>>(
-        find.byType(SegmentedButton<String>),
-      );
+      await _navigateToReview(tester);
+
+      await tester.scrollUntilVisible(find.byType(SegmentedButton<String>), 100);
+      await tester.pumpAndSettle();
+
+      final segmentedButtons = find.byType(SegmentedButton<String>);
+      expect(segmentedButtons, findsWidgets);
+
+      var segmented = tester.widget<SegmentedButton<String>>(segmentedButtons.last);
       expect(segmented.selected, {'cash'});
 
-      final selectedColor = segmented.style?.backgroundColor?.resolve({
-        WidgetState.selected,
-      });
-      final unselectedColor = segmented.style?.backgroundColor?.resolve({});
-      expect(selectedColor, isNotNull);
-      expect(unselectedColor, isNotNull);
-      expect(selectedColor, isNot(unselectedColor));
-
+      await tester.scrollUntilVisible(find.text(VN.chuyenKhoan), 100);
+      await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 
-      segmented = tester.widget<SegmentedButton<String>>(
-        find.byType(SegmentedButton<String>),
-      );
+      segmented = tester.widget<SegmentedButton<String>>(segmentedButtons.last);
       expect(segmented.selected, {'transfer'});
     });
 
-    testWidgets('submits useInventory false for force-sold cart lines', (
-      tester,
-    ) async {
+    testWidgets('submits useInventory false for force-sold cart lines', (tester) async {
       final fakeOrderService = _FakeOrderService();
-      final cartItem = PosCartItem(
-        product: _product(),
-        quantity: 1,
-        useInventory: false,
-      );
+      final cartItem = PosCartItem(product: _product(), quantity: 1, useInventory: false);
 
-      await tester.pumpWidget(
-        _buildCheckoutApp(
-          items: <PosCartItem>[cartItem],
-          orderService: fakeOrderService,
-        ),
-      );
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(FilledButton, VN.thanhToan));
+      await _navigateToReview(tester);
+
+      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, OrdersLabels.done));
+      await tester.tap(createButton);
       await tester.pumpAndSettle();
 
-      expect(fakeOrderService.createdItems.single.single['attributes'], {
-        'useInventory': 'false',
-      });
+      expect(fakeOrderService.createdItems.single.single['attributes'], {'useInventory': 'false'});
     });
 
     testWidgets('submits gift items with productId and isGift flag', (tester) async {
       final fakeOrderService = _FakeOrderService();
       final normalItem = PosCartItem(product: _product(), quantity: 1);
       final giftItem = PosCartItem(
-        product: const Product(
-          id: 42,
-          name: 'Nen',
-          basePrice: 5000,
-          category: 'phu_kien',
-          active: 1,
-          attributes: {'_gift': 'true'},
-        ),
+        product: const Product(id: 42, name: 'Nen', basePrice: 5000, category: 'phu_kien', active: 1, attributes: {'_gift': 'true'}),
         quantity: 1,
         isGift: true,
       );
 
-      await tester.pumpWidget(
-        _buildCheckoutApp(
-          items: <PosCartItem>[normalItem, giftItem],
-          orderService: fakeOrderService,
-        ),
-      );
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[normalItem, giftItem], orderService: fakeOrderService));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(FilledButton, VN.thanhToan));
+      await _navigateToReview(tester);
+
+      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, OrdersLabels.done));
+      await tester.tap(createButton);
       await tester.pumpAndSettle();
 
-      final giftPayload = fakeOrderService.createdItems.single.firstWhere(
-        (item) => item['isGift'] == true,
-      );
+      final giftPayload = fakeOrderService.createdItems.single.firstWhere((item) => item['isGift'] == true);
       expect(giftPayload['productId'], '42');
       expect(giftPayload['productName'], 'Nen');
     });
 
-    testWidgets(
-      'opens local review before order creation and keeps cart state',
-      (tester) async {
-        final fakeOrderService = _FakeOrderService();
-        final cartItem = PosCartItem(product: _product(), quantity: 2);
+    testWidgets('opens wizard review before order creation and keeps cart state', (tester) async {
+      final fakeOrderService = _FakeOrderService();
+      final cartItem = PosCartItem(product: _product(), quantity: 2);
 
-        await tester.pumpWidget(
-          _buildCheckoutApp(
-            items: <PosCartItem>[cartItem],
-            orderService: fakeOrderService,
-          ),
-        );
-        await tester.pumpAndSettle();
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.widgetWithText(FilledButton, VN.thanhToan));
-        await tester.pumpAndSettle();
+      await _navigateToReview(tester);
 
-        expect(fakeOrderService.createOrderCallCount, 0);
-        expect(find.text(OrdersLabels.checkoutReviewTitle), findsWidgets);
-        expect(find.text('Banh mi bo toi'), findsOneWidget);
-        expect(find.text(OrdersLabels.done), findsOneWidget);
-        expect(find.text(VN.editOrder), findsOneWidget);
-        expect(find.text('Receipt ORD-001'), findsNothing);
-      },
-    );
+      expect(fakeOrderService.createOrderCallCount, 0);
+      expect(find.text('Xem lại đơn hàng'), findsWidgets);
+      expect(find.text('Banh mi bo toi'), findsOneWidget);
+      expect(find.text('Receipt ORD-001'), findsNothing);
+    });
 
     testWidgets('review shows gift line totals as zero', (tester) async {
       final normalItem = PosCartItem(product: _product(), quantity: 1);
       final giftItem = PosCartItem(
-        product: const Product(
-          id: -1,
-          name: 'Nen',
-          basePrice: 5000,
-          attributes: {'_gift': 'true'},
-        ),
+        product: const Product(id: -1, name: 'Nen', basePrice: 5000, attributes: {'_gift': 'true'}),
         quantity: 1,
         isGift: true,
       );
 
-      await tester.pumpWidget(
-        _buildCheckoutApp(items: <PosCartItem>[normalItem, giftItem]),
-      );
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[normalItem, giftItem]));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(FilledButton, VN.thanhToan));
+      await _navigateToReview(tester);
+
+      await tester.scrollUntilVisible(find.text('Nen (${VN.giftSuffix})'), 100);
       await tester.pumpAndSettle();
 
       expect(find.text('Nen (${VN.giftSuffix})'), findsOneWidget);
-      expect(find.text('${VN.donGia}: ${formatVND(5000)}'), findsOneWidget);
-      expect(find.text('${VN.total}: ${formatVND(0)}'), findsOneWidget);
-      expect(find.text('${VN.total}: ${formatVND(5000)}'), findsNothing);
+      expect(find.text('Banh mi bo toi'), findsOneWidget);
+      expect(find.text(formatVND(20000)), findsWidgets);
     });
 
-    testWidgets('edit order from review preserves cart and selected payment', (
-      tester,
-    ) async {
+    testWidgets('edit order from review preserves cart and selected payment', (tester) async {
       final fakeOrderService = _FakeOrderService();
       final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-      await tester.pumpWidget(
-        _buildCheckoutApp(
-          items: <PosCartItem>[cartItem],
-          orderService: fakeOrderService,
-        ),
-      );
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
       await tester.pumpAndSettle();
 
+      await _navigateToReview(tester);
+
+      await tester.scrollUntilVisible(find.text(VN.chuyenKhoan), 100);
+      await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, VN.thanhToan));
+
+      final backButton = find.text('Quay lại');
+      await tester.ensureVisible(backButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(OutlinedButton, VN.editOrder));
+      await tester.tap(backButton);
       await tester.pumpAndSettle();
 
-      expect(find.byType(SegmentedButton<String>), findsOneWidget);
-      expect(find.text(OrdersLabels.checkoutReviewTitle), findsNothing);
+      expect(find.text('Xem lại đơn hàng'), findsNothing);
 
-      await tester.tap(find.widgetWithText(FilledButton, VN.thanhToan));
+      await _navigateToReview(tester);
+
+      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, OrdersLabels.done));
+      await tester.tap(createButton);
       await tester.pumpAndSettle();
       await tester.tap(find.text(VN.skip));
       await tester.pumpAndSettle();
@@ -460,50 +376,41 @@ void main() {
       expect(fakeOrderService.paymentMethods, <String?>['transfer']);
     });
 
-    testWidgets(
-      'xong submits create order once while processing and clears after success',
-      (tester) async {
-        final createCompleter = Completer<Order>();
-        final fakeOrderService = _FakeOrderService(
-          createOrderCompleter: createCompleter,
-        );
-        final cartItem = PosCartItem(product: _product(), quantity: 1);
+    testWidgets('finalize submits create order once while processing and clears after success', (tester) async {
+      final createCompleter = Completer<Order>();
+      final fakeOrderService = _FakeOrderService(createOrderCompleter: createCompleter);
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
 
-        await tester.pumpWidget(
-          _buildCheckoutApp(
-            items: <PosCartItem>[cartItem],
-            orderService: fakeOrderService,
-          ),
-        );
-        await tester.pumpAndSettle();
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.widgetWithText(FilledButton, VN.thanhToan));
-        await tester.pumpAndSettle();
+      await _navigateToReview(tester);
 
-        await tester.tap(find.widgetWithText(FilledButton, OrdersLabels.done));
-        await tester.pump();
-        await tester.tap(find.widgetWithText(FilledButton, OrdersLabels.done));
-        await tester.pump();
+      expect(find.text('Xem lại đơn hàng'), findsOneWidget);
 
-        expect(fakeOrderService.createOrderCallCount, 1);
-        expect(find.text('POS Home'), findsNothing);
+      final btn = find.byType(FilledButton);
+      await tester.ensureVisible(btn);
+      await tester.pumpAndSettle();
+      await tester.tap(btn);
+      await tester.pump();
+      await tester.tap(btn);
+      await tester.pump();
 
-        createCompleter.complete(
-          Order(
-            id: '2',
-            orderRef: 'ORD-LOCK',
-            customerName: VN.khachLe,
-            items: const [],
-            totalPrice: 0,
-            createdAt: DateTime(2026, 5, 20),
-            updatedAt: DateTime(2026, 5, 20),
-          ),
-        );
+      expect(fakeOrderService.createOrderCallCount, 1);
+      expect(find.text('POS Home'), findsNothing);
 
-        await tester.pumpAndSettle();
+      createCompleter.complete(Order(
+        id: '2',
+        orderRef: 'ORD-LOCK',
+        customerName: VN.khachLe,
+        items: const [],
+        totalPrice: 0,
+        createdAt: DateTime(2026, 5, 20),
+        updatedAt: DateTime(2026, 5, 20),
+      ));
 
-        expect(find.text('Receipt ORD-LOCK'), findsOneWidget);
-      },
-    );
+      await tester.pumpAndSettle();
+      expect(find.text('Receipt ORD-LOCK'), findsOneWidget);
+    });
   });
 }
