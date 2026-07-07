@@ -55,22 +55,28 @@ class _Stage2CustomerInfoScreenState
   void _syncToState() {
     final notifier = ref.read(orderCreateStateProvider.notifier);
     final state = ref.read(orderCreateStateProvider);
-    final updated = state.wizardData;
-    updated.customerName = _nameCtrl.text;
-    updated.customerPhone = _phoneCtrl.text;
-    notifier.updateWizardData(updated);
+    notifier.updateWizardData(
+      state.wizardData.copyWith(
+        customerName: _nameCtrl.text,
+        customerPhone: _phoneCtrl.text,
+      ),
+    );
   }
 
   void _onCustomerSelected(Customer? c) {
     final notifier = ref.read(orderCreateStateProvider.notifier);
     final state = ref.read(orderCreateStateProvider);
-    final updated = state.wizardData;
-    updated.selectedCustomer = c;
+    var updated = state.wizardData.copyWith(
+      selectedCustomer: c,
+      clearSelectedCustomer: c == null,
+    );
     if (c != null) {
       _nameCtrl.text = c.name;
       if (c.phone.isNotEmpty) _phoneCtrl.text = c.phone;
-      updated.customerName = c.name;
-      updated.customerPhone = c.phone;
+      updated = updated.copyWith(
+        customerName: c.name,
+        customerPhone: c.phone,
+      );
     }
     notifier.updateWizardData(updated);
   }

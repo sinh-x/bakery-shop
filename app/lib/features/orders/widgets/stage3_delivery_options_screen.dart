@@ -49,18 +49,18 @@ class _Stage3DeliveryOptionsScreenState
   void _syncToState() {
     final notifier = ref.read(orderCreateStateProvider.notifier);
     final state = ref.read(orderCreateStateProvider);
-    final updated = state.wizardData;
-    updated.deliveryAddress = _addressCtrl.text;
-    updated.deliveryPhone = _deliveryPhoneCtrl.text;
-    updated.notes = _notesCtrl.text;
-    notifier.updateWizardData(updated);
+    notifier.updateWizardData(
+      state.wizardData.copyWith(
+        deliveryAddress: _addressCtrl.text,
+        deliveryPhone: _deliveryPhoneCtrl.text,
+        notes: _notesCtrl.text,
+      ),
+    );
   }
 
   void _updateDeliveryType(String type) {
     final notifier = ref.read(orderCreateStateProvider.notifier);
     final state = ref.read(orderCreateStateProvider);
-    final updated = state.wizardData;
-    updated.deliveryType = type;
     final shippingBusDefault = firstFeeOrFallback(
       ref.read(shippingFeeBusProvider).asData?.value ?? [],
       25000,
@@ -69,27 +69,25 @@ class _Stage3DeliveryOptionsScreenState
       ref.read(shippingFeeDoorProvider).asData?.value ?? [],
       20000,
     );
-    switch (type) {
-      case 'bus':
-        updated.shippingFee = shippingBusDefault;
-        break;
-      case 'door':
-        updated.shippingFee = shippingDoorDefault;
-        break;
-      case 'pickup':
-      default:
-        updated.shippingFee = 0;
-        break;
-    }
-    notifier.updateWizardData(updated);
+    final shippingFee = switch (type) {
+      'bus' => shippingBusDefault,
+      'door' => shippingDoorDefault,
+      _ => 0.0,
+    };
+    notifier.updateWizardData(
+      state.wizardData.copyWith(
+        deliveryType: type,
+        shippingFee: shippingFee,
+      ),
+    );
   }
 
   void _setShippingFee(double fee) {
     final notifier = ref.read(orderCreateStateProvider.notifier);
     final state = ref.read(orderCreateStateProvider);
-    final updated = state.wizardData;
-    updated.shippingFee = fee;
-    notifier.updateWizardData(updated);
+    notifier.updateWizardData(
+      state.wizardData.copyWith(shippingFee: fee),
+    );
   }
 
   @override
