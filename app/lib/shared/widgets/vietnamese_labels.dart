@@ -366,6 +366,7 @@ class VN {
   static const txnTypeRutTien = 'Tiền rút';
   static const methodCash = 'Tiền mặt';
   static const methodTransfer = 'Chuyển khoản';
+  static const methodDebt = 'Nợ';
   static const addPayment = 'Thêm thanh toán';
   static const depositSection = 'Đặt cọc ngay';
   static const depositAmount = 'Số tiền đặt cọc';
@@ -645,6 +646,50 @@ class VN {
   // Reimbursed
   static const reimbursedYes = 'Đã hoàn lại';
   static const reimbursedNo = 'Chưa hoàn lại';
+
+  // Expense debt status (DG-212 Phase 3)
+  static const debtStatusUnpaid = 'Chưa trả';
+  static const debtStatusPaid = 'Đã trả';
+  static const debtStatusPartial = 'Trả một phần';
+  static const expenseCreditorLabel = 'Chủ nợ';
+  static const expenseVendorAutocompleteHint = 'Chọn từ nhà cung cấp đã dùng';
+  static const expenseDebtVendorRequired = 'Chủ nợ là bắt buộc khi chọn phương thức Nợ';
+
+  // Debt list / settlement screens (DG-212 Phase 4)
+  static const debtListTitle = 'Danh sách công nợ';
+  static const debtListEmpty = 'Chưa có công nợ nào';
+  static const debtListTotalOwed = 'Tổng còn nợ';
+  static const debtListFilterStatusLabel = 'Trạng thái';
+  static const debtListFilterAll = 'Tất cả';
+  static const debtListCreditorTotal = 'Tổng nợ';
+  static const debtListDebtCount = 'Số khoản nợ';
+  static const debtListItemAmount = 'Tiền nợ';
+  static const debtListItemSettled = 'Đã trả';
+  static const debtListItemRemaining = 'Còn lại';
+  static const debtListOpenSettlement = 'Thanh toán';
+  static const debtListLoadError = 'Không tải được danh sách công nợ';
+
+  // Debt settlement screen
+  static const debtSettlementTitle = 'Thanh toán công nợ';
+  static const debtSettlementAmountLabel = 'Số tiền thanh toán';
+  static const debtSettlementAmountHint = 'Nhập số VND cần thanh toán';
+  static const debtSettlementPaymentMethodLabel = 'Phương thức thanh toán';
+  static const debtSettlementPaymentSourceLabel = 'Nguồn tiền';
+  static const debtSettlementNoteLabel = 'Ghi chú';
+  static const debtSettlementNoteHint = 'Ghi chú thanh toán (tùy chọn)';
+  static const debtSettlementSaveAction = 'Xác nhận thanh toán';
+  static const debtSettlementAmountRequired = 'Vui lòng nhập số tiền thanh toán';
+  static const debtSettlementAmountInvalid = 'Số tiền không hợp lệ';
+  static const debtSettlementAmountExceedsRemaining =
+      'Số thanh toán vượt quá nợ còn lại';
+  static const debtSettlementPaymentSourceRequired = 'Nguồn tiền là bắt buộc';
+  static const debtSettlementSuccess = 'Đã thanh toán công nợ';
+  static const debtSettlementFailure = 'Thanh toán công nợ thất bại';
+  static const debtSettlementRemainingLabel = 'Còn lại sau thanh toán';
+  static const debtSettlementSummary = 'Thông tin công nợ';
+  static const debtSettlementCreditor = 'Chủ nợ';
+  static const debtSettlementTotalDebt = 'Tổng nợ ban đầu';
+  static const debtSettlementSettledSoFar = 'Đã thanh toán';
 
   // Shipping fee & extras
   static const shippingFee = 'Phí giao hàng';
@@ -1018,6 +1063,8 @@ String paymentMethodLabel(String method) {
       return VN.methodCash;
     case 'transfer':
       return VN.methodTransfer;
+    case 'debt':
+      return VN.methodDebt;
     default:
       return method;
   }

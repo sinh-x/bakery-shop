@@ -12,7 +12,11 @@ from pydantic import BaseModel
 
 from baker.api.photos import read_image_upload, save_photo
 from baker.db.connection import get_db
-from baker.db.queries import fetch_events, find_staff_by_name, link_event_person
+from baker.db.queries import fetch_debts, fetch_events, find_staff_by_name, link_event_person
+from baker.db.schema import (
+    EXPENSE_DEBT_PAYMENT_METHOD,
+    EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
+)
 from baker.models.event import Event
 from baker.models.order import Order
 from baker.utils.time import now_utc
@@ -20,6 +24,11 @@ from baker.utils.time import now_utc
 logger = logging.getLogger("baker.server")
 
 router = APIRouter(prefix="/api/events", tags=["events"])
+# Separate router for debt-specific expense endpoints that live under
+# /api/expenses (the events router is mounted at /api/events). Mounting
+# these under /api/expenses keeps the public URL contract consistent with
+# the requirements doc (FR4, FR5) without disturbing the events route map.
+expenses_router = APIRouter(prefix="/api/expenses", tags=["expenses"])
 
 VALID_TYPES = {"note", "equipment", "production", "inventory", "expense", "delivery", "order"}
 
@@ -120,6 +129,7 @@ def list_events(
     expense_paid_by_name: str | None = Query(None, description="Lọc chi phí theo người trả"),
     expense_payment_source: str | None = Query(None, description="Lọc chi phí theo nguồn tiền"),
     expense_search: str | None = Query(None, description="Tìm kiếm chi phí trong tóm tắt, NCC, ghi chú, nhân viên, người trả, nguồn tiền"),
+    debt_status: str | None = Query(None, description="Lọc chi phí nợ theo trạng thái: all/unpaid/paid/partial"),
     limit: int = Query(50, ge=1, le=500, description="Số kết quả tối đa"),
 ):
     """Danh sách sự kiện với bộ lọc."""
@@ -140,6 +150,7 @@ def list_events(
             expense_paid_by_name=expense_paid_by_name,
             expense_payment_source=expense_payment_source,
             expense_search=expense_search,
+            debt_status=debt_status,
             limit=limit,
         )
         return [_row_to_dict(r) for r in rows]
@@ -212,7 +223,6 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
         "amount_vnd",
         "category",
         "payment_method",
-        "payment_source",
         "vendor",
         "note",
         "paid_by_name",
@@ -227,6 +237,25 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
     amount_vnd = data.get("amount_vnd")
     if not isinstance(amount_vnd, int) or amount_vnd <= 0:
         raise HTTPException(status_code=422, detail="amount_vnd phải là số nguyên lớn hơn 0")
+
+    payment_method = data.get("payment_method", "")
+    is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
+
+    # For non-debt payment methods, payment_source is required (FR2: debt
+    # expenses hide/ignore payment_source).
+    if not is_debt and not data.get("payment_source", ""):
+        raise HTTPException(
+            status_code=422,
+            detail="payment_source là bắt buộc khi không chọn phương thức 'Nợ'",
+        )
+
+    # FR2: when payment_method is "Nợ", the vendor field is the creditor
+    # identifier and must be non-empty.
+    if is_debt and not str(data.get("vendor", "")).strip():
+        raise HTTPException(
+            status_code=422,
+            detail="vendor (chủ nợ) là bắt buộc khi chọn phương thức 'Nợ'",
+        )
 
     payment_source = data.get("payment_source", "")
     if payment_source == STAFF_ADVANCE_PAYMENT_SOURCE and not data.get("paid_by_name", "").strip():
@@ -362,12 +391,39 @@ def delete_event(event_id: int, deleted_by: str = Query("", description="Ngườ
 
         # On soft-delete of an expense event, reverse/delete its journal entry (DG-175).
         if row["type"] == "expense":
-            from baker.services.journal_sync import _sync_expense_journal, run_journal_sync
+            from baker.services.journal_sync import (
+                _sync_debt_settlement_journal,
+                _sync_expense_journal,
+                run_journal_sync,
+            )
             run_journal_sync(
                 _sync_expense_journal,
                 conn, event_id, {}, str(row["summary"]), deleted=True,
                 log_label=f"expense journal delete-sync for event {event_id}",
             )
+            # FR9 (DG-212): when a debt expense is deleted, its unsettled
+            # settlement journal entries must also be reversed/removed so the
+            # 2500 liability is cleared. The expense journal reversal above
+            # only touches the original DR Expense / CR 2500 entry.
+            try:
+                data = json.loads(row["data"]) if row["data"] else {}
+            except (json.JSONDecodeError, TypeError):
+                data = {}
+            if data.get("payment_method") == EXPENSE_DEBT_PAYMENT_METHOD:
+                settlements = data.get("settlements") or []
+                for s in settlements:
+                    sid = s.get("id") if isinstance(s, dict) else None
+                    if not sid:
+                        continue
+                    run_journal_sync(
+                        _sync_debt_settlement_journal,
+                        conn, int(sid), event_id, str(row["summary"]),
+                        0.0, "", deleted=True,
+                        log_label=(
+                            f"debt settlement journal delete-sync for "
+                            f"settlement {sid} on event {event_id}"
+                        ),
+                    )
 
 
 @router.get("/{event_id}/history")
@@ -480,3 +536,168 @@ def delete_event_photo(event_id: int, photo_id: int):
         conn.execute("DELETE FROM event_photos WHERE id = ?", (photo_id,))
 
     return {"message": "Đã xóa ảnh"}
+
+
+# ---------------------------------------------------------------------------
+# Debt settlement + outstanding debts (DG-212 Phase 2 — FR4, FR5, FR8)
+# ---------------------------------------------------------------------------
+
+
+class DebtSettleRequest(BaseModel):
+    amount: int
+    payment_method: str = "Tiền mặt"
+    payment_source: str
+    note: str = ""
+    timestamp: str | None = None
+    settled_by: str = ""
+
+
+@expenses_router.get("/debts")
+def list_outstanding_debts(
+    creditor: str | None = Query(None, description="Lọc theo chủ nợ (vendor)"),
+    since: str | None = Query(None, description="Từ ngày (ISO format)"),
+    until: str | None = Query(None, description="Đến ngày (ISO format)"),
+    status: str | None = Query("all", description="Trạng thái: all/unpaid/paid/partial"),
+):
+    """Danh sách công nợ đang còn (FR5). Nhóm theo chủ nợ + tổng còn nợ."""
+    with get_db() as conn:
+        debts = fetch_debts(
+            conn, creditor=creditor, since=since, until=until, status=status
+        )
+    # Group by creditor with totals.
+    by_creditor: dict[str, list] = {}
+    total_owed = 0.0
+    for d in debts:
+        creditor_name = d["vendor"] or "(không rõ)"
+        by_creditor.setdefault(creditor_name, []).append(d)
+        total_owed += d["remaining"]
+    groups = [
+        {
+            "creditor": name,
+            "debts": items,
+            "total_owed": sum(d["remaining"] for d in items),
+            "count": len(items),
+        }
+        for name, items in by_creditor.items()
+    ]
+    return {
+        "creditors": groups,
+        "total_owed": total_owed,
+        "count": len(debts),
+    }
+
+
+@expenses_router.post("/{event_id}/settle")
+def settle_debt(
+    event_id: int,
+    body: DebtSettleRequest,
+    settled_by: str = Query("", description="Người ghi nhận thanh toán (audit actor)"),
+):
+    """Thanh toán một phần hoặc toàn bộ công nợ (FR4, FR8).
+
+    Accepts ``amount``, ``payment_method``, ``payment_source``. Records the
+    settlement in the expense data JSON ``settlements`` array and creates a
+    settlement journal entry: DR 2500 (Accounts Payable) / CR Asset.
+    """
+    if not isinstance(body.amount, int) or body.amount <= 0:
+        raise HTTPException(status_code=422, detail="amount phải là số nguyên lớn hơn 0")
+    if not body.payment_source.strip():
+        raise HTTPException(status_code=422, detail="payment_source là bắt buộc")
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM events WHERE id = ? AND deleted_at IS NULL",
+            (event_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
+
+        if row["type"] != "expense":
+            raise HTTPException(status_code=422, detail="Sự kiện không phải chi phí")
+
+        try:
+            data = json.loads(row["data"]) if row["data"] else {}
+        except (json.JSONDecodeError, TypeError):
+            data = {}
+
+        if data.get("payment_method") != EXPENSE_DEBT_PAYMENT_METHOD:
+            raise HTTPException(
+                status_code=422,
+                detail="Chi phí không phải công nợ (payment_method != 'Nợ')",
+            )
+
+        amount_vnd = data.get("amount_vnd")
+        if not isinstance(amount_vnd, int) or amount_vnd <= 0:
+            raise HTTPException(status_code=422, detail="expense data amount_vnd không hợp lệ")
+
+        settlements = data.get("settlements") or []
+        settled_so_far = sum(
+            s.get("amount", 0) for s in settlements if isinstance(s, dict)
+        )
+        remaining = amount_vnd - settled_so_far
+        if body.amount > remaining:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Số thanh toán ({body.amount}) vượt quá nợ còn lại ({remaining})"
+                ),
+            )
+
+        # Assign a stable settlement id (monotonic within the event).
+        next_id = max(
+            (s.get("id", 0) for s in settlements if isinstance(s, dict)),
+            default=0,
+        ) + 1
+        settlement_entry = {
+            "id": next_id,
+            "amount": body.amount,
+            "payment_method": body.payment_method,
+            "payment_source": body.payment_source,
+            "note": body.note,
+            "timestamp": _normalize_timestamp(body.timestamp) or now_utc(),
+        }
+        settlements.append(settlement_entry)
+        data["settlements"] = settlements
+
+        conn.execute(
+            "UPDATE events SET data = ? WHERE id = ?",
+            (json.dumps(data), event_id),
+        )
+        _log_event_history(
+            conn, event_id, "settle", actor=settled_by or body.settled_by,
+            field_name="settlement",
+            old_value=str(settled_so_far),
+            new_value=str(settled_so_far + body.amount),
+        )
+
+        # Settlement journal entry: DR 2500 / CR Asset (FR4).
+        from baker.services.journal_sync import (
+            _sync_debt_settlement_journal,
+            run_journal_sync,
+        )
+        sync_status = run_journal_sync(
+            _sync_debt_settlement_journal,
+            conn, next_id, event_id, str(row["summary"]),
+            float(body.amount), body.payment_source,
+            log_label=f"debt settlement journal sync for event {event_id} settlement {next_id}",
+        )
+
+        # Compute updated debt status.
+        new_settled = settled_so_far + body.amount
+        new_remaining = amount_vnd - new_settled
+        if new_remaining <= 0:
+            debt_status = "paid"
+        elif new_settled > 0:
+            debt_status = "partial"
+        else:
+            debt_status = "unpaid"
+
+        return {
+            "event_id": event_id,
+            "settlement_id": next_id,
+            "amount": body.amount,
+            "settled_amount": new_settled,
+            "remaining": max(0, new_remaining),
+            "status": debt_status,
+            "accounting_sync": sync_status,
+        }

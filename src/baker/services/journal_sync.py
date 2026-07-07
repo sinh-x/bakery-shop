@@ -14,11 +14,13 @@ import logging
 from typing import Any, Callable, Optional
 
 from baker.db.schema import (
+    ACCOUNTS_PAYABLE_CODE,
     ACCOUNTS_RECEIVABLE_CODE,
     BUS_SHIPPING_HELD_CODE,
     COGS_CODE,
     CUSTOMER_DEPOSITS_CODE,
     EXPENSE_CATEGORY_TO_ACCOUNT_CODE,
+    EXPENSE_DEBT_PAYMENT_METHOD,
     EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
     INVENTORY_CODE,
     INVENTORY_PURCHASE_CATEGORIES,
@@ -164,18 +166,26 @@ def _build_expense_journal_lines(
     amount = data.get("amount_vnd")
     category = data.get("category")
     payment_source = data.get("payment_source")
+    payment_method = data.get("payment_method", "")
     if not isinstance(amount, (int, float)) or amount <= 0:
         return None
     if not isinstance(category, str) or not category:
         return None
-    if not isinstance(payment_source, str) or not payment_source:
+
+    is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
+    if not is_debt and (not isinstance(payment_source, str) or not payment_source):
         return None
 
     expense_code = EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category)
     if not expense_code:
         return None
 
-    if payment_source == STAFF_ADVANCE_PAYMENT_SOURCE:
+    if is_debt:
+        # FR3 (DG-212): debt expenses credit Accounts Payable (2500) instead
+        # of an asset account. The vendor field serves as creditor identifier
+        # but does not create a per-creditor sub-account in this phase.
+        payment_account_id = _account_id_by_code(conn, ACCOUNTS_PAYABLE_CODE)
+    elif payment_source == STAFF_ADVANCE_PAYMENT_SOURCE:
         staff_name = (data.get("paid_by_name") or "").strip()
         if not staff_name:
             return None
@@ -259,6 +269,102 @@ def _sync_expense_journal(
             description=description,
             source_type="expense",
             source_id=event_id,
+            lines=lines,
+            transaction_date=transaction_date,
+        )
+    else:
+        _update_journal_entry_in_place(
+            conn, existing_id, description=description, lines=lines
+        )
+
+
+def _build_debt_settlement_journal_lines(
+    conn, event_summary: str, amount: float, payment_source: str
+) -> Optional[tuple[str, list[tuple[int, float, float, str]]]]:
+    """Build (description, lines) for a debt settlement journal entry (FR4).
+
+    Settlement journals DR Accounts Payable (2500) and CR the asset account
+    chosen by ``payment_source`` (FR4). When ``payment_source`` is the staff
+    advance source, the credit goes to a per-staff sub-account under 2300 —
+    but settlements do not currently carry ``paid_by_name``, so the staff
+    advance path is unsupported and the function returns None.
+    """
+    if amount <= 0:
+        return None
+    ap_account_id = _account_id_by_code(conn, ACCOUNTS_PAYABLE_CODE)
+    account_code = EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE.get(payment_source)
+    if not account_code:
+        return None
+    asset_account_id = _account_id_by_code(conn, account_code)
+    amount_f = float(amount)
+    description = f"Debt settlement: {event_summary}"
+    lines = [
+        (ap_account_id, amount_f, 0.0, "Trả nợ nhà cung cấp"),
+        (asset_account_id, 0.0, amount_f, "Thanh toán nợ"),
+    ]
+    return description, lines
+
+
+def _sync_debt_settlement_journal(
+    conn,
+    settlement_id: int,
+    event_id: int,
+    event_summary: str,
+    amount: float,
+    payment_source: str,
+    *,
+    deleted: bool = False,
+) -> None:
+    """Create/update/delete the journal entry for a debt settlement.
+
+    Each settlement has its own journal entry keyed by
+    ``source_type='expense_settlement'`` and ``source_id=settlement_id`` so
+    multiple partial settlements can coexist on the same expense event. On
+    delete, unlocked entries are removed and locked entries are reversed.
+    """
+    existing_id = _find_journal_entry(conn, "expense_settlement", settlement_id)
+
+    if deleted:
+        if existing_id is None:
+            return
+        if _is_locked(conn, existing_id):
+            _reverse_journal_entry(conn, existing_id)
+        else:
+            _delete_journal_entry_cascade(conn, existing_id)
+        return
+
+    built = _build_debt_settlement_journal_lines(
+        conn, event_summary, amount, payment_source
+    )
+    if built is None:
+        if existing_id is not None and not _is_locked(conn, existing_id):
+            _delete_journal_entry_cascade(conn, existing_id)
+        return
+    description, lines = built
+
+    # The settlement's business date is the event's timestamp (the debt was
+    # incurred on the event date; settlement records the cash outflow).
+    event_row = conn.execute(
+        "SELECT timestamp FROM events WHERE id = ?", (event_id,)
+    ).fetchone()
+    transaction_date = event_row["timestamp"] if event_row else None
+
+    if existing_id is None:
+        _insert_journal_entry(
+            conn,
+            description=description,
+            source_type="expense_settlement",
+            source_id=settlement_id,
+            lines=lines,
+            transaction_date=transaction_date,
+        )
+    elif _is_locked(conn, existing_id):
+        _reverse_journal_entry(conn, existing_id)
+        _insert_journal_entry(
+            conn,
+            description=description,
+            source_type="expense_settlement",
+            source_id=settlement_id,
             lines=lines,
             transaction_date=transaction_date,
         )

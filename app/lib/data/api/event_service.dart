@@ -54,6 +54,7 @@ class EventService {
     String? expenseStaffName,
     String? expensePaidByName,
     String? expenseSearch,
+    String? expenseDebtStatus,
     int limit = 50,
   }) async {
     final params = <String, dynamic>{'limit': limit};
@@ -80,6 +81,9 @@ class EventService {
     }
     if (expenseSearch != null && expenseSearch.isNotEmpty) {
       params['expense_search'] = expenseSearch;
+    }
+    if (expenseDebtStatus != null && expenseDebtStatus.isNotEmpty) {
+      params['debt_status'] = expenseDebtStatus;
     }
 
     final response = await _dio.get('/api/events', queryParameters: params);
@@ -141,6 +145,73 @@ class EventService {
 
   Future<void> deleteEvent(int id, {String deletedBy = ''}) async {
     await _dio.delete('/api/events/$id', queryParameters: {'deleted_by': deletedBy});
+  }
+
+  /// Settle a debt expense (DG-212 Phase 4 — FR4).
+  ///
+  /// POST /api/expenses/{id}/settle with [amount], [paymentMethod],
+  /// [paymentSource], optional [note] and [timestamp]. The [settledBy]
+  /// value is sent as the ``settled_by`` query parameter so the backend can
+  /// record the audit actor on the settlement's event history entry.
+  /// Returns the parsed settlement response: ``event_id``,
+  /// ``settlement_id``, ``amount``, ``settled_amount``, ``remaining``,
+  /// ``status``, ``accounting_sync``.
+  Future<Map<String, dynamic>> settleDebt({
+    required int eventId,
+    required int amount,
+    String paymentMethod = 'Tiền mặt',
+    required String paymentSource,
+    String note = '',
+    DateTime? timestamp,
+    String settledBy = '',
+  }) async {
+    final body = <String, dynamic>{
+      'amount': amount,
+      'payment_method': paymentMethod,
+      'payment_source': paymentSource,
+      'note': note,
+    };
+    if (timestamp != null) {
+      body['timestamp'] = timestampToJson(timestamp);
+    }
+    final response = await _dio.post(
+      '/api/expenses/$eventId/settle',
+      data: body,
+      queryParameters: {'settled_by': settledBy},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// List outstanding debt expenses grouped by creditor (DG-212 Phase 4 — FR5).
+  ///
+  /// GET /api/expenses/debts with optional [creditor], [since], [until],
+  /// [status] filters. Returns the parsed response: ``creditors`` (list of
+  /// grouped debt objects with ``creditor``, ``debts``, ``total_owed``,
+  /// ``count``), ``total_owed``, ``count``.
+  Future<Map<String, dynamic>> listDebts({
+    String? creditor,
+    String? since,
+    String? until,
+    String? status,
+  }) async {
+    final params = <String, dynamic>{};
+    if (creditor != null && creditor.isNotEmpty) {
+      params['creditor'] = creditor;
+    }
+    if (since != null && since.isNotEmpty) {
+      params['since'] = since;
+    }
+    if (until != null && until.isNotEmpty) {
+      params['until'] = until;
+    }
+    if (status != null && status.isNotEmpty) {
+      params['status'] = status;
+    }
+    final response = await _dio.get(
+      '/api/expenses/debts',
+      queryParameters: params,
+    );
+    return response.data as Map<String, dynamic>;
   }
 }
 

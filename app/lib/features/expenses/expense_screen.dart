@@ -7,13 +7,19 @@ import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 import 'package:bakery_app/shared/mixins/auto_refresh_mixin.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
+import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 class ExpenseScreen extends ConsumerStatefulWidget {
-  const ExpenseScreen({super.key, this.deleteExpense, this.loadHistory});
+  const ExpenseScreen({
+    super.key,
+    this.deleteExpense,
+    this.loadHistory,
+    this.onOpenDebts,
+  });
 
   final Future<void> Function(int eventId)? deleteExpense;
   final Future<List<BakeryEvent>> Function({
@@ -26,8 +32,14 @@ class ExpenseScreen extends ConsumerStatefulWidget {
     String? paidByName,
     String? loggedBy,
     String? searchText,
+    String? debtStatus,
   })?
   loadHistory;
+
+  /// Optional callback invoked when the user taps the "Danh sách công nợ"
+  /// action in the app bar. When ``null`` the action is hidden (used by
+  /// tests that do not wire the debts route).
+  final VoidCallback? onOpenDebts;
 
   @override
   ConsumerState<ExpenseScreen> createState() => _ExpenseScreenState();
@@ -45,6 +57,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
   String _filterPaidByName = '';
   String _filterLoggedByName = '';
   String _filterPaymentSource = '';
+  ExpenseDebtStatusFilter _filterDebtStatus = ExpenseDebtStatusFilter.all;
   List<BakeryEvent> _history = <BakeryEvent>[];
 
   @override
@@ -98,6 +111,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
       _filterPaidByName = '';
       _filterLoggedByName = '';
       _filterPaymentSource = '';
+      _filterDebtStatus = ExpenseDebtStatusFilter.all;
       _searchCtrl.clear();
     });
   }
@@ -144,7 +158,17 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text(VN.expenseTitle)),
+      appBar: AppBar(
+        title: const Text(VN.expenseTitle),
+        actions: [
+          if (widget.onOpenDebts != null)
+            IconButton(
+              onPressed: widget.onOpenDebts,
+              tooltip: VN.debtListTitle,
+              icon: const Icon(Icons.account_balance),
+            ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openAdd,
         tooltip: VN.expenseAddAction,
@@ -171,6 +195,11 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
             filterPaymentSource: _filterPaymentSource,
             filterPaidByName: _filterPaidByName,
             filterLoggedByName: _filterLoggedByName,
+            filterDebtStatus: _filterDebtStatus,
+            onFilterDebtStatusChanged: (value) {
+              setState(() => _filterDebtStatus = value);
+              _refreshHistory();
+            },
             onDateFilterModeChanged: (value) => setState(() {
               _dateFilterMode = value;
               if (value == ExpenseDateFilterMode.single && _since != null) {
@@ -245,6 +274,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
 
   Future<void> _refreshHistory() async {
     final shouldToggleInitialLoading = _initialHistoryLoading;
+    final debtStatusApi = expenseDebtStatusFilterApiValue(_filterDebtStatus);
     try {
       final loader = widget.loadHistory;
       final events = await (loader != null
@@ -257,19 +287,21 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
               paidByName: _filterPaidByName,
               loggedBy: _filterLoggedByName,
               searchText: _searchCtrl.text.trim(),
+              debtStatus: debtStatusApi.isEmpty ? null : debtStatusApi,
             )
           : ref
-                .read(eventsProvider.notifier)
-                .loadExpenseHistory(
-                  since: _since == null ? null : _localDayStartIso(_since!),
-                  until: _until == null ? null : _localDayEndIso(_until!),
-                  category: _filterCategory,
-                  paymentMethod: null,
-                  paymentSource: _filterPaymentSource,
-                  paidByName: _filterPaidByName,
-                  loggedBy: _filterLoggedByName,
-                  searchText: _searchCtrl.text.trim(),
-                ));
+                 .read(eventsProvider.notifier)
+                 .loadExpenseHistory(
+                   since: _since == null ? null : _localDayStartIso(_since!),
+                   until: _until == null ? null : _localDayEndIso(_until!),
+                   category: _filterCategory,
+                   paymentMethod: null,
+                   paymentSource: _filterPaymentSource,
+                   paidByName: _filterPaidByName,
+                   loggedBy: _filterLoggedByName,
+                   searchText: _searchCtrl.text.trim(),
+                   debtStatus: debtStatusApi.isEmpty ? null : debtStatusApi,
+                 ));
       _setHistory(events);
     } catch (e) {
       if (shouldToggleInitialLoading) {

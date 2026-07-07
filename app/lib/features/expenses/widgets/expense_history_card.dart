@@ -1,5 +1,6 @@
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/data/models/event.dart';
+import 'package:bakery_app/features/expenses/widgets/debt_status_chip.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
@@ -34,12 +35,19 @@ class ExpenseHistoryCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '${data.category} • ${data.paymentMethod} • ${data.paymentSource}',
+              data.isDebt
+                  ? '${data.category} • ${data.paymentMethod} • ${VN.expenseCreditorLabel}: ${data.creditorName}'
+                  : '${data.category} • ${data.paymentMethod} • ${data.paymentSource}',
             ),
             Text(
               '${VN.expenseLoggedByLabel}: ${event.loggedBy.isNotEmpty ? event.loggedBy : '—'} • ${VN.expensePaidByNameLabel}: ${data.paidByName.isNotEmpty ? data.paidByName : '—'}',
             ),
             Text(formattedTimestamp),
+            if (data.isDebt)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: DebtStatusChip(status: data.debtStatus),
+              ),
             if (data.reimbursed)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
@@ -50,7 +58,8 @@ class ExpenseHistoryCard extends StatelessWidget {
                   visualDensity: VisualDensity.compact,
                 ),
               )
-            else if (data.paymentSource == VN.paymentSourceStaffAdvance)
+            else if (!data.isDebt &&
+                data.paymentSource == VN.paymentSourceStaffAdvance)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Chip(
@@ -79,4 +88,5 @@ class ExpenseHistoryCard extends StatelessWidget {
       ),
     );
   }
+
 }

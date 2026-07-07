@@ -75,6 +75,11 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               members.where((m) => m.active).map((m) => m.name).toList(),
         ) ??
         const <String>[];
+    final vendorSuggestionsAsync = ref.watch(expenseVendorSuggestionsProvider);
+    final vendorSuggestions = vendorSuggestionsAsync.whenOrNull<List<String>>(
+          data: (names) => names,
+        ) ??
+        const <String>[];
 
     return Scaffold(
       appBar: AppBar(
@@ -92,6 +97,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             paymentMethods: expensePaymentMethods,
             paymentSources: expensePaymentSources,
             staffList: staffList,
+            vendorSuggestions: vendorSuggestions,
             category: _category,
             paymentMethod: _paymentMethod,
             paymentSource: _paymentSource,
@@ -127,29 +133,38 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       return;
     }
 
-    if (_paidByName == null || _paidByName!.isEmpty) {
-      final resolved = await _showPayerConfirmDialog();
-      if (resolved == null) return;
-      setState(() => _paidByName = resolved);
+    final isDebt = _paymentMethod == VN.methodDebt;
+
+    // Debt expenses have no payment source (FR2); default the payer to the
+    // logged-in staff without prompting, and skip the staff-advance check.
+    if (isDebt) {
+      _paidByName ??= loggedBy;
+    } else {
+      if (_paidByName == null || _paidByName!.isEmpty) {
+        final resolved = await _showPayerConfirmDialog();
+        if (resolved == null) return;
+        setState(() => _paidByName = resolved);
+      }
+
+      if (!mounted) return;
+      if (_paymentSource == VN.paymentSourceStaffAdvance &&
+          (_paidByName == null || _paidByName!.isEmpty)) {
+        showTopSnackBar(context, VN.expenseStaffNameRequiredForAdvance);
+        return;
+      }
     }
 
     if (!mounted) return;
-    if (_paymentSource == VN.paymentSourceStaffAdvance &&
-        (_paidByName == null || _paidByName!.isEmpty)) {
-      showTopSnackBar(context, VN.expenseStaffNameRequiredForAdvance);
-      return;
-    }
-
     final amount = int.parse(_amountCtrl.text.trim());
     final payload = ExpenseEventData(
       amountVnd: amount,
       category: _category!,
       paymentMethod: _paymentMethod,
-      paymentSource: _paymentSource,
+      paymentSource: isDebt ? '' : _paymentSource,
       vendor: _vendorCtrl.text.trim(),
       note: _noteCtrl.text.trim(),
       loggedBy: loggedBy,
-      paidByName: _paidByName!,
+      paidByName: _paidByName ?? loggedBy,
     );
 
     setState(() => _loading = true);
@@ -276,8 +291,12 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     return null;
   }
 
-  String _summary(ExpenseEventData data) =>
-      '${VN.expenseTitle}: ${formatVND(data.amountVnd.toDouble())} - ${data.category} - ${data.paymentMethod}';
+  String _summary(ExpenseEventData data) {
+    final tail = data.paymentMethod == VN.methodDebt && data.vendor.isNotEmpty
+        ? '${data.paymentMethod} • ${data.vendor}'
+        : data.paymentMethod;
+    return '${VN.expenseTitle}: ${formatVND(data.amountVnd.toDouble())} - ${data.category} - $tail';
+  }
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(

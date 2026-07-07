@@ -16,6 +16,8 @@ import '../../features/checklist/checklist_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/expenses/expense_screen.dart';
 import '../../features/expenses/expense_form_screen.dart';
+import '../../features/expenses/debt_list_screen.dart';
+import '../../features/expenses/debt_settlement_screen.dart';
 import '../../features/events/event_detail_screen.dart';
 import '../../features/events/event_form_screen.dart';
 import '../../features/events/event_list_screen.dart';
@@ -229,7 +231,9 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/expenses',
       parentNavigatorKey: _rootNavigatorKey,
-      builder: (context, state) => const ExpenseScreen(),
+      builder: (context, state) => ExpenseScreen(
+        onOpenDebts: () => context.push('/expenses/debts'),
+      ),
     ),
     GoRoute(
       path: '/expenses/new',
@@ -242,6 +246,21 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final event = state.extra as BakeryEvent;
         return ExpenseFormScreen(event: event);
+      },
+    ),
+    // Outstanding debts list (DG-212 Phase 4 — FR5)
+    GoRoute(
+      path: '/expenses/debts',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const DebtListScreen(),
+    ),
+    // Debt settlement flow (DG-212 Phase 4 — FR4, AC3)
+    GoRoute(
+      path: '/expenses/:id/settle',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final id = int.tryParse(state.pathParameters['id'] ?? '') ?? 0;
+        return DebtSettlementScreen(eventId: id);
       },
     ),
     // Event detail — full-screen (outside shell)

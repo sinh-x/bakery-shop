@@ -15,6 +15,7 @@ class _FakeEventService extends EventService {
   bool applyRemoteFilters = true;
   String? capturedSince;
   String? capturedUntil;
+  String? capturedDebtStatus;
 
   final List<BakeryEvent> _store = <BakeryEvent>[
     BakeryEvent(
@@ -120,10 +121,12 @@ class _FakeEventService extends EventService {
     String? expenseStaffName,
     String? expensePaidByName,
     String? expenseSearch,
+    String? expenseDebtStatus,
     int limit = 50,
   }) async {
     capturedSince = since;
     capturedUntil = until;
+    capturedDebtStatus = expenseDebtStatus;
     var items = _store.where((item) => type == null || item.type == type);
     if (applyRemoteFilters &&
         expenseCategory != null &&

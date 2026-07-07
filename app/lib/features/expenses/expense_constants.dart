@@ -11,7 +11,11 @@ const expenseCategories = <String>[
   VN.expenseCategoryOther,
 ];
 
-const expensePaymentMethods = <String>[VN.methodCash, VN.methodTransfer];
+const expensePaymentMethods = <String>[
+  VN.methodCash,
+  VN.methodTransfer,
+  VN.methodDebt,
+];
 
 const expensePaymentSources = <String>[
   VN.paymentSourceShopCash,
