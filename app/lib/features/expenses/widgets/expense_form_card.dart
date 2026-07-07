@@ -255,6 +255,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                 ? VN.expenseCreditorLabel
                 : VN.expenseVendorLabel,
             hintText: VN.expenseVendorAutocompleteHint,
+            suffixIcon: const Icon(Icons.arrow_drop_down),
             border: const OutlineInputBorder(),
           ),
           validator: _isDebt
