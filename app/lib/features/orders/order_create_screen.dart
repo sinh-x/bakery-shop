@@ -8,6 +8,7 @@ import '../../data/api/work_item_service.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order/order_create_state_provider.dart';
 import '../../providers/order_providers.dart';
+import '../../shared/utils/api_error.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
@@ -221,7 +222,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, '${VN.apiError}: $e');
+        showTopSnackBar(context, normalizeApiError(e).message);
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
