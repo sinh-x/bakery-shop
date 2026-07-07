@@ -20,10 +20,12 @@ class Stage2CustomerInfoScreen extends ConsumerStatefulWidget {
     super.key,
     required this.onBack,
     required this.onContinue,
+    this.posMode = false,
   });
 
   final VoidCallback onBack;
   final VoidCallback onContinue;
+  final bool posMode;
 
   @override
   ConsumerState<Stage2CustomerInfoScreen> createState() =>
@@ -89,6 +91,7 @@ class _Stage2CustomerInfoScreenState
                 CustomerSearchField(
                   controller: _nameCtrl,
                   onSelected: _onCustomerSelected,
+                  clearOnFocus: widget.posMode,
                 ),
                 if (state.wizardData.selectedCustomer != null)
                   Padding(
@@ -111,22 +114,24 @@ class _Stage2CustomerInfoScreenState
                     onChanged: (_) => _syncToState(),
                   ),
                 ],
-                const SizedBox(height: 20),
-                const SectionHeader(VN.orderSource),
-                SegmentedButton<String>(
-                  segments: _sourceOptions
-                      .map((s) => ButtonSegment<String>(
-                            value: s,
-                            label: Text(s),
-                          ))
-                      .toList(),
-                  selected: {state.source.isNotEmpty ? state.source : 'Tại tiệm'},
-                  onSelectionChanged: (s) {
-                    ref
-                        .read(orderCreateStateProvider.notifier)
-                        .updateSource(s.first);
-                  },
-                ),
+                if (!widget.posMode) ...[
+                  const SizedBox(height: 20),
+                  const SectionHeader(VN.orderSource),
+                  SegmentedButton<String>(
+                    segments: _sourceOptions
+                        .map((s) => ButtonSegment<String>(
+                              value: s,
+                              label: Text(s),
+                            ))
+                        .toList(),
+                    selected: {state.source.isNotEmpty ? state.source : 'Tại tiệm'},
+                    onSelectionChanged: (s) {
+                      ref
+                          .read(orderCreateStateProvider.notifier)
+                          .updateSource(s.first);
+                    },
+                  ),
+                ],
               ],
             ),
           ),

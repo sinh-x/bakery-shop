@@ -4,12 +4,16 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/order_service.dart';
+import '../../features/orders/widgets/order_stage_indicator.dart';
 import '../../features/orders/widgets/order_wizard.dart';
 import '../../features/orders/widgets/section_header.dart';
+import '../../features/orders/widgets/stage2_customer_info_screen.dart';
+import '../../features/orders/widgets/stage3_delivery_options_screen.dart';
 import '../../features/pos/utils/pos_cart_item_display.dart';
 import '../../features/pos/widgets/pos_checkout_cart_item_tile.dart';
 import '../../features/pos/widgets/pos_checkout_dialogs.dart';
 import '../../features/stock/stock_screen.dart';
+import '../../providers/order/order_create_state_provider.dart';
 import '../../providers/pos_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/labels/orders.dart';
@@ -43,12 +47,36 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   bool _navigatingAfterCheckout = false;
   String _selectedPaymentMethod = 'cash';
 
-  late OrderWizardData _wizardData;
-
   @override
   void initState() {
     super.initState();
-    _wizardData = OrderWizardData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initPosState();
+    });
+  }
+
+  void _initPosState() {
+    final notifier = ref.read(orderCreateStateProvider.notifier);
+    final wizardData = OrderWizardData(
+      customerName: VN.khachLe,
+      source: VN.taiTiemPOS,
+    );
+    notifier.updateWizardData(wizardData);
+    notifier.updateSource(VN.taiTiemPOS);
+    notifier.goToStage(2);
+  }
+
+  void _goToStage(int stage) {
+    ref.read(orderCreateStateProvider.notifier).goToStage(stage);
+  }
+
+  void _onStage2Continue() {
+    final state = ref.read(orderCreateStateProvider);
+    if (state.wizardData.deliveryType == 'pickup') {
+      _goToStage(4);
+    } else {
+      _goToStage(3);
+    }
   }
 
   void _onPaymentMethodChanged(String paymentMethod) {
@@ -102,24 +130,26 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     setState(() => _isProcessing = true);
 
     try {
+      final state = ref.read(orderCreateStateProvider);
+      final data = state.wizardData;
       final orderItems = _buildOrderItems();
       final dueDate = posCheckoutLocalDueDate(DateTime.now());
-      final isDelivery = _wizardData.deliveryType == 'bus' || _wizardData.deliveryType == 'door';
+      final isDelivery = data.deliveryType == 'bus' || data.deliveryType == 'door';
       final status = isDelivery ? 'new' : 'delivered';
 
       final orderService = ref.read(orderServiceProvider);
       final order = await orderService.createOrder(
-        customerName: _wizardData.customerName.isNotEmpty
-            ? _wizardData.customerName
+        customerName: data.customerName.isNotEmpty
+            ? data.customerName
             : VN.khachLe,
-        customerPhone: _wizardData.customerPhone,
-        customerId: _wizardData.selectedCustomer?.id,
+        customerPhone: data.customerPhone,
+        customerId: data.selectedCustomer?.id,
         source: VN.taiTiemPOS,
         dueDate: dueDate,
-        deliveryType: _wizardData.deliveryType,
-        deliveryAddress: _wizardData.deliveryAddress,
-        shippingFee: _wizardData.shippingFee,
-        notes: _wizardData.notes,
+        deliveryType: data.deliveryType,
+        deliveryAddress: data.deliveryAddress,
+        shippingFee: data.shippingFee,
+        notes: data.notes,
         items: orderItems,
         status: status,
         paymentMethod: paymentMethod,
@@ -164,24 +194,26 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         return;
       }
 
+      final state = ref.read(orderCreateStateProvider);
+      final data = state.wizardData;
       final orderItems = _buildOrderItems();
       final dueDate = posCheckoutLocalDueDate(DateTime.now());
-      final isDelivery = _wizardData.deliveryType == 'bus' || _wizardData.deliveryType == 'door';
+      final isDelivery = data.deliveryType == 'bus' || data.deliveryType == 'door';
       final status = isDelivery ? 'new' : 'delivered';
 
       final orderService = ref.read(orderServiceProvider);
       final order = await orderService.createOrder(
-        customerName: _wizardData.customerName.isNotEmpty
-            ? _wizardData.customerName
+        customerName: data.customerName.isNotEmpty
+            ? data.customerName
             : VN.khachLe,
-        customerPhone: _wizardData.customerPhone,
-        customerId: _wizardData.selectedCustomer?.id,
+        customerPhone: data.customerPhone,
+        customerId: data.selectedCustomer?.id,
         source: VN.taiTiemPOS,
         dueDate: dueDate,
-        deliveryType: _wizardData.deliveryType,
-        deliveryAddress: _wizardData.deliveryAddress,
-        shippingFee: _wizardData.shippingFee,
-        notes: _wizardData.notes,
+        deliveryType: data.deliveryType,
+        deliveryAddress: data.deliveryAddress,
+        shippingFee: data.shippingFee,
+        notes: data.notes,
         items: orderItems,
         status: status,
         paymentMethod: 'transfer',
@@ -228,6 +260,8 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final state = ref.watch(orderCreateStateProvider);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(VN.thanhToan),
@@ -247,21 +281,145 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       ),
       body: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: OrderStageIndicator(currentStage: state.currentStage),
+          ),
           Expanded(
-            child: OrderWizard(
-              data: _wizardData,
-              onDataChanged: () => setState(() {}),
-              onFinalize: _handleFinalizeOrder,
-              showCustomerStep: true,
-              showDeliveryStep: true,
-              showReviewStep: true,
-              skipCustomerIfWalkIn: false,
-              skipDeliveryIfPickup: true,
-              isProcessing: _isProcessing,
-              extraReviewWidgets: [
-                _buildCartReview(),
-                _buildPaymentReview(),
+            child: _buildCurrentStage(state),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCurrentStage(OrderCreateState state) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      child: switch (state.currentStage) {
+        2 => Stage2CustomerInfoScreen(
+            key: const ValueKey('stage2'),
+            posMode: true,
+            onBack: () => context.pop(),
+            onContinue: _onStage2Continue,
+          ),
+        3 => Stage3DeliveryOptionsScreen(
+            key: const ValueKey('stage3'),
+            onBack: () => _goToStage(2),
+            onContinue: () => _goToStage(4),
+          ),
+        4 => _buildPosReviewStage(),
+        _ => const SizedBox.shrink(),
+      },
+    );
+  }
+
+  Widget _buildPosReviewStage() {
+    final cart = ref.watch(posCartProvider);
+    final state = ref.watch(orderCreateStateProvider);
+    final data = state.wizardData;
+    final theme = Theme.of(context);
+
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  OrdersLabels.checkoutReviewTitle,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  OrdersLabels.checkoutReviewHint,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.outline,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const SectionHeader(OrdersLabels.stage2Label),
+                _buildReviewRow(theme, VN.customerName, data.customerName.isNotEmpty ? data.customerName : '—'),
+                if (data.customerPhone.isNotEmpty)
+                  _buildReviewRow(theme, VN.customerPhone, data.customerPhone),
+                const SizedBox(height: 16),
+                const SectionHeader(OrdersLabels.stage3Label),
+                _buildReviewRow(theme, VN.deliveryType, _deliveryTypeLabel(data.deliveryType)),
+                if (data.needsAddress) ...[
+                  if (data.deliveryAddress.isNotEmpty)
+                    _buildReviewRow(theme, VN.deliveryAddress, data.deliveryAddress),
+                ],
+                const SizedBox(height: 16),
+                const SectionHeader(VN.products),
+                ...cart.items.map(
+                  (item) => PosCheckoutCartItemTile(item: item),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text('${VN.total}: ', style: theme.textTheme.bodyMedium),
+                    Text(
+                      formatVND(cart.total),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const SectionHeader(VN.paymentMethod),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 'cash',
+                      label: Text(VN.tienMat),
+                      icon: Icon(Icons.money),
+                    ),
+                    ButtonSegment(
+                      value: 'transfer',
+                      label: Text(VN.chuyenKhoan),
+                      icon: Icon(Icons.qr_code),
+                    ),
+                  ],
+                  selected: {_selectedPaymentMethod},
+                  onSelectionChanged: (s) => _onPaymentMethodChanged(s.first),
+                  showSelectedIcon: false,
+                  multiSelectionEnabled: false,
+                ),
               ],
+            ),
+          ),
+        ),
+        _buildReviewNavigation(),
+      ],
+    );
+  }
+
+  Widget _buildReviewRow(ThemeData theme, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              '$label:',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: theme.textTheme.bodyMedium,
             ),
           ),
         ],
@@ -269,61 +427,40 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     );
   }
 
-  Widget _buildCartReview() {
-    final cart = ref.watch(posCartProvider);
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SizedBox(height: 16),
-        const SectionHeader(VN.products),
-        ...cart.items.map(
-          (item) => PosCheckoutCartItemTile(item: item),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Text('${VN.total}: ', style: theme.textTheme.bodyMedium),
-            Text(
-              formatVND(cart.total),
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.primary,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
+  String _deliveryTypeLabel(String type) {
+    switch (type) {
+      case 'bus':
+        return VN.deliveryBus;
+      case 'door':
+        return VN.deliveryDoor;
+      case 'pickup':
+      default:
+        return VN.pickup;
+    }
   }
 
-  Widget _buildPaymentReview() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SizedBox(height: 16),
-        const SectionHeader(VN.paymentMethod),
-        SegmentedButton<String>(
-          segments: const [
-            ButtonSegment(
-              value: 'cash',
-              label: Text(VN.tienMat),
-              icon: Icon(Icons.money),
-            ),
-            ButtonSegment(
-              value: 'transfer',
-              label: Text(VN.chuyenKhoan),
-              icon: Icon(Icons.qr_code),
-            ),
-          ],
-          selected: {_selectedPaymentMethod},
-          onSelectionChanged: (s) => _onPaymentMethodChanged(s.first),
-          showSelectedIcon: false,
-          multiSelectionEnabled: false,
-        ),
-      ],
+  Widget _buildReviewNavigation() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          OutlinedButton(
+            onPressed: () => _goToStage(2),
+            child: const Text(OrdersLabels.backLabel),
+          ),
+          const Spacer(),
+          FilledButton(
+            onPressed: _isProcessing ? null : _handleFinalizeOrder,
+            child: _isProcessing
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text(VN.submitOrder),
+          ),
+        ],
+      ),
     );
   }
 }
