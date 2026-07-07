@@ -6,12 +6,11 @@ import 'package:image_picker/image_picker.dart';
 import '../../data/api/order_service.dart';
 import '../../features/orders/widgets/order_stage_indicator.dart';
 import '../../features/orders/widgets/order_wizard.dart';
-import '../../features/orders/widgets/section_header.dart';
 import '../../features/orders/widgets/stage2_customer_info_screen.dart';
 import '../../features/orders/widgets/stage3_delivery_options_screen.dart';
 import '../../features/pos/utils/pos_cart_item_display.dart';
-import '../../features/pos/widgets/pos_checkout_cart_item_tile.dart';
 import '../../features/pos/widgets/pos_checkout_dialogs.dart';
+import '../../features/pos/widgets/pos_review_panel.dart';
 import '../../features/stock/stock_screen.dart';
 import '../../providers/order/order_create_state_provider.dart';
 import '../../providers/pos_provider.dart';
@@ -19,7 +18,6 @@ import '../../providers/products_provider.dart';
 import '../../shared/labels/orders.dart';
 import '../../shared/utils/api_error.dart' as api_error;
 import '../../shared/utils/date_formatting.dart';
-import '../../shared/utils/order_helpers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 
 String posCheckoutLocalDueDate(DateTime dateTime) {
@@ -311,149 +309,18 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
             onBack: () => _goToStage(2),
             onContinue: () => _goToStage(4),
           ),
-        4 => _buildPosReviewStage(),
+        4 => PosReviewPanel(
+            key: const ValueKey('stage4'),
+            wizardData: state.wizardData,
+            selectedPaymentMethod: _selectedPaymentMethod,
+            isProcessing: _isProcessing,
+            onPaymentMethodChanged: _onPaymentMethodChanged,
+            onBack: () => _goToStage(2),
+            onSubmit: _handleFinalizeOrder,
+          ),
         _ => const SizedBox.shrink(),
       },
     );
   }
 
-  Widget _buildPosReviewStage() {
-    final cart = ref.watch(posCartProvider);
-    final state = ref.watch(orderCreateStateProvider);
-    final data = state.wizardData;
-    final theme = Theme.of(context);
-
-    return Column(
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  OrdersLabels.checkoutReviewTitle,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  OrdersLabels.checkoutReviewHint,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.outline,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const SectionHeader(OrdersLabels.stage2Label),
-                _buildReviewRow(theme, VN.customerName, data.customerName.isNotEmpty ? data.customerName : '—'),
-                if (data.customerPhone.isNotEmpty)
-                  _buildReviewRow(theme, VN.customerPhone, data.customerPhone),
-                const SizedBox(height: 16),
-                const SectionHeader(OrdersLabels.stage3Label),
-                _buildReviewRow(theme, VN.deliveryType, deliveryTypeLabel(data.deliveryType)),
-                if (data.needsAddress) ...[
-                  if (data.deliveryPhone.isNotEmpty)
-                    _buildReviewRow(theme, OrdersLabels.deliveryPhone, data.deliveryPhone),
-                  if (data.deliveryAddress.isNotEmpty)
-                    _buildReviewRow(theme, VN.deliveryAddress, data.deliveryAddress),
-                ],
-                const SizedBox(height: 16),
-                const SectionHeader(VN.products),
-                ...cart.items.map(
-                  (item) => PosCheckoutCartItemTile(item: item),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text('${VN.total}: ', style: theme.textTheme.bodyMedium),
-                    Text(
-                      formatVND(cart.total),
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                const SectionHeader(VN.paymentMethod),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                      value: 'cash',
-                      label: Text(VN.tienMat),
-                      icon: Icon(Icons.money),
-                    ),
-                    ButtonSegment(
-                      value: 'transfer',
-                      label: Text(VN.chuyenKhoan),
-                      icon: Icon(Icons.qr_code),
-                    ),
-                  ],
-                  selected: {_selectedPaymentMethod},
-                  onSelectionChanged: (s) => _onPaymentMethodChanged(s.first),
-                  showSelectedIcon: false,
-                  multiSelectionEnabled: false,
-                ),
-              ],
-            ),
-          ),
-        ),
-        _buildReviewNavigation(),
-      ],
-    );
-  }
-
-  Widget _buildReviewRow(ThemeData theme, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              '$label:',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: theme.textTheme.bodyMedium,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReviewNavigation() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          OutlinedButton(
-            onPressed: () => _goToStage(2),
-            child: const Text(OrdersLabels.backLabel),
-          ),
-          const Spacer(),
-          FilledButton(
-            onPressed: _isProcessing ? null : _handleFinalizeOrder,
-            child: _isProcessing
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text(VN.submitOrder),
-          ),
-        ],
-      ),
-    );
-  }
 }
