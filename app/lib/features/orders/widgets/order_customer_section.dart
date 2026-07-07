@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../data/models/customer.dart';
 import '../../../providers/customers_provider.dart';
+import '../../../shared/utils/phone_formatter.dart';
 import '../../customers/widgets/customer_profile_card.dart';
 import '../../customers/widgets/customer_search_field.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
@@ -119,6 +120,7 @@ class OrderCustomerSection extends ConsumerWidget {
               border: OutlineInputBorder(),
             ),
             keyboardType: TextInputType.phone,
+            inputFormatters: [PhoneInputFormatter()],
           ),
         ],
       ],

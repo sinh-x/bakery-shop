@@ -15,6 +15,7 @@ import '../../providers/products_provider.dart';
 import '../../shared/utils/config_parsers.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/order_helpers.dart';
+import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
@@ -446,6 +447,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                       border: OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.phone,
+                    inputFormatters: [PhoneInputFormatter()],
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
