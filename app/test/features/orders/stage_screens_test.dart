@@ -2,14 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:bakery_app/data/api/api_client.dart';
+import 'package:bakery_app/data/models/category.dart';
 import 'package:bakery_app/data/models/order_draft.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/orders/widgets/order_stage_indicator.dart';
 import 'package:bakery_app/features/orders/widgets/order_wizard.dart';
+import 'package:bakery_app/features/orders/widgets/stage1_product_selection_screen.dart';
 import 'package:bakery_app/features/orders/widgets/stage2_customer_info_screen.dart';
 import 'package:bakery_app/features/orders/widgets/stage3_delivery_options_screen.dart';
 import 'package:bakery_app/features/orders/widgets/stage4_review_screen.dart';
+import 'package:bakery_app/providers/categories_provider.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
+import 'package:bakery_app/providers/products_provider.dart';
 
 class FixedOrderCreateStateNotifier extends OrderCreateStateNotifier {
   final OrderCreateState initial;
@@ -17,6 +22,37 @@ class FixedOrderCreateStateNotifier extends OrderCreateStateNotifier {
 
   @override
   OrderCreateState build() => initial;
+}
+
+class _FakeApiBaseUrlNotifier extends ApiBaseUrlNotifier {
+  final String _url;
+  _FakeApiBaseUrlNotifier(this._url);
+
+  @override
+  String build() => _url;
+}
+
+class _FakePhotoRefreshTickNotifier extends ProductPhotoRefreshTickNotifier {
+  _FakePhotoRefreshTickNotifier();
+
+  @override
+  int build() => 0;
+}
+
+class _FakeCategoriesNotifier extends CategoriesNotifier {
+  final List<Category> _categories;
+  _FakeCategoriesNotifier(this._categories);
+
+  @override
+  Future<List<Category>> build() async => _categories;
+}
+
+class _FakeProductsNotifier extends ProductsNotifier {
+  final List<Product> _products;
+  _FakeProductsNotifier(this._products);
+
+  @override
+  Future<List<Product>> build() async => _products;
 }
 
 Widget buildTestWidget(Widget child, {OrderCreateState? state}) {
@@ -31,6 +67,36 @@ Widget buildTestWidget(Widget child, {OrderCreateState? state}) {
     child: MaterialApp(home: Scaffold(body: child)),
   );
 }
+
+Widget buildStage1TestWidget(Widget child, {
+  OrderCreateState? state,
+  List<Product> products = const [],
+  List<Category> categories = const [],
+}) {
+  return ProviderScope(
+    overrides: [
+      productsProvider.overrideWith(
+        () => _FakeProductsNotifier(products),
+      ),
+      categoriesProvider.overrideWith(
+        () => _FakeCategoriesNotifier(categories),
+      ),
+      apiBaseUrlProvider.overrideWith(
+        () => _FakeApiBaseUrlNotifier('http://test.local'),
+      ),
+      productPhotoRefreshTickProvider.overrideWith(
+        () => _FakePhotoRefreshTickNotifier(),
+      ),
+      if (state != null)
+        orderCreateStateProvider.overrideWith(
+          () => FixedOrderCreateStateNotifier(state),
+        ),
+    ],
+    child: MaterialApp(home: Scaffold(body: Column(children: [child]))),
+  );
+}
+
+void _noop() {}
 
 void main() {
   testWidgets('OrderStageIndicator renders 4 stages with currentStage=1',
@@ -117,5 +183,89 @@ void main() {
     expect(find.text('Giao tận nơi'), findsOneWidget);
     expect(find.text('Test Cake x2 — 300.000đ'), findsOneWidget);
     expect(find.text('Tạo đơn hàng'), findsOneWidget);
+  });
+
+  testWidgets('Stage1ProductSelectionScreen renders product grid',
+      (tester) async {
+    final testProduct = Product(
+      id: 1,
+      name: 'Bánh mì',
+      category: 'banh_mi',
+      basePrice: 15000,
+    );
+    await tester.pumpWidget(buildStage1TestWidget(
+      const Stage1ProductSelectionScreen(onContinue: _noop),
+      products: [testProduct],
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Chọn sản phẩm'), findsOneWidget);
+    expect(find.text('Bánh mì'), findsOneWidget);
+  });
+
+  testWidgets('Stage1ProductSelectionScreen shows category chips when provided',
+      (tester) async {
+    final testProduct = Product(
+      id: 1,
+      name: 'Bánh mì',
+      category: 'banh_mi',
+      basePrice: 15000,
+    );
+    final testCategory = const Category(
+      id: 1,
+      slug: 'banh_mi',
+      name: 'Bánh mì',
+      codePrefix: 'BM',
+      active: 1,
+    );
+    await tester.pumpWidget(buildStage1TestWidget(
+      const Stage1ProductSelectionScreen(onContinue: _noop),
+      products: [testProduct],
+      categories: [testCategory],
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bánh mì'), findsWidgets);
+  });
+
+  testWidgets('Stage3DeliveryOptionsScreen shows address fields for door delivery',
+      (tester) async {
+    final testState = OrderCreateState(
+      wizardData: OrderWizardData(deliveryType: 'door'),
+    );
+    await tester.pumpWidget(buildTestWidget(
+      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      state: testState,
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Địa chỉ giao hàng'), findsOneWidget);
+  });
+
+  testWidgets('OrderStageIndicator currentStage=1 shows all step numbers',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: OrderStageIndicator(currentStage: 1))));
+
+    expect(find.text('1'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
+    expect(find.text('3'), findsOneWidget);
+    expect(find.text('4'), findsOneWidget);
+    expect(find.byIcon(Icons.check), findsNothing);
+  });
+
+  testWidgets('Stage2CustomerInfoScreen in POS mode hides source selector',
+      (tester) async {
+    await tester.pumpWidget(buildTestWidget(
+      Stage2CustomerInfoScreen(
+        onBack: () {},
+        onContinue: () {},
+        posMode: true,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Khách hàng'), findsWidgets);
+    expect(find.text('Nguồn đặt hàng'), findsNothing);
   });
 }

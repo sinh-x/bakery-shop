@@ -9,7 +9,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/customer_service.dart';
 import 'package:bakery_app/data/api/order_service.dart';
 import 'package:bakery_app/data/models/customer.dart';
