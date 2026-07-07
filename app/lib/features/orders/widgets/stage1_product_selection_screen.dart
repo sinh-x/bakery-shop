@@ -11,7 +11,6 @@ import '../../../providers/order_providers.dart';
 import '../../../providers/products_provider.dart';
 import '../../products/widgets/product_card.dart';
 import 'expandable_item_card.dart';
-import 'order_stage_indicator.dart';
 import 'section_header.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
@@ -48,13 +47,7 @@ class _Stage1ProductSelectionScreenState
 
     final theme = Theme.of(context);
 
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: OrderStageIndicator(currentStage: 1),
-        ),
-        Expanded(
+    return Expanded(
           child: productsAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Center(child: Text(VN.apiError)),
@@ -94,8 +87,6 @@ class _Stage1ProductSelectionScreenState
               ),
             ),
           ),
-        ),
-      ],
     );
   }
 

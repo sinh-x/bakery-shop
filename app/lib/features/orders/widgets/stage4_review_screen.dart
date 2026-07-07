@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/order/order_create_state_provider.dart';
-import 'order_stage_indicator.dart';
 import 'section_header.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
@@ -11,10 +10,12 @@ class Stage4ReviewScreen extends ConsumerWidget {
     super.key,
     required this.onBack,
     required this.onSubmit,
+    this.isProcessing = false,
   });
 
   final VoidCallback onBack;
   final VoidCallback onSubmit;
+  final bool isProcessing;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -38,10 +39,6 @@ class Stage4ReviewScreen extends ConsumerWidget {
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: OrderStageIndicator(currentStage: 4),
-        ),
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -173,8 +170,14 @@ class Stage4ReviewScreen extends ConsumerWidget {
           ),
           const Spacer(),
           FilledButton(
-            onPressed: onSubmit,
-            child: const Text(OrdersLabels.reviewCreateOrder),
+            onPressed: isProcessing ? null : onSubmit,
+            child: isProcessing
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text(OrdersLabels.reviewCreateOrder),
           ),
         ],
       ),

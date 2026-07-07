@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/order/order_create_state_provider.dart';
-import 'order_stage_indicator.dart';
 import 'section_header.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
@@ -90,10 +89,6 @@ class _Stage3DeliveryOptionsScreenState
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: OrderStageIndicator(currentStage: 3),
-        ),
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),

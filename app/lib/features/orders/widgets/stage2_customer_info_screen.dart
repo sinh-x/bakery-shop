@@ -6,7 +6,6 @@ import '../../../providers/order/order_create_state_provider.dart';
 import '../../../shared/utils/phone_formatter.dart';
 import '../../customers/widgets/customer_profile_card.dart';
 import '../../customers/widgets/customer_search_field.dart';
-import 'order_stage_indicator.dart';
 import 'section_header.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
@@ -80,10 +79,6 @@ class _Stage2CustomerInfoScreenState
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: OrderStageIndicator(currentStage: 2),
-        ),
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
