@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/order/order_create_state_provider.dart';
+import '../../../shared/utils/order_helpers.dart';
 import 'section_header.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
@@ -96,7 +97,7 @@ class Stage4ReviewScreen extends ConsumerWidget {
                 const SizedBox(height: 16),
 
                 const SectionHeader(OrdersLabels.stage3Label),
-                _buildReviewRow(theme, VN.deliveryType, _deliveryTypeLabel(data.deliveryType)),
+                _buildReviewRow(theme, VN.deliveryType, deliveryTypeLabel(data.deliveryType)),
                 if (data.needsAddress) ...[
                   if (data.deliveryPhone.isNotEmpty)
                     _buildReviewRow(theme, OrdersLabels.deliveryPhone, data.deliveryPhone),
@@ -145,18 +146,6 @@ class Stage4ReviewScreen extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  String _deliveryTypeLabel(String type) {
-    switch (type) {
-      case 'bus':
-        return VN.deliveryBus;
-      case 'door':
-        return VN.deliveryDoor;
-      case 'pickup':
-      default:
-        return VN.pickup;
-    }
   }
 
   Widget _buildNavigation() {

@@ -19,6 +19,7 @@ import '../../providers/products_provider.dart';
 import '../../shared/labels/orders.dart';
 import '../../shared/utils/api_error.dart' as api_error;
 import '../../shared/utils/date_formatting.dart';
+import '../../shared/utils/order_helpers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 
 String posCheckoutLocalDueDate(DateTime dateTime) {
@@ -148,6 +149,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         dueDate: dueDate,
         deliveryType: data.deliveryType,
         deliveryAddress: data.deliveryAddress,
+        deliveryPhone: data.deliveryPhone,
         shippingFee: data.shippingFee,
         notes: data.notes,
         items: orderItems,
@@ -212,6 +214,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         dueDate: dueDate,
         deliveryType: data.deliveryType,
         deliveryAddress: data.deliveryAddress,
+        deliveryPhone: data.deliveryPhone,
         shippingFee: data.shippingFee,
         notes: data.notes,
         items: orderItems,
@@ -348,8 +351,10 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
                   _buildReviewRow(theme, VN.customerPhone, data.customerPhone),
                 const SizedBox(height: 16),
                 const SectionHeader(OrdersLabels.stage3Label),
-                _buildReviewRow(theme, VN.deliveryType, _deliveryTypeLabel(data.deliveryType)),
+                _buildReviewRow(theme, VN.deliveryType, deliveryTypeLabel(data.deliveryType)),
                 if (data.needsAddress) ...[
+                  if (data.deliveryPhone.isNotEmpty)
+                    _buildReviewRow(theme, OrdersLabels.deliveryPhone, data.deliveryPhone),
                   if (data.deliveryAddress.isNotEmpty)
                     _buildReviewRow(theme, VN.deliveryAddress, data.deliveryAddress),
                 ],
@@ -425,18 +430,6 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         ],
       ),
     );
-  }
-
-  String _deliveryTypeLabel(String type) {
-    switch (type) {
-      case 'bus':
-        return VN.deliveryBus;
-      case 'door':
-        return VN.deliveryDoor;
-      case 'pickup':
-      default:
-        return VN.pickup;
-    }
   }
 
   Widget _buildReviewNavigation() {

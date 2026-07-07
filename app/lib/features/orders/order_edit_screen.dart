@@ -42,6 +42,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   final _nameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
+  final _deliveryPhoneCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
 
   String _source = '';
@@ -62,6 +63,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     _addressCtrl.dispose();
+    _deliveryPhoneCtrl.dispose();
     _notesCtrl.dispose();
     super.dispose();
   }
@@ -72,6 +74,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _nameCtrl.text = order.customerName;
     _phoneCtrl.text = order.customerPhone;
     _addressCtrl.text = order.deliveryAddress;
+    _deliveryPhoneCtrl.text = order.deliveryPhone;
     _notesCtrl.text = order.notes;
     _source = order.source;
     _deliveryType = order.deliveryType;
@@ -200,6 +203,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             dueTime: _dueTime != null ? _formatTime(_dueTime!) : null,
             customerPhone: _phoneCtrl.text.trim(),
             deliveryAddress: _needsAddress ? _addressCtrl.text.trim() : '',
+            deliveryPhone: _needsAddress ? _deliveryPhoneCtrl.text.trim() : '',
             deliveryType: _deliveryType,
             source: _source.isEmpty ? null : _source,
             customerName: _nameCtrl.text.trim(),
@@ -434,6 +438,15 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   ),
                 ),
                 if (_needsAddress) ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _deliveryPhoneCtrl,
+                    decoration: const InputDecoration(
+                      labelText: OrdersLabels.deliveryPhone,
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.phone,
+                  ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _addressCtrl,

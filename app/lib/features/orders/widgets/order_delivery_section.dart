@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/labels/orders.dart';
+import '../../../shared/utils/order_helpers.dart';
 import 'section_header.dart';
 
 class OrderDeliverySection extends StatelessWidget {
@@ -49,7 +50,7 @@ class OrderDeliverySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildInfoRow(context, Icons.local_shipping_outlined, VN.deliveryType, _deliveryTypeLabel(deliveryType)),
+        _buildInfoRow(context, Icons.local_shipping_outlined, VN.deliveryType, deliveryTypeLabel(deliveryType)),
         if (_needsAddress) ...[
           if (customerPhone != null && customerPhone!.isNotEmpty)
             _buildInfoRow(context, Icons.phone_outlined, VN.customerPhone, customerPhone!),
@@ -182,17 +183,6 @@ class OrderDeliverySection extends StatelessWidget {
     );
   }
 
-  String _deliveryTypeLabel(String type) {
-    switch (type) {
-      case 'bus':
-        return VN.deliveryBus;
-      case 'door':
-        return VN.deliveryDoor;
-      case 'pickup':
-      default:
-        return VN.pickup;
-    }
-  }
 }
 
 enum OrderDeliverySectionMode { editable, readOnly }

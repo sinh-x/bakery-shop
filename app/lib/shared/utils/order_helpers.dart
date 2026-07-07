@@ -1,7 +1,22 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/vietnamese_labels.dart';
+
 /// Shared order/work-item helper functions.
 /// Eliminates duplication across OrderCard, CakeQueueCard, DeliveryOrderCard.
+
+/// Returns Vietnamese display label for a delivery type.
+String deliveryTypeLabel(String type) {
+  switch (type) {
+    case 'bus':
+      return VN.deliveryBus;
+    case 'door':
+      return VN.deliveryDoor;
+    case 'pickup':
+    default:
+      return VN.pickup;
+  }
+}
 
 /// Returns urgency border color: red for overdue, amber for same-day, null otherwise.
 Color? urgencyBorderColor(String? dueDate) {

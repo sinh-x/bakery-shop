@@ -150,6 +150,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             : null,
         deliveryType: state.wizardData.deliveryType,
         deliveryAddress: state.wizardData.deliveryAddress,
+        deliveryPhone: state.wizardData.deliveryPhone,
         notes: state.wizardData.notes.trim(),
         source: state.source.isEmpty ? null : state.source,
         createdBy: staffName,

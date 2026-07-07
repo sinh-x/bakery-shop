@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../providers/config_provider.dart';
 import '../../../providers/order/order_create_state_provider.dart';
+import '../../../shared/utils/config_parsers.dart';
+import '../../../shared/utils/phone_formatter.dart';
 import 'section_header.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
@@ -58,12 +61,20 @@ class _Stage3DeliveryOptionsScreenState
     final state = ref.read(orderCreateStateProvider);
     final updated = state.wizardData;
     updated.deliveryType = type;
+    final shippingBusDefault = firstFeeOrFallback(
+      ref.read(shippingFeeBusProvider).asData?.value ?? [],
+      25000,
+    );
+    final shippingDoorDefault = firstFeeOrFallback(
+      ref.read(shippingFeeDoorProvider).asData?.value ?? [],
+      20000,
+    );
     switch (type) {
       case 'bus':
-        updated.shippingFee = 25000;
+        updated.shippingFee = shippingBusDefault;
         break;
       case 'door':
-        updated.shippingFee = 20000;
+        updated.shippingFee = shippingDoorDefault;
         break;
       case 'pickup':
       default:
@@ -127,6 +138,7 @@ class _Stage3DeliveryOptionsScreenState
                       border: OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.phone,
+                    inputFormatters: [PhoneInputFormatter()],
                     onChanged: (_) => _syncToState(),
                   ),
                   const SizedBox(height: 12),
