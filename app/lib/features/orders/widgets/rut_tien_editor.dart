@@ -32,13 +32,17 @@ class _RutTienEditorState extends State<RutTienEditor> {
   @override
   void initState() {
     super.initState();
-    final defaultCashFee = widget.item.product.attributes['cash_fee'];
-    final defaultCashAmount = widget.item.product.attributes['cash_amount'];
+    final savedCashFee = widget.item.attributes['cash_fee'];
+    final savedCashAmount = widget.item.attributes['cash_amount'];
+    final productCashFee = widget.item.product.attributes['cash_fee'];
+    final productCashAmount = widget.item.product.attributes['cash_amount'];
     _cashFeeCtrl = TextEditingController(
-      text: defaultCashFee ?? '$_defaultCashFee',
+      text: (savedCashFee ?? productCashFee ?? '$_defaultCashFee').toString(),
     );
-    _cashAmountCtrl = TextEditingController(text: defaultCashAmount ?? '');
-    _rutTien = false;
+    _cashAmountCtrl = TextEditingController(
+      text: (savedCashAmount ?? productCashAmount ?? '').toString(),
+    );
+    _rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
   }
 
   @override
