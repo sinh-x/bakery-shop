@@ -97,6 +97,11 @@ class OrderCustomerSection extends ConsumerWidget {
             customer: customer,
             mode: CustomerProfileCardMode.compact,
             onTap: () => context.push('/customers/${customer.id}'),
+            onUnlink: () {
+              onClearSelection?.call();
+              nameCtrl?.clear();
+              phoneCtrl?.clear();
+            },
           ),
         ],
         if (nameCtrl != null && phoneCtrl != null) ...[
@@ -110,7 +115,6 @@ class OrderCustomerSection extends ConsumerWidget {
             textCapitalization: TextCapitalization.words,
             validator: (v) =>
                 (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
-            onChanged: (_) => onClearSelection?.call(),
           ),
           const SizedBox(height: 12),
           TextFormField(

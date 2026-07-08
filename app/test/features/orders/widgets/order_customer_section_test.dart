@@ -79,4 +79,70 @@ void main() {
     expect(find.text('0912345678'), findsOneWidget);
     expect(picked, isNull);
   });
+
+  testWidgets('tapping (x) on linked customer card calls onClearSelection (unlinks) (AC4)',
+      (tester) async {
+    const customer = Customer(
+      id: 9,
+      name: 'Phạm Văn D',
+      phone: '0901234567',
+    );
+    final nameCtrl = TextEditingController(text: 'Phạm Văn D');
+    final phoneCtrl = TextEditingController(text: '0901234567');
+    var cleared = false;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: OrderCustomerSection(
+              mode: OrderCustomerSectionMode.editable,
+              selectedCustomer: customer,
+              nameCtrl: nameCtrl,
+              phoneCtrl: phoneCtrl,
+              onClearSelection: () => cleared = true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip(VN.customerSearchClear), findsOneWidget);
+
+    await tester.tap(find.byTooltip(VN.customerSearchClear));
+    await tester.pumpAndSettle();
+
+    expect(cleared, isTrue);
+  });
+
+  testWidgets('tapping (x) clears name and phone TextFormField values (AC4)',
+      (tester) async {
+    const customer = Customer(
+      id: 9,
+      name: 'Phạm Văn D',
+      phone: '0901234567',
+    );
+    final nameCtrl = TextEditingController(text: 'Phạm Văn D');
+    final phoneCtrl = TextEditingController(text: '0901234567');
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: OrderCustomerSection(
+              mode: OrderCustomerSectionMode.editable,
+              selectedCustomer: customer,
+              nameCtrl: nameCtrl,
+              phoneCtrl: phoneCtrl,
+              onClearSelection: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip(VN.customerSearchClear));
+    await tester.pumpAndSettle();
+
+    expect(nameCtrl.text, '');
+    expect(phoneCtrl.text, '');
+  });
 }

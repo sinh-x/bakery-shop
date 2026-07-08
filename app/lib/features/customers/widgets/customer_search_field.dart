@@ -128,10 +128,6 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
   }
 
   void _onChanged(String value) {
-    if (_selected != null && value != _selected!.name) {
-      _selected = null;
-      widget.onSelected?.call(null);
-    }
     if (value.trim().isEmpty) {
       _debounce?.cancel();
       _hideOverlay();
@@ -196,22 +192,11 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
   void _select(Customer customer) {
     setState(() {
       _selected = customer;
-      _ctrl.text = customer.name;
-      _ctrl.selection = TextSelection.collapsed(offset: customer.name.length);
-      _error = null;
-    });
-    _hideOverlay();
-    widget.onSelected?.call(customer);
-  }
-
-  void _clear() {
-    setState(() {
-      _selected = null;
       _ctrl.clear();
       _error = null;
     });
     _hideOverlay();
-    widget.onSelected?.call(null);
+    widget.onSelected?.call(customer);
   }
 
   Widget _buildOverlayBox() {
@@ -284,13 +269,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
               hintText: widget.hintText ?? VN.customerSearchHint,
               border: const OutlineInputBorder(),
               prefixIcon: const Icon(Icons.person_search_outlined),
-              suffixIcon: _selected != null
-                  ? IconButton(
-                      tooltip: VN.customerSearchClear,
-                      icon: const Icon(Icons.close, size: 20),
-                      onPressed: _clear,
-                    )
-                  : _loading
+              suffixIcon: _loading
                   ? const Padding(
                       padding: EdgeInsets.all(12),
                       child: SizedBox(

@@ -81,7 +81,32 @@ void main() {
         findsOneWidget);
   });
 
-  testWidgets('clear button resets selection and calls onSelected with null',
+  testWidgets('tapping a result clears the TextField instead of displaying the customer name (AC5)',
+      (tester) async {
+    final customers = [
+      const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
+    ];
+    Customer? selected;
+    await _pumpField(
+      tester,
+      _FakeCustomerService(customers),
+      onSelected: (c) => selected = c,
+    );
+
+    await tester.enterText(find.byType(TextField), 'Sin');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Sinh'));
+    await tester.pumpAndSettle();
+
+    expect(selected, isNotNull);
+    expect(selected!.id, 1);
+    final textField = tester.widget<TextField>(find.byType(TextField));
+    expect(textField.controller!.text, '');
+  });
+
+  testWidgets('editing search text after selecting does NOT trigger onSelected(null) (AC3)',
       (tester) async {
     final customers = [
       const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
@@ -94,13 +119,33 @@ void main() {
       onSelected: (c) => selected = c,
     );
 
-    expect(find.byTooltip(VN.customerSearchClear), findsOneWidget);
-
-    await tester.tap(find.byTooltip(VN.customerSearchClear));
+    await tester.enterText(find.byType(TextField), 'Other');
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
-    expect(selected, isNull);
-    expect(find.byType(TextField), findsWidgets);
+    expect(selected, isNotNull);
+    expect(selected!.id, 1);
+  });
+
+  testWidgets('clearing search text after selecting does NOT trigger onSelected(null) (AC3)',
+      (tester) async {
+    final customers = [
+      const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
+    ];
+    Customer? selected = const Customer(id: 1, name: 'Sinh', phone: '0901234567');
+    await _pumpField(
+      tester,
+      _FakeCustomerService(customers),
+      initial: selected,
+      onSelected: (c) => selected = c,
+    );
+
+    await tester.enterText(find.byType(TextField), '');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(selected, isNotNull);
+    expect(selected!.id, 1);
   });
 
   testWidgets('empty query does not trigger a search overlay', (tester) async {
