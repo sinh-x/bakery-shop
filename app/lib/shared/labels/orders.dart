@@ -42,8 +42,8 @@ class OrdersLabels {
   static const sourceTaiTiem = 'Tại tiệm';
   static const sourceOnline = 'Online';
   static const sourceDienThoai = 'Điện thoại';
-  static const sourceFbDoangia = 'FB Doangia';
-  static const sourceFbPageMoi = 'FB page mới';
+  static const sourceFbDoangia = 'Facebook-DoanGia';
+  static const sourceFbPageMoi = 'Facebook-Page-mới';
   static const sourceZalo = 'Zalo';
 
   // Summary card titles
