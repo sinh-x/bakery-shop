@@ -201,8 +201,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       }
 
       for (final item in state.items) {
-        if (item.daDuaTienRut &&
-            item.attributes['rut_tien']?.toString() == 'true') {
+        if (item.attributes['rut_tien']?.toString() == 'true') {
           final cashAmount = double.tryParse(
             item.attributes['cash_amount']?.toString() ?? '',
           );

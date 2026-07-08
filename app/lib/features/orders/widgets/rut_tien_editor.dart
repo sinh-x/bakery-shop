@@ -238,18 +238,6 @@ class _RutTienEditorState extends State<RutTienEditor> {
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          CheckboxListTile(
-            value: widget.item.daDuaTienRut,
-            onChanged: (v) {
-              setState(() => widget.item.daDuaTienRut = v ?? false);
-              widget.onStateChanged();
-            },
-            title: const Text(VN.daDuaTienRut),
-            controlAffinity: ListTileControlAffinity.leading,
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-          ),
         ],
       ],
     );
