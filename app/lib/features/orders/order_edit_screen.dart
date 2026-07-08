@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
+import '../../data/api/customer_service.dart';
 import '../../data/models/customer.dart';
 import '../../data/models/order.dart';
 import '../../data/models/product.dart';
@@ -95,6 +96,13 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _deliveryType = order.deliveryType;
     _shippingFee = order.shippingFee;
     _linkedCustomerId = order.customerId;
+    // FR7: prefill delivery phone from customer phone for bus/door when the
+    // delivery phone is empty (mirror stage3_delivery_options_screen.dart:97-111).
+    if ((order.deliveryType == 'bus' || order.deliveryType == 'door') &&
+        _deliveryPhoneCtrl.text.trim().isEmpty &&
+        _phoneCtrl.text.trim().isNotEmpty) {
+      _deliveryPhoneCtrl.text = _phoneCtrl.text.trim();
+    }
     if (order.dueDate != null) {
       final parsed = parseApiDate(order.dueDate);
       if (parsed != null) {
@@ -217,6 +225,33 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
       if (publicCodeDateChangeDecision == null) return;
     }
 
+    // FR1: auto-create-and-link a customer when name+phone are present but no
+    // customer is linked. Mirrors order_create_screen.dart:137-151. No dedup
+    // (matches create behavior per §16).
+    var customerId = _selectedCustomer?.id;
+    if (customerId == null &&
+        _nameCtrl.text.trim().isNotEmpty &&
+        _phoneCtrl.text.trim().isNotEmpty) {
+      try {
+        final customerSvc = ref.read(customerServiceProvider);
+        final result = await customerSvc.createCustomer(
+          name: _nameCtrl.text.trim(),
+          phone: _phoneCtrl.text.trim(),
+        );
+        customerId = result.customer.id;
+        _selectedCustomer = result.customer;
+        _customerTouched = true;
+      } catch (e) {
+        debugPrint('[OrderEdit] auto-create-customer failed: $e');
+      }
+    }
+
+    // FR2: customer name is optional in edit; empty name defaults to `Khách lẻ`
+    // (VN walk-in fallback label) at save time only. The UI field stays empty.
+    final effectiveName = _nameCtrl.text.trim().isEmpty
+        ? VN.khachLe
+        : _nameCtrl.text.trim();
+
     setState(() => _saving = true);
     try {
       final updatedOrder = await ref
@@ -230,8 +265,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             deliveryPhone: _needsAddress ? _deliveryPhoneCtrl.text.trim() : '',
             deliveryType: _deliveryType,
             source: _source.isEmpty ? null : _source,
-            customerName: _nameCtrl.text.trim(),
-            customerId: _selectedCustomer?.id,
+            customerName: effectiveName,
+            customerId: customerId,
             // OPS-1: when the user touched the customer selection (including
             // clearing it), always send customerId to the backend so an unlink
             // (null) propagates instead of being omitted as "unchanged".
@@ -541,11 +576,22 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
               notesCtrl: _notesCtrl,
               shippingBusDefault: shippingBusDefault,
               shippingDoorDefault: shippingDoorDefault,
-              onDeliveryTypeChanged: (type) => _updateShippingFeeForDeliveryType(
-                type,
-                busDefault: shippingBusDefault,
-                doorDefault: shippingDoorDefault,
-              ),
+              onDeliveryTypeChanged: (type) {
+                // FR7: prefill delivery phone from customer phone for bus/door
+                // when the delivery phone is empty; never overwrite a
+                // user-entered value.
+                if (type == 'bus' || type == 'door') {
+                  if (_deliveryPhoneCtrl.text.trim().isEmpty &&
+                      _phoneCtrl.text.trim().isNotEmpty) {
+                    _deliveryPhoneCtrl.text = _phoneCtrl.text.trim();
+                  }
+                }
+                _updateShippingFeeForDeliveryType(
+                  type,
+                  busDefault: shippingBusDefault,
+                  doorDefault: shippingDoorDefault,
+                );
+              },
               onShippingFeeChanged: _setShippingFee,
               dueDate: _dueDate,
               dueTime: _dueTime,

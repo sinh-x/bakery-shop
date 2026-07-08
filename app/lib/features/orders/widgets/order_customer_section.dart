@@ -113,8 +113,6 @@ class OrderCustomerSection extends ConsumerWidget {
               border: OutlineInputBorder(),
             ),
             textCapitalization: TextCapitalization.words,
-            validator: (v) =>
-                (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
           ),
           const SizedBox(height: 12),
           TextFormField(
