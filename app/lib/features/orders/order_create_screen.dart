@@ -183,8 +183,9 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         createdBy: staffName,
       );
 
-      final hasPerItemPhotos =
-          state.items.any((i) => i.pendingPhotos.isNotEmpty);
+      final hasPerItemPhotos = state.items.any(
+        (i) => i.pendingPhotos.isNotEmpty,
+      );
       if (hasPerItemPhotos) {
         final workItemSvc = ref.read(workItemServiceProvider);
         final workItems = await workItemSvc.listWorkItems(newOrder.orderRef);
@@ -213,14 +214,14 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
           }
         }
         if (failedPhotos > 0 && mounted) {
-            showTopSnackBar(
-              context,
-              OrdersLabels.photoUploadResult(
-                totalPhotos - failedPhotos,
-                totalPhotos,
-                failedPhotos,
-              ),
-            );
+          showTopSnackBar(
+            context,
+            OrdersLabels.photoUploadResult(
+              totalPhotos - failedPhotos,
+              totalPhotos,
+              failedPhotos,
+            ),
+          );
         }
       }
 

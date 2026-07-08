@@ -31,7 +31,7 @@ class OrderCreateState {
     if (stage <= currentStage) return true;
     if (stage >= 2 && items.isEmpty) return false;
     if (stage >= 3 && wizardData.customerName.isEmpty) return false;
-    if (stage >= 4 && wizardData.needsAddress && wizardData.deliveryAddress.isEmpty) {
+    if (stage >= 4 && wizardData.needsAddress && wizardData.deliveryAddress.trim().isEmpty) {
       return false;
     }
     return true;

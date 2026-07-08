@@ -146,8 +146,8 @@ void main() {
             deliveryType: 'pickup',
             mode: OrderDeliverySectionMode.editable,
             onDeliveryTypeChanged: (_) {},
-            summaryCardSlots: [
-              const Card(child: Padding(
+            summaryCardSlots: const [
+              Card(child: Padding(
                 padding: EdgeInsets.all(16),
                 child: Text('Summary Slot Content'),
               )),
