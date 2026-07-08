@@ -90,3 +90,33 @@ String visualOrderCode({required String orderRef, String? publicOrderCode}) {
   if (code.isNotEmpty) return code;
   return orderRef;
 }
+
+/// Computes the default due date/time for new orders: [from] + 1 hour, rounded
+/// UP to the next 30-minute slot. Seconds and milliseconds are dropped.
+///
+/// Rounding rule (ceil to next 30-min slot):
+/// - minute == 0 or 30 → unchanged
+/// - minute 1–29 → round up to :30
+/// - minute 31–59 → round up to the next hour at :00 (carries into the hour,
+///   and into the next day if needed)
+///
+/// Examples (relative to the +1h target): 16:00→17:00, 16:01→17:30,
+/// 16:30→17:30, 16:31→18:00, 16:59→18:00.
+DateTime defaultDueDateTime(DateTime from) {
+  final target = DateTime(
+    from.year,
+    from.month,
+    from.day,
+    from.hour,
+    from.minute,
+  ).add(const Duration(hours: 1));
+  final minute = target.minute;
+  if (minute == 0 || minute == 30) {
+    return target;
+  }
+  if (minute < 30) {
+    return DateTime(target.year, target.month, target.day, target.hour, 30);
+  }
+  return DateTime(target.year, target.month, target.day, target.hour)
+      .add(const Duration(hours: 1));
+}

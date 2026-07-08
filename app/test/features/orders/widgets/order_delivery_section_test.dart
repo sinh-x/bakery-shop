@@ -137,6 +137,51 @@ void main() {
     expect(find.text(OrdersLabels.notSelected), findsWidgets);
   });
 
+  testWidgets('UAT-1 editable: due date section renders ABOVE delivery type selector',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: OrderDeliverySection(
+            deliveryType: 'pickup',
+            mode: OrderDeliverySectionMode.editable,
+            onDeliveryTypeChanged: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    final dueDateHeaderY = tester.getTopLeft(find.text(VN.dueDate)).dy;
+    final deliveryTypeHeaderY = tester.getTopLeft(find.text(VN.deliveryType)).dy;
+    final segmentedButtonY =
+        tester.getTopLeft(find.byType(SegmentedButton<String>)).dy;
+
+    expect(dueDateHeaderY, lessThan(deliveryTypeHeaderY));
+    expect(dueDateHeaderY, lessThan(segmentedButtonY));
+  });
+
+  testWidgets('UAT-1 readOnly: due date/time render ABOVE delivery type',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: OrderDeliverySection(
+            deliveryType: 'door',
+            deliveryAddress: '123 Lê Lợi',
+            dueDate: DateTime(2026, 7, 8),
+            dueTime: const TimeOfDay(hour: 14, minute: 30),
+          ),
+        ),
+      ),
+    );
+
+    final dueDateY = tester.getTopLeft(find.text('8/7/2026')).dy;
+    final deliveryTypeValueY =
+        tester.getTopLeft(find.text(VN.deliveryDoor)).dy;
+
+    expect(dueDateY, lessThan(deliveryTypeValueY));
+  });
+
   testWidgets('editable mode renders summary card slots when provided',
       (tester) async {
     await tester.pumpWidget(

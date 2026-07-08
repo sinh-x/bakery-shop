@@ -6,6 +6,7 @@ import '../../data/models/order_draft.dart';
 import '../../data/models/product.dart';
 import '../../features/orders/widgets/order_wizard.dart';
 import '../../shared/gift_config.dart';
+import '../../shared/utils/order_helpers.dart';
 import '../products_provider.dart';
 
 class OrderCreateState {
@@ -63,8 +64,14 @@ class OrderCreateState {
 
 class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
   @override
-  OrderCreateState build() =>
-      const OrderCreateState(wizardData: OrderWizardData());
+  OrderCreateState build() {
+    final defaultDue = defaultDueDateTime(DateTime.now());
+    return OrderCreateState(
+      wizardData: const OrderWizardData(),
+      dueDate: DateTime(defaultDue.year, defaultDue.month, defaultDue.day),
+      dueTime: TimeOfDay(hour: defaultDue.hour, minute: defaultDue.minute),
+    );
+  }
 
   void updateItems(List<DraftOrderItem> items) {
     state = state.copyWith(items: items);
@@ -237,7 +244,12 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
   }
 
   void reset() {
-    state = const OrderCreateState(wizardData: OrderWizardData());
+    final defaultDue = defaultDueDateTime(DateTime.now());
+    state = OrderCreateState(
+      wizardData: const OrderWizardData(),
+      dueDate: DateTime(defaultDue.year, defaultDue.month, defaultDue.day),
+      dueTime: TimeOfDay(hour: defaultDue.hour, minute: defaultDue.minute),
+    );
   }
 }
 

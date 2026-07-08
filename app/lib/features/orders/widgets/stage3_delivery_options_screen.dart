@@ -36,6 +36,7 @@ class _Stage3DeliveryOptionsScreenState
     _addressCtrl.text = state.wizardData.deliveryAddress;
     _deliveryPhoneCtrl.text = state.wizardData.deliveryPhone;
     _notesCtrl.text = state.wizardData.notes;
+    _maybePrefillDeliveryPhone(state.wizardData.deliveryType);
   }
 
   @override
@@ -79,6 +80,27 @@ class _Stage3DeliveryOptionsScreenState
         deliveryType: type,
         shippingFee: shippingFee,
       ),
+    );
+    _maybePrefillDeliveryPhone(type);
+  }
+
+  /// UAT-2: When bus/door delivery is selected and the delivery phone is still
+  /// empty, prefill it from the Stage-2 customer phone. Never overwrite a phone
+  /// the user has already entered, and keep the prefilled value synced to state
+  /// so it persists in the draft and on submission.
+  void _maybePrefillDeliveryPhone(String type) {
+    if (type != 'bus' && type != 'door') return;
+    if (_deliveryPhoneCtrl.text.trim().isNotEmpty) return;
+    final customerPhone =
+        ref.read(orderCreateStateProvider).wizardData.customerPhone.trim();
+    if (customerPhone.isEmpty) return;
+    _deliveryPhoneCtrl.text = customerPhone;
+    final notifier = ref.read(orderCreateStateProvider.notifier);
+    notifier.updateWizardData(
+      ref
+          .read(orderCreateStateProvider)
+          .wizardData
+          .copyWith(deliveryPhone: customerPhone),
     );
   }
 

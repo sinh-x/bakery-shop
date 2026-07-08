@@ -191,4 +191,79 @@ void main() {
 
     expect(find.byType(Stage1ResponsiveContent), findsOneWidget);
   });
+
+  String deliveryPhoneText(WidgetTester tester) {
+    final field = tester.widget<TextField>(
+      find.ancestor(
+        of: find.text(OrdersLabels.deliveryPhone),
+        matching: find.byType(TextField),
+      ),
+    );
+    return field.controller?.text ?? '';
+  }
+
+  testWidgets('UAT-2: selecting bus with empty delivery phone auto-fills from customerPhone',
+      (tester) async {
+    await tester.pumpWidget(_harness(
+      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      state: const OrderCreateState(
+        wizardData: OrderWizardData(customerPhone: '0987654321'),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(VN.deliveryBus));
+    await tester.pumpAndSettle();
+
+    expect(deliveryPhoneText(tester), '0987654321');
+  });
+
+  testWidgets('UAT-2: selecting door with empty delivery phone auto-fills from customerPhone',
+      (tester) async {
+    await tester.pumpWidget(_harness(
+      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      state: const OrderCreateState(
+        wizardData: OrderWizardData(customerPhone: '0912000111'),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(VN.deliveryDoor));
+    await tester.pumpAndSettle();
+
+    expect(deliveryPhoneText(tester), '0912000111');
+  });
+
+  testWidgets('UAT-2: does NOT overwrite a user-entered delivery phone',
+      (tester) async {
+    await tester.pumpWidget(_harness(
+      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      state: const OrderCreateState(
+        wizardData: OrderWizardData(
+          customerPhone: '0987654321',
+          deliveryType: 'bus',
+          deliveryPhone: '0900000000',
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(deliveryPhoneText(tester), '0900000000');
+  });
+
+  testWidgets('UAT-2: does not auto-fill when customerPhone is empty',
+      (tester) async {
+    await tester.pumpWidget(_harness(
+      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      state: const OrderCreateState(
+        wizardData: OrderWizardData(),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(VN.deliveryBus));
+    await tester.pumpAndSettle();
+
+    expect(deliveryPhoneText(tester), '');
+  });
 }

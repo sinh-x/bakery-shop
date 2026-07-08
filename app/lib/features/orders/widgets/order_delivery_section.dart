@@ -86,17 +86,6 @@ class OrderDeliverySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildInfoRow(context, Icons.local_shipping_outlined, VN.deliveryType, deliveryTypeLabel(deliveryType)),
-        if (_needsAddress) ...[
-          if (customerPhone != null && customerPhone!.isNotEmpty)
-            _buildInfoRow(context, Icons.phone_outlined, VN.customerPhone, customerPhone!),
-          if (deliveryAddress != null && deliveryAddress!.isNotEmpty)
-            _buildInfoRow(context, Icons.location_on_outlined, VN.deliveryAddress, deliveryAddress!),
-        ],
-        if (shippingFee != null && shippingFee! > 0)
-          _buildInfoRow(context, Icons.monetization_on_outlined, VN.shippingFee, formatVND(shippingFee!)),
-        if (notes != null && notes!.isNotEmpty)
-          _buildInfoRow(context, Icons.notes, VN.notes, notes!),
         if (dueDate != null)
           _buildInfoRow(
             context,
@@ -111,6 +100,17 @@ class OrderDeliverySection extends StatelessWidget {
             VN.dueTime,
             '${dueTime!.hour.toString().padLeft(2, '0')}:${dueTime!.minute.toString().padLeft(2, '0')}',
           ),
+        _buildInfoRow(context, Icons.local_shipping_outlined, VN.deliveryType, deliveryTypeLabel(deliveryType)),
+        if (_needsAddress) ...[
+          if (customerPhone != null && customerPhone!.isNotEmpty)
+            _buildInfoRow(context, Icons.phone_outlined, VN.customerPhone, customerPhone!),
+          if (deliveryAddress != null && deliveryAddress!.isNotEmpty)
+            _buildInfoRow(context, Icons.location_on_outlined, VN.deliveryAddress, deliveryAddress!),
+        ],
+        if (shippingFee != null && shippingFee! > 0)
+          _buildInfoRow(context, Icons.monetization_on_outlined, VN.shippingFee, formatVND(shippingFee!)),
+        if (notes != null && notes!.isNotEmpty)
+          _buildInfoRow(context, Icons.notes, VN.notes, notes!),
       ],
     );
   }
@@ -119,6 +119,15 @@ class OrderDeliverySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const SectionHeader(VN.dueDate),
+        dueDateTimeSlot ??
+            DueDateTimePickerRow(
+              dueDate: dueDate,
+              dueTime: dueTime,
+              onDueDateChanged: onDueDateChanged,
+              onDueTimeChanged: onDueTimeChanged,
+            ),
+        const SizedBox(height: 20),
         const SectionHeader(VN.deliveryType),
         SegmentedButton<String>(
           segments: const [
@@ -186,15 +195,6 @@ class OrderDeliverySection extends StatelessWidget {
           const SizedBox(height: 12),
           ...summaryCardSlots,
         ],
-        const SizedBox(height: 20),
-        const SectionHeader(VN.dueDate),
-        dueDateTimeSlot ??
-            DueDateTimePickerRow(
-              dueDate: dueDate,
-              dueTime: dueTime,
-              onDueDateChanged: onDueDateChanged,
-              onDueTimeChanged: onDueTimeChanged,
-            ),
       ],
     );
   }
