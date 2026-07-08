@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:bakery_app/data/api/api_client.dart';
+import 'package:bakery_app/features/customers/widgets/customer_profile_card.dart';
 import 'package:bakery_app/features/orders/order_edit_screen.dart';
 import 'package:bakery_app/features/orders/widgets/section_header.dart';
 import 'package:bakery_app/features/orders/widgets/stage1_empty_state.dart';
@@ -565,6 +566,22 @@ void main() {
     expect(find.byType(SectionHeader), findsWidgets,
         reason: 'AC14: Stage 4 should use the shared SectionHeader component');
   });
+
+  testWidgets(
+      'AC10: opening an order with a linked customer loads and shows the linked customer card',
+      (tester) async {
+    await tester.pumpWidget(await _buildScreenFor('REF-LINKED', _LinkedCustomerInterceptor()));
+    await tester.pumpAndSettle();
+
+    // Navigate to Stage 2 (customer).
+    await tester.tap(find.text('Tiếp tục'));
+    await tester.pumpAndSettle();
+
+    // The linked customer's card should render (FR9/AC10: single-state model
+    // still loads the existing linked customer from order.customerId on open).
+    expect(find.byType(CustomerProfileCard), findsOneWidget,
+        reason: 'AC10: linked customer card should render after loading from order.customerId');
+  });
 }
 
 /// Interceptor variant for the prefill test — returns a bus-delivery order
@@ -853,6 +870,91 @@ class _WorkItemsInterceptor extends Interceptor {
     if (path.startsWith('/api/products') && options.method == 'GET') {
       handler.resolve(
         Response(requestOptions: options, statusCode: 200, data: <Map<String, dynamic>>[]),
+      );
+      return;
+    }
+
+    if (path == '/api/orders' && options.method == 'GET') {
+      handler.resolve(
+        Response(requestOptions: options, statusCode: 200, data: <Map<String, dynamic>>[]),
+      );
+      return;
+    }
+
+    handler.reject(
+      DioException(
+        requestOptions: options,
+        response: Response(requestOptions: options, statusCode: 404),
+      ),
+    );
+  }
+}
+
+/// Interceptor variant for the AC10 linked-customer-load test — returns an
+/// order with a customerId and handles GET /api/customers/{id} so the single-
+/// state model loads the linked customer on open.
+class _LinkedCustomerInterceptor extends Interceptor {
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    final path = options.path;
+
+    if (path == '/api/orders/REF-LINKED' && options.method == 'GET') {
+      handler.resolve(
+        Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'id': 'order-linked',
+            'orderRef': 'REF-LINKED',
+            'publicOrderCode': '',
+            'customerName': 'Nguyễn Văn Linked',
+            'customerPhone': '0900000999',
+            'deliveryPhone': '',
+            'customerId': 99,
+            'items': <Map<String, dynamic>>[],
+            'totalPrice': 0.0,
+            'status': 'new',
+            'deliveryType': 'pickup',
+            'deliveryAddress': '',
+            'shippingFee': 0.0,
+            'notes': '',
+            'source': '',
+            'packingChecklist': <Map<String, dynamic>>[],
+            'createdAt': '2026-07-01T08:00:00Z',
+            'updatedAt': '2026-07-01T08:00:00Z',
+          },
+        ),
+      );
+      return;
+    }
+
+    if (path.startsWith('/api/orders/REF-LINKED/items') && options.method == 'GET') {
+      handler.resolve(
+        Response(requestOptions: options, statusCode: 200, data: <Map<String, dynamic>>[]),
+      );
+      return;
+    }
+
+    if (path.startsWith('/api/orders/REF-LINKED/photos') && options.method == 'GET') {
+      handler.resolve(
+        Response(requestOptions: options, statusCode: 200, data: <Map<String, dynamic>>[]),
+      );
+      return;
+    }
+
+    // GET /api/customers/99 — the linked customer detail.
+    if (path == '/api/customers/99' && options.method == 'GET') {
+      handler.resolve(
+        Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'id': 99,
+            'name': 'Nguyễn Văn Linked',
+            'phone': '0900000999',
+            'sharedPhoneCustomers': <Map<String, dynamic>>[],
+          },
+        ),
       );
       return;
     }

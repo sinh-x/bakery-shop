@@ -1,7 +1,12 @@
-part of '../../order_edit_screen.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class _WorkItemsSection extends ConsumerWidget {
-  const _WorkItemsSection({required this.orderRef, required this.onAddTap});
+import '../../../../providers/order_providers.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'work_item_edit_card.dart';
+
+class WorkItemsSection extends ConsumerWidget {
+  const WorkItemsSection({super.key, required this.orderRef, required this.onAddTap});
 
   final String orderRef;
   final VoidCallback onAddTap;
@@ -20,7 +25,7 @@ class _WorkItemsSection extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ...regularItems.map(
-              (item) => _WorkItemEditCard(orderRef: orderRef, item: item),
+              (item) => WorkItemEditCard(orderRef: orderRef, item: item),
             ),
             if (regularItems.isEmpty)
               Padding(
