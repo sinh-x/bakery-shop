@@ -1,11 +1,20 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:bakery_app/data/api/api_client.dart';
+import 'package:bakery_app/data/api/customer_service.dart';
+import 'package:bakery_app/data/api/order_service.dart';
+import 'package:bakery_app/data/api/work_item_service.dart';
 import 'package:bakery_app/data/models/category.dart';
+import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/data/models/order_draft.dart';
 import 'package:bakery_app/data/models/product.dart';
+import 'package:bakery_app/data/models/work_item.dart';
+import 'package:bakery_app/features/orders/order_create_screen.dart';
 import 'package:bakery_app/features/orders/widgets/gated_page_physics.dart';
 import 'package:bakery_app/features/orders/widgets/order_stage_indicator.dart';
 import 'package:bakery_app/features/orders/widgets/order_wizard.dart';
@@ -16,6 +25,7 @@ import 'package:bakery_app/features/orders/widgets/stage3_delivery_options_scree
 import 'package:bakery_app/features/orders/widgets/stage4_review_screen.dart';
 import 'package:bakery_app/providers/categories_provider.dart';
 import 'package:bakery_app/providers/config_provider.dart';
+import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
 import 'package:bakery_app/providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
@@ -908,4 +918,126 @@ void main() {
       expect(changedStage, 1);
     });
   });
+
+  group('Phase 3: Post-submit navigation to order detail', () {
+    testWidgets(
+        'AC3: submit navigates to /orders/{orderRef} detail page',
+        (tester) async {
+      final testState = OrderCreateState(
+        wizardData: const OrderWizardData(customerName: 'Test Customer'),
+        items: [
+          DraftOrderItem(
+            product: const Product(
+              id: 1,
+              name: 'Test Cake',
+              category: 'banh_kem',
+              basePrice: 150000,
+            ),
+            quantity: 1,
+          ),
+        ],
+        currentStage: 4,
+      );
+
+      SharedPreferences.setMockInitialValues({kLoggedByKey: 'Tester'});
+      final prefs = await SharedPreferences.getInstance();
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/orders/new',
+            builder: (context, state) => const OrderCreateScreen(),
+          ),
+          GoRoute(
+            path: '/orders/:id',
+            builder: (context, state) =>
+                Text('OrderDetail ${state.pathParameters['id']}'),
+          ),
+        ],
+        initialLocation: '/orders/new',
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            orderCreateStateProvider.overrideWith(
+              () => FixedOrderCreateStateNotifier(testState),
+            ),
+            orderServiceProvider.overrideWithValue(_FakeCreateOrderService()),
+            customerServiceProvider.overrideWithValue(_NoopCustomerService()),
+            workItemServiceProvider.overrideWithValue(_NoopWorkItemService()),
+            sharedPreferencesProvider.overrideWithValue(prefs),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Jump PageView to stage 4 via the stage indicator tap.
+      await tester.tap(find.text('Xem lại'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(OrdersLabels.reviewCreateOrder), findsOneWidget);
+      await tester.tap(find.text(OrdersLabels.reviewCreateOrder));
+      await tester.pump();
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+
+      expect(find.text('OrderDetail ORD-TEST-001'), findsOneWidget);
+    });
+  });
+}
+
+class _FakeCreateOrderService extends OrderService {
+  _FakeCreateOrderService() : super(Dio());
+
+  @override
+  Future<Order> createOrder({
+    required String customerName,
+    String customerPhone = '',
+    String deliveryPhone = '',
+    int? customerId,
+    List<Map<String, dynamic>> items = const [],
+    String? dueDate,
+    String? dueTime,
+    String deliveryType = 'pickup',
+    String deliveryAddress = '',
+    String notes = '',
+    String? source,
+    String createdBy = '',
+    double shippingFee = 0.0,
+    String? status,
+    String? paymentMethod,
+  }) async {
+    return Order(
+      id: '1',
+      orderRef: 'ORD-TEST-001',
+      customerName: customerName,
+      items: const [],
+      totalPrice: 0,
+      createdAt: DateTime(2026, 7, 8),
+      updatedAt: DateTime(2026, 7, 8),
+    );
+  }
+
+  @override
+  Future<List<Order>> listOrders({
+    String? status,
+    String? dueDate,
+    String? dueDateFrom,
+    String? dueDateTo,
+    int limit = 50,
+    int offset = 0,
+    bool activeOnly = false,
+  }) async =>
+      const [];
+}
+
+class _NoopCustomerService extends CustomerService {
+  _NoopCustomerService() : super(Dio());
+}
+
+class _NoopWorkItemService extends WorkItemService {
+  _NoopWorkItemService() : super(Dio());
+
+  @override
+  Future<List<WorkItem>> listWorkItems(String orderRef) async => const [];
 }

@@ -233,7 +233,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         ref.read(orderDraftProvider.notifier).clear();
         ref.read(orderCreateStateProvider.notifier).reset();
         showTopSnackBar(context, VN.orderCreated);
-        context.pop();
+        context.push('/orders/${newOrder.orderRef}');
       }
     } catch (e) {
       if (mounted) {
