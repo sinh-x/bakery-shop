@@ -509,36 +509,12 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                 ),
                 const SizedBox(height: 20),
                 const _SectionHeader(VN.orderSource),
-                sourcesAsync.when(
-                  data: (sources) => Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: sources
-                        .map(
-                          (s) => ChoiceChip(
-                            label: Text(s),
-                            selected: _source == s,
-                            onSelected: (_) => setState(() {
-                              final wasSelected = _source == s;
-                              _source = wasSelected ? '' : s;
-                              if (!wasSelected &&
-                                  s == VN.sourceTaiTiem &&
-                                  _nameCtrl.text.isEmpty) {
-                                _nameCtrl.text = VN.walkInCustomer;
-                              } else if (wasSelected &&
-                                  s == VN.sourceTaiTiem &&
-                                  _nameCtrl.text == VN.walkInCustomer) {
-                                _nameCtrl.text = '';
-                              }
-                            }),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                  loading: () => const SizedBox.shrink(),
-                  error: (e, st) => const SizedBox.shrink(),
-                ),
+                _buildSourceSelector(sourcesAsync),
                 ProductSummaryCard(items: summaryItems),
+                CustomerSummaryCard(
+                  wizardData: _wizardSnapshot,
+                  source: _source,
+                ),
               ],
             ),
           ),
@@ -601,6 +577,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                 CustomerSummaryCard(
                   wizardData: _wizardSnapshot,
                   source: _source,
+                ),
+                DeliverySummaryCard(
+                  wizardData: _wizardSnapshot,
+                  dueDate: _dueDate,
+                  dueTime: _dueTime,
                 ),
               ],
             ),
@@ -713,6 +694,65 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
           isProcessing: _saving,
         ),
       ],
+    );
+  }
+
+  // FR6: grouped two-row source selector mirroring create's
+  // stage2_customer_info_screen.dart:143-193. TaiTiem/walkInCustomer auto-fill
+  // logic is intentionally removed to match create's simple toggle pattern.
+  static const _defaultSources = [
+    OrdersLabels.sourceFbDoangia,
+    OrdersLabels.sourceFbPageMoi,
+    OrdersLabels.sourceZalo,
+    OrdersLabels.sourceDienThoai,
+    OrdersLabels.sourceTaiTiem,
+  ];
+
+  Widget _buildSourceSelector(AsyncValue<List<String>> sourcesAsync) {
+    return sourcesAsync.when(
+      data: (srcList) {
+        final sources = srcList.isNotEmpty ? srcList : _defaultSources;
+        final row1 = sources.where((s) =>
+            s == OrdersLabels.sourceFbDoangia ||
+            s == OrdersLabels.sourceFbPageMoi).toList();
+        final row2 = sources.where((s) =>
+            s == OrdersLabels.sourceZalo ||
+            s == OrdersLabels.sourceDienThoai ||
+            s == OrdersLabels.sourceTaiTiem).toList();
+        return Column(
+          children: [
+            if (row1.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Wrap(
+                  spacing: 8,
+                  children: row1
+                      .map((s) => ChoiceChip(
+                            label: Text(s),
+                            selected: _source == s,
+                            onSelected: (_) => setState(() =>
+                                _source = _source == s ? '' : s),
+                          ))
+                      .toList(),
+                ),
+              ),
+            if (row2.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                children: row2
+                    .map((s) => ChoiceChip(
+                          label: Text(s),
+                          selected: _source == s,
+                          onSelected: (_) => setState(() =>
+                              _source = _source == s ? '' : s),
+                        ))
+                    .toList(),
+              ),
+          ],
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (e, st) => const SizedBox.shrink(),
     );
   }
 
