@@ -16,9 +16,18 @@ const _stages = [
 ];
 
 class OrderStageIndicator extends StatelessWidget {
-  const OrderStageIndicator({super.key, required this.currentStage});
+  const OrderStageIndicator({
+    super.key,
+    required this.currentStage,
+    this.onStageTap,
+  });
 
   final int currentStage;
+
+  /// Called when the user taps a stage circle. Receives the 1-based stage
+  /// number. When null, the indicator is non-interactive. The caller decides
+  /// whether navigation is allowed (e.g. only after a product is selected).
+  final void Function(int stage)? onStageTap;
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +55,8 @@ class OrderStageIndicator extends StatelessWidget {
   }
 
   Widget _buildStageItem(int index, ThemeData theme) {
+    final stage = index + 1;
+    final canTap = onStageTap != null;
     final isCompleted = index < currentStage - 1;
     final isCurrent = index == currentStage - 1;
 
@@ -55,55 +66,59 @@ class OrderStageIndicator extends StatelessWidget {
 
     return SizedBox(
       width: 64,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isCurrent
-                  ? color
-                  : (isCompleted ? color.withAlpha(50) : Colors.transparent),
-              border: Border.all(color: color, width: 2),
-            ),
-            child: Center(
-              child: isCompleted
-                  ? Icon(Icons.check, size: 12, color: color)
-                  : Text(
-                      '${index + 1}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: isCurrent
-                            ? theme.colorScheme.onPrimary
-                            : color,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: canTap ? () => onStageTap!(stage) : null,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isCurrent
+                    ? color
+                    : (isCompleted ? color.withAlpha(50) : Colors.transparent),
+                border: Border.all(color: color, width: 2),
+              ),
+              child: Center(
+                child: isCompleted
+                    ? Icon(Icons.check, size: 12, color: color)
+                    : Text(
+                        '$stage',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: isCurrent
+                              ? theme.colorScheme.onPrimary
+                              : color,
+                        ),
                       ),
-                    ),
+              ),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            _stages[index].label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-              color: isCurrent || isCompleted ? color : Colors.grey.shade500,
-              fontSize: 10,
+            const SizedBox(height: 2),
+            Text(
+              _stages[index].label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                color: isCurrent || isCompleted ? color : Colors.grey.shade500,
+                fontSize: 10,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          Text(
-            _stages[index].desc,
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontSize: 8,
-              color: Colors.grey.shade400,
+            Text(
+              _stages[index].desc,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontSize: 8,
+                color: Colors.grey.shade400,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

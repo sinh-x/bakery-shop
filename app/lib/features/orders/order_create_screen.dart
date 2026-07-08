@@ -248,7 +248,10 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: OrderStageIndicator(currentStage: state.currentStage),
+            child: OrderStageIndicator(
+              currentStage: state.currentStage,
+              onStageTap: state.items.isEmpty ? null : _goToStage,
+            ),
           ),
           Expanded(
             child: PageView(

@@ -51,12 +51,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
   }
 
   void _selectSingleProduct(Product product) {
-    final alreadyAdded = widget.selectedItems.any(
-      (i) => i.product.id == product.id,
-    );
-    if (!alreadyAdded) {
-      widget.selectedItems.add(DraftOrderItem(product: product));
-    }
+    widget.selectedItems.add(DraftOrderItem(product: product));
     widget.onChanged();
     Navigator.of(context).pop();
   }

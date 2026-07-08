@@ -140,6 +140,16 @@ class _Stage1ProductSelectionScreenState
             child: ExtrasSection(onAddCatalogExtra: _addCatalogExtra),
           ),
         ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: OutlinedButton.icon(
+              onPressed: _onAddProduct,
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text(VN.addProduct),
+            ),
+          ),
+        ),
       ],
     );
 
@@ -149,22 +159,9 @@ class _Stage1ProductSelectionScreenState
           Expanded(child: content),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: Row(
-              children: [
-                FloatingActionButton(
-                  heroTag: 'stage1_add_product',
-                  tooltip: OrdersLabels.stage1AddProductHint,
-                  onPressed: _onAddProduct,
-                  child: const Icon(Icons.add),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: items.isEmpty ? null : widget.onContinue,
-                    child: const Text(OrdersLabels.continueLabel),
-                  ),
-                ),
-              ],
+            child: FilledButton(
+              onPressed: items.isEmpty ? null : widget.onContinue,
+              child: const Text(OrdersLabels.continueLabel),
             ),
           ),
         ],

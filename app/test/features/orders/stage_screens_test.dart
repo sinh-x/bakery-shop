@@ -234,7 +234,8 @@ void main() {
     expect(find.text(OrdersLabels.selectedProducts), findsOneWidget);
     expect(find.text('Bánh mì'), findsOneWidget);
     expect(find.text('Bánh kem'), findsOneWidget);
-    expect(find.byType(FloatingActionButton), findsOneWidget);
+    expect(find.byType(FloatingActionButton), findsNothing);
+    expect(find.byType(OutlinedButton), findsWidgets);
   });
 
   testWidgets('Stage3DeliveryOptionsScreen shows address fields for door delivery',

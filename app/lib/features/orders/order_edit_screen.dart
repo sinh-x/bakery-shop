@@ -300,6 +300,32 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         source: _source,
       );
 
+  /// Converts a [WorkItem] (server-side work item) into a [DraftOrderItem]
+  /// with a minimal [Product] stub so [StageSummaryCard] can render the
+  /// edit-order summary cards with real data. StageSummaryCard only reads
+  /// `product.name`, `quantity`, `unitPrice`, `isExtra`, and `isGift`, so a
+  /// minimal stub is sufficient (FB-6).
+  DraftOrderItem _workItemToDraft(WorkItem w) {
+    final stub = Product(
+      id: int.tryParse(w.productId) ?? 0,
+      name: w.productName,
+      basePrice: w.unitPrice,
+    );
+    return DraftOrderItem(
+      product: stub,
+      quantity: w.quantity,
+      notes: w.notes,
+      isBirthday: w.isBirthday,
+      isExtra: w.isExtra,
+      isGift: w.isGift,
+      attributes: Map<String, dynamic>.from(w.attributes),
+    );
+  }
+
+  List<DraftOrderItem> _summaryItems(List<WorkItem> workItems) {
+    return workItems.map(_workItemToDraft).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final orderAsync = ref.watch(orderDetailProvider(widget.orderRef));
@@ -339,13 +365,18 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         error: (e, _) => const Center(child: Text(VN.apiError)),
         data: (order) {
           _initFrom(order);
+          final workItemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));
+          final summaryItems = _summaryItems(workItemsAsync.value ?? const []);
           return Form(
             key: _formKey,
             child: Column(
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                  child: OrderStageIndicator(currentStage: _currentStage),
+                  child: OrderStageIndicator(
+                    currentStage: _currentStage,
+                    onStageTap: _goToStage,
+                  ),
                 ),
                 Expanded(
                   child: PageView(
@@ -353,12 +384,16 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                     physics: const NeverScrollableScrollPhysics(),
                     children: [
                       _buildStage1Product(order),
-                      _buildStage2Customer(sourcesAsync),
+                      _buildStage2Customer(
+                        sourcesAsync,
+                        summaryItems.where((i) => !i.isExtra).toList(),
+                      ),
                       _buildStage3Delivery(
                         shippingBusDefault,
                         shippingDoorDefault,
+                        summaryItems,
                       ),
-                      _buildStage4Review(order),
+                      _buildStage4Review(order, summaryItems),
                     ],
                   ),
                 ),
@@ -402,7 +437,10 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   }
 
   // ── Stage 2: Customer (name, phone, source) ─────────────────────────
-  Widget _buildStage2Customer(AsyncValue<List<String>> sourcesAsync) {
+  Widget _buildStage2Customer(
+    AsyncValue<List<String>> sourcesAsync,
+    List<DraftOrderItem> summaryItems,
+  ) {
     return Column(
       children: [
         Expanded(
@@ -465,10 +503,10 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   error: (e, st) => const SizedBox.shrink(),
                 ),
                 StageSummaryCard(
-                  items: const [],
+                  items: summaryItems,
                   wizardData: _wizardSnapshot,
                   source: _source,
-                  showProducts: false,
+                  showProducts: true,
                   showCustomer: false,
                 ),
               ],
@@ -488,6 +526,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   Widget _buildStage3Delivery(
     double shippingBusDefault,
     double shippingDoorDefault,
+    List<DraftOrderItem> summaryItems,
   ) {
     return Column(
       children: [
@@ -626,10 +665,10 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   onSelected: (t) => setState(() => _dueTime = t),
                 ),
                 StageSummaryCard(
-                  items: const [],
+                  items: summaryItems,
                   wizardData: _wizardSnapshot,
                   source: _source,
-                  showProducts: false,
+                  showProducts: true,
                   showCustomer: true,
                 ),
               ],
@@ -646,7 +685,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   }
 
   // ── Stage 4: Review (summary + order photos + save) ─────────────────
-  Widget _buildStage4Review(Order order) {
+  Widget _buildStage4Review(Order order, List<DraftOrderItem> summaryItems) {
     return Column(
       children: [
         Expanded(
@@ -670,12 +709,12 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                 ),
                 const SizedBox(height: 16),
                 StageSummaryCard(
-                  items: const [],
+                  items: summaryItems,
                   wizardData: _wizardSnapshot,
                   source: _source,
                   dueDate: _dueDate,
                   dueTime: _dueTime,
-                  showProducts: false,
+                  showProducts: true,
                   showCustomer: true,
                   showDelivery: true,
                 ),
