@@ -8,6 +8,7 @@ import 'package:bakery_app/data/models/order_draft.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/orders/widgets/order_stage_indicator.dart';
 import 'package:bakery_app/features/orders/widgets/order_wizard.dart';
+import 'package:bakery_app/features/orders/widgets/product_picker_page.dart';
 import 'package:bakery_app/features/orders/widgets/stage1_product_selection_screen.dart';
 import 'package:bakery_app/features/orders/widgets/stage2_customer_info_screen.dart';
 import 'package:bakery_app/features/orders/widgets/stage3_delivery_options_screen.dart';
@@ -385,5 +386,49 @@ void main() {
     expect(find.text('123 Test St'), findsOneWidget);
     expect(find.text('20.000đ'), findsOneWidget);
     expect(find.text('Tạo đơn hàng'), findsOneWidget);
+  });
+
+  testWidgets('AC-2/AC-3: (+) opens ProductPickerPage; tapping product returns item to Stage 1 (expanded)',
+      (tester) async {
+    final products = [
+      const Product(
+        id: 10,
+        name: 'Bánh mì',
+        category: 'banh_mi',
+        basePrice: 15000,
+        active: 1,
+      ),
+    ];
+    const categories = [
+      Category(id: 1, slug: 'banh_mi', name: 'Bánh mì', codePrefix: 'BM', active: 1),
+    ];
+
+    await tester.pumpWidget(buildStage1TestWidget(
+      const Stage1ProductSelectionScreen(onContinue: _noop),
+      products: products,
+      categories: categories,
+    ));
+    await tester.pumpAndSettle();
+
+    // AC-1 precondition: empty state with (+) button.
+    expect(find.text(OrdersLabels.stage1EmptyTitle), findsOneWidget);
+    expect(find.byIcon(Icons.add), findsWidgets);
+
+    // Tap the (+) filled button to open the picker.
+    await tester.tap(find.text(VN.addProduct));
+    await tester.pumpAndSettle();
+
+    // AC-2: ProductPickerPage is shown full-screen with the product grid.
+    expect(find.byType(ProductPickerPage), findsOneWidget);
+    expect(find.text('Bánh mì'), findsWidgets);
+
+    // AC-3: Tap the product -> picker closes -> item appears in Stage 1 list.
+    await tester.tap(find.text('Bánh mì').first);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ProductPickerPage), findsNothing);
+    expect(find.text(OrdersLabels.selectedProducts), findsOneWidget);
+    // New item card is expanded by default (ExpandableItemCard._expanded = true).
+    expect(find.text('Bánh mì'), findsWidgets);
   });
 }

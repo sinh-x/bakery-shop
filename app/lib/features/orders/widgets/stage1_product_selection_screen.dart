@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/models/order_draft.dart';
 import '../../../providers/order/order_create_state_provider.dart';
+import 'product_picker_page.dart';
 import 'selected_items_list.dart';
 import 'stage1_empty_state.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
@@ -12,10 +14,10 @@ import 'package:bakery_app/shared/labels/orders.dart';
 /// - Shows a selected-items list with a (+) button.
 /// - The (+) button will open a full-screen product picker (Phase 2).
 ///
-/// Phase 1 only delivers the layout: empty state, (+) button, and reuse of
-/// `ExpandableItemCard` via [SelectedItemsList]. The inline product grid has
-/// been removed and the `Expanded`/`CustomScrollView` layout conflict fixed
-/// (the parent already provides an `Expanded` for the `PageView`).
+/// Phase 2 (DG-214) wires the (+) button to a full-screen `ProductPickerPage`.
+/// Single-tap-to-select adds a `DraftOrderItem` and returns to Stage 1; new
+/// items appear expanded because `ExpandableItemCard` defaults `_expanded =
+/// true`. The picker is reused as-is (no modifications, per guardrails).
 class Stage1ProductSelectionScreen extends ConsumerStatefulWidget {
   const Stage1ProductSelectionScreen({
     super.key,
@@ -31,9 +33,50 @@ class Stage1ProductSelectionScreen extends ConsumerStatefulWidget {
 
 class _Stage1ProductSelectionScreenState
     extends ConsumerState<Stage1ProductSelectionScreen> {
-  void _onAddProduct() {
-    // Phase 2 (DG-214) will wire this to ProductPickerPage.
-    // Intentionally a no-op stub for Phase 1.
+  /// Working copy of the items list handed to `ProductPickerPage`. The picker
+  /// mutates this list in place (appends new `DraftOrderItem`s on single-tap)
+  /// and calls [onChanged]; we then commit the list back to the state.
+  List<DraftOrderItem> _pickerItems = const [];
+
+  Future<void> _onAddProduct() async {
+    // Seed the picker with the current items so already-selected products show
+    // the selected overlay and cannot be double-added.
+    _pickerItems = ref
+        .read(orderCreateStateProvider)
+        .items
+        .map((i) => DraftOrderItem(
+              product: i.product,
+              quantity: i.quantity,
+              notes: i.notes,
+              isBirthday: i.isBirthday,
+              age: i.age,
+              customUnitPrice: i.customUnitPrice,
+              isExtra: i.isExtra,
+              isGift: i.isGift,
+              attributes: Map<String, dynamic>.from(i.attributes),
+              daDuaTienRut: i.daDuaTienRut,
+              priceChipId: i.priceChipId,
+            ))
+        .toList();
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ProductPickerPage(
+          selectedItems: _pickerItems,
+          onChanged: _commitNewItems,
+        ),
+      ),
+    );
+  }
+
+  /// Called by the picker when a product is selected. Commits the working
+  /// list (which now includes the newly added item) back to the state so
+  /// Stage 1 rebuilds with the new `ExpandableItemCard` expanded.
+  void _commitNewItems() {
+    ref
+        .read(orderCreateStateProvider.notifier)
+        .updateItems(List<DraftOrderItem>.from(_pickerItems));
   }
 
   @override
