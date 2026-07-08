@@ -89,50 +89,51 @@ class EditStage2Customer extends ConsumerWidget {
   }
 
   Widget _buildSourceSelector(AsyncValue<List<String>> sourcesAsync) {
-    return sourcesAsync.when(
-      data: (srcList) {
-        final sources = srcList.isNotEmpty ? srcList : _defaultSources;
-        final row1 = sources.where((s) =>
-            s == OrdersLabels.sourceFbDoangia ||
-            s == OrdersLabels.sourceFbPageMoi).toList();
-        final row2 = sources.where((s) =>
-            s == OrdersLabels.sourceZalo ||
-            s == OrdersLabels.sourceDienThoai ||
-            s == OrdersLabels.sourceTaiTiem).toList();
-        return Column(
-          children: [
-            if (row1.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Wrap(
-                  spacing: 8,
-                  children: row1
-                      .map((s) => ChoiceChip(
-                            label: Text(s),
-                            selected: source == s,
-                            onSelected: (_) =>
-                                onSourceChanged(source == s ? '' : s),
-                          ))
-                      .toList(),
-                ),
-              ),
-            if (row2.isNotEmpty)
-              Wrap(
-                spacing: 8,
-                children: row2
-                    .map((s) => ChoiceChip(
-                          label: Text(s),
-                          selected: source == s,
-                          onSelected: (_) =>
-                              onSourceChanged(source == s ? '' : s),
-                        ))
-                    .toList(),
-              ),
-          ],
-        );
-      },
-      loading: () => const SizedBox.shrink(),
-      error: (e, st) => const SizedBox.shrink(),
+    // CQ-5: fall back to `_defaultSources` during loading/error and on empty
+    // data, matching create's `maybeWhen(...) ?? _defaultSources` pattern so
+    // the chips remain visible in all non-data states.
+    final sources = sourcesAsync.maybeWhen(
+      data: (list) => list.isNotEmpty ? list : null,
+      orElse: () => null,
+    ) ??
+        _defaultSources;
+    final row1 = sources.where((s) =>
+        s == OrdersLabels.sourceFbDoangia ||
+        s == OrdersLabels.sourceFbPageMoi).toList();
+    final row2 = sources.where((s) =>
+        s == OrdersLabels.sourceZalo ||
+        s == OrdersLabels.sourceDienThoai ||
+        s == OrdersLabels.sourceTaiTiem).toList();
+    return Column(
+      children: [
+        if (row1.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Wrap(
+              spacing: 8,
+              children: row1
+                  .map((s) => ChoiceChip(
+                        label: Text(s),
+                        selected: source == s,
+                        onSelected: (_) =>
+                            onSourceChanged(source == s ? '' : s),
+                      ))
+                  .toList(),
+            ),
+          ),
+        if (row2.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            children: row2
+                .map((s) => ChoiceChip(
+                      label: Text(s),
+                      selected: source == s,
+                      onSelected: (_) =>
+                          onSourceChanged(source == s ? '' : s),
+                    ))
+                .toList(),
+          ),
+      ],
     );
   }
 

@@ -9,6 +9,7 @@ import 'package:bakery_app/features/orders/widgets/stage1_responsive_content.dar
 import 'package:bakery_app/features/orders/widgets/stage_summary_card.dart';
 import 'package:bakery_app/providers/config_provider.dart';
 import 'package:bakery_app/providers/events_provider.dart';
+import 'package:bakery_app/shared/labels/customers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -582,6 +583,65 @@ void main() {
     expect(find.byType(CustomerProfileCard), findsOneWidget,
         reason: 'AC10: linked customer card should render after loading from order.customerId');
   });
+
+  // CQ-4 — maybeAutoCreateCustomer failure branch: when name+phone are
+  // present but POST /api/customers fails, the order still saves (PATCH
+  // succeeds) with customerId == null and the user sees a non-blocking
+  // snackbar notice (CustomersLabels.autoCreateFailedNotice).
+  testWidgets(
+      'CQ-4: auto-create-customer failure surfaces notice but order still saves',
+      (tester) async {
+    await tester.pumpWidget(
+        await _buildScreenFor('REF-AUTOCREATE-FAIL', _AutoCreateFailsInterceptor()));
+    await tester.pumpAndSettle();
+
+    // Stage 1 → Stage 2.
+    await tester.tap(find.text('Tiếp tục'));
+    await tester.pumpAndSettle();
+
+    // Enter customer name and phone (no customer linked) so FR1 fires.
+    await tester.enterText(
+      find.ancestor(
+        of: find.text('Tên khách hàng'),
+        matching: find.byType(TextField),
+      ),
+      'Trần Văn B',
+    );
+    await tester.enterText(
+      find.ancestor(
+        of: find.text('Số điện thoại'),
+        matching: find.byType(TextField),
+      ),
+      '0901234567',
+    );
+
+    // Continue through Stage 3 to Stage 4.
+    await tester.tap(find.text('Tiếp tục'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Tiếp tục'));
+    await tester.pumpAndSettle();
+
+    // Save.
+    await tester.tap(find.descendant(
+      of: find.byType(FilledButton),
+      matching: find.text('Lưu'),
+    ));
+    // The save chain is async (auto-create POST reject → snackbar → PATCH).
+    // Pump a few frames explicitly so the PATCH resolves before asserting.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
+
+    expect(_savedOrderBody, isNotNull,
+        reason: 'CQ-4: order should still save when auto-create-customer fails');
+    expect(_savedCustomerId, anyOf(isNull, 'null'),
+        reason: 'CQ-4: no customer should be linked when auto-create failed');
+    expect(
+      find.text(CustomersLabels.autoCreateFailedNotice),
+      findsOneWidget,
+      reason: 'CQ-4: a non-blocking snackbar notice should be shown on auto-create failure',
+    );
+  });
 }
 
 /// Interceptor variant for the prefill test — returns a bus-delivery order
@@ -962,6 +1022,123 @@ class _LinkedCustomerInterceptor extends Interceptor {
     if (path == '/api/orders' && options.method == 'GET') {
       handler.resolve(
         Response(requestOptions: options, statusCode: 200, data: <Map<String, dynamic>>[]),
+      );
+      return;
+    }
+
+    handler.reject(
+      DioException(
+        requestOptions: options,
+        response: Response(requestOptions: options, statusCode: 404),
+      ),
+    );
+  }
+}
+/// Interceptor variant for the CQ-4 auto-create-failure test — the order
+/// loads and PATCHes successfully, but POST /api/customers is rejected so
+/// `maybeAutoCreateCustomer` hits its catch branch and the save proceeds
+/// without a linked customer.
+class _AutoCreateFailsInterceptor extends Interceptor {
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    final path = options.path;
+
+    if (path == '/api/orders/REF-AUTOCREATE-FAIL' && options.method == 'GET') {
+      handler.resolve(
+        Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'id': 'order-acf',
+            'orderRef': 'REF-AUTOCREATE-FAIL',
+            'publicOrderCode': '',
+            'customerName': '',
+            'customerPhone': '',
+            'deliveryPhone': '',
+            'customerId': null,
+            'items': <Map<String, dynamic>>[],
+            'totalPrice': 0.0,
+            'status': 'new',
+            'deliveryType': 'pickup',
+            'deliveryAddress': '',
+            'shippingFee': 0.0,
+            'notes': '',
+            'source': '',
+            'packingChecklist': <Map<String, dynamic>>[],
+            'createdAt': '2026-07-01T08:00:00Z',
+            'updatedAt': '2026-07-01T08:00:00Z',
+          },
+        ),
+      );
+      return;
+    }
+
+    if (path.startsWith('/api/orders/REF-AUTOCREATE-FAIL/items') &&
+        options.method == 'GET') {
+      handler.resolve(
+        Response(requestOptions: options, statusCode: 200, data: <Map<String, dynamic>>[]),
+      );
+      return;
+    }
+
+    if (path.startsWith('/api/orders/REF-AUTOCREATE-FAIL/photos') &&
+        options.method == 'GET') {
+      handler.resolve(
+        Response(requestOptions: options, statusCode: 200, data: <Map<String, dynamic>>[]),
+      );
+      return;
+    }
+
+    // POST /api/customers — reject to force the auto-create failure branch.
+    if (path == '/api/customers' && options.method == 'POST') {
+      handler.reject(
+        DioException(
+          requestOptions: options,
+          response: Response(requestOptions: options, statusCode: 500),
+        ),
+      );
+      return;
+    }
+
+    if (path == '/api/orders' && options.method == 'GET') {
+      handler.resolve(
+        Response(requestOptions: options, statusCode: 200, data: <Map<String, dynamic>>[]),
+      );
+      return;
+    }
+
+    if (path == '/api/orders/REF-AUTOCREATE-FAIL' && options.method == 'PATCH') {
+      final body = options.data is String
+          ? jsonDecode(options.data as String) as Map<String, dynamic>
+          : Map<String, dynamic>.from(options.data as Map);
+      _savedOrderBody = body;
+      _savedCustomerName = body['customerName'] as String?;
+      _savedCustomerId = body['customerId']?.toString();
+      handler.resolve(
+        Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'id': 'order-acf',
+            'orderRef': 'REF-AUTOCREATE-FAIL',
+            'publicOrderCode': '',
+            'customerName': '',
+            'customerPhone': '',
+            'deliveryPhone': '',
+            'customerId': null,
+            'items': <Map<String, dynamic>>[],
+            'totalPrice': 0.0,
+            'status': 'new',
+            'deliveryType': 'pickup',
+            'deliveryAddress': '',
+            'shippingFee': 0.0,
+            'notes': '',
+            'source': '',
+            'packingChecklist': <Map<String, dynamic>>[],
+            'createdAt': '2026-07-01T08:00:00Z',
+            'updatedAt': '2026-07-01T08:00:00Z',
+          },
+        ),
       );
       return;
     }

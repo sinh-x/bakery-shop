@@ -16,4 +16,9 @@ class CustomersLabels {
 
   /// Fallback name when a customer has no name set.
   static const customerNoName = 'Không tên';
+
+  /// Non-blocking notice shown when auto-create-customer fails during save
+  /// (the order still saves with free-text name/phone, but no link is made).
+  static const autoCreateFailedNotice =
+      'Không tạo được khách hàng — đơn đã lưu nhưng chưa liên kết khách';
 }

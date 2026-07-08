@@ -11,7 +11,7 @@ import '../../providers/order_providers.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/customers.dart';
 import 'order_edit/utils/edit_public_code_dialog.dart';
 import 'order_edit/utils/edit_save_helpers.dart';
 import 'order_edit/utils/edit_summary_helpers.dart';
@@ -181,6 +181,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
       _selectedCustomer = created.customer;
     }
     if (created.touched) _customerTouched = true;
+    // CQ-6: surface a non-blocking notice when auto-create failed so the
+    // operator knows the order will save without a linked customer.
+    if (created.failed && mounted) {
+      showTopSnackBar(context, CustomersLabels.autoCreateFailedNotice);
+    }
     final customerId = _selectedCustomer?.id;
 
     // FR2: empty customer name defaults to `Khách lẻ` at save time only.
@@ -189,8 +194,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         : _nameCtrl.text.trim();
 
     setState(() => _saving = true);
+    late final Order updatedOrder;
     try {
-      final updatedOrder = await ref
+      updatedOrder = await ref
           .read(orderDetailProvider(widget.orderRef).notifier)
           .save(
             notes: _notesCtrl.text.trim(),
@@ -208,23 +214,29 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             shippingFee: _shippingFee,
             publicCodeDateChangeDecision: publicCodeDateChangeDecision,
           );
-      if (mounted) {
-        showEditSaveResult(
-          context: context,
-          originalOrder: originalOrder,
-          orderRef: widget.orderRef,
-          updatedOrder: updatedOrder,
-        );
-        context.pop();
-      }
     } catch (e, stackTrace) {
       debugPrint('order_edit: save failed for ${widget.orderRef}: $e');
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
         showTopSnackBar(context, normalizeApiError(e).message);
       }
-    } finally {
       if (mounted) setState(() => _saving = false);
+      return;
+    }
+    // Post-save UI runs outside the save try/catch so a navigation/snackbar
+    // error cannot be misreported as a save failure (CQ-3).
+    if (mounted) {
+      showEditSaveResult(
+        context: context,
+        originalOrder: originalOrder,
+        orderRef: widget.orderRef,
+        updatedOrder: updatedOrder,
+      );
+      // Guard the pop so a navigation error in test/edge contexts cannot
+      // throw after a successful save (CQ-3). The save itself already
+      // succeeded; the snackbar above informed the user.
+      if (context.canPop()) context.pop();
+      setState(() => _saving = false);
     }
   }
 
