@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 // EXEMPT: 200-line widget threshold exceeded because OrderDeliverySection
 // is the canonical shared delivery widget with multiple sub-sections
@@ -25,6 +26,7 @@ class OrderDeliverySection extends StatelessWidget {
     this.onShippingFeeChanged,
     this.addressCtrl,
     this.phoneCtrl,
+    this.phoneInputFormatters,
     this.notesCtrl,
     this.shippingBusDefault = 25000,
     this.shippingDoorDefault = 20000,
@@ -32,6 +34,7 @@ class OrderDeliverySection extends StatelessWidget {
     this.dueTime,
     this.onDueDateChanged,
     this.onDueTimeChanged,
+    this.dueDateTimeSlot,
     this.summaryCardSlots = const [],
     this.useResponsiveLayout = false,
     this.shippingFeeConfigLoading = false,
@@ -49,6 +52,7 @@ class OrderDeliverySection extends StatelessWidget {
   final ValueChanged<double>? onShippingFeeChanged;
   final TextEditingController? addressCtrl;
   final TextEditingController? phoneCtrl;
+  final List<TextInputFormatter>? phoneInputFormatters;
   final TextEditingController? notesCtrl;
   final double shippingBusDefault;
   final double shippingDoorDefault;
@@ -56,6 +60,7 @@ class OrderDeliverySection extends StatelessWidget {
   final TimeOfDay? dueTime;
   final ValueChanged<DateTime>? onDueDateChanged;
   final ValueChanged<TimeOfDay>? onDueTimeChanged;
+  final Widget? dueDateTimeSlot;
   final List<Widget> summaryCardSlots;
   final bool useResponsiveLayout;
   final bool shippingFeeConfigLoading;
@@ -146,6 +151,7 @@ class OrderDeliverySection extends StatelessWidget {
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.phone,
+              inputFormatters: phoneInputFormatters,
             ),
             const SizedBox(height: 12),
           ],
@@ -182,12 +188,13 @@ class OrderDeliverySection extends StatelessWidget {
         ],
         const SizedBox(height: 20),
         const SectionHeader(VN.dueDate),
-        DueDateTimePickerRow(
-          dueDate: dueDate,
-          dueTime: dueTime,
-          onDueDateChanged: onDueDateChanged,
-          onDueTimeChanged: onDueTimeChanged,
-        ),
+        dueDateTimeSlot ??
+            DueDateTimePickerRow(
+              dueDate: dueDate,
+              dueTime: dueTime,
+              onDueDateChanged: onDueDateChanged,
+              onDueTimeChanged: onDueTimeChanged,
+            ),
       ],
     );
   }

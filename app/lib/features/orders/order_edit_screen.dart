@@ -23,6 +23,7 @@ import 'package:bakery_app/shared/labels/orders.dart';
 import 'utils/trung_bay_inventory_extensions.dart';
 import 'widgets/hour_picker.dart';
 import 'widgets/order_customer_section.dart';
+import 'widgets/order_delivery_section.dart';
 import 'widgets/order_photo_section.dart';
 import 'widgets/order_stage_indicator.dart';
 import 'widgets/order_wizard.dart';
@@ -517,6 +518,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   }
 
   // ── Stage 3: Delivery (type, address, phone, shipping fee, notes, due date) ──
+  // Uses the canonical shared OrderDeliverySection (DG-216 Phase 3). Edit-specific
+  // features — the formatDisplayDate date label, the HourPickerDialog time picker,
+  // and HourPresetChips — are preserved via the composable `dueDateTimeSlot`.
   Widget _buildStage3Delivery(
     double shippingBusDefault,
     double shippingDoorDefault,
@@ -527,137 +531,26 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const _SectionHeader(VN.deliveryType),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                      value: 'pickup',
-                      label: Text(VN.pickup),
-                      icon: Icon(Icons.store, size: 16),
-                    ),
-                    ButtonSegment(
-                      value: 'bus',
-                      label: Text(VN.deliveryBus),
-                      icon: Icon(Icons.directions_bus, size: 16),
-                    ),
-                    ButtonSegment(
-                      value: 'door',
-                      label: Text(VN.deliveryDoor),
-                      icon: Icon(Icons.home, size: 16),
-                    ),
-                  ],
-                  selected: {_deliveryType},
-                  onSelectionChanged: (s) => _updateShippingFeeForDeliveryType(
-                    s.first,
-                    busDefault: shippingBusDefault,
-                    doorDefault: shippingDoorDefault,
-                  ),
-                ),
-                if (_needsAddress) ...[
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _deliveryPhoneCtrl,
-                    decoration: const InputDecoration(
-                      labelText: OrdersLabels.deliveryPhone,
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.phone,
-                    inputFormatters: [PhoneInputFormatter()],
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _addressCtrl,
-                    decoration: const InputDecoration(
-                      labelText: VN.deliveryAddress,
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (v) =>
-                        _needsAddress && (v == null || v.trim().isEmpty)
-                        ? VN.fieldRequired
-                        : null,
-                  ),
-                ],
-                const SizedBox(height: 20),
-                if (_deliveryType == 'bus' || _deliveryType == 'door') ...[
-                  const _SectionHeader(VN.shippingFee),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton.filled(
-                        onPressed: _shippingFee >= 5000
-                            ? () => _setShippingFee(_shippingFee - 5000.0)
-                            : null,
-                        icon: const Icon(Icons.remove),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          _shippingFee == 0
-                              ? VN.shippingFree
-                              : formatVND(_shippingFee),
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                      ),
-                      IconButton.filled(
-                        onPressed: () => _setShippingFee(_shippingFee + 5000.0),
-                        icon: const Icon(Icons.add),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                TextFormField(
-                  controller: _notesCtrl,
-                  decoration: const InputDecoration(
-                    labelText: VN.notes,
-                    border: OutlineInputBorder(),
-                    alignLabelWithHint: true,
-                  ),
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 20),
-                const _SectionHeader(VN.dueDate),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _pickDate,
-                        icon: const Icon(Icons.calendar_today, size: 18),
-                        label: Text(
-                          _dueDate != null
-                              ? formatDisplayDate(_dueDate)
-                              : VN.dueDate,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          alignment: Alignment.centerLeft,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _pickTime,
-                        icon: const Icon(Icons.schedule, size: 18),
-                        label: Text(
-                          _dueTime != null
-                              ? _formatTime(_dueTime!)
-                              : VN.dueTime,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          alignment: Alignment.centerLeft,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                HourPresetChips(
-                  selectedTime: _dueTime,
-                  onSelected: (t) => setState(() => _dueTime = t),
-                ),
+            child: OrderDeliverySection(
+              mode: OrderDeliverySectionMode.editable,
+              deliveryType: _deliveryType,
+              shippingFee: _shippingFee,
+              addressCtrl: _addressCtrl,
+              phoneCtrl: _deliveryPhoneCtrl,
+              phoneInputFormatters: [PhoneInputFormatter()],
+              notesCtrl: _notesCtrl,
+              shippingBusDefault: shippingBusDefault,
+              shippingDoorDefault: shippingDoorDefault,
+              onDeliveryTypeChanged: (type) => _updateShippingFeeForDeliveryType(
+                type,
+                busDefault: shippingBusDefault,
+                doorDefault: shippingDoorDefault,
+              ),
+              onShippingFeeChanged: _setShippingFee,
+              dueDate: _dueDate,
+              dueTime: _dueTime,
+              dueDateTimeSlot: _buildEditDueDateTime(),
+              summaryCardSlots: [
                 ProductSummaryCard(items: summaryItems),
                 CustomerSummaryCard(
                   wizardData: _wizardSnapshot,
@@ -671,6 +564,51 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
           onBack: () => _goToStage(2),
           onContinue: () => _goToStage(4),
           continueLabel: OrdersLabels.continueLabel,
+        ),
+      ],
+    );
+  }
+
+  // Edit-specific due date/time controls: date label uses formatDisplayDate,
+  // time uses the hour-only HourPickerDialog (F5), and HourPresetChips offer
+  // quick time-slot selection. Passed to OrderDeliverySection.dueDateTimeSlot.
+  Widget _buildEditDueDateTime() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _pickDate,
+                icon: const Icon(Icons.calendar_today, size: 18),
+                label: Text(
+                  _dueDate != null ? formatDisplayDate(_dueDate) : VN.dueDate,
+                ),
+                style: OutlinedButton.styleFrom(
+                  alignment: Alignment.centerLeft,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _pickTime,
+                icon: const Icon(Icons.schedule, size: 18),
+                label: Text(
+                  _dueTime != null ? _formatTime(_dueTime!) : VN.dueTime,
+                ),
+                style: OutlinedButton.styleFrom(
+                  alignment: Alignment.centerLeft,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        HourPresetChips(
+          selectedTime: _dueTime,
+          onSelected: (t) => setState(() => _dueTime = t),
         ),
       ],
     );
