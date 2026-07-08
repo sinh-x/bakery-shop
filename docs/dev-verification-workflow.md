@@ -248,7 +248,7 @@ docker compose --profile dev exec baker-dev \
 
 ## §6 HTTPS Access via Tailscale MagicDNS (Dev Caddy)
 
-The dev stack can be exposed over HTTPS on the Tailsail tailnet via the `caddy-dev` service, mirroring the prod `caddy` setup. This lets you verify the Flutter web app and API from a browser on any tailnet device using the drgnfly MagicDNS hostname.
+The dev stack can be exposed over HTTPS on the Tailscale tailnet via the `caddy-dev` service, mirroring the prod `caddy` setup. This lets you verify the Flutter web app and API from a browser on any tailnet device using the drgnfly MagicDNS hostname.
 
 ### 6.1 Prerequisites
 
@@ -306,19 +306,19 @@ docker compose --profile dev stop
 
 ## §7 Cleanup
 
-### 6.1 Stop the dev container
+### 7.1 Stop the dev container
 
 ```bash
 docker compose --profile dev stop baker-dev
 ```
 
-### 6.2 Remove temp files
+### 7.2 Remove temp files
 
 ```bash
 rm -f /tmp/dev-pre.json /tmp/dev-post.json /tmp/dev-bad.json
 ```
 
-### 6.3 Restore dev DB if needed
+### 7.3 Restore dev DB if needed
 
 If the dev DB was modified during testing and you want to restore it:
 
