@@ -300,6 +300,94 @@ void main() {
     });
   });
 
+  group('AC-7: draft save/restore preserves all delivery fields', () {
+    OrderDraft saveDraft(OrderCreateState state) {
+      return OrderDraft(
+        customerName: state.wizardData.customerName,
+        customerPhone: state.wizardData.customerPhone,
+        deliveryPhone: state.wizardData.deliveryPhone,
+        items: List.of(state.items),
+        dueDate: state.dueDate,
+        dueTime: state.dueTime,
+        deliveryType: state.wizardData.deliveryType,
+        deliveryAddress: state.wizardData.deliveryAddress,
+        shippingFee: state.wizardData.shippingFee,
+        notes: state.wizardData.notes,
+        source: state.source,
+        currentStage: state.currentStage,
+        selectedCategorySlug: state.selectedCategorySlug,
+        customerId: state.wizardData.selectedCustomer?.id,
+      );
+    }
+
+    OrderWizardData restoreWizardData(OrderDraft draft) {
+      return OrderWizardData(
+        customerName: draft.customerName,
+        customerPhone: draft.customerPhone,
+        deliveryType: draft.deliveryType,
+        deliveryAddress: draft.deliveryAddress,
+        deliveryPhone: draft.deliveryPhone,
+        shippingFee: draft.shippingFee,
+        notes: draft.notes,
+      );
+    }
+
+    test(
+        'round-trip preserves type, address, phone, shipping fee, notes, due date/time',
+        () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      final notifier = container.read(orderCreateStateProvider.notifier);
+      notifier.updateWizardData(
+        const OrderWizardData(
+          customerName: 'Chị Lan',
+          deliveryType: 'door',
+          deliveryAddress: '123 Đường Lê Lợi',
+          deliveryPhone: '0987654321',
+          shippingFee: 25000,
+          notes: 'Giao trước 10h',
+        ),
+      );
+      notifier.updateDueDate(DateTime(2026, 7, 10));
+      notifier.updateDueTime(const TimeOfDay(hour: 14, minute: 30));
+
+      final state = container.read(orderCreateStateProvider);
+      final draft = saveDraft(state);
+      container.read(orderDraftProvider.notifier).save(draft);
+
+      final restoredDraft = container.read(orderDraftProvider)!;
+      final restored = restoreWizardData(restoredDraft);
+
+      expect(restored.deliveryType, 'door');
+      expect(restored.deliveryAddress, '123 Đường Lê Lợi');
+      expect(restored.deliveryPhone, '0987654321');
+      expect(restored.shippingFee, 25000);
+      expect(restored.notes, 'Giao trước 10h');
+      expect(restoredDraft.dueDate, DateTime(2026, 7, 10));
+      expect(restoredDraft.dueTime, const TimeOfDay(hour: 14, minute: 30));
+    });
+
+    test('shipping fee survives round-trip for bus delivery', () {
+      const state = OrderCreateState(
+        wizardData: OrderWizardData(
+          deliveryType: 'bus',
+          deliveryAddress: 'Bến xe Miền Đông',
+          deliveryPhone: '0900000000',
+          shippingFee: 30000,
+        ),
+      );
+
+      final draft = saveDraft(state);
+      final restored = restoreWizardData(draft);
+
+      expect(draft.shippingFee, 30000);
+      expect(restored.shippingFee, 30000);
+      expect(restored.deliveryType, 'bus');
+      expect(restored.deliveryAddress, 'Bến xe Miền Đông');
+    });
+  });
+
   group('Phase 4 fix: pendingPhotos preserved when picker re-opens', () {
     test('copying DraftOrderItem with pendingPhotos list preserves photos', () {
       final product = _product();

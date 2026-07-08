@@ -60,6 +60,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       deliveryType: draft.deliveryType,
       deliveryAddress: draft.deliveryAddress,
       deliveryPhone: draft.deliveryPhone,
+      shippingFee: draft.shippingFee,
       notes: draft.notes,
     );
     notifier.updateWizardData(data);
@@ -92,6 +93,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       dueTime: state.dueTime,
       deliveryType: state.wizardData.deliveryType,
       deliveryAddress: state.wizardData.deliveryAddress,
+      shippingFee: state.wizardData.shippingFee,
       notes: state.wizardData.notes,
       source: state.source,
       currentStage: state.currentStage,

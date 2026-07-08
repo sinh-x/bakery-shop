@@ -141,6 +141,7 @@ class OrderDraft {
   final TimeOfDay? dueTime;
   final String deliveryType;
   final String deliveryAddress;
+  final double shippingFee;
   final String notes;
   final bool depositEnabled;
   final String depositAmount;
@@ -160,6 +161,7 @@ class OrderDraft {
     this.dueTime,
     this.deliveryType = 'pickup',
     this.deliveryAddress = '',
+    this.shippingFee = 0.0,
     this.notes = '',
     this.depositEnabled = false,
     this.depositAmount = '',
