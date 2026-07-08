@@ -1,24 +1,5 @@
 part of '../../order_edit_screen.dart';
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title);
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
-  }
-}
-
 class _WorkItemsSection extends ConsumerWidget {
   const _WorkItemsSection({required this.orderRef, required this.onAddTap});
 

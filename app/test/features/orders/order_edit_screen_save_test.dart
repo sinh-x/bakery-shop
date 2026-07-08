@@ -2,6 +2,9 @@ import 'dart:convert';
 
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/features/orders/order_edit_screen.dart';
+import 'package:bakery_app/features/orders/widgets/section_header.dart';
+import 'package:bakery_app/features/orders/widgets/stage1_empty_state.dart';
+import 'package:bakery_app/features/orders/widgets/stage1_responsive_content.dart';
 import 'package:bakery_app/features/orders/widgets/stage_summary_card.dart';
 import 'package:bakery_app/providers/config_provider.dart';
 import 'package:bakery_app/providers/events_provider.dart';
@@ -461,6 +464,107 @@ void main() {
     expect(find.byType(DeliverySummaryCard), findsOneWidget,
         reason: 'AC8: Stage 3 should show the Delivery summary card');
   });
+
+  // ── Phase 4: All-stage layout parity (FR11-FR14, AC11-AC14) ──────────
+
+  testWidgets(
+      'AC11: edit Stage 1 shows Stage1EmptyState when no work items exist',
+      (tester) async {
+    await tester.pumpWidget(await _buildScreen());
+    await tester.pumpAndSettle();
+
+    // Stage 1 is the initial page; no work items are returned by the
+    // default interceptor.
+    expect(find.byType(Stage1EmptyState), findsOneWidget,
+        reason: 'AC11: Stage 1 should show the empty state when no work items exist');
+    expect(find.text(OrdersLabels.stage1EmptyTitle), findsOneWidget);
+  });
+
+  testWidgets(
+      'AC11: edit Stage 1 wraps content in Stage1ResponsiveContent when work items exist',
+      (tester) async {
+    await tester.pumpWidget(await _buildScreenForSources(
+        'REF-ITEMS', _WorkItemsInterceptor()));
+    await tester.pumpAndSettle();
+
+    // Stage 1 has work items → should NOT show the empty state.
+    expect(find.byType(Stage1EmptyState), findsNothing,
+        reason: 'AC11: Stage 1 with work items should not show the empty state');
+    expect(find.byType(Stage1ResponsiveContent), findsOneWidget,
+        reason: 'AC11: Stage 1 content should be wrapped in Stage1ResponsiveContent');
+    // Shared SectionHeader used for the work-items section title.
+    expect(find.byType(SectionHeader), findsWidgets,
+        reason: 'AC14: Stage 1 should use the shared SectionHeader component');
+  });
+
+  testWidgets(
+      'AC12: edit Stage 3 uses responsive layout matching create',
+      (tester) async {
+    await tester.pumpWidget(await _buildScreenForSources(
+        'REF-SRC', _AllSourcesInterceptor()));
+    await tester.pumpAndSettle();
+
+    // Navigate to Stage 3.
+    await tester.tap(find.text('Tiếp tục'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Tiếp tục'));
+    await tester.pumpAndSettle();
+
+    // The OrderDeliverySection now enables useResponsiveLayout, which wraps
+    // its content in Stage1ResponsiveContent (matching create's Stage 3).
+    expect(find.byType(Stage1ResponsiveContent), findsOneWidget,
+        reason: 'AC12: Stage 3 delivery should be wrapped in Stage1ResponsiveContent');
+  });
+
+  testWidgets(
+      'AC13: edit Stage 4 uses Stage1ResponsiveContent wrapper and SectionHeader',
+      (tester) async {
+    await tester.pumpWidget(await _buildScreenForSources(
+        'REF-SRC', _AllSourcesInterceptor()));
+    await tester.pumpAndSettle();
+
+    // Navigate to Stage 4.
+    await tester.tap(find.text('Tiếp tục'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Tiếp tục'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Tiếp tục'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Stage1ResponsiveContent), findsOneWidget,
+        reason: 'AC13: Stage 4 review should be wrapped in Stage1ResponsiveContent');
+    // The review title should use the shared SectionHeader (not inline Text).
+    expect(find.byType(SectionHeader), findsWidgets,
+        reason: 'AC13/AC14: Stage 4 should use the shared SectionHeader for the review title');
+    // Review title label is present.
+    expect(find.text(OrdersLabels.reviewSummary), findsOneWidget);
+  });
+
+  testWidgets(
+      'AC14: edit stages use shared SectionHeader (no divergent inline _SectionHeader)',
+      (tester) async {
+    await tester.pumpWidget(await _buildScreenForSources(
+        'REF-ITEMS', _WorkItemsInterceptor()));
+    await tester.pumpAndSettle();
+
+    // Stage 1 — SectionHeader present (work-items section + extras header).
+    expect(find.byType(SectionHeader), findsWidgets,
+        reason: 'AC14: Stage 1 should use the shared SectionHeader component');
+
+    // Navigate to Stage 2 — Customer + Order source headers.
+    await tester.tap(find.text('Tiếp tục'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SectionHeader), findsWidgets,
+        reason: 'AC14: Stage 2 should use the shared SectionHeader component');
+
+    // Navigate to Stage 4 — review + order photos headers.
+    await tester.tap(find.text('Tiếp tục'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Tiếp tục'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SectionHeader), findsWidgets,
+        reason: 'AC14: Stage 4 should use the shared SectionHeader component');
+  });
 }
 
 /// Interceptor variant for the prefill test — returns a bus-delivery order
@@ -657,6 +761,105 @@ class _AllSourcesInterceptor extends Interceptor {
             'updatedAt': '2026-07-01T08:00:00Z',
           },
         ),
+      );
+      return;
+    }
+
+    handler.reject(
+      DioException(
+        requestOptions: options,
+        response: Response(requestOptions: options, statusCode: 404),
+      ),
+    );
+  }
+}
+
+/// Interceptor variant for Stage 1 layout tests — returns one regular work
+/// item so the empty state is suppressed and the responsive content wrapper
+/// is rendered.
+class _WorkItemsInterceptor extends Interceptor {
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    final path = options.path;
+
+    if (path == '/api/orders/REF-ITEMS' && options.method == 'GET') {
+      handler.resolve(
+        Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'id': 'order-items',
+            'orderRef': 'REF-ITEMS',
+            'publicOrderCode': '',
+            'customerName': '',
+            'customerPhone': '',
+            'deliveryPhone': '',
+            'customerId': null,
+            'items': <Map<String, dynamic>>[],
+            'totalPrice': 0.0,
+            'status': 'new',
+            'deliveryType': 'pickup',
+            'deliveryAddress': '',
+            'shippingFee': 0.0,
+            'notes': '',
+            'source': '',
+            'packingChecklist': <Map<String, dynamic>>[],
+            'createdAt': '2026-07-01T08:00:00Z',
+            'updatedAt': '2026-07-01T08:00:00Z',
+          },
+        ),
+      );
+      return;
+    }
+
+    if (path.startsWith('/api/orders/REF-ITEMS/items') && options.method == 'GET') {
+      handler.resolve(
+        Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: <Map<String, dynamic>>[
+            {
+              'id': 'wi-1',
+              'productId': 'P-001',
+              'productName': 'Bánh mì',
+              'quantity': 2,
+              'unitPrice': 15000.0,
+              'isExtra': false,
+              'isGift': false,
+              'isBirthday': false,
+              'attributes': <String, dynamic>{},
+              'notes': '',
+            },
+          ],
+        ),
+      );
+      return;
+    }
+
+    if (path.startsWith('/api/orders/REF-ITEMS/photos') && options.method == 'GET') {
+      handler.resolve(
+        Response(requestOptions: options, statusCode: 200, data: <Map<String, dynamic>>[]),
+      );
+      return;
+    }
+
+    if (path == '/api/products' && options.method == 'GET') {
+      handler.resolve(
+        Response(requestOptions: options, statusCode: 200, data: <Map<String, dynamic>>[]),
+      );
+      return;
+    }
+
+    if (path.startsWith('/api/products') && options.method == 'GET') {
+      handler.resolve(
+        Response(requestOptions: options, statusCode: 200, data: <Map<String, dynamic>>[]),
+      );
+      return;
+    }
+
+    if (path == '/api/orders' && options.method == 'GET') {
+      handler.resolve(
+        Response(requestOptions: options, statusCode: 200, data: <Map<String, dynamic>>[]),
       );
       return;
     }

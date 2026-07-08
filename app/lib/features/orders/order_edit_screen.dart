@@ -29,6 +29,9 @@ import 'widgets/order_photo_section.dart';
 import 'widgets/order_stage_indicator.dart';
 import 'widgets/order_wizard.dart';
 import 'widgets/product_picker_page.dart';
+import 'widgets/section_header.dart';
+import 'widgets/stage1_empty_state.dart';
+import 'widgets/stage1_responsive_content.dart';
 import 'widgets/stage_summary_card.dart';
 
 part 'order_edit/widgets/edit_extras_section.dart';
@@ -442,33 +445,66 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   }
 
   // ── Stage 1: Product (work items + extras) ──────────────────────────
+  // FR11/FR14: aligned with create's Stage 1 layout — wrapped in
+  // `Stage1ResponsiveContent`, shows a `Stage1EmptyState` matching create when
+  // no WorkItems exist, and uses the shared `SectionHeader`. Edit-specific
+  // `_WorkItemsSection`/`_EditExtrasSection` behavior is preserved; server-side
+  // WorkItems remain the data source.
   Widget _buildStage1Product(Order order) {
-    return Column(
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const _SectionHeader(VN.workItemsSection),
-                _WorkItemsSection(
-                  orderRef: widget.orderRef,
-                  onAddTap: _openProductPicker,
-                ),
-                const SizedBox(height: 20),
-                _EditExtrasSection(orderRef: widget.orderRef),
-                const SizedBox(height: 80),
-              ],
+    final workItemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));
+    final workItems = workItemsAsync.value ?? const <WorkItem>[];
+    final hasRegular = workItems.any((i) => !i.isExtra);
+    final hasExtras = workItems.any((i) => i.isExtra);
+    // Only show the empty state once the work items have loaded and are
+    // truly empty. During the initial load (`value` is null) we render the
+    // content scaffold so the empty state does not flash before data arrives
+    // (mirrors create's loading-then-content flow).
+    final isLoaded = workItemsAsync.hasValue;
+    final isEmpty = isLoaded && !hasRegular && !hasExtras;
+
+    if (isEmpty) {
+      return Column(
+        children: [
+          Expanded(
+            child: Stage1EmptyState(onAddProduct: _openProductPicker),
+          ),
+          _buildStageNavigation(
+            onBack: null,
+            onContinue: () => _goToStage(2),
+            continueLabel: OrdersLabels.continueLabel,
+          ),
+        ],
+      );
+    }
+
+    return Stage1ResponsiveContent(
+      child: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SectionHeader(VN.workItemsSection),
+                  _WorkItemsSection(
+                    orderRef: widget.orderRef,
+                    onAddTap: _openProductPicker,
+                  ),
+                  const SizedBox(height: 20),
+                  _EditExtrasSection(orderRef: widget.orderRef),
+                  const SizedBox(height: 80),
+                ],
+              ),
             ),
           ),
-        ),
-        _buildStageNavigation(
-          onBack: null,
-          onContinue: () => _goToStage(2),
-          continueLabel: OrdersLabels.continueLabel,
-        ),
-      ],
+          _buildStageNavigation(
+            onBack: null,
+            onContinue: () => _goToStage(2),
+            continueLabel: OrdersLabels.continueLabel,
+          ),
+        ],
+      ),
     );
   }
 
@@ -485,7 +521,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const _SectionHeader(VN.customer),
+                const SectionHeader(VN.customer),
                 OrderCustomerSection(
                   linkedCustomerId: _linkedCustomerId,
                   selectedCustomer: _selectedCustomer,
@@ -508,7 +544,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   phoneCtrl: _phoneCtrl,
                 ),
                 const SizedBox(height: 20),
-                const _SectionHeader(VN.orderSource),
+                const SectionHeader(VN.orderSource),
                 _buildSourceSelector(sourcesAsync),
                 ProductSummaryCard(items: summaryItems),
                 CustomerSummaryCard(
@@ -544,6 +580,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             child: OrderDeliverySection(
               mode: OrderDeliverySectionMode.editable,
+              useResponsiveLayout: true,
               deliveryType: _deliveryType,
               shippingFee: _shippingFee,
               addressCtrl: _addressCtrl,
@@ -642,48 +679,48 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   }
 
   // ── Stage 4: Review (summary + order photos + save) ─────────────────
+  // FR13/FR14: aligned with create's Stage 4 layout — wrapped in
+  // `Stage1ResponsiveContent`, uses the shared `SectionHeader` for the review
+  // title (replacing the inline `Text`), and preserves the order-level
+  // `OrderPhotoSection`.
   Widget _buildStage4Review(Order order, List<DraftOrderItem> summaryItems) {
     return Column(
       children: [
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  OrdersLabels.reviewSummary,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  OrdersLabels.checkoutReviewHint,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
-                ),
-                const SizedBox(height: 16),
-                ProductSummaryCard(items: summaryItems),
-                CustomerSummaryCard(
-                  wizardData: _wizardSnapshot,
-                  source: _source,
-                ),
-                DeliverySummaryCard(
-                  wizardData: _wizardSnapshot,
-                  dueDate: _dueDate,
-                  dueTime: _dueTime,
-                ),
-                const SizedBox(height: 20),
-                const _SectionHeader(VN.orderPhotos),
-                OrderPhotoSection(
-                  orderRef: widget.orderRef,
-                  baseUrl: ref.watch(apiBaseUrlProvider),
-                  orderLevelOnly: true,
-                ),
-                const SizedBox(height: 80),
-              ],
+          child: Stage1ResponsiveContent(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SectionHeader(OrdersLabels.reviewSummary),
+                  Text(
+                    OrdersLabels.checkoutReviewHint,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                  ),
+                  const SizedBox(height: 16),
+                  ProductSummaryCard(items: summaryItems),
+                  CustomerSummaryCard(
+                    wizardData: _wizardSnapshot,
+                    source: _source,
+                  ),
+                  DeliverySummaryCard(
+                    wizardData: _wizardSnapshot,
+                    dueDate: _dueDate,
+                    dueTime: _dueTime,
+                  ),
+                  const SizedBox(height: 20),
+                  const SectionHeader(VN.orderPhotos),
+                  OrderPhotoSection(
+                    orderRef: widget.orderRef,
+                    baseUrl: ref.watch(apiBaseUrlProvider),
+                    orderLevelOnly: true,
+                  ),
+                  const SizedBox(height: 80),
+                ],
+              ),
             ),
           ),
         ),
