@@ -973,7 +973,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Jump PageView to stage 4 via the stage indicator tap.
-      await tester.tap(find.text('Xem lại'));
+      await tester.tap(find.text(OrdersLabels.stage4Label));
       await tester.pumpAndSettle();
 
       expect(find.text(OrdersLabels.reviewCreateOrder), findsOneWidget);
