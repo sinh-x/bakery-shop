@@ -263,12 +263,15 @@ The dev stack can be exposed over HTTPS on the Tailsail tailnet via the `caddy-d
 
 ### 6.2 Validate the dev Caddyfile
 
+`caddy validate` additionally loads the TLS certificates referenced by the `tls` directive, which fails in a syntax-only check without the cert files mounted. Use `caddy adapt` instead for a syntax-only check that works without certs (it renders the Caddyfile to its JSON config and exits 0 if the syntax is valid):
+
 ```bash
-docker run --rm -v "$(pwd)/Caddyfile.dev:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
-  caddy validate --config /etc/caddy/Caddyfile
+docker run --rm -v "$(pwd)/Caddyfile.dev:/etc/caddy/Caddyfile:ro" \
+  -e DOMAIN=drgnfly.tail10c2c6.ts.net caddy:2-alpine \
+  caddy adapt --config /etc/caddy/Caddyfile
 ```
 
-- [ ] Exits 0 (config valid)
+- [ ] Exits 0 and emits valid JSON (syntax valid). Note: full `caddy validate` additionally loads certs, so `caddy adapt` is used here for syntax-only checks.
 
 ### 6.3 Start the dev stack with caddy
 
@@ -367,7 +370,7 @@ ls -lt ./data/baker-backup-pre-migrate-*.db | head -1
 | `docker compose --profile dev logs baker-dev --tail 50` | View container logs |
 | `docker compose --profile dev stop baker-dev` | Stop dev container |
 | `docker compose --profile dev up -d` | Start full dev stack (baker-dev + caddy-dev) |
-| `docker run --rm -v "$(pwd)/Caddyfile.dev:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile` | Validate dev Caddyfile |
+| `docker run --rm -v "$(pwd)/Caddyfile.dev:/etc/caddy/Caddyfile:ro" -e DOMAIN=drgnfly.tail10c2c6.ts.net caddy:2-alpine caddy adapt --config /etc/caddy/Caddyfile` | Validate dev Caddyfile (syntax-only via adapt; full `caddy validate` additionally loads certs) |
 | `./scripts/renew-certs.sh drgnfly.tail10c2c6.ts.net` | Renew/generate dev TLS cert |
 | `./scripts/db-validate.sh snapshot --db-path ./data/baker.db` | Capture DB snapshot |
 | `./scripts/db-validate.sh diff --pre pre.json --post post.json` | Diff two snapshots |
