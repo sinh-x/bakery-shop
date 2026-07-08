@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/order/order_create_state_provider.dart';
+import 'section_header.dart';
+import 'stage1_responsive_content.dart';
 import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
@@ -25,36 +27,32 @@ class Stage4ReviewScreen extends ConsumerWidget {
     return Column(
       children: [
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  OrdersLabels.reviewSummary,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+          child: Stage1ResponsiveContent(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SectionHeader(OrdersLabels.reviewSummary),
+                  Text(
+                    OrdersLabels.checkoutReviewHint,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  OrdersLabels.checkoutReviewHint,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.outline,
+                  const SizedBox(height: 8),
+                  ProductSummaryCard(items: state.items),
+                  CustomerSummaryCard(
+                    wizardData: state.wizardData,
+                    source: state.source,
                   ),
-                ),
-                const SizedBox(height: 16),
-                ProductSummaryCard(items: state.items),
-                CustomerSummaryCard(
-                  wizardData: state.wizardData,
-                  source: state.source,
-                ),
-                DeliverySummaryCard(
-                  wizardData: state.wizardData,
-                  dueDate: state.dueDate,
-                  dueTime: state.dueTime,
-                ),
-              ],
+                  DeliverySummaryCard(
+                    wizardData: state.wizardData,
+                    dueDate: state.dueDate,
+                    dueTime: state.dueTime,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
