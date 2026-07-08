@@ -491,6 +491,230 @@ void main() {
     expect(find.text('Bánh kem dâu'), findsOneWidget);
   });
 
+  group('Phase 4: Stage Gating — canNavigateToStage', () {
+    test('allows navigation to current or past stages', () {
+      const state = OrderCreateState(
+        wizardData: OrderWizardData(),
+        currentStage: 3,
+      );
+      expect(state.canNavigateToStage(1), true);
+      expect(state.canNavigateToStage(2), true);
+      expect(state.canNavigateToStage(3), true);
+    });
+
+    test('blocks stage 2+ when no products selected', () {
+      const state = OrderCreateState(
+        wizardData: OrderWizardData(),
+        currentStage: 1,
+      );
+      expect(state.canNavigateToStage(2), false);
+      expect(state.canNavigateToStage(3), false);
+      expect(state.canNavigateToStage(4), false);
+    });
+
+    test('allows stage 2 when products selected, blocks stage 3+ without customer',
+        () {
+      final state = OrderCreateState(
+        wizardData: const OrderWizardData(),
+        currentStage: 1,
+        items: [
+          DraftOrderItem(
+            product: const Product(
+                id: 1, name: 'Test', category: 'test', basePrice: 100),
+            quantity: 1,
+          ),
+        ],
+      );
+      expect(state.canNavigateToStage(2), true);
+      expect(state.canNavigateToStage(3), false);
+      expect(state.canNavigateToStage(4), false);
+    });
+
+    test('allows stage 3 when stages 1-2 complete', () {
+      final state = OrderCreateState(
+        wizardData: const OrderWizardData(
+          customerName: 'Test',
+          deliveryType: 'door',
+          deliveryAddress: '',
+        ),
+        currentStage: 2,
+        items: [
+          DraftOrderItem(
+            product: const Product(
+                id: 1, name: 'Test', category: 'test', basePrice: 100),
+            quantity: 1,
+          ),
+        ],
+      );
+      expect(state.canNavigateToStage(3), true);
+      expect(state.canNavigateToStage(4), false);
+    });
+
+    test('blocks stage 4 when door delivery has empty address', () {
+      final state = OrderCreateState(
+        wizardData: const OrderWizardData(
+          customerName: 'Test',
+          deliveryType: 'door',
+          deliveryAddress: '',
+        ),
+        currentStage: 3,
+        items: [
+          DraftOrderItem(
+            product: const Product(
+                id: 1, name: 'Test', category: 'test', basePrice: 100),
+            quantity: 1,
+          ),
+        ],
+      );
+      expect(state.canNavigateToStage(4), false);
+    });
+
+    test('blocks stage 4 when bus delivery has empty address', () {
+      final state = OrderCreateState(
+        wizardData: const OrderWizardData(
+          customerName: 'Test',
+          deliveryType: 'bus',
+          deliveryAddress: '',
+        ),
+        currentStage: 3,
+        items: [
+          DraftOrderItem(
+            product: const Product(
+                id: 1, name: 'Test', category: 'test', basePrice: 100),
+            quantity: 1,
+          ),
+        ],
+      );
+      expect(state.canNavigateToStage(4), false);
+    });
+
+    test('allows stage 4 when delivery is pickup (no address required)', () {
+      final state = OrderCreateState(
+        wizardData: const OrderWizardData(
+          customerName: 'Test',
+          deliveryType: 'pickup',
+        ),
+        currentStage: 3,
+        items: [
+          DraftOrderItem(
+            product: const Product(
+                id: 1, name: 'Test', category: 'test', basePrice: 100),
+            quantity: 1,
+          ),
+        ],
+      );
+      expect(state.canNavigateToStage(4), true);
+    });
+
+    test('allows stage 4 when door delivery has address', () {
+      final state = OrderCreateState(
+        wizardData: const OrderWizardData(
+          customerName: 'Test',
+          deliveryType: 'door',
+          deliveryAddress: '123 Main St',
+        ),
+        currentStage: 3,
+        items: [
+          DraftOrderItem(
+            product: const Product(
+                id: 1, name: 'Test', category: 'test', basePrice: 100),
+            quantity: 1,
+          ),
+        ],
+      );
+      expect(state.canNavigateToStage(4), true);
+    });
+
+    test('allows all stage transitions when data is complete (1→2→3→4)', () {
+      final state = OrderCreateState(
+        wizardData: const OrderWizardData(
+          customerName: 'Test',
+          deliveryType: 'door',
+          deliveryAddress: '123 Main St',
+        ),
+        currentStage: 1,
+        items: [
+          DraftOrderItem(
+            product: const Product(
+                id: 1, name: 'Test', category: 'test', basePrice: 100),
+            quantity: 1,
+          ),
+        ],
+      );
+      expect(state.canNavigateToStage(1), true);
+      expect(state.canNavigateToStage(2), true);
+      expect(state.canNavigateToStage(3), true);
+      expect(state.canNavigateToStage(4), true);
+    });
+  });
+
+  testWidgets(
+      'Phase 4: tapping future stage with incomplete data does not navigate',
+      (tester) async {
+    int? tappedStage;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: OrderStageIndicator(
+          currentStage: 1,
+          onStageTap: (stage) {
+            if (stage <= 1) {
+              tappedStage = stage;
+            }
+          },
+        ),
+      ),
+    ));
+
+    await tester.tap(find.text('3'));
+    expect(tappedStage, isNull);
+  });
+
+  testWidgets(
+      'Phase 4: tapping allowed stage does navigate',
+      (tester) async {
+    int? tappedStage;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: OrderStageIndicator(
+          currentStage: 1,
+          onStageTap: (stage) => tappedStage = stage,
+        ),
+      ),
+    ));
+
+    await tester.tap(find.text('2'));
+    expect(tappedStage, 2);
+  });
+
+  testWidgets(
+      'Phase 4: all stage transitions invoke callback when gating passes',
+      (tester) async {
+    int? tappedStage;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: OrderStageIndicator(
+          currentStage: 1,
+          onStageTap: (stage) => tappedStage = stage,
+        ),
+      ),
+    ));
+
+    await tester.tap(find.text('1'));
+    expect(tappedStage, 1);
+    tappedStage = null;
+
+    await tester.tap(find.text('2'));
+    expect(tappedStage, 2);
+    tappedStage = null;
+
+    await tester.tap(find.text('3'));
+    expect(tappedStage, 3);
+    tappedStage = null;
+
+    await tester.tap(find.text('4'));
+    expect(tappedStage, 4);
+  });
+
   testWidgets('Phase 3: ProductPickerPage restores initial category tab from slug',
       (tester) async {
     final products = [

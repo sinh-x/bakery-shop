@@ -27,6 +27,16 @@ class OrderCreateState {
     this.selectedCategorySlug,
   });
 
+  bool canNavigateToStage(int stage) {
+    if (stage <= currentStage) return true;
+    if (stage >= 2 && items.isEmpty) return false;
+    if (stage >= 3 && wizardData.customerName.isEmpty) return false;
+    if (stage >= 4 && wizardData.needsAddress && wizardData.deliveryAddress.isEmpty) {
+      return false;
+    }
+    return true;
+  }
+
   OrderCreateState copyWith({
     List<DraftOrderItem>? items,
     OrderWizardData? wizardData,

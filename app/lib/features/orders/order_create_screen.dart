@@ -251,7 +251,11 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: OrderStageIndicator(
               currentStage: state.currentStage,
-              onStageTap: state.items.isEmpty ? null : _goToStage,
+              onStageTap: (stage) {
+                if (state.canNavigateToStage(stage)) {
+                  _goToStage(stage);
+                }
+              },
             ),
           ),
           Expanded(
