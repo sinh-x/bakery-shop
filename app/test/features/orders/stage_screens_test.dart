@@ -14,6 +14,7 @@ import 'package:bakery_app/features/orders/widgets/stage2_customer_info_screen.d
 import 'package:bakery_app/features/orders/widgets/stage3_delivery_options_screen.dart';
 import 'package:bakery_app/features/orders/widgets/stage4_review_screen.dart';
 import 'package:bakery_app/providers/categories_provider.dart';
+import 'package:bakery_app/providers/config_provider.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
 import 'package:bakery_app/providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
@@ -24,6 +25,14 @@ class FixedOrderCreateStateNotifier extends OrderCreateStateNotifier {
 
   @override
   OrderCreateState build() => initial;
+}
+
+class _FakeConfigValuesNotifier extends ConfigValuesNotifier {
+  final List<String> _values;
+  _FakeConfigValuesNotifier(this._values) : super('test');
+
+  @override
+  Future<List<String>> build() async => _values;
 }
 
 class _FakeApiBaseUrlNotifier extends ApiBaseUrlNotifier {
@@ -59,13 +68,18 @@ class _FakeProductsNotifier extends ProductsNotifier {
 
 Widget buildTestWidget(Widget child, {OrderCreateState? state}) {
   return ProviderScope(
-    overrides: state != null
-        ? [
-            orderCreateStateProvider.overrideWith(
-              () => FixedOrderCreateStateNotifier(state),
-            ),
-          ]
-        : [],
+    overrides: [
+      shippingFeeBusProvider.overrideWith(
+        () => _FakeConfigValuesNotifier(['25000']),
+      ),
+      shippingFeeDoorProvider.overrideWith(
+        () => _FakeConfigValuesNotifier(['20000']),
+      ),
+      if (state != null)
+        orderCreateStateProvider.overrideWith(
+          () => FixedOrderCreateStateNotifier(state),
+        ),
+    ],
     child: MaterialApp(home: Scaffold(body: child)),
   );
 }

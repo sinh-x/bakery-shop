@@ -30,6 +30,8 @@ class OrdersLabels {
 
   // Stage 3
   static const deliveryPhone = 'SĐT nhận hàng';
+  static const validationDeliveryAddressRequired =
+      'Vui lòng nhập địa chỉ giao hàng';
 
   // Stage 4
   static const reviewSummary = 'Tóm tắt đơn hàng';
