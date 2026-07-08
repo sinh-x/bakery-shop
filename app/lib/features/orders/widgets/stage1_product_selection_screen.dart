@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../data/models/order_draft.dart';
+import '../../../data/models/product.dart';
 import '../../../providers/order/order_create_state_provider.dart';
+import 'extras_section.dart';
 import 'product_picker_page.dart';
 import 'selected_items_list.dart';
 import 'stage1_empty_state.dart';
@@ -80,11 +82,26 @@ class _Stage1ProductSelectionScreenState
 
   /// Called by the picker when a product is selected. Commits the working
   /// list (which now includes the newly added item) back to the state so
-  /// Stage 1 rebuilds with the new `ExpandableItemCard` expanded.
+  /// Stage 1 rebuilds with the new `ExpandableItemCard` expanded. Then runs
+  /// auto-gift check so tang_kem products >= threshold trigger gift extras.
   void _commitNewItems() {
     ref
         .read(orderCreateStateProvider.notifier)
         .updateItems(List<DraftOrderItem>.from(_pickerItems));
+    ref.read(orderCreateStateProvider.notifier).checkAutoGift();
+  }
+
+  /// Adds a catalog (phu_kien) extra via [ExtrasSection] chips.
+  void _addCatalogExtra(
+    Product product,
+    int? priceChipId,
+    double? customUnitPrice,
+  ) {
+    ref.read(orderCreateStateProvider.notifier).addCatalogExtra(
+          product: product,
+          priceChipId: priceChipId,
+          customUnitPrice: customUnitPrice,
+        );
   }
 
   @override
@@ -110,6 +127,18 @@ class _Stage1ProductSelectionScreenState
                 extraItems: extraItems,
               ),
             ),
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: _ExtrasHeader(),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                child: ExtrasSection(onAddCatalogExtra: _addCatalogExtra),
+              ),
+            ),
           ],
         ),
         Positioned(
@@ -123,6 +152,24 @@ class _Stage1ProductSelectionScreenState
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Section header for the extras (phu_kien) add-chips in Stage 1.
+class _ExtrasHeader extends StatelessWidget {
+  const _ExtrasHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 6),
+      child: Text(
+        VN.addExtra,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+            ),
+      ),
     );
   }
 }

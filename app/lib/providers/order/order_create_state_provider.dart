@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/order_draft.dart';
+import '../../data/models/product.dart';
 import '../../features/orders/widgets/order_wizard.dart';
+import '../../shared/gift_config.dart';
+import '../products_provider.dart';
 
 class OrderCreateState {
   final List<DraftOrderItem> items;
@@ -80,6 +83,114 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
     state = slug == null
         ? state.copyWith(clearSelectedCategorySlug: true)
         : state.copyWith(selectedCategorySlug: slug);
+  }
+
+  /// Adds a catalog (phu_kien) extra to the items list. If an existing
+  /// matching extra (same product, same gift flag, same unit price) is
+  /// present, its quantity is incremented instead of adding a duplicate.
+  void addCatalogExtra({
+    required Product product,
+    int? priceChipId,
+    double? customUnitPrice,
+    bool isGift = false,
+  }) {
+    final items = List<DraftOrderItem>.from(state.items);
+    final normalizedUnitPrice = customUnitPrice ?? product.basePrice;
+    final existing = items
+        .where(
+          (i) =>
+              i.isExtra &&
+              i.product.id == product.id &&
+              i.isGift == isGift &&
+              i.unitPrice == normalizedUnitPrice,
+        )
+        .firstOrNull;
+    if (existing != null) {
+      existing.quantity += 1;
+    } else {
+      items.add(
+        createCatalogExtraItem(
+          product: product,
+          isGift: isGift,
+          priceChipId: priceChipId,
+          customUnitPrice: customUnitPrice,
+        ),
+      );
+    }
+    state = state.copyWith(items: items);
+  }
+
+  /// Auto-adds gift extras when tang_kem products total >= [GiftConfig.giftThreshold].
+  ///
+  /// Matches gift-configured extras (by normalized name) to active phu_kien
+  /// catalog products and adds them as isGift=true items. Existing gifts are
+  /// incremented instead of duplicated. This mirrors the legacy auto-gift
+  /// behavior from the pre-refactor order_create_screen (commit bd17e17) and
+  /// the POS cart (pos_provider.dart).
+  void checkAutoGift() {
+    final items = state.items;
+    final hasTangKem = items.any(
+      (i) =>
+          !i.isExtra &&
+          i.product.attributes['tang_kem']?.toString() == 'true',
+    );
+    if (!hasTangKem) return;
+
+    final qualifiedTotal = items
+        .where(
+          (i) =>
+              !i.isGift &&
+              i.product.attributes['tang_kem']?.toString() == 'true',
+        )
+        .fold<double>(0, (sum, i) => sum + i.unitPrice * i.quantity);
+
+    if (qualifiedTotal < GiftConfig.giftThreshold) return;
+
+    final giftCatalog = _giftCatalogByNormalizedName();
+    if (giftCatalog.isEmpty) return;
+
+    final updated = List<DraftOrderItem>.from(items);
+    var changed = false;
+    for (final (configuredName, configuredPrice) in GiftConfig.giftExtras) {
+      final normalized = configuredName.trim().toLowerCase();
+      final giftProduct = giftCatalog[normalized];
+      if (giftProduct == null) continue;
+
+      final existingGift = updated
+          .where((i) => i.product.id == giftProduct.id && i.isGift)
+          .firstOrNull;
+      if (existingGift != null) {
+        existingGift.quantity += 1;
+        changed = true;
+        continue;
+      }
+
+      updated.add(
+        createCatalogExtraItem(
+          product: giftProduct,
+          isGift: true,
+          customUnitPrice: configuredPrice,
+        ),
+      );
+      changed = true;
+    }
+
+    if (changed) {
+      state = state.copyWith(items: updated);
+    }
+  }
+
+  Map<String, Product> _giftCatalogByNormalizedName() {
+    final products =
+        ref.read(phuKienProductsProvider).asData?.value ?? const [];
+    final byName = <String, Product>{};
+    for (final product in products) {
+      final normalized = product.name.trim().toLowerCase();
+      if (normalized.isNotEmpty) {
+        byName.putIfAbsent(normalized, () => product);
+      }
+    }
+    return byName;
   }
 
   void reset() {
