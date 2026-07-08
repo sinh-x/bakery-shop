@@ -198,12 +198,15 @@ class _Stage3DeliveryOptionsScreenState
                 const SizedBox(height: 20),
                 const SectionHeader(VN.dueDate),
                 _buildDatePickerRow(context, state.dueDate, state.dueTime),
-                StageSummaryCard(
-                  items: state.items,
+                ProductSummaryCard(items: state.items),
+                CustomerSummaryCard(
                   wizardData: state.wizardData,
                   source: state.source,
-                  showProducts: true,
-                  showCustomer: true,
+                ),
+                DeliverySummaryCard(
+                  wizardData: state.wizardData,
+                  dueDate: state.dueDate,
+                  dueTime: state.dueTime,
                 ),
               ],
             ),

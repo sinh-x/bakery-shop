@@ -301,8 +301,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
       );
 
   /// Converts a [WorkItem] (server-side work item) into a [DraftOrderItem]
-  /// with a minimal [Product] stub so [StageSummaryCard] can render the
-  /// edit-order summary cards with real data. StageSummaryCard only reads
+  /// with a minimal [Product] stub so the summary cards can render the
+  /// edit-order summary cards with real data. The summary cards only read
   /// `product.name`, `quantity`, `unitPrice`, `isExtra`, and `isGift`, so a
   /// minimal stub is sufficient (FB-6).
   DraftOrderItem _workItemToDraft(WorkItem w) {
@@ -502,13 +502,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   loading: () => const SizedBox.shrink(),
                   error: (e, st) => const SizedBox.shrink(),
                 ),
-                StageSummaryCard(
-                  items: summaryItems,
-                  wizardData: _wizardSnapshot,
-                  source: _source,
-                  showProducts: true,
-                  showCustomer: false,
-                ),
+                ProductSummaryCard(items: summaryItems),
               ],
             ),
           ),
@@ -664,12 +658,10 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                   selectedTime: _dueTime,
                   onSelected: (t) => setState(() => _dueTime = t),
                 ),
-                StageSummaryCard(
-                  items: summaryItems,
+                ProductSummaryCard(items: summaryItems),
+                CustomerSummaryCard(
                   wizardData: _wizardSnapshot,
                   source: _source,
-                  showProducts: true,
-                  showCustomer: true,
                 ),
               ],
             ),
@@ -708,15 +700,15 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                       ),
                 ),
                 const SizedBox(height: 16),
-                StageSummaryCard(
-                  items: summaryItems,
+                ProductSummaryCard(items: summaryItems),
+                CustomerSummaryCard(
                   wizardData: _wizardSnapshot,
                   source: _source,
+                ),
+                DeliverySummaryCard(
+                  wizardData: _wizardSnapshot,
                   dueDate: _dueDate,
                   dueTime: _dueTime,
-                  showProducts: true,
-                  showCustomer: true,
-                  showDelivery: true,
                 ),
                 const SizedBox(height: 20),
                 const _SectionHeader(VN.orderPhotos),

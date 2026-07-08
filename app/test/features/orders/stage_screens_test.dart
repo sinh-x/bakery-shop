@@ -141,7 +141,7 @@ void main() {
     ));
 
     expect(find.text('Hình thức nhận hàng'), findsOneWidget);
-    expect(find.text('Lấy tại tiệm'), findsOneWidget);
+    expect(find.text('Lấy tại tiệm'), findsWidgets);
     expect(find.text('Giao xe khách'), findsOneWidget);
     expect(find.text('Giao tận nơi'), findsOneWidget);
     expect(find.text('Hạn giao'), findsOneWidget);
@@ -306,8 +306,8 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text('Tóm tắt bước trước'), findsOneWidget);
-    expect(find.text('Sản phẩm'), findsWidgets);
+    expect(find.text('Tóm tắt sản phẩm'), findsOneWidget);
+    expect(find.text('Sản phẩm:'), findsWidgets);
     expect(find.text('Test Cake x2 — 300.000đ'), findsOneWidget);
   });
 
@@ -339,7 +339,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text('Tóm tắt bước trước'), findsOneWidget);
+    expect(find.text('Tóm tắt sản phẩm'), findsOneWidget);
     expect(find.text('Bánh mì x3 — 45.000đ'), findsOneWidget);
     expect(find.text('Nguyen Van A'), findsOneWidget);
     expect(find.text('0987654321'), findsOneWidget);
@@ -380,7 +380,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Tóm tắt đơn hàng'), findsOneWidget);
-    expect(find.text('Tóm tắt bước trước'), findsOneWidget);
+    expect(find.text('Tóm tắt sản phẩm'), findsOneWidget);
     expect(find.text('Test Cake x2 — 300.000đ'), findsOneWidget);
     expect(find.text('Test Customer'), findsOneWidget);
     expect(find.text('Giao tận nơi'), findsOneWidget);

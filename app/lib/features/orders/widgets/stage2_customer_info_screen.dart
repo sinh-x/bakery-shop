@@ -113,11 +113,10 @@ class _Stage2CustomerInfoScreenState
                     const SizedBox(height: 8),
                     _buildSourceSelector(state, sourcesAsync),
                   ],
-                  StageSummaryCard(
-                    items: state.items,
+                  ProductSummaryCard(items: state.items),
+                  CustomerSummaryCard(
                     wizardData: state.wizardData,
                     source: state.source,
-                    showProducts: true,
                   ),
                 ],
               ),
@@ -129,6 +128,14 @@ class _Stage2CustomerInfoScreenState
     );
   }
 
+  static const _defaultSources = [
+    OrdersLabels.sourceFbDoangia,
+    OrdersLabels.sourceFbPageMoi,
+    OrdersLabels.sourceZalo,
+    OrdersLabels.sourceDienThoai,
+    OrdersLabels.sourceTaiTiem,
+  ];
+
   Widget _buildSourceSelector(
     OrderCreateState state,
     AsyncValue<List<String>> sourcesAsync,
@@ -137,25 +144,47 @@ class _Stage2CustomerInfoScreenState
       data: (list) => list.isNotEmpty ? list : null,
       orElse: () => null,
     ) ??
-        const [
-          OrdersLabels.sourceTaiTiem,
-          OrdersLabels.sourceOnline,
-          OrdersLabels.sourceDienThoai,
-        ];
+        _defaultSources;
 
-    return SegmentedButton<String>(
-      segments: sources
-          .map((s) => ButtonSegment<String>(
-                value: s,
+    final selectedSource =
+        state.source.isNotEmpty ? state.source : OrdersLabels.sourceTaiTiem;
+
+    final row1 = sources.where((s) =>
+        s == OrdersLabels.sourceFbDoangia ||
+        s == OrdersLabels.sourceFbPageMoi).toList();
+    final row2 = sources.where((s) =>
+        s == OrdersLabels.sourceZalo ||
+        s == OrdersLabels.sourceDienThoai ||
+        s == OrdersLabels.sourceTaiTiem).toList();
+
+    return Column(
+      children: [
+        if (row1.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Wrap(
+              spacing: 8,
+              children: row1.map((s) => ChoiceChip(
                 label: Text(s),
-              ))
-          .toList(),
-      selected: {
-        state.source.isNotEmpty ? state.source : OrdersLabels.sourceTaiTiem,
-      },
-      onSelectionChanged: (s) {
-        ref.read(orderCreateStateProvider.notifier).updateSource(s.first);
-      },
+                selected: selectedSource == s,
+                onSelected: (_) {
+                  ref.read(orderCreateStateProvider.notifier).updateSource(s);
+                },
+              )).toList(),
+            ),
+          ),
+        if (row2.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            children: row2.map((s) => ChoiceChip(
+              label: Text(s),
+              selected: selectedSource == s,
+              onSelected: (_) {
+                ref.read(orderCreateStateProvider.notifier).updateSource(s);
+              },
+            )).toList(),
+          ),
+      ],
     );
   }
 

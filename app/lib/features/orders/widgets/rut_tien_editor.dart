@@ -40,7 +40,7 @@ class _RutTienEditorState extends State<RutTienEditor> {
     _cashAmountCtrl = TextEditingController(
       text: (savedCashAmount ?? '').toString(),
     );
-    _rutTien = false;
+    _rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
   }
 
   @override

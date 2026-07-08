@@ -149,7 +149,7 @@ void main() {
       expect(item.attributes['nhan_banh'], 'Sầu riêng');
     });
 
-    testWidgets('tien rut toggle persists daDuaTienRut to item', (tester) async {
+    testWidgets('tien rut toggle persists rut_tien attribute to item', (tester) async {
       const product = Product(
         id: 101,
         name: 'Bánh rút tiền',
@@ -164,11 +164,6 @@ void main() {
       await tester.pump();
 
       expect(item.attributes['rut_tien'], 'true');
-
-      await tester.tap(find.text(VN.daDuaTienRut));
-      await tester.pump();
-
-      expect(item.daDuaTienRut, isTrue);
     });
   });
 

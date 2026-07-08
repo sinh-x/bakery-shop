@@ -42,6 +42,14 @@ class OrdersLabels {
   static const sourceTaiTiem = 'Tại tiệm';
   static const sourceOnline = 'Online';
   static const sourceDienThoai = 'Điện thoại';
+  static const sourceFbDoangia = 'FB Doangia';
+  static const sourceFbPageMoi = 'FB page mới';
+  static const sourceZalo = 'Zalo';
+
+  // Summary card titles
+  static const summaryProducts = 'Tóm tắt sản phẩm';
+  static const summaryCustomer = 'Thông tin khách hàng';
+  static const summaryDelivery = 'Thông tin giao hàng';
 
   // Generic placeholder for unselected values (DG-211 review cycle 1 — CQ-3)
   static const notSelected = 'Chưa chọn';

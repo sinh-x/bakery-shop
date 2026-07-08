@@ -44,15 +44,15 @@ class Stage4ReviewScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                StageSummaryCard(
-                  items: state.items,
+                ProductSummaryCard(items: state.items),
+                CustomerSummaryCard(
                   wizardData: state.wizardData,
                   source: state.source,
+                ),
+                DeliverySummaryCard(
+                  wizardData: state.wizardData,
                   dueDate: state.dueDate,
                   dueTime: state.dueTime,
-                  showProducts: true,
-                  showCustomer: true,
-                  showDelivery: true,
                 ),
               ],
             ),
