@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../data/models/order_draft.dart';
 import '../../../providers/order/order_create_state_provider.dart';
@@ -39,11 +40,13 @@ class _Stage1ProductSelectionScreenState
   List<DraftOrderItem> _pickerItems = const [];
 
   Future<void> _onAddProduct() async {
-    // Seed the picker with the current items so already-selected products show
-    // the selected overlay and cannot be double-added.
-    _pickerItems = ref
-        .read(orderCreateStateProvider)
-        .items
+    // Seed the picker with a deep copy of the current items so edits made to
+    // working copies inside the picker do not mutate the live state objects
+    // before [onChanged] commits. All mutable fields must be copied to avoid
+    // losing details (qty, price, notes, birthday, age, attributes, photos,
+    // tien rut) when the picker appends a new item and commits the list.
+    final current = ref.read(orderCreateStateProvider).items;
+    _pickerItems = current
         .map((i) => DraftOrderItem(
               product: i.product,
               quantity: i.quantity,
@@ -56,7 +59,7 @@ class _Stage1ProductSelectionScreenState
               attributes: Map<String, dynamic>.from(i.attributes),
               daDuaTienRut: i.daDuaTienRut,
               priceChipId: i.priceChipId,
-            ))
+            )..pendingPhotos = List<XFile>.from(i.pendingPhotos))
         .toList();
 
     await Navigator.of(context).push<void>(
