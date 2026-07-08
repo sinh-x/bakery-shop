@@ -431,4 +431,94 @@ void main() {
     // New item card is expanded by default (ExpandableItemCard._expanded = true).
     expect(find.text('Bánh mì'), findsWidgets);
   });
+
+  testWidgets('Phase 3: category filter persists selected slug to OrderCreateState',
+      (tester) async {
+    final products = [
+      const Product(
+        id: 10,
+        name: 'Bánh mì',
+        category: 'banh_mi',
+        basePrice: 15000,
+        active: 1,
+      ),
+      const Product(
+        id: 20,
+        name: 'Bánh kem dâu',
+        category: 'banh_kem',
+        basePrice: 200000,
+        active: 1,
+      ),
+    ];
+    const categories = [
+      Category(id: 1, slug: 'banh_mi', name: 'Bánh mì', codePrefix: 'BM', active: 1),
+      Category(id: 2, slug: 'banh_kem', name: 'Bánh kem', codePrefix: 'BK', active: 1),
+    ];
+
+    await tester.pumpWidget(buildStage1TestWidget(
+      const Stage1ProductSelectionScreen(onContinue: _noop),
+      products: products,
+      categories: categories,
+    ));
+    await tester.pumpAndSettle();
+
+    // Open picker.
+    await tester.tap(find.text(VN.addProduct));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ProductPickerPage), findsOneWidget);
+
+    // Tap the second category tab (emoji + name: '🎂 Bánh kem').
+    await tester.tap(find.text('🎂 Bánh kem'));
+    await tester.pumpAndSettle();
+
+    // The 'Bánh kem dâu' product (in banh_kem category) should be visible.
+    expect(find.text('Bánh kem dâu'), findsOneWidget);
+  });
+
+  testWidgets('Phase 3: ProductPickerPage restores initial category tab from slug',
+      (tester) async {
+    final products = [
+      const Product(
+        id: 10,
+        name: 'Bánh mì',
+        category: 'banh_mi',
+        basePrice: 15000,
+        active: 1,
+      ),
+      const Product(
+        id: 20,
+        name: 'Bánh kem dâu',
+        category: 'banh_kem',
+        basePrice: 200000,
+        active: 1,
+      ),
+    ];
+    const categories = [
+      Category(id: 1, slug: 'banh_mi', name: 'Bánh mì', codePrefix: 'BM', active: 1),
+      Category(id: 2, slug: 'banh_kem', name: 'Bánh kem', codePrefix: 'BK', active: 1),
+    ];
+
+    // Seed state with a pre-selected category slug ('banh_kem').
+    const testState = OrderCreateState(
+      wizardData: OrderWizardData(),
+      selectedCategorySlug: 'banh_kem',
+    );
+
+    await tester.pumpWidget(buildStage1TestWidget(
+      const Stage1ProductSelectionScreen(onContinue: _noop),
+      products: products,
+      categories: categories,
+      state: testState,
+    ));
+    await tester.pumpAndSettle();
+
+    // Open picker — should restore to the 'banh_kem' tab (index 1).
+    await tester.tap(find.text(VN.addProduct));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ProductPickerPage), findsOneWidget);
+    // The 'Bánh kem dâu' product should be visible because the tab was restored.
+    expect(find.text('Bánh kem dâu'), findsOneWidget);
+  });
 }

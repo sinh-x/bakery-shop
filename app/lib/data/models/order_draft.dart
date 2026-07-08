@@ -148,6 +148,7 @@ class OrderDraft {
   final List<DraftPendingPhoto> pendingPhotos;
   final String source;
   final int currentStage;
+  final String? selectedCategorySlug;
 
   OrderDraft({
     this.customerName = '',
@@ -165,6 +166,7 @@ class OrderDraft {
     List<DraftPendingPhoto>? pendingPhotos,
     this.source = '',
     this.currentStage = 1,
+    this.selectedCategorySlug,
   }) : items = items ?? [],
        pendingPhotos = pendingPhotos ?? [];
 
@@ -182,5 +184,6 @@ class OrderDraft {
       depositAmount.isNotEmpty ||
       pendingPhotos.isNotEmpty ||
       source.isNotEmpty ||
-      currentStage != 1;
+      currentStage != 1 ||
+      selectedCategorySlug != null;
 }

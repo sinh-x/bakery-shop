@@ -65,6 +65,11 @@ class _Stage1ProductSelectionScreenState
         builder: (_) => ProductPickerPage(
           selectedItems: _pickerItems,
           onChanged: _commitNewItems,
+          initialCategorySlug:
+              ref.read(orderCreateStateProvider).selectedCategorySlug,
+          onCategorySelected: (slug) => ref
+              .read(orderCreateStateProvider.notifier)
+              .updateSelectedCategorySlug(slug),
         ),
       ),
     );

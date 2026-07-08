@@ -10,16 +10,21 @@ import '../../../providers/products_provider.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import '../../products/widgets/product_card.dart';
+import 'category_tab_tracker.dart';
 
 class ProductPickerPage extends ConsumerStatefulWidget {
   const ProductPickerPage({
     super.key,
     required this.selectedItems,
     required this.onChanged,
+    this.initialCategorySlug,
+    this.onCategorySelected,
   });
 
   final List<DraftOrderItem> selectedItems;
   final VoidCallback onChanged;
+  final String? initialCategorySlug;
+  final void Function(String? slug)? onCategorySelected;
 
   @override
   ConsumerState<ProductPickerPage> createState() => _ProductPickerPageState();
@@ -102,29 +107,43 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
       );
     }
 
+    final initialIndex = _initialTabIndex(activeCategories);
+
     return DefaultTabController(
+      initialIndex: initialIndex,
       length: activeCategories.length,
-      child: Scaffold(
-        appBar: appBar,
-        body: TabBarView(
-          children: activeCategories.map((cat) {
-            final catProducts = activeProducts
-                .where((p) => p.category == cat.slug)
-                .toList();
-            return catProducts.isEmpty
-                ? Center(
-                    child: Text(
-                      VN.noProducts,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
+      child: CategoryTabTracker(
+        activeCategories: activeCategories,
+        onCategorySelected: widget.onCategorySelected,
+        child: Scaffold(
+          appBar: appBar,
+          body: TabBarView(
+            children: activeCategories.map((cat) {
+              final catProducts = activeProducts
+                  .where((p) => p.category == cat.slug)
+                  .toList();
+              return catProducts.isEmpty
+                  ? Center(
+                      child: Text(
+                        VN.noProducts,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
                       ),
-                    ),
-                  )
-                : _buildCategoryGrid(catProducts, baseUrl, cacheBuster);
-          }).toList(),
+                    )
+                  : _buildCategoryGrid(catProducts, baseUrl, cacheBuster);
+            }).toList(),
+          ),
         ),
       ),
     );
+  }
+
+  int _initialTabIndex(List<Category> activeCategories) {
+    final slug = widget.initialCategorySlug;
+    if (slug == null) return 0;
+    final idx = activeCategories.indexWhere((c) => c.slug == slug);
+    return idx >= 0 ? idx : 0;
   }
 
   PreferredSizeWidget _buildAppBar(

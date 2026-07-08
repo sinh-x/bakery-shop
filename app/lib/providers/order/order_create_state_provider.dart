@@ -11,6 +11,7 @@ class OrderCreateState {
   final TimeOfDay? dueTime;
   final String source;
   final int currentStage;
+  final String? selectedCategorySlug;
 
   const OrderCreateState({
     this.items = const [],
@@ -19,6 +20,7 @@ class OrderCreateState {
     this.dueTime,
     this.source = '',
     this.currentStage = 1,
+    this.selectedCategorySlug,
   });
 
   OrderCreateState copyWith({
@@ -28,6 +30,8 @@ class OrderCreateState {
     TimeOfDay? dueTime,
     String? source,
     int? currentStage,
+    String? selectedCategorySlug,
+    bool clearSelectedCategorySlug = false,
   }) {
     return OrderCreateState(
       items: items ?? this.items,
@@ -36,6 +40,9 @@ class OrderCreateState {
       dueTime: dueTime ?? this.dueTime,
       source: source ?? this.source,
       currentStage: currentStage ?? this.currentStage,
+      selectedCategorySlug: clearSelectedCategorySlug
+          ? null
+          : selectedCategorySlug ?? this.selectedCategorySlug,
     );
   }
 }
@@ -67,6 +74,12 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
 
   void goToStage(int stage) {
     state = state.copyWith(currentStage: stage);
+  }
+
+  void updateSelectedCategorySlug(String? slug) {
+    state = slug == null
+        ? state.copyWith(clearSelectedCategorySlug: true)
+        : state.copyWith(selectedCategorySlug: slug);
   }
 
   void reset() {

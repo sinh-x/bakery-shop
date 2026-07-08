@@ -67,6 +67,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     notifier.updateDueDate(draft.dueDate);
     notifier.updateDueTime(draft.dueTime);
     notifier.updateSource(draft.source);
+    notifier.updateSelectedCategorySlug(draft.selectedCategorySlug);
     final targetStage = draft.currentStage.clamp(1, 4);
     notifier.goToStage(targetStage);
     _pageController.jumpToPage(targetStage - 1);
@@ -87,6 +88,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       notes: state.wizardData.notes,
       source: state.source,
       currentStage: state.currentStage,
+      selectedCategorySlug: state.selectedCategorySlug,
     );
     if (draft.isNotEmpty) {
       ref.read(orderDraftProvider.notifier).save(draft);
