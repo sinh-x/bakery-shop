@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:bakery_app/features/orders/widgets/due_date_time_picker_row.dart';
 import 'package:bakery_app/features/orders/widgets/order_delivery_section.dart';
+import 'package:bakery_app/features/orders/widgets/stage1_responsive_content.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 void main() {
@@ -93,5 +96,161 @@ void main() {
     await tester.tap(find.byIcon(Icons.add).last);
     await tester.pump();
     expect(fee, 25000);
+  });
+
+  testWidgets('readOnly mode renders due date and time when provided',
+      (tester) async {
+    final dueDate = DateTime(2026, 7, 8);
+    const dueTime = TimeOfDay(hour: 14, minute: 30);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: OrderDeliverySection(
+            deliveryType: 'door',
+            deliveryAddress: '123 Lê Lợi',
+            dueDate: dueDate,
+            dueTime: dueTime,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('8/7/2026'), findsOneWidget);
+    expect(find.text('14:30'), findsOneWidget);
+  });
+
+  testWidgets('editable mode renders DueDateTimePickerRow',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: OrderDeliverySection(
+            deliveryType: 'pickup',
+            mode: OrderDeliverySectionMode.editable,
+            onDeliveryTypeChanged: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(DueDateTimePickerRow), findsOneWidget);
+    expect(find.text(VN.dueDate), findsOneWidget);
+    expect(find.text(OrdersLabels.notSelected), findsWidgets);
+  });
+
+  testWidgets('editable mode renders summary card slots when provided',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: OrderDeliverySection(
+            deliveryType: 'pickup',
+            mode: OrderDeliverySectionMode.editable,
+            onDeliveryTypeChanged: (_) {},
+            summaryCardSlots: [
+              const Card(child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('Summary Slot Content'),
+              )),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Summary Slot Content'), findsOneWidget);
+  });
+
+  testWidgets('shipping fee config loading shows spinner', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: OrderDeliverySection(
+            deliveryType: 'door',
+            mode: OrderDeliverySectionMode.editable,
+            onDeliveryTypeChanged: (_) {},
+            onShippingFeeChanged: (_) {},
+            addressCtrl: TextEditingController(text: '123 Test'),
+            shippingFee: 25000,
+            shippingFeeConfigLoading: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
+  testWidgets('shipping fee config error shows retry button', (tester) async {
+    var retryCalled = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: OrderDeliverySection(
+            deliveryType: 'door',
+            mode: OrderDeliverySectionMode.editable,
+            onDeliveryTypeChanged: (_) {},
+            onShippingFeeChanged: (_) {},
+            addressCtrl: TextEditingController(text: '123 Test'),
+            shippingFee: 25000,
+            shippingFeeConfigError: 'Test error',
+            onRetryShippingFeeConfig: () => retryCalled = true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text(VN.errorLoading), findsOneWidget);
+    expect(find.text(VN.retry), findsOneWidget);
+    await tester.tap(find.text(VN.retry));
+    expect(retryCalled, true);
+  });
+
+  testWidgets('responsive layout wraps content with Stage1ResponsiveContent',
+      (tester) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: OrderDeliverySection(
+            deliveryType: 'pickup',
+            mode: OrderDeliverySectionMode.editable,
+            onDeliveryTypeChanged: (_) {},
+            useResponsiveLayout: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(Stage1ResponsiveContent), findsOneWidget);
+  });
+
+  testWidgets('non-responsive layout does not add wrapper', (tester) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: OrderDeliverySection(
+            deliveryType: 'pickup',
+            mode: OrderDeliverySectionMode.editable,
+            onDeliveryTypeChanged: (_) {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(Stage1ResponsiveContent), findsNothing);
   });
 }

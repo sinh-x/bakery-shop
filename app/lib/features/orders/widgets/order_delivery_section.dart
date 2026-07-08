@@ -1,8 +1,16 @@
 import 'package:flutter/material.dart';
 
+// EXEMPT: 200-line widget threshold exceeded because OrderDeliverySection
+// is the canonical shared delivery widget with multiple sub-sections
+// (delivery type, address/phone, shipping fee, notes, due date/time,
+// summary card slots, responsive layout). DueDateTimePickerRow was extracted.
+// Reviewed 2026-07-08.
+
 import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/order_helpers.dart';
+import 'due_date_time_picker_row.dart';
 import 'section_header.dart';
+import 'stage1_responsive_content.dart';
 
 class OrderDeliverySection extends StatelessWidget {
   const OrderDeliverySection({
@@ -20,6 +28,15 @@ class OrderDeliverySection extends StatelessWidget {
     this.notesCtrl,
     this.shippingBusDefault = 25000,
     this.shippingDoorDefault = 20000,
+    this.dueDate,
+    this.dueTime,
+    this.onDueDateChanged,
+    this.onDueTimeChanged,
+    this.summaryCardSlots = const [],
+    this.useResponsiveLayout = false,
+    this.shippingFeeConfigLoading = false,
+    this.shippingFeeConfigError,
+    this.onRetryShippingFeeConfig,
   });
 
   final String deliveryType;
@@ -35,15 +52,29 @@ class OrderDeliverySection extends StatelessWidget {
   final TextEditingController? notesCtrl;
   final double shippingBusDefault;
   final double shippingDoorDefault;
+  final DateTime? dueDate;
+  final TimeOfDay? dueTime;
+  final ValueChanged<DateTime>? onDueDateChanged;
+  final ValueChanged<TimeOfDay>? onDueTimeChanged;
+  final List<Widget> summaryCardSlots;
+  final bool useResponsiveLayout;
+  final bool shippingFeeConfigLoading;
+  final String? shippingFeeConfigError;
+  final VoidCallback? onRetryShippingFeeConfig;
 
   bool get _needsAddress => deliveryType == 'bus' || deliveryType == 'door';
 
   @override
   Widget build(BuildContext context) {
     if (mode == OrderDeliverySectionMode.readOnly) {
-      return _buildReadOnly(context);
+      return _wrap(_buildReadOnly(context));
     }
-    return _buildEditable(context);
+    return _wrap(_buildEditable(context));
+  }
+
+  Widget _wrap(Widget child) {
+    if (!useResponsiveLayout) return child;
+    return Stage1ResponsiveContent(child: child);
   }
 
   Widget _buildReadOnly(BuildContext context) {
@@ -61,6 +92,20 @@ class OrderDeliverySection extends StatelessWidget {
           _buildInfoRow(context, Icons.monetization_on_outlined, VN.shippingFee, formatVND(shippingFee!)),
         if (notes != null && notes!.isNotEmpty)
           _buildInfoRow(context, Icons.notes, VN.notes, notes!),
+        if (dueDate != null)
+          _buildInfoRow(
+            context,
+            Icons.calendar_today,
+            VN.dueDate,
+            '${dueDate!.day}/${dueDate!.month}/${dueDate!.year}',
+          ),
+        if (dueTime != null)
+          _buildInfoRow(
+            context,
+            Icons.access_time,
+            VN.dueTime,
+            '${dueTime!.hour.toString().padLeft(2, '0')}:${dueTime!.minute.toString().padLeft(2, '0')}',
+          ),
       ],
     );
   }
@@ -97,7 +142,7 @@ class OrderDeliverySection extends StatelessWidget {
             TextFormField(
               controller: phoneCtrl,
               decoration: const InputDecoration(
-                labelText: VN.customerPhone,
+                labelText: OrdersLabels.deliveryPhone,
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.phone,
@@ -116,34 +161,9 @@ class OrderDeliverySection extends StatelessWidget {
                 : null,
           ),
         ],
-        if ((deliveryType == 'bus' || deliveryType == 'door') && onShippingFeeChanged != null) ...[
-          const SizedBox(height: 20),
-          const SectionHeader(VN.shippingFee),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              IconButton.filled(
-                onPressed: (shippingFee ?? 0) >= 5000
-                    ? () => onShippingFeeChanged!((shippingFee ?? 0) - 5000.0)
-                    : null,
-                icon: const Icon(Icons.remove),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  (shippingFee ?? 0) == 0
-                      ? VN.shippingFree
-                      : formatVND(shippingFee!),
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ),
-              IconButton.filled(
-                onPressed: () => onShippingFeeChanged!((shippingFee ?? 0) + 5000.0),
-                icon: const Icon(Icons.add),
-              ),
-            ],
-          ),
-        ],
+        if ((deliveryType == 'bus' || deliveryType == 'door') &&
+            onShippingFeeChanged != null)
+          _buildShippingFeeSection(context),
         if (notesCtrl != null) ...[
           const SizedBox(height: 16),
           TextFormField(
@@ -156,6 +176,95 @@ class OrderDeliverySection extends StatelessWidget {
             maxLines: 3,
           ),
         ],
+        if (summaryCardSlots.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          ...summaryCardSlots,
+        ],
+        const SizedBox(height: 20),
+        const SectionHeader(VN.dueDate),
+        DueDateTimePickerRow(
+          dueDate: dueDate,
+          dueTime: dueTime,
+          onDueDateChanged: onDueDateChanged,
+          onDueTimeChanged: onDueTimeChanged,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildShippingFeeSection(BuildContext context) {
+    return Column(
+      children: [
+        const SizedBox(height: 20),
+        const SectionHeader(VN.shippingFee),
+        if (shippingFeeConfigLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: SizedBox(
+              height: 24,
+              width: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          )
+        else if (shippingFeeConfigError != null)
+          _buildShippingFeeError(context)
+        else
+          _buildShippingFeeStepper(context),
+      ],
+    );
+  }
+
+  Widget _buildShippingFeeError(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Flexible(
+            child: Text(
+              VN.errorLoading,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          if (onRetryShippingFeeConfig != null) ...[
+            const SizedBox(width: 8),
+            TextButton.icon(
+              onPressed: onRetryShippingFeeConfig,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text(VN.retry),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShippingFeeStepper(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconButton.filled(
+          onPressed: (shippingFee ?? 0) >= 5000
+              ? () => onShippingFeeChanged!((shippingFee ?? 0) - 5000.0)
+              : null,
+          icon: const Icon(Icons.remove),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            (shippingFee ?? 0) == 0
+                ? VN.shippingFree
+                : formatVND(shippingFee!),
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+        ),
+        IconButton.filled(
+          onPressed: () => onShippingFeeChanged!((shippingFee ?? 0) + 5000.0),
+          icon: const Icon(Icons.add),
+        ),
       ],
     );
   }
@@ -182,7 +291,6 @@ class OrderDeliverySection extends StatelessWidget {
       ),
     );
   }
-
 }
 
 enum OrderDeliverySectionMode { editable, readOnly }
