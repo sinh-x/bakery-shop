@@ -36,11 +36,17 @@ class _Stage3DeliveryOptionsScreenState
     _addressCtrl.text = state.wizardData.deliveryAddress;
     _deliveryPhoneCtrl.text = state.wizardData.deliveryPhone;
     _notesCtrl.text = state.wizardData.notes;
+    _addressCtrl.addListener(_syncToState);
+    _deliveryPhoneCtrl.addListener(_syncToState);
+    _notesCtrl.addListener(_syncToState);
     _maybePrefillDeliveryPhone(state.wizardData.deliveryType);
   }
 
   @override
   void dispose() {
+    _addressCtrl.removeListener(_syncToState);
+    _deliveryPhoneCtrl.removeListener(_syncToState);
+    _notesCtrl.removeListener(_syncToState);
     _addressCtrl.dispose();
     _deliveryPhoneCtrl.dispose();
     _notesCtrl.dispose();

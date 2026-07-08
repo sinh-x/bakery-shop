@@ -113,7 +113,9 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
         customerPhone: customer.phone,
       );
       state = state.copyWith(wizardData: updated);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[OrderCreateState] restoreCustomerFromDraft failed: $e');
+    }
   }
 
   /// Adds a catalog (phu_kien) extra to the items list. If an existing
@@ -225,7 +227,8 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
       try {
         final loaded = await future;
         return _buildGiftCatalogMap(loaded);
-      } catch (_) {
+      } catch (e) {
+        debugPrint('[OrderCreateState] checkAutoGift gift catalog load failed: $e');
         return {};
       }
     }

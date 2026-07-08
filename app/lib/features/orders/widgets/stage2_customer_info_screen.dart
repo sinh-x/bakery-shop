@@ -42,10 +42,14 @@ class _Stage2CustomerInfoScreenState
     if (state.wizardData.selectedCustomer != null) {
       _customerTouched = true;
     }
+    _nameCtrl.addListener(_syncToState);
+    _phoneCtrl.addListener(_syncToState);
   }
 
   @override
   void dispose() {
+    _nameCtrl.removeListener(_syncToState);
+    _phoneCtrl.removeListener(_syncToState);
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     super.dispose();

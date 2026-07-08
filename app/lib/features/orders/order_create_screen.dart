@@ -145,7 +145,9 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             phone: state.wizardData.customerPhone.trim(),
           );
           customerId = result.customer.id;
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('[OrderCreate] _submitOrder auto-create-customer failed: $e');
+        }
       }
 
       final newOrder = await service.createOrder(
