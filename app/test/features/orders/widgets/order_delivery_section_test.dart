@@ -5,7 +5,6 @@ import 'package:bakery_app/features/orders/widgets/due_date_time_picker_row.dart
 import 'package:bakery_app/features/orders/widgets/order_delivery_section.dart';
 import 'package:bakery_app/features/orders/widgets/stage1_responsive_content.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 
 void main() {
   testWidgets('OrderDeliverySection readOnly pickup renders only delivery type row',

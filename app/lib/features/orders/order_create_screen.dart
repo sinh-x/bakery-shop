@@ -130,7 +130,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       final service = ref.read(orderServiceProvider);
       final staffName = ref.read(loggedByProvider);
       final customerName = state.wizardData.customerName.isEmpty
-          ? 'Khách'
+          ? OrdersLabels.walkInCustomerFallback
           : state.wizardData.customerName;
 
       var customerId = state.wizardData.selectedCustomer?.id;
@@ -213,10 +213,14 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
           }
         }
         if (failedPhotos > 0 && mounted) {
-          showTopSnackBar(
-            context,
-            'Tải lên ảnh: ${totalPhotos - failedPhotos}/$totalPhotos thành công, $failedPhotos lỗi',
-          );
+            showTopSnackBar(
+              context,
+              OrdersLabels.photoUploadResult(
+                totalPhotos - failedPhotos,
+                totalPhotos,
+                failedPhotos,
+              ),
+            );
         }
       }
 

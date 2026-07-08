@@ -65,4 +65,9 @@ class OrdersLabels {
   // Product/extras count strings (DG-211 review cycle 1 — CQ-2)
   static String productCount(int count) => '$count sản phẩm';
   static String extraCount(int count) => '$count phụ kiện';
+
+  // Order submission (DG-216 Phase 6)
+  static const walkInCustomerFallback = 'Khách';
+  static String photoUploadResult(int success, int total, int failed) =>
+      'Tải lên ảnh: $success/$total thành công, $failed lỗi';
 }
