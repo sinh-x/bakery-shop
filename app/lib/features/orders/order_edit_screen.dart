@@ -1,4 +1,4 @@
-// EXEMPT: 300-line threshold exceeded because DG-150 blocker: continued extraction from Phase 6 would alter edit-form state synchronization and submit guards without dedicated regression window. Reviewed 2026-05-29.
+// EXEMPT: 300-line threshold exceeded: screen coordinator above threshold because shared 4-stage PageView wizard orchestration, edit-form state synchronization, and submit guards are tightly coupled in-place. Extraction of stage bodies requires dedicated regression window to validate edit-mode state preservation across wizard stages. Reviewed 2026-07-08.
 // DG-211 Phase 5: converted to 4-stage PageView wizard matching OrderCreateScreen pattern.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
