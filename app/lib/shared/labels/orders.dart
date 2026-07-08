@@ -22,6 +22,9 @@ class OrdersLabels {
   // Stage 1
   static const selectedProducts = 'Sản phẩm đã chọn';
   static const noProductsSelected = 'Chưa chọn sản phẩm';
+  static const stage1AddProductHint = 'Thêm sản phẩm vào đơn';
+  static const stage1EmptyTitle = 'Chưa có sản phẩm nào';
+  static const stage1EmptyBody = 'Bấm (+) để chọn sản phẩm cho đơn hàng.';
 
   // Stage 3
   static const deliveryPhone = 'SĐT nhận hàng';

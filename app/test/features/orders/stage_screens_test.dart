@@ -15,6 +15,7 @@ import 'package:bakery_app/features/orders/widgets/stage4_review_screen.dart';
 import 'package:bakery_app/providers/categories_provider.dart';
 import 'package:bakery_app/providers/order/order_create_state_provider.dart';
 import 'package:bakery_app/providers/products_provider.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 class FixedOrderCreateStateNotifier extends OrderCreateStateNotifier {
   final OrderCreateState initial;
@@ -92,7 +93,7 @@ Widget buildStage1TestWidget(Widget child, {
           () => FixedOrderCreateStateNotifier(state),
         ),
     ],
-    child: MaterialApp(home: Scaffold(body: Column(children: [child]))),
+    child: MaterialApp(home: Scaffold(body: Column(children: [Expanded(child: child)]))),
   );
 }
 
@@ -185,47 +186,54 @@ void main() {
     expect(find.text('Tạo đơn hàng'), findsOneWidget);
   });
 
-  testWidgets('Stage1ProductSelectionScreen renders product grid',
+  testWidgets('Stage1ProductSelectionScreen shows empty state with (+) button when no items (AC-1)',
       (tester) async {
-    const testProduct = Product(
-      id: 1,
-      name: 'Bánh mì',
-      category: 'banh_mi',
-      basePrice: 15000,
-    );
     await tester.pumpWidget(buildStage1TestWidget(
       const Stage1ProductSelectionScreen(onContinue: _noop),
-      products: [testProduct],
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text('Chọn sản phẩm'), findsOneWidget);
-    expect(find.text('Bánh mì'), findsOneWidget);
+    expect(find.text(OrdersLabels.stage1EmptyTitle), findsOneWidget);
+    expect(find.text(OrdersLabels.stage1EmptyBody), findsOneWidget);
+    expect(find.byIcon(Icons.add), findsWidgets);
+    expect(find.text(VN.addProduct), findsOneWidget);
   });
 
-  testWidgets('Stage1ProductSelectionScreen shows category chips when provided',
+  testWidgets('Stage1ProductSelectionScreen shows selected items list when items present (AC-6)',
       (tester) async {
-    const testProduct = Product(
-      id: 1,
-      name: 'Bánh mì',
-      category: 'banh_mi',
-      basePrice: 15000,
-    );
-    const testCategory = Category(
-      id: 1,
-      slug: 'banh_mi',
-      name: 'Bánh mì',
-      codePrefix: 'BM',
-      active: 1,
+    final testState = OrderCreateState(
+      wizardData: const OrderWizardData(),
+      items: [
+        DraftOrderItem(
+          product: const Product(
+            id: 1,
+            name: 'Bánh mì',
+            category: 'banh_mi',
+            basePrice: 15000,
+          ),
+          quantity: 2,
+        ),
+        DraftOrderItem(
+          product: const Product(
+            id: 2,
+            name: 'Bánh kem',
+            category: 'banh_kem',
+            basePrice: 200000,
+          ),
+          quantity: 1,
+        ),
+      ],
     );
     await tester.pumpWidget(buildStage1TestWidget(
       const Stage1ProductSelectionScreen(onContinue: _noop),
-      products: [testProduct],
-      categories: [testCategory],
+      state: testState,
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text('Bánh mì'), findsWidgets);
+    expect(find.text(OrdersLabels.selectedProducts), findsOneWidget);
+    expect(find.text('Bánh mì'), findsOneWidget);
+    expect(find.text('Bánh kem'), findsOneWidget);
+    expect(find.byType(FloatingActionButton), findsOneWidget);
   });
 
   testWidgets('Stage3DeliveryOptionsScreen shows address fields for door delivery',
