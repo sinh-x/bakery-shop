@@ -149,6 +149,7 @@ class OrderDraft {
   final String source;
   final int currentStage;
   final String? selectedCategorySlug;
+  final int? customerId;
 
   OrderDraft({
     this.customerName = '',
@@ -167,6 +168,7 @@ class OrderDraft {
     this.source = '',
     this.currentStage = 1,
     this.selectedCategorySlug,
+    this.customerId,
   }) : items = items ?? [],
        pendingPhotos = pendingPhotos ?? [];
 

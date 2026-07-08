@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/api/customer_service.dart';
 import '../../data/api/order_service.dart';
 import '../../data/api/work_item_service.dart';
 import '../../providers/events_provider.dart';
@@ -67,6 +68,9 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     notifier.updateDueTime(draft.dueTime);
     notifier.updateSource(draft.source);
     notifier.updateSelectedCategorySlug(draft.selectedCategorySlug);
+    if (draft.customerId != null) {
+      notifier.restoreCustomerFromDraft(draft.customerId!);
+    }
     final targetStage = draft.currentStage.clamp(1, 4);
     notifier.goToStage(targetStage);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -92,6 +96,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       source: state.source,
       currentStage: state.currentStage,
       selectedCategorySlug: state.selectedCategorySlug,
+      customerId: state.wizardData.selectedCustomer?.id,
     );
     if (draft.isNotEmpty) {
       ref.read(orderDraftProvider.notifier).save(draft);
@@ -126,10 +131,24 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
           ? 'Khách'
           : state.wizardData.customerName;
 
+      var customerId = state.wizardData.selectedCustomer?.id;
+      if (customerId == null &&
+          state.wizardData.customerName.trim().isNotEmpty &&
+          state.wizardData.customerPhone.trim().isNotEmpty) {
+        try {
+          final customerSvc = ref.read(customerServiceProvider);
+          final result = await customerSvc.createCustomer(
+            name: state.wizardData.customerName.trim(),
+            phone: state.wizardData.customerPhone.trim(),
+          );
+          customerId = result.customer.id;
+        } catch (_) {}
+      }
+
       final newOrder = await service.createOrder(
         customerName: customerName,
         customerPhone: state.wizardData.customerPhone,
-        customerId: state.wizardData.selectedCustomer?.id,
+        customerId: customerId,
         items: state.items.map((i) {
           final m = <String, dynamic>{
             'productId': i.product.id.toString(),

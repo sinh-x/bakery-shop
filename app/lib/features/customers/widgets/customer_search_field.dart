@@ -7,13 +7,53 @@ import '../../../data/api/customer_service.dart';
 import '../../../data/models/customer.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 
-/// Standalone customer search field for reuse in POS checkout (FR10) and
-/// order creation (FR11). Search is on-demand and debounced so the walk-in
-/// flow is unaffected when the field is left empty (NFR2).
-///
-/// Exposes the selected customer via [onSelected]; pass `null` to clear. The
-/// field is optional — leaving it untouched results in `customerId == null`,
-/// preserving the existing "Khách lẻ" walk-in behavior.
+String _stripDiacritics(String s) {
+  const diacriticMap = {
+    'à': 'a', 'á': 'a', 'ả': 'a', 'ã': 'a', 'ạ': 'a',
+    'ă': 'a', 'ằ': 'a', 'ắ': 'a', 'ẳ': 'a', 'ẵ': 'a', 'ặ': 'a',
+    'â': 'a', 'ầ': 'a', 'ấ': 'a', 'ẩ': 'a', 'ẫ': 'a', 'ậ': 'a',
+    'è': 'e', 'é': 'e', 'ẻ': 'e', 'ẽ': 'e', 'ẹ': 'e',
+    'ê': 'e', 'ề': 'e', 'ế': 'e', 'ể': 'e', 'ễ': 'e', 'ệ': 'e',
+    'ì': 'i', 'í': 'i', 'ỉ': 'i', 'ĩ': 'i', 'ị': 'i',
+    'ò': 'o', 'ó': 'o', 'ỏ': 'o', 'õ': 'o', 'ọ': 'o',
+    'ô': 'o', 'ồ': 'o', 'ố': 'o', 'ổ': 'o', 'ỗ': 'o', 'ộ': 'o',
+    'ơ': 'o', 'ờ': 'o', 'ớ': 'o', 'ở': 'o', 'ỡ': 'o', 'ợ': 'o',
+    'ù': 'u', 'ú': 'u', 'ủ': 'u', 'ũ': 'u', 'ụ': 'u',
+    'ư': 'u', 'ừ': 'u', 'ứ': 'u', 'ử': 'u', 'ữ': 'u', 'ự': 'u',
+    'ỳ': 'y', 'ý': 'y', 'ỷ': 'y', 'ỹ': 'y', 'ỵ': 'y',
+    'đ': 'd',
+    'À': 'A', 'Á': 'A', 'Ả': 'A', 'Ã': 'A', 'Ạ': 'A',
+    'Ă': 'A', 'Ằ': 'A', 'Ắ': 'A', 'Ẳ': 'A', 'Ẵ': 'A', 'Ặ': 'A',
+    'Â': 'A', 'Ầ': 'A', 'Ấ': 'A', 'Ẩ': 'A', 'Ẫ': 'A', 'Ậ': 'A',
+    'È': 'E', 'É': 'E', 'Ẻ': 'E', 'Ẽ': 'E', 'Ẹ': 'E',
+    'Ê': 'E', 'Ề': 'E', 'Ế': 'E', 'Ể': 'E', 'Ễ': 'E', 'Ệ': 'E',
+    'Ì': 'I', 'Í': 'I', 'Ỉ': 'I', 'Ĩ': 'I', 'Ị': 'I',
+    'Ò': 'O', 'Ó': 'O', 'Ỏ': 'O', 'Õ': 'O', 'Ọ': 'O',
+    'Ô': 'O', 'Ồ': 'O', 'Ố': 'O', 'Ổ': 'O', 'Ỗ': 'O', 'Ộ': 'O',
+    'Ơ': 'O', 'Ờ': 'O', 'Ớ': 'O', 'Ở': 'O', 'Ỡ': 'O', 'Ợ': 'O',
+    'Ù': 'U', 'Ú': 'U', 'Ủ': 'U', 'Ũ': 'U', 'Ụ': 'U',
+    'Ư': 'U', 'Ừ': 'U', 'Ứ': 'U', 'Ử': 'U', 'Ữ': 'U', 'Ự': 'U',
+    'Ỳ': 'Y', 'Ý': 'Y', 'Ỷ': 'Y', 'Ỹ': 'Y', 'Ỵ': 'Y',
+    'Đ': 'D',
+  };
+  return s.split('').map((c) => diacriticMap[c] ?? c).join();
+}
+
+bool _matchesDiacriticAware(String query, Customer customer) {
+  final q = query.trim().toLowerCase();
+  final name = customer.name.trim().toLowerCase();
+  if (name.contains(q)) return true;
+  final hasDiacritics = q != _stripDiacritics(q);
+  if (!hasDiacritics) {
+    if (_stripDiacritics(name).contains(q)) return true;
+  }
+  if (customer.phone.toLowerCase().contains(q)) return true;
+  for (final p in customer.phones) {
+    if (p.phone.toLowerCase().contains(q)) return true;
+  }
+  return false;
+}
+
 class CustomerSearchField extends ConsumerStatefulWidget {
   const CustomerSearchField({
     super.key,
@@ -25,27 +65,11 @@ class CustomerSearchField extends ConsumerStatefulWidget {
     this.clearOnFocus = false,
   });
 
-  /// Called whenever the selection changes. Receives `null` when the user
-  /// clears the selection.
   final ValueChanged<Customer?>? onSelected;
-
-  /// Pre-selected customer (used when editing an existing order).
   final Customer? initialCustomer;
-
-  /// Optional external controller. When provided, the field uses this
-  /// controller instead of an internal one so the parent can read the typed
-  /// text (e.g. for the walk-in name in order create). When null, an internal
-  /// controller is created and disposed with the widget.
   final TextEditingController? controller;
-
-  /// Optional label override; defaults to the shared VN label.
   final String? labelText;
-
-  /// Optional hint override; defaults to the shared VN search hint.
   final String? hintText;
-
-  /// When true, on first focus, clears the pre-filled text and selected
-  /// customer so the staff can search freely (POS auto-clear behavior).
   final bool clearOnFocus;
 
   @override
@@ -66,6 +90,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
   bool _showing = false;
   Customer? _selected;
   bool _clearedOnFocus = false;
+  String? _error;
 
   @override
   void initState() {
@@ -81,8 +106,6 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
   void dispose() {
     _debounce?.cancel();
     _hideOverlay();
-    // Only dispose the internal controller; external controllers are owned by
-    // the parent widget.
     if (widget.controller == null) {
       _ctrl.dispose();
     }
@@ -100,14 +123,11 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
     if (_focus.hasFocus && _ctrl.text.isNotEmpty && !_showing) {
       _showResults();
     } else if (!_focus.hasFocus && _showing) {
-      // Delay to allow tap on a suggestion to register.
       Future.delayed(const Duration(milliseconds: 150), _hideOverlay);
     }
   }
 
   void _onChanged(String value) {
-    // While typing, clear any previous selection — the displayed text no
-    // longer matches a concrete customer record.
     if (_selected != null && value != _selected!.name) {
       _selected = null;
       widget.onSelected?.call(null);
@@ -118,6 +138,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
       setState(() {
         _results = const [];
         _loading = false;
+        _error = null;
       });
       return;
     }
@@ -129,13 +150,19 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
     final query = _ctrl.text.trim();
     if (query.isEmpty) return;
     if (!mounted) return;
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final service = ref.read(customerServiceProvider);
       final results = await service.listCustomers(search: query);
       if (!mounted) return;
+      final filtered = results
+          .where((c) => _matchesDiacriticAware(query, c))
+          .toList();
       setState(() {
-        _results = results;
+        _results = filtered;
         _loading = false;
       });
       _showResults();
@@ -144,8 +171,13 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
       setState(() {
         _results = const [];
         _loading = false;
+        _error = VN.customerSearchError;
       });
     }
+  }
+
+  void _retry() {
+    _search();
   }
 
   void _showResults() {
@@ -166,6 +198,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
       _selected = customer;
       _ctrl.text = customer.name;
       _ctrl.selection = TextSelection.collapsed(offset: customer.name.length);
+      _error = null;
     });
     _hideOverlay();
     widget.onSelected?.call(customer);
@@ -175,6 +208,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
     setState(() {
       _selected = null;
       _ctrl.clear();
+      _error = null;
     });
     _hideOverlay();
     widget.onSelected?.call(null);
@@ -256,9 +290,54 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
                       icon: const Icon(Icons.close, size: 20),
                       onPressed: _clear,
                     )
+                  : _loading
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
                   : null,
             ),
           ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6, left: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 14,
+                    color: theme.colorScheme.error,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      _error!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.error,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: _retry,
+                    icon: const Icon(Icons.refresh, size: 14),
+                    label: Text(
+                      VN.retry,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (_selected != null)
             Padding(
               padding: const EdgeInsets.only(top: 6, left: 4),

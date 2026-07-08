@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/api/customer_service.dart';
 import '../../data/models/order_draft.dart';
 import '../../data/models/product.dart';
 import '../../features/orders/widgets/order_wizard.dart';
@@ -83,6 +84,19 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
     state = slug == null
         ? state.copyWith(clearSelectedCategorySlug: true)
         : state.copyWith(selectedCategorySlug: slug);
+  }
+
+  Future<void> restoreCustomerFromDraft(int customerId) async {
+    try {
+      final service = ref.read(customerServiceProvider);
+      final customer = await service.getCustomer(customerId);
+      final updated = state.wizardData.copyWith(
+        selectedCustomer: customer,
+        customerName: customer.name,
+        customerPhone: customer.phone,
+      );
+      state = state.copyWith(wizardData: updated);
+    } catch (_) {}
   }
 
   /// Adds a catalog (phu_kien) extra to the items list. If an existing

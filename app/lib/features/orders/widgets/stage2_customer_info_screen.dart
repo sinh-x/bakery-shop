@@ -2,19 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/customer.dart';
+import '../../../providers/config_provider.dart';
 import '../../../providers/order/order_create_state_provider.dart';
-import '../../../shared/utils/phone_formatter.dart';
-import '../../customers/widgets/customer_profile_card.dart';
-import '../../customers/widgets/customer_search_field.dart';
+import 'order_customer_section.dart';
 import 'section_header.dart';
+import 'stage1_responsive_content.dart';
 import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-
-const _sourceOptions = <String>[
-  OrdersLabels.sourceTaiTiem,
-  OrdersLabels.sourceOnline,
-  OrdersLabels.sourceDienThoai,
-];
 
 class Stage2CustomerInfoScreen extends ConsumerStatefulWidget {
   const Stage2CustomerInfoScreen({
@@ -37,6 +31,7 @@ class _Stage2CustomerInfoScreenState
     extends ConsumerState<Stage2CustomerInfoScreen> {
   final _nameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
+  bool _customerTouched = false;
 
   @override
   void initState() {
@@ -44,6 +39,9 @@ class _Stage2CustomerInfoScreenState
     final state = ref.read(orderCreateStateProvider);
     _nameCtrl.text = state.wizardData.customerName;
     _phoneCtrl.text = state.wizardData.customerPhone;
+    if (state.wizardData.selectedCustomer != null) {
+      _customerTouched = true;
+    }
   }
 
   @override
@@ -65,6 +63,7 @@ class _Stage2CustomerInfoScreenState
   }
 
   void _onCustomerSelected(Customer? c) {
+    _customerTouched = true;
     final notifier = ref.read(orderCreateStateProvider.notifier);
     final state = ref.read(orderCreateStateProvider);
     var updated = state.wizardData.copyWith(
@@ -85,74 +84,78 @@ class _Stage2CustomerInfoScreenState
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(orderCreateStateProvider);
+    final sourcesAsync = ref.watch(orderSourcesProvider);
 
     return Column(
       children: [
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SectionHeader(VN.customer),
-                CustomerSearchField(
-                  controller: _nameCtrl,
-                  onSelected: _onCustomerSelected,
-                  clearOnFocus: widget.posMode,
-                ),
-                if (state.wizardData.selectedCustomer != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: CustomerProfileCard(
-                      customer: state.wizardData.selectedCustomer!,
-                      mode: CustomerProfileCardMode.compact,
-                    ),
+          child: Stage1ResponsiveContent(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SectionHeader(VN.customer),
+                  OrderCustomerSection(
+                    selectedCustomer: state.wizardData.selectedCustomer,
+                    customerTouched: _customerTouched,
+                    onSelected: _onCustomerSelected,
+                    onClearSelection: () {
+                      _customerTouched = true;
+                      _onCustomerSelected(null);
+                    },
+                    nameCtrl: _nameCtrl,
+                    phoneCtrl: _phoneCtrl,
                   ),
-                if (state.wizardData.selectedCustomer == null) ...[
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _phoneCtrl,
-                    decoration: const InputDecoration(
-                      labelText: VN.customerPhone,
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.phone,
-                    inputFormatters: [PhoneInputFormatter()],
-                    onChanged: (_) => _syncToState(),
+                  if (!widget.posMode) ...[
+                    const SizedBox(height: 20),
+                    const SectionHeader(VN.orderSource),
+                    const SizedBox(height: 8),
+                    _buildSourceSelector(state, sourcesAsync),
+                  ],
+                  StageSummaryCard(
+                    items: state.items,
+                    wizardData: state.wizardData,
+                    source: state.source,
+                    showProducts: true,
                   ),
                 ],
-                if (!widget.posMode) ...[
-                  const SizedBox(height: 20),
-                  const SectionHeader(VN.orderSource),
-                  SegmentedButton<String>(
-                    segments: _sourceOptions
-                        .map((s) => ButtonSegment<String>(
-                              value: s,
-                              label: Text(s),
-                            ))
-                        .toList(),
-                    selected: {
-                      state.source.isNotEmpty ? state.source : OrdersLabels.sourceTaiTiem,
-                    },
-                    onSelectionChanged: (s) {
-                      ref
-                          .read(orderCreateStateProvider.notifier)
-                          .updateSource(s.first);
-                    },
-                  ),
-                ],
-                StageSummaryCard(
-                  items: state.items,
-                  wizardData: state.wizardData,
-                  source: state.source,
-                  showProducts: true,
-                ),
-              ],
+              ),
             ),
           ),
         ),
         _buildNavigation(),
       ],
+    );
+  }
+
+  Widget _buildSourceSelector(
+    OrderCreateState state,
+    AsyncValue<List<String>> sourcesAsync,
+  ) {
+    final sources = sourcesAsync.maybeWhen(
+      data: (list) => list.isNotEmpty ? list : null,
+      orElse: () => null,
+    ) ??
+        const [
+          OrdersLabels.sourceTaiTiem,
+          OrdersLabels.sourceOnline,
+          OrdersLabels.sourceDienThoai,
+        ];
+
+    return SegmentedButton<String>(
+      segments: sources
+          .map((s) => ButtonSegment<String>(
+                value: s,
+                label: Text(s),
+              ))
+          .toList(),
+      selected: {
+        state.source.isNotEmpty ? state.source : OrdersLabels.sourceTaiTiem,
+      },
+      onSelectionChanged: (s) {
+        ref.read(orderCreateStateProvider.notifier).updateSource(s.first);
+      },
     );
   }
 
@@ -169,6 +172,13 @@ class _Stage2CustomerInfoScreenState
           FilledButton(
             onPressed: () {
               _syncToState();
+              final state = ref.read(orderCreateStateProvider);
+              if (state.wizardData.customerName.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text(OrdersLabels.validationCustomerNameRequired)),
+                );
+                return;
+              }
               widget.onContinue();
             },
             child: const Text(OrdersLabels.continueLabel),

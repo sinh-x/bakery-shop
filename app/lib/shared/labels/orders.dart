@@ -49,6 +49,8 @@ class OrdersLabels {
   // Validation messages (DG-211 review cycle 1 — CQ-4)
   static const validationSelectAtLeastOneProduct =
       'Vui lòng chọn ít nhất một sản phẩm';
+  static const validationCustomerNameRequired =
+      'Vui lòng nhập tên khách hàng';
 
   // Product/extras count strings (DG-211 review cycle 1 — CQ-2)
   static String productCount(int count) => '$count sản phẩm';
