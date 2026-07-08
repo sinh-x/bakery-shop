@@ -127,7 +127,10 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
   /// incremented instead of duplicated. This mirrors the legacy auto-gift
   /// behavior from the pre-refactor order_create_screen (commit bd17e17) and
   /// the POS cart (pos_provider.dart).
-  void checkAutoGift() {
+  ///
+  /// Waits for [phuKienProductsProvider] to load so the gift catalog is
+  /// available on the first product selection (FB-3).
+  Future<void> checkAutoGift() async {
     final items = state.items;
     final hasTangKem = items.any(
       (i) =>
@@ -146,7 +149,7 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
 
     if (qualifiedTotal < GiftConfig.giftThreshold) return;
 
-    final giftCatalog = _giftCatalogByNormalizedName();
+    final giftCatalog = await _giftCatalogByNormalizedName();
     if (giftCatalog.isEmpty) return;
 
     final updated = List<DraftOrderItem>.from(items);
@@ -180,9 +183,25 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
     }
   }
 
-  Map<String, Product> _giftCatalogByNormalizedName() {
-    final products =
-        ref.read(phuKienProductsProvider).asData?.value ?? const [];
+  Future<Map<String, Product>> _giftCatalogByNormalizedName() async {
+    final asyncValue = ref.read(phuKienProductsProvider);
+    final products = asyncValue.maybeWhen(
+      data: (products) => products,
+      orElse: () => <Product>[],
+    );
+    if (products.isEmpty) {
+      final future = ref.read(phuKienProductsProvider.future);
+      try {
+        final loaded = await future;
+        return _buildGiftCatalogMap(loaded);
+      } catch (_) {
+        return {};
+      }
+    }
+    return _buildGiftCatalogMap(products);
+  }
+
+  Map<String, Product> _buildGiftCatalogMap(List<Product> products) {
     final byName = <String, Product>{};
     for (final product in products) {
       final normalized = product.name.trim().toLowerCase();

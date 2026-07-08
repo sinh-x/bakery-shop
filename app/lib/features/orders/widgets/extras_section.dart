@@ -9,10 +9,15 @@ import 'stage1_extras_states.dart';
 
 /// Result of the catalog-extra price selection dialog.
 class CatalogExtraSelection {
-  const CatalogExtraSelection({this.priceChipId, this.customUnitPrice});
+  const CatalogExtraSelection({
+    this.priceChipId,
+    this.customUnitPrice,
+    this.isGift = false,
+  });
 
   final int? priceChipId;
   final double? customUnitPrice;
+  final bool isGift;
 }
 
 /// Dialog for choosing a price (base / chip / manual) when adding a catalog
@@ -34,6 +39,7 @@ class _CatalogExtraPriceDialogState extends State<CatalogExtraPriceDialog> {
   static const int _manualOptionId = -999;
   final TextEditingController _manualCtrl = TextEditingController();
   late int _selectedOptionId;
+  bool _isGift = false;
 
   @override
   void initState() {
@@ -87,6 +93,30 @@ class _CatalogExtraPriceDialogState extends State<CatalogExtraPriceDialog> {
               ),
             ),
           ],
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => setState(() => _isGift = !_isGift),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _isGift
+                    ? Colors.green.withValues(alpha: 0.2)
+                    : Colors.grey.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: _isGift ? Colors.green : Colors.grey.shade300,
+                ),
+              ),
+              child: Text(
+                _isGift ? VN.giftBadge : VN.paymentFee,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _isGift ? Colors.green : Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
       actions: [
@@ -104,7 +134,10 @@ class _CatalogExtraPriceDialogState extends State<CatalogExtraPriceDialog> {
               }
               Navigator.pop(
                 context,
-                CatalogExtraSelection(customUnitPrice: manualPrice),
+                CatalogExtraSelection(
+                  customUnitPrice: manualPrice,
+                  isGift: _isGift,
+                ),
               );
               return;
             }
@@ -113,12 +146,18 @@ class _CatalogExtraPriceDialogState extends State<CatalogExtraPriceDialog> {
             if (selected.$4 == null) {
               Navigator.pop(
                 context,
-                const CatalogExtraSelection(customUnitPrice: null),
+                CatalogExtraSelection(
+                  customUnitPrice: null,
+                  isGift: _isGift,
+                ),
               );
             } else {
               Navigator.pop(
                 context,
-                CatalogExtraSelection(priceChipId: selected.$4),
+                CatalogExtraSelection(
+                  priceChipId: selected.$4,
+                  isGift: _isGift,
+                ),
               );
             }
           },
@@ -146,6 +185,7 @@ class ExtrasSection extends ConsumerWidget {
     Product product,
     int? priceChipId,
     double? customUnitPrice,
+    bool isGift,
   ) onAddCatalogExtra;
 
   @override
@@ -190,6 +230,7 @@ class ExtrasSection extends ConsumerWidget {
                   product,
                   selection.priceChipId,
                   selection.customUnitPrice,
+                  selection.isGift,
                 );
               },
             );

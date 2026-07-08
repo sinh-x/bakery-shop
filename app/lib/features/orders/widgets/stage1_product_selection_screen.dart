@@ -97,11 +97,13 @@ class _Stage1ProductSelectionScreenState
     Product product,
     int? priceChipId,
     double? customUnitPrice,
+    bool isGift,
   ) {
     ref.read(orderCreateStateProvider.notifier).addCatalogExtra(
           product: product,
           priceChipId: priceChipId,
           customUnitPrice: customUnitPrice,
+          isGift: isGift,
         );
   }
 
@@ -142,17 +144,27 @@ class _Stage1ProductSelectionScreenState
     );
 
     return Stage1ResponsiveContent(
-      child: Stack(
+      child: Column(
         children: [
-          content,
-          Positioned(
-            right: 16,
-            bottom: 16,
-            child: FloatingActionButton(
-              heroTag: 'stage1_add_product',
-              tooltip: OrdersLabels.stage1AddProductHint,
-              onPressed: _onAddProduct,
-              child: const Icon(Icons.add),
+          Expanded(child: content),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Row(
+              children: [
+                FloatingActionButton(
+                  heroTag: 'stage1_add_product',
+                  tooltip: OrdersLabels.stage1AddProductHint,
+                  onPressed: _onAddProduct,
+                  child: const Icon(Icons.add),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: items.isEmpty ? null : widget.onContinue,
+                    child: const Text(OrdersLabels.continueLabel),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

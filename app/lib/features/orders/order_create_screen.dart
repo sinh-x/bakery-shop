@@ -70,7 +70,11 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     notifier.updateSelectedCategorySlug(draft.selectedCategorySlug);
     final targetStage = draft.currentStage.clamp(1, 4);
     notifier.goToStage(targetStage);
-    _pageController.jumpToPage(targetStage - 1);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(targetStage - 1);
+      }
+    });
   }
 
   void _saveDraft() {

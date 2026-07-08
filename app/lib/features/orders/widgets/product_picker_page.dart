@@ -216,7 +216,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
                   ? null
                   : () => _enterMultiSelectMode(product),
             ),
-            if (selected)
+            if (selected && _multiSelectMode)
               IgnorePointer(
                 child: Container(
                   decoration: BoxDecoration(

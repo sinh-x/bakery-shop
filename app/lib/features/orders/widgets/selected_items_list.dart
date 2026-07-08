@@ -5,6 +5,7 @@ import '../../../data/models/order_draft.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import 'expandable_item_card.dart';
 import 'section_header.dart';
+import 'simple_extra_row.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Renders the selected regular items and extras as `ExpandableItemCard`s.
@@ -57,27 +58,37 @@ class SelectedItemsList extends ConsumerWidget {
             const SizedBox(height: 12),
             const SectionHeader(VN.extras),
             ...extraItems.map(
-              (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: ExpandableItemCard(
-                  item: item,
-                  onRemove: () {
+              (item) => SimpleExtraRow(
+                item: item,
+                onIncrement: () {
+                  item.quantity += 1;
+                  ref
+                      .read(orderCreateStateProvider.notifier)
+                      .updateItems([...items]);
+                },
+                onDecrement: () {
+                  if (item.quantity > 1) {
+                    item.quantity -= 1;
+                    ref
+                        .read(orderCreateStateProvider.notifier)
+                        .updateItems([...items]);
+                  } else {
                     ref
                         .read(orderCreateStateProvider.notifier)
                         .updateItems([...items.where((i) => i != item)]);
-                  },
-                  onQtyChanged: (qty) {
-                    item.quantity = qty;
-                    ref
-                        .read(orderCreateStateProvider.notifier)
-                        .updateItems([...items]);
-                  },
-                  onStateChanged: () {
-                    ref
-                        .read(orderCreateStateProvider.notifier)
-                        .updateItems([...items]);
-                  },
-                ),
+                  }
+                },
+                onToggleGift: () {
+                  item.isGift = !item.isGift;
+                  ref
+                      .read(orderCreateStateProvider.notifier)
+                      .updateItems([...items]);
+                },
+                onRemove: () {
+                  ref
+                      .read(orderCreateStateProvider.notifier)
+                      .updateItems([...items.where((i) => i != item)]);
+                },
               ),
             ),
           ],

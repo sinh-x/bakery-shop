@@ -191,7 +191,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Nến (5.000đ)'));
+      await tester.tap(find.descendant(
+        of: find.byType(ActionChip),
+        matching: find.text('Nến (5.000đ)'),
+      ));
       await tester.pumpAndSettle();
       await tester.tap(find.text(VN.xacNhan));
       await tester.pumpAndSettle();
@@ -230,7 +233,7 @@ void main() {
         ),
       ]);
 
-      container.read(orderCreateStateProvider.notifier).checkAutoGift();
+      await container.read(orderCreateStateProvider.notifier).checkAutoGift();
 
       final items = container.read(orderCreateStateProvider).items;
       final gifts = items.where((i) => i.isGift).toList();
@@ -262,7 +265,7 @@ void main() {
         ),
       ]);
 
-      container.read(orderCreateStateProvider.notifier).checkAutoGift();
+      await container.read(orderCreateStateProvider.notifier).checkAutoGift();
 
       final items = container.read(orderCreateStateProvider).items;
       final gifts = items.where((i) => i.isGift).toList();
@@ -288,7 +291,7 @@ void main() {
         ),
       ]);
 
-      container.read(orderCreateStateProvider.notifier).checkAutoGift();
+      await container.read(orderCreateStateProvider.notifier).checkAutoGift();
 
       final gifts = container
           .read(orderCreateStateProvider)
@@ -329,7 +332,7 @@ void main() {
         existingGift,
       ]);
 
-      container.read(orderCreateStateProvider.notifier).checkAutoGift();
+      await container.read(orderCreateStateProvider.notifier).checkAutoGift();
 
       final items = container.read(orderCreateStateProvider).items;
       final gifts = items.where((i) => i.isGift && i.product.name == 'Nến').toList();
@@ -357,7 +360,7 @@ void main() {
         ),
       ]);
 
-      container.read(orderCreateStateProvider.notifier).checkAutoGift();
+      await container.read(orderCreateStateProvider.notifier).checkAutoGift();
 
       final gifts = container
           .read(orderCreateStateProvider)
