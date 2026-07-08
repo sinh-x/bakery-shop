@@ -6,6 +6,7 @@ import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/models/category.dart';
 import 'package:bakery_app/data/models/order_draft.dart';
 import 'package:bakery_app/data/models/product.dart';
+import 'package:bakery_app/features/orders/widgets/gated_page_physics.dart';
 import 'package:bakery_app/features/orders/widgets/order_stage_indicator.dart';
 import 'package:bakery_app/features/orders/widgets/order_wizard.dart';
 import 'package:bakery_app/features/orders/widgets/product_picker_page.dart';
@@ -759,5 +760,152 @@ void main() {
     expect(find.byType(ProductPickerPage), findsOneWidget);
     // The 'Bánh kem dâu' product should be visible because the tab was restored.
     expect(find.text('Bánh kem dâu'), findsOneWidget);
+  });
+
+  group('Phase 2: Swipe navigation gating', () {
+    Widget buildSwipeWidget({
+      required OrderCreateState state,
+      required void Function(int) onStageChanged,
+    }) {
+      final controller =
+          PageController(initialPage: state.currentStage - 1);
+      addTearDown(controller.dispose);
+      return MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 400,
+            child: GestureDetector(
+              onHorizontalDragEnd: (d) {
+                final pv = d.primaryVelocity;
+                final target = targetStageForSwipe(
+                  velocity: Velocity(
+                      pixelsPerSecond: pv == null ? Offset.zero : Offset(pv, 0)),
+                  currentStage: state.currentStage,
+                  pageCount: 4,
+                );
+                if (target != null && state.canNavigateToStage(target)) {
+                  onStageChanged(target);
+                }
+              },
+              child: PageView(
+                controller: controller,
+                physics: const NeverScrollableScrollPhysics(),
+                children: const [
+                  Text('Stage1'),
+                  Text('Stage2'),
+                  Text('Stage3'),
+                  Text('Stage4'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('AC2: blocked swipe shows no movement (stage 1, no items)',
+        (tester) async {
+      const state = OrderCreateState(
+        wizardData: OrderWizardData(),
+        currentStage: 1,
+      );
+      int? changedStage;
+      await tester.pumpWidget(buildSwipeWidget(
+        state: state,
+        onStageChanged: (s) => changedStage = s,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Stage1'), findsOneWidget);
+      expect(find.text('Stage2'), findsNothing);
+
+      await tester.fling(find.text('Stage1'), const Offset(-300, 0), 1000);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Stage1'), findsOneWidget);
+      expect(find.text('Stage2'), findsNothing);
+      expect(changedStage, isNull);
+    });
+
+    testWidgets('AC2: allowed swipe navigates to next stage (items present)',
+        (tester) async {
+      final state = OrderCreateState(
+        wizardData: const OrderWizardData(customerName: 'Test'),
+        currentStage: 1,
+        items: [
+          DraftOrderItem(
+            product: const Product(
+                id: 1, name: 'Test', category: 'test', basePrice: 100),
+            quantity: 1,
+          ),
+        ],
+      );
+      int? changedStage;
+      await tester.pumpWidget(buildSwipeWidget(
+        state: state,
+        onStageChanged: (s) => changedStage = s,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Stage1'), findsOneWidget);
+
+      await tester.fling(find.text('Stage1'), const Offset(-300, 0), 1000);
+      await tester.pumpAndSettle();
+
+      expect(changedStage, 2);
+    });
+
+    testWidgets('AC2: blocked swipe at stage 3 (door, empty address)',
+        (tester) async {
+      final state = OrderCreateState(
+        wizardData: const OrderWizardData(
+          customerName: 'Test',
+          deliveryType: 'door',
+          deliveryAddress: '',
+        ),
+        currentStage: 3,
+        items: [
+          DraftOrderItem(
+            product: const Product(
+                id: 1, name: 'Test', category: 'test', basePrice: 100),
+            quantity: 1,
+          ),
+        ],
+      );
+      int? changedStage;
+      await tester.pumpWidget(buildSwipeWidget(
+        state: state,
+        onStageChanged: (s) => changedStage = s,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Stage3'), findsOneWidget);
+
+      await tester.fling(find.text('Stage3'), const Offset(-300, 0), 1000);
+      await tester.pumpAndSettle();
+
+      expect(changedStage, isNull);
+    });
+
+    testWidgets('AC2: swipe right to previous stage always allowed',
+        (tester) async {
+      const state = OrderCreateState(
+        wizardData: OrderWizardData(customerName: 'Test'),
+        currentStage: 2,
+      );
+      int? changedStage;
+      await tester.pumpWidget(buildSwipeWidget(
+        state: state,
+        onStageChanged: (s) => changedStage = s,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Stage2'), findsOneWidget);
+
+      await tester.fling(find.text('Stage2'), const Offset(300, 0), 1000);
+      await tester.pumpAndSettle();
+
+      expect(changedStage, 1);
+    });
   });
 }

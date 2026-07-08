@@ -13,6 +13,7 @@ import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/order_stage_indicator.dart';
+import 'widgets/gated_page_physics.dart';
 import 'widgets/order_wizard.dart';
 import 'widgets/stage1_product_selection_screen.dart';
 import 'widgets/stage2_customer_info_screen.dart';
@@ -258,38 +259,36 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: OrderStageIndicator(
               currentStage: state.currentStage,
-              onStageTap: (stage) {
-                if (state.canNavigateToStage(stage)) {
-                  _goToStage(stage);
-                }
-              },
+              onStageTap: (s) => state.canNavigateToStage(s) ? _goToStage(s) : null,
             ),
           ),
           Expanded(
-            child: PageView(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [
-                Stage1ProductSelectionScreen(onContinue: _goToStage2),
-                Stage2CustomerInfoScreen(
-                  onBack: _goToStage1,
-                  onContinue: _goToStage3,
-                ),
-                Stage3DeliveryOptionsScreen(
-                  onBack: _goToStage2,
-                  onContinue: _goToStage4,
-                ),
-                Stage4ReviewScreen(
-                  onBack: _goToStage3,
-                  onSubmit: _submitOrder,
-                  isProcessing: _submitting,
-                ),
-              ],
+            child: GestureDetector(
+              onHorizontalDragEnd: _onSwipe,
+              child: PageView(
+                controller: _pageController,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  Stage1ProductSelectionScreen(onContinue: _goToStage2),
+                  Stage2CustomerInfoScreen(onBack: _goToStage1, onContinue: _goToStage3),
+                  Stage3DeliveryOptionsScreen(onBack: _goToStage2, onContinue: _goToStage4),
+                  Stage4ReviewScreen(onBack: _goToStage3, onSubmit: _submitOrder, isProcessing: _submitting),
+                ],
+              ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  void _onSwipe(DragEndDetails d) {
+    final s = ref.read(orderCreateStateProvider);
+    final pv = d.primaryVelocity;
+    final target = targetStageForSwipe(
+      velocity: Velocity(pixelsPerSecond: pv == null ? Offset.zero : Offset(pv, 0)),
+      currentStage: s.currentStage, pageCount: 4);
+    if (target != null && s.canNavigateToStage(target)) _goToStage(target);
   }
 
   void _goToStage1() => _goToStage(1);
