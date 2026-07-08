@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/order_service.dart';
-import '../../data/api/payment_transaction_service.dart';
 import '../../data/api/work_item_service.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order/order_create_state_provider.dart';
@@ -197,23 +196,6 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             context,
             'Tải lên ảnh: ${totalPhotos - failedPhotos}/$totalPhotos thành công, $failedPhotos lỗi',
           );
-        }
-      }
-
-      for (final item in state.items) {
-        if (item.attributes['rut_tien']?.toString() == 'true') {
-          final cashAmount = double.tryParse(
-            item.attributes['cash_amount']?.toString() ?? '',
-          );
-          if (cashAmount != null && cashAmount > 0) {
-            final txnService = ref.read(paymentTransactionServiceProvider);
-            await txnService.createTransaction(
-              newOrder.orderRef,
-              amount: cashAmount,
-              type: 'tien_rut',
-              method: 'cash',
-            );
-          }
         }
       }
 
