@@ -9,6 +9,7 @@ import 'extras_section.dart';
 import 'product_picker_page.dart';
 import 'selected_items_list.dart';
 import 'stage1_empty_state.dart';
+import 'stage1_responsive_content.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Stage 1 of the order creation wizard — product selection.
@@ -115,43 +116,47 @@ class _Stage1ProductSelectionScreenState
       return Stage1EmptyState(onAddProduct: _onAddProduct);
     }
 
-    return Stack(
-      children: [
-        CustomScrollView(
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              sliver: SelectedItemsList(
-                items: items,
-                regularItems: regularItems,
-                extraItems: extraItems,
-              ),
-            ),
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
-                child: _ExtrasHeader(),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                child: ExtrasSection(onAddCatalogExtra: _addCatalogExtra),
-              ),
-            ),
-          ],
+    final content = CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          sliver: SelectedItemsList(
+            items: items,
+            regularItems: regularItems,
+            extraItems: extraItems,
+          ),
         ),
-        Positioned(
-          right: 16,
-          bottom: 16,
-          child: FloatingActionButton(
-            heroTag: 'stage1_add_product',
-            tooltip: OrdersLabels.stage1AddProductHint,
-            onPressed: _onAddProduct,
-            child: const Icon(Icons.add),
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: _ExtrasHeader(),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+            child: ExtrasSection(onAddCatalogExtra: _addCatalogExtra),
           ),
         ),
       ],
+    );
+
+    return Stage1ResponsiveContent(
+      child: Stack(
+        children: [
+          content,
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: FloatingActionButton(
+              heroTag: 'stage1_add_product',
+              tooltip: OrdersLabels.stage1AddProductHint,
+              onPressed: _onAddProduct,
+              child: const Icon(Icons.add),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

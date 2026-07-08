@@ -25,6 +25,8 @@ class OrdersLabels {
   static const stage1AddProductHint = 'Thêm sản phẩm vào đơn';
   static const stage1EmptyTitle = 'Chưa có sản phẩm nào';
   static const stage1EmptyBody = 'Bấm (+) để chọn sản phẩm cho đơn hàng.';
+  static const stage1ExtrasLoading = 'Đang tải phụ kiện...';
+  static const stage1ExtrasLoadError = 'Không tải được danh sách phụ kiện';
 
   // Stage 3
   static const deliveryPhone = 'SĐT nhận hàng';

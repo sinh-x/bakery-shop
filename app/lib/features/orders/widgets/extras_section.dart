@@ -5,6 +5,7 @@ import '../../../data/models/order_draft.dart';
 import '../../../data/models/product.dart';
 import '../../../providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'stage1_extras_states.dart';
 
 /// Result of the catalog-extra price selection dialog.
 class CatalogExtraSelection {
@@ -153,8 +154,10 @@ class ExtrasSection extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return extrasAsync.when(
-      loading: () => const SizedBox.shrink(),
-      error: (e, st) => const SizedBox.shrink(),
+      loading: () => const Stage1ExtrasLoading(),
+      error: (e, st) => Stage1ExtrasError(
+        onRetry: () => ref.invalidate(phuKienProductsProvider),
+      ),
       data: (products) {
         if (products.isEmpty) {
           return Padding(
