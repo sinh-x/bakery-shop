@@ -246,7 +246,62 @@ docker compose --profile dev exec baker-dev \
 
 ---
 
-## §6 Cleanup
+## §6 HTTPS Access via Tailscale MagicDNS (Dev Caddy)
+
+The dev stack can be exposed over HTTPS on the Tailsail tailnet via the `caddy-dev` service, mirroring the prod `caddy` setup. This lets you verify the Flutter web app and API from a browser on any tailnet device using the drgnfly MagicDNS hostname.
+
+### 6.1 Prerequisites
+
+- [ ] Tailscale is connected on this host (`tailscale status` shows the node)
+- [ ] TLS cert exists for the dev domain: `./certs/drgnfly.tail10c2c6.ts.net.crt` and `.key`
+  - Renew/generate with: `./scripts/renew-certs.sh drgnfly.tail10c2c6.ts.net`
+- [ ] Fresh web bundle is built (so `web-build/` is up to date):
+  ```bash
+  cd app && flutter build web --release
+  # or: ./scripts/deploy-web.sh
+  ```
+
+### 6.2 Validate the dev Caddyfile
+
+```bash
+docker run --rm -v "$(pwd)/Caddyfile.dev:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+  caddy validate --config /etc/caddy/Caddyfile
+```
+
+- [ ] Exits 0 (config valid)
+
+### 6.3 Start the dev stack with caddy
+
+```bash
+docker compose --profile dev up -d
+```
+
+This starts both `baker-dev` and `caddy-dev`. The caddy-dev container publishes host port `443` and serves the Flutter web app + reverse-proxies `/api/*` to `baker-dev:2312` over the tailnet TLS cert.
+
+### 6.4 Verify HTTPS access
+
+Open in a browser on any tailnet device:
+
+```
+https://drgnfly.tail10c2c6.ts.net
+```
+
+- [ ] App loads with valid TLS (no cert warning)
+- [ ] `/api/health` responds 200:
+  ```bash
+  curl -sf https://drgnfly.tail10c2c6.ts.net/api/health
+  ```
+- [ ] SPA deep-link fallback works (e.g. navigate to a client-side route and reload)
+
+### 6.5 Stop the dev stack
+
+```bash
+docker compose --profile dev stop
+```
+
+---
+
+## §7 Cleanup
 
 ### 6.1 Stop the dev container
 
@@ -287,7 +342,8 @@ ls -lt ./data/baker-backup-pre-migrate-*.db | head -1
 | §4 Anomaly detection works | pass / fail | |
 | §5 DB integrity ok | pass / fail | |
 | §5 Container logs clean | pass / fail | |
-| §6 Cleanup done | pass / fail | |
+| §6 Dev caddy HTTPS valid | pass / fail | |
+| §7 Cleanup done | pass / fail | |
 
 ### Reviewer
 
@@ -310,5 +366,8 @@ ls -lt ./data/baker-backup-pre-migrate-*.db | head -1
 | `docker compose --profile dev exec baker-dev python -m pytest /app/tests -v` | Run tests in container |
 | `docker compose --profile dev logs baker-dev --tail 50` | View container logs |
 | `docker compose --profile dev stop baker-dev` | Stop dev container |
+| `docker compose --profile dev up -d` | Start full dev stack (baker-dev + caddy-dev) |
+| `docker run --rm -v "$(pwd)/Caddyfile.dev:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile` | Validate dev Caddyfile |
+| `./scripts/renew-certs.sh drgnfly.tail10c2c6.ts.net` | Renew/generate dev TLS cert |
 | `./scripts/db-validate.sh snapshot --db-path ./data/baker.db` | Capture DB snapshot |
 | `./scripts/db-validate.sh diff --pre pre.json --post post.json` | Diff two snapshots |

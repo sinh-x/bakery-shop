@@ -1,4 +1,0 @@
-drgnfly.tail10c2c6.ts.net {
-    tls /certs/drgnfly.tail10c2c6.ts.net.crt /certs/drgnfly.tail10c2c6.ts.net.key
-    redir https://lily.tail10c2c6.ts.net{uri} permanent
-}
