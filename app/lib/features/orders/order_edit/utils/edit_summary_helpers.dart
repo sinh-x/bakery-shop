@@ -8,6 +8,15 @@ import '../../../../providers/config_provider.dart';
 import '../../../../shared/utils/config_parsers.dart';
 import '../../../../shared/utils/date_formatting.dart';
 
+/// Default shipping fee (VND) for bus delivery when the config provider is
+/// still loading or returns an error. Kept as a module-level constant so the
+/// fallback value is documented in one place instead of being a magic number.
+const _defaultShippingFeeBus = 25000.0;
+
+/// Default shipping fee (VND) for door delivery when the config provider is
+/// still loading or returns an error.
+const _defaultShippingFeeDoor = 20000.0;
+
 /// Converts a [WorkItem] (server-side work item) into a [DraftOrderItem] with
 /// a minimal [Product] stub so the summary cards can render the edit-order
 /// summary cards with real data. The summary cards only read `product.name`,
@@ -37,19 +46,20 @@ List<DraftOrderItem> summaryItemsFromWorkItems(List<WorkItem> workItems) {
 }
 
 /// Resolves the bus/door shipping-fee defaults from the config providers,
-/// falling back to 25000 (bus) / 20000 (door) while loading or on error.
+/// falling back to [_defaultShippingFeeBus] / [_defaultShippingFeeDoor] while
+/// loading or on error.
 ({double bus, double door}) shippingFeeDefaults(WidgetRef ref) {
   final busAsync = ref.watch(shippingFeeBusProvider);
   final doorAsync = ref.watch(shippingFeeDoorProvider);
   final bus = busAsync.when(
-    data: (values) => firstFeeOrFallback(values, 25000),
-    loading: () => 25000.0,
-    error: (_, _) => 25000.0,
+    data: (values) => firstFeeOrFallback(values, _defaultShippingFeeBus),
+    loading: () => _defaultShippingFeeBus,
+    error: (_, _) => _defaultShippingFeeBus,
   );
   final door = doorAsync.when(
-    data: (values) => firstFeeOrFallback(values, 20000),
-    loading: () => 20000.0,
-    error: (_, _) => 20000.0,
+    data: (values) => firstFeeOrFallback(values, _defaultShippingFeeDoor),
+    loading: () => _defaultShippingFeeDoor,
+    error: (_, _) => _defaultShippingFeeDoor,
   );
   return (bus: bus, door: door);
 }

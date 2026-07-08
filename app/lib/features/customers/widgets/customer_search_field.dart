@@ -162,7 +162,8 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
         _loading = false;
       });
       _showResults();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[CustomerSearch] search failed: $e');
       if (!mounted) return;
       setState(() {
         _results = const [];
