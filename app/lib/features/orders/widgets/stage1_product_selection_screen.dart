@@ -23,12 +23,14 @@ import 'package:bakery_app/shared/labels/orders.dart';
 /// items appear expanded because `ExpandableItemCard` defaults `_expanded =
 /// true`. The picker is reused as-is (no modifications, per guardrails).
 class Stage1ProductSelectionScreen extends ConsumerStatefulWidget {
-  const Stage1ProductSelectionScreen({
+  Stage1ProductSelectionScreen({
     super.key,
     required this.onContinue,
+    required this.orderStateProvider,
   });
 
   final VoidCallback onContinue;
+  final NotifierProvider<OrderCreateStateNotifier, OrderCreateState> orderStateProvider;
 
   @override
   ConsumerState<Stage1ProductSelectionScreen> createState() =>
@@ -48,7 +50,7 @@ class _Stage1ProductSelectionScreenState
     // before [onChanged] commits. All mutable fields must be copied to avoid
     // losing details (qty, price, notes, birthday, age, attributes, photos,
     // tien rut) when the picker appends a new item and commits the list.
-    final current = ref.read(orderCreateStateProvider).items;
+    final current = ref.read(widget.orderStateProvider).items;
     _pickerItems = current
         .map((i) => DraftOrderItem(
               product: i.product,
@@ -72,9 +74,9 @@ class _Stage1ProductSelectionScreenState
           selectedItems: _pickerItems,
           onChanged: _commitNewItems,
           initialCategorySlug:
-              ref.read(orderCreateStateProvider).selectedCategorySlug,
+              ref.read(widget.orderStateProvider).selectedCategorySlug,
           onCategorySelected: (slug) => ref
-              .read(orderCreateStateProvider.notifier)
+              .read(widget.orderStateProvider.notifier)
               .updateSelectedCategorySlug(slug),
         ),
       ),
@@ -87,9 +89,9 @@ class _Stage1ProductSelectionScreenState
   /// auto-gift check so tang_kem products >= threshold trigger gift extras.
   void _commitNewItems() {
     ref
-        .read(orderCreateStateProvider.notifier)
+        .read(widget.orderStateProvider.notifier)
         .updateItems(List<DraftOrderItem>.from(_pickerItems));
-    ref.read(orderCreateStateProvider.notifier).checkAutoGift();
+    ref.read(widget.orderStateProvider.notifier).checkAutoGift();
   }
 
   /// Adds a catalog (phu_kien) extra via [ExtrasSection] chips.
@@ -99,7 +101,7 @@ class _Stage1ProductSelectionScreenState
     double? customUnitPrice,
     bool isGift,
   ) {
-    ref.read(orderCreateStateProvider.notifier).addCatalogExtra(
+    ref.read(widget.orderStateProvider.notifier).addCatalogExtra(
           product: product,
           priceChipId: priceChipId,
           customUnitPrice: customUnitPrice,
@@ -109,7 +111,7 @@ class _Stage1ProductSelectionScreenState
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(orderCreateStateProvider);
+    final state = ref.watch(widget.orderStateProvider);
     final items = state.items;
     final regularItems = items.where((i) => !i.isExtra).toList();
     final extraItems = items.where((i) => i.isExtra).toList();
@@ -126,6 +128,7 @@ class _Stage1ProductSelectionScreenState
             items: items,
             regularItems: regularItems,
             extraItems: extraItems,
+            orderStateProvider: widget.orderStateProvider,
           ),
         ),
         const SliverToBoxAdapter(

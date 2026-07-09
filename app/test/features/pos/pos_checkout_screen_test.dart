@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:bakery_app/data/api/payment_transaction_service.dart';
+import 'package:bakery_app/data/models/payment_transaction.dart';
 import 'package:bakery_app/features/pos/pos_checkout_screen.dart';
 import 'package:bakery_app/providers/pos_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
@@ -69,6 +71,27 @@ class _FakeOrderService extends OrderService {
   }
 }
 
+class _FakePaymentTransactionService extends PaymentTransactionService {
+  _FakePaymentTransactionService() : super(Dio());
+  @override
+  Future<PaymentTransaction> createTransaction(
+    String orderRef, {
+    required double amount,
+    String type = 'deposit',
+    String method = 'cash',
+    String notes = '',
+  }) async {
+    return PaymentTransaction(
+      id: 'txn-1',
+      orderId: orderRef,
+      amount: amount,
+      type: type,
+      method: method,
+      createdAt: DateTime(2026, 5, 20),
+    );
+  }
+}
+
 Product _product() {
   return const Product(
     id: 1,
@@ -93,11 +116,13 @@ Widget _buildCheckoutApp({
     initialLocation: '/pos/checkout',
   );
 
+  final txnSvc = _FakePaymentTransactionService();
   return ProviderScope(
     overrides: [
       posCartProvider.overrideWith(() => _SeededPosCartNotifier(items)),
       if (orderService != null) orderServiceProvider.overrideWithValue(orderService),
       customerServiceProvider.overrideWithValue(_FakeCustomerService()),
+      paymentTransactionServiceProvider.overrideWithValue(txnSvc),
     ],
     child: MaterialApp.router(routerConfig: router),
   );
@@ -106,6 +131,16 @@ Widget _buildCheckoutApp({
 Future<void> _navigateToReview(WidgetTester tester) async {
   await tester.tap(find.text('Tiếp tục'));
   await tester.pumpAndSettle();
+}
+
+/// Dismisses the "Giao ngay?" (B5) dialog by tapping "Để sau" (confirmed).
+Future<void> _dismissDeliverNowDialog(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
+  await tester.tap(find.text(VN.deliverNowNo));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
+  await tester.pump();
 }
 
 /// From the Stage 4 review sub-step, advance to the dedicated payment step
@@ -201,7 +236,7 @@ void main() {
       // where the cash/transfer selector lives (DG-218 Phase 4, FR-5).
       await _navigateToPayment(tester);
 
-      await tester.scrollUntilVisible(find.text(VN.chuyenKhoan), 100);
+      await tester.ensureVisible(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
@@ -210,7 +245,7 @@ void main() {
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await tester.pumpAndSettle();
+      await _dismissDeliverNowDialog(tester);
       await tester.tap(find.text(VN.skip));
       await tester.pumpAndSettle();
 
@@ -229,7 +264,7 @@ void main() {
       // (DG-218 Phase 4); the review panel has no payment selector.
       await _navigateToPayment(tester);
 
-      await tester.scrollUntilVisible(find.byType(SegmentedButton<String>), 100);
+      await tester.ensureVisible(find.byType(SegmentedButton<String>));
       await tester.pumpAndSettle();
 
       final segmentedButtons = find.byType(SegmentedButton<String>);
@@ -238,7 +273,7 @@ void main() {
       var segmented = tester.widget<SegmentedButton<String>>(segmentedButtons.last);
       expect(segmented.selected, {'cash'});
 
-      await tester.scrollUntilVisible(find.text(VN.chuyenKhoan), 100);
+      await tester.ensureVisible(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
@@ -263,7 +298,7 @@ void main() {
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await tester.pumpAndSettle();
+      await _dismissDeliverNowDialog(tester);
 
       expect(fakeOrderService.createdItems.single.single['attributes'], {'useInventory': 'false'});
     });
@@ -288,7 +323,7 @@ void main() {
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await tester.pumpAndSettle();
+      await _dismissDeliverNowDialog(tester);
 
       final giftPayload = fakeOrderService.createdItems.single.firstWhere((item) => item['isGift'] == true);
       expect(giftPayload['productId'], '42');
@@ -328,10 +363,7 @@ void main() {
       // Stage 4 review uses the unified ProductSummaryCard (DG-218 Phase 4,
       // FR-6). POS cart gifts render as wizard extras-with-gift in the
       // extras section with the "Tặng kèm" suffix and a "x<qty>" body.
-      await tester.scrollUntilVisible(
-        find.textContaining('Nen').at(0),
-        100,
-      );
+      await tester.ensureVisible(find.textContaining('Nen').at(0));
       await tester.pumpAndSettle();
 
       // The gift line shows the tang-kem suffix (unified card convention).
@@ -352,7 +384,7 @@ void main() {
       // (DG-218 Phase 4, FR-5).
       await _navigateToPayment(tester);
 
-      await tester.scrollUntilVisible(find.text(VN.chuyenKhoan), 100);
+      await tester.ensureVisible(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
@@ -375,7 +407,7 @@ void main() {
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await tester.pumpAndSettle();
+      await _dismissDeliverNowDialog(tester);
       await tester.tap(find.text(VN.skip));
       await tester.pumpAndSettle();
 
@@ -395,20 +427,20 @@ void main() {
       // Stage 4 review sub-step is shown (unified summary card title).
       expect(find.text(OrdersLabels.reviewSummary), findsOneWidget);
 
-      // Advance to the dedicated payment step, then tap the submit button
-      // twice quickly to assert only one order is created while processing.
+      // Advance to the dedicated payment step.
       await _navigateToPayment(tester);
 
-      // The payment step exposes a single FilledButton (the submit action);
-      // tapping it starts processing and swaps its child for a spinner, but
-      // the FilledButton widget itself persists, so the second tap is a no-op
-      // guarded by `_isProcessing`.
+      // Tap the submit button — _isProcessing guard prevents a second call.
       final btn = find.byType(FilledButton);
       expect(btn, findsOneWidget);
       await tester.ensureVisible(btn);
       await tester.pumpAndSettle();
       await tester.tap(btn);
-      await tester.pump();
+      // B5 dialog appears; dismiss it to continue submit flow.
+      await _dismissDeliverNowDialog(tester);
+
+      // While the first call is still processing (completer not yet resolved),
+      // tap again — should be a no-op because _isProcessing is true.
       await tester.tap(btn);
       await tester.pump();
 
@@ -476,7 +508,7 @@ void main() {
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await tester.pumpAndSettle();
+      await _dismissDeliverNowDialog(tester);
 
       expect(fakeOrderService.createOrderCallCount, 1);
       final submittedItems = fakeOrderService.createdItems.single;
@@ -560,7 +592,7 @@ void main() {
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await tester.pumpAndSettle();
+      await _dismissDeliverNowDialog(tester);
 
       expect(fakeOrderService.paymentMethods, <String?>['cash']);
       // Receipt screen is shown.
@@ -584,7 +616,7 @@ void main() {
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await tester.pumpAndSettle();
+      await _dismissDeliverNowDialog(tester);
       // Skip the transfer proof photo.
       await tester.tap(find.text(VN.skip));
       await tester.pumpAndSettle();
@@ -607,7 +639,7 @@ void main() {
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await tester.pumpAndSettle();
+      await _dismissDeliverNowDialog(tester);
 
       // FR-9: the walk-in customer and POS source defaults are applied.
       expect(fakeOrderService.createOrderCallCount, 1);

@@ -11,16 +11,18 @@ import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class Stage2CustomerInfoScreen extends ConsumerStatefulWidget {
-  const Stage2CustomerInfoScreen({
+  Stage2CustomerInfoScreen({
     super.key,
     required this.onBack,
     required this.onContinue,
     this.posMode = false,
+    required this.orderStateProvider,
   });
 
   final VoidCallback onBack;
   final VoidCallback onContinue;
   final bool posMode;
+  final NotifierProvider<OrderCreateStateNotifier, OrderCreateState> orderStateProvider;
 
   @override
   ConsumerState<Stage2CustomerInfoScreen> createState() =>
@@ -36,7 +38,7 @@ class _Stage2CustomerInfoScreenState
   @override
   void initState() {
     super.initState();
-    final state = ref.read(orderCreateStateProvider);
+    final state = ref.read(widget.orderStateProvider);
     _nameCtrl.text = state.wizardData.customerName;
     _phoneCtrl.text = state.wizardData.customerPhone;
     if (state.wizardData.selectedCustomer != null) {
@@ -56,8 +58,8 @@ class _Stage2CustomerInfoScreenState
   }
 
   void _syncToState() {
-    final notifier = ref.read(orderCreateStateProvider.notifier);
-    final state = ref.read(orderCreateStateProvider);
+    final notifier = ref.read(widget.orderStateProvider.notifier);
+    final state = ref.read(widget.orderStateProvider);
     notifier.updateWizardData(
       state.wizardData.copyWith(
         customerName: _nameCtrl.text,
@@ -68,8 +70,8 @@ class _Stage2CustomerInfoScreenState
 
   void _onCustomerSelected(Customer? c) {
     _customerTouched = true;
-    final notifier = ref.read(orderCreateStateProvider.notifier);
-    final state = ref.read(orderCreateStateProvider);
+    final notifier = ref.read(widget.orderStateProvider.notifier);
+    final state = ref.read(widget.orderStateProvider);
     var updated = state.wizardData.copyWith(
       selectedCustomer: c,
       clearSelectedCustomer: c == null,
@@ -87,7 +89,7 @@ class _Stage2CustomerInfoScreenState
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(orderCreateStateProvider);
+    final state = ref.watch(widget.orderStateProvider);
     final sourcesAsync = ref.watch(orderSourcesProvider);
 
     return Column(
@@ -172,7 +174,7 @@ class _Stage2CustomerInfoScreenState
                 label: Text(s),
                 selected: selectedSource == s,
                 onSelected: (_) {
-                  ref.read(orderCreateStateProvider.notifier).updateSource(s);
+                  ref.read(widget.orderStateProvider.notifier).updateSource(s);
                 },
               )).toList(),
             ),
@@ -184,7 +186,7 @@ class _Stage2CustomerInfoScreenState
               label: Text(s),
               selected: selectedSource == s,
               onSelected: (_) {
-                ref.read(orderCreateStateProvider.notifier).updateSource(s);
+                ref.read(widget.orderStateProvider.notifier).updateSource(s);
               },
             )).toList(),
           ),
@@ -205,7 +207,7 @@ class _Stage2CustomerInfoScreenState
           FilledButton(
             onPressed: () {
               _syncToState();
-              final state = ref.read(orderCreateStateProvider);
+              final state = ref.read(widget.orderStateProvider);
               if (state.wizardData.customerName.trim().isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text(OrdersLabels.validationCustomerNameRequired)),

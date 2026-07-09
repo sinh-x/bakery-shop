@@ -260,3 +260,8 @@ final orderCreateStateProvider =
     NotifierProvider<OrderCreateStateNotifier, OrderCreateState>(
   OrderCreateStateNotifier.new,
 );
+
+final posOrderStateProvider =
+    NotifierProvider<OrderCreateStateNotifier, OrderCreateState>(
+  OrderCreateStateNotifier.new,
+);

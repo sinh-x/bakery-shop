@@ -16,21 +16,20 @@ import '../../orders/widgets/stage_summary_card.dart';
 /// The continue button advances to the payment step; the back button returns
 /// to the previous stage (Stage 2 for pickup, Stage 3 for delivery).
 class PosReviewPanel extends ConsumerWidget {
-  const PosReviewPanel({
+  PosReviewPanel({
     super.key,
     required this.onBack,
     required this.onContinue,
+    required this.orderStateProvider,
   });
 
-  /// Returns to the previous stage (Stage 2 for pickup, Stage 3 for delivery).
   final VoidCallback onBack;
-
-  /// Advances to the dedicated payment step.
   final VoidCallback onContinue;
+  final NotifierProvider<OrderCreateStateNotifier, OrderCreateState> orderStateProvider;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(orderCreateStateProvider);
+    final state = ref.watch(orderStateProvider);
     final theme = Theme.of(context);
 
     return Column(

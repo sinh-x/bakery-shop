@@ -54,6 +54,7 @@ Widget _pumpItemsList(WidgetTester tester, List<DraftOrderItem> items) {
                 items: items,
                 regularItems: regularItems,
                 extraItems: extraItems,
+                orderStateProvider: orderCreateStateProvider,
               ),
             ),
           ],

@@ -10,13 +10,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// copy in `orderCreateStateProvider.items` and writes it back via
 /// [draftItemsToCart].
 DraftOrderItem cartItemToDraft(PosCartItem item) {
+  // B4: phụ kiện items (non-gift, category='phu_kien') map to extras
+  // with isExtra=true so they render in the extras section and are excluded
+  // from the product-count summary. POS cart gifts also produce extras.
+  final isExtra = item.isGift || item.product.category == 'phu_kien';
   return DraftOrderItem(
     product: item.product,
     quantity: item.quantity,
-    // POS cart gifts map to wizard extras-with-gift so the unified
-    // ProductSummaryCard renders them in the extras section with the gift
-    // suffix and excludes them from the regular total (DG-218 Phase 4, FR-6).
-    isExtra: item.isGift,
+    isExtra: isExtra,
     isGift: item.isGift,
     customUnitPrice: item.selectedPrice,
     priceChipId: item.selectedChipId,

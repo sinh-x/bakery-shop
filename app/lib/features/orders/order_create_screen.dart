@@ -271,10 +271,26 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
                 controller: _pageController,
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
-                  Stage1ProductSelectionScreen(onContinue: _goToStage2),
-                  Stage2CustomerInfoScreen(onBack: _goToStage1, onContinue: _goToStage3),
-                  Stage3DeliveryOptionsScreen(onBack: _goToStage2, onContinue: _goToStage4),
-                  Stage4ReviewScreen(onBack: _goToStage3, onSubmit: _submitOrder, isProcessing: _submitting),
+                  Stage1ProductSelectionScreen(
+                    onContinue: _goToStage2,
+                    orderStateProvider: orderCreateStateProvider,
+                  ),
+                  Stage2CustomerInfoScreen(
+                    onBack: _goToStage1,
+                    onContinue: _goToStage3,
+                    orderStateProvider: orderCreateStateProvider,
+                  ),
+                  Stage3DeliveryOptionsScreen(
+                    onBack: _goToStage2,
+                    onContinue: _goToStage4,
+                    orderStateProvider: orderCreateStateProvider,
+                  ),
+                  Stage4ReviewScreen(
+                    onBack: _goToStage3,
+                    onSubmit: _submitOrder,
+                    isProcessing: _submitting,
+                    orderStateProvider: orderCreateStateProvider,
+                  ),
                 ],
               ),
             ),

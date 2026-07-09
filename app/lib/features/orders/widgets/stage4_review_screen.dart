@@ -8,20 +8,22 @@ import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class Stage4ReviewScreen extends ConsumerWidget {
-  const Stage4ReviewScreen({
+  Stage4ReviewScreen({
     super.key,
     required this.onBack,
     required this.onSubmit,
     this.isProcessing = false,
+    required this.orderStateProvider,
   });
 
   final VoidCallback onBack;
   final VoidCallback onSubmit;
   final bool isProcessing;
+  final NotifierProvider<OrderCreateStateNotifier, OrderCreateState> orderStateProvider;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(orderCreateStateProvider);
+    final state = ref.watch(orderStateProvider);
     final theme = Theme.of(context);
 
     return Column(

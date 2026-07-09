@@ -66,7 +66,11 @@ void main() {
   testWidgets('AC-1: uses OrderDeliverySection as canonical delivery widget',
       (tester) async {
     await tester.pumpWidget(_harness(
-      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      Stage3DeliveryOptionsScreen(
+        onBack: () {},
+        onContinue: () {},
+        orderStateProvider: orderCreateStateProvider,
+      ),
       state: const OrderCreateState(wizardData: OrderWizardData()),
     ));
     await tester.pumpAndSettle();
@@ -81,6 +85,7 @@ void main() {
       Stage3DeliveryOptionsScreen(
         onBack: () {},
         onContinue: () => continued = true,
+        orderStateProvider: orderCreateStateProvider,
       ),
       state: const OrderCreateState(
         wizardData: OrderWizardData(deliveryType: 'door'),
@@ -105,6 +110,7 @@ void main() {
       Stage3DeliveryOptionsScreen(
         onBack: () {},
         onContinue: () => continued = true,
+        orderStateProvider: orderCreateStateProvider,
       ),
       state: const OrderCreateState(
         wizardData: OrderWizardData(
@@ -132,6 +138,7 @@ void main() {
       Stage3DeliveryOptionsScreen(
         onBack: () {},
         onContinue: () => continued = true,
+        orderStateProvider: orderCreateStateProvider,
       ),
       state: const OrderCreateState(
         wizardData: OrderWizardData(deliveryType: 'pickup'),
@@ -148,7 +155,11 @@ void main() {
   testWidgets('AC-6: shipping fee config loading shows a spinner',
       (tester) async {
     await tester.pumpWidget(_harness(
-      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      Stage3DeliveryOptionsScreen(
+        onBack: () {},
+        onContinue: () {},
+        orderStateProvider: orderCreateStateProvider,
+      ),
       state: const OrderCreateState(
         wizardData: OrderWizardData(deliveryType: 'door'),
       ),
@@ -162,7 +173,11 @@ void main() {
   testWidgets('AC-6: shipping fee config error shows error state with retry',
       (tester) async {
     await tester.pumpWidget(_harness(
-      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      Stage3DeliveryOptionsScreen(
+        onBack: () {},
+        onContinue: () {},
+        orderStateProvider: orderCreateStateProvider,
+      ),
       state: const OrderCreateState(
         wizardData: OrderWizardData(deliveryType: 'door'),
       ),
@@ -184,7 +199,11 @@ void main() {
     });
 
     await tester.pumpWidget(_harness(
-      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      Stage3DeliveryOptionsScreen(
+        onBack: () {},
+        onContinue: () {},
+        orderStateProvider: orderCreateStateProvider,
+      ),
       state: const OrderCreateState(wizardData: OrderWizardData()),
     ));
     await tester.pumpAndSettle();
@@ -205,7 +224,11 @@ void main() {
   testWidgets('UAT-2: selecting bus with empty delivery phone auto-fills from customerPhone',
       (tester) async {
     await tester.pumpWidget(_harness(
-      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      Stage3DeliveryOptionsScreen(
+        onBack: () {},
+        onContinue: () {},
+        orderStateProvider: orderCreateStateProvider,
+      ),
       state: const OrderCreateState(
         wizardData: OrderWizardData(customerPhone: '0987654321'),
       ),
@@ -221,7 +244,11 @@ void main() {
   testWidgets('UAT-2: selecting door with empty delivery phone auto-fills from customerPhone',
       (tester) async {
     await tester.pumpWidget(_harness(
-      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      Stage3DeliveryOptionsScreen(
+        onBack: () {},
+        onContinue: () {},
+        orderStateProvider: orderCreateStateProvider,
+      ),
       state: const OrderCreateState(
         wizardData: OrderWizardData(customerPhone: '0912000111'),
       ),
@@ -237,7 +264,11 @@ void main() {
   testWidgets('UAT-2: does NOT overwrite a user-entered delivery phone',
       (tester) async {
     await tester.pumpWidget(_harness(
-      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      Stage3DeliveryOptionsScreen(
+        onBack: () {},
+        onContinue: () {},
+        orderStateProvider: orderCreateStateProvider,
+      ),
       state: const OrderCreateState(
         wizardData: OrderWizardData(
           customerPhone: '0987654321',
@@ -254,7 +285,11 @@ void main() {
   testWidgets('UAT-2: does not auto-fill when customerPhone is empty',
       (tester) async {
     await tester.pumpWidget(_harness(
-      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      Stage3DeliveryOptionsScreen(
+        onBack: () {},
+        onContinue: () {},
+        orderStateProvider: orderCreateStateProvider,
+      ),
       state: const OrderCreateState(
         wizardData: OrderWizardData(),
       ),

@@ -536,6 +536,11 @@ class VN {
   static const backToCart = 'Quay lại giỏ hàng';
   static const clearCart = 'Xóa giỏ';
   static const selectPaymentMethod = 'Chọn phương thức thanh toán';
+  static const paymentAmount = 'Số tiền';
+  static const deliverNow = 'Giao ngay?';
+  static const deliverNowPrompt = 'Giao bánh cho khách ngay?';
+  static const deliverNowYes = 'Giao ngay';
+  static const deliverNowNo = 'Để sau';
   static const confirmCounterPayment = 'Xác nhận thanh toán đơn tại quầy';
   static const removeFromCartTitle = 'Xóa sản phẩm khỏi giỏ?';
   static const decreaseQuantity = 'Giảm số lượng';

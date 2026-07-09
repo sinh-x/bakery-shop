@@ -1,18 +1,19 @@
 // EXEMPT: 300-line screen threshold — orchestrates 4 wizard stages + 2 payment
-// paths (cash/transfer+photo). Reviewed 2026-07-09 DG-218.
+// paths (cash/transfer+photo) + editable amount + photo upload + status
+// confirmation. Reviewed 2026-07-09 DG-218.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/order_service.dart';
+import '../../data/api/payment_transaction_service.dart';
+import '../../data/models/order_draft.dart';
 import '../../features/orders/widgets/order_stage_indicator.dart';
 import '../../features/orders/widgets/order_wizard.dart';
 import '../../features/orders/widgets/stage1_product_selection_screen.dart';
 import '../../features/orders/widgets/stage2_customer_info_screen.dart';
 import '../../features/orders/widgets/stage3_delivery_options_screen.dart';
-import '../../features/pos/utils/pos_cart_item_display.dart';
-import '../../features/pos/utils/pos_cart_wizard_sync.dart';
 import '../../features/pos/widgets/pos_checkout_dialogs.dart';
 import '../../features/pos/widgets/pos_payment_step.dart';
 import '../../features/pos/widgets/pos_review_panel.dart';
@@ -51,10 +52,10 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   bool _isProcessing = false;
   bool _navigatingAfterCheckout = false;
   String _selectedPaymentMethod = 'cash';
-  // Stage 4 sub-step: review → payment (DG-218 Phase 4, FR-5). When true the
-  // dedicated payment step is shown after the review; when false the
-  // review-only panel is shown.
+  double _paidAmount = 0;
+
   bool _paymentStepActive = false;
+  bool _posStateInitialized = false;
 
   @override
   void initState() {
@@ -65,54 +66,55 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   }
 
   void _initPosState() {
-    final notifier = ref.read(orderCreateStateProvider.notifier);
-    // POS defaults: delivery type = pickup, due time = now ceil-rounded to the
-    // next 15-minute slot (no +1h offset). See FR-3 / FR-4.
+    if (_posStateInitialized) return;
+    _posStateInitialized = true;
+
+    final posNotifier = ref.read(posOrderStateProvider.notifier);
+    final cart = ref.read(posCartProvider);
+
+    // B1: seed items from cart losslessly (B4: detect phu_kien as extras)
+    final items = cart.items.map((ci) {
+      final isExtra = ci.isGift || ci.product.category == 'phu_kien';
+      return DraftOrderItem(
+        product: ci.product,
+        quantity: ci.quantity,
+        isExtra: isExtra,
+        isGift: ci.isGift,
+        customUnitPrice: ci.selectedPrice,
+        priceChipId: ci.selectedChipId,
+        attributes: ci.useInventory
+            ? null
+            : const <String, dynamic>{'useInventory': 'false'},
+      );
+    }).toList();
+    posNotifier.updateItems(items);
+
     const wizardData = OrderWizardData(
       customerName: VN.khachLe,
       source: VN.taiTiemPOS,
       deliveryType: 'pickup',
     );
-    notifier.updateWizardData(wizardData);
-    notifier.updateSource(VN.taiTiemPOS);
+    posNotifier.updateWizardData(wizardData);
+    posNotifier.updateSource(VN.taiTiemPOS);
     final posDue = posDefaultDueDateTime(DateTime.now());
-    notifier.updateDueDate(DateTime(posDue.year, posDue.month, posDue.day));
-    notifier.updateDueTime(TimeOfDay(hour: posDue.hour, minute: posDue.minute));
-    notifier.goToStage(2);
+    posNotifier.updateDueDate(DateTime(posDue.year, posDue.month, posDue.day));
+    posNotifier.updateDueTime(TimeOfDay(hour: posDue.hour, minute: posDue.minute));
+    posNotifier.goToStage(2);
   }
 
   void _goToStage(int stage) {
-    // Stage 1 (product selection) edits the wizard working copy
-    // (`orderCreateStateProvider.items`); the POS cart is the single source
-    // of truth at submit (DG-218 FR-2). When leaving Stage 1, write the
-    // wizard edits back to the cart; when entering Stage 1, seed the wizard
-    // working copy from the cart.
-    final currentStage = ref.read(orderCreateStateProvider).currentStage;
-    if (currentStage == 1 && stage != 1) {
-      syncWizardItemsToCart(ref);
-    }
-    if (stage == 1 && currentStage != 1) {
-      syncCartToWizardItems(ref);
-    }
-    // Entering Stage 4: sync the cart into the wizard working copy so the
-    // unified summary cards (ProductSummaryCard etc.) reflect the latest
-    // cart contents. Reset to the review sub-step (DG-218 Phase 4, FR-5).
+    ref.read(posOrderStateProvider.notifier).goToStage(stage);
     if (stage == 4) {
-      syncCartToWizardItems(ref);
       setState(() => _paymentStepActive = false);
     }
-    ref.read(orderCreateStateProvider.notifier).goToStage(stage);
   }
 
   void _onStage1Continue() {
-    // Stage 1 → Stage 2: _goToStage(2) persists wizard edits back to the POS
-    // cart (single source of truth at submit) before advancing, so no explicit
-    // sync is needed here (review Mn3 — removed the redundant double-sync).
     _goToStage(2);
   }
 
   void _onStage2Continue() {
-    final state = ref.read(orderCreateStateProvider);
+    final state = ref.read(posOrderStateProvider);
     if (state.wizardData.deliveryType == 'pickup') {
       _goToStage(4);
     } else {
@@ -121,12 +123,17 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   }
 
   void _enterPaymentStep() {
-    // Review → dedicated payment step (DG-218 Phase 4, FR-5).
-    setState(() => _paymentStepActive = true);
+    final cart = ref.read(posCartProvider);
+    final total = cart.items
+        .where((i) => !i.isGift)
+        .fold<double>(0, (sum, i) => sum + i.total);
+    setState(() {
+      _paymentStepActive = true;
+      _paidAmount = total;
+    });
   }
 
   void _backFromPaymentStep() {
-    // Payment → review sub-step.
     setState(() => _paymentStepActive = false);
   }
 
@@ -135,53 +142,83 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     setState(() => _selectedPaymentMethod = paymentMethod);
   }
 
+  void _onAmountChanged(double amount) {
+    setState(() => _paidAmount = amount);
+  }
+
   List<Map<String, dynamic>> _buildOrderItems() {
-    final cart = ref.read(posCartProvider);
-    final orderItems = cart.items.where((i) => !i.isGift).map((i) {
-      return <String, dynamic>{
+    final state = ref.read(posOrderStateProvider);
+    return state.items.map((i) {
+      final m = <String, dynamic>{
         'productId': i.product.id.toString(),
-        'productName': posCartItemDisplayName(i),
+        'productName': i.product.name,
         'quantity': i.quantity,
         'unitPrice': i.unitPrice,
-        'priceChipId': i.selectedChipId,
-        if (!i.useInventory) 'attributes': {'useInventory': 'false'},
+        'isExtra': i.isExtra,
+        'isGift': i.isGift,
+        'attributes': i.attributes,
+        'priceChipId': i.priceChipId,
       };
+      if (i.isBirthday && i.age.isNotEmpty) {
+        final age = int.tryParse(i.age.trim());
+        if (age != null) m['age'] = age;
+      }
+      return m;
     }).toList();
-
-    final giftItems = cart.items
-        .where((i) => i.isGift)
-        .map(
-          (i) => <String, dynamic>{
-            'productId': i.product.id.toString(),
-            'productName': i.product.name,
-            'quantity': i.quantity,
-            'unitPrice': i.product.basePrice,
-            'isGift': true,
-          },
-        )
-        .toList();
-
-    orderItems.addAll(giftItems);
-    return orderItems;
   }
 
   Future<void> _handleFinalizeOrder() async {
     if (_isProcessing) return;
+    setState(() => _isProcessing = true);
+    try {
+      // B5: pickup → "Giao ngay?" confirmation dialog
+      final state = ref.read(posOrderStateProvider);
+      final isDelivery = state.wizardData.deliveryType == 'bus' ||
+          state.wizardData.deliveryType == 'door';
+      bool deliverImmediately = false;
+      if (!isDelivery) {
+        deliverImmediately = await _confirmDeliverNow() ?? false;
+        if (!mounted) return;
+      }
 
-    if (_selectedPaymentMethod == 'transfer') {
-      await _handleTransfer();
-    } else {
-      await _createOrder('cash');
+      if (_selectedPaymentMethod == 'transfer') {
+        await _handleTransfer(deliverImmediately: deliverImmediately);
+      } else {
+        await _createOrder('cash', deliverImmediately: deliverImmediately);
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
-  Future<void> _createOrder(String paymentMethod) async {
-    if (_isProcessing) return;
+  Future<bool?> _confirmDeliverNow() {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(VN.deliverNow),
+        content: const Text(VN.deliverNowPrompt),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text(VN.deliverNowNo),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(VN.deliverNowYes),
+          ),
+        ],
+      ),
+    );
+  }
 
+  Future<void> _createOrder(
+    String paymentMethod, {
+    bool deliverImmediately = false,
+  }) async {
     setState(() => _isProcessing = true);
 
     try {
-      final state = ref.read(orderCreateStateProvider);
+      final state = ref.read(posOrderStateProvider);
       final data = state.wizardData;
       final orderItems = _buildOrderItems();
       final dueDate = state.dueDate != null
@@ -190,8 +227,14 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       final dueTime = state.dueTime != null
           ? formatHourMinute(state.dueTime!.hour, state.dueTime!.minute)
           : null;
-      final isDelivery = data.deliveryType == 'bus' || data.deliveryType == 'door';
-      final status = isDelivery ? 'new' : 'delivered';
+      final isDelivery = data.deliveryType == 'bus' ||
+          data.deliveryType == 'door';
+      // B5: pickup defaults to 'confirmed'; "deliver now" → 'delivered'
+      final status = isDelivery
+          ? 'new'
+          : deliverImmediately
+              ? 'delivered'
+              : 'confirmed';
 
       final orderService = ref.read(orderServiceProvider);
       final order = await orderService.createOrder(
@@ -215,6 +258,40 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
       if (!mounted) return;
 
+      // B2: upload per-item cake photos
+      final hasPerItemPhotos =
+          state.items.any((i) => i.pendingPhotos.isNotEmpty);
+      if (hasPerItemPhotos) {
+        for (final draftItem in state.items) {
+          if (draftItem.pendingPhotos.isEmpty) continue;
+          for (final xfile in draftItem.pendingPhotos) {
+            try {
+              await orderService.uploadOrderPhoto(
+                order.orderRef,
+                xfile,
+              );
+            } catch (e) {
+              debugPrint(
+                'Photo upload failed (${xfile.path}): $e',
+              );
+            }
+          }
+        }
+      }
+
+      // B3: always create a payment transaction
+      final txnSvc = ref.read(paymentTransactionServiceProvider);
+      final txnType = _paidAmount >= order.totalPrice
+          ? 'full_payment'
+          : 'deposit';
+      await txnSvc.createTransaction(
+        order.orderRef,
+        amount: _paidAmount,
+        type: txnType,
+        method: _selectedPaymentMethod,
+      );
+
+      if (!mounted) return;
       _navigatingAfterCheckout = true;
       context.pushReplacement('/pos/receipt/${order.orderRef}');
       ref.read(posCartProvider.notifier).clearCart();
@@ -228,14 +305,14 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     }
   }
 
-  Future<void> _handleTransfer() async {
-    if (_isProcessing) return;
-
+  Future<void> _handleTransfer({
+    bool deliverImmediately = false,
+  }) async {
     final source = await showTransferSourceDialog(context);
     if (source == null) return;
 
     if (source == 'skip') {
-      await _createOrder('transfer');
+      await _createOrder('transfer', deliverImmediately: deliverImmediately);
       return;
     }
 
@@ -252,7 +329,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         return;
       }
 
-      final state = ref.read(orderCreateStateProvider);
+      final state = ref.read(posOrderStateProvider);
       final data = state.wizardData;
       final orderItems = _buildOrderItems();
       final dueDate = state.dueDate != null
@@ -261,8 +338,13 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       final dueTime = state.dueTime != null
           ? formatHourMinute(state.dueTime!.hour, state.dueTime!.minute)
           : null;
-      final isDelivery = data.deliveryType == 'bus' || data.deliveryType == 'door';
-      final status = isDelivery ? 'new' : 'delivered';
+      final isDelivery = data.deliveryType == 'bus' ||
+          data.deliveryType == 'door';
+      final status = isDelivery
+          ? 'new'
+          : deliverImmediately
+              ? 'delivered'
+              : 'confirmed';
 
       final orderService = ref.read(orderServiceProvider);
       final order = await orderService.createOrder(
@@ -288,6 +370,39 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         order.orderRef,
         image,
         tags: 'chuyen-khoan',
+      );
+
+      // B2: upload per-item cake photos
+      final hasPerItemPhotos =
+          state.items.any((i) => i.pendingPhotos.isNotEmpty);
+      if (hasPerItemPhotos) {
+        for (final draftItem in state.items) {
+          if (draftItem.pendingPhotos.isEmpty) continue;
+          for (final xfile in draftItem.pendingPhotos) {
+            try {
+              await orderService.uploadOrderPhoto(
+                order.orderRef,
+                xfile,
+              );
+            } catch (e) {
+              debugPrint(
+                'Photo upload failed (${xfile.path}): $e',
+              );
+            }
+          }
+        }
+      }
+
+      // B3: always create a payment transaction
+      final txnSvc = ref.read(paymentTransactionServiceProvider);
+      final txnType = _paidAmount >= order.totalPrice
+          ? 'full_payment'
+          : 'deposit';
+      await txnSvc.createTransaction(
+        order.orderRef,
+        amount: _paidAmount,
+        type: txnType,
+        method: 'transfer',
       );
 
       if (!mounted) return;
@@ -325,7 +440,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final state = ref.watch(orderCreateStateProvider);
+    final state = ref.watch(posOrderStateProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -370,34 +485,42 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         1 => Stage1ProductSelectionScreen(
             key: const ValueKey('stage1'),
             onContinue: _onStage1Continue,
+            orderStateProvider: posOrderStateProvider,
           ),
         2 => Stage2CustomerInfoScreen(
             key: const ValueKey('stage2'),
             posMode: true,
             onBack: () => context.pop(),
             onContinue: _onStage2Continue,
+            orderStateProvider: posOrderStateProvider,
           ),
         3 => Stage3DeliveryOptionsScreen(
             key: const ValueKey('stage3'),
             onBack: () => _goToStage(2),
             onContinue: () => _goToStage(4),
+            orderStateProvider: posOrderStateProvider,
           ),
         4 => _paymentStepActive
             ? PosPaymentStep(
                 key: const ValueKey('pos-payment'),
+                orderTotal: _paidAmount,
                 selectedPaymentMethod: _selectedPaymentMethod,
                 isProcessing: _isProcessing,
                 onPaymentMethodChanged: _onPaymentMethodChanged,
+                onAmountChanged: _onAmountChanged,
                 onBack: _backFromPaymentStep,
                 onSubmit: _handleFinalizeOrder,
               )
             : PosReviewPanel(
                 key: const ValueKey('stage4'),
                 onBack: () {
-                  final data = ref.read(orderCreateStateProvider).wizardData;
-                  _goToStage(data.deliveryType == 'pickup' ? 2 : 3);
+                  final data =
+                      ref.read(posOrderStateProvider).wizardData;
+                  _goToStage(
+                      data.deliveryType == 'pickup' ? 2 : 3);
                 },
                 onContinue: _enterPaymentStep,
+                orderStateProvider: posOrderStateProvider,
               ),
         _ => const SizedBox.shrink(),
       },

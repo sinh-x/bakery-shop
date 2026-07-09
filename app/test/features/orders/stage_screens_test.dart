@@ -150,7 +150,11 @@ void main() {
       'Stage2CustomerInfoScreen renders customer search + source selection',
       (tester) async {
     await tester.pumpWidget(buildTestWidget(
-      Stage2CustomerInfoScreen(onBack: () {}, onContinue: () {}),
+      Stage2CustomerInfoScreen(
+                onBack: () {},
+                onContinue: () {},
+                orderStateProvider: orderCreateStateProvider,
+              ),
     ));
 
     expect(find.text('Khách hàng'), findsWidgets);
@@ -162,7 +166,11 @@ void main() {
   testWidgets('Stage3DeliveryOptionsScreen renders delivery type selector',
       (tester) async {
     await tester.pumpWidget(buildTestWidget(
-      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      Stage3DeliveryOptionsScreen(
+                onBack: () {},
+                onContinue: () {},
+                orderStateProvider: orderCreateStateProvider,
+              ),
     ));
 
     expect(find.text('Hình thức nhận hàng'), findsOneWidget);
@@ -201,7 +209,11 @@ void main() {
     );
 
     await tester.pumpWidget(buildTestWidget(
-      Stage4ReviewScreen(onBack: () {}, onSubmit: () {}),
+      Stage4ReviewScreen(
+                onBack: () {},
+                onSubmit: () {},
+                orderStateProvider: orderCreateStateProvider,
+              ),
       state: testState,
     ));
 
@@ -215,7 +227,10 @@ void main() {
   testWidgets('Stage1ProductSelectionScreen shows empty state with (+) button when no items (AC-1)',
       (tester) async {
     await tester.pumpWidget(buildStage1TestWidget(
-      const Stage1ProductSelectionScreen(onContinue: _noop),
+      Stage1ProductSelectionScreen(
+        onContinue: _noop,
+        orderStateProvider: orderCreateStateProvider,
+      ),
     ));
     await tester.pumpAndSettle();
 
@@ -251,7 +266,10 @@ void main() {
       ],
     );
     await tester.pumpWidget(buildStage1TestWidget(
-      const Stage1ProductSelectionScreen(onContinue: _noop),
+      Stage1ProductSelectionScreen(
+        onContinue: _noop,
+        orderStateProvider: orderCreateStateProvider,
+      ),
       state: testState,
     ));
     await tester.pumpAndSettle();
@@ -269,7 +287,11 @@ void main() {
       wizardData: OrderWizardData(deliveryType: 'door'),
     );
     await tester.pumpWidget(buildTestWidget(
-      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      Stage3DeliveryOptionsScreen(
+                onBack: () {},
+                onContinue: () {},
+                orderStateProvider: orderCreateStateProvider,
+              ),
       state: testState,
     ));
     await tester.pumpAndSettle();
@@ -296,6 +318,7 @@ void main() {
         onBack: () {},
         onContinue: () {},
         posMode: true,
+        orderStateProvider: orderCreateStateProvider,
       ),
     ));
     await tester.pumpAndSettle();
@@ -326,7 +349,11 @@ void main() {
     );
 
     await tester.pumpWidget(buildTestWidget(
-      Stage2CustomerInfoScreen(onBack: () {}, onContinue: () {}),
+      Stage2CustomerInfoScreen(
+                onBack: () {},
+                onContinue: () {},
+                orderStateProvider: orderCreateStateProvider,
+              ),
       state: testState,
     ));
     await tester.pumpAndSettle();
@@ -359,7 +386,11 @@ void main() {
     );
 
     await tester.pumpWidget(buildTestWidget(
-      Stage3DeliveryOptionsScreen(onBack: () {}, onContinue: () {}),
+      Stage3DeliveryOptionsScreen(
+                onBack: () {},
+                onContinue: () {},
+                orderStateProvider: orderCreateStateProvider,
+              ),
       state: testState,
     ));
     await tester.pumpAndSettle();
@@ -399,7 +430,11 @@ void main() {
     );
 
     await tester.pumpWidget(buildTestWidget(
-      Stage4ReviewScreen(onBack: () {}, onSubmit: () {}),
+      Stage4ReviewScreen(
+                onBack: () {},
+                onSubmit: () {},
+                orderStateProvider: orderCreateStateProvider,
+              ),
       state: testState,
     ));
     await tester.pumpAndSettle();
@@ -430,7 +465,10 @@ void main() {
     ];
 
     await tester.pumpWidget(buildStage1TestWidget(
-      const Stage1ProductSelectionScreen(onContinue: _noop),
+      Stage1ProductSelectionScreen(
+        onContinue: _noop,
+        orderStateProvider: orderCreateStateProvider,
+      ),
       products: products,
       categories: categories,
     ));
@@ -482,7 +520,10 @@ void main() {
     ];
 
     await tester.pumpWidget(buildStage1TestWidget(
-      const Stage1ProductSelectionScreen(onContinue: _noop),
+      Stage1ProductSelectionScreen(
+        onContinue: _noop,
+        orderStateProvider: orderCreateStateProvider,
+      ),
       products: products,
       categories: categories,
     ));
@@ -756,7 +797,10 @@ void main() {
     );
 
     await tester.pumpWidget(buildStage1TestWidget(
-      const Stage1ProductSelectionScreen(onContinue: _noop),
+      Stage1ProductSelectionScreen(
+        onContinue: _noop,
+        orderStateProvider: orderCreateStateProvider,
+      ),
       products: products,
       categories: categories,
       state: testState,

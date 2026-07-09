@@ -9,14 +9,16 @@ import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class Stage3DeliveryOptionsScreen extends ConsumerStatefulWidget {
-  const Stage3DeliveryOptionsScreen({
+  Stage3DeliveryOptionsScreen({
     super.key,
     required this.onBack,
     required this.onContinue,
+    required this.orderStateProvider,
   });
 
   final VoidCallback onBack;
   final VoidCallback onContinue;
+  final NotifierProvider<OrderCreateStateNotifier, OrderCreateState> orderStateProvider;
 
   @override
   ConsumerState<Stage3DeliveryOptionsScreen> createState() =>
@@ -32,7 +34,7 @@ class _Stage3DeliveryOptionsScreenState
   @override
   void initState() {
     super.initState();
-    final state = ref.read(orderCreateStateProvider);
+    final state = ref.read(widget.orderStateProvider);
     _addressCtrl.text = state.wizardData.deliveryAddress;
     _deliveryPhoneCtrl.text = state.wizardData.deliveryPhone;
     _notesCtrl.text = state.wizardData.notes;
@@ -54,8 +56,8 @@ class _Stage3DeliveryOptionsScreenState
   }
 
   void _syncToState() {
-    final notifier = ref.read(orderCreateStateProvider.notifier);
-    final state = ref.read(orderCreateStateProvider);
+    final notifier = ref.read(widget.orderStateProvider.notifier);
+    final state = ref.read(widget.orderStateProvider);
     notifier.updateWizardData(
       state.wizardData.copyWith(
         deliveryAddress: _addressCtrl.text,
@@ -66,8 +68,8 @@ class _Stage3DeliveryOptionsScreenState
   }
 
   void _updateDeliveryType(String type) {
-    final notifier = ref.read(orderCreateStateProvider.notifier);
-    final state = ref.read(orderCreateStateProvider);
+    final notifier = ref.read(widget.orderStateProvider.notifier);
+    final state = ref.read(widget.orderStateProvider);
     final shippingBusDefault = firstFeeOrFallback(
       ref.read(shippingFeeBusProvider).asData?.value ?? [],
       25000,
@@ -98,21 +100,21 @@ class _Stage3DeliveryOptionsScreenState
     if (type != 'bus' && type != 'door') return;
     if (_deliveryPhoneCtrl.text.trim().isNotEmpty) return;
     final customerPhone =
-        ref.read(orderCreateStateProvider).wizardData.customerPhone.trim();
+        ref.read(widget.orderStateProvider).wizardData.customerPhone.trim();
     if (customerPhone.isEmpty) return;
     _deliveryPhoneCtrl.text = customerPhone;
-    final notifier = ref.read(orderCreateStateProvider.notifier);
+    final notifier = ref.read(widget.orderStateProvider.notifier);
     notifier.updateWizardData(
       ref
-          .read(orderCreateStateProvider)
+          .read(widget.orderStateProvider)
           .wizardData
           .copyWith(deliveryPhone: customerPhone),
     );
   }
 
   void _setShippingFee(double fee) {
-    final notifier = ref.read(orderCreateStateProvider.notifier);
-    final state = ref.read(orderCreateStateProvider);
+    final notifier = ref.read(widget.orderStateProvider.notifier);
+    final state = ref.read(widget.orderStateProvider);
     notifier.updateWizardData(
       state.wizardData.copyWith(shippingFee: fee),
     );
@@ -129,7 +131,7 @@ class _Stage3DeliveryOptionsScreenState
 
   void _onContinue() {
     _syncToState();
-    final data = ref.read(orderCreateStateProvider).wizardData;
+    final data = ref.read(widget.orderStateProvider).wizardData;
     if (data.needsAddress && data.deliveryAddress.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -143,7 +145,7 @@ class _Stage3DeliveryOptionsScreenState
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(orderCreateStateProvider);
+    final state = ref.watch(widget.orderStateProvider);
     final data = state.wizardData;
 
     final AsyncValue<List<String>>? feeConfig = switch (data.deliveryType) {
@@ -170,10 +172,10 @@ class _Stage3DeliveryOptionsScreenState
               dueDate: state.dueDate,
               dueTime: state.dueTime,
               onDueDateChanged: (d) => ref
-                  .read(orderCreateStateProvider.notifier)
+                  .read(widget.orderStateProvider.notifier)
                   .updateDueDate(d),
               onDueTimeChanged: (t) => ref
-                  .read(orderCreateStateProvider.notifier)
+                  .read(widget.orderStateProvider.notifier)
                   .updateDueTime(t),
               shippingFeeConfigLoading: feeConfig?.isLoading ?? false,
               shippingFeeConfigError:

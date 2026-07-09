@@ -83,7 +83,10 @@ void main() {
       final container = containerWithProducts(phuKienProducts, state: state);
 
       await tester.pumpWidget(
-        wrapWidget(container, const Stage1ProductSelectionScreen(onContinue: _noop)),
+        wrapWidget(container, Stage1ProductSelectionScreen(
+          onContinue: _noop,
+          orderStateProvider: orderCreateStateProvider,
+        )),
       );
       await tester.pumpAndSettle();
 
@@ -126,7 +129,10 @@ void main() {
       final container = containerWithProducts(phuKienProducts, state: state);
 
       await tester.pumpWidget(
-        wrapWidget(container, const Stage1ProductSelectionScreen(onContinue: _noop)),
+        wrapWidget(container, Stage1ProductSelectionScreen(
+          onContinue: _noop,
+          orderStateProvider: orderCreateStateProvider,
+        )),
       );
       await tester.pumpAndSettle();
 
@@ -187,7 +193,10 @@ void main() {
       final container = containerWithProducts(phuKienProducts, state: state);
 
       await tester.pumpWidget(
-        wrapWidget(container, const Stage1ProductSelectionScreen(onContinue: _noop)),
+        wrapWidget(container, Stage1ProductSelectionScreen(
+          onContinue: _noop,
+          orderStateProvider: orderCreateStateProvider,
+        )),
       );
       await tester.pumpAndSettle();
 
