@@ -109,6 +109,30 @@ void main() {
     });
   });
 
+  group('ProductSummaryCard rut tien line (DG-223 MAJOR-1)', () {
+    testWidgets('renders rut tien lines for a POS rut-tien item with integer cash values',
+        (tester) async {
+      final item = DraftOrderItem(
+        product: _product(),
+        quantity: 1,
+        attributes: {
+          'rut_tien': 'true',
+          'cash_amount': '20000',
+          'cash_fee': '5000',
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ProductSummaryCard(items: [item])),
+        ),
+      );
+
+      expect(find.textContaining(VN.rutTien), findsOneWidget);
+      expect(find.textContaining(formatVND(20000)), findsWidgets);
+    });
+  });
+
   group('ProductSummaryCard product count (S1 — exclude extras)', () {
     testWidgets(
         'product count is 1 for 1 cake + N extras (excludes phụ kiện)',

@@ -84,7 +84,7 @@ class PosCheckoutCartItemTile extends ConsumerWidget {
                       )
                     : null,
               ),
-              if (!item.isGift)
+              if (!item.isGift && item.useInventory)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: _UseInventoryBadge(useInventory: item.useInventory),

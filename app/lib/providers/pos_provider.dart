@@ -67,6 +67,11 @@ class PosCartNotifier extends Notifier<PosCartState> {
   @override
   PosCartState build() => PosCartState();
 
+  /// Adds a product to the POS cart.
+  ///
+  /// Cash fields (`cashFee`, `cashAmount`) and general `attributes` are NOT
+  /// set here — they are populated only via wizard write-back
+  /// ([draftItemsToCart]). No caller passes them at add time today.
   void addItem(
     Product product, {
     double? selectedPrice,
@@ -76,9 +81,6 @@ class PosCartNotifier extends Notifier<PosCartState> {
     bool isBirthday = false,
     String age = '',
     bool rutTien = false,
-    double? cashFee,
-    double? cashAmount,
-    Map<String, dynamic>? attributes,
   }) {
     final items = List<PosCartItem>.from(state.items);
     final option = selectedChipId != null ? 'chip:$selectedChipId' : 'base';
@@ -103,9 +105,6 @@ class PosCartNotifier extends Notifier<PosCartState> {
           isBirthday: isBirthday,
           age: age,
           rutTien: rutTien,
-          cashFee: cashFee,
-          cashAmount: cashAmount,
-          attributes: attributes,
         ),
       );
     }

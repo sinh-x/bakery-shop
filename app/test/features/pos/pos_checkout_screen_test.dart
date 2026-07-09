@@ -498,8 +498,8 @@ void main() {
       expect(regularItem['isBirthday'], isTrue);
       expect(regularItem['age'], 5);
       expect(regularItem['attributes']['rut_tien'], 'true');
-      expect(regularItem['attributes']['cash_fee'], '5000.0');
-      expect(regularItem['attributes']['cash_amount'], '20000.0');
+      expect(regularItem['attributes']['cash_fee'], '5000');
+      expect(regularItem['attributes']['cash_amount'], '20000');
     });
   });
 
@@ -863,8 +863,8 @@ void main() {
       expect(posState.items.single.isBirthday, isTrue);
       expect(posState.items.single.age, '5');
       expect(posState.items.single.attributes['rut_tien'], 'true');
-      expect(posState.items.single.attributes['cash_fee'], '10000.0');
-      expect(posState.items.single.attributes['cash_amount'], '50000.0');
+      expect(posState.items.single.attributes['cash_fee'], '10000');
+      expect(posState.items.single.attributes['cash_amount'], '50000');
 
       final updated = capturedRef.read(posOrderStateProvider);
       final cartItems = updated.items.map(draftItemToCart).toList();

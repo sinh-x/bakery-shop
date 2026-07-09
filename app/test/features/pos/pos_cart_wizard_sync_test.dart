@@ -180,8 +180,8 @@ void main() {
       );
       final draft = cartItemToDraft(cartItem);
       expect(draft.attributes['rut_tien'], 'true');
-      expect(draft.attributes['cash_fee'], '5000.0');
-      expect(draft.attributes['cash_amount'], '20000.0');
+      expect(draft.attributes['cash_fee'], '5000');
+      expect(draft.attributes['cash_amount'], '20000');
     });
 
     test('draftItemToCart preserves isBirthday and age', () {
