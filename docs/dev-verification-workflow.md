@@ -248,38 +248,52 @@ docker compose --profile dev exec baker-dev \
 
 ## §6 HTTPS Access via Tailscale MagicDNS (Dev Caddy)
 
-The dev stack can be exposed over HTTPS on the Tailscale tailnet via the `caddy-dev` service, mirroring the prod `caddy` setup. This lets you verify the Flutter web app and API from a browser on any tailnet device using the drgnfly MagicDNS hostname.
+The dev stack can be accessed over HTTPS on the Tailscale tailnet. TLS is terminated by the **central `drgnfly-caddy` gateway** (which owns host port 443 for `drgnfly.tail10c2c6.ts.net`). The bakery repo's own `caddy-dev` service serves the Flutter web app and proxies `/api/*` to `baker-dev:2312` on **host loopback `127.0.0.1:2380`** (plain HTTP — no TLS, no `DOMAIN` env, no cert mount). The central gateway reverse-proxies the domain root to `127.0.0.1:2380`.
+
+```
+Browser (tailnet device)
+  └─ https://drgnfly.tail10c2c6.ts.net
+       └─ central drgnfly-caddy (:443, TLS)
+            └─ 127.0.0.1:2380 (caddy-dev, plain HTTP)
+                 ├─ /api/* → baker-dev:2312
+                 └─ else  → web-build/ (Flutter SPA)
+```
 
 ### 6.1 Prerequisites
 
 - [ ] Tailscale is connected on this host (`tailscale status` shows the node)
-- [ ] TLS cert exists for the dev domain: `./certs/drgnfly.tail10c2c6.ts.net.crt` and `.key`
-  - Renew/generate with: `./scripts/renew-certs.sh drgnfly.tail10c2c6.ts.net`
-- [ ] Fresh web bundle is built (so `web-build/` is up to date):
-  ```bash
-  cd app && flutter build web --release
-  # or: ./scripts/deploy-web.sh
-  ```
+- [ ] Central `drgnfly-caddy` gateway is running (`docker compose ps` in `~/git-repos/sinh-x/drgnfly-caddy/`)
+- [ ] Gateway TLS cert is valid (renew with `drgnfly-caddy/scripts/renew-certs.sh` if expired; cert is in the gateway repo, not this one)
+- [ ] Fresh web bundle built (re-run `./scripts/rebuild-dev.sh` or `cd app && flutter build web --release`)
 
 ### 6.2 Validate the dev Caddyfile
 
-`caddy validate` additionally loads the TLS certificates referenced by the `tls` directive, which fails in a syntax-only check without the cert files mounted. Use `caddy adapt` instead for a syntax-only check that works without certs (it renders the Caddyfile to its JSON config and exits 0 if the syntax is valid):
+Syntax-only validation (no certs needed — `caddy-dev` is plain HTTP on loopback):
 
 ```bash
 docker run --rm -v "$(pwd)/Caddyfile.dev:/etc/caddy/Caddyfile:ro" \
-  -e DOMAIN=drgnfly.tail10c2c6.ts.net caddy:2-alpine \
-  caddy adapt --config /etc/caddy/Caddyfile
+  caddy:2-alpine caddy adapt --config /etc/caddy/Caddyfile
 ```
 
-- [ ] Exits 0 and emits valid JSON (syntax valid). Note: full `caddy validate` additionally loads certs, so `caddy adapt` is used here for syntax-only checks.
+- [ ] Exits 0 and emits valid JSON.
 
-### 6.3 Start the dev stack with caddy
+### 6.3 Start the dev stack
+
+```bash
+./scripts/rebuild-dev.sh
+```
+
+or manually:
 
 ```bash
 docker compose --profile dev up -d
 ```
 
-This starts both `baker-dev` and `caddy-dev`. The caddy-dev container publishes host port `443` and serves the Flutter web app + reverse-proxies `/api/*` to `baker-dev:2312` over the tailnet TLS cert.
+If server-side Python code changed, rebuild the image too:
+
+```bash
+./scripts/rebuild-dev.sh --build-backend
+```
 
 ### 6.4 Verify HTTPS access
 
@@ -289,12 +303,12 @@ Open in a browser on any tailnet device:
 https://drgnfly.tail10c2c6.ts.net
 ```
 
-- [ ] App loads with valid TLS (no cert warning)
+- [ ] App loads with valid TLS (no cert warning — TLS is provided by the central gateway)
 - [ ] `/api/health` responds 200:
   ```bash
   curl -sf https://drgnfly.tail10c2c6.ts.net/api/health
   ```
-- [ ] SPA deep-link fallback works (e.g. navigate to a client-side route and reload)
+- [ ] SPA deep-link fallback works (navigate to a client-side route and reload)
 
 ### 6.5 Stop the dev stack
 
