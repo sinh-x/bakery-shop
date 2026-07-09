@@ -228,7 +228,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
       _search(q);
     } else {
       await _load();
-      if (mounted && q.isNotEmpty && _mode == _FilterMode.client) {
+      if (mounted && _error == null && q.isNotEmpty && _mode == _FilterMode.client) {
         _onChanged(_ctrl.text);
       }
     }

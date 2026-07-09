@@ -265,6 +265,26 @@ void main() {
         reason: 'retry must trigger another listCustomers call');
   });
 
+  testWidgets('retry on repeated client-mode load failure keeps error+retry visible (UX-2)',
+      (tester) async {
+    final service = _ThrowingCustomerService();
+    await _pumpField(
+      tester,
+      service,
+      initial: const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
+    );
+
+    expect(find.text(VN.customerSearchError), findsOneWidget);
+    expect(find.text(VN.retry), findsOneWidget);
+
+    await tester.tap(find.text(VN.retry));
+    await tester.pumpAndSettle();
+
+    expect(find.text(VN.customerSearchError), findsOneWidget);
+    expect(find.text(VN.retry), findsOneWidget);
+    expect(find.text(VN.customerSearchNoMatch), findsNothing);
+  });
+
   testWidgets('server-mode caps results at 20 rows (AC-3)', (tester) async {
     final customers = List.generate(
       25,
