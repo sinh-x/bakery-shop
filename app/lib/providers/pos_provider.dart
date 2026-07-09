@@ -81,55 +81,11 @@ class PosCartNotifier extends Notifier<PosCartState> {
       );
     }
 
-    // Auto-gift: if tang_kem + total >= threshold, add gift extras
+    // Auto-gift: only recompute when the added item itself is tang_kem, so
+    // adding a non-tang_kem item never mutates existing gift quantities
+    // (preserves the prior inline guard's observable behavior).
     if (product.attributes['tang_kem']?.toString() == 'true') {
-      final qualified = items
-          .where(
-            (i) =>
-                i.product.attributes['tang_kem']?.toString() == 'true' &&
-                !i.isGift,
-          )
-          .fold<double>(0, (sum, i) => sum + i.total);
-
-      if (qualified >= GiftConfig.giftThreshold) {
-        final giftCatalog = _giftCatalogByNormalizedName();
-        for (final (configuredName, configuredPrice) in GiftConfig.giftExtras) {
-          final normalized = _normalizeGiftName(configuredName);
-          final giftProduct = giftCatalog[normalized];
-          if (giftProduct == null) {
-            assert(() {
-              debugPrint(
-                'pos_provider: unmatched gift config "${configuredName.trim()}" '
-                'for active phu_kien products',
-              );
-              return true;
-            }());
-            continue;
-          }
-
-          final existingGift = items
-              .where((i) => i.product.id == giftProduct.id && i.isGift)
-              .firstOrNull;
-          if (existingGift != null) {
-            existingGift.quantity += 1;
-            continue;
-          }
-
-          items.add(
-            PosCartItem(
-              product: giftProduct.copyWith(
-                basePrice: configuredPrice,
-                attributes: {
-                  ...giftProduct.attributes,
-                  '_gift': 'true',
-                },
-              ),
-              quantity: 1,
-              isGift: true,
-            ),
-          );
-        }
-      }
+      _computeGifts(items, incrementExisting: true);
     }
 
     state = PosCartState(items: items);
@@ -168,17 +124,23 @@ class PosCartNotifier extends Notifier<PosCartState> {
   /// item's quantity drops below the gift threshold (review Mn6).
   void replaceCart(List<PosCartItem> items) {
     final working = List<PosCartItem>.from(items);
-    _recomputeGifts(working);
+    _computeGifts(working, incrementExisting: false);
     state = PosCartState(items: working);
   }
 
-  /// Recomputes the auto-gift extras for the current [items].
+  /// Computes the auto-gift extras for [items] in place.
   ///
   /// Prunes existing auto-gifts that no longer qualify and re-adds the
   /// configured gift extras when the tang_kem total meets the threshold.
-  /// Shared by [addItem] and [replaceCart] so both paths apply the same gift
-  /// logic (review Mn6 — extracted from addItem).
-  void _recomputeGifts(List<PosCartItem> items) {
+  /// Shared by [addItem] (with `incrementExisting: true` so re-adding a
+  /// qualifying tang_kem item increments an existing gift's quantity) and
+  /// [replaceCart] (with `incrementExisting: false` so rewriting the cart
+  /// preserves any existing gift quantity). Single implementation of the
+  /// gift policy (review Mn7 — dedup of the prior addItem inline copy).
+  void _computeGifts(
+    List<PosCartItem> items, {
+    bool incrementExisting = false,
+  }) {
     final hasTangKem = items.any(
       (i) => i.product.attributes['tang_kem']?.toString() == 'true' && !i.isGift,
     );
@@ -219,6 +181,9 @@ class PosCartNotifier extends Notifier<PosCartState> {
           .where((i) => i.product.id == giftProduct.id && i.isGift)
           .firstOrNull;
       if (existingGift != null) {
+        if (incrementExisting) {
+          existingGift.quantity += 1;
+        }
         continue;
       }
 

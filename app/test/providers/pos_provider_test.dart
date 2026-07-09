@@ -153,4 +153,48 @@ void main() {
     expect(state.items.where((i) => i.isGift), isNotEmpty,
         reason: 'Mn6: replaceCart must recompute gifts for qualifying carts');
   });
+
+  test(
+      'addItem increments an existing gift while replaceCart preserves its quantity (Mn7)',
+      () async {
+    final container = ProviderContainer(
+      overrides: [
+        phuKienProductsProvider.overrideWith(
+          (ref) => Future.value(
+            const <Product>[
+              Product(id: 201, name: 'Nến', category: 'phu_kien', active: 1),
+            ],
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(phuKienProductsProvider.future);
+
+    final product = tangKemProduct();
+    final notifier = container.read(posCartProvider.notifier);
+
+    // First qualifying add creates the gift with quantity 1.
+    notifier.addItem(product);
+    int giftQuantity() =>
+        container
+            .read(posCartProvider)
+            .items
+            .where((i) => i.isGift)
+            .fold(0, (sum, i) => sum + i.quantity);
+    expect(giftQuantity(), 1, reason: 'sanity: first add creates one gift');
+
+    // Second qualifying addItem must INCREMENT the existing gift (Mn7).
+    notifier.addItem(product);
+    expect(giftQuantity(), 2,
+        reason: 'Mn7: addItem increments an existing gift quantity');
+
+    // replaceCart of the same qualifying contents must PRESERVE the gift
+    // quantity, not increment it again (Mn7).
+    final cart = container.read(posCartProvider).items;
+    notifier.replaceCart(cart);
+    expect(giftQuantity(), 2,
+        reason: 'Mn7: replaceCart preserves the existing gift quantity');
+  });
 }
