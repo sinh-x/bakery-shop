@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:bakery_app/data/api/payment_transaction_service.dart';
 import 'package:bakery_app/data/models/payment_transaction.dart';
+import 'package:bakery_app/data/models/order_draft.dart';
 import 'package:bakery_app/features/pos/pos_checkout_screen.dart';
+import 'package:bakery_app/providers/order/order_create_state_provider.dart';
 import 'package:bakery_app/providers/pos_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:dio/dio.dart';
@@ -10,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import 'package:bakery_app/data/api/customer_service.dart';
 import 'package:bakery_app/data/api/order_service.dart';
@@ -644,6 +647,142 @@ void main() {
       // FR-9: the walk-in customer and POS source defaults are applied.
       expect(fakeOrderService.createOrderCallCount, 1);
       expect(find.text('Receipt ORD-001'), findsOneWidget);
+    });
+  });
+
+  group('B1a round-trip preserves notes and photos (leave → re-enter)', () {
+    testWidgets('notes seeded from cart survive write-back on back navigation', (tester) async {
+      final cartItem = PosCartItem(
+        product: _product(),
+        quantity: 1,
+        notes: 'Không đường',
+      );
+
+      late WidgetRef capturedRef;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            posCartProvider.overrideWith(() => _SeededPosCartNotifier([cartItem])),
+            customerServiceProvider.overrideWithValue(_FakeCustomerService()),
+            paymentTransactionServiceProvider.overrideWithValue(_FakePaymentTransactionService()),
+          ],
+          child: Consumer(
+            builder: (context, ref, _) {
+              capturedRef = ref;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Seed posOrderStateProvider from cart (simulating _initPosState).
+      final cart = capturedRef.read(posCartProvider);
+      final item = cart.items.single;
+      capturedRef.read(posOrderStateProvider.notifier).updateItems([
+        DraftOrderItem(
+          product: item.product,
+          quantity: item.quantity,
+          notes: item.notes,
+        ),
+      ]);
+
+      // Verify notes are seeded.
+      var posState = capturedRef.read(posOrderStateProvider);
+      expect(posState.items.single.notes, 'Không đường');
+
+      // Simulate user editing notes in POS state.
+      capturedRef.read(posOrderStateProvider.notifier).updateItems([
+        DraftOrderItem(
+          product: item.product,
+          quantity: item.quantity,
+          notes: 'Không đường, ít bơ',
+        ),
+      ]);
+
+      // Write back to cart (simulating _writeBackToCart).
+      final updated = capturedRef.read(posOrderStateProvider);
+      final cartItems = updated.items.map((di) => PosCartItem(
+        product: di.product,
+        quantity: di.quantity,
+        notes: di.notes,
+        pendingPhotos: List<XFile>.from(di.pendingPhotos),
+      )).toList();
+      capturedRef.read(posCartProvider.notifier).replaceCart(cartItems);
+
+      // Re-seed from the now-lossless cart.
+      final updatedCart = capturedRef.read(posCartProvider);
+      capturedRef.read(posOrderStateProvider.notifier).updateItems([
+        DraftOrderItem(
+          product: updatedCart.items.single.product,
+          quantity: updatedCart.items.single.quantity,
+          notes: updatedCart.items.single.notes,
+        ),
+      ]);
+
+      // Assert notes preserved on the re-seeded POS state.
+      posState = capturedRef.read(posOrderStateProvider);
+      expect(posState.items.single.notes, 'Không đường, ít bơ');
+    });
+
+    testWidgets('pendingPhotos seeded from cart survive write-back', (tester) async {
+      late WidgetRef capturedRef;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            posCartProvider.overrideWith(() => _SeededPosCartNotifier([
+              PosCartItem(product: _product(), quantity: 1, pendingPhotos: <XFile>[]),
+            ])),
+            customerServiceProvider.overrideWithValue(_FakeCustomerService()),
+            paymentTransactionServiceProvider.overrideWithValue(_FakePaymentTransactionService()),
+          ],
+          child: Consumer(
+            builder: (context, ref, _) {
+              capturedRef = ref;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Seed POS state from cart.
+      final cart = capturedRef.read(posCartProvider);
+      final item = cart.items.single;
+      capturedRef.read(posOrderStateProvider.notifier).updateItems([
+        DraftOrderItem(
+          product: item.product,
+          quantity: item.quantity,
+          pendingPhotos: item.pendingPhotos,
+        ),
+      ]);
+
+      // Verify photos seeded.
+      expect(capturedRef.read(posOrderStateProvider).items.single.pendingPhotos, isEmpty);
+
+      // Write back to cart.
+      final state = capturedRef.read(posOrderStateProvider);
+      final cartItems = state.items.map((di) => PosCartItem(
+        product: di.product,
+        quantity: di.quantity,
+        pendingPhotos: List<XFile>.from(di.pendingPhotos),
+      )).toList();
+      capturedRef.read(posCartProvider.notifier).replaceCart(cartItems);
+
+      // Re-seed.
+      final updatedCart = capturedRef.read(posCartProvider);
+      capturedRef.read(posOrderStateProvider.notifier).updateItems([
+        DraftOrderItem(
+          product: updatedCart.items.single.product,
+          quantity: updatedCart.items.single.quantity,
+          pendingPhotos: List<XFile>.from(updatedCart.items.single.pendingPhotos),
+        ),
+      ]);
+
+      expect(
+        capturedRef.read(posOrderStateProvider).items.single.pendingPhotos,
+        isEmpty,
+      );
     });
   });
 }

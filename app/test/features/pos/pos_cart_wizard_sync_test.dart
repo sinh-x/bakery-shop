@@ -7,6 +7,7 @@ import 'package:bakery_app/providers/pos_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 Product _product({int id = 1, double price = 20000, String name = 'Banh mi'}) {
   return Product(
@@ -90,6 +91,42 @@ void main() {
     test('draftItemToCart defaults useInventory true when not overridden', () {
       final draft = DraftOrderItem(product: _product(), quantity: 1);
       expect(draftItemToCart(draft).useInventory, isTrue);
+    });
+
+    test('cartItemToDraft preserves notes and pendingPhotos', () {
+      final cartItem = PosCartItem(
+        product: _product(),
+        quantity: 1,
+        notes: 'Không đường',
+        pendingPhotos: <XFile>[],
+      );
+      final draft = cartItemToDraft(cartItem);
+      expect(draft.notes, 'Không đường');
+      expect(draft.pendingPhotos, isEmpty);
+    });
+
+    test('draftItemToCart preserves notes and pendingPhotos', () {
+      final draft = DraftOrderItem(
+        product: _product(),
+        quantity: 1,
+        notes: 'Ít ngọt',
+        pendingPhotos: <XFile>[],
+      );
+      final cartItem = draftItemToCart(draft);
+      expect(cartItem.notes, 'Ít ngọt');
+      expect(cartItem.pendingPhotos, isEmpty);
+    });
+
+    test('round trip cart -> draft -> cart preserves notes and photos', () {
+      final original = PosCartItem(
+        product: _product(),
+        quantity: 2,
+        notes: 'Không đường, ít bơ',
+        pendingPhotos: <XFile>[],
+      );
+      final roundTripped = draftItemToCart(cartItemToDraft(original));
+      expect(roundTripped.notes, 'Không đường, ít bơ');
+      expect(roundTripped.pendingPhotos, isEmpty);
     });
 
     test('round trip cart -> draft -> cart preserves line identity', () {

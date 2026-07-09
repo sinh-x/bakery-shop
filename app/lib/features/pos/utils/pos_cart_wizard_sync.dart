@@ -1,7 +1,9 @@
+import 'package:image_picker/image_picker.dart' show XFile;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../data/models/order_draft.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../providers/pos_provider.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Converts a [PosCartItem] into the equivalent [DraftOrderItem] so the POS
 /// cart contents can seed the order-wizard Stage 1 (product selection).
@@ -24,6 +26,8 @@ DraftOrderItem cartItemToDraft(PosCartItem item) {
     attributes: item.useInventory
         ? null
         : const <String, dynamic>{'useInventory': 'false'},
+    notes: item.notes,
+    pendingPhotos: item.pendingPhotos,
   );
 }
 
@@ -41,6 +45,8 @@ PosCartItem draftItemToCart(DraftOrderItem item) {
     selectedPrice: item.customUnitPrice,
     selectedChipId: item.priceChipId,
     selectedChipLabel: _resolveChipLabel(item),
+    notes: item.notes,
+    pendingPhotos: List<XFile>.from(item.pendingPhotos),
   );
 }
 

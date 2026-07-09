@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../data/models/product.dart';
 import '../providers/products_provider.dart';
@@ -15,6 +16,8 @@ class PosCartItem {
     this.selectedPrice,
     this.selectedChipId,
     this.selectedChipLabel,
+    this.notes = '',
+    this.pendingPhotos = const [],
   });
 
   final Product product;
@@ -24,6 +27,8 @@ class PosCartItem {
   final double? selectedPrice;
   final int? selectedChipId;
   final String? selectedChipLabel;
+  String notes;
+  List<XFile> pendingPhotos;
 
   String get lineKey {
     final option = selectedChipId != null ? 'chip:$selectedChipId' : 'base';

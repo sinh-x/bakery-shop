@@ -3,6 +3,7 @@ import 'package:bakery_app/providers/pos_provider.dart';
 import 'package:bakery_app/providers/products_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 void main() {
   Product tangKemProduct() {
@@ -196,5 +197,71 @@ void main() {
     notifier.replaceCart(cart);
     expect(giftQuantity(), 2,
         reason: 'Mn7: replaceCart preserves the existing gift quantity');
+  });
+
+  group('replaceCart preserves lossless fields (B1a)', () {
+    test('replaceCart preserves notes and pendingPhotos', () {
+      final product = tangKemProduct();
+      final items = [
+        PosCartItem(
+          product: product,
+          quantity: 1,
+          notes: 'Không đường',
+          pendingPhotos: <XFile>[],
+        ),
+      ];
+      final container = ProviderContainer(
+        overrides: [
+          phuKienProductsProvider.overrideWith(
+            (ref) => Future.value(const <Product>[]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(posCartProvider.notifier).replaceCart(items);
+      final state = container.read(posCartProvider);
+      expect(state.items.single.notes, 'Không đường');
+      expect(state.items.single.pendingPhotos, isEmpty);
+    });
+  });
+
+  group('B1a PosCartItem lossless round-trip', () {
+    test('round-trip preserves notes, photos, chip, and useInventory', () {
+      final item = PosCartItem(
+        product: tangKemProduct(),
+        quantity: 2,
+        isGift: false,
+        useInventory: false,
+        selectedPrice: 130000,
+        selectedChipId: 5,
+        selectedChipLabel: 'Lớn',
+        notes: 'Không đường',
+        pendingPhotos: <XFile>[],
+      );
+
+      expect(item.notes, 'Không đường');
+      expect(item.pendingPhotos, isEmpty);
+      expect(item.selectedChipId, 5);
+      expect(item.selectedChipLabel, 'Lớn');
+      expect(item.selectedPrice, 130000);
+      expect(item.useInventory, isFalse);
+      expect(item.quantity, 2);
+    });
+
+    test('notes and photos do not affect lineKey', () {
+      final a = PosCartItem(product: tangKemProduct(), quantity: 1, notes: 'Ghi chú A');
+      final b = PosCartItem(product: tangKemProduct(), quantity: 1, notes: 'Ghi chú B');
+      expect(a.lineKey, b.lineKey);
+    });
+
+    test('default notes is empty string', () {
+      final item = PosCartItem(product: tangKemProduct(), quantity: 1);
+      expect(item.notes, '');
+    });
+
+    test('default pendingPhotos is empty list', () {
+      final item = PosCartItem(product: tangKemProduct(), quantity: 1);
+      expect(item.pendingPhotos, isEmpty);
+    });
   });
 }

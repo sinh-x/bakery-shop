@@ -22,6 +22,7 @@ import '../../providers/order/order_create_state_provider.dart';
 import '../../providers/pos_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/labels/orders.dart';
+import '../pos/utils/pos_cart_wizard_sync.dart';
 import '../../shared/utils/order_helpers.dart';
 import '../../shared/utils/api_error.dart' as api_error;
 import '../../shared/utils/date_formatting.dart';
@@ -85,6 +86,8 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         attributes: ci.useInventory
             ? null
             : const <String, dynamic>{'useInventory': 'false'},
+        notes: ci.notes,
+        pendingPhotos: ci.pendingPhotos,
       );
     }).toList();
     posNotifier.updateItems(items);
@@ -107,6 +110,13 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     if (stage == 4) {
       setState(() => _paymentStepActive = false);
     }
+  }
+
+  void _writeBackToCart() {
+    final state = ref.read(posOrderStateProvider);
+    if (state.items.isEmpty) return;
+    final cartItems = state.items.map(draftItemToCart).toList();
+    ref.read(posCartProvider.notifier).replaceCart(cartItems);
   }
 
   void _onStage1Continue() {
@@ -448,7 +458,10 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: VN.backToCart,
-          onPressed: () => context.pop(),
+          onPressed: () {
+            _writeBackToCart();
+            context.pop();
+          },
         ),
         actions: [
           TextButton.icon(
@@ -490,7 +503,10 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         2 => Stage2CustomerInfoScreen(
             key: const ValueKey('stage2'),
             posMode: true,
-            onBack: () => context.pop(),
+            onBack: () {
+              _writeBackToCart();
+              context.pop();
+            },
             onContinue: _onStage2Continue,
             orderStateProvider: posOrderStateProvider,
           ),
