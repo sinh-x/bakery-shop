@@ -92,6 +92,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
   Customer? _selected;
   bool _clearedOnFocus = false;
   String? _error;
+  bool _showRefineHint = false;
 
   static const int _cap = 20;
 
@@ -129,6 +130,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
     setState(() {
       _loading = true;
       _error = null;
+      _showRefineHint = false;
     });
     try {
       final service = ref.read(customerServiceProvider);
@@ -153,6 +155,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
   }
 
   void _applyBrowseList() {
+    _showRefineHint = false;
     if (_allCustomers.length <= _cap) {
       _listCustomers = List.from(_allCustomers);
     } else {
@@ -169,12 +172,14 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
       setState(() {
         _applyBrowseList();
         _error = null;
+        _showRefineHint = false;
       });
       return;
     }
 
     if (_mode == _FilterMode.client) {
       setState(() {
+        _showRefineHint = false;
         _listCustomers = _allCustomers
             .where((c) => _matchesDiacriticAware(query, c))
             .toList();
@@ -199,8 +204,10 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
       final service = ref.read(customerServiceProvider);
       final results = await service.listCustomers(search: query);
       if (!mounted) return;
+      final capped = results.take(_cap).toList();
       setState(() {
-        _listCustomers = results.take(_cap).toList();
+        _listCustomers = capped;
+        _showRefineHint = results.length > _cap;
         _loading = false;
       });
     } catch (e) {
@@ -210,6 +217,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
         _listCustomers = const [];
         _loading = false;
         _error = VN.customerSearchError;
+        _showRefineHint = false;
       });
     }
   }
@@ -248,67 +256,106 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
             hintText: widget.hintText ?? VN.customerSearchHint,
             border: const OutlineInputBorder(),
             prefixIcon: const Icon(Icons.person_search_outlined),
-            suffixIcon: _loading
-                ? const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : null,
           ),
         ),
         const SizedBox(height: 8),
         Expanded(
-          child: _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        size: 32,
-                        color: theme.colorScheme.error,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _error!,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.error,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextButton.icon(
-                        onPressed: _retry,
-                        icon: const Icon(Icons.refresh, size: 16),
-                        label: const Text(VN.retry),
-                      ),
-                    ],
-                  ),
-                )
-              : _listCustomers.isEmpty
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
                   ? Center(
-                      child: Text(
-                        VN.customerSearchNoMatch,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.outline,
-                        ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 32,
+                            color: theme.colorScheme.error,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _error!,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.error,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: _retry,
+                            icon: const Icon(Icons.refresh, size: 16),
+                            label: const Text(VN.retry),
+                          ),
+                        ],
                       ),
                     )
-                  : ListView.builder(
-                      itemCount: _listCustomers.length,
-                      itemBuilder: (context, index) {
-                        final c = _listCustomers[index];
-                        return ListTile(
-                          dense: true,
-                          title: Text(c.name),
-                          subtitle: c.phone.isNotEmpty ? Text(c.phone) : null,
-                          onTap: () => _select(c),
-                        );
-                      },
-                    ),
+                  : _listCustomers.isEmpty
+                      ? Center(
+                          child: Text(
+                            VN.customerSearchNoMatch,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.outline,
+                            ),
+                          ),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: ListView.builder(
+                                itemCount: _listCustomers.length,
+                                itemBuilder: (context, index) {
+                                  final c = _listCustomers[index];
+                                  return ListTile(
+                                    dense: true,
+                                    title: Text(c.name),
+                                    subtitle: c.phone.isNotEmpty
+                                        ? Text(c.phone)
+                                        : null,
+                                    onTap: () => _select(c),
+                                  );
+                                },
+                              ),
+                            ),
+                            if (_selected != null)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.only(top: 4, left: 4),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.check_circle,
+                                      size: 16,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        VN.customerSearchLinked.replaceAll(
+                                          '{name}',
+                                          _selected!.name,
+                                        ),
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                          color: theme.colorScheme.primary,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (_showRefineHint)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.only(top: 4, left: 4),
+                                child: Text(
+                                  VN.customerSearchRefineHint,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.outline,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
         ),
       ],
     );

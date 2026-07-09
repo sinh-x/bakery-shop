@@ -894,6 +894,8 @@ class VN {
   static const customerSearchNoMatch = 'Không tìm thấy khách';
   static const customerSearchLoading = 'Đang tìm...';
   static const customerSearchError = 'Lỗi tìm kiếm khách hàng';
+  static const customerSearchRefineHint =
+      'Nhập thêm để thu hẹp kết quả';
 
   // Customer form multi-phone (DG-205 Phase 5)
   static const customerAddPhone = 'Thêm số điện thoại';

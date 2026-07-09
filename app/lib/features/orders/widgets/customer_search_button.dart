@@ -85,7 +85,6 @@ class _CustomerSearchModalState extends ConsumerState<_CustomerSearchModal> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return AlertDialog(
       title: Row(
         children: [
@@ -117,32 +116,6 @@ class _CustomerSearchModalState extends ConsumerState<_CustomerSearchModal> {
                 },
               ),
             ),
-            const SizedBox(height: 12),
-            if (_selected != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 4, left: 4),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.check_circle,
-                      size: 16,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        VN.customerSearchLinked.replaceAll(
-                          '{name}',
-                          _selected!.name,
-                        ),
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
           ],
         ),
       ),
