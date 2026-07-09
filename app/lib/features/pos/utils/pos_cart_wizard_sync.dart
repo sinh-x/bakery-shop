@@ -12,10 +12,17 @@ import '../../../providers/pos_provider.dart';
 /// copy in `orderCreateStateProvider.items` and writes it back via
 /// [draftItemsToCart].
 DraftOrderItem cartItemToDraft(PosCartItem item) {
-  // B4: phụ kiện items (non-gift, category='phu_kien') map to extras
-  // with isExtra=true so they render in the extras section and are excluded
-  // from the product-count summary. POS cart gifts also produce extras.
   final isExtra = item.isGift || item.product.category == 'phu_kien';
+  Map<String, dynamic>? attrs;
+  if (!item.useInventory || item.rutTien) {
+    attrs = <String, dynamic>{};
+    if (!item.useInventory) attrs['useInventory'] = 'false';
+    if (item.rutTien) {
+      attrs['rut_tien'] = 'true';
+      if (item.cashFee != null) attrs['cash_fee'] = item.cashFee.toString();
+      if (item.cashAmount != null) attrs['cash_amount'] = item.cashAmount.toString();
+    }
+  }
   return DraftOrderItem(
     product: item.product,
     quantity: item.quantity,
@@ -23,30 +30,43 @@ DraftOrderItem cartItemToDraft(PosCartItem item) {
     isGift: item.isGift,
     customUnitPrice: item.selectedPrice,
     priceChipId: item.selectedChipId,
-    attributes: item.useInventory
-        ? null
-        : const <String, dynamic>{'useInventory': 'false'},
+    isBirthday: item.isBirthday,
+    age: item.age,
+    attributes: attrs,
     notes: item.notes,
     pendingPhotos: item.pendingPhotos,
   );
 }
 
 /// Converts a [DraftOrderItem] (wizard Stage 1 working copy) back into a
-/// [PosCartItem], preserving the chip selection and inventory flag so the
-/// POS cart stays the single source of truth at submit (DG-218 FR-2).
+/// [PosCartItem], preserving all attributes so the POS cart stays the single
+/// source of truth at submit (DG-218 FR-2, DG-223 FR-3).
 PosCartItem draftItemToCart(DraftOrderItem item) {
   final useInventory =
       item.attributes['useInventory']?.toString() != 'false';
+  final rutTien = item.attributes['rut_tien']?.toString() == 'true';
+  final cashFeeStr = item.attributes['cash_fee']?.toString();
+  final cashAmountStr = item.attributes['cash_amount']?.toString();
   return PosCartItem(
     product: item.product,
     quantity: item.quantity,
     isGift: item.isGift,
     useInventory: useInventory,
+    isBirthday: item.isBirthday,
+    age: item.age,
+    rutTien: rutTien,
+    cashFee: cashFeeStr != null && cashFeeStr.isNotEmpty
+        ? double.tryParse(cashFeeStr)
+        : null,
+    cashAmount: cashAmountStr != null && cashAmountStr.isNotEmpty
+        ? double.tryParse(cashAmountStr)
+        : null,
     selectedPrice: item.customUnitPrice,
     selectedChipId: item.priceChipId,
     selectedChipLabel: _resolveChipLabel(item),
     notes: item.notes,
     pendingPhotos: List<XFile>.from(item.pendingPhotos),
+    attributes: Map<String, dynamic>.from(item.attributes),
   );
 }
 

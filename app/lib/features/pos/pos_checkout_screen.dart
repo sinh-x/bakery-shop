@@ -8,7 +8,6 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/order_service.dart';
 import '../../data/api/payment_transaction_service.dart';
-import '../../data/models/order_draft.dart';
 import '../../features/orders/widgets/order_stage_indicator.dart';
 import '../../features/orders/widgets/order_wizard.dart';
 import '../../features/orders/widgets/stage1_product_selection_screen.dart';
@@ -73,23 +72,8 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     final posNotifier = ref.read(posOrderStateProvider.notifier);
     final cart = ref.read(posCartProvider);
 
-    // B1: seed items from cart losslessly (B4: detect phu_kien as extras)
-    final items = cart.items.map((ci) {
-      final isExtra = ci.isGift || ci.product.category == 'phu_kien';
-      return DraftOrderItem(
-        product: ci.product,
-        quantity: ci.quantity,
-        isExtra: isExtra,
-        isGift: ci.isGift,
-        customUnitPrice: ci.selectedPrice,
-        priceChipId: ci.selectedChipId,
-        attributes: ci.useInventory
-            ? null
-            : const <String, dynamic>{'useInventory': 'false'},
-        notes: ci.notes,
-        pendingPhotos: ci.pendingPhotos,
-      );
-    }).toList();
+    // B1: seed items from cart losslessly via cartItemToDraft (DG-223 FR-2)
+    final items = cart.items.map(cartItemToDraft).toList();
     posNotifier.updateItems(items);
 
     const wizardData = OrderWizardData(
