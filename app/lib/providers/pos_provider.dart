@@ -158,6 +158,16 @@ class PosCartNotifier extends Notifier<PosCartState> {
     state = PosCartState();
   }
 
+  /// Replaces the entire cart contents with [items].
+  ///
+  /// Used by POS checkout Stage 1 (product selection) to write wizard edits
+  /// back to the POS cart so the cart remains the single source of truth at
+  /// submit (DG-218 Phase 3, FR-2). Gift items are preserved as-is; regular
+  /// items keep their chip selection and inventory flag.
+  void replaceCart(List<PosCartItem> items) {
+    state = PosCartState(items: List<PosCartItem>.from(items));
+  }
+
   Map<String, Product> _giftCatalogByNormalizedName() {
     final products = ref.read(phuKienProductsProvider).asData?.value ?? const [];
     final byName = <String, Product>{};

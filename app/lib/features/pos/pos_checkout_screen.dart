@@ -6,9 +6,11 @@ import 'package:image_picker/image_picker.dart';
 import '../../data/api/order_service.dart';
 import '../../features/orders/widgets/order_stage_indicator.dart';
 import '../../features/orders/widgets/order_wizard.dart';
+import '../../features/orders/widgets/stage1_product_selection_screen.dart';
 import '../../features/orders/widgets/stage2_customer_info_screen.dart';
 import '../../features/orders/widgets/stage3_delivery_options_screen.dart';
 import '../../features/pos/utils/pos_cart_item_display.dart';
+import '../../features/pos/utils/pos_cart_wizard_sync.dart';
 import '../../features/pos/widgets/pos_checkout_dialogs.dart';
 import '../../features/pos/widgets/pos_review_panel.dart';
 import '../../features/stock/stock_screen.dart';
@@ -73,7 +75,26 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   }
 
   void _goToStage(int stage) {
+    // Stage 1 (product selection) edits the wizard working copy
+    // (`orderCreateStateProvider.items`); the POS cart is the single source
+    // of truth at submit (DG-218 FR-2). When leaving Stage 1, write the
+    // wizard edits back to the cart; when entering Stage 1, seed the wizard
+    // working copy from the cart.
+    final currentStage = ref.read(orderCreateStateProvider).currentStage;
+    if (currentStage == 1 && stage != 1) {
+      syncWizardItemsToCart(ref);
+    }
+    if (stage == 1 && currentStage != 1) {
+      syncCartToWizardItems(ref);
+    }
     ref.read(orderCreateStateProvider.notifier).goToStage(stage);
+  }
+
+  void _onStage1Continue() {
+    // Stage 1 → Stage 2: persist wizard edits back to the POS cart (single
+    // source of truth at submit) before advancing.
+    syncWizardItemsToCart(ref);
+    _goToStage(2);
   }
 
   void _onStage2Continue() {
@@ -303,7 +324,12 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: OrderStageIndicator(currentStage: state.currentStage),
+            child: OrderStageIndicator(
+              currentStage: state.currentStage,
+              onStageTap: (s) {
+                if (state.canNavigateToStage(s)) _goToStage(s);
+              },
+            ),
           ),
           Expanded(
             child: _buildCurrentStage(state),
@@ -317,6 +343,10 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 300),
       child: switch (state.currentStage) {
+        1 => Stage1ProductSelectionScreen(
+            key: const ValueKey('stage1'),
+            onContinue: _onStage1Continue,
+          ),
         2 => Stage2CustomerInfoScreen(
             key: const ValueKey('stage2'),
             posMode: true,

@@ -413,4 +413,77 @@ void main() {
       expect(find.text('Receipt ORD-LOCK'), findsOneWidget);
     });
   });
+
+  group('Stage 1 reachability and cart sync (DG-218 Phase 3)', () {
+    testWidgets('Stage 1 is reachable via the stage indicator (AC1)', (tester) async {
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
+      await tester.pumpAndSettle();
+
+      // Checkout opens on Stage 2; the Stage 1 indicator label is tappable.
+      expect(find.text(OrdersLabels.stage1Label), findsWidgets);
+      await tester.tap(find.text(OrdersLabels.stage1Label).first);
+      await tester.pumpAndSettle();
+
+      // Stage 1 (product selection) shows the seeded product, confirming
+      // Stage 1 rendered with the cart contents.
+      expect(find.text('Banh mi bo toi'), findsOneWidget);
+    });
+
+    testWidgets('Stage 1 edit writes back to posCartProvider so submit reflects the edit (AC2)', (tester) async {
+      final fakeOrderService = _FakeOrderService();
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
+      await tester.pumpAndSettle();
+
+      // Navigate to Stage 1 via the indicator.
+      await tester.tap(find.text(OrdersLabels.stage1Label).first);
+      await tester.pumpAndSettle();
+
+      // Edit the product quantity in the wizard Stage 1 (1 -> 2).
+      await tester.tap(find.byIcon(Icons.add_circle_outline));
+      await tester.pumpAndSettle();
+
+      // Continue out of Stage 1 — this syncs the wizard edits back to the
+      // POS cart (single source of truth at submit) and advances to Stage 2.
+      await tester.tap(find.text(OrdersLabels.continueLabel));
+      await tester.pumpAndSettle();
+
+      // Proceed to the review panel (Stage 2 pickup skips Stage 3).
+      await _navigateToReview(tester);
+
+      // Submit (cash) and assert the created order reflects the edited qty.
+      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      await tester.ensureVisible(createButton);
+      await tester.pumpAndSettle();
+      await tester.tap(createButton);
+      await tester.pumpAndSettle();
+
+      expect(fakeOrderService.createOrderCallCount, 1);
+      final submittedItems = fakeOrderService.createdItems.single;
+      final regularItem = submittedItems.firstWhere((i) => i['isGift'] != true);
+      expect(regularItem['quantity'], 2);
+      expect(regularItem['productId'], '1');
+    });
+
+    testWidgets('returning to Stage 1 seeds wizard items from the cart', (tester) async {
+      final cartItem = PosCartItem(product: _product(), quantity: 3);
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(OrdersLabels.stage1Label).first);
+      await tester.pumpAndSettle();
+
+      // The wizard Stage 1 reflects the cart contents (product seeded).
+      expect(find.text('Banh mi bo toi'), findsOneWidget);
+      // The qty stepper shows the cart quantity (3) in the item row, not the
+      // stage indicator number. Match the qty Text by its titleSmall style to
+      // disambiguate from the stage-3 indicator circle ("3").
+      final qtyFinder = find.byWidgetPredicate(
+        (w) => w is Text && w.data == '3' && (w.style?.fontSize ?? 0) >= 14,
+      );
+      expect(qtyFinder, findsOneWidget);
+    });
+  });
 }
