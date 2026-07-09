@@ -222,14 +222,15 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
     }
   }
 
-  void _retry() {
+  Future<void> _retry() async {
     final q = _ctrl.text.trim();
-    if (q.isEmpty) {
-      _load();
-    } else if (_mode == _FilterMode.server) {
+    if (_mode == _FilterMode.server && q.isNotEmpty) {
       _search(q);
     } else {
-      _load();
+      await _load();
+      if (mounted && q.isNotEmpty && _mode == _FilterMode.client) {
+        _onChanged(_ctrl.text);
+      }
     }
   }
 
@@ -239,6 +240,93 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
       _error = null;
     });
     widget.onSelected?.call(customer);
+  }
+
+  Widget _errorView() {
+    final theme = Theme.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 32,
+            color: theme.colorScheme.error,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _error!,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: _retry,
+            icon: const Icon(Icons.refresh, size: 16),
+            label: const Text(VN.retry),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _resultsList() {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: ListView.builder(
+            itemCount: _listCustomers.length,
+            itemBuilder: (context, index) {
+              final c = _listCustomers[index];
+              return ListTile(
+                dense: true,
+                title: Text(c.name),
+                subtitle: c.phone.isNotEmpty ? Text(c.phone) : null,
+                onTap: () => _select(c),
+              );
+            },
+          ),
+        ),
+        if (_selected != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 4),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.check_circle,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    VN.customerSearchLinked.replaceAll(
+                      '{name}',
+                      _selected!.name,
+                    ),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (_showRefineHint)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 4),
+            child: Text(
+              VN.customerSearchRefineHint,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   @override
@@ -263,31 +351,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
           child: _loading
               ? const Center(child: CircularProgressIndicator())
               : _error != null
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.error_outline,
-                            size: 32,
-                            color: theme.colorScheme.error,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _error!,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.error,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          TextButton.icon(
-                            onPressed: _retry,
-                            icon: const Icon(Icons.refresh, size: 16),
-                            label: const Text(VN.retry),
-                          ),
-                        ],
-                      ),
-                    )
+                  ? _errorView()
                   : _listCustomers.isEmpty
                       ? Center(
                           child: Text(
@@ -297,65 +361,7 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
                             ),
                           ),
                         )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(
-                              child: ListView.builder(
-                                itemCount: _listCustomers.length,
-                                itemBuilder: (context, index) {
-                                  final c = _listCustomers[index];
-                                  return ListTile(
-                                    dense: true,
-                                    title: Text(c.name),
-                                    subtitle: c.phone.isNotEmpty
-                                        ? Text(c.phone)
-                                        : null,
-                                    onTap: () => _select(c),
-                                  );
-                                },
-                              ),
-                            ),
-                            if (_selected != null)
-                              Padding(
-                                padding:
-                                    const EdgeInsets.only(top: 4, left: 4),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.check_circle,
-                                      size: 16,
-                                      color: theme.colorScheme.primary,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        VN.customerSearchLinked.replaceAll(
-                                          '{name}',
-                                          _selected!.name,
-                                        ),
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                          color: theme.colorScheme.primary,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            if (_showRefineHint)
-                              Padding(
-                                padding:
-                                    const EdgeInsets.only(top: 4, left: 4),
-                                child: Text(
-                                  VN.customerSearchRefineHint,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.outline,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
+                      : _resultsList(),
         ),
       ],
     );
