@@ -120,3 +120,31 @@ DateTime defaultDueDateTime(DateTime from) {
   return DateTime(target.year, target.month, target.day, target.hour)
       .add(const Duration(hours: 1));
 }
+
+/// Computes the default due date/time for POS checkout: the current time
+/// rounded UP to the next 15-minute slot, with NO +1 hour offset. Seconds and
+/// milliseconds are dropped.
+///
+/// Rounding rule (ceil to next 15-min slot):
+/// - minute % 15 == 0 (0, 15, 30, 45) → unchanged
+/// - otherwise → round up to the next 15-min boundary (carries into the hour,
+///   and into the next day if needed)
+///
+/// Examples: 16:00→16:00, 16:07→16:15, 16:14→16:15, 16:15→16:15,
+/// 16:16→16:30, 16:45→16:45, 16:46→17:00, 23:59→00:00 (next day).
+DateTime posDefaultDueDateTime(DateTime from) {
+  final target = DateTime(
+    from.year,
+    from.month,
+    from.day,
+    from.hour,
+    from.minute,
+  );
+  final minute = target.minute;
+  if (minute % 15 == 0) {
+    return target;
+  }
+  final remainder = minute % 15;
+  final addMinutes = 15 - remainder;
+  return target.add(Duration(minutes: addMinutes));
+}

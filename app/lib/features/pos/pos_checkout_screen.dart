@@ -16,6 +16,7 @@ import '../../providers/order/order_create_state_provider.dart';
 import '../../providers/pos_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/labels/orders.dart';
+import '../../shared/utils/order_helpers.dart';
 import '../../shared/utils/api_error.dart' as api_error;
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
@@ -56,12 +57,18 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
   void _initPosState() {
     final notifier = ref.read(orderCreateStateProvider.notifier);
+    // POS defaults: delivery type = pickup, due time = now ceil-rounded to the
+    // next 15-minute slot (no +1h offset). See FR-3 / FR-4.
     const wizardData = OrderWizardData(
       customerName: VN.khachLe,
       source: VN.taiTiemPOS,
+      deliveryType: 'pickup',
     );
     notifier.updateWizardData(wizardData);
     notifier.updateSource(VN.taiTiemPOS);
+    final posDue = posDefaultDueDateTime(DateTime.now());
+    notifier.updateDueDate(DateTime(posDue.year, posDue.month, posDue.day));
+    notifier.updateDueTime(TimeOfDay(hour: posDue.hour, minute: posDue.minute));
     notifier.goToStage(2);
   }
 
@@ -132,7 +139,12 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       final state = ref.read(orderCreateStateProvider);
       final data = state.wizardData;
       final orderItems = _buildOrderItems();
-      final dueDate = posCheckoutLocalDueDate(DateTime.now());
+      final dueDate = state.dueDate != null
+          ? formatApiDate(state.dueDate!)
+          : posCheckoutLocalDueDate(DateTime.now());
+      final dueTime = state.dueTime != null
+          ? formatHourMinute(state.dueTime!.hour, state.dueTime!.minute)
+          : null;
       final isDelivery = data.deliveryType == 'bus' || data.deliveryType == 'door';
       final status = isDelivery ? 'new' : 'delivered';
 
@@ -145,6 +157,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         customerId: data.selectedCustomer?.id,
         source: VN.taiTiemPOS,
         dueDate: dueDate,
+        dueTime: dueTime,
         deliveryType: data.deliveryType,
         deliveryAddress: data.deliveryAddress,
         deliveryPhone: data.deliveryPhone,
@@ -197,7 +210,12 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       final state = ref.read(orderCreateStateProvider);
       final data = state.wizardData;
       final orderItems = _buildOrderItems();
-      final dueDate = posCheckoutLocalDueDate(DateTime.now());
+      final dueDate = state.dueDate != null
+          ? formatApiDate(state.dueDate!)
+          : posCheckoutLocalDueDate(DateTime.now());
+      final dueTime = state.dueTime != null
+          ? formatHourMinute(state.dueTime!.hour, state.dueTime!.minute)
+          : null;
       final isDelivery = data.deliveryType == 'bus' || data.deliveryType == 'door';
       final status = isDelivery ? 'new' : 'delivered';
 
@@ -210,6 +228,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         customerId: data.selectedCustomer?.id,
         source: VN.taiTiemPOS,
         dueDate: dueDate,
+        dueTime: dueTime,
         deliveryType: data.deliveryType,
         deliveryAddress: data.deliveryAddress,
         deliveryPhone: data.deliveryPhone,
