@@ -132,6 +132,10 @@ Widget _buildCheckoutApp({
 }
 
 Future<void> _navigateToReview(WidgetTester tester) async {
+  // Stage 1 (product selection) → Stage 2 (customer info)
+  await tester.tap(find.text('Tiếp tục'));
+  await tester.pumpAndSettle();
+  // Stage 2 (customer info) → Stage 4 (review)
   await tester.tap(find.text('Tiếp tục'));
   await tester.pumpAndSettle();
 }
@@ -502,7 +506,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Proceed to the review panel (Stage 2 pickup skips Stage 3).
-      await _navigateToReview(tester);
+      await tester.tap(find.text('Tiếp tục'));
+      await tester.pumpAndSettle();
       // Advance to the dedicated payment step before submit (DG-218 Phase 4).
       await _navigateToPayment(tester);
 

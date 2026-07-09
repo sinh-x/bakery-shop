@@ -86,7 +86,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     final posDue = posDefaultDueDateTime(DateTime.now());
     posNotifier.updateDueDate(DateTime(posDue.year, posDue.month, posDue.day));
     posNotifier.updateDueTime(TimeOfDay(hour: posDue.hour, minute: posDue.minute));
-    posNotifier.goToStage(2);
+    posNotifier.goToStage(1);
   }
 
   void _goToStage(int stage) {
@@ -150,6 +150,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         'unitPrice': i.unitPrice,
         'isExtra': i.isExtra,
         'isGift': i.isGift,
+        'isBirthday': i.isBirthday,
         'attributes': i.attributes,
         'priceChipId': i.priceChipId,
       };
