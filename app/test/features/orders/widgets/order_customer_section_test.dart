@@ -49,7 +49,8 @@ void main() {
     expect(find.text('Trần Thị B'), findsWidgets);
   });
 
-  testWidgets('OrderCustomerSection editable renders name and phone text fields',
+  testWidgets(
+      'OrderCustomerSection editable renders the "Tìm khách hàng" button and name/phone text fields (FR-8)',
       (tester) async {
     final nameCtrl = TextEditingController(text: 'Lê Minh C');
     final phoneCtrl = TextEditingController(text: '0912345678');
@@ -73,11 +74,58 @@ void main() {
     );
 
     expect(find.byType(OrderCustomerSection), findsOneWidget);
+    // The search entry is now a button, not an inline text field.
+    expect(find.text(VN.customerSearchButton), findsOneWidget);
     expect(find.text(VN.customerName), findsOneWidget);
     expect(find.text(VN.customerPhone), findsOneWidget);
     expect(find.text('Lê Minh C'), findsOneWidget);
     expect(find.text('0912345678'), findsOneWidget);
     expect(picked, isNull);
+  });
+
+  testWidgets('tapping the search button opens the customer search modal (FR-8, AC7)',
+      (tester) async {
+    final nameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: OrderCustomerSection(
+              mode: OrderCustomerSectionMode.editable,
+              selectedCustomer: null,
+              nameCtrl: nameCtrl,
+              phoneCtrl: phoneCtrl,
+              onSelected: (_) {},
+              onClearSelection: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(AlertDialog), findsNothing);
+    await tester.tap(find.text(VN.customerSearchButton));
+    await tester.pumpAndSettle();
+
+    // Modal title + hosted search field render.
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text(VN.customerSearchModalTitle),
+      ),
+      findsOneWidget,
+    );
+    // The name/phone input fields remain separate from the modal search entry.
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text(VN.customerName),
+      ),
+      findsNothing,
+      reason: 'AC7: name/phone fields should remain outside the search modal',
+    );
   });
 
   testWidgets('tapping (x) on linked customer card calls onClearSelection (unlinks) (AC4)',

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../../data/models/order_draft.dart';
+import '../utils/trung_bay_inventory_extensions.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Product summary card shown on Stage 2/3/4 of the order wizard.
@@ -78,15 +79,14 @@ class ProductSummaryCard extends StatelessWidget {
     final hasRutTien = item.attributes['rut_tien']?.toString() == 'true' &&
         cashAmount != null &&
         cashAmount > 0;
-    final useInventory = item.attributes['useInventory']?.toString();
+    final usesInventory = item.attributes.useInventory;
     final priceChipLabel = _resolvePriceChipLabel(item);
 
     final attributeLines = <String>[
       if (item.notes.isNotEmpty) '${VN.notes}: ${item.notes}',
       if (item.isBirthday && item.age.isNotEmpty)
         '${VN.birthdayWithAge}: ${item.age}',
-      if (useInventory != null && useInventory != 'false')
-        '${VN.useInventory}: $useInventory',
+      if (usesInventory) VN.useInventory,
       if (priceChipLabel != null) '${VN.priceChipLabel}: $priceChipLabel',
     ];
 

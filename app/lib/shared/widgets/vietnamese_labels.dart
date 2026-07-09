@@ -889,6 +889,9 @@ class VN {
   static const customerSearchNoMatch = 'Không tìm thấy khách';
   static const customerSearchLoading = 'Đang tìm...';
   static const customerSearchError = 'Lỗi tìm kiếm khách hàng';
+  // Customer search modal trigger button (DG-218 Phase 1 — FR-8)
+  static const customerSearchButton = 'Tìm khách hàng';
+  static const customerSearchModalTitle = 'Tìm khách hàng';
 
   // Customer form multi-phone (DG-205 Phase 5)
   static const customerAddPhone = 'Thêm số điện thoại';
