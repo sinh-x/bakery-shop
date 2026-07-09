@@ -18,7 +18,13 @@ class PosCartItem {
     this.selectedChipLabel,
     this.notes = '',
     this.pendingPhotos = const [],
-  });
+    this.isBirthday = false,
+    this.age = '',
+    this.rutTien = false,
+    this.cashFee,
+    this.cashAmount,
+    Map<String, dynamic>? attributes,
+  }) : attributes = attributes ?? {};
 
   final Product product;
   int quantity;
@@ -29,10 +35,16 @@ class PosCartItem {
   final String? selectedChipLabel;
   String notes;
   List<XFile> pendingPhotos;
+  final bool isBirthday;
+  final String age;
+  final bool rutTien;
+  final double? cashFee;
+  final double? cashAmount;
+  final Map<String, dynamic> attributes;
 
   String get lineKey {
     final option = selectedChipId != null ? 'chip:$selectedChipId' : 'base';
-    return '${product.id}:$option:inventory:${useInventory ? 1 : 0}';
+    return '${product.id}:$option:inventory:${useInventory ? 1 : 0}:bdy:${isBirthday ? 1 : 0}:age:$age:rt:${rutTien ? 1 : 0}';
   }
 
   double get unitPrice => selectedPrice ?? product.basePrice;
@@ -61,10 +73,16 @@ class PosCartNotifier extends Notifier<PosCartState> {
     int? selectedChipId,
     String? selectedChipLabel,
     bool useInventory = true,
+    bool isBirthday = false,
+    String age = '',
+    bool rutTien = false,
+    double? cashFee,
+    double? cashAmount,
+    Map<String, dynamic>? attributes,
   }) {
     final items = List<PosCartItem>.from(state.items);
     final option = selectedChipId != null ? 'chip:$selectedChipId' : 'base';
-    final lineKey = '${product.id}:$option:inventory:${useInventory ? 1 : 0}';
+    final lineKey = '${product.id}:$option:inventory:${useInventory ? 1 : 0}:bdy:${isBirthday ? 1 : 0}:age:$age:rt:${rutTien ? 1 : 0}';
 
     // Check if same product + same chip selection is already in cart.
     final existing = items
@@ -82,6 +100,12 @@ class PosCartNotifier extends Notifier<PosCartState> {
           selectedPrice: selectedPrice,
           selectedChipId: selectedChipId,
           selectedChipLabel: selectedChipLabel,
+          isBirthday: isBirthday,
+          age: age,
+          rutTien: rutTien,
+          cashFee: cashFee,
+          cashAmount: cashAmount,
+          attributes: attributes,
         ),
       );
     }
