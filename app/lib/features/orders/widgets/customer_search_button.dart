@@ -104,12 +104,11 @@ class _CustomerSearchModalState extends ConsumerState<_CustomerSearchModal> {
           maxWidth: 480,
           maxHeight: MediaQuery.of(context).size.height * 0.7,
         ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              CustomerSearchField(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: CustomerSearchField(
                 initialCustomer: _selected,
                 onSelected: (customer) {
                   if (customer != null) {
@@ -117,34 +116,34 @@ class _CustomerSearchModalState extends ConsumerState<_CustomerSearchModal> {
                   }
                 },
               ),
-              const SizedBox(height: 12),
-              if (_selected != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, left: 4),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.check_circle,
-                        size: 16,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          VN.customerSearchLinked.replaceAll(
-                            '{name}',
-                            _selected!.name,
-                          ),
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.primary,
-                          ),
+            ),
+            const SizedBox(height: 12),
+            if (_selected != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, left: 4),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle,
+                      size: 16,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        VN.customerSearchLinked.replaceAll(
+                          '{name}',
+                          _selected!.name,
+                        ),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.primary,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
       actions: [

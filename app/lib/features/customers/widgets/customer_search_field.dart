@@ -54,6 +54,8 @@ bool _matchesDiacriticAware(String query, Customer customer) {
   return false;
 }
 
+enum _FilterMode { client, server }
+
 class CustomerSearchField extends ConsumerStatefulWidget {
   const CustomerSearchField({
     super.key,
@@ -81,16 +83,17 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
   late final TextEditingController _ctrl =
       widget.controller ?? TextEditingController();
   final FocusNode _focus = FocusNode();
-  final LayerLink _layerLink = LayerLink();
-  OverlayEntry? _overlay;
   Timer? _debounce;
 
-  List<Customer> _results = const [];
+  List<Customer> _allCustomers = const [];
+  List<Customer> _listCustomers = const [];
+  _FilterMode _mode = _FilterMode.client;
   bool _loading = false;
-  bool _showing = false;
   Customer? _selected;
   bool _clearedOnFocus = false;
   String? _error;
+
+  static const int _cap = 20;
 
   @override
   void initState() {
@@ -100,12 +103,12 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
       _ctrl.text = _selected!.name;
     }
     _focus.addListener(_onFocusChange);
+    _load();
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
-    _hideOverlay();
     if (widget.controller == null) {
       _ctrl.dispose();
     }
@@ -120,31 +123,73 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
       _ctrl.clear();
       widget.onSelected?.call(null);
     }
-    if (_focus.hasFocus && _ctrl.text.isNotEmpty && !_showing) {
-      _showResults();
-    } else if (!_focus.hasFocus && _showing) {
-      Future.delayed(const Duration(milliseconds: 150), _hideOverlay);
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final service = ref.read(customerServiceProvider);
+      final customers = await service.listCustomers();
+      if (!mounted) return;
+      setState(() {
+        _allCustomers = customers;
+        _mode = customers.length <= _cap
+            ? _FilterMode.client
+            : _FilterMode.server;
+        _applyBrowseList();
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint('[CustomerSearch] load failed: $e');
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = VN.customerSearchError;
+      });
+    }
+  }
+
+  void _applyBrowseList() {
+    if (_allCustomers.length <= _cap) {
+      _listCustomers = List.from(_allCustomers);
+    } else {
+      final sorted = List<Customer>.from(_allCustomers)
+        ..sort((a, b) => b.id.compareTo(a.id));
+      _listCustomers = sorted.take(_cap).toList();
     }
   }
 
   void _onChanged(String value) {
-    if (value.trim().isEmpty) {
+    final query = value.trim();
+    if (query.isEmpty) {
       _debounce?.cancel();
-      _hideOverlay();
       setState(() {
-        _results = const [];
-        _loading = false;
+        _applyBrowseList();
         _error = null;
       });
       return;
     }
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), _search);
+
+    if (_mode == _FilterMode.client) {
+      setState(() {
+        _listCustomers = _allCustomers
+            .where((c) => _matchesDiacriticAware(query, c))
+            .toList();
+        _error = null;
+      });
+    } else {
+      _debounce?.cancel();
+      _debounce = Timer(
+        const Duration(milliseconds: 350),
+        () => _search(query),
+      );
+    }
   }
 
-  Future<void> _search() async {
-    final query = _ctrl.text.trim();
-    if (query.isEmpty) return;
+  Future<void> _search(String query) async {
     if (!mounted) return;
     setState(() {
       _loading = true;
@@ -154,19 +199,15 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
       final service = ref.read(customerServiceProvider);
       final results = await service.listCustomers(search: query);
       if (!mounted) return;
-      final filtered = results
-          .where((c) => _matchesDiacriticAware(query, c))
-          .toList();
       setState(() {
-        _results = filtered;
+        _listCustomers = results.take(_cap).toList();
         _loading = false;
       });
-      _showResults();
     } catch (e) {
       debugPrint('[CustomerSearch] search failed: $e');
       if (!mounted) return;
       setState(() {
-        _results = const [];
+        _listCustomers = const [];
         _loading = false;
         _error = VN.customerSearchError;
       });
@@ -174,175 +215,102 @@ class _CustomerSearchFieldState extends ConsumerState<CustomerSearchField> {
   }
 
   void _retry() {
-    _search();
-  }
-
-  void _showResults() {
-    if (_overlay != null) return;
-    _overlay = OverlayEntry(builder: (_) => _buildOverlayBox());
-    Overlay.of(context).insert(_overlay!);
-    _showing = true;
-  }
-
-  void _hideOverlay() {
-    _overlay?.remove();
-    _overlay = null;
-    _showing = false;
+    final q = _ctrl.text.trim();
+    if (q.isEmpty) {
+      _load();
+    } else if (_mode == _FilterMode.server) {
+      _search(q);
+    } else {
+      _load();
+    }
   }
 
   void _select(Customer customer) {
     setState(() {
       _selected = customer;
-      _ctrl.clear();
       _error = null;
     });
-    _hideOverlay();
     widget.onSelected?.call(customer);
-  }
-
-  Widget _buildOverlayBox() {
-    final theme = Theme.of(context);
-    return Positioned(
-      width: _layerLink.leaderSize?.width,
-      child: CompositedTransformFollower(
-        link: _layerLink,
-        showWhenUnlinked: false,
-        offset: const Offset(0, 56),
-        child: Material(
-          elevation: 8,
-          borderRadius: BorderRadius.circular(12),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 260),
-            child: _loading
-                ? const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Center(
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                  )
-                : _results.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      VN.customerSearchNoMatch,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.outline,
-                      ),
-                    ),
-                  )
-                : ListView(
-                    padding: EdgeInsets.zero,
-                    shrinkWrap: true,
-                    children: [
-                      for (final c in _results)
-                        ListTile(
-                          dense: true,
-                          title: Text(c.name),
-                          subtitle: c.phone.isNotEmpty ? Text(c.phone) : null,
-                          onTap: () => _select(c),
-                        ),
-                    ],
-                  ),
-          ),
-        ),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return CompositedTransformTarget(
-      link: _layerLink,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            controller: _ctrl,
-            focusNode: _focus,
-            onChanged: _onChanged,
-            decoration: InputDecoration(
-              labelText: widget.labelText ?? VN.customer,
-              hintText: widget.hintText ?? VN.customerSearchHint,
-              border: const OutlineInputBorder(),
-              prefixIcon: const Icon(Icons.person_search_outlined),
-              suffixIcon: _loading
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  : null,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _ctrl,
+          focusNode: _focus,
+          onChanged: _onChanged,
+          decoration: InputDecoration(
+            labelText: widget.labelText ?? VN.customer,
+            hintText: widget.hintText ?? VN.customerSearchHint,
+            border: const OutlineInputBorder(),
+            prefixIcon: const Icon(Icons.person_search_outlined),
+            suffixIcon: _loading
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : null,
           ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6, left: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.error_outline,
-                    size: 14,
-                    color: theme.colorScheme.error,
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      _error!,
-                      style: theme.textTheme.bodySmall?.copyWith(
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _error != null
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 32,
                         color: theme.colorScheme.error,
                       ),
-                    ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _error!,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.error,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: _retry,
+                        icon: const Icon(Icons.refresh, size: 16),
+                        label: const Text(VN.retry),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: _retry,
-                    icon: const Icon(Icons.refresh, size: 14),
-                    label: Text(
-                      VN.retry,
-                      style: theme.textTheme.bodySmall,
+                )
+              : _listCustomers.isEmpty
+                  ? Center(
+                      child: Text(
+                        VN.customerSearchNoMatch,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.outline,
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _listCustomers.length,
+                      itemBuilder: (context, index) {
+                        final c = _listCustomers[index];
+                        return ListTile(
+                          dense: true,
+                          title: Text(c.name),
+                          subtitle: c.phone.isNotEmpty ? Text(c.phone) : null,
+                          onTap: () => _select(c),
+                        );
+                      },
                     ),
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          if (_selected != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6, left: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.check_circle,
-                    size: 14,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    VN.customerSearchLinked.replaceAll(
-                      '{name}',
-                      _selected!.name,
-                    ),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
