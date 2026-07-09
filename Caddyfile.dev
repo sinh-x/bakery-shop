@@ -1,7 +1,10 @@
-{$DOMAIN} {
-	tls /certs/{$DOMAIN}.crt /certs/{$DOMAIN}.key
-
-	# Reverse proxy API requests to baker backend (preserves /api/ prefix)
+# Dev front-end for the bakery app, fronted by the central drgnfly-caddy
+# gateway which terminates TLS on :443 for the tailnet FQDN and reverse-proxies
+# the domain root here. This server listens plain HTTP on :80 (published to
+# host loopback 127.0.0.1:2380 by docker-compose) and proxies /api/* to the
+# dev backend while serving the Flutter web app with SPA fallback.
+:80 {
+	# Reverse proxy API requests to the dev baker backend (preserves /api/ prefix)
 	handle /api/* {
 		reverse_proxy baker-dev:2312
 	}
