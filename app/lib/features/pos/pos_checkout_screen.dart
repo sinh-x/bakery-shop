@@ -1,3 +1,5 @@
+// EXEMPT: 300-line screen threshold — orchestrates 4 wizard stages + 2 payment
+// paths (cash/transfer+photo). Reviewed 2026-07-09 DG-218.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -103,9 +105,9 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   }
 
   void _onStage1Continue() {
-    // Stage 1 → Stage 2: persist wizard edits back to the POS cart (single
-    // source of truth at submit) before advancing.
-    syncWizardItemsToCart(ref);
+    // Stage 1 → Stage 2: _goToStage(2) persists wizard edits back to the POS
+    // cart (single source of truth at submit) before advancing, so no explicit
+    // sync is needed here (review Mn3 — removed the redundant double-sync).
     _goToStage(2);
   }
 

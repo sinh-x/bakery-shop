@@ -46,7 +46,7 @@ class ProductSummaryCard extends StatelessWidget {
             _buildRow(
               theme,
               VN.products,
-              OrdersLabels.productCount(regularItems.length + extraItems.length),
+              OrdersLabels.productCount(regularItems.length),
             ),
             ...regularItems.map((item) => _buildItemBlock(theme, item)),
             if (extraItems.isNotEmpty) ...[

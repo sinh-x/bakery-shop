@@ -45,7 +45,7 @@ class CustomerSearchButton extends ConsumerWidget {
       child: FilledButton.tonalIcon(
         onPressed: () => _openModal(context, ref),
         icon: const Icon(Icons.person_search_outlined, size: 20),
-        label: const Text(VN.customerSearchButton),
+        label: const Text(OrdersLabels.customerSearchButton),
         style: FilledButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
@@ -91,7 +91,7 @@ class _CustomerSearchModalState extends ConsumerState<_CustomerSearchModal> {
         children: [
           const Icon(Icons.person_search_outlined, size: 22),
           const SizedBox(width: 8),
-          const Expanded(child: Text(VN.customerSearchModalTitle)),
+          const Expanded(child: Text(OrdersLabels.customerSearchModalTitle)),
           IconButton(
             tooltip: MaterialLocalizations.of(context).closeButtonLabel,
             icon: const Icon(Icons.close, size: 20),

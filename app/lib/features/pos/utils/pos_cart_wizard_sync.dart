@@ -68,6 +68,7 @@ void syncCartToWizardItems(WidgetRef ref) {
 /// because Stage 1's continue button is disabled when no items are selected.
 void syncWizardItemsToCart(WidgetRef ref) {
   final items = ref.read(orderCreateStateProvider).items;
+  if (items.isEmpty) return;
   final cartItems = items.map(draftItemToCart).toList();
   ref.read(posCartProvider.notifier).replaceCart(cartItems);
 }

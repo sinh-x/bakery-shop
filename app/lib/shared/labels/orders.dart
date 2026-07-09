@@ -56,6 +56,11 @@ class OrdersLabels {
   // Generic placeholder for unselected values (DG-211 review cycle 1 — CQ-3)
   static const notSelected = 'Chưa chọn';
 
+  // Customer search modal trigger (DG-218 Phase 1 — FR-8, moved from VN per
+  // flutter-coding-standards.md §5).
+  static const customerSearchButton = 'Tìm khách hàng';
+  static const customerSearchModalTitle = 'Tìm khách hàng';
+
   // Validation messages (DG-211 review cycle 1 — CQ-4)
   static const validationSelectAtLeastOneProduct =
       'Vui lòng chọn ít nhất một sản phẩm';

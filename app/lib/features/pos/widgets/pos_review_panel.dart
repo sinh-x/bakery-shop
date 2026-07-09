@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../providers/order/order_create_state_provider.dart';
+import 'package:bakery_app/providers/order/order_create_state_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import '../../orders/widgets/stage1_responsive_content.dart';
 import '../../orders/widgets/stage_summary_card.dart';

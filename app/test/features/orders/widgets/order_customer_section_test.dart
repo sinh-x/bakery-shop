@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:bakery_app/data/models/customer.dart';
 import 'package:bakery_app/features/orders/widgets/order_customer_section.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 void main() {
   testWidgets('OrderCustomerSection readOnly renders customer name and phone info rows',
@@ -75,7 +75,7 @@ void main() {
 
     expect(find.byType(OrderCustomerSection), findsOneWidget);
     // The search entry is now a button, not an inline text field.
-    expect(find.text(VN.customerSearchButton), findsOneWidget);
+    expect(find.text(OrdersLabels.customerSearchButton), findsOneWidget);
     expect(find.text(VN.customerName), findsOneWidget);
     expect(find.text(VN.customerPhone), findsOneWidget);
     expect(find.text('Lê Minh C'), findsOneWidget);
@@ -105,7 +105,7 @@ void main() {
     );
 
     expect(find.byType(AlertDialog), findsNothing);
-    await tester.tap(find.text(VN.customerSearchButton));
+    await tester.tap(find.text(OrdersLabels.customerSearchButton));
     await tester.pumpAndSettle();
 
     // Modal title + hosted search field render.
@@ -113,7 +113,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(AlertDialog),
-        matching: find.text(VN.customerSearchModalTitle),
+        matching: find.text(OrdersLabels.customerSearchModalTitle),
       ),
       findsOneWidget,
     );

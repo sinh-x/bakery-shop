@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bakery_app/data/models/order_draft.dart';
 import 'package:bakery_app/data/models/product.dart';
 import 'package:bakery_app/features/orders/widgets/product_summary_card.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 
 Product _product({Map<String, String> attributes = const {}}) {
   return Product(
@@ -106,6 +106,71 @@ void main() {
       expect(find.textContaining(VN.notes), findsOneWidget);
       expect(find.textContaining(VN.birthdayWithAge), findsOneWidget);
       expect(find.text(VN.useInventory), findsOneWidget);
+    });
+  });
+
+  group('ProductSummaryCard product count (S1 — exclude extras)', () {
+    testWidgets(
+        'product count is 1 for 1 cake + N extras (excludes phụ kiện)',
+        (tester) async {
+      final cake = DraftOrderItem(
+        product: _product(),
+        quantity: 1,
+      );
+      final extras = [
+        createExtraItem('Nến', 5000),
+        createExtraItem('Đĩa', 10000),
+        createExtraItem('Nón', 5000),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProductSummaryCard(items: [cake, ...extras]),
+          ),
+        ),
+      );
+
+      // The "Sản phẩm" row must show "1 sản phẩm" — extras are counted
+      // separately under "phụ kiện" (S1).
+      expect(
+        find.text(OrdersLabels.productCount(1)),
+        findsOneWidget,
+        reason: 'S1: product count must count only cakes, excluding extras',
+      );
+      expect(
+        find.text(OrdersLabels.productCount(4)),
+        findsNothing,
+        reason: 'S1: the old combined count (1 cake + 3 extras = 4) must not appear',
+      );
+      // The extras count line still renders the 3 phụ kiện.
+      expect(find.text(OrdersLabels.extraCount(3)), findsOneWidget);
+    });
+
+    testWidgets('product count matches the number of regular (cake) items only',
+        (tester) async {
+      final cakes = [
+        DraftOrderItem(product: _product(), quantity: 1),
+        DraftOrderItem(
+          product: const Product(
+            id: 2,
+            name: 'Bánh kem Dâu',
+            category: 'banh_kem',
+            basePrice: 180000,
+          ),
+          quantity: 2,
+        ),
+      ];
+      final extras = [createExtraItem('Nến', 5000)];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ProductSummaryCard(items: [...cakes, ...extras])),
+        ),
+      );
+
+      expect(find.text(OrdersLabels.productCount(2)), findsOneWidget);
+      expect(find.text(OrdersLabels.extraCount(1)), findsOneWidget);
     });
   });
 }

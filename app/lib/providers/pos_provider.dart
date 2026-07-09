@@ -163,9 +163,79 @@ class PosCartNotifier extends Notifier<PosCartState> {
   /// Used by POS checkout Stage 1 (product selection) to write wizard edits
   /// back to the POS cart so the cart remains the single source of truth at
   /// submit (DG-218 Phase 3, FR-2). Gift items are preserved as-is; regular
-  /// items keep their chip selection and inventory flag.
+  /// items keep their chip selection and inventory flag. After replacing, the
+  /// auto-gift list is recomputed so stale gifts are pruned when a qualifying
+  /// item's quantity drops below the gift threshold (review Mn6).
   void replaceCart(List<PosCartItem> items) {
-    state = PosCartState(items: List<PosCartItem>.from(items));
+    final working = List<PosCartItem>.from(items);
+    _recomputeGifts(working);
+    state = PosCartState(items: working);
+  }
+
+  /// Recomputes the auto-gift extras for the current [items].
+  ///
+  /// Prunes existing auto-gifts that no longer qualify and re-adds the
+  /// configured gift extras when the tang_kem total meets the threshold.
+  /// Shared by [addItem] and [replaceCart] so both paths apply the same gift
+  /// logic (review Mn6 — extracted from addItem).
+  void _recomputeGifts(List<PosCartItem> items) {
+    final hasTangKem = items.any(
+      (i) => i.product.attributes['tang_kem']?.toString() == 'true' && !i.isGift,
+    );
+    if (!hasTangKem) {
+      items.removeWhere((i) => i.isGift);
+      return;
+    }
+
+    final qualified = items
+        .where(
+          (i) =>
+              i.product.attributes['tang_kem']?.toString() == 'true' &&
+              !i.isGift,
+        )
+        .fold<double>(0, (sum, i) => sum + i.total);
+
+    if (qualified < GiftConfig.giftThreshold) {
+      items.removeWhere((i) => i.isGift);
+      return;
+    }
+
+    final giftCatalog = _giftCatalogByNormalizedName();
+    for (final (configuredName, configuredPrice) in GiftConfig.giftExtras) {
+      final normalized = _normalizeGiftName(configuredName);
+      final giftProduct = giftCatalog[normalized];
+      if (giftProduct == null) {
+        assert(() {
+          debugPrint(
+            'pos_provider: unmatched gift config "${configuredName.trim()}" '
+            'for active phu_kien products',
+          );
+          return true;
+        }());
+        continue;
+      }
+
+      final existingGift = items
+          .where((i) => i.product.id == giftProduct.id && i.isGift)
+          .firstOrNull;
+      if (existingGift != null) {
+        continue;
+      }
+
+      items.add(
+        PosCartItem(
+          product: giftProduct.copyWith(
+            basePrice: configuredPrice,
+            attributes: {
+              ...giftProduct.attributes,
+              '_gift': 'true',
+            },
+          ),
+          quantity: 1,
+          isGift: true,
+        ),
+      );
+    }
   }
 
   Map<String, Product> _giftCatalogByNormalizedName() {
