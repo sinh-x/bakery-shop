@@ -19,6 +19,7 @@ import 'package:bakery_app/data/api/order_service.dart';
 import 'package:bakery_app/data/models/customer.dart';
 import 'package:bakery_app/data/models/order.dart';
 import 'package:bakery_app/data/models/product.dart';
+import 'package:bakery_app/features/pos/utils/pos_cart_wizard_sync.dart';
 
 class _SeededPosCartNotifier extends PosCartNotifier {
   _SeededPosCartNotifier(this._items);
@@ -467,6 +468,39 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Receipt ORD-LOCK'), findsOneWidget);
     });
+
+    testWidgets('AC-6: submitted order contains isBirthday, age, rut_tien, cash_fee, cash_amount', (tester) async {
+      final fakeOrderService = _FakeOrderService();
+      final cartItem = PosCartItem(
+        product: _product(),
+        quantity: 1,
+        isBirthday: true,
+        age: '5',
+        rutTien: true,
+        cashFee: 5000,
+        cashAmount: 20000,
+      );
+
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
+      await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
+      await _navigateToPayment(tester);
+
+      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      await tester.ensureVisible(createButton);
+      await tester.pumpAndSettle();
+      await tester.tap(createButton);
+      await _dismissDeliverNowDialog(tester);
+
+      final submitted = fakeOrderService.createdItems.single;
+      final regularItem = submitted.firstWhere((i) => i['isGift'] != true);
+      expect(regularItem['isBirthday'], isTrue);
+      expect(regularItem['age'], 5);
+      expect(regularItem['attributes']['rut_tien'], 'true');
+      expect(regularItem['attributes']['cash_fee'], '5000.0');
+      expect(regularItem['attributes']['cash_amount'], '20000.0');
+    });
   });
 
   group('Stage 1 reachability and cart sync (DG-218 Phase 3)', () {
@@ -788,6 +822,69 @@ void main() {
         capturedRef.read(posOrderStateProvider).items.single.pendingPhotos,
         isEmpty,
       );
+    });
+
+    testWidgets('AC-1/AC-2/AC-5: attributes round-trip via cartItemToDraft and draftItemToCart preserves all values',
+        (tester) async {
+      late WidgetRef capturedRef;
+      final cartItem = PosCartItem(
+        product: _product(),
+        quantity: 1,
+        isBirthday: true,
+        age: '5',
+        rutTien: true,
+        cashFee: 10000,
+        cashAmount: 50000,
+        useInventory: false,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            posCartProvider.overrideWith(() => _SeededPosCartNotifier([cartItem])),
+            customerServiceProvider.overrideWithValue(_FakeCustomerService()),
+            paymentTransactionServiceProvider.overrideWithValue(_FakePaymentTransactionService()),
+          ],
+          child: Consumer(
+            builder: (context, ref, _) {
+              capturedRef = ref;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final cart = capturedRef.read(posCartProvider);
+      final drafts = cart.items.map(cartItemToDraft).toList();
+      capturedRef.read(posOrderStateProvider.notifier).updateItems(drafts);
+
+      var posState = capturedRef.read(posOrderStateProvider);
+      expect(posState.items.single.isBirthday, isTrue);
+      expect(posState.items.single.age, '5');
+      expect(posState.items.single.attributes['rut_tien'], 'true');
+      expect(posState.items.single.attributes['cash_fee'], '10000.0');
+      expect(posState.items.single.attributes['cash_amount'], '50000.0');
+
+      final updated = capturedRef.read(posOrderStateProvider);
+      final cartItems = updated.items.map(draftItemToCart).toList();
+      capturedRef.read(posCartProvider.notifier).replaceCart(cartItems);
+
+      final updatedCart = capturedRef.read(posCartProvider);
+      expect(updatedCart.items.single.isBirthday, isTrue);
+      expect(updatedCart.items.single.age, '5');
+      expect(updatedCart.items.single.rutTien, isTrue);
+      expect(updatedCart.items.single.cashFee, 10000);
+      expect(updatedCart.items.single.cashAmount, 50000);
+      expect(updatedCart.items.single.useInventory, isFalse);
+
+      final reseeded = updatedCart.items.map(cartItemToDraft).toList();
+      capturedRef.read(posOrderStateProvider.notifier).updateItems(reseeded);
+
+      posState = capturedRef.read(posOrderStateProvider);
+      expect(posState.items.single.isBirthday, isTrue);
+      expect(posState.items.single.age, '5');
+      expect(posState.items.single.attributes['rut_tien'], 'true');
     });
   });
 }

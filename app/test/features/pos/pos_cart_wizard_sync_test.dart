@@ -157,6 +157,113 @@ void main() {
       expect(roundTripped.selectedChipLabel, 'Nhỏ');
       expect(roundTripped.selectedPrice, 15000);
     });
+
+    test('cartItemToDraft preserves isBirthday and age', () {
+      final cartItem = PosCartItem(
+        product: _product(),
+        quantity: 1,
+        isBirthday: true,
+        age: '5',
+      );
+      final draft = cartItemToDraft(cartItem);
+      expect(draft.isBirthday, isTrue);
+      expect(draft.age, '5');
+    });
+
+    test('cartItemToDraft preserves rutTien with cash fee and amount', () {
+      final cartItem = PosCartItem(
+        product: _product(),
+        quantity: 1,
+        rutTien: true,
+        cashFee: 5000,
+        cashAmount: 20000,
+      );
+      final draft = cartItemToDraft(cartItem);
+      expect(draft.attributes['rut_tien'], 'true');
+      expect(draft.attributes['cash_fee'], '5000.0');
+      expect(draft.attributes['cash_amount'], '20000.0');
+    });
+
+    test('draftItemToCart preserves isBirthday and age', () {
+      final draft = DraftOrderItem(
+        product: _product(),
+        quantity: 1,
+        isBirthday: true,
+        age: '7',
+      );
+      final cartItem = draftItemToCart(draft);
+      expect(cartItem.isBirthday, isTrue);
+      expect(cartItem.age, '7');
+    });
+
+    test('draftItemToCart preserves rutTien, cashFee, cashAmount from attributes', () {
+      final draft = DraftOrderItem(
+        product: _product(),
+        quantity: 1,
+        attributes: {'rut_tien': 'true', 'cash_fee': '5000', 'cash_amount': '20000'},
+      );
+      final cartItem = draftItemToCart(draft);
+      expect(cartItem.rutTien, isTrue);
+      expect(cartItem.cashFee, 5000);
+      expect(cartItem.cashAmount, 20000);
+    });
+
+    test('cartItemToDraft omits rut_tien attributes when rutTien is false', () {
+      final cartItem = PosCartItem(product: _product(), quantity: 1, rutTien: false);
+      final draft = cartItemToDraft(cartItem);
+      expect(draft.attributes['rut_tien'], isNot('true'));
+    });
+
+    test('round trip cart -> draft -> cart preserves all birthday and rut_tien attributes', () {
+      const chip = PriceChip(id: 1, label: 'Lớn', price: 25000);
+      const product = Product(
+        id: 1,
+        name: 'Banh sinh nhat',
+        basePrice: 200000,
+        category: 'cake',
+        active: 1,
+        priceChips: [chip],
+      );
+      final original = PosCartItem(
+        product: product,
+        quantity: 2,
+        isBirthday: true,
+        age: '5',
+        rutTien: true,
+        cashFee: 10000,
+        cashAmount: 50000,
+        useInventory: false,
+      );
+      final roundTripped = draftItemToCart(cartItemToDraft(original));
+      expect(roundTripped.isBirthday, isTrue);
+      expect(roundTripped.age, '5');
+      expect(roundTripped.rutTien, isTrue);
+      expect(roundTripped.cashFee, 10000);
+      expect(roundTripped.cashAmount, 50000);
+      expect(roundTripped.useInventory, isFalse);
+    });
+
+    test('round trip with partial rutTien (true but no fee/amount)', () {
+      final original = PosCartItem(
+        product: _product(),
+        quantity: 1,
+        rutTien: true,
+      );
+      final roundTripped = draftItemToCart(cartItemToDraft(original));
+      expect(roundTripped.rutTien, isTrue);
+      expect(roundTripped.cashFee, isNull);
+      expect(roundTripped.cashAmount, isNull);
+    });
+
+    test('round trip with null attributes map yields empty attributes', () {
+      final original = PosCartItem(
+        product: _product(),
+        quantity: 1,
+        attributes: null,
+      );
+      final roundTripped = draftItemToCart(cartItemToDraft(original));
+      expect(roundTripped.attributes, isEmpty);
+    });
   });
 
   group('syncWizardItemsToCart contract (M1)', () {
