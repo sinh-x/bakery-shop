@@ -12,6 +12,7 @@ import '../../features/orders/widgets/stage3_delivery_options_screen.dart';
 import '../../features/pos/utils/pos_cart_item_display.dart';
 import '../../features/pos/utils/pos_cart_wizard_sync.dart';
 import '../../features/pos/widgets/pos_checkout_dialogs.dart';
+import '../../features/pos/widgets/pos_payment_step.dart';
 import '../../features/pos/widgets/pos_review_panel.dart';
 import '../../features/stock/stock_screen.dart';
 import '../../providers/order/order_create_state_provider.dart';
@@ -48,6 +49,10 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   bool _isProcessing = false;
   bool _navigatingAfterCheckout = false;
   String _selectedPaymentMethod = 'cash';
+  // Stage 4 sub-step: review → payment (DG-218 Phase 4, FR-5). When true the
+  // dedicated payment step is shown after the review; when false the
+  // review-only panel is shown.
+  bool _paymentStepActive = false;
 
   @override
   void initState() {
@@ -87,6 +92,13 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     if (stage == 1 && currentStage != 1) {
       syncCartToWizardItems(ref);
     }
+    // Entering Stage 4: sync the cart into the wizard working copy so the
+    // unified summary cards (ProductSummaryCard etc.) reflect the latest
+    // cart contents. Reset to the review sub-step (DG-218 Phase 4, FR-5).
+    if (stage == 4) {
+      syncCartToWizardItems(ref);
+      setState(() => _paymentStepActive = false);
+    }
     ref.read(orderCreateStateProvider.notifier).goToStage(stage);
   }
 
@@ -104,6 +116,16 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     } else {
       _goToStage(3);
     }
+  }
+
+  void _enterPaymentStep() {
+    // Review → dedicated payment step (DG-218 Phase 4, FR-5).
+    setState(() => _paymentStepActive = true);
+  }
+
+  void _backFromPaymentStep() {
+    // Payment → review sub-step.
+    setState(() => _paymentStepActive = false);
   }
 
   void _onPaymentMethodChanged(String paymentMethod) {
@@ -358,15 +380,23 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
             onBack: () => _goToStage(2),
             onContinue: () => _goToStage(4),
           ),
-        4 => PosReviewPanel(
-            key: const ValueKey('stage4'),
-            wizardData: state.wizardData,
-            selectedPaymentMethod: _selectedPaymentMethod,
-            isProcessing: _isProcessing,
-            onPaymentMethodChanged: _onPaymentMethodChanged,
-            onBack: () => _goToStage(2),
-            onSubmit: _handleFinalizeOrder,
-          ),
+        4 => _paymentStepActive
+            ? PosPaymentStep(
+                key: const ValueKey('pos-payment'),
+                selectedPaymentMethod: _selectedPaymentMethod,
+                isProcessing: _isProcessing,
+                onPaymentMethodChanged: _onPaymentMethodChanged,
+                onBack: _backFromPaymentStep,
+                onSubmit: _handleFinalizeOrder,
+              )
+            : PosReviewPanel(
+                key: const ValueKey('stage4'),
+                onBack: () {
+                  final data = ref.read(orderCreateStateProvider).wizardData;
+                  _goToStage(data.deliveryType == 'pickup' ? 2 : 3);
+                },
+                onContinue: _enterPaymentStep,
+              ),
         _ => const SizedBox.shrink(),
       },
     );

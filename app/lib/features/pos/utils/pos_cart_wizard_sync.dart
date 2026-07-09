@@ -13,6 +13,10 @@ DraftOrderItem cartItemToDraft(PosCartItem item) {
   return DraftOrderItem(
     product: item.product,
     quantity: item.quantity,
+    // POS cart gifts map to wizard extras-with-gift so the unified
+    // ProductSummaryCard renders them in the extras section with the gift
+    // suffix and excludes them from the regular total (DG-218 Phase 4, FR-6).
+    isExtra: item.isGift,
     isGift: item.isGift,
     customUnitPrice: item.selectedPrice,
     priceChipId: item.selectedChipId,

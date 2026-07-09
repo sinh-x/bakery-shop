@@ -1,156 +1,81 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../providers/pos_provider.dart';
-import '../../../shared/labels/orders.dart';
-import '../../../shared/utils/order_helpers.dart';
-import '../../orders/widgets/order_wizard.dart';
-import '../../orders/widgets/section_header.dart';
-import 'pos_checkout_cart_item_tile.dart';
+import '../../../providers/order/order_create_state_provider.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import '../../orders/widgets/stage1_responsive_content.dart';
+import '../../orders/widgets/stage_summary_card.dart';
 
+/// POS Stage 4 review panel (DG-218 Phase 4, FR-6). Now review-only: it renders
+/// the same unified summary cards (`ProductSummaryCard` /
+/// `CustomerSummaryCard` / `DeliverySummaryCard`) as the order-create wizard
+/// Stage 4 and contains NO payment selector. The payment selection (cash/
+/// transfer + transfer photo) is presented as a dedicated step after this
+/// review (see `PosPaymentStep`).
+///
+/// The continue button advances to the payment step; the back button returns
+/// to the previous stage (Stage 2 for pickup, Stage 3 for delivery).
 class PosReviewPanel extends ConsumerWidget {
   const PosReviewPanel({
     super.key,
-    required this.wizardData,
-    required this.selectedPaymentMethod,
-    required this.isProcessing,
-    required this.onPaymentMethodChanged,
     required this.onBack,
-    required this.onSubmit,
+    required this.onContinue,
   });
 
-  final OrderWizardData wizardData;
-  final String selectedPaymentMethod;
-  final bool isProcessing;
-  final ValueChanged<String> onPaymentMethodChanged;
+  /// Returns to the previous stage (Stage 2 for pickup, Stage 3 for delivery).
   final VoidCallback onBack;
-  final VoidCallback onSubmit;
+
+  /// Advances to the dedicated payment step.
+  final VoidCallback onContinue;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cart = ref.watch(posCartProvider);
+    final state = ref.watch(orderCreateStateProvider);
     final theme = Theme.of(context);
-    final data = wizardData;
 
     return Column(
       children: [
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  OrdersLabels.checkoutReviewTitle,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  OrdersLabels.checkoutReviewHint,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.outline,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const SectionHeader(OrdersLabels.stage2Label),
-                _buildReviewRow(
-                  theme,
-                  VN.customerName,
-                  data.customerName.isNotEmpty ? data.customerName : '—',
-                ),
-                if (data.customerPhone.isNotEmpty)
-                  _buildReviewRow(theme, VN.customerPhone, data.customerPhone),
-                const SizedBox(height: 16),
-                const SectionHeader(OrdersLabels.stage3Label),
-                _buildReviewRow(
-                  theme,
-                  VN.deliveryType,
-                  deliveryTypeLabel(data.deliveryType),
-                ),
-                if (data.needsAddress) ...[
-                  if (data.deliveryPhone.isNotEmpty)
-                    _buildReviewRow(
-                      theme,
-                      OrdersLabels.deliveryPhone,
-                      data.deliveryPhone,
+          child: Stage1ResponsiveContent(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    OrdersLabels.reviewSummary,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
-                  if (data.deliveryAddress.isNotEmpty)
-                    _buildReviewRow(theme, VN.deliveryAddress, data.deliveryAddress),
+                  ),
+                  Text(
+                    OrdersLabels.checkoutReviewHint,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ProductSummaryCard(items: state.items),
+                  CustomerSummaryCard(
+                    wizardData: state.wizardData,
+                    source: state.source,
+                  ),
+                  DeliverySummaryCard(
+                    wizardData: state.wizardData,
+                    dueDate: state.dueDate,
+                    dueTime: state.dueTime,
+                  ),
                 ],
-                const SizedBox(height: 16),
-                const SectionHeader(VN.products),
-                ...cart.items.map(
-                  (item) => PosCheckoutCartItemTile(item: item),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text('${VN.total}: ', style: theme.textTheme.bodyMedium),
-                    Text(
-                      formatVND(cart.total),
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                const SectionHeader(VN.paymentMethod),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                      value: 'cash',
-                      label: Text(VN.tienMat),
-                      icon: Icon(Icons.money),
-                    ),
-                    ButtonSegment(
-                      value: 'transfer',
-                      label: Text(VN.chuyenKhoan),
-                      icon: Icon(Icons.qr_code),
-                    ),
-                  ],
-                  selected: {selectedPaymentMethod},
-                  onSelectionChanged: (s) => onPaymentMethodChanged(s.first),
-                  showSelectedIcon: false,
-                  multiSelectionEnabled: false,
-                ),
-              ],
+              ),
             ),
           ),
         ),
-        _buildNavigation(theme),
+        _buildNavigation(),
       ],
     );
   }
 
-  Widget _buildReviewRow(ThemeData theme, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              '$label:',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(value, style: theme.textTheme.bodyMedium),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavigation(ThemeData theme) {
+  Widget _buildNavigation() {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -161,17 +86,12 @@ class PosReviewPanel extends ConsumerWidget {
           ),
           const Spacer(),
           FilledButton(
-            onPressed: isProcessing ? null : onSubmit,
-            child: isProcessing
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text(VN.submitOrder),
+            onPressed: onContinue,
+            child: const Text(OrdersLabels.continueLabel),
           ),
         ],
       ),
     );
   }
 }
+

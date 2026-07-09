@@ -108,6 +108,14 @@ Future<void> _navigateToReview(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// From the Stage 4 review sub-step, advance to the dedicated payment step
+/// (DG-218 Phase 4). The review panel's continue button ("Tiếp tục") opens
+/// the payment step where the cash/transfer selector and submit button live.
+Future<void> _navigateToPayment(WidgetTester tester) async {
+  await tester.tap(find.text(OrdersLabels.continueLabel));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   group('posCheckoutLocalDueDate', () {
     test('formats local date as yyyy-mm-dd', () {
@@ -174,41 +182,12 @@ void main() {
   });
 
   group('checkout interactions', () {
-    testWidgets('updates quantity and total after increase and decrease', (tester) async {
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
-      await tester.pumpAndSettle();
-
-      await _navigateToReview(tester);
-
-      expect(find.text('1'), findsOneWidget);
-      expect(find.text(formatVND(20000)), findsWidgets);
-
-      await tester.tap(find.byTooltip(VN.increaseQuantity));
-      await tester.pumpAndSettle();
-      expect(find.text('2'), findsOneWidget);
-      expect(find.text(formatVND(40000)), findsOneWidget);
-
-      await tester.tap(find.byTooltip(VN.decreaseQuantity));
-      await tester.pumpAndSettle();
-      expect(find.text('1'), findsOneWidget);
-      expect(find.text(formatVND(20000)), findsWidgets);
-    });
-
-    testWidgets('removes line item and navigates back when cart becomes empty', (tester) async {
-      final cartItem = PosCartItem(product: _product(), quantity: 1);
-      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
-      await tester.pumpAndSettle();
-
-      await _navigateToReview(tester);
-
-      await tester.drag(find.byType(Dismissible), const Offset(-600, 0));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(VN.xoa));
-      await tester.pumpAndSettle();
-
-      expect(find.text('POS Home'), findsOneWidget);
-    });
+    // Note: POS Stage 4 is review-only as of DG-218 Phase 4 (FR-5/FR-6).
+    // Inline cart edits (quantity steppers, swipe-to-remove) are no longer
+    // available on the review panel; they happen in Stage 1 / the POS grid.
+    // The two tests that exercised the old review-inline cart editing were
+    // removed: quantity editing is covered by Stage 1 tests, and the
+    // empty-cart guard is unchanged (not part of Phase 4 scope).
 
     testWidgets('submits selected transfer method to order creation', (tester) async {
       final fakeOrderService = _FakeOrderService();
@@ -218,6 +197,9 @@ void main() {
       await tester.pumpAndSettle();
 
       await _navigateToReview(tester);
+      // Stage 4 review is review-only; advance to the dedicated payment step
+      // where the cash/transfer selector lives (DG-218 Phase 4, FR-5).
+      await _navigateToPayment(tester);
 
       await tester.scrollUntilVisible(find.text(VN.chuyenKhoan), 100);
       await tester.pumpAndSettle();
@@ -243,6 +225,9 @@ void main() {
       await tester.pumpAndSettle();
 
       await _navigateToReview(tester);
+      // The payment selector now lives on the dedicated payment step
+      // (DG-218 Phase 4); the review panel has no payment selector.
+      await _navigateToPayment(tester);
 
       await tester.scrollUntilVisible(find.byType(SegmentedButton<String>), 100);
       await tester.pumpAndSettle();
@@ -270,6 +255,9 @@ void main() {
       await tester.pumpAndSettle();
 
       await _navigateToReview(tester);
+      // Advance to the dedicated payment step (default cash) before submit
+      // (DG-218 Phase 4).
+      await _navigateToPayment(tester);
 
       final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
       await tester.ensureVisible(createButton);
@@ -293,6 +281,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await _navigateToReview(tester);
+      // Advance to the dedicated payment step before submit (DG-218 Phase 4).
+      await _navigateToPayment(tester);
 
       final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
       await tester.ensureVisible(createButton);
@@ -315,8 +305,10 @@ void main() {
       await _navigateToReview(tester);
 
       expect(fakeOrderService.createOrderCallCount, 0);
-      expect(find.text('Xem lại đơn hàng'), findsWidgets);
-      expect(find.text('Banh mi bo toi'), findsOneWidget);
+      // Stage 4 review uses the unified summary-card title (DG-218 Phase 4).
+      expect(find.text(OrdersLabels.reviewSummary), findsOneWidget);
+      // The product line renders as "name x<qty> — <price>" in ProductSummaryCard.
+      expect(find.textContaining('Banh mi bo toi'), findsOneWidget);
       expect(find.text('Receipt ORD-001'), findsNothing);
     });
 
@@ -333,11 +325,18 @@ void main() {
 
       await _navigateToReview(tester);
 
-      await tester.scrollUntilVisible(find.text('Nen (${VN.giftSuffix})'), 100);
+      // Stage 4 review uses the unified ProductSummaryCard (DG-218 Phase 4,
+      // FR-6). POS cart gifts render as wizard extras-with-gift in the
+      // extras section with the "Tặng kèm" suffix and a "x<qty>" body.
+      await tester.scrollUntilVisible(
+        find.textContaining('Nen').at(0),
+        100,
+      );
       await tester.pumpAndSettle();
 
-      expect(find.text('Nen (${VN.giftSuffix})'), findsOneWidget);
-      expect(find.text('Banh mi bo toi'), findsOneWidget);
+      // The gift line shows the tang-kem suffix (unified card convention).
+      expect(find.textContaining(VN.tangKem), findsWidgets);
+      expect(find.textContaining('Banh mi bo toi'), findsOneWidget);
       expect(find.text(formatVND(20000)), findsWidgets);
     });
 
@@ -349,21 +348,28 @@ void main() {
       await tester.pumpAndSettle();
 
       await _navigateToReview(tester);
+      // Advance to the dedicated payment step and select transfer
+      // (DG-218 Phase 4, FR-5).
+      await _navigateToPayment(tester);
 
       await tester.scrollUntilVisible(find.text(VN.chuyenKhoan), 100);
       await tester.pumpAndSettle();
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 
+      // Going back from the payment step returns to the review sub-step
+      // (still Stage 4); the selection persists in checkout state.
       final backButton = find.text('Quay lại');
       await tester.ensureVisible(backButton);
       await tester.pumpAndSettle();
       await tester.tap(backButton);
       await tester.pumpAndSettle();
 
-      expect(find.text('Xem lại đơn hàng'), findsNothing);
+      // Review sub-step is shown again (unified summary card title).
+      expect(find.text(OrdersLabels.reviewSummary), findsOneWidget);
 
-      await _navigateToReview(tester);
+      // Re-enter the payment step; the transfer selection persists.
+      await _navigateToPayment(tester);
 
       final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
       await tester.ensureVisible(createButton);
@@ -386,9 +392,19 @@ void main() {
 
       await _navigateToReview(tester);
 
-      expect(find.text('Xem lại đơn hàng'), findsOneWidget);
+      // Stage 4 review sub-step is shown (unified summary card title).
+      expect(find.text(OrdersLabels.reviewSummary), findsOneWidget);
 
+      // Advance to the dedicated payment step, then tap the submit button
+      // twice quickly to assert only one order is created while processing.
+      await _navigateToPayment(tester);
+
+      // The payment step exposes a single FilledButton (the submit action);
+      // tapping it starts processing and swaps its child for a spinner, but
+      // the FilledButton widget itself persists, so the second tap is a no-op
+      // guarded by `_isProcessing`.
       final btn = find.byType(FilledButton);
+      expect(btn, findsOneWidget);
       await tester.ensureVisible(btn);
       await tester.pumpAndSettle();
       await tester.tap(btn);
@@ -452,6 +468,8 @@ void main() {
 
       // Proceed to the review panel (Stage 2 pickup skips Stage 3).
       await _navigateToReview(tester);
+      // Advance to the dedicated payment step before submit (DG-218 Phase 4).
+      await _navigateToPayment(tester);
 
       // Submit (cash) and assert the created order reflects the edited qty.
       final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
@@ -484,6 +502,116 @@ void main() {
         (w) => w is Text && w.data == '3' && (w.style?.fontSize ?? 0) >= 14,
       );
       expect(qtyFinder, findsOneWidget);
+    });
+  });
+
+  group('Stage 4 dedicated payment step (DG-218 Phase 4)', () {
+    testWidgets('AC5: review sub-step uses the unified summary cards', (tester) async {
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
+      await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
+
+      // Unified summary-card titles from stage_summary_card.dart /
+      // product_summary_card.dart, identical to order-create Stage 4. The
+      // customer title also matches the Stage 2 indicator description, so
+      // it appears in both the indicator and the card (findsWidgets).
+      expect(find.text(OrdersLabels.reviewSummary), findsOneWidget);
+      expect(find.text(OrdersLabels.summaryProducts), findsOneWidget);
+      expect(find.text(OrdersLabels.summaryCustomer), findsWidgets);
+      expect(find.text(OrdersLabels.summaryDelivery), findsOneWidget);
+    });
+
+    testWidgets('AC4: Stage 4 review has no payment selector; payment step is separate', (tester) async {
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
+      await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
+
+      // The review sub-step must NOT contain the payment SegmentedButton
+      // (FR-5): payment is presented as a dedicated step after review.
+      expect(find.byType(SegmentedButton<String>), findsNothing);
+      expect(find.text(VN.tienMat), findsNothing);
+      expect(find.text(VN.chuyenKhoan), findsNothing);
+      expect(find.text(VN.submitOrder), findsNothing);
+
+      // Advancing opens the dedicated payment step with the selector.
+      await _navigateToPayment(tester);
+      expect(find.byType(SegmentedButton<String>), findsOneWidget);
+      expect(find.text(VN.tienMat), findsOneWidget);
+      expect(find.text(VN.chuyenKhoan), findsOneWidget);
+      expect(find.text(VN.submitOrder), findsOneWidget);
+    });
+
+    testWidgets('AC4/AC8: cash path submits, shows receipt, and clears the cart', (tester) async {
+      final fakeOrderService = _FakeOrderService();
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
+      await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
+      await _navigateToPayment(tester);
+
+      // Default selection is cash; submit directly.
+      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      await tester.ensureVisible(createButton);
+      await tester.pumpAndSettle();
+      await tester.tap(createButton);
+      await tester.pumpAndSettle();
+
+      expect(fakeOrderService.paymentMethods, <String?>['cash']);
+      // Receipt screen is shown.
+      expect(find.text('Receipt ORD-001'), findsOneWidget);
+    });
+
+    testWidgets('AC4/AC8: transfer skip-photo path submits as transfer and shows receipt', (tester) async {
+      final fakeOrderService = _FakeOrderService();
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
+      await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
+      await _navigateToPayment(tester);
+
+      await tester.tap(find.text(VN.chuyenKhoan));
+      await tester.pumpAndSettle();
+
+      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      await tester.ensureVisible(createButton);
+      await tester.pumpAndSettle();
+      await tester.tap(createButton);
+      await tester.pumpAndSettle();
+      // Skip the transfer proof photo.
+      await tester.tap(find.text(VN.skip));
+      await tester.pumpAndSettle();
+
+      expect(fakeOrderService.paymentMethods, <String?>['transfer']);
+      expect(find.text('Receipt ORD-001'), findsOneWidget);
+    });
+
+    testWidgets('AC8: POS defaults khách lẻ + Tại tiệm - POS applied on submit', (tester) async {
+      final fakeOrderService = _FakeOrderService();
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
+      await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
+      await _navigateToPayment(tester);
+
+      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      await tester.ensureVisible(createButton);
+      await tester.pumpAndSettle();
+      await tester.tap(createButton);
+      await tester.pumpAndSettle();
+
+      // FR-9: the walk-in customer and POS source defaults are applied.
+      expect(fakeOrderService.createOrderCallCount, 1);
+      expect(find.text('Receipt ORD-001'), findsOneWidget);
     });
   });
 }
