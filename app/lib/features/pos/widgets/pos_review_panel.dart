@@ -16,7 +16,7 @@ import '../../orders/widgets/stage_summary_card.dart';
 /// The continue button advances to the payment step; the back button returns
 /// to the previous stage (Stage 2 for pickup, Stage 3 for delivery).
 class PosReviewPanel extends ConsumerWidget {
-  PosReviewPanel({
+  const PosReviewPanel({
     super.key,
     required this.onBack,
     required this.onContinue,

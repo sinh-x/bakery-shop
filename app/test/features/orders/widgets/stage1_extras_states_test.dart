@@ -16,7 +16,7 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: Stage1ResponsiveContent(
-              child: Container(key: key, width: double.infinity, height: 50),
+              child: SizedBox(key: key, width: double.infinity, height: 50),
             ),
           ),
         ),
@@ -37,7 +37,7 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: Stage1ResponsiveContent(
-              child: Container(key: key, width: double.infinity, height: 50),
+              child: SizedBox(key: key, width: double.infinity, height: 50),
             ),
           ),
         ),

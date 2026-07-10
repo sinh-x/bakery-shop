@@ -15,7 +15,7 @@ typedef OrderStateProvider = NotifierProvider<OrderCreateStateNotifier, OrderCre
 /// Reuses `ExpandableItemCard` as-is (per DG-214 guardrails) and forwards
 /// edit/remove callbacks to the `OrderCreateStateNotifier`.
 class SelectedItemsList extends ConsumerWidget {
-  SelectedItemsList({
+  const SelectedItemsList({
     super.key,
     required this.items,
     required this.regularItems,

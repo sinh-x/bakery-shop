@@ -11,7 +11,7 @@ import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class Stage2CustomerInfoScreen extends ConsumerStatefulWidget {
-  Stage2CustomerInfoScreen({
+  const Stage2CustomerInfoScreen({
     super.key,
     required this.onBack,
     required this.onContinue,

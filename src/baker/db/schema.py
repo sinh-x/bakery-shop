@@ -3378,6 +3378,197 @@ def _migrate_v64_delivery_phone(conn):
         conn.execute("ALTER TABLE orders ADD COLUMN delivery_phone TEXT DEFAULT ''")
 
 
+def _migrate_v66_repair_customer_links(conn):
+    """Link all NULL customer_id orders to customers on startup — DG-227 Phase 2.
+
+    Idempotent migration (v66 slot — v65 is taken by DG-226). Scans orders
+    WHERE customer_id IS NULL, groups by phone/name, creates new customers
+    for unmatched identities, and links orders. Three categories:
+      (1) phone-having orders — resolve/match/create
+      (2) name-only orders — match via search_name or create
+      (3) walk-in (no phone, no name) — link to "Khách lẻ"
+
+    Recomputes customer_year_summary for every affected customer after linking.
+    Logs summary with counts per resolution method.
+    """
+    import logging
+    from baker.models.customer import Customer
+
+    logger = logging.getLogger("baker.db")
+
+    total_null_before = conn.execute(
+        "SELECT COUNT(*) FROM orders WHERE customer_id IS NULL"
+    ).fetchone()[0]
+
+    if total_null_before == 0:
+        logger.info("Không có đơn hàng nào thiếu customer_id — bỏ qua.")
+        return
+
+    # -- Build lookup tables ------------------------------------------------
+    # Existing customer phones (from customer_phones and legacy customers.phone).
+    existing_phones: dict[str, int] = {}
+    for crow in conn.execute(
+        "SELECT customer_id, phone FROM customer_phones"
+    ).fetchall():
+        nphone = _normalize_phone(crow["phone"] or "")
+        if nphone and nphone not in existing_phones:
+            existing_phones[nphone] = crow["customer_id"]
+    for crow in conn.execute(
+        "SELECT id, phone FROM customers WHERE phone IS NOT NULL AND phone != ''"
+    ).fetchall():
+        nphone = _normalize_phone(crow["phone"] or "")
+        if nphone and nphone not in existing_phones:
+            existing_phones[nphone] = crow["id"]
+
+    # Existing customers by search_name (for name-only matching).
+    existing_names: dict[str, int] = {}
+    for crow in conn.execute(
+        "SELECT id, search_name FROM customers WHERE search_name IS NOT NULL AND search_name != ''"
+    ).fetchall():
+        key = crow["search_name"].strip().lower()
+        if key and key not in existing_names:
+            existing_names[key] = crow["id"]
+
+    # Find "Khách lẻ" customer for walk-in orders (FR5).
+    khach_le = conn.execute(
+        "SELECT id FROM customers WHERE LOWER(name) = 'khách lẻ' ORDER BY id ASC LIMIT 1"
+    ).fetchone()
+    khach_le_id = khach_le["id"] if khach_le else None
+
+    # -- Counters -----------------------------------------------------------
+    phone_match = 0
+    name_match = 0
+    new_customer = 0
+    walk_in = 0
+    affected_customers: set[int] = set()
+
+    def _link_and_track(oid: int, cust_id: int) -> None:
+        conn.execute(
+            "UPDATE orders SET customer_id = ? WHERE id = ? AND customer_id IS NULL",
+            (cust_id, oid),
+        )
+        affected_customers.add(cust_id)
+
+    # -- (1) Phone-having orders -------------------------------------------
+    phone_rows = conn.execute(
+        """
+        SELECT id, customer_phone, customer_name
+        FROM orders
+        WHERE customer_id IS NULL
+          AND customer_phone IS NOT NULL
+          AND customer_phone != ''
+        ORDER BY created_at ASC, id ASC
+        """
+    ).fetchall()
+
+    # Group by normalized phone.
+    phone_groups: dict[str, list[dict]] = {}
+    for orow in phone_rows:
+        nphone = _normalize_phone(orow["customer_phone"])
+        if not nphone:
+            continue
+        phone_groups.setdefault(nphone, []).append({
+            "id": orow["id"],
+            "name": orow["customer_name"] or "",
+        })
+
+    for nphone, orders in phone_groups.items():
+        if nphone in existing_phones:
+            cust_id = existing_phones[nphone]
+            for o in orders:
+                _link_and_track(o["id"], cust_id)
+                phone_match += 1
+        else:
+            # Create a new customer — use the most common name for the group.
+            names = [o["name"] for o in orders if o["name"]]
+            resolved_name = _pick_most_common_name(names) if names else "Khách"
+            cust = Customer(name=resolved_name, phone=nphone)
+            cust_id = cust.save(conn)
+            existing_phones[nphone] = cust_id
+            search_name = _strip_diacritics(resolved_name)
+            if search_name and search_name not in existing_names:
+                existing_names[search_name] = cust_id
+            for o in orders:
+                _link_and_track(o["id"], cust_id)
+                new_customer += 1
+
+    # -- (2) Name-only orders (no phone, has name) -------------------------
+    name_rows = conn.execute(
+        """
+        SELECT id, customer_name
+        FROM orders
+        WHERE customer_id IS NULL
+          AND (customer_phone IS NULL OR customer_phone = '')
+          AND customer_name IS NOT NULL
+          AND customer_name != ''
+        ORDER BY created_at ASC, id ASC
+        """
+    ).fetchall()
+
+    # Group by diacritic-stripped name.
+    name_groups: dict[str, list[dict]] = {}
+    for orow in name_rows:
+        key = _strip_diacritics(orow["customer_name"] or "")
+        if not key:
+            continue
+        name_groups.setdefault(key, []).append({
+            "id": orow["id"],
+            "name": orow["customer_name"],
+        })
+
+    for key, orders in name_groups.items():
+        if key in existing_names:
+            cust_id = existing_names[key]
+            for o in orders:
+                _link_and_track(o["id"], cust_id)
+                name_match += 1
+        else:
+            resolved_name = _pick_most_common_name([o["name"] for o in orders])
+            cust = Customer(name=resolved_name, phone="")
+            cust_id = cust.save(conn)
+            existing_names[key] = cust_id
+            for o in orders:
+                _link_and_track(o["id"], cust_id)
+                new_customer += 1
+
+    # -- (3) Walk-in orders (no phone, no name) — FR5 ---------------------
+    if khach_le_id is not None:
+        walk_in_rows = conn.execute(
+            """
+            SELECT id FROM orders
+            WHERE customer_id IS NULL
+              AND (customer_phone IS NULL OR customer_phone = '')
+              AND (customer_name IS NULL OR customer_name = '')
+            """
+        ).fetchall()
+        for row in walk_in_rows:
+            _link_and_track(row["id"], khach_le_id)
+            walk_in += 1
+
+    # -- Recompute customer_year_summary for affected customers — FR6 ------
+    for cust_id in affected_customers:
+        year_rows = conn.execute(
+            "SELECT DISTINCT CAST(strftime('%Y', created_at) AS INTEGER) AS yr "
+            "FROM orders WHERE customer_id = ? AND created_at IS NOT NULL",
+            (cust_id,),
+        ).fetchall()
+        for yr_row in year_rows:
+            if yr_row["yr"]:
+                _recompute_customer_year_summary(conn, cust_id, yr_row["yr"])
+
+    # -- Log summary — FR3 --------------------------------------------------
+    total_linked = phone_match + name_match + new_customer + walk_in
+    total_null_after = conn.execute(
+        "SELECT COUNT(*) FROM orders WHERE customer_id IS NULL"
+    ).fetchone()[0]
+
+    logger.info(
+        "Đã sửa %d đơn hàng: %d khớp số điện thoại, %d khớp tên, "
+        "%d tạo mới, %d khách lẻ. Còn lại NULL: %d.",
+        total_linked, phone_match, name_match, new_customer, walk_in, total_null_after,
+    )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -3687,6 +3878,11 @@ MIGRATIONS = {
         "description": "Create journal_sync_failure_log table for per-source audit records — DG-226 Phase 1",
         "sql": "",
         "callable": _migrate_v65_journal_sync_failure_log,
+    },
+    66: {
+        "description": "Repair unlinked orders — link all NULL customer_id orders by phone/name/walk-in, idempotent re-run (DG-227 Phase 2)",
+        "sql": "",
+        "callable": _migrate_v66_repair_customer_links,
     },
 }
 

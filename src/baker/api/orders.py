@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
-from baker.db.schema import _order_year, _recompute_customer_year_summary
+from baker.db.schema import _order_year, _recompute_customer_year_summary, _strip_diacritics
 from baker.logging import log_context, logger
 from baker.models.order import (
     PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN,
@@ -35,7 +35,7 @@ def _day_bounds(date_str: str) -> tuple[str, str]:
     return f"{date_str}T00:00:00", next_day.strftime("%Y-%m-%dT00:00:00")
 
 
-def _resolve_customer_id_by_phone(conn, phone: str) -> Optional[int]:
+def _resolve_customer_id_by_phone(conn, phone: str, customer_name: Optional[str] = None) -> Optional[int]:
     """Resolve a customer_id from a phone number via the ``customer_phones`` table.
 
     DG-205 Phase 3 (FR8). Matches the normalized phone against every row in
@@ -46,6 +46,10 @@ def _resolve_customer_id_by_phone(conn, phone: str) -> Optional[int]:
 
     Falls back to the legacy ``customers.phone`` column when ``customer_phones``
     has no match (e.g. pre-v58 databases or customers created before Phase 1).
+
+    DG-227 Phase 1 (FR1). When phone lookup returns nothing, falls back to a
+    name-based lookup via ``customers.search_name`` (case-insensitive,
+    diacritic-insensitive). Returns the first match ordered by id ASC.
     Returns ``None`` when no customer matches.
     """
     from baker.db.schema import _normalize_phone
@@ -94,7 +98,21 @@ def _resolve_customer_id_by_phone(conn, phone: str) -> Optional[int]:
         "ORDER BY id ASC LIMIT 1",
         (nphone,),
     ).fetchone()
-    return legacy["id"] if legacy else None
+    if legacy:
+        return legacy["id"]
+
+    # Tertiary path: name-based fallback (DG-227 FR1).
+    # Strip diacritics for case-insensitive, diacritic-insensitive matching
+    # against the pre-computed ``customers.search_name`` column.
+    if customer_name and customer_name.strip():
+        normalized_name = _strip_diacritics(customer_name.strip())
+        name_match = conn.execute(
+            "SELECT id FROM customers WHERE search_name = ? ORDER BY id ASC LIMIT 1",
+            (normalized_name,),
+        ).fetchone()
+        return name_match["id"] if name_match else None
+
+    return None
 
 
 class OrderItemIn(BaseModel):
@@ -423,7 +441,8 @@ def create_order(body: OrderCreate, request: Request):
         else:
             # DG-205 Phase 3 (FR8): resolve customer_id from customerPhone via
             # customer_phones when the caller did not pass an explicit customerId.
-            resolved = _resolve_customer_id_by_phone(conn, body.customerPhone)
+            # DG-227 Phase 1: pass customerName for name-based fallback.
+            resolved = _resolve_customer_id_by_phone(conn, body.customerPhone, customer_name=body.customerName)
             if resolved is not None:
                 body.customerId = resolved
         public_order_code = _generate_unique_public_order_code(conn, body.dueDate, body.deliveryType)
@@ -577,11 +596,16 @@ def edit_order(ref: str, body: OrderEdit):
             exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (data["customerId"],)).fetchone()
             if not exists:
                 raise HTTPException(status_code=422, detail="Khách hàng không tồn tại")
-        elif "customerId" not in data and "customerPhone" in data and data["customerPhone"] is not None:
-            # DG-205 Phase 3 (FR8): phone changed without an explicit customerId —
-            # re-resolve the customer link against customer_phones. An explicit
-            # customerId (including null-to-unlink) is respected as-is.
-            resolved = _resolve_customer_id_by_phone(conn, data["customerPhone"])
+        elif "customerPhone" in data and data["customerPhone"] is not None:
+            # DG-227 Phase 1 (FR8): When customerId is explicitly null (the
+            # ``if`` above only matches non-None values) but customerPhone is
+            # provided, we deliberately fall through to re-resolve the customer
+            # link from phone + name. This is the intended FR8 flow — not a bug.
+            # Pass customer_name so the name-based fallback can match when the
+            # phone fails to resolve.
+            resolved = _resolve_customer_id_by_phone(
+                conn, data["customerPhone"], customer_name=data.get("customerName")
+            )
             if resolved is not None:
                 data["customerId"] = resolved
 

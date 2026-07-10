@@ -23,7 +23,7 @@ import 'package:bakery_app/shared/labels/orders.dart';
 /// items appear expanded because `ExpandableItemCard` defaults `_expanded =
 /// true`. The picker is reused as-is (no modifications, per guardrails).
 class Stage1ProductSelectionScreen extends ConsumerStatefulWidget {
-  Stage1ProductSelectionScreen({
+  const Stage1ProductSelectionScreen({
     super.key,
     required this.onContinue,
     required this.orderStateProvider,
