@@ -2554,6 +2554,29 @@ def _migrate_v54_add_account_2400(conn):
     _seed_chart_of_accounts(conn)
 
 
+JOURNAL_SYNC_FAILURE_LOG_SCHEMA = """
+CREATE TABLE IF NOT EXISTS journal_sync_failure_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_type     TEXT NOT NULL,
+    source_id       INTEGER,
+    error_message   TEXT NOT NULL,
+    stack_trace     TEXT DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_failure_log_type_id ON journal_sync_failure_log(source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_failure_log_created ON journal_sync_failure_log(created_at);
+"""
+
+
+def _migrate_v65_journal_sync_failure_log(conn):
+    """Create journal_sync_failure_log table for per-source audit records (DG-226 Phase 1).
+
+    Idempotent: uses CREATE TABLE IF NOT EXISTS and CREATE INDEX IF NOT EXISTS.
+    """
+    conn.executescript(JOURNAL_SYNC_FAILURE_LOG_SCHEMA)
+
+
 NEGATIVE_BALANCE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS negative_balance (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3659,6 +3682,11 @@ MIGRATIONS = {
         "description": "Add delivery_phone column to orders table — DG-211 Phase 4.1",
         "sql": "",
         "callable": _migrate_v64_delivery_phone,
+    },
+    65: {
+        "description": "Create journal_sync_failure_log table for per-source audit records — DG-226 Phase 1",
+        "sql": "",
+        "callable": _migrate_v65_journal_sync_failure_log,
     },
 }
 
