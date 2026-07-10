@@ -197,6 +197,8 @@ def delete_transaction(ref: str, txn_id: int):
             conn, txn_id, float(row["amount"]), row["type"], row["method"],
             order_id=order_id, deleted=True,
             log_label=f"payment journal delete-sync for txn {txn_id}",
+            source_type="payment_transaction",
+            source_id=txn_id,
         )
 
 

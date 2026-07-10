@@ -414,6 +414,8 @@ def delete_event(event_id: int, deleted_by: str = Query("", description="Ngườ
                 _sync_expense_journal,
                 conn, event_id, {}, str(row["summary"]), deleted=True,
                 log_label=f"expense journal delete-sync for event {event_id}",
+                source_type="expense",
+                source_id=event_id,
             )
             # FR9 (DG-212): when a debt expense is deleted, its unsettled
             # settlement journal entries must also be reversed/removed so the
