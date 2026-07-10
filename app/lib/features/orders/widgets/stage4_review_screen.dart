@@ -8,7 +8,7 @@ import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class Stage4ReviewScreen extends ConsumerWidget {
-  Stage4ReviewScreen({
+  const Stage4ReviewScreen({
     super.key,
     required this.onBack,
     required this.onSubmit,

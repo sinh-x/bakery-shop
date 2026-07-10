@@ -9,7 +9,7 @@ import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class Stage3DeliveryOptionsScreen extends ConsumerStatefulWidget {
-  Stage3DeliveryOptionsScreen({
+  const Stage3DeliveryOptionsScreen({
     super.key,
     required this.onBack,
     required this.onContinue,
