@@ -439,6 +439,8 @@ def delete_event(event_id: int, deleted_by: str = Query("", description="Ngườ
                             f"debt settlement journal delete-sync for "
                             f"settlement {sid} on event {event_id}"
                         ),
+                        source_type="debt_settlement",
+                        source_id=int(sid),
                     )
 
 
