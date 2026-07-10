@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.7.2+82] — 2026-07-11
+
+> **Release summary:** This release bundles all features from v0.7.0 through v0.7.2+82 (approximately 108 commits), including 4-stage unified order creation pipeline (DG-211, DG-214, DG-218), order edit/create wizard UI parity (DG-217, DG-220), customer picker improvements (DG-222), cart attribute sync (DG-221), journal backfill prevention (DG-226), customer link repair (DG-227), missing revenue repair (DG-229), expense debt management, Tailscale MagicDNS HTTPS dev server (DG-219), and COGS audit/business-health metrics (DG-208, DG-209). See the entries below for the full delta.
+- feat(DG-229): repair missing revenue — fix all query, create missing entries, check-revenue-gaps command, --since date filtering
+- feat(DG-227): customer link repair — name fallback, update endpoint fix, migration v66
+- feat(DG-226): journal backfill prevention — audit log, proactive detection, missing source_type/source_id params
+- feat(DG-225): POS fixes — useInventory persistence, trailing newline, health check retry
+- feat(DG-224): POS order creation — extract _createOrderInternal, guard debugPrint
+- feat(DG-223): POS review findings resolution (4/4)
+- feat(DG-222): customer picker — inline list, adaptive fetch/mode, selection states, VN labels
+- feat(DG-221): POS cart attribute sync — lossless cart↔wizard isBirthday, age, rut_tien, cash_fee
+- feat(DG-220): order edit UI parity — single-state customer model, stage-widget decomposition
+- feat(DG-219): Tailscale MagicDNS HTTPS dev server via central drgnfly-caddy gateway
+- feat(DG-218): POS unified order creation — 4-stage pipeline, dedicated payment step, gift logic dedup
+- feat(DG-217): order wizard — swipe navigation, stage gating, post-submit navigation, VN labels
+- feat(DG-216): delivery options polish — layout/UX, shipping fee config, due date/time picker
+- feat(DG-215): Facebook source labels — align with backend values, Stage 2 customer info polish
+- feat(DG-214): order wizard UI — tien_rut fixes, cash amount defaults, state management
+- feat(DG-213): VN label policy + const lint warnings resolution
+- feat(DG-211): 4-stage unified order creation pipeline — OrderWizardData, PageView, error handling
+- feat(delivery): phone input formatter, delivery_phone NULL handling
+- feat(expense-debt): debt expense creation, settlement API, Flutter UI, vendor autocomplete
+- feat(reports): COGS ratio in income statement, business-health metrics with severity classification
+- chore(release): bump patch version to 0.7.2+82 [skip ci]
+
 ## [0.7.0+79] — 2026-07-06
 
 > **Release summary:** This release bundles all features from v0.6.1 through v0.6.13 (approximately 178 commits across 18 milestone features), including double-entry accounting (DG-175, DG-189–199), customer management (DG-182, DG-204–206), negative inventory flow (DG-200), UTC timestamp standardization (DG-202), printing module (DG-186), expense events (DG-185), printer paper mode (DG-183), and COGS audit/cost_history (DG-208). See the entries below for the full delta.
