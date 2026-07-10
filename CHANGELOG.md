@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.7.2+84] — 2026-07-11
+- chore(release): auto-changelog entry for 0.7.2+83
+
 ## [0.7.2+83] — 2026-07-11
 - chore(release): add CHANGELOG 0.7.2+82 entry, sync uv.lock version
 
