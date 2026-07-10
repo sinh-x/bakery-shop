@@ -537,8 +537,6 @@ def test_repair_all_with_since_includes_orders_without_revenue_entry():
     """--since scan includes orders with no revenue entry (created action)."""
     with get_db() as conn:
         ensure_schema(conn)
-        deposits_acc = _account_id(conn, "2100")
-        revenue_acc = _account_id(conn, "4100")
         oid1 = _insert_order(
             conn, order_ref="ORD-260624-610", customer_name="Khách Mới",
             total_price=300000, status="delivered", due_date="2026-07-01",
