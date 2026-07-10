@@ -19,6 +19,7 @@ import click.testing
 
 from baker.cli import app
 from baker.commands.repair import _process_order
+from baker.commands.repair import _vn_amount
 from baker.db.connection import get_db
 from baker.db.schema import ensure_schema
 
@@ -534,3 +535,118 @@ def test_vn_amount_formatting():
     assert _vn_amount(500000) == "500.000"
     assert _vn_amount(1500000) == "1.500.000"
     assert _vn_amount(-200000) == "-200.000"
+
+
+# ---------------------------------------------------------------------------
+# check-revenue-gaps (Phase 4.3)
+# ---------------------------------------------------------------------------
+
+
+def test_check_revenue_gaps_command_registered():
+    result = _invoke(["check-revenue-gaps", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "chỉ đọc" in result.output.lower()
+
+
+def test_check_revenue_gaps_finds_missing_entries():
+    with get_db() as conn:
+        ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
+        oid1 = _insert_order(
+            conn, order_ref="ORD-260624-700", customer_name="Khách G1",
+            total_price=500000, status="delivered", due_date="2026-07-01",
+        )
+        _insert_payment(conn, order_id=oid1, amount=500000, ptype="deposit")
+        oid2 = _insert_order(
+            conn, order_ref="ORD-260624-701", customer_name="Khách G2",
+            total_price=300000, status="completed", due_date="2026-07-02",
+        )
+        _insert_payment(conn, order_id=oid2, amount=300000, ptype="deposit")
+        oid3 = _insert_order(
+            conn, order_ref="ORD-260624-702", customer_name="Khách OK",
+            total_price=400000, status="delivered", due_date="2026-07-03",
+        )
+        _insert_payment(conn, order_id=oid3, amount=400000, ptype="deposit")
+        _insert_revenue_entry(
+            conn, order_id=oid3, deposits_account_id=deposits_acc,
+            revenue_account_id=revenue_acc, amount=400000,
+        )
+
+    result = _invoke(["check-revenue-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-260624-700" in result.output
+    assert "ORD-260624-701" in result.output
+    assert "ORD-260624-702" not in result.output
+    assert "Tổng: 2" in result.output
+
+
+def test_check_revenue_gaps_read_only_no_mutation():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid1 = _insert_order(
+            conn, order_ref="ORD-260624-710", customer_name="Khách RO",
+            total_price=500000, status="delivered", due_date="2026-07-10",
+        )
+        _insert_payment(conn, order_id=oid1, amount=500000, ptype="deposit")
+
+    # Count rows before
+    with get_db() as conn:
+        ensure_schema(conn)
+        je_before = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        jl_before = conn.execute("SELECT COUNT(*) AS c FROM journal_lines").fetchone()["c"]
+        pt_before = conn.execute("SELECT COUNT(*) AS c FROM payment_transactions").fetchone()["c"]
+        o_before = conn.execute("SELECT COUNT(*) AS c FROM orders").fetchone()["c"]
+
+    result = _invoke(["check-revenue-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-260624-710" in result.output
+    assert "thiếu bút toán doanh thu" in result.output
+
+    # Count rows after — must be identical
+    with get_db() as conn:
+        ensure_schema(conn)
+        je_after = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        jl_after = conn.execute("SELECT COUNT(*) AS c FROM journal_lines").fetchone()["c"]
+        pt_after = conn.execute("SELECT COUNT(*) AS c FROM payment_transactions").fetchone()["c"]
+        o_after = conn.execute("SELECT COUNT(*) AS c FROM orders").fetchone()["c"]
+
+    assert je_before == je_after
+    assert jl_before == jl_after
+    assert pt_before == pt_after
+    assert o_before == o_after
+
+
+def test_check_revenue_gaps_empty_when_all_have_entries():
+    with get_db() as conn:
+        ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
+        oid1 = _insert_order(
+            conn, order_ref="ORD-260624-720", customer_name="Khách All",
+            total_price=500000, status="delivered",
+        )
+        _insert_payment(conn, order_id=oid1, amount=500000, ptype="deposit")
+        _insert_revenue_entry(
+            conn, order_id=oid1, deposits_account_id=deposits_acc,
+            revenue_account_id=revenue_acc, amount=500000,
+        )
+
+    result = _invoke(["check-revenue-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "không có đơn hàng nào" in result.output
+
+
+def test_check_revenue_gaps_ignores_non_delivered_orders():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid1 = _insert_order(
+            conn, order_ref="ORD-260624-730", customer_name="Khách New",
+            total_price=500000, status="new",
+        )
+        _insert_payment(conn, order_id=oid1, amount=500000, ptype="deposit")
+
+    result = _invoke(["check-revenue-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-260624-730" not in result.output
+    assert "không có đơn hàng nào" in result.output
