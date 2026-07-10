@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
-from baker.db.schema import _order_year, _recompute_customer_year_summary
+from baker.db.schema import _order_year, _recompute_customer_year_summary, _strip_diacritics
 from baker.logging import log_context, logger
 from baker.models.order import (
     PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN,
@@ -105,8 +105,6 @@ def _resolve_customer_id_by_phone(conn, phone: str, customer_name: Optional[str]
     # Strip diacritics for case-insensitive, diacritic-insensitive matching
     # against the pre-computed ``customers.search_name`` column.
     if customer_name and customer_name.strip():
-        from baker.db.schema import _strip_diacritics
-
         normalized_name = _strip_diacritics(customer_name.strip())
         name_match = conn.execute(
             "SELECT id FROM customers WHERE search_name = ? ORDER BY id ASC LIMIT 1",
@@ -599,10 +597,12 @@ def edit_order(ref: str, body: OrderEdit):
             if not exists:
                 raise HTTPException(status_code=422, detail="Khách hàng không tồn tại")
         elif "customerPhone" in data and data["customerPhone"] is not None:
-            # DG-227 Phase 1 (FR8): when customerPhone is provided but customerId
-            # is absent or explicitly null, re-resolve the customer link. Pass
-            # customer_name so the name-based fallback can match when the phone
-            # fails to resolve.
+            # DG-227 Phase 1 (FR8): When customerId is explicitly null (the
+            # ``if`` above only matches non-None values) but customerPhone is
+            # provided, we deliberately fall through to re-resolve the customer
+            # link from phone + name. This is the intended FR8 flow — not a bug.
+            # Pass customer_name so the name-based fallback can match when the
+            # phone fails to resolve.
             resolved = _resolve_customer_id_by_phone(
                 conn, data["customerPhone"], customer_name=data.get("customerName")
             )
