@@ -392,8 +392,9 @@ def _print_cogs_report(results, *, dry_run):
 @click.option("--all", "repair_all", is_flag=True, default=False, help="Sửa tất cả đơn đã giao có bút toán lệch.")
 @click.option("--cogs", "repair_cogs", is_flag=True, default=False, help="Sửa/bổ sung bút toán giá vốn (COGS) thay vì doanh thu.")
 @click.option("--force", "force_cogs", is_flag=True, default=False, help="Tính lại toàn bộ cost_at_sale (không chỉ dòng = 0). Chỉ dùng với --cogs.")
+@click.option("--since", "since_date", type=str, default=None, help="Chỉ xử lý đơn có ngày giao từ DATE trở đi (YYYY-MM-DD). Chỉ dùng với --all.")
 @click.option("--dry-run", is_flag=True, default=False, help="Xem trước thay đổi, không ghi vào CSDL.")
-def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, dry_run):
+def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, since_date, dry_run):
     """Sửa bút toán doanh thu đơn hàng bị lệch (nợ 2100 ≠ cọc thực tế).
 
     Với ``--cogs``, sửa/bổ sung bút toán giá vốn (COGS) cho đơn đã giao:
@@ -411,6 +412,9 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, dry_
     if force_cogs and not repair_cogs:
         click.echo("--force chỉ dùng với --cogs.", err=True)
         raise SystemExit(1)
+    if since_date and not repair_all:
+        click.echo("--since chỉ dùng với --all.", err=True)
+        raise SystemExit(1)
 
     try:
         with get_db() as conn:
@@ -419,15 +423,17 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, dry_
                     conn, order_id=order_id, repair_all=repair_all, dry_run=dry_run, force=force_cogs
                 )
             elif repair_all:
-                rows = conn.execute(
-                    f"""
+                sql = f"""
                     SELECT o.id AS order_id
                     FROM orders o
                     WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
-                    ORDER BY o.id ASC
-                    """,
-                    list(DELIVERED_STATUSES),
-                ).fetchall()
+                """
+                params = list(DELIVERED_STATUSES)
+                if since_date:
+                    sql += " AND o.due_date >= ?"
+                    params.append(since_date)
+                sql += " ORDER BY o.id ASC"
+                rows = conn.execute(sql, params).fetchall()
                 order_ids = [int(r["order_id"]) for r in rows]
                 results = [
                     _process_order(conn, oid, dry_run=dry_run) for oid in order_ids

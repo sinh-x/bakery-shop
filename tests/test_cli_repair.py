@@ -453,6 +453,76 @@ def test_process_order_will_repair_in_dry_run():
 
 
 # ---------------------------------------------------------------------------
+# --since date filtering (Phase 4.2)
+# ---------------------------------------------------------------------------
+
+
+def test_repair_all_with_since_filters_by_due_date():
+    """--since DATE limits scan to orders with due_date >= DATE."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
+        oid1 = _insert_order(
+            conn, order_ref="ORD-260624-600", customer_name="Khách Sau",
+            total_price=700000, status="delivered", due_date="2026-06-01",
+        )
+        _insert_payment(conn, order_id=oid1, amount=500000, ptype="deposit")
+        _insert_revenue_entry(
+            conn, order_id=oid1, deposits_account_id=deposits_acc,
+            revenue_account_id=revenue_acc, amount=700000,
+        )
+        oid2 = _insert_order(
+            conn, order_ref="ORD-260624-601", customer_name="Khách Trước",
+            total_price=700000, status="delivered", due_date="2026-05-01",
+        )
+        _insert_payment(conn, order_id=oid2, amount=500000, ptype="deposit")
+        _insert_revenue_entry(
+            conn, order_id=oid2, deposits_account_id=deposits_acc,
+            revenue_account_id=revenue_acc, amount=700000,
+        )
+
+    result = _invoke(["repair-order-revenue", "--all", "--since", "2026-06-01"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-260624-600" in result.output
+    assert "ORD-260624-601" not in result.output
+    assert "đã sửa: 1" in result.output
+    assert "bỏ qua: 0" in result.output
+
+
+def test_repair_all_with_since_includes_orders_without_revenue_entry():
+    """--since scan includes orders with no revenue entry (created action)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
+        oid1 = _insert_order(
+            conn, order_ref="ORD-260624-610", customer_name="Khách Mới",
+            total_price=300000, status="delivered", due_date="2026-07-01",
+        )
+        _insert_payment(conn, order_id=oid1, amount=300000, ptype="deposit")
+        oid2 = _insert_order(
+            conn, order_ref="ORD-260624-611", customer_name="Khách Cũ",
+            total_price=300000, status="delivered", due_date="2026-05-01",
+        )
+        _insert_payment(conn, order_id=oid2, amount=300000, ptype="deposit")
+
+    result = _invoke(["repair-order-revenue", "--all", "--since", "2026-06-01"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-260624-610" in result.output
+    assert "ORD-260624-611" not in result.output
+    assert "đã tạo" in result.output
+    assert "đã sửa: 1" in result.output
+
+
+def test_since_rejected_without_all():
+    """--since without --all is an error."""
+    result = _invoke(["repair-order-revenue", "--order-id", "1", "--since", "2026-06-01"])
+    assert result.exit_code != 0
+    assert "chỉ dùng với --all" in result.output
+
+
+# ---------------------------------------------------------------------------
 # VN amount formatting
 # ---------------------------------------------------------------------------
 
