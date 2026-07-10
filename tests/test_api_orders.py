@@ -1538,10 +1538,7 @@ def test_pos_chip_order_with_gift_creates_order_tracks_payment_and_skips_gift_st
             "SELECT amount, method, type FROM payment_transactions WHERE order_id = ? ORDER BY id",
             (int(order["id"]),),
         ).fetchall()
-        assert len(payment_rows) == 1
-        assert payment_rows[0]["type"] == "payment"
-        assert payment_rows[0]["method"] == payment_method
-        assert payment_rows[0]["amount"] == float(order["totalPrice"])
+        assert len(payment_rows) == 0
 
         movement_rows = conn.execute(
             """SELECT id, quantity, price_chip_id

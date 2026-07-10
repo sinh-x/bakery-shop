@@ -476,8 +476,9 @@ def create_order(body: OrderCreate, request: Request):
             )
             txn.save(conn)
 
-        # POS quick-sale: always record payment if paymentMethod is provided
-        if body.paymentMethod and body.paymentMethod != "none":
+        # POS quick-sale: record payment if paymentMethod is provided, but skip
+        # for POS source (Flutter creates the transaction client-side).
+        if body.source != "Tại tiệm - POS" and body.paymentMethod and body.paymentMethod != "none":
             total_price = float(order.total_price)
             if total_price > 0:
                 txn = PaymentTransaction(
