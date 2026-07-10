@@ -112,13 +112,29 @@ def _process_order(conn, order_id: int, *, dry_run: bool) -> dict:
     net = PaymentTransaction.total_paid_net(conn, order_id)
 
     if entry_id is None:
-        # No revenue entry with a 2100 debit — nothing to repair.
+        if net <= 0:
+            return {
+                "order_id": order_id,
+                "order_ref": order_ref,
+                "old_debit": old_debit,
+                "net_deposits": net,
+                "action": "not-applicable",
+            }
+        if dry_run:
+            return {
+                "order_id": order_id,
+                "order_ref": order_ref,
+                "old_debit": old_debit,
+                "net_deposits": net,
+                "action": "will-create",
+            }
+        _sync_delivered_order_journal(conn, order_id, order_ref)
         return {
             "order_id": order_id,
             "order_ref": order_ref,
             "old_debit": old_debit,
             "net_deposits": net,
-            "action": "not-applicable",
+            "action": "created",
         }
 
     mismatch = abs(old_debit - net)
@@ -167,6 +183,8 @@ _ACTION_LABELS = {
     "not-applicable": "không áp dụng",
     "locked": "khoá",
     "will-repair": "sẽ sửa",
+    "created": "đã tạo",
+    "will-create": "sẽ tạo",
     "backfilled": "đã sửa",
     "will-backfill": "sẽ sửa",
 }
@@ -403,17 +421,12 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, dry_
             elif repair_all:
                 rows = conn.execute(
                     f"""
-                    SELECT DISTINCT je.source_id AS order_id
-                    FROM journal_entries je
-                    JOIN journal_lines jl ON jl.journal_entry_id = je.id
-                    JOIN accounts a ON a.id = jl.account_id
-                    JOIN orders o ON o.id = je.source_id
-                    WHERE je.source_type = 'order'
-                      AND a.code = ?
-                      AND o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
-                    ORDER BY je.source_id ASC
+                    SELECT o.id AS order_id
+                    FROM orders o
+                    WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
+                    ORDER BY o.id ASC
                     """,
-                    [CUSTOMER_DEPOSITS_CODE, *DELIVERED_STATUSES],
+                    list(DELIVERED_STATUSES),
                 ).fetchall()
                 order_ids = [int(r["order_id"]) for r in rows]
                 results = [
@@ -457,16 +470,18 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, dry_
     click.echo("-" * 68)
 
     repaired = sum(1 for r in results if r["action"] == "repaired")
+    created = sum(1 for r in results if r["action"] == "created")
     will_repair = sum(1 for r in results if r["action"] == "will-repair")
+    will_create = sum(1 for r in results if r["action"] == "will-create")
     skipped = sum(1 for r in results if r["action"] == "skipped")
     not_applicable = sum(1 for r in results if r["action"] == "not-applicable")
     locked = sum(1 for r in results if r["action"] == "locked")
 
     parts = []
     if dry_run:
-        parts.append(f"sẽ sửa: {will_repair}")
+        parts.append(f"sẽ sửa: {will_repair + will_create}")
     else:
-        parts.append(f"đã sửa: {repaired}")
+        parts.append(f"đã sửa: {repaired + created}")
     parts.append(f"bỏ qua: {skipped}")
     parts.append(f"không áp dụng: {not_applicable}")
     if locked:

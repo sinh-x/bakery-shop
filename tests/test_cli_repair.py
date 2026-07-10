@@ -267,8 +267,8 @@ def test_repair_all_repairs_only_stale_entries():
     assert result.exit_code == 0, result.output
     assert "ORD-260624-200" in result.output
     assert "ORD-260624-201" in result.output
-    assert "ORD-260624-202" not in result.output  # no revenue entry → not scanned
-    assert "đã sửa: 1" in result.output
+    assert "ORD-260624-202" in result.output
+    assert "đã sửa: 2" in result.output
     assert "bỏ qua: 1" in result.output
 
     with get_db() as conn:
@@ -404,7 +404,7 @@ def test_repair_fixes_refund_double_debit():
 # ---------------------------------------------------------------------------
 
 
-def test_process_order_not_applicable_when_no_revenue_entry():
+def test_process_order_creates_when_no_revenue_entry():
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_order(
@@ -413,7 +413,7 @@ def test_process_order_not_applicable_when_no_revenue_entry():
         )
         _insert_payment(conn, order_id=oid, amount=500000, ptype="deposit")
         result = _process_order(conn, oid, dry_run=False)
-    assert result["action"] == "not-applicable"
+    assert result["action"] == "created"
 
 
 def test_process_order_skipped_when_within_tolerance():
