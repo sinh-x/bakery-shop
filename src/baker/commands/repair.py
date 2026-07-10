@@ -23,9 +23,13 @@ Modes:
 - ``--dry-run``       — show what would change without mutating the database
   (works with both ``--order-id`` and ``--all``)
 
-Only delivered/completed orders are considered. Orders without a revenue entry
-(or with an accounts-receivable entry that has no 2100 debit) are reported as
-"không áp dụng" (not applicable).
+Only delivered/completed orders are considered. Orders without a revenue
+entry (or with an accounts-receivable entry that has no 2100 debit) are now
+created (action ``"created"`` / ``"will-create"`` in dry-run) instead of being
+reported as "không áp dụng". Use ``--since DATE`` to scope ``--all`` repairs
+to orders with ``due_date >= DATE`` (requires ``--all``). The companion
+``check-revenue-gaps`` command provides a read-only scan of orders missing
+revenue entries.
 
 All user-facing labels are in Vietnamese (VN label policy). Exit code is 0 on
 success and 1 on error; errors are written to stderr only — following the
@@ -105,7 +109,8 @@ def _process_order(conn, order_id: int, *, dry_run: bool) -> dict:
     """Evaluate and optionally repair one order's revenue entry.
 
     Returns a result dict with keys: order_id, order_ref, old_debit, net_deposits,
-    action (one of 'repaired', 'skipped', 'not-applicable', 'locked', 'will-repair').
+    action (one of 'repaired', 'skipped', 'not-applicable', 'locked', 'will-repair',
+    'created', 'will-create').
     """
     order_ref = _order_ref(conn, order_id)
     entry_id, old_debit = _order_revenue_2100_debit(conn, order_id)
