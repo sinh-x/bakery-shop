@@ -698,6 +698,8 @@ def settle_debt(
             conn, next_id, event_id, str(row["summary"]),
             float(body.amount), body.payment_source,
             log_label=f"debt settlement journal sync for event {event_id} settlement {next_id}",
+            source_type="debt_settlement",
+            source_id=next_id,
         )
 
         # Compute updated debt status.
