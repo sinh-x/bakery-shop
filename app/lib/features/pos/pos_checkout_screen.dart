@@ -1,6 +1,7 @@
 // EXEMPT: 300-line screen threshold — orchestrates 4 wizard stages + 2 payment
 // paths (cash/transfer+photo) + editable amount + photo upload + status
 // confirmation. Reviewed 2026-07-09 DG-218.
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -175,6 +176,8 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   List<Map<String, dynamic>> _buildOrderItems() {
     final state = ref.read(posOrderStateProvider);
     return state.items.map((i) {
+      // Map<String, dynamic> matches the API layer convention
+      // (OrderService.createOrder accepts List<Map<String, dynamic>>).
       final m = <String, dynamic>{
         'productId': i.product.id.toString(),
         'productName': i.product.name,
@@ -246,6 +249,47 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     String paymentMethod, {
     bool deliverImmediately = false,
   }) async {
+    await _createOrderInternal(
+      paymentMethod: paymentMethod,
+      deliverImmediately: deliverImmediately,
+    );
+  }
+
+  Future<void> _handleTransfer({
+    bool deliverImmediately = false,
+  }) async {
+    final source = await showTransferSourceDialog(context);
+    if (source == null) return;
+
+    if (source == 'skip') {
+      await _createOrderInternal(
+        paymentMethod: 'transfer',
+        deliverImmediately: deliverImmediately,
+      );
+      return;
+    }
+
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: source as ImageSource,
+      imageQuality: 85,
+    );
+    if (image == null) return;
+
+    await _createOrderInternal(
+      paymentMethod: 'transfer',
+      deliverImmediately: deliverImmediately,
+      transferPhoto: image,
+      showSuccessSnackbar: true,
+    );
+  }
+
+  Future<void> _createOrderInternal({
+    required String paymentMethod,
+    required bool deliverImmediately,
+    XFile? transferPhoto,
+    bool showSuccessSnackbar = false,
+  }) async {
     setState(() => _isProcessing = true);
 
     try {
@@ -289,128 +333,13 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
       if (!mounted) return;
 
-      // B2: upload per-item cake photos
-      final hasPerItemPhotos =
-          state.items.any((i) => i.pendingPhotos.isNotEmpty);
-      if (hasPerItemPhotos) {
-        for (final draftItem in state.items) {
-          if (draftItem.pendingPhotos.isEmpty) continue;
-          for (final xfile in draftItem.pendingPhotos) {
-            try {
-              await orderService.uploadOrderPhoto(
-                order.orderRef,
-                xfile,
-              );
-            } catch (e) {
-              debugPrint(
-                'Photo upload failed (${xfile.path}): $e',
-              );
-            }
-          }
-        }
-      }
-
-      // B3: always create a payment transaction
-      final txnSvc = ref.read(paymentTransactionServiceProvider);
-      final txnType = _paidAmount >= order.totalPrice
-          ? 'full_payment'
-          : 'deposit';
-      await txnSvc.createTransaction(
-        order.orderRef,
-        amount: _paidAmount,
-        type: txnType,
-        method: _selectedPaymentMethod,
-      );
-
-      if (_hasTienRut && _tienRutAmount > 0) {
-        await txnSvc.createTransaction(
+      if (transferPhoto != null) {
+        await orderService.uploadOrderPhoto(
           order.orderRef,
-          amount: _tienRutAmount,
-          type: 'tien_rut',
-          method: _selectedPaymentMethod,
+          transferPhoto,
+          tags: 'chuyen-khoan',
         );
       }
-
-      if (!mounted) return;
-      _navigatingAfterCheckout = true;
-      context.pushReplacement('/pos/receipt/${order.orderRef}');
-      ref.read(posCartProvider.notifier).clearCart();
-      ref.invalidate(productsProvider);
-      ref.invalidate(stockOverviewProvider);
-    } catch (e) {
-      if (!mounted) return;
-      showTopSnackBar(context, resolvePosCheckoutErrorMessage(e));
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
-    }
-  }
-
-  Future<void> _handleTransfer({
-    bool deliverImmediately = false,
-  }) async {
-    final source = await showTransferSourceDialog(context);
-    if (source == null) return;
-
-    if (source == 'skip') {
-      await _createOrder('transfer', deliverImmediately: deliverImmediately);
-      return;
-    }
-
-    setState(() => _isProcessing = true);
-
-    try {
-      final picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: source as ImageSource,
-        imageQuality: 85,
-      );
-      if (image == null) {
-        setState(() => _isProcessing = false);
-        return;
-      }
-
-      final state = ref.read(posOrderStateProvider);
-      final data = state.wizardData;
-      final orderItems = _buildOrderItems();
-      final dueDate = state.dueDate != null
-          ? formatApiDate(state.dueDate!)
-          : posCheckoutLocalDueDate(DateTime.now());
-      final dueTime = state.dueTime != null
-          ? formatHourMinute(state.dueTime!.hour, state.dueTime!.minute)
-          : null;
-      final isDelivery = data.deliveryType == 'bus' ||
-          data.deliveryType == 'door';
-      final status = isDelivery
-          ? 'new'
-          : deliverImmediately
-              ? 'delivered'
-              : 'confirmed';
-
-      final orderService = ref.read(orderServiceProvider);
-      final order = await orderService.createOrder(
-        customerName: data.customerName.isNotEmpty
-            ? data.customerName
-            : VN.khachLe,
-        customerPhone: data.customerPhone,
-        customerId: data.selectedCustomer?.id,
-        source: VN.taiTiemPOS,
-        dueDate: dueDate,
-        dueTime: dueTime,
-        deliveryType: data.deliveryType,
-        deliveryAddress: data.deliveryAddress,
-        deliveryPhone: data.deliveryPhone,
-        shippingFee: data.shippingFee,
-        notes: data.notes,
-        items: orderItems,
-        status: status,
-        paymentMethod: 'transfer',
-      );
-
-      await orderService.uploadOrderPhoto(
-        order.orderRef,
-        image,
-        tags: 'chuyen-khoan',
-      );
 
       // B2: upload per-item cake photos
       final hasPerItemPhotos =
@@ -425,9 +354,9 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
                 xfile,
               );
             } catch (e) {
-              debugPrint(
-                'Photo upload failed (${xfile.path}): $e',
-              );
+              if (kDebugMode) {
+                debugPrint('Photo upload failed (${xfile.path}): $e');
+              }
             }
           }
         }
@@ -442,7 +371,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         order.orderRef,
         amount: _paidAmount,
         type: txnType,
-        method: 'transfer',
+        method: paymentMethod,
       );
 
       if (_hasTienRut && _tienRutAmount > 0) {
@@ -450,13 +379,15 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
           order.orderRef,
           amount: _tienRutAmount,
           type: 'tien_rut',
-          method: 'transfer',
+          method: paymentMethod,
         );
       }
 
       if (!mounted) return;
       _navigatingAfterCheckout = true;
-      showTopSnackBar(context, VN.thanhToanThanhCong);
+      if (showSuccessSnackbar) {
+        showTopSnackBar(context, VN.thanhToanThanhCong);
+      }
       context.pushReplacement('/pos/receipt/${order.orderRef}');
       ref.read(posCartProvider.notifier).clearCart();
       ref.invalidate(productsProvider);
