@@ -49,6 +49,10 @@ STAFF_ADVANCE_PAYMENT_SOURCE = "Nhân viên ứng trước"
 # accounting gaps without tailing logs.
 journal_sync_failures: int = 0
 
+
+def sync_status_to_warning(status: str) -> str:
+    return "ok" if status == "ok" else "journal_sync_failed"
+
 # Auto-truncation limit for journal_sync_failure_log (NFR4, DG-226).
 _JOURNAL_SYNC_FAILURE_LOG_MAX_ROWS = 10000
 

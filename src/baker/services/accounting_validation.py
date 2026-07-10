@@ -357,7 +357,7 @@ def _check_source_completeness(conn) -> dict[str, Any]:
     Checks three source types:
       - expense events (type='expense', not soft-deleted)
       - payment_transactions
-      - delivered orders (status='delivered')
+      - delivered/completed orders (terminal statuses)
     """
     findings: list[dict[str, Any]] = []
 
@@ -409,12 +409,12 @@ def _check_source_completeness(conn) -> dict[str, Any]:
             "created_at": r["created_at"],
         })
 
-    # Delivered orders without revenue conversion journal entry
+    # Delivered/completed orders without revenue conversion journal entry
     ord_rows = conn.execute(
         """
         SELECT o.id, o.order_ref, o.total_price
         FROM orders o
-        WHERE o.status = 'delivered'
+        WHERE o.status IN ('delivered', 'completed')
           AND NOT EXISTS (
               SELECT 1 FROM journal_entries je
               WHERE je.source_type = 'order' AND je.source_id = o.id

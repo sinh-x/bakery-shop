@@ -493,6 +493,7 @@ def create_order(body: OrderCreate, request: Request):
                                    changed_by=body.createdBy)
 
         # If status='delivered', also update order status and decrement stock
+        accounting_sync_warning = None
         if body.status == "delivered":
             Order.update_status(conn, order.order_ref, "delivered", "")
             _log_order_history(conn, order.id, "status_change", "status",
@@ -500,12 +501,15 @@ def create_order(body: OrderCreate, request: Request):
             auto_decrement_stock(conn, order.id, order.order_ref)
 
             # Auto-generate revenue conversion + COGS journal entries (DG-175).
-            from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync
-            run_journal_sync(
+            from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync, sync_status_to_warning
+            sync_status = run_journal_sync(
                 _sync_delivered_order_journal,
                 conn, order.id, order.order_ref,
                 log_label=f"delivered order journal sync for order {order.id}",
+                source_type="order",
+                source_id=order.id,
             )
+            accounting_sync_warning = sync_status_to_warning(sync_status)
 
         log_context(request, ref_type="order", ref_id=order.id)
         # DG-206 FR6/NFR2: keep customer_year_summary in sync within the same
@@ -515,7 +519,10 @@ def create_order(body: OrderCreate, request: Request):
                 conn, body.customerId, _order_year(order.created_at or now_utc())
             )
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
-        return _order_detail(conn, row)
+        response = _order_detail(conn, row)
+        if accounting_sync_warning is not None:
+            response["accountingSyncWarning"] = accounting_sync_warning
+        return response
 
 
 @router.get("/{ref}/events")
@@ -851,13 +858,17 @@ def transition_status(ref: str, body: StatusTransition):
         _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, body.changedBy)
 
         # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
+        accounting_sync_warning = None
         if body.status == "delivered" and row["status"] != "delivered":
-            from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync
-            run_journal_sync(
+            from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync, sync_status_to_warning
+            sync_status = run_journal_sync(
                 _sync_delivered_order_journal,
                 conn, row["id"], row["order_ref"],
                 log_label=f"delivered order journal sync for order {row['id']}",
+                source_type="order",
+                source_id=row["id"],
             )
+            accounting_sync_warning = sync_status_to_warning(sync_status)
 
         # Auto-cascade confirmed order status to main items (non-extra, non-gift) at pending (F5)
         if body.status == "confirmed":
@@ -871,7 +882,10 @@ def transition_status(ref: str, body: StatusTransition):
         sync_extras_to_order_status(conn, row["id"], body.status)
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return _order_detail(conn, updated)
+        response = _order_detail(conn, updated)
+        if accounting_sync_warning is not None:
+            response["accountingSyncWarning"] = accounting_sync_warning
+        return response
 
 
 @router.patch("/{ref}/payment-method")
