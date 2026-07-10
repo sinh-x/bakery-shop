@@ -14,22 +14,20 @@ import '../../../providers/pos_provider.dart';
 DraftOrderItem cartItemToDraft(PosCartItem item) {
   final isExtra = item.isGift || item.product.category == 'phu_kien';
   Map<String, dynamic>? attrs;
-  if (!item.useInventory || item.rutTien || item.attributes.isNotEmpty) {
-    attrs = <String, dynamic>{...item.attributes};
-    if (!item.useInventory) {
-      attrs['useInventory'] = 'false';
-    } else {
-      attrs.remove('useInventory');
-    }
-    if (item.rutTien) {
-      attrs['rut_tien'] = 'true';
-      if (item.cashFee != null) attrs['cash_fee'] = item.cashFee!.toInt().toString();
-      if (item.cashAmount != null) attrs['cash_amount'] = item.cashAmount!.toInt().toString();
-    } else {
-      attrs.remove('rut_tien');
-      attrs.remove('cash_fee');
-      attrs.remove('cash_amount');
-    }
+  attrs = <String, dynamic>{...item.attributes};
+  if (!item.useInventory) {
+    attrs['useInventory'] = 'false';
+  } else {
+    attrs['useInventory'] = 'true';
+  }
+  if (item.rutTien) {
+    attrs['rut_tien'] = 'true';
+    if (item.cashFee != null) attrs['cash_fee'] = item.cashFee!.toInt().toString();
+    if (item.cashAmount != null) attrs['cash_amount'] = item.cashAmount!.toInt().toString();
+  } else {
+    attrs.remove('rut_tien');
+    attrs.remove('cash_fee');
+    attrs.remove('cash_amount');
   }
   return DraftOrderItem(
     product: item.product,

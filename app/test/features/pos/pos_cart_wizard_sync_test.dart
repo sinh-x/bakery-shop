@@ -255,14 +255,14 @@ void main() {
       expect(roundTripped.cashAmount, isNull);
     });
 
-    test('round trip with null attributes map yields empty attributes', () {
+    test('round trip with null attributes map preserves useInventory=true', () {
       final original = PosCartItem(
         product: _product(),
         quantity: 1,
         attributes: null,
       );
       final roundTripped = draftItemToCart(cartItemToDraft(original));
-      expect(roundTripped.attributes, isEmpty);
+      expect(roundTripped.attributes, {'useInventory': 'true'});
     });
   });
 
