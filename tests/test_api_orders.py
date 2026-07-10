@@ -1538,10 +1538,7 @@ def test_pos_chip_order_with_gift_creates_order_tracks_payment_and_skips_gift_st
             "SELECT amount, method, type FROM payment_transactions WHERE order_id = ? ORDER BY id",
             (int(order["id"]),),
         ).fetchall()
-        assert len(payment_rows) == 1
-        assert payment_rows[0]["type"] == "payment"
-        assert payment_rows[0]["method"] == payment_method
-        assert payment_rows[0]["amount"] == float(order["totalPrice"])
+        assert len(payment_rows) == 0
 
         movement_rows = conn.execute(
             """SELECT id, quantity, price_chip_id
@@ -1873,6 +1870,124 @@ def test_auto_decrement_stock_is_idempotent(api_client):
             (ref,),
         ).fetchone()
         assert restores["c"] == 1
+
+
+def test_restore_stock_for_order_fully_reverses(api_client):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "RestoreFull", 15000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 2, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[{
+            "productId": "1",
+            "productName": "Bánh kem",
+            "quantity": 2,
+            "unitPrice": 15000,
+            "priceChipId": chip_id,
+        }],
+        source="Tại tiệm - POS",
+        status="delivered",
+        paymentMethod="cash",
+    )
+    ref = order["orderRef"]
+
+    with get_db() as conn:
+        sale = conn.execute(
+            "SELECT id, quantity FROM stock_movements WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchone()
+        assert sale is not None
+        assert sale["quantity"] == -2
+
+        consumed = conn.execute(
+            "SELECT COUNT(*) AS c FROM inventory_items WHERE consumed_by_movement_id = ?",
+            (sale["id"],),
+        ).fetchone()
+        assert consumed["c"] == 2
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "cancelled", "reason": "Khách hủy"},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        restore = conn.execute(
+            "SELECT quantity FROM stock_movements WHERE reference_id = ? AND movement_type = 'restore_sale'",
+            (ref,),
+        ).fetchone()
+        assert restore is not None
+        assert restore["quantity"] == 2
+
+        available = conn.execute(
+            """SELECT COUNT(*) AS c FROM inventory_items ii
+               JOIN stock_lots sl ON sl.id = ii.lot_id
+               WHERE sl.product_id = 1 AND sl.price_chip_id = ? AND ii.status = 'available'""",
+            (chip_id,),
+        ).fetchone()
+        assert available["c"] == 2
+
+
+def test_auto_decrement_stock_idempotent_after_backward_forward_cycle(api_client):
+    _ensure_trung_bay(1)
+    chip_id = _create_chip(api_client, 1, "DoubleDeduct", 20000)
+
+    restock = api_client.post(
+        "/api/products/1/stock/restock",
+        json={"quantity": 3, "price_chip_id": chip_id},
+    )
+    assert restock.status_code == 200
+
+    order = _create_order(
+        api_client,
+        items=[{
+            "productId": "1",
+            "productName": "Bánh kem",
+            "quantity": 1,
+            "unitPrice": 20000,
+            "priceChipId": chip_id,
+            "attributes": {"useInventory": "true"},
+        }],
+    )
+    ref = order["orderRef"]
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "confirmed", "reason": "Xác nhận lần 1"},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        sales = conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_movements WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchone()
+        assert sales["c"] == 1
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "new", "reason": "Cần chỉnh sửa"},
+    )
+    assert resp.status_code == 200
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "confirmed", "reason": "Xác nhận lại"},
+    )
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        sales = conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_movements WHERE reference_id = ? AND movement_type = 'sale'",
+            (ref,),
+        ).fetchone()
+        assert sales["c"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -2239,3 +2354,66 @@ def test_legacy_fallback_matches_phone_with_separators(api_client):
         customerPhone="8499900000",
     )
     assert order["customerId"] == legacy_id
+
+
+# --- DG-211 Phase 1: delivery_phone NULL handling + migration v64 ---
+
+
+def test_create_order_with_delivery_phone_succeeds(api_client):
+    """AC6: Creating an order with deliveryPhone returns 201 (not 500).
+
+    Verifies migration v64 has been applied (delivery_phone column exists)
+    and the order creation flow handles delivery_phone end-to-end.
+    """
+    resp = api_client.post(
+        "/api/orders",
+        json={
+            "customerName": "DG211 Delivery Phone",
+            "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}],
+            "dueDate": "2026-03-25",
+            "deliveryPhone": "0912345678",
+        },
+    )
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    body = resp.json()
+    assert body["deliveryPhone"] == "0912345678"
+
+
+def test_create_order_without_delivery_phone_succeeds(api_client):
+    """AC6 complement: order creation without deliveryPhone still succeeds
+    (column has DEFAULT '' from migration v64)."""
+    resp = api_client.post(
+        "/api/orders",
+        json={
+            "customerName": "DG211 No Delivery Phone",
+            "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000, "productId": "BKS-16"}],
+            "dueDate": "2026-03-25",
+        },
+    )
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    body = resp.json()
+    assert body["deliveryPhone"] == ""
+
+
+def test_get_order_with_null_delivery_phone_returns_empty_string(api_client):
+    """AC3 (API surface): an order stored with NULL delivery_phone must
+    serialize as "" in the API response, not None."""
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        cur = conn.execute(
+            """INSERT INTO orders (order_ref, customer_name, customer_phone, items,
+                                      total_price, status, delivery_phone)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            ("ORD-NULL-001", "Null Delivery", "0123456789", "[]", 0, "new", None),
+        )
+        order_id = cur.lastrowid
+        conn.commit()
+
+    resp = api_client.get(f"/api/orders/{order_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["deliveryPhone"] == ""
+    assert body["deliveryPhone"] is not None

@@ -16,8 +16,6 @@ class _FakeCustomerService extends CustomerService {
   Future<List<Customer>> listCustomers({String? search}) async {
     if (search == null || search.trim().isEmpty) return List.of(_customers);
     final q = search.trim().toLowerCase();
-    // Match against name, primary phone, or any entry in the phones list
-    // (mirrors the backend search that joins customer_phones).
     return _customers
         .where(
           (c) =>
@@ -53,7 +51,39 @@ Future<void> _pumpField(
 }
 
 void main() {
-  testWidgets('typing a partial query shows matching suggestions', (tester) async {
+  testWidgets('browse-on-open: shows all customers inline when <= cap (AC-1, AC-4)',
+      (tester) async {
+    final customers = [
+      const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
+      const Customer(id: 2, name: 'An', phone: '0909876543'),
+    ];
+    await _pumpField(tester, _FakeCustomerService(customers));
+
+    expect(find.text('Sinh'), findsOneWidget);
+    expect(find.text('An'), findsOneWidget);
+  });
+
+  testWidgets('browse-on-open: shows 20 newest customers when > cap (AC-4)',
+      (tester) async {
+    final customers = List.generate(
+      25,
+      (i) => Customer(
+        id: i + 1,
+        name: 'Customer ${i + 1}',
+        phone: '090${(1000000 + i).toString().padLeft(7, '0')}',
+      ),
+    );
+    await _pumpField(tester, _FakeCustomerService(customers));
+
+    expect(find.text('Customer 25'), findsOneWidget);
+    final listView = tester.widget<ListView>(find.byType(ListView));
+    final delegate = listView.childrenDelegate;
+    if (delegate is SliverChildBuilderDelegate) {
+      expect(delegate.childCount, 20);
+    }
+  });
+
+  testWidgets('typing filters inline list in client mode (AC-2)', (tester) async {
     final customers = [
       const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
       const Customer(id: 2, name: 'An', phone: '0909876543'),
@@ -66,10 +96,9 @@ void main() {
     );
 
     await tester.enterText(find.byType(TextField), 'Sin');
-    await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
-    expect(find.text('Sinh'), findsWidgets);
+    expect(find.text('Sinh'), findsOneWidget);
     expect(find.text('An'), findsNothing);
 
     await tester.tap(find.text('Sinh'));
@@ -77,16 +106,44 @@ void main() {
 
     expect(selected, isNotNull);
     expect(selected!.id, 1);
-    expect(find.textContaining(VN.customerSearchLinked.replaceAll('{name}', 'Sinh')),
-        findsOneWidget);
+    expect(
+      find.textContaining(VN.customerSearchLinked.replaceAll('{name}', 'Sinh')),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('clear button resets selection and calls onSelected with null',
+  testWidgets('selection clears the TextField (AC-5)', (tester) async {
+    final customers = [
+      const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
+    ];
+    Customer? selected;
+    await _pumpField(
+      tester,
+      _FakeCustomerService(customers),
+      onSelected: (c) => selected = c,
+    );
+
+    await tester.enterText(find.byType(TextField), 'Sinh');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(ListTile, 'Sinh'));
+    await tester.pumpAndSettle();
+
+    expect(selected, isNotNull);
+    expect(selected!.id, 1);
+    expect(
+      find.textContaining(VN.customerSearchLinked.replaceAll('{name}', 'Sinh')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('editing after selection does NOT trigger onSelected(null) (AC-5)',
       (tester) async {
     final customers = [
       const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
     ];
-    Customer? selected = const Customer(id: 1, name: 'Sinh', phone: '0901234567');
+    Customer? selected =
+        const Customer(id: 1, name: 'Sinh', phone: '0901234567');
     await _pumpField(
       tester,
       _FakeCustomerService(customers),
@@ -94,44 +151,47 @@ void main() {
       onSelected: (c) => selected = c,
     );
 
-    expect(find.byTooltip(VN.customerSearchClear), findsOneWidget);
-
-    await tester.tap(find.byTooltip(VN.customerSearchClear));
+    await tester.enterText(find.byType(TextField), 'Other');
     await tester.pumpAndSettle();
 
-    expect(selected, isNull);
-    expect(find.byType(TextField), findsWidgets);
+    expect(selected, isNotNull);
+    expect(selected!.id, 1);
   });
 
-  testWidgets('empty query does not trigger a search overlay', (tester) async {
+  testWidgets('clearing after selection does NOT trigger onSelected(null) (AC-5)',
+      (tester) async {
     final customers = [
       const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
     ];
-    await _pumpField(tester, _FakeCustomerService(customers));
+    Customer? selected =
+        const Customer(id: 1, name: 'Sinh', phone: '0901234567');
+    await _pumpField(
+      tester,
+      _FakeCustomerService(customers),
+      initial: selected,
+      onSelected: (c) => selected = c,
+    );
 
     await tester.enterText(find.byType(TextField), '');
-    await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
-    expect(find.text(VN.customerSearchNoMatch), findsNothing);
+    expect(selected, isNotNull);
+    expect(selected!.id, 1);
   });
 
-  testWidgets('no-match query shows the no-match message', (tester) async {
+  testWidgets('no-match shows no-match message (AC-7)', (tester) async {
     final customers = [
       const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
     ];
     await _pumpField(tester, _FakeCustomerService(customers));
 
     await tester.enterText(find.byType(TextField), 'zzz');
-    await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
     expect(find.text(VN.customerSearchNoMatch), findsOneWidget);
   });
 
-  // AC10 — searching by a secondary phone surfaces the matching customer.
-  testWidgets('search by secondary phone surfaces matching customer (AC10)',
-      (tester) async {
+  testWidgets('search by secondary phone surfaces customer', (tester) async {
     final customers = [
       const Customer(
         id: 1,
@@ -145,11 +205,145 @@ void main() {
     ];
     await _pumpField(tester, _FakeCustomerService(customers));
 
-    // Search by the secondary phone (not the primary phone field).
     await tester.enterText(find.byType(TextField), '0909876543');
-    await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
     expect(find.text('Sinh'), findsOneWidget);
   });
+
+  testWidgets('diacritic-insensitive: "sinh" matches "Sính"', (tester) async {
+    final customers = [
+      const Customer(id: 1, name: 'Sính', phone: '0901234567'),
+      const Customer(id: 2, name: 'An', phone: '0909876543'),
+    ];
+    await _pumpField(tester, _AllCustomersService(customers));
+
+    await tester.enterText(find.byType(TextField), 'sinh');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sính'), findsOneWidget,
+        reason:
+            'diacritic-insensitive match should surface "Sính" for query "sinh"');
+    expect(find.text('An'), findsNothing);
+  });
+
+  testWidgets('multi-phone match via phones list', (tester) async {
+    final customers = [
+      const Customer(
+        id: 1,
+        name: 'Hoa',
+        phone: '0901000000',
+        phones: [
+          CustomerPhone(phone: '0901000000', isPrimary: true),
+          CustomerPhone(phone: '0912345678', isPrimary: false),
+        ],
+      ),
+    ];
+    await _pumpField(tester, _AllCustomersService(customers));
+
+    await tester.enterText(find.byType(TextField), '0912345678');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hoa'), findsOneWidget,
+        reason:
+            'query matching only a secondary phone should surface the customer');
+  });
+
+  testWidgets('error shows error label and retry re-runs load (AC-6)',
+      (tester) async {
+    final service = _ThrowingCustomerService();
+    await _pumpField(tester, service);
+
+    expect(find.text(VN.customerSearchError), findsOneWidget);
+    expect(find.text(VN.retry), findsOneWidget);
+
+    await tester.tap(find.text(VN.retry));
+    await tester.pumpAndSettle();
+
+    expect(find.text(VN.customerSearchError), findsOneWidget);
+    expect(service.callCount, greaterThanOrEqualTo(2),
+        reason: 'retry must trigger another listCustomers call');
+  });
+
+  testWidgets('retry on repeated client-mode load failure keeps error+retry visible (UX-2)',
+      (tester) async {
+    final service = _ThrowingCustomerService();
+    await _pumpField(
+      tester,
+      service,
+      initial: const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
+    );
+
+    expect(find.text(VN.customerSearchError), findsOneWidget);
+    expect(find.text(VN.retry), findsOneWidget);
+
+    await tester.tap(find.text(VN.retry));
+    await tester.pumpAndSettle();
+
+    expect(find.text(VN.customerSearchError), findsOneWidget);
+    expect(find.text(VN.retry), findsOneWidget);
+    expect(find.text(VN.customerSearchNoMatch), findsNothing);
+  });
+
+  testWidgets('server-mode caps results at 20 rows (AC-3)', (tester) async {
+    final customers = List.generate(
+      25,
+      (i) => Customer(
+        id: i + 1,
+        name: 'Customer ${i + 1}',
+        phone: '090${(1000000 + i).toString().padLeft(7, '0')}',
+      ),
+    );
+    await _pumpField(tester, _FakeCustomerService(customers));
+
+    await tester.enterText(find.byType(TextField), 'Customer');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    final listView = tester.widget<ListView>(find.byType(ListView));
+    final delegate = listView.childrenDelegate;
+    if (delegate is SliverChildBuilderDelegate) {
+      expect(delegate.childCount, 20);
+    }
+  });
+
+  testWidgets('server-mode shows refine hint when results exceed 20 (AC-3)',
+      (tester) async {
+    final customers = List.generate(
+      25,
+      (i) => Customer(
+        id: i + 1,
+        name: 'Customer ${i + 1}',
+        phone: '090${(1000000 + i).toString().padLeft(7, '0')}',
+      ),
+    );
+    await _pumpField(tester, _FakeCustomerService(customers));
+
+    await tester.enterText(find.byType(TextField), 'Customer');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    expect(find.text(VN.customerSearchRefineHint), findsOneWidget);
+  });
+}
+
+class _AllCustomersService extends CustomerService {
+  _AllCustomersService(this._customers) : super(Dio());
+
+  final List<Customer> _customers;
+
+  @override
+  Future<List<Customer>> listCustomers({String? search}) async =>
+      List.of(_customers);
+}
+
+class _ThrowingCustomerService extends CustomerService {
+  _ThrowingCustomerService() : super(Dio());
+  int callCount = 0;
+
+  @override
+  Future<List<Customer>> listCustomers({String? search}) async {
+    callCount++;
+    throw Exception('search failed (test)');
+  }
 }

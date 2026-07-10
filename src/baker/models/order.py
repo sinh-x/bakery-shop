@@ -185,6 +185,7 @@ class Order:
     delivery_type: str = "pickup"
     delivery_address: str = ""
     customer_phone: str = ""
+    delivery_phone: str = ""
     notes: str = ""
     amount_paid: float = 0.0
     source: str = ""
@@ -227,12 +228,12 @@ class Order:
 
         items_json = json.dumps([i.to_dict() for i in self.items])
         cursor = conn.execute(
-            """INSERT INTO orders (order_ref, customer_name, customer_phone, items,
+            """INSERT INTO orders (order_ref, customer_name, customer_phone, delivery_phone, items,
                total_price, status, due_date, due_time, delivery_type,
                delivery_address, notes, amount_paid, source, created_by, shipping_fee, public_order_code,
                customer_id, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (self.order_ref, self.customer_name, self.customer_phone,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (self.order_ref, self.customer_name, self.customer_phone, self.delivery_phone,
               items_json, self.total_price, self.status, self.due_date,
               self.due_time, self.delivery_type, self.delivery_address, self.notes,
               self.amount_paid, self.source, self.created_by, self.shipping_fee, self.public_order_code,
@@ -300,6 +301,7 @@ class Order:
         return Order(
             id=row["id"], order_ref=row["order_ref"],
             customer_name=row["customer_name"], customer_phone=row["customer_phone"],
+            delivery_phone=(row["delivery_phone"] if "delivery_phone" in row.keys() and row["delivery_phone"] is not None else ""),
             items=items, total_price=row["total_price"], status=row["status"],
             due_date=row["due_date"], due_time=row["due_time"],
             delivery_type=row["delivery_type"], delivery_address=row["delivery_address"],
@@ -321,6 +323,7 @@ class Order:
             "orderRef": self.order_ref,
             "customerName": self.customer_name,
             "customerPhone": self.customer_phone,
+            "deliveryPhone": self.delivery_phone,
             "items": [i.to_api_dict() for i in self.items],
             "totalPrice": self.total_price,
             "status": self.status,

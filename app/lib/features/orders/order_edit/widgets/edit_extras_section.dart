@@ -1,7 +1,16 @@
-part of '../../order_edit_screen.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class _EditExtrasSection extends ConsumerWidget {
-  const _EditExtrasSection({required this.orderRef});
+import '../../../../data/models/product.dart';
+import '../../../../data/models/work_item.dart';
+import '../../../../providers/order_providers.dart';
+import '../../../../providers/products_provider.dart';
+import '../../../../shared/widgets/vietnamese_labels.dart';
+import '../../widgets/section_header.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+
+class EditExtrasSection extends ConsumerWidget {
+  const EditExtrasSection({super.key, required this.orderRef});
 
   final String orderRef;
 
@@ -25,7 +34,7 @@ class _EditExtrasSection extends ConsumerWidget {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const _SectionHeader(VN.extras),
+                const SectionHeader(VN.extras),
                 if (extras.isEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),

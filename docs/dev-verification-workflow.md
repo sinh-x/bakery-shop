@@ -246,21 +246,93 @@ docker compose --profile dev exec baker-dev \
 
 ---
 
-## §6 Cleanup
+## §6 HTTPS Access via Tailscale MagicDNS (Dev Caddy)
 
-### 6.1 Stop the dev container
+The dev stack can be accessed over HTTPS on the Tailscale tailnet. TLS is terminated by the **central `drgnfly-caddy` gateway** (which owns host port 443 for `drgnfly.tail10c2c6.ts.net`). The bakery repo's own `caddy-dev` service serves the Flutter web app and proxies `/api/*` to `baker-dev:2312` on **host loopback `127.0.0.1:2380`** (plain HTTP — no TLS, no `DOMAIN` env, no cert mount). The central gateway reverse-proxies the domain root to `127.0.0.1:2380`.
+
+```
+Browser (tailnet device)
+  └─ https://drgnfly.tail10c2c6.ts.net
+       └─ central drgnfly-caddy (:443, TLS)
+            └─ 127.0.0.1:2380 (caddy-dev, plain HTTP)
+                 ├─ /api/* → baker-dev:2312
+                 └─ else  → web-build/ (Flutter SPA)
+```
+
+### 6.1 Prerequisites
+
+- [ ] Tailscale is connected on this host (`tailscale status` shows the node)
+- [ ] Central `drgnfly-caddy` gateway is running (`docker compose ps` in `~/git-repos/sinh-x/drgnfly-caddy/`)
+- [ ] Gateway TLS cert is valid (renew with `drgnfly-caddy/scripts/renew-certs.sh` if expired; cert is in the gateway repo, not this one)
+- [ ] Fresh web bundle built (re-run `./scripts/rebuild-dev.sh` or `cd app && flutter build web --release`)
+
+### 6.2 Validate the dev Caddyfile
+
+Syntax-only validation (no certs needed — `caddy-dev` is plain HTTP on loopback):
+
+```bash
+docker run --rm -v "$(pwd)/Caddyfile.dev:/etc/caddy/Caddyfile:ro" \
+  caddy:2-alpine caddy adapt --config /etc/caddy/Caddyfile
+```
+
+- [ ] Exits 0 and emits valid JSON.
+
+### 6.3 Start the dev stack
+
+```bash
+./scripts/rebuild-dev.sh
+```
+
+or manually:
+
+```bash
+docker compose --profile dev up -d
+```
+
+If server-side Python code changed, rebuild the image too:
+
+```bash
+./scripts/rebuild-dev.sh --build-backend
+```
+
+### 6.4 Verify HTTPS access
+
+Open in a browser on any tailnet device:
+
+```
+https://drgnfly.tail10c2c6.ts.net
+```
+
+- [ ] App loads with valid TLS (no cert warning — TLS is provided by the central gateway)
+- [ ] `/api/health` responds 200:
+  ```bash
+  curl -sf https://drgnfly.tail10c2c6.ts.net/api/health
+  ```
+- [ ] SPA deep-link fallback works (navigate to a client-side route and reload)
+
+### 6.5 Stop the dev stack
+
+```bash
+docker compose --profile dev stop
+```
+
+---
+
+## §7 Cleanup
+
+### 7.1 Stop the dev container
 
 ```bash
 docker compose --profile dev stop baker-dev
 ```
 
-### 6.2 Remove temp files
+### 7.2 Remove temp files
 
 ```bash
 rm -f /tmp/dev-pre.json /tmp/dev-post.json /tmp/dev-bad.json
 ```
 
-### 6.3 Restore dev DB if needed
+### 7.3 Restore dev DB if needed
 
 If the dev DB was modified during testing and you want to restore it:
 
@@ -287,7 +359,8 @@ ls -lt ./data/baker-backup-pre-migrate-*.db | head -1
 | §4 Anomaly detection works | pass / fail | |
 | §5 DB integrity ok | pass / fail | |
 | §5 Container logs clean | pass / fail | |
-| §6 Cleanup done | pass / fail | |
+| §6 Dev caddy HTTPS valid | pass / fail | |
+| §7 Cleanup done | pass / fail | |
 
 ### Reviewer
 
@@ -310,5 +383,8 @@ ls -lt ./data/baker-backup-pre-migrate-*.db | head -1
 | `docker compose --profile dev exec baker-dev python -m pytest /app/tests -v` | Run tests in container |
 | `docker compose --profile dev logs baker-dev --tail 50` | View container logs |
 | `docker compose --profile dev stop baker-dev` | Stop dev container |
+| `docker compose --profile dev up -d` | Start full dev stack (baker-dev + caddy-dev) |
+| `docker run --rm -v "$(pwd)/Caddyfile.dev:/etc/caddy/Caddyfile:ro" -e DOMAIN=drgnfly.tail10c2c6.ts.net caddy:2-alpine caddy adapt --config /etc/caddy/Caddyfile` | Validate dev Caddyfile (syntax-only via adapt; full `caddy validate` additionally loads certs) |
+| `./scripts/renew-certs.sh drgnfly.tail10c2c6.ts.net` | Renew/generate dev TLS cert |
 | `./scripts/db-validate.sh snapshot --db-path ./data/baker.db` | Capture DB snapshot |
 | `./scripts/db-validate.sh diff --pre pre.json --post post.json` | Diff two snapshots |

@@ -23,6 +23,7 @@ class CustomerProfileCard extends StatelessWidget {
     super.key,
     required this.customer,
     this.onTap,
+    this.onUnlink,
     this.mode = CustomerProfileCardMode.full,
   });
 
@@ -30,6 +31,11 @@ class CustomerProfileCard extends StatelessWidget {
 
   /// Called when the card is tapped. When null the card is non-interactive.
   final VoidCallback? onTap;
+
+  /// Called when the (x) unlink control is tapped (compact mode only).
+  /// When set, an (x) IconButton is shown at the trailing edge instead of the
+  /// navigation chevron. Mutually exclusive with [onTap] trailing icon.
+  final VoidCallback? onUnlink;
 
   /// Display density: `full` for order detail, `compact` for create/edit.
   final CustomerProfileCardMode mode;
@@ -158,7 +164,14 @@ class CustomerProfileCard extends StatelessWidget {
                 ],
               ),
             ),
-            if (onTap != null) const Icon(Icons.chevron_right, color: Colors.grey),
+            if (onUnlink != null)
+              IconButton(
+                tooltip: VN.customerSearchClear,
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: onUnlink,
+              )
+            else if (onTap != null)
+              const Icon(Icons.chevron_right, color: Colors.grey),
           ],
         ),
       ),

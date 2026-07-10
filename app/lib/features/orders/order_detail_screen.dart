@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/api/order_service.dart';
@@ -15,12 +14,10 @@ import '../../data/models/order_photo.dart';
 import '../../data/models/payment_transaction.dart';
 import '../../data/models/product.dart';
 import '../../data/models/work_item.dart';
-import '../../providers/customers_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/utils/order_helpers.dart';
-import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/vnd_units.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/theme/bakery_theme.dart';
@@ -28,10 +25,11 @@ import '../../shared/utils/api_error.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/enum_attribute_display.dart';
+import 'widgets/order_customer_section.dart';
+import 'widgets/order_delivery_section.dart';
 import 'widgets/order_photo_section.dart';
-import 'widgets/section_header.dart';
 import 'widgets/rut_tien_section.dart';
-import '../customers/widgets/customer_profile_card.dart';
+import 'widgets/section_header.dart';
 
 const _workItemStatusColors = {
   'pending': Colors.grey,
@@ -328,19 +326,6 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     return time != null ? '$dateStr $time' : dateStr;
   }
 
-  String _deliveryLabel(String type) {
-    switch (type) {
-      case 'pickup':
-        return VN.pickup;
-      case 'bus':
-        return VN.deliveryBus;
-      case 'door':
-        return VN.deliveryDoor;
-      default:
-        return type;
-    }
-  }
-
   Future<void> _onTransition(String targetStatus) async {
     String reason = '';
     if (_isBackward(order.status, targetStatus, _orderStatusRank) ||
@@ -593,67 +578,16 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           ),
         ),
         if (order.customerId != null)
-          _CustomerCard(customerId: order.customerId!)
-        else ...[
-          _InfoRow(
-            icon: Icons.person_outline,
-            label: VN.customerName,
-            value: order.customerName,
+          OrderCustomerSection(
+            linkedCustomerId: order.customerId,
+            mode: OrderCustomerSectionMode.readOnly,
+          )
+        else
+          OrderCustomerSection(
+            mode: OrderCustomerSectionMode.readOnly,
+            customerName: order.customerName,
+            customerPhone: order.customerPhone,
           ),
-          if (order.customerPhone.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.phone_outlined,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 96,
-                    child: Text(
-                      VN.customerPhone,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        final digits = order.customerPhone.replaceAll(
-                          RegExp(r'\D'),
-                          '',
-                        );
-                        launchUrl(Uri.parse('tel:$digits'));
-                      },
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            formatPhone(order.customerPhone),
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.phone,
-                            size: 16,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
         if (order.source.isNotEmpty)
           _InfoRow(
             icon: Icons.campaign_outlined,
@@ -666,23 +600,14 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
             label: VN.dueDate,
             value: _formatDueDisplay(order.dueDate, order.dueTime),
           ),
-        _InfoRow(
-          icon: Icons.local_shipping_outlined,
-          label: VN.deliveryType,
-          value: _deliveryLabel(order.deliveryType),
+        OrderDeliverySection(
+          deliveryType: order.deliveryType,
+          deliveryAddress: order.deliveryAddress,
+          customerPhone: order.customerPhone,
+          shippingFee: order.shippingFee,
+          notes: order.notes,
+          mode: OrderDeliverySectionMode.readOnly,
         ),
-        if (order.deliveryAddress.isNotEmpty)
-          _InfoRow(
-            icon: Icons.location_on_outlined,
-            label: VN.deliveryAddress,
-            value: order.deliveryAddress,
-          ),
-        if (order.notes.isNotEmpty)
-          _InfoRow(
-            icon: Icons.notes_outlined,
-            label: VN.notes,
-            value: order.notes,
-          ),
         if (order.createdBy.isNotEmpty)
           _InfoRow(
             icon: Icons.person_outline,
@@ -1095,45 +1020,6 @@ class _InfoRow extends StatelessWidget {
 /// Customer profile card section for the order detail screen (DG-206 FR1/FR5).
 ///
 /// When [Order.customerId] is set, fetches the full [Customer] record from the
-/// API via [customerProvider] and renders a tappable [CustomerProfileCard] that
-/// navigates to `/customers/:id`. Uses [AsyncValue.when] so the fetch does not
-/// block screen render: a loading skeleton is shown while the request is in
-/// flight, and a silent `SizedBox.shrink()` is rendered on error.
-class _CustomerCard extends ConsumerWidget {
-  const _CustomerCard({required this.customerId});
-
-  final int customerId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final customerAsync = ref.watch(customerProvider(customerId));
-    return customerAsync.when(
-      loading: () => Card(
-        margin: const EdgeInsets.all(16),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Center(
-            child: SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Theme.of(context).colorScheme.outline,
-              ),
-            ),
-          ),
-        ),
-      ),
-      error: (_, _) => const SizedBox.shrink(),
-      data: (customer) => CustomerProfileCard(
-        customer: customer,
-        mode: CustomerProfileCardMode.full,
-        onTap: () => context.push('/customers/$customerId'),
-      ),
-    );
-  }
-}
-
 // ── Payment row ───────────────────────────────────────────────────────────────
 
 class _PaymentRow extends StatelessWidget {

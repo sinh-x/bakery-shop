@@ -73,13 +73,23 @@ class PosCheckoutCartItemTile extends ConsumerWidget {
                     color: theme.colorScheme.primary,
                   ),
                 ),
-          title: Text(
-            posCartItemDisplayName(item),
-            style: item.isGift
-                ? theme.textTheme.bodyMedium?.copyWith(
-                    fontStyle: FontStyle.italic,
-                  )
-                : null,
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                posCartItemDisplayName(item),
+                style: item.isGift
+                    ? theme.textTheme.bodyMedium?.copyWith(
+                        fontStyle: FontStyle.italic,
+                      )
+                    : null,
+              ),
+              if (!item.isGift && item.useInventory)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: _UseInventoryBadge(useInventory: item.useInventory),
+                ),
+            ],
           ),
           subtitle: item.isGift ? null : Text(formatVND(item.unitPrice)),
           trailing: item.isGift
@@ -117,6 +127,35 @@ class PosCheckoutCartItemTile extends ConsumerWidget {
                     ),
                   ],
                 ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UseInventoryBadge extends StatelessWidget {
+  const _UseInventoryBadge({required this.useInventory});
+
+  final bool useInventory;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: useInventory
+            ? theme.colorScheme.tertiaryContainer
+            : theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        VN.useInventory,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: useInventory
+              ? theme.colorScheme.onTertiaryContainer
+              : theme.colorScheme.outline,
+          fontSize: 10,
         ),
       ),
     );

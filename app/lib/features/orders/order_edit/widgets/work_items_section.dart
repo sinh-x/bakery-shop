@@ -1,26 +1,12 @@
-part of '../../order_edit_screen.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title);
+import '../../../../providers/order_providers.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+import 'work_item_edit_card.dart';
 
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
-  }
-}
-
-class _WorkItemsSection extends ConsumerWidget {
-  const _WorkItemsSection({required this.orderRef, required this.onAddTap});
+class WorkItemsSection extends ConsumerWidget {
+  const WorkItemsSection({super.key, required this.orderRef, required this.onAddTap});
 
   final String orderRef;
   final VoidCallback onAddTap;
@@ -39,7 +25,7 @@ class _WorkItemsSection extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ...regularItems.map(
-              (item) => _WorkItemEditCard(orderRef: orderRef, item: item),
+              (item) => WorkItemEditCard(orderRef: orderRef, item: item),
             ),
             if (regularItems.isEmpty)
               Padding(

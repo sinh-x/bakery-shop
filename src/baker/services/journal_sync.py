@@ -1124,17 +1124,18 @@ def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
 
 
 def _compute_order_cogs_total(
-    conn, order_id: int, *, populate_cost_at_sale: bool = True
+    conn, order_id: int, *, populate_cost_at_sale: bool = True, force: bool = False
 ) -> float:
     """Compute the expected total COGS for an order (DG-208 Phase 5).
 
     Iterates the order's non-extra/non-gift items. For each item:
 
-    - When ``cost_at_sale > 0`` the snapshotted value is used as-is (historical
-      cost is preserved — review finding from the requirements risk register:
-      "Backfill only touches orders where COGS is missing or cost_at_sale = 0;
-      existing non-zero cost_at_sale is preserved").
-    - When ``cost_at_sale == 0`` the cost is resolved via
+    - When ``cost_at_sale > 0`` and ``force`` is False the snapshotted value is
+      used as-is (historical cost is preserved — review finding from the
+      requirements risk register: "Backfill only touches orders where COGS is
+      missing or cost_at_sale = 0; existing non-zero cost_at_sale is
+      preserved").
+    - When ``cost_at_sale == 0`` or ``force`` is True the cost is resolved via
       :func:`resolve_product_cost` using ``unit_price`` as the baseline anchor
       (DG-208 Phase 1, FR1/FR2). When ``populate_cost_at_sale`` is True the
       resolved value is also written back to ``order_items.cost_at_sale``
@@ -1157,7 +1158,7 @@ def _compute_order_cogs_total(
         if qty <= 0:
             continue
         cost_at_sale = float(irow["cost_at_sale"] or 0)
-        if cost_at_sale == 0:
+        if cost_at_sale == 0 or force:
             product_id = irow["product_id"]
             pid: int | None = None
             if product_id is not None:

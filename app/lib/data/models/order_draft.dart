@@ -135,38 +135,49 @@ class DraftPendingPhoto {
 class OrderDraft {
   final String customerName;
   final String customerPhone;
+  final String deliveryPhone;
   final List<DraftOrderItem> items;
   final DateTime? dueDate;
   final TimeOfDay? dueTime;
   final String deliveryType;
   final String deliveryAddress;
+  final double shippingFee;
   final String notes;
   final bool depositEnabled;
   final String depositAmount;
   final String depositMethod;
   final List<DraftPendingPhoto> pendingPhotos;
   final String source;
+  final int currentStage;
+  final String? selectedCategorySlug;
+  final int? customerId;
 
   OrderDraft({
     this.customerName = '',
     this.customerPhone = '',
+    this.deliveryPhone = '',
     List<DraftOrderItem>? items,
     this.dueDate,
     this.dueTime,
     this.deliveryType = 'pickup',
     this.deliveryAddress = '',
+    this.shippingFee = 0.0,
     this.notes = '',
     this.depositEnabled = false,
     this.depositAmount = '',
     this.depositMethod = 'cash',
     List<DraftPendingPhoto>? pendingPhotos,
     this.source = '',
+    this.currentStage = 1,
+    this.selectedCategorySlug,
+    this.customerId,
   }) : items = items ?? [],
        pendingPhotos = pendingPhotos ?? [];
 
   bool get isNotEmpty =>
       customerName.isNotEmpty ||
       customerPhone.isNotEmpty ||
+      deliveryPhone.isNotEmpty ||
       items.isNotEmpty ||
       dueDate != null ||
       dueTime != null ||
@@ -176,5 +187,7 @@ class OrderDraft {
       depositEnabled ||
       depositAmount.isNotEmpty ||
       pendingPhotos.isNotEmpty ||
-      source.isNotEmpty;
+      source.isNotEmpty ||
+      currentStage != 1 ||
+      selectedCategorySlug != null;
 }

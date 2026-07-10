@@ -1,7 +1,22 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/vietnamese_labels.dart';
+
 /// Shared order/work-item helper functions.
 /// Eliminates duplication across OrderCard, CakeQueueCard, DeliveryOrderCard.
+
+/// Returns Vietnamese display label for a delivery type.
+String deliveryTypeLabel(String type) {
+  switch (type) {
+    case 'bus':
+      return VN.deliveryBus;
+    case 'door':
+      return VN.deliveryDoor;
+    case 'pickup':
+    default:
+      return VN.pickup;
+  }
+}
 
 /// Returns urgency border color: red for overdue, amber for same-day, null otherwise.
 Color? urgencyBorderColor(String? dueDate) {
@@ -74,4 +89,62 @@ String visualOrderCode({required String orderRef, String? publicOrderCode}) {
   final code = (publicOrderCode ?? '').trim();
   if (code.isNotEmpty) return code;
   return orderRef;
+}
+
+/// Computes the default due date/time for new orders: [from] + 1 hour, rounded
+/// UP to the next 30-minute slot. Seconds and milliseconds are dropped.
+///
+/// Rounding rule (ceil to next 30-min slot):
+/// - minute == 0 or 30 → unchanged
+/// - minute 1–29 → round up to :30
+/// - minute 31–59 → round up to the next hour at :00 (carries into the hour,
+///   and into the next day if needed)
+///
+/// Examples (relative to the +1h target): 16:00→17:00, 16:01→17:30,
+/// 16:30→17:30, 16:31→18:00, 16:59→18:00.
+DateTime defaultDueDateTime(DateTime from) {
+  final target = DateTime(
+    from.year,
+    from.month,
+    from.day,
+    from.hour,
+    from.minute,
+  ).add(const Duration(hours: 1));
+  final minute = target.minute;
+  if (minute == 0 || minute == 30) {
+    return target;
+  }
+  if (minute < 30) {
+    return DateTime(target.year, target.month, target.day, target.hour, 30);
+  }
+  return DateTime(target.year, target.month, target.day, target.hour)
+      .add(const Duration(hours: 1));
+}
+
+/// Computes the default due date/time for POS checkout: the current time
+/// rounded UP to the next 15-minute slot, with NO +1 hour offset. Seconds and
+/// milliseconds are dropped.
+///
+/// Rounding rule (ceil to next 15-min slot):
+/// - minute % 15 == 0 (0, 15, 30, 45) → unchanged
+/// - otherwise → round up to the next 15-min boundary (carries into the hour,
+///   and into the next day if needed)
+///
+/// Examples: 16:00→16:00, 16:07→16:15, 16:14→16:15, 16:15→16:15,
+/// 16:16→16:30, 16:45→16:45, 16:46→17:00, 23:59→00:00 (next day).
+DateTime posDefaultDueDateTime(DateTime from) {
+  final target = DateTime(
+    from.year,
+    from.month,
+    from.day,
+    from.hour,
+    from.minute,
+  );
+  final minute = target.minute;
+  if (minute % 15 == 0) {
+    return target;
+  }
+  final remainder = minute % 15;
+  final addMinutes = 15 - remainder;
+  return target.add(Duration(minutes: addMinutes));
 }

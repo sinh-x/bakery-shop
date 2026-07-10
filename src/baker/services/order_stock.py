@@ -12,6 +12,7 @@ from baker.api.inventory_fifo import (
     resolve_price_bucket_chip_id,
     upsert_negative_balance,
 )
+from baker.logging import logger
 from baker.models.event import Event
 from baker.utils.time import now_utc
 
@@ -80,6 +81,17 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
             (product_id,),
         ).fetchone()
         if not attr_row or attr_row["value"] != "true":
+            logger.warning(
+                "order_stock_skip_missing_trung_bay",
+                extra={
+                    "extra_data": {
+                        "order_ref": order_ref,
+                        "product_id": product_id,
+                        "product_name": item["product_name"],
+                        "trung_bay": attr_row["value"] if attr_row else None,
+                    }
+                },
+            )
             continue
 
         attrs = {}
@@ -97,7 +109,7 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
         if isinstance(use_inventory, str):
             use_inventory_enabled = use_inventory.lower() == "true"
         else:
-            use_inventory_enabled = use_inventory is True
+            use_inventory_enabled = bool(use_inventory)
 
         is_pos_order = item["source"] == "Tại tiệm - POS"
         is_reconciliation_order = item["source"] == "reconciliation"
@@ -107,6 +119,22 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
         # is tracked in negative_balance (DG-200 Phase 2, FR-3). Non-POS
         # sources keep the historical FIFO-blocks-at-zero behaviour (NFR-3).
         allow_negative = is_pos_order or is_reconciliation_order
+
+        if not should_consume_fifo:
+            logger.info(
+                "order_stock_fifo_skipped",
+                extra={
+                    "extra_data": {
+                        "order_ref": order_ref,
+                        "product_id": product_id,
+                        "product_name": item["product_name"],
+                        "source": item["source"],
+                        "has_use_inventory": has_use_inventory,
+                        "use_inventory": use_inventory,
+                        "default_consume_sources": default_consume_sources,
+                    }
+                },
+            )
 
         movement_cursor = conn.execute(
             """INSERT INTO stock_movements

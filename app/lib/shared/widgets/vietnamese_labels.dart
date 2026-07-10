@@ -536,6 +536,14 @@ class VN {
   static const backToCart = 'Quay lại giỏ hàng';
   static const clearCart = 'Xóa giỏ';
   static const selectPaymentMethod = 'Chọn phương thức thanh toán';
+  static const paymentAmount = 'Số tiền';
+  static const excessPaymentWarningTitle = 'Số tiền không hợp lệ';
+  static const excessPaymentWarningMessage =
+      'Số tiền thanh toán vượt quá tổng tiền sản phẩm. Vui lòng điều chỉnh lại.';
+  static const deliverNow = 'Giao ngay?';
+  static const deliverNowPrompt = 'Giao bánh cho khách ngay?';
+  static const deliverNowYes = 'Giao ngay';
+  static const deliverNowNo = 'Để sau';
   static const confirmCounterPayment = 'Xác nhận thanh toán đơn tại quầy';
   static const removeFromCartTitle = 'Xóa sản phẩm khỏi giỏ?';
   static const decreaseQuantity = 'Giảm số lượng';
@@ -888,6 +896,9 @@ class VN {
   static const customerSearchClear = 'Bỏ chọn khách';
   static const customerSearchNoMatch = 'Không tìm thấy khách';
   static const customerSearchLoading = 'Đang tìm...';
+  static const customerSearchError = 'Lỗi tìm kiếm khách hàng';
+  static const customerSearchRefineHint =
+      'Nhập thêm để thu hẹp kết quả';
 
   // Customer form multi-phone (DG-205 Phase 5)
   static const customerAddPhone = 'Thêm số điện thoại';

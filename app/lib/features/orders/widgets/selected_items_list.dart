@@ -1,0 +1,104 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../data/models/order_draft.dart';
+import '../../../providers/order/order_create_state_provider.dart';
+import 'expandable_item_card.dart';
+import 'section_header.dart';
+import 'simple_extra_row.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+
+typedef OrderStateProvider = NotifierProvider<OrderCreateStateNotifier, OrderCreateState>;
+
+/// Renders the selected regular items and extras as `ExpandableItemCard`s.
+///
+/// Reuses `ExpandableItemCard` as-is (per DG-214 guardrails) and forwards
+/// edit/remove callbacks to the `OrderCreateStateNotifier`.
+class SelectedItemsList extends ConsumerWidget {
+  SelectedItemsList({
+    super.key,
+    required this.items,
+    required this.regularItems,
+    required this.extraItems,
+    required this.orderStateProvider,
+  });
+
+  final List<DraftOrderItem> items;
+  final List<DraftOrderItem> regularItems;
+  final List<DraftOrderItem> extraItems;
+  final OrderStateProvider orderStateProvider;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SliverList(
+      delegate: SliverChildListDelegate.fixed(
+        [
+          const SectionHeader(OrdersLabels.selectedProducts),
+          ...regularItems.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ExpandableItemCard(
+                item: item,
+                onRemove: () {
+                  ref
+                      .read(orderStateProvider.notifier)
+                      .updateItems([...items.where((i) => i != item)]);
+                },
+                onQtyChanged: (qty) {
+                  item.quantity = qty;
+                  ref
+                      .read(orderStateProvider.notifier)
+                      .updateItems([...items]);
+                },
+                onStateChanged: () {
+                  ref
+                      .read(orderStateProvider.notifier)
+                      .updateItems([...items]);
+                },
+              ),
+            ),
+          ),
+          if (extraItems.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const SectionHeader(VN.extras),
+            ...extraItems.map(
+              (item) => SimpleExtraRow(
+                item: item,
+                onIncrement: () {
+                  item.quantity += 1;
+                  ref
+                      .read(orderStateProvider.notifier)
+                      .updateItems([...items]);
+                },
+                onDecrement: () {
+                  if (item.quantity > 1) {
+                    item.quantity -= 1;
+                    ref
+                        .read(orderStateProvider.notifier)
+                        .updateItems([...items]);
+                  } else {
+                    ref
+                        .read(orderStateProvider.notifier)
+                        .updateItems([...items.where((i) => i != item)]);
+                  }
+                },
+                onToggleGift: () {
+                  item.isGift = !item.isGift;
+                  ref
+                      .read(orderStateProvider.notifier)
+                      .updateItems([...items]);
+                },
+                onRemove: () {
+                  ref
+                      .read(orderStateProvider.notifier)
+                      .updateItems([...items.where((i) => i != item)]);
+                },
+              ),
+            ),
+          ],
+          const SizedBox(height: 80),
+        ],
+      ),
+    );
+  }
+}

@@ -32,13 +32,15 @@ class _RutTienEditorState extends State<RutTienEditor> {
   @override
   void initState() {
     super.initState();
-    final defaultCashFee = widget.item.product.attributes['cash_fee'];
-    final defaultCashAmount = widget.item.product.attributes['cash_amount'];
+    final savedCashFee = widget.item.attributes['cash_fee'];
+    final savedCashAmount = widget.item.attributes['cash_amount'];
     _cashFeeCtrl = TextEditingController(
-      text: defaultCashFee ?? '$_defaultCashFee',
+      text: (savedCashFee ?? '$_defaultCashFee').toString(),
     );
-    _cashAmountCtrl = TextEditingController(text: defaultCashAmount ?? '');
-    _rutTien = false;
+    _cashAmountCtrl = TextEditingController(
+      text: (savedCashAmount ?? '').toString(),
+    );
+    _rutTien = widget.item.attributes['rut_tien']?.toString() == 'true';
   }
 
   @override
@@ -233,18 +235,6 @@ class _RutTienEditorState extends State<RutTienEditor> {
                 padding: EdgeInsets.zero,
               ),
             ],
-          ),
-          const SizedBox(height: 4),
-          CheckboxListTile(
-            value: widget.item.daDuaTienRut,
-            onChanged: (v) {
-              setState(() => widget.item.daDuaTienRut = v ?? false);
-              widget.onStateChanged();
-            },
-            title: const Text(VN.daDuaTienRut),
-            controlAffinity: ListTileControlAffinity.leading,
-            contentPadding: EdgeInsets.zero,
-            dense: true,
           ),
         ],
       ],

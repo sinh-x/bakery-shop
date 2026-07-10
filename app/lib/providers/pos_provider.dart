@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../data/models/product.dart';
 import '../providers/products_provider.dart';
@@ -15,7 +16,15 @@ class PosCartItem {
     this.selectedPrice,
     this.selectedChipId,
     this.selectedChipLabel,
-  });
+    this.notes = '',
+    this.pendingPhotos = const [],
+    this.isBirthday = false,
+    this.age = '',
+    this.rutTien = false,
+    this.cashFee,
+    this.cashAmount,
+    Map<String, dynamic>? attributes,
+  }) : attributes = attributes ?? {};
 
   final Product product;
   int quantity;
@@ -24,10 +33,18 @@ class PosCartItem {
   final double? selectedPrice;
   final int? selectedChipId;
   final String? selectedChipLabel;
+  String notes;
+  List<XFile> pendingPhotos;
+  final bool isBirthday;
+  final String age;
+  final bool rutTien;
+  final double? cashFee;
+  final double? cashAmount;
+  final Map<String, dynamic> attributes;
 
   String get lineKey {
     final option = selectedChipId != null ? 'chip:$selectedChipId' : 'base';
-    return '${product.id}:$option:inventory:${useInventory ? 1 : 0}';
+    return '${product.id}:$option:inventory:${useInventory ? 1 : 0}:bdy:${isBirthday ? 1 : 0}:age:$age:rt:${rutTien ? 1 : 0}';
   }
 
   double get unitPrice => selectedPrice ?? product.basePrice;
@@ -50,16 +67,24 @@ class PosCartNotifier extends Notifier<PosCartState> {
   @override
   PosCartState build() => PosCartState();
 
+  /// Adds a product to the POS cart.
+  ///
+  /// Cash fields (`cashFee`, `cashAmount`) and general `attributes` are NOT
+  /// set here — they are populated only via wizard write-back
+  /// ([draftItemsToCart]). No caller passes them at add time today.
   void addItem(
     Product product, {
     double? selectedPrice,
     int? selectedChipId,
     String? selectedChipLabel,
     bool useInventory = true,
+    bool isBirthday = false,
+    String age = '',
+    bool rutTien = false,
   }) {
     final items = List<PosCartItem>.from(state.items);
     final option = selectedChipId != null ? 'chip:$selectedChipId' : 'base';
-    final lineKey = '${product.id}:$option:inventory:${useInventory ? 1 : 0}';
+    final lineKey = '${product.id}:$option:inventory:${useInventory ? 1 : 0}:bdy:${isBirthday ? 1 : 0}:age:$age:rt:${rutTien ? 1 : 0}';
 
     // Check if same product + same chip selection is already in cart.
     final existing = items
@@ -77,59 +102,18 @@ class PosCartNotifier extends Notifier<PosCartState> {
           selectedPrice: selectedPrice,
           selectedChipId: selectedChipId,
           selectedChipLabel: selectedChipLabel,
+          isBirthday: isBirthday,
+          age: age,
+          rutTien: rutTien,
         ),
       );
     }
 
-    // Auto-gift: if tang_kem + total >= threshold, add gift extras
+    // Auto-gift: only recompute when the added item itself is tang_kem, so
+    // adding a non-tang_kem item never mutates existing gift quantities
+    // (preserves the prior inline guard's observable behavior).
     if (product.attributes['tang_kem']?.toString() == 'true') {
-      final qualified = items
-          .where(
-            (i) =>
-                i.product.attributes['tang_kem']?.toString() == 'true' &&
-                !i.isGift,
-          )
-          .fold<double>(0, (sum, i) => sum + i.total);
-
-      if (qualified >= GiftConfig.giftThreshold) {
-        final giftCatalog = _giftCatalogByNormalizedName();
-        for (final (configuredName, configuredPrice) in GiftConfig.giftExtras) {
-          final normalized = _normalizeGiftName(configuredName);
-          final giftProduct = giftCatalog[normalized];
-          if (giftProduct == null) {
-            assert(() {
-              debugPrint(
-                'pos_provider: unmatched gift config "${configuredName.trim()}" '
-                'for active phu_kien products',
-              );
-              return true;
-            }());
-            continue;
-          }
-
-          final existingGift = items
-              .where((i) => i.product.id == giftProduct.id && i.isGift)
-              .firstOrNull;
-          if (existingGift != null) {
-            existingGift.quantity += 1;
-            continue;
-          }
-
-          items.add(
-            PosCartItem(
-              product: giftProduct.copyWith(
-                basePrice: configuredPrice,
-                attributes: {
-                  ...giftProduct.attributes,
-                  '_gift': 'true',
-                },
-              ),
-              quantity: 1,
-              isGift: true,
-            ),
-          );
-        }
-      }
+      _computeGifts(items, incrementExisting: true);
     }
 
     state = PosCartState(items: items);
@@ -156,6 +140,95 @@ class PosCartNotifier extends Notifier<PosCartState> {
 
   void clearCart() {
     state = PosCartState();
+  }
+
+  /// Replaces the entire cart contents with [items].
+  ///
+  /// Used by POS checkout Stage 1 (product selection) to write wizard edits
+  /// back to the POS cart so the cart remains the single source of truth at
+  /// submit (DG-218 Phase 3, FR-2). Gift items are preserved as-is; regular
+  /// items keep their chip selection and inventory flag. After replacing, the
+  /// auto-gift list is recomputed so stale gifts are pruned when a qualifying
+  /// item's quantity drops below the gift threshold (review Mn6).
+  void replaceCart(List<PosCartItem> items) {
+    final working = List<PosCartItem>.from(items);
+    _computeGifts(working, incrementExisting: false);
+    state = PosCartState(items: working);
+  }
+
+  /// Computes the auto-gift extras for [items] in place.
+  ///
+  /// Prunes existing auto-gifts that no longer qualify and re-adds the
+  /// configured gift extras when the tang_kem total meets the threshold.
+  /// Shared by [addItem] (with `incrementExisting: true` so re-adding a
+  /// qualifying tang_kem item increments an existing gift's quantity) and
+  /// [replaceCart] (with `incrementExisting: false` so rewriting the cart
+  /// preserves any existing gift quantity). Single implementation of the
+  /// gift policy (review Mn7 — dedup of the prior addItem inline copy).
+  void _computeGifts(
+    List<PosCartItem> items, {
+    bool incrementExisting = false,
+  }) {
+    final hasTangKem = items.any(
+      (i) => i.product.attributes['tang_kem']?.toString() == 'true' && !i.isGift,
+    );
+    if (!hasTangKem) {
+      items.removeWhere((i) => i.isGift);
+      return;
+    }
+
+    final qualified = items
+        .where(
+          (i) =>
+              i.product.attributes['tang_kem']?.toString() == 'true' &&
+              !i.isGift,
+        )
+        .fold<double>(0, (sum, i) => sum + i.total);
+
+    if (qualified < GiftConfig.giftThreshold) {
+      items.removeWhere((i) => i.isGift);
+      return;
+    }
+
+    final giftCatalog = _giftCatalogByNormalizedName();
+    for (final (configuredName, configuredPrice) in GiftConfig.giftExtras) {
+      final normalized = _normalizeGiftName(configuredName);
+      final giftProduct = giftCatalog[normalized];
+      if (giftProduct == null) {
+        assert(() {
+          debugPrint(
+            'pos_provider: unmatched gift config "${configuredName.trim()}" '
+            'for active phu_kien products',
+          );
+          return true;
+        }());
+        continue;
+      }
+
+      final existingGift = items
+          .where((i) => i.product.id == giftProduct.id && i.isGift)
+          .firstOrNull;
+      if (existingGift != null) {
+        if (incrementExisting) {
+          existingGift.quantity += 1;
+        }
+        continue;
+      }
+
+      items.add(
+        PosCartItem(
+          product: giftProduct.copyWith(
+            basePrice: configuredPrice,
+            attributes: {
+              ...giftProduct.attributes,
+              '_gift': 'true',
+            },
+          ),
+          quantity: 1,
+          isGift: true,
+        ),
+      );
+    }
   }
 
   Map<String, Product> _giftCatalogByNormalizedName() {

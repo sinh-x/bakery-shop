@@ -1,35 +1,27 @@
-// EXEMPT: 300-line threshold exceeded because DG-150 blocker: continued extraction from Phase 6 would alter edit-form state synchronization and submit guards without dedicated regression window. Reviewed 2026-05-29.
+// DG-211 Phase 5: single-state customer model + stage-widget decomposition
+// (coordinator delegates stage bodies to widgets/order_edit/edit_stageN_*).
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../data/api/api_client.dart';
+import '../../data/api/customer_service.dart';
 import '../../data/models/customer.dart';
 import '../../data/models/order.dart';
-import '../../data/models/product.dart';
-import '../../data/models/work_item.dart';
-import '../../providers/config_provider.dart';
-import '../../providers/customers_provider.dart';
 import '../../providers/order_providers.dart';
-import '../../providers/products_provider.dart';
-import '../../shared/utils/config_parsers.dart';
 import '../../shared/utils/date_formatting.dart';
-import '../../shared/utils/order_helpers.dart';
-import '../../shared/utils/phone_formatter.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
-import '../customers/widgets/customer_profile_card.dart';
-import '../customers/widgets/customer_search_field.dart';
-import 'utils/trung_bay_inventory_extensions.dart';
+import 'package:bakery_app/shared/labels/customers.dart';
+import 'order_edit/utils/edit_public_code_dialog.dart';
+import 'order_edit/utils/edit_save_helpers.dart';
+import 'order_edit/utils/edit_summary_helpers.dart';
 import 'widgets/hour_picker.dart';
-import 'widgets/order_photo_section.dart';
-import 'widgets/product_picker_page.dart';
-
-part 'order_edit/widgets/edit_extras_section.dart';
-part 'order_edit/widgets/work_item_edit_card.dart';
-part 'order_edit/widgets/work_items_section.dart';
+import 'widgets/order_stage_indicator.dart';
+import 'widgets/order_wizard.dart';
+import 'widgets/order_edit/edit_stage1_product.dart';
+import 'widgets/order_edit/edit_stage2_customer.dart';
+import 'widgets/order_edit/edit_stage3_delivery.dart';
+import 'widgets/order_edit/edit_stage4_review.dart';
 
 class OrderEditScreen extends ConsumerStatefulWidget {
   const OrderEditScreen({super.key, required this.orderRef});
@@ -45,7 +37,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   final _nameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
+  final _deliveryPhoneCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+  late final PageController _pageController;
 
   String _source = '';
   DateTime? _dueDate;
@@ -54,18 +48,29 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   double _shippingFee = 0.0;
   bool _saving = false;
   bool _initialized = false;
+  // FR9: single-state customer model (was tri-state: _selectedCustomer +
+  // _linkedCustomerId + _customerTouched). The existing linked customer is
+  // loaded from `order.customerId` into `_selectedCustomer` on open.
   Customer? _selectedCustomer;
-  int? _linkedCustomerId;
+  // Save-semantics flag (OPS-1): sends customerId (incl. null to unlink) when
+  // the user touched the customer selection. Not customer state.
   bool _customerTouched = false;
+  int _currentStage = 1;
 
-  final _pendingNewItems = <DraftOrderItem>[];
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: 0);
+  }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     _addressCtrl.dispose();
+    _deliveryPhoneCtrl.dispose();
     _notesCtrl.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -75,27 +80,30 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _nameCtrl.text = order.customerName;
     _phoneCtrl.text = order.customerPhone;
     _addressCtrl.text = order.deliveryAddress;
+    _deliveryPhoneCtrl.text = order.deliveryPhone;
     _notesCtrl.text = order.notes;
     _source = order.source;
     _deliveryType = order.deliveryType;
     _shippingFee = order.shippingFee;
-    _linkedCustomerId = order.customerId;
-    if (order.dueDate != null) {
-      final parsed = parseApiDate(order.dueDate);
-      if (parsed != null) {
-        _dueDate = parsed;
-      } else {
-        debugPrint('order_edit: invalid due date "${order.dueDate}"');
-      }
+    // FR9: load the existing linked customer from `order.customerId`.
+    if (order.customerId != null) _loadLinkedCustomer(order.customerId!);
+    // FR7: prefill delivery phone from customer phone for bus/door when empty.
+    if ((order.deliveryType == 'bus' || order.deliveryType == 'door') &&
+        _deliveryPhoneCtrl.text.trim().isEmpty &&
+        _phoneCtrl.text.trim().isNotEmpty) {
+      _deliveryPhoneCtrl.text = _phoneCtrl.text.trim();
     }
-    if (order.dueTime != null) {
-      final parts = order.dueTime!.split(':');
-      if (parts.length == 2) {
-        _dueTime = TimeOfDay(
-          hour: int.tryParse(parts[0]) ?? 0,
-          minute: int.tryParse(parts[1]) ?? 0,
-        );
-      }
+    _dueDate = parseDueDate(order.dueDate);
+    _dueTime = parseDueTime(order.dueTime);
+  }
+
+  Future<void> _loadLinkedCustomer(int customerId) async {
+    try {
+      final customerSvc = ref.read(customerServiceProvider);
+      final customer = await customerSvc.getCustomer(customerId);
+      if (mounted) setState(() => _selectedCustomer = customer);
+    } catch (e) {
+      debugPrint('[OrderEdit] load linked customer failed: $e');
     }
   }
 
@@ -110,18 +118,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   }) {
     setState(() {
       _deliveryType = type;
-      switch (type) {
-        case 'bus':
-          _shippingFee = busDefault;
-          break;
-        case 'door':
-          _shippingFee = doorDefault;
-          break;
-        case 'pickup':
-        default:
-          _shippingFee = 0;
-          break;
-      }
+      _shippingFee = shippingFeeForDeliveryType(
+        type,
+        busDefault: busDefault,
+        doorDefault: doorDefault,
+      );
     });
   }
 
@@ -139,7 +140,6 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     if (picked != null) setState(() => _dueDate = picked);
   }
 
-  // F5: Hour picker (replaces showTimePicker)
   Future<void> _pickTime() async {
     final picked = await showDialog<int>(
       context: context,
@@ -150,52 +150,53 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     }
   }
 
-  Future<void> _openProductPicker() async {
-    _pendingNewItems.clear();
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => ProductPickerPage(
-          selectedItems: _pendingNewItems,
-          onChanged: _commitNewItems,
-        ),
-      ),
+  void _goToStage(int stage) {
+    setState(() => _currentStage = stage);
+    _pageController.animateToPage(
+      stage - 1,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
     );
-  }
-
-  void _commitNewItems() {
-    final toAdd = List<DraftOrderItem>.from(_pendingNewItems);
-    for (final draft in toAdd) {
-      ref
-          .read(orderWorkItemsProvider(widget.orderRef).notifier)
-          .add(
-            productName: draft.product.name,
-            productId: draft.product.productCode,
-            quantity: draft.quantity,
-            unitPrice: draft.unitPrice,
-            notes: draft.notes,
-            attributes: draft.attributes,
-            priceChipId: draft.priceChipId,
-          );
-    }
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final originalOrder = ref.read(orderDetailProvider(widget.orderRef)).value;
     final newDueDate = _dueDate != null ? formatApiDate(_dueDate!) : null;
-    final dueDateChanged = originalOrder != null && newDueDate != originalOrder.dueDate;
-    final shouldAskDateDecision =
-        dueDateChanged && (originalOrder.publicOrderCode.trim().isNotEmpty);
     String? publicCodeDateChangeDecision;
-    if (shouldAskDateDecision) {
-      publicCodeDateChangeDecision = await _promptPublicCodeDateDecision();
+    if (shouldAskPublicCodeDateDecision(originalOrder, newDueDate)) {
+      publicCodeDateChangeDecision =
+          await showPublicCodeDateChangeDecision(context);
       if (publicCodeDateChangeDecision == null) return;
     }
 
+    // FR1: auto-create-and-link a customer when name+phone present, no link.
+    final created = await maybeAutoCreateCustomer(
+      selectedCustomer: _selectedCustomer,
+      name: _nameCtrl.text,
+      phone: _phoneCtrl.text,
+      customerService: ref.read(customerServiceProvider),
+    );
+    if (created.customer != null && created.customer!.id != _selectedCustomer?.id) {
+      _selectedCustomer = created.customer;
+    }
+    if (created.touched) _customerTouched = true;
+    // CQ-6: surface a non-blocking notice when auto-create failed so the
+    // operator knows the order will save without a linked customer.
+    if (created.failed && mounted) {
+      showTopSnackBar(context, CustomersLabels.autoCreateFailedNotice);
+    }
+    final customerId = _selectedCustomer?.id;
+
+    // FR2: empty customer name defaults to `Khách lẻ` at save time only.
+    final effectiveName = _nameCtrl.text.trim().isEmpty
+        ? VN.khachLe
+        : _nameCtrl.text.trim();
+
     setState(() => _saving = true);
+    late final Order updatedOrder;
     try {
-      final updatedOrder = await ref
+      updatedOrder = await ref
           .read(orderDetailProvider(widget.orderRef).notifier)
           .save(
             notes: _notesCtrl.text.trim(),
@@ -203,90 +204,85 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             dueTime: _dueTime != null ? _formatTime(_dueTime!) : null,
             customerPhone: _phoneCtrl.text.trim(),
             deliveryAddress: _needsAddress ? _addressCtrl.text.trim() : '',
+            deliveryPhone: _needsAddress ? _deliveryPhoneCtrl.text.trim() : '',
             deliveryType: _deliveryType,
             source: _source.isEmpty ? null : _source,
-            customerName: _nameCtrl.text.trim(),
-            customerId: _selectedCustomer?.id,
-            // OPS-1: when the user touched the customer selection (including
-            // clearing it), always send customerId to the backend so an unlink
-            // (null) propagates instead of being omitted as "unchanged".
+            customerName: effectiveName,
+            customerId: customerId,
+            // OPS-1: send customerId (incl. null to unlink) when touched.
             customerTouched: _customerTouched,
             shippingFee: _shippingFee,
             publicCodeDateChangeDecision: publicCodeDateChangeDecision,
           );
-      final oldVisualCode = visualOrderCode(
-        orderRef: originalOrder?.orderRef ?? widget.orderRef,
-        publicOrderCode: originalOrder?.publicOrderCode,
-      );
-      final newVisualCode = visualOrderCode(
-        orderRef: updatedOrder.orderRef,
-        publicOrderCode: updatedOrder.publicOrderCode,
-      );
-      if (mounted) {
-        if (oldVisualCode != newVisualCode) {
-          showTopSnackBar(context, '${VN.publicCodeChangedNotice} $newVisualCode');
-        }
-        showTopSnackBar(context, VN.orderEditSaved);
-        context.pop();
-      }
     } catch (e, stackTrace) {
       debugPrint('order_edit: save failed for ${widget.orderRef}: $e');
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
         showTopSnackBar(context, normalizeApiError(e).message);
       }
-    } finally {
       if (mounted) setState(() => _saving = false);
+      return;
+    }
+    // Post-save UI runs outside the save try/catch so a navigation/snackbar
+    // error cannot be misreported as a save failure (CQ-3).
+    if (mounted) {
+      showEditSaveResult(
+        context: context,
+        originalOrder: originalOrder,
+        orderRef: widget.orderRef,
+        updatedOrder: updatedOrder,
+      );
+      // Guard the pop so a navigation error in test/edge contexts cannot
+      // throw after a successful save (CQ-3). The save itself already
+      // succeeded; the snackbar above informed the user.
+      if (context.canPop()) context.pop();
+      setState(() => _saving = false);
     }
   }
 
-  Future<String?> _promptPublicCodeDateDecision() {
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text(VN.publicCodeDateChangeTitle),
-        content: const Text(VN.publicCodeDateChangePrompt),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text(VN.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop('keep'),
-            child: const Text(VN.publicCodeKeep),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop('regenerate'),
-            child: const Text(VN.publicCodeRegenerate),
-          ),
-        ],
-      ),
-    );
+  OrderWizardData get _wizardSnapshot => OrderWizardData(
+        customerName: _nameCtrl.text,
+        customerPhone: _phoneCtrl.text,
+        selectedCustomer: _selectedCustomer,
+        deliveryType: _deliveryType,
+        deliveryAddress: _addressCtrl.text,
+        deliveryPhone: _deliveryPhoneCtrl.text,
+        shippingFee: _shippingFee,
+        notes: _notesCtrl.text,
+        source: _source,
+      );
+
+  void _onCustomerSelected(Customer? c) {
+    setState(() {
+      _selectedCustomer = c;
+      _customerTouched = true;
+      if (c != null) {
+        _nameCtrl.text = c.name;
+        if (c.phone.isNotEmpty) _phoneCtrl.text = c.phone;
+      }
+    });
+  }
+
+  void _onClearCustomerSelection() {
+    setState(() {
+      if (_selectedCustomer != null) {
+        _selectedCustomer = null;
+        _customerTouched = true;
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final orderAsync = ref.watch(orderDetailProvider(widget.orderRef));
-    final sourcesAsync = ref.watch(orderSourcesProvider); // F1
-    final shippingBusAsync = ref.watch(shippingFeeBusProvider);
-    final shippingDoorAsync = ref.watch(shippingFeeDoorProvider);
-    final double shippingBusDefault = shippingBusAsync.when(
-      data: (values) => firstFeeOrFallback(values, 25000),
-      loading: () => 25000,
-      error: (_, _) => 25000,
-    );
-    final double shippingDoorDefault = shippingDoorAsync.when(
-      data: (values) => firstFeeOrFallback(values, 20000),
-      loading: () => 20000,
-      error: (_, _) => 20000,
-    );
+    final fees = shippingFeeDefaults(ref);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text(VN.editOrder),
         actions: [
           TextButton(
-            onPressed: _saving ? null : _save,
+            onPressed: _saving ? null : () => _goToStage(4),
             child: _saving
                 ? const SizedBox(
                     height: 18,
@@ -303,307 +299,88 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         error: (e, _) => const Center(child: Text(VN.apiError)),
         data: (order) {
           _initFrom(order);
+          final workItemsAsync = ref.watch(orderWorkItemsProvider(widget.orderRef));
+          final summaryItems =
+              summaryItemsFromWorkItems(workItemsAsync.value ?? const []);
           return Form(
             key: _formKey,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
               children: [
-                // ── Source (F1) ───────────────────────────────────────
-                const _SectionHeader(VN.orderSource),
-                sourcesAsync.when(
-                  data: (sources) => Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: sources
-                        .map(
-                          (s) => ChoiceChip(
-                            label: Text(s),
-                            selected: _source == s,
-                            onSelected: (_) => setState(() {
-                              final wasSelected = _source == s;
-                              _source = wasSelected ? '' : s;
-                              if (!wasSelected &&
-                                  s == VN.sourceTaiTiem &&
-                                  _nameCtrl.text.isEmpty) {
-                                _nameCtrl.text = VN.walkInCustomer;
-                              } else if (wasSelected &&
-                                  s == VN.sourceTaiTiem &&
-                                  _nameCtrl.text == VN.walkInCustomer) {
-                                _nameCtrl.text = '';
-                              }
-                            }),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                  loading: () => const SizedBox.shrink(),
-                  error: (e, st) => const SizedBox.shrink(),
-                ),
-                const SizedBox(height: 12),
-
-                // ── Customer info ─────────────────────────────────────
-                const _SectionHeader(VN.customer),
-                _CustomerSection(
-                  linkedCustomerId: _linkedCustomerId,
-                  selectedCustomer: _selectedCustomer,
-                  customerTouched: _customerTouched,
-                  onSelected: (c) => setState(() {
-                    _selectedCustomer = c;
-                    _customerTouched = true;
-                    if (c != null) {
-                      _nameCtrl.text = c.name;
-                      if (c.phone.isNotEmpty) _phoneCtrl.text = c.phone;
-                    }
-                  }),
-                  onClearSelection: () => setState(() {
-                    if (_selectedCustomer != null) {
-                      _selectedCustomer = null;
-                      _customerTouched = true;
-                    }
-                  }),
-                  nameCtrl: _nameCtrl,
-                  phoneCtrl: _phoneCtrl,
-                ),
-                const SizedBox(height: 20),
-
-                // ── Schedule ──────────────────────────────────────────
-                const _SectionHeader(VN.dueDate),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _pickDate,
-                        icon: const Icon(Icons.calendar_today, size: 18),
-                        label: Text(
-                          _dueDate != null
-                              ? formatDisplayDate(_dueDate)
-                              : VN.dueDate,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          alignment: Alignment.centerLeft,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _pickTime,
-                        icon: const Icon(Icons.schedule, size: 18),
-                        label: Text(
-                          _dueTime != null
-                              ? _formatTime(_dueTime!)
-                              : VN.dueTime,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          alignment: Alignment.centerLeft,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                // F5: preset time chips
-                HourPresetChips(
-                  selectedTime: _dueTime,
-                  onSelected: (t) => setState(() => _dueTime = t),
-                ),
-                const SizedBox(height: 20),
-
-                // ── Delivery ──────────────────────────────────────────
-                const _SectionHeader(VN.deliveryType),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                      value: 'pickup',
-                      label: Text(VN.pickup),
-                      icon: Icon(Icons.store, size: 16),
-                    ),
-                    ButtonSegment(
-                      value: 'bus',
-                      label: Text(VN.deliveryBus),
-                      icon: Icon(Icons.directions_bus, size: 16),
-                    ),
-                    ButtonSegment(
-                      value: 'door',
-                      label: Text(VN.deliveryDoor),
-                      icon: Icon(Icons.home, size: 16),
-                    ),
-                  ],
-                  selected: {_deliveryType},
-                  onSelectionChanged: (s) => _updateShippingFeeForDeliveryType(
-                    s.first,
-                    busDefault: shippingBusDefault,
-                    doorDefault: shippingDoorDefault,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: OrderStageIndicator(
+                    currentStage: _currentStage,
+                    onStageTap: _goToStage,
                   ),
                 ),
-                if (_needsAddress) ...[
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _addressCtrl,
-                    decoration: const InputDecoration(
-                      labelText: VN.deliveryAddress,
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (v) =>
-                        _needsAddress && (v == null || v.trim().isEmpty)
-                        ? VN.fieldRequired
-                        : null,
-                  ),
-                ],
-                const SizedBox(height: 20),
-
-                // ── Shipping Fee ───────────────────────────────────────────
-                if (_deliveryType == 'bus' || _deliveryType == 'door') ...[
-                  const _SectionHeader(VN.shippingFee),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                Expanded(
+                  child: PageView(
+                    controller: _pageController,
+                    physics: const NeverScrollableScrollPhysics(),
                     children: [
-                      IconButton.filled(
-                        onPressed: _shippingFee >= 5000
-                            ? () => _setShippingFee(_shippingFee - 5000.0)
-                            : null,
-                        icon: const Icon(Icons.remove),
+                      EditStage1Product(
+                        orderRef: widget.orderRef,
+                        onBack: null,
+                        onContinue: () => _goToStage(2),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          _shippingFee == 0
-                              ? VN.shippingFree
-                              : formatVND(_shippingFee),
-                          style: Theme.of(context).textTheme.titleLarge,
+                      EditStage2Customer(
+                        selectedCustomer: _selectedCustomer,
+                        onSelectedCustomer: _onCustomerSelected,
+                        onClearSelection: _onClearCustomerSelection,
+                        nameCtrl: _nameCtrl,
+                        phoneCtrl: _phoneCtrl,
+                        source: _source,
+                        onSourceChanged: (s) => setState(() => _source = s),
+                        wizardSnapshot: _wizardSnapshot,
+                        summaryItems:
+                            summaryItems.where((i) => !i.isExtra).toList(),
+                        onBack: () => _goToStage(1),
+                        onContinue: () => _goToStage(3),
+                      ),
+                      EditStage3Delivery(
+                        deliveryType: _deliveryType,
+                        shippingFee: _shippingFee,
+                        addressCtrl: _addressCtrl,
+                        deliveryPhoneCtrl: _deliveryPhoneCtrl,
+                        customerPhone: _phoneCtrl.text,
+                        notesCtrl: _notesCtrl,
+                        shippingBusDefault: fees.bus,
+                        shippingDoorDefault: fees.door,
+                        onDeliveryTypeChanged: (type) =>
+                            _updateShippingFeeForDeliveryType(
+                          type,
+                          busDefault: fees.bus,
+                          doorDefault: fees.door,
                         ),
+                        onShippingFeeChanged: _setShippingFee,
+                        dueDate: _dueDate,
+                        dueTime: _dueTime,
+                        onPickDate: _pickDate,
+                        onPickTime: _pickTime,
+                        onDueTimeChanged: (t) => setState(() => _dueTime = t),
+                        wizardSnapshot: _wizardSnapshot,
+                        summaryItems: summaryItems,
+                        onBack: () => _goToStage(2),
+                        onContinue: () => _goToStage(4),
                       ),
-                      IconButton.filled(
-                        onPressed: () => _setShippingFee(_shippingFee + 5000.0),
-                        icon: const Icon(Icons.add),
+                      EditStage4Review(
+                        orderRef: widget.orderRef,
+                        wizardSnapshot: _wizardSnapshot,
+                        summaryItems: summaryItems,
+                        dueDate: _dueDate,
+                        dueTime: _dueTime,
+                        onSave: _save,
+                        onBack: () => _goToStage(3),
+                        isProcessing: _saving,
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                ],
-
-                // ── Notes ─────────────────────────────────────────────
-                TextFormField(
-                  controller: _notesCtrl,
-                  decoration: const InputDecoration(
-                    labelText: VN.notes,
-                    border: OutlineInputBorder(),
-                    alignLabelWithHint: true,
-                  ),
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 20),
-
-                // ── Work items ────────────────────────────────────────
-                const _SectionHeader(VN.workItemsSection),
-                _WorkItemsSection(
-                  orderRef: widget.orderRef,
-                  onAddTap: _openProductPicker,
-                ),
-                const SizedBox(height: 20),
-
-                // ── Extras section ────────────────────────────────────
-                _EditExtrasSection(orderRef: widget.orderRef),
-                const SizedBox(height: 20),
-
-                // ── Order-level photos ────────────────────────────────
-                OrderPhotoSection(
-                  orderRef: widget.orderRef,
-                  baseUrl: ref.watch(apiBaseUrlProvider),
-                  orderLevelOnly: true,
-                ),
-                const SizedBox(height: 24),
-
-                FilledButton(
-                  onPressed: _saving ? null : _save,
-                  child: _saving
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text(VN.save),
                 ),
               ],
             ),
           );
         },
       ),
-    );
-  }
-}
-
-/// Customer search + profile card section for the order edit screen
-/// (DG-206 Phase 6 / FR3 / AC3).
-///
-/// Renders a [CustomerSearchField] pre-populated with the order's linked
-/// customer (when `linkedCustomerId` is set and the user has not yet
-/// changed the selection) and, once a customer is selected, a compact
-/// [CustomerProfileCard] below it. The name/phone text fields are kept for
-/// the walk-in/free-text fallback path.
-class _CustomerSection extends ConsumerWidget {
-  const _CustomerSection({
-    required this.linkedCustomerId,
-    required this.selectedCustomer,
-    required this.customerTouched,
-    required this.onSelected,
-    required this.onClearSelection,
-    required this.nameCtrl,
-    required this.phoneCtrl,
-  });
-
-  final int? linkedCustomerId;
-  final Customer? selectedCustomer;
-  final bool customerTouched;
-  final ValueChanged<Customer?> onSelected;
-  final VoidCallback onClearSelection;
-  final TextEditingController nameCtrl;
-  final TextEditingController phoneCtrl;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final customer = selectedCustomer ??
-        (customerTouched || linkedCustomerId == null
-            ? null
-            : ref.watch(customerProvider(linkedCustomerId!)).value);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        CustomerSearchField(
-          initialCustomer: customer,
-          onSelected: onSelected,
-        ),
-        if (customer != null) ...[
-          const SizedBox(height: 8),
-          CustomerProfileCard(
-            customer: customer,
-            mode: CustomerProfileCardMode.compact,
-            onTap: () => context.push('/customers/${customer.id}'),
-          ),
-        ],
-        const SizedBox(height: 12),
-        TextFormField(
-          controller: nameCtrl,
-          decoration: const InputDecoration(
-            labelText: VN.customerName,
-            border: OutlineInputBorder(),
-          ),
-          textCapitalization: TextCapitalization.words,
-          validator: (v) =>
-              (v == null || v.trim().isEmpty) ? VN.fieldRequired : null,
-          onChanged: (_) => onClearSelection(),
-        ),
-        const SizedBox(height: 12),
-        TextFormField(
-          controller: phoneCtrl,
-          decoration: const InputDecoration(
-            labelText: VN.customerPhone,
-            border: OutlineInputBorder(),
-          ),
-          keyboardType: TextInputType.phone,
-          inputFormatters: [PhoneInputFormatter()],
-        ),
-      ],
     );
   }
 }

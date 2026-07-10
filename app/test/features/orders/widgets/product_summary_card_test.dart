@@ -1,0 +1,200 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:bakery_app/data/models/order_draft.dart';
+import 'package:bakery_app/data/models/product.dart';
+import 'package:bakery_app/features/orders/widgets/product_summary_card.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+
+Product _product({Map<String, String> attributes = const {}}) {
+  return Product(
+    id: 1,
+    name: 'Bánh kem Socola',
+    category: 'banh_kem',
+    basePrice: 200000,
+    attributes: attributes,
+  );
+}
+
+DraftOrderItem _item({
+  Map<String, String> productAttributes = const {},
+  Map<String, dynamic> itemAttributes = const {},
+}) {
+  return DraftOrderItem(
+    product: _product(attributes: productAttributes),
+    quantity: 2,
+    attributes: itemAttributes,
+  );
+}
+
+void main() {
+  group('ProductSummaryCard inventory label (FR-7, AC6)', () {
+    testWidgets(
+        'shows the VN inventory label only (no ": true", no English) when item uses inventory',
+        (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProductSummaryCard(items: [
+              _item(
+                productAttributes: {'trung_bay': 'true'},
+                itemAttributes: {'useInventory': 'true'},
+              ),
+            ]),
+          ),
+        ),
+      );
+
+      expect(find.text(VN.useInventory), findsOneWidget);
+      // No ": true" suffix anywhere in the rendered tree.
+      expect(
+        find.textContaining('${VN.useInventory}: true'),
+        findsNothing,
+        reason: 'FR-7: the inventory line must not append ": true"',
+      );
+      // No English fallback value rendered.
+      expect(find.textContaining('true'), findsNothing);
+    });
+
+    testWidgets('does not render the inventory line when item does not use inventory',
+        (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProductSummaryCard(items: [
+              _item(
+                productAttributes: {'trung_bay': 'true'},
+                itemAttributes: {'useInventory': 'false'},
+              ),
+            ]),
+          ),
+        ),
+      );
+
+      expect(find.text(VN.useInventory), findsNothing,
+          reason: 'AC6: when the item does not use inventory, no line is shown');
+    });
+
+    testWidgets('does not render the inventory line when useInventory is absent',
+        (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProductSummaryCard(items: [_item()]),
+          ),
+        ),
+      );
+
+      expect(find.text(VN.useInventory), findsNothing);
+    });
+
+    testWidgets('renders other attribute lines (notes, birthday) correctly',
+        (tester) async {
+      final item = _item(
+        productAttributes: {'trung_bay': 'true'},
+        itemAttributes: {'useInventory': 'true'},
+      );
+      item.notes = 'Ghi chú';
+      item.isBirthday = true;
+      item.age = '5';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ProductSummaryCard(items: [item])),
+        ),
+      );
+
+      expect(find.textContaining(VN.notes), findsOneWidget);
+      expect(find.textContaining(VN.birthdayWithAge), findsOneWidget);
+      expect(find.text(VN.useInventory), findsOneWidget);
+    });
+  });
+
+  group('ProductSummaryCard rut tien line (DG-223 MAJOR-1)', () {
+    testWidgets('renders rut tien lines for a POS rut-tien item with integer cash values',
+        (tester) async {
+      final item = DraftOrderItem(
+        product: _product(),
+        quantity: 1,
+        attributes: {
+          'rut_tien': 'true',
+          'cash_amount': '20000',
+          'cash_fee': '5000',
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ProductSummaryCard(items: [item])),
+        ),
+      );
+
+      expect(find.textContaining(VN.rutTien), findsOneWidget);
+      expect(find.textContaining(formatVND(20000)), findsWidgets);
+    });
+  });
+
+  group('ProductSummaryCard product count (S1 — exclude extras)', () {
+    testWidgets(
+        'product count is 1 for 1 cake + N extras (excludes phụ kiện)',
+        (tester) async {
+      final cake = DraftOrderItem(
+        product: _product(),
+        quantity: 1,
+      );
+      final extras = [
+        createExtraItem('Nến', 5000),
+        createExtraItem('Đĩa', 10000),
+        createExtraItem('Nón', 5000),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProductSummaryCard(items: [cake, ...extras]),
+          ),
+        ),
+      );
+
+      // The "Sản phẩm" row must show "1 sản phẩm" — extras are counted
+      // separately under "phụ kiện" (S1).
+      expect(
+        find.text(OrdersLabels.productCount(1)),
+        findsOneWidget,
+        reason: 'S1: product count must count only cakes, excluding extras',
+      );
+      expect(
+        find.text(OrdersLabels.productCount(4)),
+        findsNothing,
+        reason: 'S1: the old combined count (1 cake + 3 extras = 4) must not appear',
+      );
+      // The extras count line still renders the 3 phụ kiện.
+      expect(find.text(OrdersLabels.extraCount(3)), findsOneWidget);
+    });
+
+    testWidgets('product count matches the number of regular (cake) items only',
+        (tester) async {
+      final cakes = [
+        DraftOrderItem(product: _product(), quantity: 1),
+        DraftOrderItem(
+          product: const Product(
+            id: 2,
+            name: 'Bánh kem Dâu',
+            category: 'banh_kem',
+            basePrice: 180000,
+          ),
+          quantity: 2,
+        ),
+      ];
+      final extras = [createExtraItem('Nến', 5000)];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ProductSummaryCard(items: [...cakes, ...extras])),
+        ),
+      );
+
+      expect(find.text(OrdersLabels.productCount(2)), findsOneWidget);
+      expect(find.text(OrdersLabels.extraCount(1)), findsOneWidget);
+    });
+  });
+}

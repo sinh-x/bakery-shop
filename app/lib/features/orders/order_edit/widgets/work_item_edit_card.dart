@@ -1,16 +1,29 @@
-part of '../../order_edit_screen.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class _WorkItemEditCard extends ConsumerStatefulWidget {
-  const _WorkItemEditCard({required this.orderRef, required this.item});
+import '../../../../data/api/api_client.dart';
+import '../../../../data/models/product.dart';
+import '../../../../data/models/work_item.dart';
+import '../../../../providers/order_providers.dart';
+import '../../../../providers/products_provider.dart';
+import '../../../../shared/utils/api_error.dart';
+import '../../../../shared/widgets/vietnamese_labels.dart';
+import '../../utils/trung_bay_inventory_extensions.dart';
+import '../../widgets/order_photo_section.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
+
+class WorkItemEditCard extends ConsumerStatefulWidget {
+  const WorkItemEditCard({super.key, required this.orderRef, required this.item});
 
   final String orderRef;
   final WorkItem item;
 
   @override
-  ConsumerState<_WorkItemEditCard> createState() => _WorkItemEditCardState();
+  ConsumerState<WorkItemEditCard> createState() => _WorkItemEditCardState();
 }
 
-class _WorkItemEditCardState extends ConsumerState<_WorkItemEditCard> {
+class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
   bool _expanded = true;
   bool _isBirthday = false;
   bool _rutTien = false;

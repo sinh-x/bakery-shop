@@ -62,6 +62,26 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+  # Dev front-end for the bakery app on drgnfly. TLS is terminated by the
+  # central drgnfly-caddy gateway (owns :443 for the tailnet FQDN); this
+  # service only serves plain HTTP on host loopback 127.0.0.1:2380, and the
+  # gateway reverse-proxies the domain root to it. Serves web-build + /api.
+  caddy-dev:
+    image: caddy:2-alpine
+    profiles: [dev]
+    ports:
+      - "127.0.0.1:2380:80"
+    volumes:
+      - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      - ./web-build:/srv/web:ro
+    depends_on:
+      - baker-dev
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
   baker-dev:
     build:
       context: .
