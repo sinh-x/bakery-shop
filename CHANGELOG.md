@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.7.2+83] — 2026-07-11
+- chore(release): add CHANGELOG 0.7.2+82 entry, sync uv.lock version
+
 ## [0.7.2+82] — 2026-07-11
 
 > **Release summary:** This release bundles all features from v0.7.0 through v0.7.2+82 (approximately 108 commits), including 4-stage unified order creation pipeline (DG-211, DG-214, DG-218), order edit/create wizard UI parity (DG-217, DG-220), customer picker improvements (DG-222), cart attribute sync (DG-221), journal backfill prevention (DG-226), customer link repair (DG-227), missing revenue repair (DG-229), expense debt management, Tailscale MagicDNS HTTPS dev server (DG-219), and COGS audit/business-health metrics (DG-208, DG-209). See the entries below for the full delta.
