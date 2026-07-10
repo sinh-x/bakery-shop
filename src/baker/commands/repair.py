@@ -201,13 +201,14 @@ def _delivered_orders_with_cogs(conn):
     return [int(r["order_id"]) for r in rows]
 
 
-def _process_cogs_order(conn, order_id: int, *, dry_run: bool) -> dict:
+def _process_cogs_order(conn, order_id: int, *, dry_run: bool, force: bool = False) -> dict:
     """Evaluate and optionally repair one order's COGS entry (FR8/FR9).
 
     Idempotent delete-and-recreate pattern (mirrors the revenue repair):
       1. Compute the expected COGS total via :func:`_compute_order_cogs_total`
          (writing back ``cost_at_sale`` for zero-cost items using the current
          cost_history / baseline rule with ``unit_price`` as the anchor).
+         When ``force`` is True, re-resolves ALL items (not just zero-cost ones).
       2. Look up the existing ``order_cogs`` entry. When none exists and the
          expected total > 0, create it (action ``backfilled``).
       3. When an entry exists and its COGS debit is within
@@ -224,7 +225,7 @@ def _process_cogs_order(conn, order_id: int, *, dry_run: bool) -> dict:
     order_ref = _order_ref(conn, order_id)
     entry_id, old_cogs = _order_cogs_entry(conn, order_id)
     expected = _compute_order_cogs_total(
-        conn, order_id, populate_cost_at_sale=False
+        conn, order_id, populate_cost_at_sale=False, force=force
     )
 
     if entry_id is None:
@@ -249,7 +250,7 @@ def _process_cogs_order(conn, order_id: int, *, dry_run: bool) -> dict:
         # via total_cogs_override so it does not re-scan order_items
         # (DG-208 review finding CQ-3).
         actual_total = _compute_order_cogs_total(
-            conn, order_id, populate_cost_at_sale=True
+            conn, order_id, populate_cost_at_sale=True, force=force
         )
         _sync_order_cogs_entry(
             conn, order_id, order_ref, total_cogs_override=actual_total
@@ -295,7 +296,7 @@ def _process_cogs_order(conn, order_id: int, *, dry_run: bool) -> dict:
     # re-scan of order_items (DG-208 review finding CQ-3).
     _delete_journal_entry_cascade(conn, entry_id)
     actual_total = _compute_order_cogs_total(
-        conn, order_id, populate_cost_at_sale=True
+        conn, order_id, populate_cost_at_sale=True, force=force
     )
     _sync_order_cogs_entry(
         conn, order_id, order_ref, total_cogs_override=actual_total
@@ -309,7 +310,7 @@ def _process_cogs_order(conn, order_id: int, *, dry_run: bool) -> dict:
     }
 
 
-def _run_cogs_repair(conn, *, order_id, repair_all, dry_run):
+def _run_cogs_repair(conn, *, order_id, repair_all, dry_run, force=False):
     """Drive the COGS repair for either a single order or all delivered orders.
 
     Mirrors the revenue repair's ``--all`` semantics: every
@@ -317,16 +318,16 @@ def _run_cogs_repair(conn, *, order_id, repair_all, dry_run):
     (``repaired`` / ``backfilled`` / ``skipped`` / ``locked`` /
     ``not-applicable``). This is required for AC6 — the second idempotent
     run must report every order as ``skipped`` rather than an empty list.
+
+    When ``force`` is True, re-resolves ALL items (not just zero-cost ones)
+    using the current unit_price-anchored baseline.
     """
     if repair_all:
         order_ids = _delivered_orders_with_cogs(conn)
     else:
-        # Single order: process it unconditionally so the user gets a status
-        # row (skipped / repaired / not-applicable). This matches the revenue
-        # repair's single-order behaviour.
         order_ids = [order_id]
     return [
-        _process_cogs_order(conn, oid, dry_run=dry_run) for oid in order_ids
+        _process_cogs_order(conn, oid, dry_run=dry_run, force=force) for oid in order_ids
     ]
 
 
@@ -372,12 +373,16 @@ def _print_cogs_report(results, *, dry_run):
 @click.option("--order-id", "order_id", type=int, default=None, help="ID đơn hàng cần sửa.")
 @click.option("--all", "repair_all", is_flag=True, default=False, help="Sửa tất cả đơn đã giao có bút toán lệch.")
 @click.option("--cogs", "repair_cogs", is_flag=True, default=False, help="Sửa/bổ sung bút toán giá vốn (COGS) thay vì doanh thu.")
+@click.option("--force", "force_cogs", is_flag=True, default=False, help="Tính lại toàn bộ cost_at_sale (không chỉ dòng = 0). Chỉ dùng với --cogs.")
 @click.option("--dry-run", is_flag=True, default=False, help="Xem trước thay đổi, không ghi vào CSDL.")
-def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, dry_run):
+def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, dry_run):
     """Sửa bút toán doanh thu đơn hàng bị lệch (nợ 2100 ≠ cọc thực tế).
 
     Với ``--cogs``, sửa/bổ sung bút toán giá vốn (COGS) cho đơn đã giao:
     bỏ qua đơn đã có bút toán COGS khớp với chi phí dự kiến (idempotent).
+
+    Với ``--cogs --force``, tính lại toàn bộ cost_at_sale cho tất cả mặt hàng
+    (kể cả những dòng đã có cost_at_sale > 0) dùng công thức unit_price × 30%.
     """
     if order_id is None and not repair_all:
         click.echo("Cần chỉ định --order-id <id> hoặc --all.", err=True)
@@ -385,12 +390,15 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, dry_run):
     if order_id is not None and repair_all:
         click.echo("Không thể dùng --order-id và --all cùng lúc.", err=True)
         raise SystemExit(1)
+    if force_cogs and not repair_cogs:
+        click.echo("--force chỉ dùng với --cogs.", err=True)
+        raise SystemExit(1)
 
     try:
         with get_db() as conn:
             if repair_cogs:
                 results = _run_cogs_repair(
-                    conn, order_id=order_id, repair_all=repair_all, dry_run=dry_run
+                    conn, order_id=order_id, repair_all=repair_all, dry_run=dry_run, force=force_cogs
                 )
             elif repair_all:
                 rows = conn.execute(
