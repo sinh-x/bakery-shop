@@ -257,7 +257,7 @@ def test_repair_all_repairs_only_stale_entries():
             conn, order_id=oid2, deposits_account_id=deposits_acc,
             revenue_account_id=revenue_acc, amount=500000,
         )
-        # Order 3: delivered but no revenue entry → excluded from --all scan.
+        # Order 3: delivered but no revenue entry → included, revenue entry created.
         oid3 = _insert_order(
             conn, order_ref="ORD-260624-202", customer_name="Khách 3",
             total_price=300000, status="delivered",
@@ -275,6 +275,48 @@ def test_repair_all_repairs_only_stale_entries():
     with get_db() as conn:
         ensure_schema(conn)
         assert _revenue_2100_debit(conn, oid1) == 500000.0
+
+
+# ---------------------------------------------------------------------------
+# Batch --all idempotency: second run is all "bỏ qua" (NF2, AC2)
+# ---------------------------------------------------------------------------
+
+
+def test_repair_all_idempotent_second_run_all_skipped():
+    """After --all creates missing entries, a second --all run reports all orders as 'bỏ qua'."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid1 = _insert_order(
+            conn, order_ref="ORD-260624-250", customer_name="Khách I1",
+            total_price=400000, status="delivered", due_date="2026-07-01",
+        )
+        _insert_payment(conn, order_id=oid1, amount=400000, ptype="deposit")
+        oid2 = _insert_order(
+            conn, order_ref="ORD-260624-251", customer_name="Khách I2",
+            total_price=600000, status="completed", due_date="2026-07-02",
+        )
+        _insert_payment(conn, order_id=oid2, amount=600000, ptype="deposit")
+
+    # First run: creates entries for both orders.
+    result1 = _invoke(["repair-order-revenue", "--all"])
+    assert result1.exit_code == 0, result1.output
+    assert "ORD-260624-250" in result1.output
+    assert "ORD-260624-251" in result1.output
+    assert "đã sửa: 2" in result1.output
+
+    # Verify entries were created.
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _revenue_2100_debit(conn, oid1) == 400000.0
+        assert _revenue_2100_debit(conn, oid2) == 600000.0
+
+    # Second run: all orders already correct → skipped.
+    result2 = _invoke(["repair-order-revenue", "--all"])
+    assert result2.exit_code == 0, result2.output
+    assert "ORD-260624-250" in result2.output
+    assert "ORD-260624-251" in result2.output
+    assert "bỏ qua: 2" in result2.output
+    assert "đã sửa: 0" in result2.output
 
 
 # ---------------------------------------------------------------------------
