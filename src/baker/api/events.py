@@ -103,16 +103,23 @@ def create_event(body: EventCreate):
 
         # Auto-generate double-entry journal for expense events (DG-175).
         # Accounting failure must never block the primary business operation.
+        accounting_sync_warning = None
         if body.type == "expense":
-            from baker.services.journal_sync import _sync_expense_journal, run_journal_sync
-            run_journal_sync(
+            from baker.services.journal_sync import _sync_expense_journal, run_journal_sync, sync_status_to_warning
+            sync_status = run_journal_sync(
                 _sync_expense_journal,
                 conn, event_id, body.data, body.summary,
                 log_label=f"expense journal sync for event {event_id}",
+                source_type="expense",
+                source_id=event_id,
             )
+            accounting_sync_warning = sync_status_to_warning(sync_status)
 
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
-        return _row_to_dict(row)
+        result = _row_to_dict(row)
+        if accounting_sync_warning is not None:
+            result["accountingSyncWarning"] = accounting_sync_warning
+        return result
 
 
 @router.get("")
@@ -360,16 +367,23 @@ def update_event(event_id: int, body: EventUpdate):
         conn.execute(f"UPDATE events SET {', '.join(fields)} WHERE id = ?", values)
 
         # Re-sync double-entry journal if this is an expense event (DG-175).
+        accounting_sync_warning = None
         if next_type == "expense":
-            from baker.services.journal_sync import _sync_expense_journal, run_journal_sync
-            run_journal_sync(
+            from baker.services.journal_sync import _sync_expense_journal, run_journal_sync, sync_status_to_warning
+            sync_status = run_journal_sync(
                 _sync_expense_journal,
                 conn, event_id, next_data, str(row["summary"] if "summary" not in data else data["summary"]),
                 log_label=f"expense journal re-sync for event {event_id}",
+                source_type="expense",
+                source_id=event_id,
             )
+            accounting_sync_warning = sync_status_to_warning(sync_status)
 
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
-        return _row_to_dict(row)
+        result = _row_to_dict(row)
+        if accounting_sync_warning is not None:
+            result["accountingSyncWarning"] = accounting_sync_warning
+        return result
 
 
 @router.delete("/{event_id}", status_code=204)
@@ -400,6 +414,8 @@ def delete_event(event_id: int, deleted_by: str = Query("", description="Ngườ
                 _sync_expense_journal,
                 conn, event_id, {}, str(row["summary"]), deleted=True,
                 log_label=f"expense journal delete-sync for event {event_id}",
+                source_type="expense",
+                source_id=event_id,
             )
             # FR9 (DG-212): when a debt expense is deleted, its unsettled
             # settlement journal entries must also be reversed/removed so the
@@ -423,6 +439,8 @@ def delete_event(event_id: int, deleted_by: str = Query("", description="Ngườ
                             f"debt settlement journal delete-sync for "
                             f"settlement {sid} on event {event_id}"
                         ),
+                        source_type="debt_settlement",
+                        source_id=int(sid),
                     )
 
 
@@ -680,6 +698,8 @@ def settle_debt(
             conn, next_id, event_id, str(row["summary"]),
             float(body.amount), body.payment_source,
             log_label=f"debt settlement journal sync for event {event_id} settlement {next_id}",
+            source_type="debt_settlement",
+            source_id=next_id,
         )
 
         # Compute updated debt status.

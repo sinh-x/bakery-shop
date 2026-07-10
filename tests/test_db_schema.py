@@ -366,7 +366,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 64
+        assert _migrated_version(conn) == 65
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -383,7 +383,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 64
+        assert _migrated_version(conn) == 65
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -397,10 +397,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 64
+        assert _migrated_version(conn) == 65
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 64
+        assert _migrated_version(conn) == 65
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3240,3 +3240,72 @@ def test_v57_full_ensure_schema_run_with_orders():
             "SELECT COUNT(*) FROM orders WHERE customer_id IS NOT NULL"
         ).fetchone()[0]
         assert linked == 2
+
+
+# ---------------------------------------------------------------------------
+# v65 — journal_sync_failure_log table (DG-226 Phase 1)
+# ---------------------------------------------------------------------------
+
+
+def _assert_journal_sync_failure_log_schema(conn) -> None:
+    columns = _schema_columns(conn, "journal_sync_failure_log")
+    assert set(columns) >= {
+        "id",
+        "source_type",
+        "source_id",
+        "error_message",
+        "stack_trace",
+        "created_at",
+    }
+    assert columns["source_type"]["notnull"] == 1
+    assert columns["error_message"]["notnull"] == 1
+    assert columns["source_id"]["notnull"] == 0
+
+    index_rows = conn.execute(
+        "PRAGMA index_list(journal_sync_failure_log)"
+    ).fetchall()
+    index_names = [row["name"] for row in index_rows]
+    assert "idx_failure_log_type_id" in index_names
+    assert "idx_failure_log_created" in index_names
+
+
+def test_v65_registered_in_migration_chain():
+    assert 65 in MIGRATIONS
+    assert (
+        MIGRATIONS[65]["callable"].__name__
+        == "_migrate_v65_journal_sync_failure_log"
+    )
+
+
+def test_v65_creates_journal_sync_failure_log_table():
+    with get_db() as conn:
+        _migrate_to_version(conn, 64)
+        tables = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        assert "journal_sync_failure_log" not in tables
+
+        _migrate_to_version(conn, 65)
+        assert _migrated_version(conn) == 65
+        _assert_journal_sync_failure_log_schema(conn)
+
+
+def test_v65_fresh_db_creates_table():
+    with get_db() as conn:
+        _migrate_to_version(conn, 65)
+        assert _migrated_version(conn) == 65
+        _assert_journal_sync_failure_log_schema(conn)
+
+
+def test_v65_idempotent():
+    with get_db() as conn:
+        _migrate_to_version(conn, 65)
+        assert _migrated_version(conn) == 65
+        from baker.db.schema import _migrate_v65_journal_sync_failure_log
+
+        _migrate_v65_journal_sync_failure_log(conn)
+        assert _migrated_version(conn) == 65
+        _assert_journal_sync_failure_log_schema(conn)

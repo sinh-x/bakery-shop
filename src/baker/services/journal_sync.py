@@ -11,6 +11,7 @@ wrap each ``_sync_*`` call in try/except with ``logger.exception``.
 """
 
 import logging
+import traceback
 from typing import Any, Callable, Optional
 
 from baker.db.schema import (
@@ -49,10 +50,49 @@ STAFF_ADVANCE_PAYMENT_SOURCE = "Nhân viên ứng trước"
 journal_sync_failures: int = 0
 
 
+def sync_status_to_warning(status: str) -> str:
+    return "ok" if status == "ok" else "journal_sync_failed"
+
+# Auto-truncation limit for journal_sync_failure_log (NFR4, DG-226).
+_JOURNAL_SYNC_FAILURE_LOG_MAX_ROWS = 10000
+
+
+def _log_journal_sync_failure(
+    conn,
+    source_type: str,
+    source_id: int,
+    error_message: str,
+    stack_trace_str: str,
+) -> None:
+    """Record a journal sync failure in the audit log (NFR2: never throws)."""
+    try:
+        conn.execute(
+            "INSERT INTO journal_sync_failure_log "
+            "(source_type, source_id, error_message, stack_trace) "
+            "VALUES (?, ?, ?, ?)",
+            (source_type, source_id, error_message, stack_trace_str),
+        )
+        # NFR4: auto-truncate to last 10,000 rows, oldest-first.
+        row_count = conn.execute(
+            "SELECT COUNT(*) FROM journal_sync_failure_log"
+        ).fetchone()[0]
+        if row_count > _JOURNAL_SYNC_FAILURE_LOG_MAX_ROWS:
+            conn.execute(
+                "DELETE FROM journal_sync_failure_log WHERE id NOT IN ("
+                "SELECT id FROM journal_sync_failure_log ORDER BY id DESC "
+                "LIMIT ?)",
+                (_JOURNAL_SYNC_FAILURE_LOG_MAX_ROWS,),
+            )
+    except Exception:
+        pass  # NFR2: log write failure must not cascade into business operation failure
+
+
 def run_journal_sync(
     sync_fn: Callable[..., None],
     *args: Any,
     log_label: str,
+    source_type: Optional[str] = None,
+    source_id: Optional[int] = None,
     **kwargs: Any,
 ) -> str:
     """Run a journal sync callable with non-blocking error handling + observability.
@@ -63,6 +103,10 @@ def run_journal_sync(
     ``logger.exception`` and the :data:`journal_sync_failures` counter is
     incremented, so the gap is observable through ``/api/health``.
 
+    When ``source_type`` and ``source_id`` are both provided, the failure is
+    also recorded in the ``journal_sync_failure_log`` audit table (DG-226) so
+    the failure is traceable to a specific source.
+
     Returns ``"ok"`` when the sync succeeded, or ``"failed"`` when it raised.
     Callers may attach this to their API response (e.g. an
     ``accounting_sync`` field) so the Flutter client can surface a warning.
@@ -70,9 +114,21 @@ def run_journal_sync(
     global journal_sync_failures
     try:
         sync_fn(*args, **kwargs)
-    except Exception:
+    except Exception as exc:
         journal_sync_failures += 1
         logger.exception("%s failed", log_label)
+        if source_type is not None and source_id is not None and args:
+            conn = args[0]
+            try:
+                _log_journal_sync_failure(
+                    conn,
+                    source_type,
+                    source_id,
+                    str(exc),
+                    traceback.format_exc(),
+                )
+            except Exception:
+                pass  # NFR2: must never cascade into business operation failure
         return "failed"
     return "ok"
 

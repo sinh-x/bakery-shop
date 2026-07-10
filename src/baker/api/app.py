@@ -76,13 +76,26 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     def health():
+        from baker.db.connection import get_db
         from baker.services.journal_sync import journal_sync_failures
+
+        failure_log_rows = []
+        try:
+            with get_db() as conn:
+                rows = conn.execute(
+                    "SELECT id, source_type, source_id, error_message, created_at "
+                    "FROM journal_sync_failure_log ORDER BY id DESC LIMIT 50"
+                ).fetchall()
+                failure_log_rows = [dict(r) for r in rows]
+        except Exception:
+            pass
 
         return {
             "status": "ok",
             "version": VERSION,
             "fingerprint": BUILD_FINGERPRINT,
             "journalSyncFailures": journal_sync_failures,
+            "journalSyncFailureLogRows": failure_log_rows,
         }
 
     app.include_router(photos_router)
