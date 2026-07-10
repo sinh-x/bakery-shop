@@ -537,6 +537,9 @@ class VN {
   static const clearCart = 'Xóa giỏ';
   static const selectPaymentMethod = 'Chọn phương thức thanh toán';
   static const paymentAmount = 'Số tiền';
+  static const excessPaymentWarningTitle = 'Số tiền không hợp lệ';
+  static const excessPaymentWarningMessage =
+      'Số tiền thanh toán vượt quá tổng tiền sản phẩm. Vui lòng điều chỉnh lại.';
   static const deliverNow = 'Giao ngay?';
   static const deliverNowPrompt = 'Giao bánh cho khách ngay?';
   static const deliverNowYes = 'Giao ngay';

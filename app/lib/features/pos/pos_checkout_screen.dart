@@ -53,6 +53,9 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   bool _navigatingAfterCheckout = false;
   String _selectedPaymentMethod = 'cash';
   double _paidAmount = 0;
+  double _cartTotal = 0;
+  bool _hasTienRut = false;
+  double _tienRutAmount = 0;
 
   bool _paymentStepActive = false;
   bool _posStateInitialized = false;
@@ -118,12 +121,21 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
   void _enterPaymentStep() {
     final cart = ref.read(posCartProvider);
-    final total = cart.items
+    final cartTotal = cart.items
         .where((i) => !i.isGift)
         .fold<double>(0, (sum, i) => sum + i.total);
+    final tienRutItems = cart.items.where((i) => i.rutTien).toList();
+    final hasTienRut = tienRutItems.isNotEmpty;
+    final tienRutDefault = tienRutItems.fold<double>(
+      0,
+      (sum, i) => sum + (i.cashAmount ?? 0),
+    );
     setState(() {
       _paymentStepActive = true;
-      _paidAmount = total;
+      _cartTotal = cartTotal;
+      _paidAmount = cartTotal;
+      _hasTienRut = hasTienRut;
+      _tienRutAmount = tienRutDefault;
     });
   }
 
@@ -138,6 +150,26 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
   void _onAmountChanged(double amount) {
     setState(() => _paidAmount = amount);
+  }
+
+  void _onTienRutAmountChanged(double amount) {
+    setState(() => _tienRutAmount = amount);
+  }
+
+  Future<void> _showExcessWarning() {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(VN.excessPaymentWarningTitle),
+        content: const Text(VN.excessPaymentWarningMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   List<Map<String, dynamic>> _buildOrderItems() {
@@ -164,6 +196,10 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
   Future<void> _handleFinalizeOrder() async {
     if (_isProcessing) return;
+    if (_paidAmount > _cartTotal) {
+      await _showExcessWarning();
+      return;
+    }
     setState(() => _isProcessing = true);
     try {
       // B5: pickup → "Giao ngay?" confirmation dialog
@@ -286,6 +322,15 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         method: _selectedPaymentMethod,
       );
 
+      if (_hasTienRut && _tienRutAmount > 0) {
+        await txnSvc.createTransaction(
+          order.orderRef,
+          amount: _tienRutAmount,
+          type: 'tien_rut',
+          method: _selectedPaymentMethod,
+        );
+      }
+
       if (!mounted) return;
       _navigatingAfterCheckout = true;
       context.pushReplacement('/pos/receipt/${order.orderRef}');
@@ -400,6 +445,15 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         method: 'transfer',
       );
 
+      if (_hasTienRut && _tienRutAmount > 0) {
+        await txnSvc.createTransaction(
+          order.orderRef,
+          amount: _tienRutAmount,
+          type: 'tien_rut',
+          method: 'transfer',
+        );
+      }
+
       if (!mounted) return;
       _navigatingAfterCheckout = true;
       showTopSnackBar(context, VN.thanhToanThanhCong);
@@ -504,11 +558,15 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         4 => _paymentStepActive
             ? PosPaymentStep(
                 key: const ValueKey('pos-payment'),
-                orderTotal: _paidAmount,
+                orderTotal: _cartTotal,
+                initialAmount: _paidAmount,
+                hasTienRut: _hasTienRut,
+                tienRutAmount: _tienRutAmount,
                 selectedPaymentMethod: _selectedPaymentMethod,
                 isProcessing: _isProcessing,
                 onPaymentMethodChanged: _onPaymentMethodChanged,
                 onAmountChanged: _onAmountChanged,
+                onTienRutAmountChanged: _onTienRutAmountChanged,
                 onBack: _backFromPaymentStep,
                 onSubmit: _handleFinalizeOrder,
               )

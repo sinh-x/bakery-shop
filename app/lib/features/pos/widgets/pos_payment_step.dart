@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/labels/orders.dart';
+import '../../../shared/utils/vnd_units.dart';
 
 /// Dedicated POS payment step shown AFTER the Stage 4 review (DG-218 Phase 4,
 /// FR-5). Presents the cash/transfer method selection, an editable amount field
@@ -18,19 +19,27 @@ class PosPaymentStep extends ConsumerStatefulWidget {
   const PosPaymentStep({
     super.key,
     required this.orderTotal,
+    required this.initialAmount,
+    required this.hasTienRut,
+    required this.tienRutAmount,
     required this.selectedPaymentMethod,
     required this.isProcessing,
     required this.onPaymentMethodChanged,
     required this.onAmountChanged,
+    required this.onTienRutAmountChanged,
     required this.onBack,
     required this.onSubmit,
   });
 
   final double orderTotal;
+  final double initialAmount;
+  final bool hasTienRut;
+  final double tienRutAmount;
   final String selectedPaymentMethod;
   final bool isProcessing;
   final ValueChanged<String> onPaymentMethodChanged;
   final ValueChanged<double> onAmountChanged;
+  final ValueChanged<double> onTienRutAmountChanged;
   final VoidCallback onBack;
   final VoidCallback onSubmit;
 
@@ -40,22 +49,34 @@ class PosPaymentStep extends ConsumerStatefulWidget {
 
 class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
   late final TextEditingController _amountCtrl;
+  late final TextEditingController _tienRutCtrl;
 
   @override
   void initState() {
     super.initState();
     _amountCtrl = TextEditingController(
-      text: formatVND(widget.orderTotal),
+      text: vndThousandsTextFromAmount(widget.initialAmount),
     );
     _amountCtrl.addListener(_onAmountTextChanged);
+    _tienRutCtrl = TextEditingController(
+      text: widget.hasTienRut
+          ? vndThousandsTextFromAmount(widget.tienRutAmount)
+          : '',
+    );
+    _tienRutCtrl.addListener(_onTienRutTextChanged);
   }
 
   @override
   void didUpdateWidget(PosPaymentStep oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.orderTotal != widget.orderTotal &&
-        !_amountCtrl.text.contains(RegExp(r'[1-9]'))) {
-      _amountCtrl.text = formatVND(widget.orderTotal);
+    if (oldWidget.initialAmount != widget.initialAmount &&
+        _amountCtrl.text.replaceAll(RegExp(r'[^\d]'), '').isEmpty) {
+      _amountCtrl.text = vndThousandsTextFromAmount(widget.initialAmount);
+    }
+    if (oldWidget.tienRutAmount != widget.tienRutAmount &&
+        widget.hasTienRut &&
+        _tienRutCtrl.text.replaceAll(RegExp(r'[^\d]'), '').isEmpty) {
+      _tienRutCtrl.text = vndThousandsTextFromAmount(widget.tienRutAmount);
     }
   }
 
@@ -63,32 +84,57 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
   void dispose() {
     _amountCtrl.removeListener(_onAmountTextChanged);
     _amountCtrl.dispose();
+    _tienRutCtrl.removeListener(_onTienRutTextChanged);
+    _tienRutCtrl.dispose();
     super.dispose();
   }
 
   void _onAmountTextChanged() {
-    final raw = _amountCtrl.text
-        .replaceAll(RegExp(r'[^\d]'), '');
+    final raw = _amountCtrl.text.replaceAll(RegExp(r'[^\d]'), '');
     final parsed = double.tryParse(raw);
     if (parsed != null) {
-      widget.onAmountChanged(parsed);
+      widget.onAmountChanged(vndFromThousands(parsed));
     }
+    setState(() {});
+  }
+
+  void _onTienRutTextChanged() {
+    final raw = _tienRutCtrl.text.replaceAll(RegExp(r'[^\d]'), '');
+    final parsed = double.tryParse(raw);
+    if (parsed != null) {
+      widget.onTienRutAmountChanged(vndFromThousands(parsed));
+    }
+    setState(() {});
   }
 
   void _onAmountFocusLost() {
-    final raw = _amountCtrl.text
-        .replaceAll(RegExp(r'[^\d]'), '');
+    final raw = _amountCtrl.text.replaceAll(RegExp(r'[^\d]'), '');
     final parsed = double.tryParse(raw);
     if (parsed != null && parsed > 0) {
-      final clamped = parsed > widget.orderTotal
-          ? widget.orderTotal
-          : parsed;
-      _amountCtrl.text = formatVND(clamped);
-      widget.onAmountChanged(clamped);
+      _amountCtrl.text = vndThousandsTextFromAmount(vndFromThousands(parsed));
     } else {
-      _amountCtrl.text = formatVND(widget.orderTotal);
+      _amountCtrl.text = vndThousandsTextFromAmount(widget.orderTotal);
       widget.onAmountChanged(widget.orderTotal);
     }
+  }
+
+  void _onTienRutFocusLost() {
+    final raw = _tienRutCtrl.text.replaceAll(RegExp(r'[^\d]'), '');
+    final parsed = double.tryParse(raw);
+    if (parsed != null && parsed > 0) {
+      _tienRutCtrl.text =
+          vndThousandsTextFromAmount(vndFromThousands(parsed));
+    }
+  }
+
+  void _clearAmountField() {
+    _amountCtrl.clear();
+    widget.onAmountChanged(0);
+  }
+
+  void _clearTienRutField() {
+    _tienRutCtrl.clear();
+    widget.onTienRutAmountChanged(0);
   }
 
   @override
@@ -126,10 +172,20 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
                   controller: _amountCtrl,
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
-                    suffixText: VN.currency,
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
+                  decoration: InputDecoration(
+                    suffixText: ',000đ',
+                    helperText: VN.paymentThousandsHint,
+                    suffixIcon: _amountCtrl.text
+                            .replaceAll(RegExp(r'[^\d]'), '')
+                            .isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            tooltip: VN.clear,
+                            onPressed: _clearAmountField,
+                          )
+                        : null,
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(
                       horizontal: 12,
                       vertical: 14,
                     ),
@@ -145,6 +201,47 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
                   onEditingComplete: _onAmountFocusLost,
                   onSubmitted: (_) => _onAmountFocusLost(),
                 ),
+                if (widget.hasTienRut) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    VN.soTienRut,
+                    style: theme.textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: _tienRutCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: InputDecoration(
+                      suffixText: ',000đ',
+                      helperText: VN.paymentThousandsHint,
+                      suffixIcon: _tienRutCtrl.text
+                              .replaceAll(RegExp(r'[^\d]'), '')
+                              .isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              tooltip: VN.clear,
+                              onPressed: _clearTienRutField,
+                            )
+                          : null,
+                      border: const OutlineInputBorder(),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 14,
+                      ),
+                    ),
+                    onTap: () {
+                      final raw = _tienRutCtrl.text
+                          .replaceAll(RegExp(r'[^\d]'), '');
+                      _tienRutCtrl.selection = TextSelection(
+                        baseOffset: 0,
+                        extentOffset: raw.length,
+                      );
+                    },
+                    onEditingComplete: _onTienRutFocusLost,
+                    onSubmitted: (_) => _onTienRutFocusLost(),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 SegmentedButton<String>(
                   segments: const [
