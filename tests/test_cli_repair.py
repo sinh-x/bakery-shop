@@ -19,6 +19,7 @@ import click.testing
 
 from baker.cli import app
 from baker.commands.repair import _process_order
+from baker.commands.repair import _vn_amount
 from baker.db.connection import get_db
 from baker.db.schema import ensure_schema
 
@@ -256,7 +257,7 @@ def test_repair_all_repairs_only_stale_entries():
             conn, order_id=oid2, deposits_account_id=deposits_acc,
             revenue_account_id=revenue_acc, amount=500000,
         )
-        # Order 3: delivered but no revenue entry → excluded from --all scan.
+        # Order 3: delivered but no revenue entry → included, revenue entry created.
         oid3 = _insert_order(
             conn, order_ref="ORD-260624-202", customer_name="Khách 3",
             total_price=300000, status="delivered",
@@ -267,13 +268,55 @@ def test_repair_all_repairs_only_stale_entries():
     assert result.exit_code == 0, result.output
     assert "ORD-260624-200" in result.output
     assert "ORD-260624-201" in result.output
-    assert "ORD-260624-202" not in result.output  # no revenue entry → not scanned
-    assert "đã sửa: 1" in result.output
+    assert "ORD-260624-202" in result.output
+    assert "đã sửa: 2" in result.output
     assert "bỏ qua: 1" in result.output
 
     with get_db() as conn:
         ensure_schema(conn)
         assert _revenue_2100_debit(conn, oid1) == 500000.0
+
+
+# ---------------------------------------------------------------------------
+# Batch --all idempotency: second run is all "bỏ qua" (NF2, AC2)
+# ---------------------------------------------------------------------------
+
+
+def test_repair_all_idempotent_second_run_all_skipped():
+    """After --all creates missing entries, a second --all run reports all orders as 'bỏ qua'."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid1 = _insert_order(
+            conn, order_ref="ORD-260624-250", customer_name="Khách I1",
+            total_price=400000, status="delivered", due_date="2026-07-01",
+        )
+        _insert_payment(conn, order_id=oid1, amount=400000, ptype="deposit")
+        oid2 = _insert_order(
+            conn, order_ref="ORD-260624-251", customer_name="Khách I2",
+            total_price=600000, status="completed", due_date="2026-07-02",
+        )
+        _insert_payment(conn, order_id=oid2, amount=600000, ptype="deposit")
+
+    # First run: creates entries for both orders.
+    result1 = _invoke(["repair-order-revenue", "--all"])
+    assert result1.exit_code == 0, result1.output
+    assert "ORD-260624-250" in result1.output
+    assert "ORD-260624-251" in result1.output
+    assert "đã sửa: 2" in result1.output
+
+    # Verify entries were created.
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _revenue_2100_debit(conn, oid1) == 400000.0
+        assert _revenue_2100_debit(conn, oid2) == 600000.0
+
+    # Second run: all orders already correct → skipped.
+    result2 = _invoke(["repair-order-revenue", "--all"])
+    assert result2.exit_code == 0, result2.output
+    assert "ORD-260624-250" in result2.output
+    assert "ORD-260624-251" in result2.output
+    assert "bỏ qua: 2" in result2.output
+    assert "đã sửa: 0" in result2.output
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +447,7 @@ def test_repair_fixes_refund_double_debit():
 # ---------------------------------------------------------------------------
 
 
-def test_process_order_not_applicable_when_no_revenue_entry():
+def test_process_order_creates_when_no_revenue_entry():
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_order(
@@ -413,7 +456,7 @@ def test_process_order_not_applicable_when_no_revenue_entry():
         )
         _insert_payment(conn, order_id=oid, amount=500000, ptype="deposit")
         result = _process_order(conn, oid, dry_run=False)
-    assert result["action"] == "not-applicable"
+    assert result["action"] == "created"
 
 
 def test_process_order_skipped_when_within_tolerance():
@@ -453,6 +496,74 @@ def test_process_order_will_repair_in_dry_run():
 
 
 # ---------------------------------------------------------------------------
+# --since date filtering (Phase 4.2)
+# ---------------------------------------------------------------------------
+
+
+def test_repair_all_with_since_filters_by_due_date():
+    """--since DATE limits scan to orders with due_date >= DATE."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
+        oid1 = _insert_order(
+            conn, order_ref="ORD-260624-600", customer_name="Khách Sau",
+            total_price=700000, status="delivered", due_date="2026-06-01",
+        )
+        _insert_payment(conn, order_id=oid1, amount=500000, ptype="deposit")
+        _insert_revenue_entry(
+            conn, order_id=oid1, deposits_account_id=deposits_acc,
+            revenue_account_id=revenue_acc, amount=700000,
+        )
+        oid2 = _insert_order(
+            conn, order_ref="ORD-260624-601", customer_name="Khách Trước",
+            total_price=700000, status="delivered", due_date="2026-05-01",
+        )
+        _insert_payment(conn, order_id=oid2, amount=500000, ptype="deposit")
+        _insert_revenue_entry(
+            conn, order_id=oid2, deposits_account_id=deposits_acc,
+            revenue_account_id=revenue_acc, amount=700000,
+        )
+
+    result = _invoke(["repair-order-revenue", "--all", "--since", "2026-06-01"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-260624-600" in result.output
+    assert "ORD-260624-601" not in result.output
+    assert "đã sửa: 1" in result.output
+    assert "bỏ qua: 0" in result.output
+
+
+def test_repair_all_with_since_includes_orders_without_revenue_entry():
+    """--since scan includes orders with no revenue entry (created action)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid1 = _insert_order(
+            conn, order_ref="ORD-260624-610", customer_name="Khách Mới",
+            total_price=300000, status="delivered", due_date="2026-07-01",
+        )
+        _insert_payment(conn, order_id=oid1, amount=300000, ptype="deposit")
+        oid2 = _insert_order(
+            conn, order_ref="ORD-260624-611", customer_name="Khách Cũ",
+            total_price=300000, status="delivered", due_date="2026-05-01",
+        )
+        _insert_payment(conn, order_id=oid2, amount=300000, ptype="deposit")
+
+    result = _invoke(["repair-order-revenue", "--all", "--since", "2026-06-01"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-260624-610" in result.output
+    assert "ORD-260624-611" not in result.output
+    assert "đã tạo" in result.output
+    assert "đã sửa: 1" in result.output
+
+
+def test_since_rejected_without_all():
+    """--since without --all is an error."""
+    result = _invoke(["repair-order-revenue", "--order-id", "1", "--since", "2026-06-01"])
+    assert result.exit_code != 0
+    assert "chỉ dùng với --all" in result.output
+
+
+# ---------------------------------------------------------------------------
 # VN amount formatting
 # ---------------------------------------------------------------------------
 
@@ -464,3 +575,118 @@ def test_vn_amount_formatting():
     assert _vn_amount(500000) == "500.000"
     assert _vn_amount(1500000) == "1.500.000"
     assert _vn_amount(-200000) == "-200.000"
+
+
+# ---------------------------------------------------------------------------
+# check-revenue-gaps (Phase 4.3)
+# ---------------------------------------------------------------------------
+
+
+def test_check_revenue_gaps_command_registered():
+    result = _invoke(["check-revenue-gaps", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "chỉ đọc" in result.output.lower()
+
+
+def test_check_revenue_gaps_finds_missing_entries():
+    with get_db() as conn:
+        ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
+        oid1 = _insert_order(
+            conn, order_ref="ORD-260624-700", customer_name="Khách G1",
+            total_price=500000, status="delivered", due_date="2026-07-01",
+        )
+        _insert_payment(conn, order_id=oid1, amount=500000, ptype="deposit")
+        oid2 = _insert_order(
+            conn, order_ref="ORD-260624-701", customer_name="Khách G2",
+            total_price=300000, status="completed", due_date="2026-07-02",
+        )
+        _insert_payment(conn, order_id=oid2, amount=300000, ptype="deposit")
+        oid3 = _insert_order(
+            conn, order_ref="ORD-260624-702", customer_name="Khách OK",
+            total_price=400000, status="delivered", due_date="2026-07-03",
+        )
+        _insert_payment(conn, order_id=oid3, amount=400000, ptype="deposit")
+        _insert_revenue_entry(
+            conn, order_id=oid3, deposits_account_id=deposits_acc,
+            revenue_account_id=revenue_acc, amount=400000,
+        )
+
+    result = _invoke(["check-revenue-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-260624-700" in result.output
+    assert "ORD-260624-701" in result.output
+    assert "ORD-260624-702" not in result.output
+    assert "Tổng: 2" in result.output
+
+
+def test_check_revenue_gaps_read_only_no_mutation():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid1 = _insert_order(
+            conn, order_ref="ORD-260624-710", customer_name="Khách RO",
+            total_price=500000, status="delivered", due_date="2026-07-10",
+        )
+        _insert_payment(conn, order_id=oid1, amount=500000, ptype="deposit")
+
+    # Count rows before
+    with get_db() as conn:
+        ensure_schema(conn)
+        je_before = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        jl_before = conn.execute("SELECT COUNT(*) AS c FROM journal_lines").fetchone()["c"]
+        pt_before = conn.execute("SELECT COUNT(*) AS c FROM payment_transactions").fetchone()["c"]
+        o_before = conn.execute("SELECT COUNT(*) AS c FROM orders").fetchone()["c"]
+
+    result = _invoke(["check-revenue-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-260624-710" in result.output
+    assert "thiếu bút toán doanh thu" in result.output
+
+    # Count rows after — must be identical
+    with get_db() as conn:
+        ensure_schema(conn)
+        je_after = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        jl_after = conn.execute("SELECT COUNT(*) AS c FROM journal_lines").fetchone()["c"]
+        pt_after = conn.execute("SELECT COUNT(*) AS c FROM payment_transactions").fetchone()["c"]
+        o_after = conn.execute("SELECT COUNT(*) AS c FROM orders").fetchone()["c"]
+
+    assert je_before == je_after
+    assert jl_before == jl_after
+    assert pt_before == pt_after
+    assert o_before == o_after
+
+
+def test_check_revenue_gaps_empty_when_all_have_entries():
+    with get_db() as conn:
+        ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
+        oid1 = _insert_order(
+            conn, order_ref="ORD-260624-720", customer_name="Khách All",
+            total_price=500000, status="delivered",
+        )
+        _insert_payment(conn, order_id=oid1, amount=500000, ptype="deposit")
+        _insert_revenue_entry(
+            conn, order_id=oid1, deposits_account_id=deposits_acc,
+            revenue_account_id=revenue_acc, amount=500000,
+        )
+
+    result = _invoke(["check-revenue-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "không có đơn hàng nào" in result.output
+
+
+def test_check_revenue_gaps_ignores_non_delivered_orders():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid1 = _insert_order(
+            conn, order_ref="ORD-260624-730", customer_name="Khách New",
+            total_price=500000, status="new",
+        )
+        _insert_payment(conn, order_id=oid1, amount=500000, ptype="deposit")
+
+    result = _invoke(["check-revenue-gaps"])
+    assert result.exit_code == 0, result.output
+    assert "ORD-260624-730" not in result.output
+    assert "không có đơn hàng nào" in result.output

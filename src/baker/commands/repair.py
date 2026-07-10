@@ -23,9 +23,13 @@ Modes:
 - ``--dry-run``       — show what would change without mutating the database
   (works with both ``--order-id`` and ``--all``)
 
-Only delivered/completed orders are considered. Orders without a revenue entry
-(or with an accounts-receivable entry that has no 2100 debit) are reported as
-"không áp dụng" (not applicable).
+Only delivered/completed orders are considered. Orders without a revenue
+entry (or with an accounts-receivable entry that has no 2100 debit) are now
+created (action ``"created"`` / ``"will-create"`` in dry-run) instead of being
+reported as "không áp dụng". Use ``--since DATE`` to scope ``--all`` repairs
+to orders with ``due_date >= DATE`` (requires ``--all``). The companion
+``check-revenue-gaps`` command provides a read-only scan of orders missing
+revenue entries.
 
 All user-facing labels are in Vietnamese (VN label policy). Exit code is 0 on
 success and 1 on error; errors are written to stderr only — following the
@@ -105,20 +109,37 @@ def _process_order(conn, order_id: int, *, dry_run: bool) -> dict:
     """Evaluate and optionally repair one order's revenue entry.
 
     Returns a result dict with keys: order_id, order_ref, old_debit, net_deposits,
-    action (one of 'repaired', 'skipped', 'not-applicable', 'locked', 'will-repair').
+    action (one of 'repaired', 'skipped', 'not-applicable', 'locked', 'will-repair',
+    'created', 'will-create').
     """
     order_ref = _order_ref(conn, order_id)
     entry_id, old_debit = _order_revenue_2100_debit(conn, order_id)
     net = PaymentTransaction.total_paid_net(conn, order_id)
 
     if entry_id is None:
-        # No revenue entry with a 2100 debit — nothing to repair.
+        if net <= 0:
+            return {
+                "order_id": order_id,
+                "order_ref": order_ref,
+                "old_debit": old_debit,
+                "net_deposits": net,
+                "action": "not-applicable",
+            }
+        if dry_run:
+            return {
+                "order_id": order_id,
+                "order_ref": order_ref,
+                "old_debit": old_debit,
+                "net_deposits": net,
+                "action": "will-create",
+            }
+        _sync_delivered_order_journal(conn, order_id, order_ref)
         return {
             "order_id": order_id,
             "order_ref": order_ref,
             "old_debit": old_debit,
             "net_deposits": net,
-            "action": "not-applicable",
+            "action": "created",
         }
 
     mismatch = abs(old_debit - net)
@@ -167,6 +188,8 @@ _ACTION_LABELS = {
     "not-applicable": "không áp dụng",
     "locked": "khoá",
     "will-repair": "sẽ sửa",
+    "created": "đã tạo",
+    "will-create": "sẽ tạo",
     "backfilled": "đã sửa",
     "will-backfill": "sẽ sửa",
 }
@@ -374,8 +397,9 @@ def _print_cogs_report(results, *, dry_run):
 @click.option("--all", "repair_all", is_flag=True, default=False, help="Sửa tất cả đơn đã giao có bút toán lệch.")
 @click.option("--cogs", "repair_cogs", is_flag=True, default=False, help="Sửa/bổ sung bút toán giá vốn (COGS) thay vì doanh thu.")
 @click.option("--force", "force_cogs", is_flag=True, default=False, help="Tính lại toàn bộ cost_at_sale (không chỉ dòng = 0). Chỉ dùng với --cogs.")
+@click.option("--since", "since_date", type=str, default=None, help="Chỉ xử lý đơn có ngày giao từ DATE trở đi (YYYY-MM-DD). Chỉ dùng với --all.")
 @click.option("--dry-run", is_flag=True, default=False, help="Xem trước thay đổi, không ghi vào CSDL.")
-def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, dry_run):
+def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, since_date, dry_run):
     """Sửa bút toán doanh thu đơn hàng bị lệch (nợ 2100 ≠ cọc thực tế).
 
     Với ``--cogs``, sửa/bổ sung bút toán giá vốn (COGS) cho đơn đã giao:
@@ -393,6 +417,9 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, dry_
     if force_cogs and not repair_cogs:
         click.echo("--force chỉ dùng với --cogs.", err=True)
         raise SystemExit(1)
+    if since_date and not repair_all:
+        click.echo("--since chỉ dùng với --all.", err=True)
+        raise SystemExit(1)
 
     try:
         with get_db() as conn:
@@ -401,20 +428,17 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, dry_
                     conn, order_id=order_id, repair_all=repair_all, dry_run=dry_run, force=force_cogs
                 )
             elif repair_all:
-                rows = conn.execute(
-                    f"""
-                    SELECT DISTINCT je.source_id AS order_id
-                    FROM journal_entries je
-                    JOIN journal_lines jl ON jl.journal_entry_id = je.id
-                    JOIN accounts a ON a.id = jl.account_id
-                    JOIN orders o ON o.id = je.source_id
-                    WHERE je.source_type = 'order'
-                      AND a.code = ?
-                      AND o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
-                    ORDER BY je.source_id ASC
-                    """,
-                    [CUSTOMER_DEPOSITS_CODE, *DELIVERED_STATUSES],
-                ).fetchall()
+                sql = f"""
+                    SELECT o.id AS order_id
+                    FROM orders o
+                    WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
+                """
+                params = list(DELIVERED_STATUSES)
+                if since_date:
+                    sql += " AND o.due_date >= ?"
+                    params.append(since_date)
+                sql += " ORDER BY o.id ASC"
+                rows = conn.execute(sql, params).fetchall()
                 order_ids = [int(r["order_id"]) for r in rows]
                 results = [
                     _process_order(conn, oid, dry_run=dry_run) for oid in order_ids
@@ -457,16 +481,18 @@ def repair_order_revenue_cmd(order_id, repair_all, repair_cogs, force_cogs, dry_
     click.echo("-" * 68)
 
     repaired = sum(1 for r in results if r["action"] == "repaired")
+    created = sum(1 for r in results if r["action"] == "created")
     will_repair = sum(1 for r in results if r["action"] == "will-repair")
+    will_create = sum(1 for r in results if r["action"] == "will-create")
     skipped = sum(1 for r in results if r["action"] == "skipped")
     not_applicable = sum(1 for r in results if r["action"] == "not-applicable")
     locked = sum(1 for r in results if r["action"] == "locked")
 
     parts = []
     if dry_run:
-        parts.append(f"sẽ sửa: {will_repair}")
+        parts.append(f"sẽ sửa: {will_repair + will_create}")
     else:
-        parts.append(f"đã sửa: {repaired}")
+        parts.append(f"đã sửa: {repaired + created}")
     parts.append(f"bỏ qua: {skipped}")
     parts.append(f"không áp dụng: {not_applicable}")
     if locked:
@@ -654,3 +680,57 @@ def repair_tien_rut_gap_cmd(order_id, repair_all, dry_run):
         )
     click.echo("-" * 68)
     click.echo(f"Tổng: {len(results)} đơn cần sửa khoảng trống tiền rút")
+
+
+# ---------------------------------------------------------------------------
+# ``baker check-revenue-gaps`` — DG-229 Phase 4.3 read-only gap detection
+# (FR3, NFR3, AC3)
+# ---------------------------------------------------------------------------
+
+
+@click.command("check-revenue-gaps")
+def check_revenue_gaps_cmd():
+    """Kiểm tra đơn hàng đã giao/hoàn thành thiếu bút toán doanh thu (chỉ đọc)."""
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT o.id, o.order_ref, o.due_date, o.status, o.total_price
+                FROM orders o
+                WHERE o.status IN ({",".join("?" * len(DELIVERED_STATUSES))})
+                  AND NOT EXISTS (
+                      SELECT 1 FROM journal_entries je
+                      WHERE je.source_type = 'order' AND je.source_id = o.id
+                  )
+                ORDER BY o.id ASC
+                """,
+                list(DELIVERED_STATUSES),
+            ).fetchall()
+    except Exception:  # noqa: BLE001 — top-level CLI guard
+        logger.exception("Check revenue gaps CLI error")
+        click.echo(
+            "Lỗi khi kiểm tra khoảng trống doanh thu. Xem log máy chủ để biết chi tiết.",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    if not rows:
+        click.echo("(không có đơn hàng nào thiếu bút toán doanh thu)")
+        return
+
+    click.echo("Kiểm tra khoảng trống doanh thu đơn hàng")
+    click.echo("=" * 40)
+    click.echo("")
+    click.echo(
+        f"{'Mã đơn':<20}{'Ngày giao':>12}{'Tổng tiền':>14}{'Trạng thái':<14}"
+    )
+    click.echo("-" * 60)
+    for r in rows:
+        click.echo(
+            f"{r['order_ref'][:19]:<20}"
+            f"{r['due_date'] or '':>12}"
+            f"{_vn_amount(r['total_price']):>14}"
+            f"{r['status']:<14}"
+        )
+    click.echo("-" * 60)
+    click.echo(f"Tổng: {len(rows)} đơn thiếu bút toán doanh thu")
