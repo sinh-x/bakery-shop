@@ -77,6 +77,20 @@ class BakeryTheme {
     'delivered': Colors.teal,
   };
 
+  // Urgency tier colors (FR-3: critical=red, urgent=amber)
+  static const urgencyTierColors = {
+    'critical': Color(0xFFD32F2F),  // Red
+    'urgent': Color(0xFFFFA000),    // Amber
+    'normal': null,
+  };
+
+  // Urgency tier icons (FR-3)
+  static const urgencyTierIcons = {
+    'critical': Icons.error_outline,
+    'urgent': Icons.warning_amber_rounded,
+    'normal': null,
+  };
+
   // Status icons
   static const statusIcons = {
     'new': Icons.fiber_new,

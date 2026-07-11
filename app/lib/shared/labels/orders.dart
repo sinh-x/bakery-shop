@@ -75,4 +75,11 @@ class OrdersLabels {
   static const walkInCustomerFallback = 'Khách';
   static String photoUploadResult(int success, int total, int failed) =>
       'Tải lên ảnh: $success/$total thành công, $failed lỗi';
+
+  // Urgency tier labels (DG-221 Phase 2)
+  static const urgencyCritical = 'Khẩn cấp';
+  static const urgencyUrgent = 'Gấp';
+  static const urgencyNormal = '';
+  static const urgencyCriticalBadge = 'KHẨN CẤP';
+  static const urgencyUrgentBadge = 'GẤP';
 }

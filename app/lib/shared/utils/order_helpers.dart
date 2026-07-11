@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../widgets/vietnamese_labels.dart';
+import '../labels/orders.dart';
+import '../theme/bakery_theme.dart';
 
 /// Shared order/work-item helper functions.
 /// Eliminates duplication across OrderCard, CakeQueueCard, DeliveryOrderCard.
@@ -54,6 +55,31 @@ bool isDueWithin2Hours(String? dueDate, String? dueTime) {
     debugPrintStack(stackTrace: stackTrace);
   }
   return false;
+}
+
+/// Returns urgency tier color from backend-computed [urgency] field.
+/// Uses `BakeryTheme.urgencyTierColors` as single source of truth.
+Color? urgencyTierColor(String? urgency) {
+  if (urgency == null || urgency == 'normal') return null;
+  return BakeryTheme.urgencyTierColors[urgency];
+}
+
+/// Returns urgency tier icon data from backend-computed [urgency] field.
+IconData? urgencyTierIcon(String? urgency) {
+  if (urgency == null || urgency == 'normal') return null;
+  return BakeryTheme.urgencyTierIcons[urgency];
+}
+
+/// Returns urgency tier label from backend-computed [urgency] field.
+String urgencyTierLabel(String? urgency) {
+  switch (urgency) {
+    case 'critical':
+      return OrdersLabels.urgencyCriticalBadge;
+    case 'urgent':
+      return OrdersLabels.urgencyUrgentBadge;
+    default:
+      return '';
+  }
 }
 
 /// Returns delivery icon based on delivery type.

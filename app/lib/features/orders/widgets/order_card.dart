@@ -121,13 +121,14 @@ class OrderCard extends ConsumerWidget {
         ? '$baseUrl/api/photos/${cakePhoto.photoHash}.jpg'
         : null;
 
-    final urgencyColor = urgencyBorderColor(order.dueDate);
-    final dueSoon = isDueWithin2Hours(order.dueDate, order.dueTime);
+    final tierColor = urgencyTierColor(order.urgency);
+    final tierIcon = urgencyTierIcon(order.urgency);
+    final tierLabel = urgencyTierLabel(order.urgency);
 
-    // Build left border decoration
+    // Build left border decoration using backend urgency tier
     final borderSides = <BorderSide>[];
-    if (urgencyColor != null) {
-      borderSides.add(BorderSide(color: urgencyColor, width: 4));
+    if (tierColor != null) {
+      borderSides.add(BorderSide(color: tierColor, width: 4));
     }
     if (borderSides.isEmpty) {
       borderSides.add(const BorderSide(color: Colors.transparent, width: 4));
@@ -155,7 +156,7 @@ class OrderCard extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Customer name + delivery icon (own line, above everything) ──
+              // ── Customer name + delivery icon + urgency badge ──
               Row(
                 children: [
                   Icon(
@@ -174,6 +175,34 @@ class OrderCard extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (tierColor != null && tierLabel.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: tierColor.withAlpha(25),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: tierColor.withAlpha(100)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (tierIcon != null) ...[
+                            Icon(tierIcon, size: 12, color: tierColor),
+                            const SizedBox(width: 3),
+                          ],
+                          Text(
+                            tierLabel,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: tierColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
               // ── Photo badge + thumbnail (below name row) ──
@@ -379,27 +408,25 @@ class OrderCard extends ConsumerWidget {
                 Row(
                   children: [
                     Icon(
-                      dueSoon ? Icons.warning_amber_rounded : Icons.schedule,
+                      tierIcon ?? Icons.schedule,
                       size: 14,
-                      color: dueSoon
-                          ? Colors.orange
-                          : (urgencyColor ?? theme.colorScheme.outline),
+                      color: tierColor ?? theme.colorScheme.outline,
                     ),
                     const SizedBox(width: 4),
-                    if (dueSoon)
+                    if (tierColor != null)
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withAlpha(25),
+                          color: tierColor.withAlpha(25),
                           borderRadius: BorderRadius.circular(4),
                           border:
-                              Border.all(color: Colors.orange.withAlpha(80)),
+                              Border.all(color: tierColor.withAlpha(80)),
                         ),
                         child: Text(
                           _formatDue(order.dueDate, order.dueTime),
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: Colors.orange,
+                            color: tierColor,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -408,10 +435,7 @@ class OrderCard extends ConsumerWidget {
                       Text(
                         _formatDue(order.dueDate, order.dueTime),
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color:
-                              urgencyColor ?? theme.colorScheme.outline,
-                          fontWeight:
-                              urgencyColor != null ? FontWeight.bold : null,
+                          color: theme.colorScheme.outline,
                         ),
                       ),
                     const SizedBox(width: 12),
