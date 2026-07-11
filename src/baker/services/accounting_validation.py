@@ -490,6 +490,9 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
                     "SELECT id FROM products WHERE product_code = ?", (pid_str,)
                 ).fetchone()
                 if prod_row is None:
+                    unit_price = i["unit_price"]
+                    if unit_price is not None:
+                        expected += round(float(unit_price) * 0.3, 2) * int(i["quantity"] or 0)
                     continue
                 pid = int(prod_row["id"])
             unit_price = i["unit_price"]
