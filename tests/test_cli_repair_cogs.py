@@ -623,3 +623,280 @@ def _order_id_by_ref(conn, order_ref):
         "SELECT id FROM orders WHERE order_ref = ?", (order_ref,)
     ).fetchone()
     return int(row["id"])
+
+
+# ---------------------------------------------------------------------------
+# --force flag: re-resolve ALL items (not just zero-cost ones) — DG-233 Phase 3
+# (FR3, AC3, AC7, AC9)
+# ---------------------------------------------------------------------------
+
+
+def test_force_cogs_resolves_nonzero_cost_at_sale():
+    """--force re-resolves items with existing non-zero cost_at_sale.
+
+    Item has cost_at_sale=25000 (stale, e.g. old baseline), but
+    resolve_product_cost with unit_price=100000 returns 30000 (30%).
+    Without --force the entry is skipped; with --force it is repaired.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        cogs_acc = _account_id(conn, "5900")
+        inv_acc = _account_id(conn, "1300")
+        oid, _pid = _seed_delivered_order_with_product(
+            conn, order_ref="ORD-FORCE-100", unit_price=100000, base_price=100000,
+            cost_at_sale=25000,
+        )
+        # Stale COGS entry matching the old cost_at_sale (25000), but expected
+        # after re-resolution is 30000 (100000 * 0.30).
+        _insert_cogs_entry(
+            conn, order_id=oid, cogs_account_id=cogs_acc,
+            inventory_account_id=inv_acc, amount=25000, order_ref="ORD-FORCE-100",
+        )
+        assert _cogs_5900_debit(conn, oid) == 25000.0
+
+    # Without --force: cost_at_sale=25000 is non-zero → preserved → skipped.
+    r_skip = _invoke(
+        ["repair-order-revenue", "--cogs", "--order-id", str(oid)]
+    )
+    assert r_skip.exit_code == 0, r_skip.output
+    assert "bỏ qua: 1" in r_skip.output
+    assert "đã sửa: 0" in r_skip.output
+
+    # With --force: re-resolves → 30000 → detects mismatch → repairs.
+    r_fix = _invoke(
+        ["repair-order-revenue", "--cogs", "--order-id", str(oid), "--force"]
+    )
+    assert r_fix.exit_code == 0, r_fix.output
+    assert "đã sửa: 1" in r_fix.output
+    assert "30.000" in r_fix.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _cogs_5900_debit(conn, oid) == 30000.0
+        row = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE order_id = ?", (oid,)
+        ).fetchone()
+        assert float(row["cost_at_sale"]) == 30000.0
+
+
+def test_force_cogs_all_idempotent_second_run_all_skipped():
+    """--cogs --all --force idempotency: second run all skipped (AC7)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cogs_acc = _account_id(conn, "5900")
+        inv_acc = _account_id(conn, "1300")
+        # Two orders with stale non-zero cost_at_sale.
+        oid1, _ = _seed_delivered_order_with_product(
+            conn, order_ref="ORD-FORCE-200", unit_price=200000, base_price=100000,
+            cost_at_sale=25000,
+        )
+        _insert_cogs_entry(
+            conn, order_id=oid1, cogs_account_id=cogs_acc,
+            inventory_account_id=inv_acc, amount=25000, order_ref="ORD-FORCE-200",
+        )
+        oid2, _ = _seed_delivered_order_with_product(
+            conn, order_ref="ORD-FORCE-201", unit_price=500000, base_price=100000,
+            cost_at_sale=50000,
+        )
+        _insert_cogs_entry(
+            conn, order_id=oid2, cogs_account_id=cogs_acc,
+            inventory_account_id=inv_acc, amount=50000, order_ref="ORD-FORCE-201",
+        )
+
+    # First run: both should be repaired (25000→60000, 50000→150000).
+    r1 = _invoke(["repair-order-revenue", "--cogs", "--all", "--force"])
+    assert r1.exit_code == 0, r1.output
+    assert "ORD-FORCE-200" in r1.output
+    assert "ORD-FORCE-201" in r1.output
+    assert "đã sửa: 2" in r1.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _cogs_5900_debit(conn, oid1) == 60000.0
+        assert _cogs_5900_debit(conn, oid2) == 150000.0
+
+    # Second run: idempotent → all skipped.
+    r2 = _invoke(["repair-order-revenue", "--cogs", "--all", "--force"])
+    assert r2.exit_code == 0, r2.output
+    assert "đã sửa: 0" in r2.output
+    assert "bỏ qua: 2" in r2.output
+
+
+def test_force_cogs_dry_run_does_not_mutate():
+    """--cogs --force --dry-run shows planned actions without mutating."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cogs_acc = _account_id(conn, "5900")
+        inv_acc = _account_id(conn, "1300")
+        oid, _ = _seed_delivered_order_with_product(
+            conn, order_ref="ORD-FORCE-300", unit_price=100000, base_price=100000,
+            cost_at_sale=25000,
+        )
+        _insert_cogs_entry(
+            conn, order_id=oid, cogs_account_id=cogs_acc,
+            inventory_account_id=inv_acc, amount=25000, order_ref="ORD-FORCE-300",
+        )
+        assert _cogs_5900_debit(conn, oid) == 25000.0
+
+    result = _invoke(
+        ["repair-order-revenue", "--cogs", "--order-id", str(oid),
+         "--force", "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "sẽ sửa" in result.output
+    assert "đã sửa" not in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Entry unchanged.
+        assert _cogs_5900_debit(conn, oid) == 25000.0
+        # cost_at_sale unchanged (dry-run must not write back).
+        row = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE order_id = ?", (oid,)
+        ).fetchone()
+        assert float(row["cost_at_sale"]) == 25000.0
+
+
+def test_force_cogs_requires_cogs_flag():
+    """--force without --cogs is rejected with a VN error message."""
+    result = _invoke(
+        ["repair-order-revenue", "--all", "--force"]
+    )
+    assert result.exit_code == 1
+    assert "--cogs" in result.output
+
+
+def test_force_cogs_backfills_missing_entry_like_normal_mode():
+    """--force on a missing COGS entry backfills it (same as non-force mode)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid, _pid = _seed_delivered_order_with_product(
+            conn, order_ref="ORD-FORCE-400", unit_price=200000, base_price=100000,
+        )
+        assert _cogs_5900_debit(conn, oid) == 0.0
+
+    result = _invoke(
+        ["repair-order-revenue", "--cogs", "--order-id", str(oid), "--force"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _cogs_5900_debit(conn, oid) == 60000.0
+
+
+def test_force_cogs_resolves_multiple_items_with_mixed_costs():
+    """--force re-resolves all items in a multi-item order.
+
+    Order with two items: one with cost_at_sale=25000 (stale, expected 30000),
+    one with cost_at_sale=0 (needs resolution → 60000). Total stale entry
+    debits 25000; after --force total should be 30000 + 60000 = 90000.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        cogs_acc = _account_id(conn, "5900")
+        inv_acc = _account_id(conn, "1300")
+        pid1 = _insert_product(conn, base_price=100000, name="SP-F1")
+        pid2 = _insert_product(conn, base_price=100000, name="SP-F2")
+        oid = _insert_order(
+            conn, order_ref="ORD-FORCE-500", total_price=300000,
+        )
+        _add_order_item(
+            conn, order_id=oid, product_id=pid1, qty=1,
+            unit_price=100000, cost_at_sale=25000,
+        )
+        _add_order_item(
+            conn, order_id=oid, product_id=pid2, qty=2,
+            unit_price=200000, cost_at_sale=0,
+        )
+        _insert_cogs_entry(
+            conn, order_id=oid, cogs_account_id=cogs_acc,
+            inventory_account_id=inv_acc, amount=25000, order_ref="ORD-FORCE-500",
+        )
+
+    result = _invoke(
+        ["repair-order-revenue", "--cogs", "--order-id", str(oid), "--force"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Item 1: 100000 * 0.30 = 30000; Item 2: 200000 * 0.30 * 2 qty = 120000.
+        # Total = 150000.
+        assert _cogs_5900_debit(conn, oid) == 150000.0
+        # Both cost_at_sale values updated.
+        rows = conn.execute(
+            "SELECT cost_at_sale, product_id FROM order_items WHERE order_id = ? ORDER BY product_id",
+            (oid,),
+        ).fetchall()
+        assert float(rows[0]["cost_at_sale"]) == 30000.0
+        assert float(rows[1]["cost_at_sale"]) == 60000.0
+
+
+# ---------------------------------------------------------------------------
+# Service-level: _process_cogs_order with force=True
+# ---------------------------------------------------------------------------
+
+
+def test_process_cogs_order_force_repairs_nonzero_cost():
+    """_process_cogs_order(force=True) repairs when non-zero cost_at_sale is stale."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cogs_acc = _account_id(conn, "5900")
+        inv_acc = _account_id(conn, "1300")
+        oid, _ = _seed_delivered_order_with_product(
+            conn, order_ref="ORD-FORCE-600", unit_price=100000, base_price=100000,
+            cost_at_sale=25000,
+        )
+        _insert_cogs_entry(
+            conn, order_id=oid, cogs_account_id=cogs_acc,
+            inventory_account_id=inv_acc, amount=25000, order_ref="ORD-FORCE-600",
+        )
+
+        # Without force: skips (cost_at_sale=25000 > 0 → preserved).
+        r_no_force = _process_cogs_order(conn, oid, dry_run=False, force=False)
+        assert r_no_force["action"] == "skipped"
+
+        # With force: repairs (re-resolves → 30000, detects mismatch).
+        r_force = _process_cogs_order(conn, oid, dry_run=False, force=True)
+        assert r_force["action"] == "repaired"
+        assert r_force["expected_cogs"] == 30000.0
+
+
+def test_process_cogs_order_force_will_repair_in_dry_run():
+    """_process_cogs_order(force=True, dry_run=True) reports will-repair."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cogs_acc = _account_id(conn, "5900")
+        inv_acc = _account_id(conn, "1300")
+        oid, _ = _seed_delivered_order_with_product(
+            conn, order_ref="ORD-FORCE-700", unit_price=100000, base_price=100000,
+            cost_at_sale=25000,
+        )
+        _insert_cogs_entry(
+            conn, order_id=oid, cogs_account_id=cogs_acc,
+            inventory_account_id=inv_acc, amount=25000, order_ref="ORD-FORCE-700",
+        )
+        result = _process_cogs_order(conn, oid, dry_run=True, force=True)
+    assert result["action"] == "will-repair"
+    assert result["expected_cogs"] == 30000.0
+
+
+def test_process_cogs_order_force_skipped_when_already_correct():
+    """_process_cogs_order(force=True) still skips when entry matches resolved cost."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cogs_acc = _account_id(conn, "5900")
+        inv_acc = _account_id(conn, "1300")
+        oid, _ = _seed_delivered_order_with_product(
+            conn, order_ref="ORD-FORCE-800", unit_price=100000, base_price=100000,
+            cost_at_sale=30000,
+        )
+        _insert_cogs_entry(
+            conn, order_id=oid, cogs_account_id=cogs_acc,
+            inventory_account_id=inv_acc, amount=30000, order_ref="ORD-FORCE-800",
+        )
+        result = _process_cogs_order(conn, oid, dry_run=False, force=True)
+    assert result["action"] == "skipped"
