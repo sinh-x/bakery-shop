@@ -147,7 +147,6 @@ def test_repair_single_order_fixes_stale_entry():
         ensure_schema(conn)
         deposits_acc = _account_id(conn, "2100")
         revenue_acc = _account_id(conn, "4100")
-        # Order: 500k deposit, but revenue entry debits 2100 for 700k (stale).
         oid = _insert_order(
             conn, order_ref="ORD-260624-100", customer_name="Anh K",
             total_price=700000, status="delivered",
@@ -690,3 +689,227 @@ def test_check_revenue_gaps_ignores_non_delivered_orders():
     assert result.exit_code == 0, result.output
     assert "ORD-260624-730" not in result.output
     assert "không có đơn hàng nào" in result.output
+
+
+# ---------------------------------------------------------------------------
+# ``baker repair-payment-journal`` CLI tests — DG-233 Phase 1
+# ---------------------------------------------------------------------------
+
+
+def _payment_journal_entry(conn, txn_id: int):
+    """Return the journal entry id for a payment transaction, or None."""
+    row = conn.execute(
+        "SELECT id FROM journal_entries "
+        "WHERE source_type = 'payment_transaction' AND source_id = ?",
+        (txn_id,),
+    ).fetchone()
+    return int(row["id"]) if row else None
+
+
+def _payment_journal_lines(conn, txn_id: int):
+    """Return count of journal lines for a payment transaction's journal entry."""
+    row = conn.execute(
+        "SELECT COUNT(*) AS c FROM journal_lines jl "
+        "JOIN journal_entries je ON je.id = jl.journal_entry_id "
+        "WHERE je.source_type = 'payment_transaction' AND je.source_id = ?",
+        (txn_id,),
+    ).fetchone()
+    return int(row["c"]) if row else 0
+
+
+# Registration & help
+
+
+def test_payment_journal_command_registered():
+    result = _invoke(["repair-payment-journal", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--order-id" in result.output
+    assert "--all" in result.output
+    assert "--dry-run" in result.output
+
+
+def test_payment_journal_requires_one_mode():
+    result = _invoke(["repair-payment-journal"])
+    assert result.exit_code != 0
+    assert "Cần chỉ định" in result.output
+
+
+def test_payment_journal_rejects_both_modes():
+    result = _invoke(["repair-payment-journal", "--order-id", "1", "--all"])
+    assert result.exit_code != 0
+    assert "cùng lúc" in result.output
+
+
+# --all backfill
+
+
+def test_payment_journal_all_backfills_missing():
+    with get_db() as conn:
+        ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
+        oid = _insert_order(
+            conn, order_ref="ORD-260707-052", customer_name="Khách Backfill",
+            total_price=500000, status="delivered",
+        )
+        txn1 = _insert_payment(conn, order_id=oid, amount=300000, ptype="deposit")
+        txn2 = _insert_payment(conn, order_id=oid, amount=50000, ptype="refund")
+        # No journal entries created — simulating missing backfill state
+
+    result = _invoke(["repair-payment-journal", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+    assert "#" + str(txn1) in result.output
+    assert "#" + str(txn2) in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _payment_journal_entry(conn, txn1) is not None
+        assert _payment_journal_entry(conn, txn2) is not None
+        assert _payment_journal_lines(conn, txn1) > 0
+        assert _payment_journal_lines(conn, txn2) > 0
+
+
+def test_payment_journal_all_idempotent():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260707-053", customer_name="Khách Idem",
+            total_price=500000, status="delivered",
+        )
+        _insert_payment(conn, order_id=oid, amount=300000, ptype="deposit")
+
+    # First run — backfills
+    result1 = _invoke(["repair-payment-journal", "--all"])
+    assert result1.exit_code == 0, result1.output
+    assert "đã sửa" in result1.output
+
+    # Second run — idempotent, no transactions need backfill
+    result2 = _invoke(["repair-payment-journal", "--all"])
+    assert result2.exit_code == 0, result2.output
+    assert "không có giao dịch thanh toán nào cần bổ sung" in result2.output
+
+
+# --order-id backfill
+
+
+def test_payment_journal_order_id_backfills():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260707-054", customer_name="Khách Single",
+            total_price=500000, status="delivered",
+        )
+        txn1 = _insert_payment(conn, order_id=oid, amount=200000, ptype="deposit")
+        _insert_payment(conn, order_id=oid, amount=100000, ptype="refund")
+
+    result = _invoke(["repair-payment-journal", "--order-id", str(oid)])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+    # Both payment transactions for this order should be backfilled
+    assert "#" + str(txn1) in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Check all transactions for that order got journal entries
+        txns = conn.execute(
+            "SELECT id FROM payment_transactions WHERE order_id = ?", (oid,)
+        ).fetchall()
+        for t in txns:
+            assert _payment_journal_entry(conn, int(t["id"])) is not None
+
+
+# --dry-run
+
+
+def test_payment_journal_dry_run_does_not_mutate():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260707-055", customer_name="Khách Dry",
+            total_price=500000, status="delivered",
+        )
+        txn1 = _insert_payment(conn, order_id=oid, amount=300000, ptype="deposit")
+        je_before = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        jl_before = conn.execute("SELECT COUNT(*) AS c FROM journal_lines").fetchone()["c"]
+
+    result = _invoke(["repair-payment-journal", "--all", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "sẽ sửa" in result.output
+    assert "#" + str(txn1) in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        je_after = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        jl_after = conn.execute("SELECT COUNT(*) AS c FROM journal_lines").fetchone()["c"]
+        entry_id = _payment_journal_entry(conn, txn1)
+
+    assert je_before == je_after
+    assert jl_before == jl_after
+    assert entry_id is None
+
+
+def test_payment_journal_dry_run_order_id():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260707-056", customer_name="Khách Dry2",
+            total_price=500000, status="delivered",
+        )
+        txn1 = _insert_payment(conn, order_id=oid, amount=300000, ptype="deposit")
+
+    result = _invoke(["repair-payment-journal", "--order-id", str(oid), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "sẽ sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _payment_journal_entry(conn, txn1) is None
+
+
+# Invalidated transactions are skipped
+
+
+def test_payment_journal_skips_invalidated():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260707-057", customer_name="Khách Inv",
+            total_price=500000, status="delivered",
+        )
+        # Create a payment transaction then invalidate it
+        txn1 = _insert_payment(conn, order_id=oid, amount=300000, ptype="deposit")
+        conn.execute(
+            "UPDATE payment_transactions SET invalidated_at = datetime('now') WHERE id = ?",
+            (txn1,),
+        )
+
+    result = _invoke(["repair-payment-journal", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "không có giao dịch thanh toán nào cần bổ sung" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _payment_journal_entry(conn, txn1) is None
+
+
+# Vietnamese labels
+
+
+def test_payment_journal_vn_labels():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260707-058", customer_name="Khách VN",
+            total_price=500000, status="delivered",
+        )
+        _insert_payment(conn, order_id=oid, amount=300000, ptype="deposit")
+
+    result = _invoke(["repair-payment-journal", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "Bổ sung bút toán nhật ký thanh toán" in result.output
+    assert "Mã GD" in result.output
+    assert "Số tiền" in result.output
+    assert "Loại" in result.output
+    assert "Hành động" in result.output
+    assert "đã sửa" in result.output
