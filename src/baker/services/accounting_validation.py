@@ -486,7 +486,12 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
             try:
                 pid = int(pid_str)
             except (TypeError, ValueError):
-                continue
+                prod_row = conn.execute(
+                    "SELECT id FROM products WHERE product_code = ?", (pid_str,)
+                ).fetchone()
+                if prod_row is None:
+                    continue
+                pid = int(prod_row["id"])
             unit_price = i["unit_price"]
             selling_price = float(unit_price) if unit_price is not None else None
             cost = resolve_product_cost(conn, pid, selling_price=selling_price)
