@@ -59,10 +59,12 @@ from baker.services.journal_sync import (
     _order_cogs_entry,
     _reconcile_order_revenue_entry,
     _reverse_journal_entry,
+    _sync_cancelled_order_journal,
     _sync_delivered_order_journal,
     _sync_expense_journal,
     _sync_order_cogs_entry,
     _sync_payment_journal,
+    run_journal_sync,
 )
 
 logger = logging.getLogger(__name__)
@@ -1605,3 +1607,136 @@ def repair_deposit_balance_cmd(order_id, repair_all, dry_run):
         return
 
     _print_deposit_balance_report(results, dry_run=dry_run)
+
+
+# ---------------------------------------------------------------------------
+# ``baker repair-cancelled-orders`` — DG-236 Phase 3 cancelled order journal repair
+# (FR9, NFR4, NFR5, AC5)
+# ---------------------------------------------------------------------------
+
+
+def _cancelled_orders_with_orphaned_entries(conn, order_id=None):
+    """Return cancelled orders with associated payment_transactions.
+
+    Matches the design spec query: cancelled orders joined with their
+    payment_transactions so orders with no transactions are naturally
+    excluded.
+    """
+    sql = """
+        SELECT DISTINCT o.id, o.order_ref
+        FROM orders o
+        JOIN payment_transactions pt ON pt.order_id = o.id
+        WHERE o.status = 'cancelled'
+    """
+    params = []
+    if order_id is not None:
+        sql += " AND o.id = ?"
+        params.append(order_id)
+    sql += " ORDER BY o.id ASC"
+    return conn.execute(sql, params).fetchall()
+
+
+def _process_cancelled_order(conn, order_id, order_ref, *, dry_run):
+    """Reverse or delete all journal entries for one cancelled order.
+
+    Calls :func:`_sync_cancelled_order_journal` (Phase 1) wrapped in
+    :func:`run_journal_sync` for NFR1 non-blocking behavior. Idempotent:
+    entries already cleaned up are a no-op.
+    """
+    if dry_run:
+        return {
+            "order_id": order_id,
+            "order_ref": order_ref,
+            "action": "will-repair",
+        }
+
+    run_journal_sync(
+        _sync_cancelled_order_journal,
+        conn,
+        order_id,
+        log_label=f"cancel-journal-{order_id}",
+    )
+    return {
+        "order_id": order_id,
+        "order_ref": order_ref,
+        "action": "repaired",
+    }
+
+
+def _print_cancelled_orders_report(results, *, dry_run):
+    """Print the cancelled orders repair report table and summary."""
+    click.echo("Sửa bút toán đơn hàng đã huỷ")
+    click.echo("=" * 40)
+    click.echo("")
+    click.echo(f"{'Mã đơn':<20}{'Hành động':<16}")
+    click.echo("-" * 36)
+    for r in results:
+        click.echo(
+            f"{r['order_ref'][:19]:<20}"
+            f"{_ACTION_LABELS.get(r['action'], r['action']):<16}"
+        )
+    click.echo("-" * 36)
+
+    repaired = sum(1 for r in results if r["action"] == "repaired")
+    will_repair = sum(1 for r in results if r["action"] == "will-repair")
+
+    parts = []
+    if dry_run:
+        parts.append(f"sẽ sửa: {will_repair}")
+    else:
+        parts.append(f"đã sửa: {repaired}")
+    click.echo(f"Tổng: {len(results)} đơn  |  " + ", ".join(parts))
+
+
+@click.command("repair-cancelled-orders")
+@click.option("--order-id", "order_id", type=int, default=None, help="ID đơn hàng đã huỷ cần sửa.")
+@click.option("--all", "repair_all", is_flag=True, default=False, help="Sửa tất cả đơn đã huỷ có bút toán mồ côi.")
+@click.option("--dry-run", is_flag=True, default=False, help="Xem trước thay đổi, không ghi vào CSDL.")
+def repair_cancelled_orders_cmd(order_id, repair_all, dry_run):
+    """Xoá/hoàn nhập bút toán mồ côi của đơn hàng đã huỷ.
+
+    Tìm đơn hàng ở trạng thái ``cancelled`` có giao dịch thanh toán và
+    đảo ngược (locked) hoặc xoá (unlocked) toàn bộ bút toán nhật ký
+    liên quan: payment_transaction, order (doanh thu + tien_rut),
+    order_cogs, order_shipping_release. Lệnh idempotent: chạy lần hai
+    sẽ không tìm thấy bút toán nào cần sửa.
+    """
+    if order_id is None and not repair_all:
+        click.echo("Cần chỉ định --order-id <id> hoặc --all.", err=True)
+        raise SystemExit(1)
+    if order_id is not None and repair_all:
+        click.echo("Không thể dùng --order-id và --all cùng lúc.", err=True)
+        raise SystemExit(1)
+
+    try:
+        with get_db() as conn:
+            if repair_all:
+                orders = _cancelled_orders_with_orphaned_entries(conn)
+            else:
+                orders = _cancelled_orders_with_orphaned_entries(conn, order_id=order_id)
+
+            results = []
+            for o in orders:
+                results.append(
+                    _process_cancelled_order(
+                        conn,
+                        int(o["id"]),
+                        o["order_ref"],
+                        dry_run=dry_run,
+                    )
+                )
+            if not dry_run:
+                conn.commit()
+    except Exception:  # noqa: BLE001 — top-level CLI guard
+        logger.exception("Repair cancelled-orders CLI error")
+        click.echo(
+            "Lỗi khi sửa bút toán đơn đã huỷ. Xem log máy chủ để biết chi tiết.",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    if not results:
+        click.echo("(không có đơn hàng đã huỷ nào có bút toán mồ côi)")
+        return
+
+    _print_cancelled_orders_report(results, dry_run=dry_run)
