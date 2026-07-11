@@ -1493,7 +1493,7 @@ CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(parent_id);
 CREATE TABLE IF NOT EXISTS journal_entries (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     description TEXT NOT NULL,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now', 'utc')),
     source_type TEXT NOT NULL,
     source_id   INTEGER,
     locked_at   TEXT,
