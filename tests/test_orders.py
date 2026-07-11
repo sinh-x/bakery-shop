@@ -146,12 +146,6 @@ def _account_id(conn, code: str) -> int:
     )
 
 
-def _create_test_accounts(conn):
-    """Seed minimal accounts needed for accounting tests.
-    COA already seeded by ensure_schema; this ensures codes exist.
-    """
-
-
 def _create_test_order(conn):
     cursor = conn.execute(
         "INSERT INTO orders (order_ref, customer_name, items, total_price, status, created_at) "
@@ -161,9 +155,9 @@ def _create_test_order(conn):
 
 
 def _make_entry(conn, description, source_type, source_id, lines, txn_date=None):
-    from baker.db.schema import _insert_journal_entry
+    from baker.models.journal_entry import JournalEntry
 
-    return _insert_journal_entry(
+    return JournalEntry.create_with_lines(
         conn, description=description, source_type=source_type,
         source_id=source_id, lines=lines, transaction_date=txn_date,
     )
@@ -182,7 +176,6 @@ def test_accounting_query_direct_source_types():
     """FR2: Journal entries queried across all order-linked source_types."""
     with get_db() as conn:
         ensure_schema(conn)
-        _create_test_accounts(conn)
         order_id = _create_test_order(conn)
 
         aid = _account_id
@@ -204,7 +197,6 @@ def test_accounting_query_payment_transactions():
     """FR3+FR4: Payment transaction entries included via JOIN, invalidated excluded."""
     with get_db() as conn:
         ensure_schema(conn)
-        _create_test_accounts(conn)
         order_id = _create_test_order(conn)
 
         txn_id = _make_payment_txn(conn, order_id)
@@ -223,7 +215,6 @@ def test_accounting_query_excludes_invalidated_payments():
     """FR4: Invalidated (soft-deleted) payment transactions excluded."""
     with get_db() as conn:
         ensure_schema(conn)
-        _create_test_accounts(conn)
         order_id = _create_test_order(conn)
 
         valid_txn = _make_payment_txn(conn, order_id, 30)
@@ -251,7 +242,6 @@ def test_accounting_query_empty():
     """FR7 edge: No journal entries returns empty list."""
     with get_db() as conn:
         ensure_schema(conn)
-        _create_test_accounts(conn)
         order_id = _create_test_order(conn)
 
         from baker.models.journal_entry import JournalEntry
@@ -264,7 +254,6 @@ def test_accounting_query_line_account_info():
     """FR5: Each line includes account code, name, debit, credit, description."""
     with get_db() as conn:
         ensure_schema(conn)
-        _create_test_accounts(conn)
         order_id = _create_test_order(conn)
 
         aid = _account_id
@@ -295,7 +284,6 @@ def test_cli_accounting_flag_activates_display():
     """AC1/FR1: --accounting flag triggers accounting display after order detail."""
     with get_db() as conn:
         ensure_schema(conn)
-        _create_test_accounts(conn)
         order_id = _create_test_order(conn)
         aid = _account_id
         _make_entry(conn, "Revenue", "order", order_id, [(aid(conn, "4100"), 100, 0, ""), (aid(conn, "1100"), 0, 100, "")])
@@ -303,7 +291,7 @@ def test_cli_accounting_flag_activates_display():
     result = runner.invoke(app, ["order", "show", "ACC-TEST-001", "--accounting"])
     assert result.exit_code == 0
     assert "Accounting Test" in result.output
-    assert "Kế toán" in result.output
+    assert "Tóm tắt theo tài khoản" in result.output
     assert "Bút toán" in result.output
 
 
@@ -311,7 +299,6 @@ def test_cli_accounting_all_source_types():
     """AC2, AC3, AC4 / FR2, FR3: All order-linked source types appear."""
     with get_db() as conn:
         ensure_schema(conn)
-        _create_test_accounts(conn)
         order_id = _create_test_order(conn)
 
         aid = _account_id
@@ -334,7 +321,6 @@ def test_cli_accounting_excludes_invalidated_payments():
     """FR4: Invalidated payment transactions excluded from CLI output."""
     with get_db() as conn:
         ensure_schema(conn)
-        _create_test_accounts(conn)
         order_id = _create_test_order(conn)
 
         valid_txn = _make_payment_txn(conn, order_id, 30)
@@ -360,7 +346,6 @@ def test_cli_accounting_line_details():
     """AC5/FR5: Lines display account code, VN name, debit, credit, description."""
     with get_db() as conn:
         ensure_schema(conn)
-        _create_test_accounts(conn)
         order_id = _create_test_order(conn)
         aid = _account_id
         _make_entry(conn, "Revenue", "order", order_id,
@@ -377,10 +362,9 @@ def test_cli_accounting_line_details():
 
 
 def test_cli_accounting_summary_section():
-    """FR6: Summary shows totals grouped by source_type."""
+    """FR6: Summary shows totals per account across all entries."""
     with get_db() as conn:
         ensure_schema(conn)
-        _create_test_accounts(conn)
         order_id = _create_test_order(conn)
         aid = _account_id
         _make_entry(conn, "Revenue", "order", order_id, [(aid(conn, "4100"), 100, 0, ""), (aid(conn, "1100"), 0, 100, "")])
@@ -388,9 +372,10 @@ def test_cli_accounting_summary_section():
 
     result = runner.invoke(app, ["order", "show", "ACC-TEST-001", "--accounting"])
     assert result.exit_code == 0
-    assert "Kế toán" in result.output
-    assert "Doanh thu" in result.output
-    assert "Giá vốn" in result.output
+    assert "Tóm tắt theo tài khoản" in result.output
+    assert "4100" in result.output
+    assert "5900" in result.output
+    assert "1100" in result.output
     assert "Tổng" in result.output
 
 
@@ -398,7 +383,6 @@ def test_cli_accounting_empty_no_entries():
     """AC6/FR7: Empty order shows 'Không có bút toán kế toán cho đơn hàng này'."""
     with get_db() as conn:
         ensure_schema(conn)
-        _create_test_accounts(conn)
         _create_test_order(conn)
 
     result = runner.invoke(app, ["order", "show", "ACC-TEST-001", "--accounting"])
@@ -411,7 +395,6 @@ def test_cli_accounting_backward_compatible():
     """AC7/FR8: Without --accounting, output unchanged (no accounting display)."""
     with get_db() as conn:
         ensure_schema(conn)
-        _create_test_accounts(conn)
         order_id = _create_test_order(conn)
         aid = _account_id
         _make_entry(conn, "Revenue", "order", order_id, [(aid(conn, "4100"), 100, 0, ""), (aid(conn, "1100"), 0, 100, "")])
@@ -427,7 +410,6 @@ def test_cli_accounting_read_only():
     """NFR1: --accounting does not modify the database (no new rows)."""
     with get_db() as conn:
         ensure_schema(conn)
-        _create_test_accounts(conn)
         order_id = _create_test_order(conn)
         aid = _account_id
         _make_entry(conn, "Revenue", "order", order_id, [(aid(conn, "4100"), 100, 0, ""), (aid(conn, "1100"), 0, 100, "")])

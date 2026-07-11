@@ -114,6 +114,32 @@ class JournalEntry:
         }
 
     @staticmethod
+    def create_with_lines(conn, description, source_type, source_id, lines, transaction_date=None):
+        """Create a journal entry with lines using the internal factory.
+
+        Args:
+            conn: Database connection.
+            description: Entry description.
+            source_type: Source type (e.g. 'order', 'order_cogs').
+            source_id: ID of the source record.
+            lines: List of (account_id, debit, credit, line_description) tuples.
+            transaction_date: Optional business date. Defaults to current time.
+
+        Returns:
+            The new journal entry ID.
+        """
+        from baker.db.schema import _insert_journal_entry
+
+        return _insert_journal_entry(
+            conn,
+            description=description,
+            source_type=source_type,
+            source_id=source_id,
+            lines=lines,
+            transaction_date=transaction_date,
+        )
+
+    @staticmethod
     def list_by_date_range(
         conn, since: Optional[str] = None, until: Optional[str] = None
     ) -> list["JournalEntry"]:

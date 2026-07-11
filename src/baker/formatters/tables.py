@@ -240,27 +240,38 @@ def print_order_accounting(entries):
         "payment_transaction": "Thanh toán",
     }
 
-    group_totals: dict[str, dict] = {}
+    account_totals: dict[str, dict] = {}
     for entry in entries:
-        group = source_type_groups.get(entry["source_type"], entry["source_type"])
-        if group not in group_totals:
-            group_totals[group] = {"debit": 0.0, "credit": 0.0}
         for line in entry["lines"]:
-            group_totals[group]["debit"] += line["debit"]
-            group_totals[group]["credit"] += line["credit"]
+            code = line["account_code"]
+            if code not in account_totals:
+                account_totals[code] = {"name": line["account_name"], "debit": 0.0, "credit": 0.0}
+            account_totals[code]["debit"] += line["debit"]
+            account_totals[code]["credit"] += line["credit"]
 
-    summary_lines = []
+    summary_table = Table(title="Tóm tắt theo tài khoản", show_lines=False, padding=(0, 1), box=None)
+    summary_table.add_column("Mã TK", style="bold", width=8)
+    summary_table.add_column("Tên tài khoản", width=22)
+    summary_table.add_column("Nợ", justify="right", width=12)
+    summary_table.add_column("Có", justify="right", width=12)
+
     grand_debit = grand_credit = 0.0
-    for group_key in ["Doanh thu", "Giá vốn", "Ship", "Thanh toán"]:
-        if group_key in group_totals:
-            d = group_totals[group_key]["debit"]
-            c = group_totals[group_key]["credit"]
-            summary_lines.append(f"  {group_key:>12}: Nợ {d:>10.2f} / Có {c:>10.2f}")
-            grand_debit += d
-            grand_credit += c
-    summary_lines.append(f"  {'Tổng':>12}: Nợ {grand_debit:>10.2f} / Có {grand_credit:>10.2f}")
+    for code in sorted(account_totals):
+        d = account_totals[code]["debit"]
+        c = account_totals[code]["credit"]
+        summary_table.add_row(
+            code,
+            account_totals[code]["name"],
+            f"{d:,.0f}" if d else "",
+            f"{c:,.0f}" if c else "",
+        )
+        grand_debit += d
+        grand_credit += c
+    summary_table.add_row("", "", "", "")
+    summary_table.add_row("Tổng", "", f"{grand_debit:,.0f}", f"{grand_credit:,.0f}")
 
-    console.print(Panel("\n".join(summary_lines), title="Kế toán", border_style="cyan"))
+    console.print()
+    console.print(summary_table)
     console.print()
 
     for entry in entries:
