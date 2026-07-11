@@ -913,3 +913,229 @@ def test_payment_journal_vn_labels():
     assert "Loại" in result.output
     assert "Hành động" in result.output
     assert "đã sửa" in result.output
+
+
+# ---------------------------------------------------------------------------
+# ``baker repair-ar-entries`` — DG-233 Phase 2 tests
+# (FR2, AC8, AC7, AC9)
+# ---------------------------------------------------------------------------
+
+
+def _ar_entry_exists(conn, order_id: int):
+    """Return True if the order has a source_type='order' journal entry."""
+    row = conn.execute(
+        "SELECT id FROM journal_entries "
+        "WHERE source_type = 'order' AND source_id = ?",
+        (order_id,),
+    ).fetchone()
+    return row is not None
+
+
+def _ar_entry_has_ar_desc(conn, order_id: int):
+    """Return True if the order has an AR-prefix journal entry."""
+    row = conn.execute(
+        "SELECT id FROM journal_entries "
+        "WHERE source_type = 'order' AND source_id = ? AND description LIKE ?",
+        (order_id, "Order revenue (AR):%"),
+    ).fetchone()
+    return row is not None
+
+
+# Registration & help
+
+
+def test_ar_entries_command_registered():
+    result = _invoke(["repair-ar-entries", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--order-id" in result.output
+    assert "--all" in result.output
+    assert "--dry-run" in result.output
+
+
+def test_ar_entries_requires_one_mode():
+    result = _invoke(["repair-ar-entries"])
+    assert result.exit_code != 0
+    assert "Cần chỉ định" in result.output
+
+
+def test_ar_entries_rejects_both_modes():
+    result = _invoke(["repair-ar-entries", "--order-id", "1", "--all"])
+    assert result.exit_code != 0
+    assert "cùng lúc" in result.output
+
+
+# --all backfill
+
+
+def test_ar_entries_all_backfills_missing():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260707-009", customer_name="Khách AR",
+            total_price=500000, status="delivered",
+        )
+        # No payment_transactions — zero deposit order
+
+    result = _invoke(["repair-ar-entries", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+    assert "ORD-260707-009" in result.output
+    assert "500.000" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _ar_entry_exists(conn, oid)
+        assert _ar_entry_has_ar_desc(conn, oid)
+
+
+def test_ar_entries_all_idempotent():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260707-010", customer_name="Khách Idem",
+            total_price=500000, status="delivered",
+        )
+
+    # First run — creates AR entry
+    result1 = _invoke(["repair-ar-entries", "--all"])
+    assert result1.exit_code == 0, result1.output
+    assert "đã sửa" in result1.output
+
+    # Second run — idempotent, no orders need backfill
+    result2 = _invoke(["repair-ar-entries", "--all"])
+    assert result2.exit_code == 0, result2.output
+    assert "không có đơn hàng nào cần bổ sung bút toán công nợ" in result2.output
+
+
+# --order-id backfill
+
+
+def test_ar_entries_order_id_backfills():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260707-011", customer_name="Khách Single",
+            total_price=200000, status="delivered",
+        )
+
+    result = _invoke(["repair-ar-entries", "--order-id", str(oid)])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+    assert "ORD-260707-011" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _ar_entry_exists(conn, oid)
+        assert _ar_entry_has_ar_desc(conn, oid)
+
+
+def test_ar_entries_order_id_not_applicable_when_not_zero_deposit():
+    """Order with deposits should not be picked up (handled by repair-order-revenue)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260707-012", customer_name="Khách Skip",
+            total_price=500000, status="delivered",
+        )
+        _insert_payment(conn, order_id=oid, amount=300000, ptype="deposit")
+
+    result = _invoke(["repair-ar-entries", "--order-id", str(oid)])
+    assert result.exit_code == 0, result.output
+    assert "không có đơn hàng nào cần bổ sung bút toán công nợ" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert not _ar_entry_exists(conn, oid)
+
+
+# --dry-run
+
+
+def test_ar_entries_dry_run_does_not_mutate():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260707-013", customer_name="Khách Dry",
+            total_price=300000, status="delivered",
+        )
+        je_before = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+
+    result = _invoke(["repair-ar-entries", "--all", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "sẽ sửa" in result.output
+    assert "ORD-260707-013" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        je_after = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        assert not _ar_entry_exists(conn, oid)
+
+    assert je_before == je_after
+
+
+def test_ar_entries_dry_run_order_id():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260707-014", customer_name="Khách Dry2",
+            total_price=300000, status="delivered",
+        )
+
+    result = _invoke(["repair-ar-entries", "--order-id", str(oid), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "sẽ sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert not _ar_entry_exists(conn, oid)
+
+
+# Non-delivered orders are skipped
+
+
+def test_ar_entries_skips_non_delivered():
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order(
+            conn, order_ref="ORD-260707-015", customer_name="Khách Draft",
+            total_price=500000, status="draft",
+        )
+
+    result = _invoke(["repair-ar-entries", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "không có đơn hàng nào cần bổ sung bút toán công nợ" in result.output
+
+
+def test_ar_entries_skips_deposit_orders():
+    """Orders with deposits but no revenue entry should not be picked up."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260707-016", customer_name="Khách Dep",
+            total_price=500000, status="delivered",
+        )
+        _insert_payment(conn, order_id=oid, amount=400000, ptype="deposit")
+
+    result = _invoke(["repair-ar-entries", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "không có đơn hàng nào cần bổ sung bút toán công nợ" in result.output
+
+
+# Vietnamese labels
+
+
+def test_ar_entries_vn_labels():
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order(
+            conn, order_ref="ORD-260707-017", customer_name="Khách VN",
+            total_price=500000, status="delivered",
+        )
+
+    result = _invoke(["repair-ar-entries", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "Bổ sung bút toán công nợ phải thu (AR)" in result.output
+    assert "Mã đơn" in result.output
+    assert "Tổng tiền" in result.output
+    assert "Hành động" in result.output
+    assert "đã sửa" in result.output

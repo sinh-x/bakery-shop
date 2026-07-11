@@ -40,7 +40,7 @@ from baker.commands.server_log import server_log_cmd
 from baker.commands.validate import validate_accounts_cmd
 from baker.commands.report import report_cmd
 from baker.commands.pipeline import pipeline_cmd
-from baker.commands.repair import repair_order_revenue_cmd, repair_tien_rut_gap_cmd, check_revenue_gaps_cmd, repair_payment_journal_cmd
+from baker.commands.repair import repair_order_revenue_cmd, repair_tien_rut_gap_cmd, check_revenue_gaps_cmd, repair_payment_journal_cmd, repair_ar_entries_cmd
 
 app.add_command(log_cmd, "log")
 app.add_command(organize_cmd, "organize")
@@ -63,3 +63,4 @@ app.add_command(repair_order_revenue_cmd, "repair-order-revenue")
 app.add_command(repair_tien_rut_gap_cmd, "repair-tien-rut-gap")
 app.add_command(check_revenue_gaps_cmd, "check-revenue-gaps")
 app.add_command(repair_payment_journal_cmd, "repair-payment-journal")
+app.add_command(repair_ar_entries_cmd, "repair-ar-entries")
