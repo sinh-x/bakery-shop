@@ -1,15 +1,16 @@
 """``baker repair-order-revenue`` CLI command (DG-190 Phase 4.2).
 
 Repairs stale order-revenue journal entries whose 2100 (Customer Deposits)
-debit no longer matches the order's current net deposits
-(deposits − outflows (refund only); ``PaymentTransaction.total_paid_net``).
-``tien_rut`` is a deposit inflow (DG-198 reversal), not an outflow, so it is
-not subtracted from the deposit balance.
+debit no longer matches the order's effective deposit balance
+(``total_paid_net − total_tien_rut``). ``tien_rut`` journals to 2400
+(Tien Rut Held) and is returned separately at delivery, so it must be
+excluded from the 2100 debit comparison — matching the logic in
+:func:`_reconcile_order_revenue_entry`.
 
 The repair deletes the existing ``source_type = 'order'`` journal entry and
 re-runs :func:`_sync_delivered_order_journal` to recreate it with the current
 net deposit amounts. The command is idempotent: entries already within 0.005 of
-the net deposits are skipped.
+the effective deposit balance are skipped.
 
 Modes:
 - ``--order-id <id>`` — repair a single order
@@ -114,7 +115,15 @@ def _process_order(conn, order_id: int, *, dry_run: bool) -> dict:
     """
     order_ref = _order_ref(conn, order_id)
     entry_id, old_debit = _order_revenue_2100_debit(conn, order_id)
-    net = PaymentTransaction.total_paid_net(conn, order_id)
+    net_deposits = PaymentTransaction.total_paid_net(conn, order_id)
+    tien_rut = PaymentTransaction.total_tien_rut(conn, order_id)
+    shipping_held = 0.0
+    order_row = conn.execute(
+        "SELECT delivery_type, shipping_fee FROM orders WHERE id = ?", (order_id,)
+    ).fetchone()
+    if order_row and (order_row["delivery_type"] or "pickup") == "bus" and float(order_row["shipping_fee"] or 0) > 0:
+        shipping_held = float(order_row["shipping_fee"])
+    net = max(0.0, net_deposits - tien_rut - shipping_held)
 
     if entry_id is None:
         if net <= 0:
