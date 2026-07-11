@@ -469,7 +469,7 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
 
         items = conn.execute(
             """
-            SELECT oi.product_id, oi.product_name, oi.quantity
+            SELECT oi.product_id, oi.product_name, oi.quantity, oi.unit_price
             FROM order_items oi
             WHERE oi.order_id = ?
               AND oi.is_extra = 0
@@ -487,7 +487,9 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
                 pid = int(pid_str)
             except (TypeError, ValueError):
                 continue
-            cost = resolve_product_cost(conn, pid)
+            unit_price = i["unit_price"]
+            selling_price = float(unit_price) if unit_price is not None else None
+            cost = resolve_product_cost(conn, pid, selling_price=selling_price)
             qty = int(i["quantity"] or 0)
             expected += cost * qty
 
