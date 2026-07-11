@@ -1139,3 +1139,360 @@ def test_ar_entries_vn_labels():
     assert "Tổng tiền" in result.output
     assert "Hành động" in result.output
     assert "đã sửa" in result.output
+
+
+# ---------------------------------------------------------------------------
+# ``baker repair-inventory`` CLI tests — DG-233 Phase 4
+# (FR4, AC4, AC7, AC9)
+# ---------------------------------------------------------------------------
+
+
+def _insert_expense_event(conn, *, category: str, amount: float = 10000,
+                          payment_source: str = "Shop tiền mặt") -> int:
+    """Insert an expense event and return its id."""
+    import json
+
+    data = json.dumps({
+        "amount_vnd": amount,
+        "category": category,
+        "payment_source": payment_source,
+    })
+    cur = conn.execute(
+        "INSERT INTO events (type, summary, data) VALUES (?, ?, ?)",
+        ("expense", f"Chi phí: {category}", data),
+    )
+    return int(cur.lastrowid)
+
+
+def _expense_journal_entry(conn, event_id: int):
+    """Return the journal entry id for an expense event, or None."""
+    row = conn.execute(
+        "SELECT id FROM journal_entries "
+        "WHERE source_type = 'expense' AND source_id = ?",
+        (event_id,),
+    ).fetchone()
+    return int(row["id"]) if row else None
+
+
+# Registration & help
+
+
+def test_inventory_command_registered():
+    result = _invoke(["repair-inventory", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--event-id" in result.output
+    assert "--all" in result.output
+    assert "--dry-run" in result.output
+
+
+def test_inventory_requires_one_mode():
+    result = _invoke(["repair-inventory"])
+    assert result.exit_code != 0
+    assert "Cần chỉ định" in result.output
+
+
+def test_inventory_rejects_both_modes():
+    result = _invoke(["repair-inventory", "--event-id", "1", "--all"])
+    assert result.exit_code != 0
+    assert "cùng lúc" in result.output
+
+
+# --all backfill
+
+
+def test_inventory_all_backfills_missing():
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid1 = _insert_expense_event(
+            conn, category="Nguyên liệu", amount=500000,
+            payment_source="Shop tiền mặt",
+        )
+        eid2 = _insert_expense_event(
+            conn, category="Bao bì", amount=200000,
+            payment_source="Shop tiền mặt",
+        )
+        assert eid1 > 0
+        assert eid2 > 0
+
+    result = _invoke(["repair-inventory", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+    assert "#" + str(eid1) in result.output
+    assert "#" + str(eid2) in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _expense_journal_entry(conn, eid1) is not None
+        assert _expense_journal_entry(conn, eid2) is not None
+
+
+def test_inventory_all_idempotent():
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_expense_event(
+            conn, category="Nguyên liệu", amount=300000,
+            payment_source="Shop tiền mặt",
+        )
+
+    result1 = _invoke(["repair-inventory", "--all"])
+    assert result1.exit_code == 0, result1.output
+    assert "đã sửa" in result1.output
+
+    result2 = _invoke(["repair-inventory", "--all"])
+    assert result2.exit_code == 0, result2.output
+    assert "không có sự kiện nhập kho nào cần bổ sung" in result2.output
+
+
+# --event-id backfill
+
+
+def test_inventory_event_id_backfills():
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, category="Nguyên liệu", amount=150000,
+            payment_source="Shop tiền mặt",
+        )
+
+    result = _invoke(["repair-inventory", "--event-id", str(eid)])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+    assert "#" + str(eid) in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _expense_journal_entry(conn, eid) is not None
+
+
+def test_inventory_event_id_not_found_is_noop():
+    result = _invoke(["repair-inventory", "--event-id", "99999"])
+    assert result.exit_code == 0, result.output
+    assert "không có sự kiện nhập kho nào cần bổ sung" in result.output
+
+
+# --dry-run
+
+
+def test_inventory_dry_run_does_not_mutate():
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, category="Bao bì", amount=250000,
+            payment_source="Shop tiền mặt",
+        )
+        je_before = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries"
+        ).fetchone()["c"]
+
+    result = _invoke(["repair-inventory", "--all", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "sẽ sửa" in result.output
+    assert "#" + str(eid) in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        je_after = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries"
+        ).fetchone()["c"]
+        assert _expense_journal_entry(conn, eid) is None
+
+    assert je_before == je_after
+
+
+def test_inventory_dry_run_event_id():
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, category="Nguyên liệu", amount=100000,
+            payment_source="Shop tiền mặt",
+        )
+
+    result = _invoke(
+        ["repair-inventory", "--event-id", str(eid), "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "sẽ sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _expense_journal_entry(conn, eid) is None
+
+
+# Non-inventory categories are excluded
+
+
+def test_inventory_excludes_non_inventory_categories():
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, category="Vận chuyển", amount=100000,
+            payment_source="Shop tiền mặt",
+        )
+
+    result = _invoke(["repair-inventory", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "không có sự kiện nhập kho nào cần bổ sung" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _expense_journal_entry(conn, eid) is None
+
+
+def test_inventory_mixed_categories_only_backfills_inventory():
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid1 = _insert_expense_event(
+            conn, category="Nguyên liệu", amount=300000,
+            payment_source="Shop tiền mặt",
+        )
+        eid2 = _insert_expense_event(
+            conn, category="Vận chuyển", amount=50000,
+            payment_source="Shop tiền mặt",
+        )
+
+    result = _invoke(["repair-inventory", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+    assert "#" + str(eid1) in result.output
+    assert "#" + str(eid2) not in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _expense_journal_entry(conn, eid1) is not None
+        assert _expense_journal_entry(conn, eid2) is None
+
+
+# Deleted events are skipped
+
+
+def test_inventory_skips_deleted_events():
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, category="Nguyên liệu", amount=400000,
+            payment_source="Shop tiền mặt",
+        )
+        conn.execute(
+            "UPDATE events SET deleted_at = datetime('now') WHERE id = ?",
+            (eid,),
+        )
+
+    result = _invoke(["repair-inventory", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "không có sự kiện nhập kho nào cần bổ sung" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _expense_journal_entry(conn, eid) is None
+
+
+# Vietnamese labels
+
+
+def test_inventory_vn_labels():
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_expense_event(
+            conn, category="Bao bì", amount=350000,
+            payment_source="Shop tiền mặt",
+        )
+
+    result = _invoke(["repair-inventory", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "Sửa bút toán nhập kho (Hàng tồn kho 1300)" in result.output
+    assert "Mã SK" in result.output
+    assert "Danh mục" in result.output
+    assert "Số tiền" in result.output
+    assert "Hành động" in result.output
+    assert "đã sửa" in result.output
+
+
+# Service-level function tests
+
+
+def test_process_inventory_backfill_service_level():
+    from baker.commands.repair import (
+        _expense_events_needing_inventory_backfill,
+        _process_inventory_backfill,
+    )
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, category="Nguyên liệu", amount=150000,
+            payment_source="Shop tiền mặt",
+        )
+        events = _expense_events_needing_inventory_backfill(conn, event_id=eid)
+        assert len(events) == 1
+        assert events[0]["id"] == eid
+
+        result = _process_inventory_backfill(conn, events[0], dry_run=False)
+        assert result["action"] == "backfilled"
+        assert _expense_journal_entry(conn, eid) is not None
+
+        events_after = _expense_events_needing_inventory_backfill(
+            conn, event_id=eid
+        )
+        assert len(events_after) == 0
+
+
+def test_process_inventory_backfill_dry_run():
+    from baker.commands.repair import (
+        _expense_events_needing_inventory_backfill,
+        _process_inventory_backfill,
+    )
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, category="Bao bì", amount=200000,
+            payment_source="Shop tiền mặt",
+        )
+        events = _expense_events_needing_inventory_backfill(conn, event_id=eid)
+        assert len(events) == 1
+
+        result = _process_inventory_backfill(conn, events[0], dry_run=True)
+        assert result["action"] == "will-backfill"
+        assert _expense_journal_entry(conn, eid) is None
+
+
+# Verify backfill creates correct DR 1300 / CR payment account
+
+
+def test_inventory_backfill_creates_1300_debit():
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, category="Nguyên liệu", amount=500000,
+            payment_source="Shop tiền mặt",
+        )
+
+    _invoke(["repair-inventory", "--all"])
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        entry_id = _expense_journal_entry(conn, eid)
+        assert entry_id is not None
+
+        inv_row = conn.execute(
+            """
+            SELECT jl.debit, jl.credit
+            FROM journal_lines jl
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE jl.journal_entry_id = ? AND a.code = '1300'
+            """,
+            (entry_id,),
+        ).fetchone()
+        assert inv_row is not None
+        assert float(inv_row["debit"]) == 500000.0
+        assert float(inv_row["credit"]) == 0.0
+
+        cr_row = conn.execute(
+            """
+            SELECT jl.debit, jl.credit, a.code
+            FROM journal_lines jl
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE jl.journal_entry_id = ? AND jl.credit > 0
+            """,
+            (entry_id,),
+        ).fetchone()
+        assert cr_row is not None
+        assert float(cr_row["credit"]) == 500000.0
