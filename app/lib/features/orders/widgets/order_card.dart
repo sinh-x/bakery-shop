@@ -10,23 +10,13 @@ import '../../../providers/order_providers.dart';
 import '../../../shared/utils/order_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
+const _pulseDuration = Duration(milliseconds: 1500);
+
 /// Unified OrderCard widget for use across order list, kanban, and dashboard.
 ///
-/// Displays all FR-5 card content items:
-/// - Main product names with prices (non-extra items only)
-/// - Delivery type icon
-/// - customer name + source badge
-/// - due date/time with urgency coloring
-/// - total price
-/// - status chip
-/// - photo thumbnail (first cake photo)
-/// - print status indicator
-/// - notes preview
-///
-/// Also includes:
-/// - Payment badge (FR-2): Đã TT / Cọc / Chưa TT
-/// - Urgency indicators (FR-3): overdue red, due-soon amber, today subtle
-class OrderCard extends ConsumerWidget {
+/// Displays all FR-5 card content items, plus a slow pulse animation on
+/// critical (overdue) order cards (FR-4) at ≤1 pulse/1.5s.
+class OrderCard extends ConsumerStatefulWidget {
   const OrderCard({
     super.key,
     required this.order,
@@ -35,6 +25,53 @@ class OrderCard extends ConsumerWidget {
 
   final Order order;
   final VoidCallback? onTap;
+
+  @override
+  ConsumerState<OrderCard> createState() => _OrderCardState();
+}
+
+class _OrderCardState extends ConsumerState<OrderCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+
+  Order get order => widget.order;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: _pulseDuration,
+    );
+    _pulseAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.92), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 0.92, end: 1.0), weight: 1),
+    ]).animate(CurvedAnimation(
+      parent: _pulseController,
+      curve: Curves.easeInOut,
+    ));
+    if (order.urgency == 'critical') {
+      _pulseController.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(OrderCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (order.urgency == 'critical' && !_pulseController.isAnimating) {
+      _pulseController.repeat();
+    } else if (order.urgency != 'critical' && _pulseController.isAnimating) {
+      _pulseController.stop();
+      _pulseController.value = 1.0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
 
   // ── Payment badge helpers ───────────────────────────────────────────────
 
@@ -96,7 +133,7 @@ class OrderCard extends ConsumerWidget {
   // ── Build ───────────────────────────────────────────────────────────────
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final photosAsync = ref.watch(orderPhotosProvider(order.orderRef));
     final baseUrl = ref.watch(apiBaseUrlProvider);
@@ -143,11 +180,11 @@ class OrderCard extends ConsumerWidget {
         ? '${VN.printStatusPrintedShort}: $printedBy'
         : VN.printStatusPrintedShort;
 
-    return Card(
+    final card = Card(
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onTap,
         child: Container(
           decoration: BoxDecoration(
             border: Border(left: borderSides.first),
@@ -505,5 +542,21 @@ class OrderCard extends ConsumerWidget {
         ),
       ),
     );
+
+    if (order.urgency == 'critical') {
+      return AnimatedBuilder(
+        animation: _pulseAnimation,
+        builder: (context, child) => Transform.scale(
+          scale: _pulseAnimation.value,
+          child: Opacity(
+            opacity: _pulseAnimation.value,
+            child: child,
+          ),
+        ),
+        child: card,
+      );
+    }
+
+    return card;
   }
 }

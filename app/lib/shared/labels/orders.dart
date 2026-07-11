@@ -100,4 +100,10 @@ class OrdersLabels {
   // Urgency badge tooltip (DG-221 Phase 3 — FR-5)
   static String urgencyBadgeTooltip(int count) =>
       '$count đơn hàng khẩn cấp/gấp';
+
+  // In-app alert (DG-221 Phase 4 — FR-7)
+  static const criticalAlertTitle = 'Đơn hàng khẩn cấp mới';
+  static String criticalAlertBody(int count) =>
+      '$count đơn hàng khẩn cấp vừa xuất hiện';
+  static const criticalAlertDismiss = 'Đã hiểu';
 }

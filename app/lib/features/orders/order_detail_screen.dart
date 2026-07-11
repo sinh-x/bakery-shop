@@ -315,8 +315,29 @@ class _OrderDetailBody extends ConsumerStatefulWidget {
 
 class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
   bool _transitioning = false;
+  bool _acknowledgedOnce = false;
 
   Order get order => widget.order;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _acknowledgeIfNeeded();
+    });
+  }
+
+  Future<void> _acknowledgeIfNeeded() async {
+    if (_acknowledgedOnce) return;
+    if (order.acknowledgedAt != null) return;
+    _acknowledgedOnce = true;
+    try {
+      final service = ref.read(orderServiceProvider);
+      await service.acknowledgeOrder(order.orderRef);
+    } catch (_) {
+      // Acknowledge is best-effort — no user-facing error for failure.
+    }
+  }
 
   String _formatDueDisplay(String? date, String? time) {
     if (date == null) return '—';
