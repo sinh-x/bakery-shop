@@ -58,6 +58,7 @@ from baker.services.journal_sync import (
     _is_locked,
     _order_cogs_entry,
     _reconcile_order_revenue_entry,
+    _reverse_journal_entry,
     _sync_delivered_order_journal,
     _sync_expense_journal,
     _sync_order_cogs_entry,
