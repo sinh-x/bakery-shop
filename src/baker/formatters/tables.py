@@ -222,6 +222,81 @@ def print_order_detail(row):
     console.print(Panel("\n".join(lines), title=row["order_ref"], border_style="blue"))
 
 
+def print_order_accounting(entries):
+    """Print accounting journal entries for an order.
+
+    Args:
+        entries: Output from JournalEntry.list_for_order().
+    """
+    if not entries:
+        console.print("  [dim]Không có bút toán kế toán cho đơn hàng này[/dim]")
+        return
+
+    source_type_groups = {
+        "order": "Doanh thu",
+        "order_cogs": "Giá vốn",
+        "order_shipping_hold": "Ship",
+        "order_shipping_release": "Ship",
+        "payment_transaction": "Thanh toán",
+    }
+
+    group_totals: dict[str, dict] = {}
+    for entry in entries:
+        group = source_type_groups.get(entry["source_type"], entry["source_type"])
+        if group not in group_totals:
+            group_totals[group] = {"debit": 0.0, "credit": 0.0}
+        for line in entry["lines"]:
+            group_totals[group]["debit"] += line["debit"]
+            group_totals[group]["credit"] += line["credit"]
+
+    summary_lines = []
+    grand_debit = grand_credit = 0.0
+    for group_key in ["Doanh thu", "Giá vốn", "Ship", "Thanh toán"]:
+        if group_key in group_totals:
+            d = group_totals[group_key]["debit"]
+            c = group_totals[group_key]["credit"]
+            summary_lines.append(f"  {group_key:>12}: Nợ {d:>10.2f} / Có {c:>10.2f}")
+            grand_debit += d
+            grand_credit += c
+    summary_lines.append(f"  {'Tổng':>12}: Nợ {grand_debit:>10.2f} / Có {grand_credit:>10.2f}")
+
+    console.print(Panel("\n".join(summary_lines), title="Kế toán", border_style="cyan"))
+    console.print()
+
+    for entry in entries:
+        entry_lines = []
+        entry_lines.append(
+            f"[bold]Bút toán #{entry['id']}[/bold]  "
+            f"[dim]{entry['description']}[/dim]"
+        )
+        if entry.get("transaction_date"):
+            entry_lines.append(f"  Ngày: {entry['transaction_date']}")
+        entry_lines.append(
+            f"  Nguồn: {source_type_groups.get(entry['source_type'], entry['source_type'])}"
+        )
+        entry_lines.append("")
+
+        table = Table(show_lines=False, padding=(0, 1), box=None)
+        table.add_column("TK", style="bold", width=8)
+        table.add_column("Tên tài khoản", width=22)
+        table.add_column("Nợ", justify="right", width=12)
+        table.add_column("Có", justify="right", width=12)
+        table.add_column("Diễn giải", width=30)
+
+        for line in entry["lines"]:
+            table.add_row(
+                line["account_code"],
+                line["account_name"],
+                f"{line['debit']:.2f}" if line["debit"] else "",
+                f"{line['credit']:.2f}" if line["credit"] else "",
+                line["description"],
+            )
+        entry_lines.append(table)
+
+        console.print(Panel("\n".join(entry_lines), border_style="dim"))
+        console.print()
+
+
 def print_dashboard(orders_due, low_stock, event_counts, total_events, staff_counts=None):
     """Print the daily dashboard."""
     lines = []
