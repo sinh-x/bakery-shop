@@ -890,6 +890,10 @@ def _sync_cancelled_order_journal(conn, order_id: int) -> None:
     if entry_id is not None:
         _replace_order_entry(conn, entry_id, respect_locks=True)
 
+    entry_id = _find_order_entry_by_prefix(conn, order_id, _AR_ENTRY_PREFIX)
+    if entry_id is not None:
+        _replace_order_entry(conn, entry_id, respect_locks=True)
+
     entry_id = _find_order_entry_by_prefix(conn, order_id, _TIEN_RUT_RETURN_PREFIX)
     if entry_id is not None:
         _replace_order_entry(conn, entry_id, respect_locks=True)
