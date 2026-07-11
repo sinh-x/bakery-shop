@@ -28,13 +28,18 @@ def now_utc() -> str:
 def utc_to_local(ts_str: str | None) -> str:
     """Convert a UTC ISO-8601 timestamp string to local time for display.
 
-    Accepts ``YYYY-MM-DDTHH:MM:SSZ`` or ``YYYY-MM-DDTHH:MM:SS``.
-    Returns ``HH:MM DD/MM/YYYY`` in the configured ``TIMEZONE``.
+    Accepts ``YYYY-MM-DDTHH:MM:SSZ`` / ``YYYY-MM-DDTHH:MM:SS`` (full
+    timestamp) or ``YYYY-MM-DD`` (date-only, backward compat).
+    Returns ``HH:MM DD/MM/YYYY`` for full timestamps or ``DD/MM/YYYY``
+    for date-only strings, in the configured ``TIMEZONE``.
     Returns empty string for None/empty input.
     """
     if not ts_str:
         return ""
     try:
+        if "T" not in ts_str and ":" not in ts_str:
+            dt = datetime.strptime(ts_str, "%Y-%m-%d")
+            return dt.strftime("%d/%m/%Y")
         dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
         local_dt = dt.astimezone(TIMEZONE)
         return local_dt.strftime("%H:%M %d/%m/%Y")
