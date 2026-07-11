@@ -22,6 +22,7 @@ import click
 from baker.db.connection import get_db
 from baker.db.schema import CUSTOMER_DEPOSITS_CODE, PAYMENT_OUTFLOW_TYPES, REVENUE_UPDATE_TOLERANCE
 from baker.formatters import format_vnd_amount
+from baker.utils.time import utc_to_local
 
 logger = logging.getLogger(__name__)
 
@@ -326,7 +327,7 @@ def refunds_cmd():
         click.echo(
             f"{r['order_ref'][:19]:<20}{r['customer_name'][:23]:<24}"
             f"{r['type']:<10}{_vn_amount(amount):>16}{r['pt_id']:>8}"
-            f"{(r['created_at'] or '-')[:19]:<20}{r['status']:<14}"
+            f"{utc_to_local(r['created_at']):<20}{r['status']:<14}"
         )
     click.echo("-" * 112)
     click.echo(f"{'TỔNG TIỀN RÚT':<54}{_vn_amount(total):>16}")
@@ -377,7 +378,7 @@ def new_no_deposit_cmd():
         total_price += price
         click.echo(
             f"{r['order_ref'][:19]:<20}{r['customer_name'][:23]:<24}"
-            f"{_vn_amount(price):>16}{(r['created_at'] or '-')[:19]:<20}"
+            f"{_vn_amount(price):>16}{utc_to_local(r['created_at']):<20}"
         )
     click.echo("-" * 80)
     click.echo(f"{'TỔNG GIÁ TRỊ':<44}{_vn_amount(total_price):>16}")

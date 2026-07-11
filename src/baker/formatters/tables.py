@@ -7,6 +7,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from . import format_phone
+from baker.utils.time import utc_to_local
 
 console = Console()
 
@@ -27,7 +28,7 @@ def print_event(row):
     data = json.loads(row["data"]) if row["data"] and row["data"] != "{}" else None
     data_str = f"  {data}" if data else ""
 
-    ts = row["timestamp"][:16]  # trim seconds
+    ts = utc_to_local(row["timestamp"])
     type_color = {
         "note": "white", "production": "green", "sale": "yellow",
         "inventory": "cyan", "expense": "red", "delivery": "blue", "order": "magenta",
@@ -70,7 +71,7 @@ def print_events_table(rows, title="Events"):
         tags = row["tags"] if row["tags"] else ""
         cells = [
             str(row["id"]),
-            row["timestamp"][:16],
+            utc_to_local(row["timestamp"]),
             f"[{color}]{row['type']}[/{color}]",
             row["summary"],
         ]
@@ -217,7 +218,7 @@ def print_order_detail(row):
         lines.append(f"Address: {row['delivery_address']}")
     if row["notes"]:
         lines.append(f"\nNotes: {row['notes']}")
-    lines.append(f"\n[dim]Created: {row['created_at']}  Updated: {row['updated_at']}[/dim]")
+    lines.append(f"\n[dim]Created: {utc_to_local(row['created_at'])}  Updated: {utc_to_local(row['updated_at'])}[/dim]")
 
     console.print(Panel("\n".join(lines), title=row["order_ref"], border_style="blue"))
 
@@ -280,7 +281,7 @@ def print_order_accounting(entries):
             f"[dim]{entry['description']}[/dim]",
         ]
         if entry.get("transaction_date"):
-            header_lines.append(f"  Ngày: {entry['transaction_date']}")
+            header_lines.append(f"  Ngày: {utc_to_local(entry['transaction_date'])}")
         header_lines.append(
             f"  Nguồn: {source_type_groups.get(entry['source_type'], entry['source_type'])}"
         )
