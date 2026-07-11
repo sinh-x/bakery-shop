@@ -1,5 +1,6 @@
 from typing import Optional
 
+from baker.utils.time import now_utc
 
 INITIAL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -1492,7 +1493,7 @@ CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(parent_id);
 CREATE TABLE IF NOT EXISTS journal_entries (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     description TEXT NOT NULL,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now', 'utc')),
     source_type TEXT NOT NULL,
     source_id   INTEGER,
     locked_at   TEXT,
@@ -1709,9 +1710,10 @@ def _insert_journal_entry(
 
     `transaction_date` is the business event date the entry relates to (used
     by reports, API filtering, and journal locks). When ``None``, defaults to
-    the current local time — preserving the historical INSERT-time behavior of
-    ``created_at`` so existing call sites work unchanged during the transition.
-    The audit-only ``created_at`` column still records the actual INSERT time.
+    the current local time.
+    The audit-only ``created_at`` column is set explicitly via
+    ``now_utc()`` — the same pattern used by Event.save(), Order.save(),
+    PaymentTransaction.save(), etc.
     """
     total_debit = sum(d for _, d, _, _ in lines)
     total_credit = sum(c for _, _, c, _ in lines)
@@ -1733,18 +1735,19 @@ def _insert_journal_entry(
     has_col = "transaction_date" in {
         r[1] for r in conn.execute("PRAGMA table_info(journal_entries)").fetchall()
     }
+    now = now_utc()
     if has_col:
         cursor = conn.execute(
             "INSERT INTO journal_entries "
-            "(description, source_type, source_id, transaction_date) "
-            "VALUES (?, ?, ?, ?)",
-            (description, source_type, source_id, transaction_date),
+            "(description, source_type, source_id, transaction_date, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (description, source_type, source_id, transaction_date, now),
         )
     else:
         cursor = conn.execute(
-            "INSERT INTO journal_entries (description, source_type, source_id) "
-            "VALUES (?, ?, ?)",
-            (description, source_type, source_id),
+            "INSERT INTO journal_entries (description, source_type, source_id, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (description, source_type, source_id, now),
         )
     entry_id = int(cursor.lastrowid)
     for account_id, debit, credit, line_desc in lines:
