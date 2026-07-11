@@ -871,21 +871,13 @@ def _replace_order_entry(
 
 
 def _sync_cancelled_order_journal(conn, order_id: int) -> None:
-    """Reverse (locked) or delete (unlocked) all journal entries for a cancelled order.
+    """Reverse (locked) or delete (unlocked) accounting entries for a cancelled order.
 
-    Handles all entry types: payment_transaction, order (revenue + tien rut
-    return), order_cogs, order_shipping_release.
+    Handles revenue, COGS, and shipping release entries — internal accounting
+    entries that can be auto-reversed on cancellation. Payment transaction
+    entries are deliberately excluded: they represent real cash that requires
+    a human decision (refund vs. manual invalidation).
     """
-    txn_rows = conn.execute(
-        "SELECT id FROM payment_transactions "
-        "WHERE order_id = ? AND (invalidated_at IS NULL OR invalidated_at = '')",
-        (order_id,),
-    ).fetchall()
-    for txn_row in txn_rows:
-        entry_id = _find_journal_entry(conn, 'payment_transaction', int(txn_row["id"]))
-        if entry_id is not None:
-            _replace_order_entry(conn, entry_id, respect_locks=True)
-
     entry_id = _find_order_entry_by_prefix(conn, order_id, _REVENUE_ENTRY_PREFIX)
     if entry_id is not None:
         _replace_order_entry(conn, entry_id, respect_locks=True)

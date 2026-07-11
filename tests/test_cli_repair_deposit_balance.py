@@ -257,8 +257,6 @@ def test_repair_deposit_balance_cancelled_order_idempotent():
 def test_repair_delivered_order_negative_balance():
     with get_db() as conn:
         ensure_schema(conn)
-        deposits_acc = _account_id(conn, "2100")
-        revenue_acc = _account_id(conn, "4100")
         oid = _insert_order(
             conn, order_ref="ORD-260710-010", customer_name="Anh N",
             total_price=300000, status="delivered",
@@ -297,8 +295,6 @@ def test_repair_delivered_order_negative_balance():
 def test_repair_delivered_negative_dry_run():
     with get_db() as conn:
         ensure_schema(conn)
-        deposits_acc = _account_id(conn, "2100")
-        revenue_acc = _account_id(conn, "4100")
         oid = _insert_order(
             conn, order_ref="ORD-260710-011", customer_name="Anh D",
             total_price=400000, status="delivered",
@@ -325,8 +321,6 @@ def test_repair_delivered_negative_dry_run():
 def test_repair_delivered_negative_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        deposits_acc = _account_id(conn, "2100")
-        revenue_acc = _account_id(conn, "4100")
         oid = _insert_order(
             conn, order_ref="ORD-260710-012", customer_name="Anh I",
             total_price=250000, status="delivered",
@@ -358,8 +352,6 @@ def test_repair_delivered_negative_idempotent():
 def test_repair_deposit_balance_all_repairs_multiple():
     with get_db() as conn:
         ensure_schema(conn)
-        deposits_acc = _account_id(conn, "2100")
-        revenue_acc = _account_id(conn, "4100")
 
         # Order 1: cancelled with orphaned deposits
         oid1 = _insert_order(
@@ -400,8 +392,6 @@ def test_repair_deposit_balance_all_repairs_multiple():
 def test_repair_deposit_balance_all_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        deposits_acc = _account_id(conn, "2100")
-        revenue_acc = _account_id(conn, "4100")
 
         oid1 = _insert_order(
             conn, order_ref="ORD-260707-A03", customer_name="Khách 3",
@@ -464,8 +454,6 @@ def test_repair_deposit_balance_all_dry_run():
 def test_deposit_balance_correct_order_not_flagged():
     with get_db() as conn:
         ensure_schema(conn)
-        deposits_acc = _account_id(conn, "2100")
-        revenue_acc = _account_id(conn, "4100")
         oid = _insert_order(
             conn, order_ref="ORD-260710-020", customer_name="Anh C",
             total_price=200000, status="delivered",
@@ -550,8 +538,6 @@ def test_process_deposit_balance_cancelled_order():
 def test_process_deposit_balance_delivered_order():
     with get_db() as conn:
         ensure_schema(conn)
-        deposits_acc = _account_id(conn, "2100")
-        revenue_acc = _account_id(conn, "4100")
         oid = _insert_order(
             conn, order_ref="ORD-260710-S02", customer_name="SV Test",
             total_price=400000, status="delivered",
@@ -657,6 +643,40 @@ def _invoke_cancelled(args):
     return runner.invoke(repair_cancelled_orders_cmd, args)
 
 
+def _insert_revenue_entry_direct(
+    conn, *, order_id: int, amount: float,
+) -> int:
+    from baker.db.schema import _insert_journal_entry
+    dep_acc = _ensure_account(conn, "2100", "Customer Deposits")
+    rev_acc = _ensure_account(conn, "4100", "Order Revenue")
+    return _insert_journal_entry(
+        conn,
+        description=f"Order revenue: {order_id}",
+        source_type="order",
+        source_id=order_id,
+        lines=[
+            (dep_acc, amount, 0.0, "Chuyển cọc sang doanh thu"),
+            (rev_acc, 0.0, amount, "Doanh thu bán hàng"),
+        ],
+    )
+
+
+def _ensure_account(conn, code: str, name: str) -> int:
+    row = conn.execute("SELECT id FROM accounts WHERE code = ?", (code,)).fetchone()
+    if row:
+        return int(row["id"])
+    cur = conn.execute(
+        "INSERT INTO accounts (code, name, type) VALUES (?, ?, ?)",
+        (code, name, "revenue" if code == "4100" else "liability"),
+    )
+    return int(cur.lastrowid)
+
+
+def _setup_accounts(conn):
+    _ensure_account(conn, "2100", "Customer Deposits")
+    _ensure_account(conn, "4100", "Order Revenue")
+
+
 def test_cancelled_orders_command_registered():
     result = _invoke_cancelled(["--help"])
     assert result.exit_code == 0, result.output
@@ -678,90 +698,77 @@ def test_cancelled_orders_rejects_both_modes():
 
 
 def test_repair_cancelled_order_cleans_orphaned_entries():
+    """Orders with non-cash entries (revenue) are auto-repaired."""
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_order(
             conn, order_ref="ORD-260711-C01", customer_name="Anh C1",
             total_price=200000, status="cancelled",
         )
-        _insert_payment(conn, order_id=oid, amount=200000)
-        from baker.services.journal_sync import _sync_payment_journal
-        _sync_payment_journal(conn, 1, 200000, "deposit", "cash", order_id=oid)
-
-        entry_count = conn.execute(
-            "SELECT COUNT(*) FROM journal_entries WHERE source_id = ? OR source_id = ?",
-            (oid, 1),
-        ).fetchone()[0]
-        assert entry_count > 0
+        _insert_revenue_entry_direct(
+            conn, order_id=oid, amount=200000,
+        )
         conn.commit()
 
     result = _invoke_cancelled(["--order-id", str(oid)])
     assert result.exit_code == 0, result.output
     assert "đã sửa: 1" in result.output
+    assert "Bút toán doanh thu" in result.output
 
     with get_db() as conn:
         ensure_schema(conn)
-        entry_count = conn.execute(
-            "SELECT COUNT(*) FROM journal_entries WHERE source_id = ? OR source_id = ?",
-            (oid, 1),
+        rev_count = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries "
+            "WHERE source_type = 'order' AND source_id = ?",
+            (oid,),
         ).fetchone()[0]
-        assert entry_count == 0
+        assert rev_count == 0
 
 
 def test_repair_cancelled_orders_single_dry_run():
+    """Dry-run with non-cash entries shows 'sẽ sửa'."""
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_order(
             conn, order_ref="ORD-260711-C02", customer_name="Anh C2",
             total_price=300000, status="cancelled",
         )
-        _insert_payment(conn, order_id=oid, amount=300000)
-        from baker.services.journal_sync import _sync_payment_journal
-        _sync_payment_journal(conn, 1, 300000, "deposit", "cash", order_id=oid)
+        _insert_revenue_entry_direct(
+            conn, order_id=oid, amount=300000,
+        )
         conn.commit()
 
     result = _invoke_cancelled(["--order-id", str(oid), "--dry-run"])
     assert result.exit_code == 0, result.output
     assert "sẽ sửa: 1" in result.output
-
-    with get_db() as conn:
-        ensure_schema(conn)
-        entry_count = conn.execute(
-            "SELECT COUNT(*) FROM journal_entries WHERE source_id = ? OR source_id = ?",
-            (oid, 1),
-        ).fetchone()[0]
-        assert entry_count > 0
+    assert "Bút toán doanh thu" in result.output
 
 
 def test_repair_cancelled_order_idempotent():
+    """Second run is a no-op after non-cash entries cleaned."""
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_order(
             conn, order_ref="ORD-260711-C03", customer_name="Anh C3",
             total_price=400000, status="cancelled",
         )
-        _insert_payment(conn, order_id=oid, amount=400000)
-        from baker.services.journal_sync import _sync_payment_journal
-        _sync_payment_journal(conn, 1, 400000, "deposit", "cash", order_id=oid)
+        _insert_revenue_entry_direct(
+            conn, order_id=oid, amount=400000,
+        )
         conn.commit()
 
     result = _invoke_cancelled(["--order-id", str(oid)])
     assert result.exit_code == 0, result.output
     assert "đã sửa: 1" in result.output
 
+    # Second run: no more issues
     result = _invoke_cancelled(["--order-id", str(oid)])
     assert result.exit_code == 0, result.output
-
-    with get_db() as conn:
-        ensure_schema(conn)
-        entry_count = conn.execute(
-            "SELECT COUNT(*) FROM journal_entries WHERE source_id = ? OR source_id = ?",
-            (oid, 1),
-        ).fetchone()[0]
-        assert entry_count == 0
+    assert "không có đơn hàng đã huỷ nào có bút toán mồ côi" in result.output
 
 
 def test_repair_cancelled_orders_all():
+    """--all with non-cash entries."""
     with get_db() as conn:
         ensure_schema(conn)
         for i, ref in enumerate(["ORD-260711-A11", "ORD-260711-A12"]):
@@ -769,9 +776,9 @@ def test_repair_cancelled_orders_all():
                 conn, order_ref=ref, customer_name=f"Khách A{i}",
                 total_price=500000, status="cancelled",
             )
-            _insert_payment(conn, order_id=oid, amount=500000)
-            from baker.services.journal_sync import _sync_payment_journal
-            _sync_payment_journal(conn, i + 1, 500000, "deposit", "cash", order_id=oid)
+            _insert_revenue_entry_direct(
+                conn, order_id=oid, amount=500000,
+            )
         conn.commit()
 
     result = _invoke_cancelled(["--all"])
@@ -780,47 +787,60 @@ def test_repair_cancelled_orders_all():
 
 
 def test_repair_cancelled_orders_all_dry_run():
+    """--all --dry-run with non-cash entries."""
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_order(
             conn, order_ref="ORD-260711-AD1", customer_name="Khách AD",
             total_price=500000, status="cancelled",
         )
-        _insert_payment(conn, order_id=oid, amount=500000)
-        from baker.services.journal_sync import _sync_payment_journal
-        _sync_payment_journal(conn, 1, 500000, "deposit", "cash", order_id=oid)
+        _insert_revenue_entry_direct(
+            conn, order_id=oid, amount=500000,
+        )
         conn.commit()
 
     result = _invoke_cancelled(["--all", "--dry-run"])
     assert result.exit_code == 0, result.output
     assert "sẽ sửa: 1" in result.output
 
+
+def test_repair_cancelled_orders_cash_only():
+    """Payment-only orders show in 'cần xem xét' section, not auto-repaired."""
     with get_db() as conn:
         ensure_schema(conn)
-        entry_count = conn.execute(
-            "SELECT COUNT(*) FROM journal_entries WHERE source_id = ? OR source_id = ?",
-            (oid, 1),
-        ).fetchone()[0]
-        assert entry_count > 0
+        oid = _insert_order(
+            conn, order_ref="ORD-260711-CO", customer_name="Cash Only",
+            total_price=200000, status="cancelled",
+        )
+        _insert_payment(conn, order_id=oid, amount=200000)
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(conn, 1, 200000, "deposit", "cash", order_id=oid)
+        conn.commit()
+
+    result = _invoke_cancelled(["--order-id", str(oid)])
+    assert result.exit_code == 0, result.output
+    assert "Bút toán thanh toán (cần xem xét" in result.output
+    assert "cọc: 200,000" in result.output
+    assert "đã sửa" not in result.output
 
 
 def test_repair_cancelled_orders_vn_labels():
+    """VN labels in non-cash section."""
     with get_db() as conn:
         ensure_schema(conn)
         oid = _insert_order(
             conn, order_ref="ORD-260711-VN", customer_name="Anh VN",
             total_price=400000, status="cancelled",
         )
-        _insert_payment(conn, order_id=oid, amount=400000)
-        from baker.services.journal_sync import _sync_payment_journal
-        _sync_payment_journal(conn, 1, 400000, "deposit", "cash", order_id=oid)
+        _insert_revenue_entry_direct(
+            conn, order_id=oid, amount=400000,
+        )
         conn.commit()
 
     result = _invoke_cancelled(["--order-id", str(oid)])
     assert result.exit_code == 0, result.output
-    assert "Sửa bút toán đơn hàng đã huỷ" in result.output
+    assert "Bút toán doanh thu" in result.output
     assert "Mã đơn" in result.output
-    assert "Hành động" in result.output
     assert "đã sửa" in result.output
 
 
@@ -841,9 +861,9 @@ def test_repair_cancelled_order_journal_sync_failure():
             conn, order_ref="ORD-260711-ERR", customer_name="Anh E",
             total_price=300000, status="cancelled",
         )
-        _insert_payment(conn, order_id=oid, amount=300000)
-        from baker.services.journal_sync import _sync_payment_journal
-        _sync_payment_journal(conn, 1, 300000, "deposit", "cash", order_id=oid)
+        _insert_revenue_entry_direct(
+            conn, order_id=oid, amount=300000,
+        )
         conn.commit()
 
     with patch("baker.commands.repair._sync_cancelled_order_journal") as mock_sync:
