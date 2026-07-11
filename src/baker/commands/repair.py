@@ -1617,24 +1617,71 @@ def repair_deposit_balance_cmd(order_id, repair_all, dry_run):
 
 
 def _cancelled_orders_with_orphaned_entries(conn, order_id=None):
-    """Return cancelled orders with associated payment_transactions.
+    """Return cancelled orders with non-zero 2100 balance (orphaned entries).
 
-    Matches the design spec query: cancelled orders joined with their
-    payment_transactions so orders with no transactions are naturally
-    excluded.
+    Mirrors :func:`_check_deposit_balance_integrity` — calculates
+    ``net_2100 = deposits_in - refunds_out - revenue_cleared - shipping_cleared``
+    and returns only cancelled orders where ``abs(net_2100) > MISMATCH_TOLERANCE``.
     """
+    deposits_code = CUSTOMER_DEPOSITS_CODE
     sql = """
-        SELECT DISTINCT o.id, o.order_ref
+        SELECT o.id, o.order_ref,
+               COALESCE(pt.dep_credit, 0) AS deposits_in,
+               COALESCE(pt.ref_debit, 0) AS refunds_out,
+               COALESCE(ord.rev_debit, 0) AS revenue_cleared,
+               COALESCE(ship.ship_debit, 0) AS shipping_cleared,
+               (COALESCE(pt.dep_credit, 0) - COALESCE(pt.ref_debit, 0)
+                - COALESCE(ord.rev_debit, 0) - COALESCE(ship.ship_debit, 0)
+               ) AS net_2100
         FROM orders o
-        JOIN payment_transactions pt ON pt.order_id = o.id
+        LEFT JOIN (
+            SELECT pt2.order_id,
+                   SUM(CASE WHEN jl2.credit > 0 THEN jl2.credit ELSE 0 END) AS dep_credit,
+                   SUM(CASE WHEN jl2.debit > 0 THEN jl2.debit ELSE 0 END) AS ref_debit
+            FROM payment_transactions pt2
+            JOIN journal_entries je2
+              ON je2.source_type = 'payment_transaction' AND je2.source_id = pt2.id
+            JOIN journal_lines jl2 ON jl2.journal_entry_id = je2.id
+            JOIN accounts a2 ON a2.id = jl2.account_id AND a2.code = ?
+            WHERE (pt2.invalidated_at IS NULL OR pt2.invalidated_at = '')
+            GROUP BY pt2.order_id
+        ) pt ON pt.order_id = o.id
+        LEFT JOIN (
+            SELECT je3.source_id AS order_id,
+                   SUM(CASE WHEN jl3.debit > 0 THEN jl3.debit ELSE 0 END) AS rev_debit
+            FROM journal_entries je3
+            JOIN journal_lines jl3 ON jl3.journal_entry_id = je3.id
+            JOIN accounts a3 ON a3.id = jl3.account_id AND a3.code = ?
+            WHERE je3.source_type = 'order'
+              AND je3.description NOT LIKE 'Reversal:%'
+            GROUP BY je3.source_id
+        ) ord ON ord.order_id = o.id
+        LEFT JOIN (
+            SELECT je4.source_id AS order_id,
+                   SUM(CASE WHEN jl4.debit > 0 THEN jl4.debit ELSE 0 END) AS ship_debit
+            FROM journal_entries je4
+            JOIN journal_lines jl4 ON jl4.journal_entry_id = je4.id
+            JOIN accounts a4 ON a4.id = jl4.account_id AND a4.code = ?
+            WHERE je4.source_type = 'order_shipping_hold'
+            GROUP BY je4.source_id
+        ) ship ON ship.order_id = o.id
         WHERE o.status = 'cancelled'
     """
-    params = []
+    params = [deposits_code, deposits_code, deposits_code]
     if order_id is not None:
         sql += " AND o.id = ?"
         params.append(order_id)
     sql += " ORDER BY o.id ASC"
-    return conn.execute(sql, params).fetchall()
+
+    rows = conn.execute(sql, params).fetchall()
+
+    result = []
+    for r in rows:
+        net = float(r["net_2100"])
+        if abs(net) <= MISMATCH_TOLERANCE:
+            continue
+        result.append(r)
+    return result
 
 
 def _process_cancelled_order(conn, order_id, order_ref, *, dry_run):
