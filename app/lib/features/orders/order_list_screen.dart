@@ -12,7 +12,6 @@ import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
-import '../../shared/widgets/in_app_alert.dart';
 import '../../providers/order/critical_alert_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
@@ -66,22 +65,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   @override
   void onAutoRefreshTriggered() {
     super.onAutoRefreshTriggered();
-    _checkCriticalAlert();
-  }
-
-  void _checkCriticalAlert() {
-    if (ref.read(alertActiveProvider)) return;
-    final count = checkNewCriticalOrders(ref);
-    if (count > 0 && mounted) {
-      ref.read(alertActiveProvider.notifier).setActive(true);
-      InAppAlert.show(
-        context: context,
-        count: count,
-        onDismiss: () {
-          ref.read(alertActiveProvider.notifier).setActive(false);
-        },
-      );
-    }
+    checkAndShowCriticalAlert(ref: ref, context: context, mounted: mounted);
   }
 
   Future<void> _loadViewMode() async {

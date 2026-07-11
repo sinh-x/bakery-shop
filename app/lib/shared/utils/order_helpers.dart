@@ -6,6 +6,9 @@ import '../theme/bakery_theme.dart';
 /// Shared order/work-item helper functions.
 /// Eliminates duplication across OrderCard, CakeQueueCard, DeliveryOrderCard.
 
+const urgencyCritical = 'critical';
+const urgencyUrgent = 'urgent';
+
 /// Returns Vietnamese display label for a delivery type.
 String deliveryTypeLabel(String type) {
   switch (type) {

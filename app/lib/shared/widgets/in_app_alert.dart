@@ -44,7 +44,8 @@ class InAppAlert {
   }
 
   static void _showOverlay(BuildContext context, int count, VoidCallback? onDismiss) {
-    final overlay = Overlay.of(context);
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
     late OverlayEntry entry;
 
     entry = OverlayEntry(

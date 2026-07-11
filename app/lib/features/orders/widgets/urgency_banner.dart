@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/labels/orders.dart';
 import '../../../shared/theme/bakery_theme.dart';
+import '../../../shared/utils/order_helpers.dart';
 
 /// Pinned attention banner at top of the orders list summarizing critical and
 /// urgent order counts.
 ///
 /// Hidden when both counts are 0. When tapped, invokes [onTap] so the parent
 /// screen can filter or scroll to high-urgency orders.
-class UrgencyBanner extends ConsumerWidget {
+class UrgencyBanner extends StatelessWidget {
   const UrgencyBanner({
     super.key,
     required this.criticalCount,
@@ -22,13 +22,13 @@ class UrgencyBanner extends ConsumerWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     if (criticalCount == 0 && urgentCount == 0) {
       return const SizedBox.shrink();
     }
 
-    final criticalColor = BakeryTheme.urgencyTierColors['critical'] ?? Colors.red;
-    final urgentColor = BakeryTheme.urgencyTierColors['urgent'] ?? Colors.amber;
+    final criticalColor = BakeryTheme.urgencyTierColors[urgencyCritical] ?? Colors.red;
+    final urgentColor = BakeryTheme.urgencyTierColors[urgencyUrgent] ?? Colors.amber;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),

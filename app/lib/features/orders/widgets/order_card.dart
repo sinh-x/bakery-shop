@@ -7,8 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/api_client.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
-import '../../../shared/utils/order_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import '../../../shared/utils/order_helpers.dart';
 
 const _pulseDuration = Duration(milliseconds: 1500);
 
@@ -51,7 +51,7 @@ class _OrderCardState extends ConsumerState<OrderCard>
       parent: _pulseController,
       curve: Curves.easeInOut,
     ));
-    if (order.urgency == 'critical') {
+    if (order.urgency == urgencyCritical) {
       _pulseController.repeat();
     }
   }
@@ -59,9 +59,9 @@ class _OrderCardState extends ConsumerState<OrderCard>
   @override
   void didUpdateWidget(OrderCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (order.urgency == 'critical' && !_pulseController.isAnimating) {
+    if (order.urgency == urgencyCritical && !_pulseController.isAnimating) {
       _pulseController.repeat();
-    } else if (order.urgency != 'critical' && _pulseController.isAnimating) {
+    } else if (order.urgency != urgencyCritical && _pulseController.isAnimating) {
       _pulseController.stop();
       _pulseController.value = 1.0;
     }
@@ -543,7 +543,7 @@ class _OrderCardState extends ConsumerState<OrderCard>
       ),
     );
 
-    if (order.urgency == 'critical') {
+    if (order.urgency == urgencyCritical) {
       return AnimatedBuilder(
         animation: _pulseAnimation,
         builder: (context, child) => Transform.scale(
