@@ -1,7 +1,7 @@
 import json
 import random
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 from typing import Optional
 
@@ -61,6 +61,62 @@ def allowed_transitions(current: str) -> list[str]:
         return [s.value for s in TRANSITIONS.get(OrderStatus(current), [])]
     except ValueError:
         return []
+
+
+class UrgencyTier(str, Enum):
+    CRITICAL = "critical"
+    URGENT = "urgent"
+    NORMAL = "normal"
+
+
+def compute_urgency(
+    due_date: Optional[str],
+    due_time: Optional[str],
+    status: str,
+    acknowledged_at: Optional[str],
+) -> str:
+    """Compute the urgency tier for an order.
+
+    Rules (FR-1):
+    - ``critical`` = past due datetime and not delivered/completed/cancelled.
+    - ``urgent`` = due ≤ 2h from now, OR status='new' and unacknowledged,
+      OR status in (new, confirmed) and due today.
+    - ``normal`` = everything else.
+    """
+    terminal = {"delivered", "completed", "cancelled"}
+    if status in terminal:
+        return UrgencyTier.NORMAL.value
+
+    now = datetime.now(timezone.utc)
+
+    # Build due datetime
+    due_dt = None
+    if due_date:
+        try:
+            if due_time:
+                due_dt = datetime.strptime(f"{due_date}T{due_time}", "%Y-%m-%dT%H:%M")
+                due_dt = due_dt.replace(tzinfo=timezone.utc)
+            else:
+                due_dt = datetime.strptime(due_date, "%Y-%m-%d")
+                due_dt = due_dt.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            pass
+
+    if due_dt:
+        if due_dt < now:
+            return UrgencyTier.CRITICAL.value
+        if due_dt - now <= timedelta(hours=2):
+            return UrgencyTier.URGENT.value
+
+    if status == "new" and not acknowledged_at:
+        return UrgencyTier.URGENT.value
+
+    if status in ("new", "confirmed") and due_date:
+        today_str = now.strftime("%Y-%m-%d")
+        if due_date == today_str:
+            return UrgencyTier.URGENT.value
+
+    return UrgencyTier.NORMAL.value
 
 
 def generate_order_ref(conn) -> str:
@@ -198,6 +254,7 @@ class Order:
     updated_at: Optional[str] = None
     work_ticket_printed_at: Optional[str] = None
     work_ticket_printed_by: str = ""
+    acknowledged_at: Optional[str] = None
 
     @staticmethod
     def exists(order_id: int, conn=None) -> bool:
@@ -314,6 +371,7 @@ class Order:
             created_at=row["created_at"], updated_at=row["updated_at"],
             work_ticket_printed_at=row["work_ticket_printed_at"] if "work_ticket_printed_at" in row.keys() else None,
             work_ticket_printed_by=row["work_ticket_printed_by"] if "work_ticket_printed_by" in row.keys() else "",
+            acknowledged_at=row["acknowledged_at"] if "acknowledged_at" in row.keys() else None,
         )
 
     def to_api_dict(self) -> dict:
@@ -344,4 +402,8 @@ class Order:
             "updatedAt": self.updated_at,
             "workTicketPrintedAt": self.work_ticket_printed_at,
             "workTicketPrintedBy": self.work_ticket_printed_by,
+            "acknowledgedAt": self.acknowledged_at,
+            "urgency": compute_urgency(
+                self.due_date, self.due_time, self.status, self.acknowledged_at
+            ),
         }

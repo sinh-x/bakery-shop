@@ -406,6 +406,65 @@ def test_cli_accounting_backward_compatible():
     assert "Bút toán" not in result.output
 
 
+# --- Urgency tier (DG-221) ---
+
+
+def test_urgency_normal_when_terminal_status():
+    from baker.models.order import compute_urgency
+    assert compute_urgency("2026-07-10", "10:00", "delivered", None) == "normal"
+    assert compute_urgency("2026-07-10", "10:00", "completed", None) == "normal"
+    assert compute_urgency("2026-07-10", "10:00", "cancelled", None) == "normal"
+
+
+def test_urgency_critical_when_past_due():
+    from baker.models.order import compute_urgency
+    assert compute_urgency("2020-01-01", "00:00", "new", None) == "critical"
+
+
+def test_urgency_urgent_when_due_soon():
+    from baker.models.order import compute_urgency
+    from datetime import datetime, timezone, timedelta
+    soon = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%Y-%m-%d")
+    soon_time = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%H:%M")
+    result = compute_urgency(soon, soon_time, "new", None)
+    assert result == "urgent", f"Expected urgent for due in 1h, got {result}"
+
+
+def test_urgency_urgent_when_new_and_unacknowledged():
+    from baker.models.order import compute_urgency
+    far_future = "2099-01-01"
+    assert compute_urgency(far_future, "10:00", "new", None) == "urgent"
+
+
+def test_urgency_urgent_when_due_today_and_active():
+    from baker.models.order import compute_urgency
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    assert compute_urgency(today, "23:59", "new", None) == "urgent"
+    assert compute_urgency(today, "23:59", "confirmed", None) == "urgent"
+
+
+def test_urgency_new_unacknowledged_not_due_today():
+    from baker.models.order import compute_urgency
+    from datetime import datetime, timezone, timedelta
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    assert compute_urgency(yesterday, "10:00", "new", None) == "critical"
+
+
+def test_urgency_acknowledged_new_not_urgent():
+    from baker.models.order import compute_urgency
+    from baker.utils.time import now_utc
+    far_future = "2099-01-01"
+    assert compute_urgency(far_future, "10:00", "new", now_utc()) == "normal"
+
+
+def test_urgency_normal_no_match():
+    from baker.models.order import compute_urgency
+    from baker.utils.time import now_utc
+    far_future = "2099-01-01"
+    assert compute_urgency(far_future, "10:00", "confirmed", now_utc()) == "normal"
+
+
 def test_cli_accounting_read_only():
     """NFR1: --accounting does not modify the database (no new rows)."""
     with get_db() as conn:
