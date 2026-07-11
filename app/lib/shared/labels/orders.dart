@@ -106,4 +106,7 @@ class OrdersLabels {
   static String criticalAlertBody(int count) =>
       '$count đơn hàng khẩn cấp vừa xuất hiện';
   static const criticalAlertDismiss = 'Đã hiểu';
+
+  // Urgency filter empty state (DG-221 Phase 5)
+  static const urgencyFilterEmpty = 'Không có đơn hàng khẩn cấp';
 }

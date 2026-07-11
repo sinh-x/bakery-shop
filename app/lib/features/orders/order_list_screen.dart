@@ -410,7 +410,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                             return Center(
                               child: Text(
                                 _urgencyFilterEnabled
-                                    ? 'Không có đơn hàng khẩn cấp'
+                                    ? OrdersLabels.urgencyFilterEmpty
                                     : _searchQuery.isNotEmpty
                                         ? 'Không có đơn hàng phù hợp'
                                         : 'Không có đơn hàng',
