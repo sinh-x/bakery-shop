@@ -40,7 +40,7 @@ from baker.commands.server_log import server_log_cmd
 from baker.commands.validate import validate_accounts_cmd
 from baker.commands.report import report_cmd
 from baker.commands.pipeline import pipeline_cmd
-from baker.commands.repair import repair_order_revenue_cmd, repair_tien_rut_gap_cmd, check_revenue_gaps_cmd, repair_payment_journal_cmd, repair_ar_entries_cmd, repair_future_dates_cmd, repair_inventory_cmd, repair_deposit_balance_cmd
+from baker.commands.repair import repair_order_revenue_cmd, repair_tien_rut_gap_cmd, check_revenue_gaps_cmd, repair_payment_journal_cmd, repair_ar_entries_cmd, repair_future_dates_cmd, repair_inventory_cmd, repair_deposit_balance_cmd, repair_cancelled_orders_cmd
 
 app.add_command(log_cmd, "log")
 app.add_command(organize_cmd, "organize")
@@ -67,3 +67,4 @@ app.add_command(repair_ar_entries_cmd, "repair-ar-entries")
 app.add_command(repair_future_dates_cmd, "repair-future-dates")
 app.add_command(repair_inventory_cmd, "repair-inventory")
 app.add_command(repair_deposit_balance_cmd, "repair-deposit-balance")
+app.add_command(repair_cancelled_orders_cmd, "repair-cancelled-orders")

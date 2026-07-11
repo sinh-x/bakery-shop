@@ -626,7 +626,6 @@ def test_process_deposit_balance_locked_payment():
         txn_id = _insert_payment(conn, order_id=oid, amount=500000, ptype="deposit")
         _sync_payment_journal(conn, txn_id, 500000, "deposit", "cash", order_id=oid)
 
-        # Lock the journal entry
         conn.execute(
             "UPDATE journal_entries SET locked_at = datetime('now') "
             "WHERE source_type = 'payment_transaction' AND source_id = ?",
@@ -645,3 +644,212 @@ def test_process_deposit_balance_locked_payment():
         ensure_schema(conn)
         bal = _deposit_2100_balance(conn, oid)
         assert abs(bal["net"]) <= 0.01
+
+
+# ---------------------------------------------------------------------------
+# repair-cancelled-orders — DG-236 Phase 4 tests
+# ---------------------------------------------------------------------------
+
+
+def _invoke_cancelled(args):
+    runner = click.testing.CliRunner()
+    from baker.commands.repair import repair_cancelled_orders_cmd
+    return runner.invoke(repair_cancelled_orders_cmd, args)
+
+
+def test_cancelled_orders_command_registered():
+    result = _invoke_cancelled(["--help"])
+    assert result.exit_code == 0, result.output
+    assert "--order-id" in result.output
+    assert "--all" in result.output
+    assert "--dry-run" in result.output
+
+
+def test_cancelled_orders_requires_one_mode():
+    result = _invoke_cancelled([])
+    assert result.exit_code != 0
+    assert "Cần chỉ định" in result.output
+
+
+def test_cancelled_orders_rejects_both_modes():
+    result = _invoke_cancelled(["--order-id", "1", "--all"])
+    assert result.exit_code != 0
+    assert "cùng lúc" in result.output
+
+
+def test_repair_cancelled_order_cleans_orphaned_entries():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260711-C01", customer_name="Anh C1",
+            total_price=200000, status="cancelled",
+        )
+        _insert_payment(conn, order_id=oid, amount=200000)
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(conn, 1, 200000, "deposit", "cash", order_id=oid)
+
+        entry_count = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_id = ? OR source_id = ?",
+            (oid, 1),
+        ).fetchone()[0]
+        assert entry_count > 0
+        conn.commit()
+
+    result = _invoke_cancelled(["--order-id", str(oid)])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa: 1" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        entry_count = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_id = ? OR source_id = ?",
+            (oid, 1),
+        ).fetchone()[0]
+        assert entry_count == 0
+
+
+def test_repair_cancelled_orders_single_dry_run():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260711-C02", customer_name="Anh C2",
+            total_price=300000, status="cancelled",
+        )
+        _insert_payment(conn, order_id=oid, amount=300000)
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(conn, 1, 300000, "deposit", "cash", order_id=oid)
+        conn.commit()
+
+    result = _invoke_cancelled(["--order-id", str(oid), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "sẽ sửa: 1" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        entry_count = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_id = ? OR source_id = ?",
+            (oid, 1),
+        ).fetchone()[0]
+        assert entry_count > 0
+
+
+def test_repair_cancelled_order_idempotent():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260711-C03", customer_name="Anh C3",
+            total_price=400000, status="cancelled",
+        )
+        _insert_payment(conn, order_id=oid, amount=400000)
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(conn, 1, 400000, "deposit", "cash", order_id=oid)
+        conn.commit()
+
+    result = _invoke_cancelled(["--order-id", str(oid)])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa: 1" in result.output
+
+    result = _invoke_cancelled(["--order-id", str(oid)])
+    assert result.exit_code == 0, result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        entry_count = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_id = ? OR source_id = ?",
+            (oid, 1),
+        ).fetchone()[0]
+        assert entry_count == 0
+
+
+def test_repair_cancelled_orders_all():
+    with get_db() as conn:
+        ensure_schema(conn)
+        for i, ref in enumerate(["ORD-260711-A11", "ORD-260711-A12"]):
+            oid = _insert_order(
+                conn, order_ref=ref, customer_name=f"Khách A{i}",
+                total_price=500000, status="cancelled",
+            )
+            _insert_payment(conn, order_id=oid, amount=500000)
+            from baker.services.journal_sync import _sync_payment_journal
+            _sync_payment_journal(conn, i + 1, 500000, "deposit", "cash", order_id=oid)
+        conn.commit()
+
+    result = _invoke_cancelled(["--all"])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa: 2" in result.output
+
+
+def test_repair_cancelled_orders_all_dry_run():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260711-AD1", customer_name="Khách AD",
+            total_price=500000, status="cancelled",
+        )
+        _insert_payment(conn, order_id=oid, amount=500000)
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(conn, 1, 500000, "deposit", "cash", order_id=oid)
+        conn.commit()
+
+    result = _invoke_cancelled(["--all", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "sẽ sửa: 1" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        entry_count = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_id = ? OR source_id = ?",
+            (oid, 1),
+        ).fetchone()[0]
+        assert entry_count > 0
+
+
+def test_repair_cancelled_orders_vn_labels():
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260711-VN", customer_name="Anh VN",
+            total_price=400000, status="cancelled",
+        )
+        _insert_payment(conn, order_id=oid, amount=400000)
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(conn, 1, 400000, "deposit", "cash", order_id=oid)
+        conn.commit()
+
+    result = _invoke_cancelled(["--order-id", str(oid)])
+    assert result.exit_code == 0, result.output
+    assert "Sửa bút toán đơn hàng đã huỷ" in result.output
+    assert "Mã đơn" in result.output
+    assert "Hành động" in result.output
+    assert "đã sửa" in result.output
+
+
+def test_repair_cancelled_orders_vn_labels_empty():
+    with get_db() as conn:
+        ensure_schema(conn)
+    result = _invoke_cancelled(["--all"])
+    assert result.exit_code == 0, result.output
+    assert "không có đơn hàng đã huỷ nào có bút toán mồ côi" in result.output
+
+
+def test_repair_cancelled_order_journal_sync_failure():
+    from unittest.mock import patch
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260711-ERR", customer_name="Anh E",
+            total_price=300000, status="cancelled",
+        )
+        _insert_payment(conn, order_id=oid, amount=300000)
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(conn, 1, 300000, "deposit", "cash", order_id=oid)
+        conn.commit()
+
+    with patch("baker.commands.repair._sync_cancelled_order_journal") as mock_sync:
+        mock_sync.side_effect = RuntimeError("simulated journal sync failure")
+        result = _invoke_cancelled(["--order-id", str(oid)])
+
+    assert result.exit_code == 0, result.output
+    assert "ORD-260711-ERR" in result.output
+    assert "đã sửa, có lỗi" in result.output

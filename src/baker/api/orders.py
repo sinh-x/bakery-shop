@@ -866,8 +866,19 @@ def transition_status(ref: str, body: StatusTransition):
         if body.status == "confirmed":
             auto_decrement_stock(conn, row["id"], row["order_ref"])
 
+        accounting_sync_warning = None
+
         if body.status == "cancelled":
             restore_stock_for_order(conn, row["id"], row["order_ref"])
+            from baker.services.journal_sync import _sync_cancelled_order_journal, run_journal_sync, sync_status_to_warning
+            sync_status = run_journal_sync(
+                _sync_cancelled_order_journal,
+                conn, row["id"],
+                log_label=f"cancelled order journal sync for order {row['id']}",
+                source_type="order",
+                source_id=row["id"],
+            )
+            accounting_sync_warning = sync_status_to_warning(sync_status)
 
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:
@@ -882,7 +893,6 @@ def transition_status(ref: str, body: StatusTransition):
         _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, body.changedBy)
 
         # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
-        accounting_sync_warning = None
         if body.status == "delivered" and row["status"] != "delivered":
             from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync, sync_status_to_warning
             sync_status = run_journal_sync(
