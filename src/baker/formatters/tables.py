@@ -1,12 +1,13 @@
 """Rich formatters for terminal output."""
 
 import json
-from rich.console import Console
+from rich.console import Console, Group
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
 from . import format_phone
+from baker.utils.time import utc_to_local
 
 console = Console()
 
@@ -27,7 +28,7 @@ def print_event(row):
     data = json.loads(row["data"]) if row["data"] and row["data"] != "{}" else None
     data_str = f"  {data}" if data else ""
 
-    ts = row["timestamp"][:16]  # trim seconds
+    ts = utc_to_local(row["timestamp"])
     type_color = {
         "note": "white", "production": "green", "sale": "yellow",
         "inventory": "cyan", "expense": "red", "delivery": "blue", "order": "magenta",
@@ -70,7 +71,7 @@ def print_events_table(rows, title="Events"):
         tags = row["tags"] if row["tags"] else ""
         cells = [
             str(row["id"]),
-            row["timestamp"][:16],
+            utc_to_local(row["timestamp"]),
             f"[{color}]{row['type']}[/{color}]",
             row["summary"],
         ]
@@ -217,9 +218,93 @@ def print_order_detail(row):
         lines.append(f"Address: {row['delivery_address']}")
     if row["notes"]:
         lines.append(f"\nNotes: {row['notes']}")
-    lines.append(f"\n[dim]Created: {row['created_at']}  Updated: {row['updated_at']}[/dim]")
+    lines.append(f"\n[dim]Created: {utc_to_local(row['created_at'])}  Updated: {utc_to_local(row['updated_at'])}[/dim]")
 
     console.print(Panel("\n".join(lines), title=row["order_ref"], border_style="blue"))
+
+
+def print_order_accounting(entries):
+    """Print accounting journal entries for an order.
+
+    Args:
+        entries: Output from JournalEntry.list_for_order().
+    """
+    if not entries:
+        console.print("  [dim]Không có bút toán kế toán cho đơn hàng này[/dim]")
+        return
+
+    source_type_groups = {
+        "order": "Doanh thu",
+        "order_cogs": "Giá vốn",
+        "order_shipping_hold": "Ship",
+        "order_shipping_release": "Ship",
+        "payment_transaction": "Thanh toán",
+    }
+
+    account_totals: dict[str, dict] = {}
+    for entry in entries:
+        for line in entry["lines"]:
+            code = line["account_code"]
+            if code not in account_totals:
+                account_totals[code] = {"name": line["account_name"], "debit": 0.0, "credit": 0.0}
+            account_totals[code]["debit"] += line["debit"]
+            account_totals[code]["credit"] += line["credit"]
+
+    summary_table = Table(title="Tóm tắt theo tài khoản", show_lines=False, padding=(0, 1), box=None)
+    summary_table.add_column("Mã TK", style="bold", width=8)
+    summary_table.add_column("Tên tài khoản", width=22)
+    summary_table.add_column("Nợ", justify="right", width=12)
+    summary_table.add_column("Có", justify="right", width=12)
+
+    grand_debit = grand_credit = 0.0
+    for code in sorted(account_totals):
+        d = account_totals[code]["debit"]
+        c = account_totals[code]["credit"]
+        summary_table.add_row(
+            code,
+            account_totals[code]["name"],
+            f"{d:,.0f}" if d else "",
+            f"{c:,.0f}" if c else "",
+        )
+        grand_debit += d
+        grand_credit += c
+    summary_table.add_row("", "", "", "")
+    summary_table.add_row("Tổng", "", f"{grand_debit:,.0f}", f"{grand_credit:,.0f}")
+
+    console.print()
+    console.print(summary_table)
+    console.print()
+
+    for entry in entries:
+        header_lines = [
+            f"[bold]Bút toán #{entry['id']}[/bold]  "
+            f"[dim]{entry['description']}[/dim]",
+        ]
+        if entry.get("transaction_date"):
+            header_lines.append(f"  Ngày: {utc_to_local(entry['transaction_date'])}")
+        header_lines.append(
+            f"  Nguồn: {source_type_groups.get(entry['source_type'], entry['source_type'])}"
+        )
+        header_lines.append("")
+
+        table = Table(show_lines=False, padding=(0, 1), box=None)
+        table.add_column("TK", style="bold", width=8)
+        table.add_column("Tên tài khoản", width=22)
+        table.add_column("Nợ", justify="right", width=12)
+        table.add_column("Có", justify="right", width=12)
+        table.add_column("Diễn giải", width=30)
+
+        for line in entry["lines"]:
+            table.add_row(
+                line["account_code"],
+                line["account_name"],
+                f"{line['debit']:.2f}" if line["debit"] else "",
+                f"{line['credit']:.2f}" if line["credit"] else "",
+                line["description"],
+            )
+
+        console.print(Panel(Group("\n".join(header_lines), table), border_style="dim"))
+        console.print()
 
 
 def print_dashboard(orders_due, low_stock, event_counts, total_events, staff_counts=None):

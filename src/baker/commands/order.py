@@ -2,7 +2,8 @@ import click
 
 from baker.db.connection import get_db
 from baker.models.order import Order, OrderItem, allowed_transitions
-from baker.formatters.tables import console, print_orders_table, print_order_detail
+from baker.models.journal_entry import JournalEntry
+from baker.formatters.tables import console, print_orders_table, print_order_detail, print_order_accounting
 from baker.utils.time import now_utc
 
 
@@ -94,7 +95,8 @@ def order_list(show_all, status, due):
 
 @order_cmd.command("show")
 @click.argument("ref")
-def order_show(ref):
+@click.option("--accounting", is_flag=True, help="Show accounting journal entries")
+def order_show(ref, accounting):
     """Show order details."""
     with get_db() as conn:
         row = conn.execute(
@@ -105,6 +107,9 @@ def order_show(ref):
             console.print(f"  [red]Order '{ref}' not found[/red]")
             return
         print_order_detail(row)
+        if accounting:
+            entries = JournalEntry.list_for_order(conn, row["id"])
+            print_order_accounting(entries)
 
 
 @order_cmd.command("status")
