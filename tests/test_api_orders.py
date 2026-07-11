@@ -2619,7 +2619,8 @@ def _setup_order_with_all_journal_entries(api_client, *, lock_entries: bool = Fa
     return ref, order_id, txn_id, bal, entry_ids
 
 
-# AC1 — Cancellation with unlocked entries: cascade-delete all entries
+# AC1 — Cancellation with unlocked entries: cascade-delete non-cash entries,
+# payment_transaction entry intentionally preserved (real cash needs human decision).
 def test_cancel_order_cascade_deletes_unlocked_entries(api_client):
     from baker.db.connection import get_db
     from baker.db.schema import ensure_schema
@@ -2645,16 +2646,16 @@ def test_cancel_order_cascade_deletes_unlocked_entries(api_client):
             + ",".join("?" for _ in entry_ids) + ")",
             entry_ids,
         ).fetchone()[0]
-        assert remaining == 0
+        assert remaining == 1  # payment_transaction entry intentionally preserved
 
         bal = _deposit_2100_balance(conn, order_id)
-        assert abs(bal["net"]) <= 0.01
-        assert bal["pt_net"] == 0.0
+        assert bal["pt_net"] > 0   # payment_transaction entry still present
         assert bal["rev_debit"] == 0.0
         assert bal["ship_debit"] == 0.0
 
 
-# AC2 — Cancellation with locked entries: reversals created, transaction_date preserved
+# AC2 — Cancellation with locked entries: reversals for non-cash entries,
+# payment_transaction left untouched.
 def test_cancel_order_creates_reversals_for_locked_entries(api_client):
     from baker.db.connection import get_db
     from baker.db.schema import ensure_schema
@@ -2679,12 +2680,19 @@ def test_cancel_order_creates_reversals_for_locked_entries(api_client):
             "SELECT id, description, transaction_date FROM journal_entries "
             "WHERE description LIKE 'Reversal:%' ",
         ).fetchall()
-        assert len(reversals) == 5
+        assert len(reversals) == 4  # revenue + COGS + shipping + tien rut (not payment_transaction)
 
         for rev in reversals:
             assert rev["description"].startswith("Reversal:")
 
-        for orig_id in entry_ids:
+        # Verify reversals for the 4 non-cash entries only
+        non_cash_entry_ids = [
+            eid for eid in entry_ids
+            if conn.execute(
+                "SELECT source_type FROM journal_entries WHERE id = ?", (eid,)
+            ).fetchone()["source_type"] != "payment_transaction"
+        ]
+        for orig_id in non_cash_entry_ids:
             orig = conn.execute(
                 "SELECT description, transaction_date FROM journal_entries WHERE id = ?",
                 (orig_id,),
@@ -2697,19 +2705,6 @@ def test_cancel_order_creates_reversals_for_locked_entries(api_client):
             ).fetchone()
             assert rev is not None
             assert rev["transaction_date"] == orig["transaction_date"]
-
-        originals_source_ids = [txn_id, order_id, order_id, order_id, order_id]
-        all_2100_lines = conn.execute(
-            "SELECT jl.credit, jl.debit FROM journal_lines jl "
-            "JOIN journal_entries je ON je.id = jl.journal_entry_id "
-            "JOIN accounts a ON a.id = jl.account_id AND a.code = '2100' "
-            "WHERE je.source_id IN ("
-            + ",".join("?" for _ in originals_source_ids) + ")",
-            originals_source_ids,
-        ).fetchall()
-        total_credit = sum(float(r["credit"]) for r in all_2100_lines)
-        total_debit = sum(float(r["debit"]) for r in all_2100_lines)
-        assert abs(total_credit - total_debit) <= 0.01
 
 
 # AC3 — Cancellation of order with no journal entries succeeds without errors
