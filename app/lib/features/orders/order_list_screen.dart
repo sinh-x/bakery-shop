@@ -15,6 +15,7 @@ import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
 import 'widgets/order_card.dart';
+import 'widgets/urgency_banner.dart';
 
 // Status filter chips for list view (mirrors Kanban column statuses + extras)
 // List view filters mirror Kanban columns (one column at a time)
@@ -44,6 +45,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   late final TabController _tabController;
   String _statusFilter = 'new';
   String _searchQuery = '';
+  bool _urgencyFilterEnabled = false;
   final _searchController = TextEditingController();
 
   // View mode: 'list' or 'kanban'
@@ -167,8 +169,15 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         .toList();
   }
 
+  List<Order> _applyUrgencyFilter(List<Order> orders) {
+    if (!_urgencyFilterEnabled) return orders;
+    return orders
+        .where((o) => o.urgency == 'critical' || o.urgency == 'urgent')
+        .toList();
+  }
+
   List<Order> _applyFilters(List<Order> orders) {
-    return _applySearchFilter(_applyStatusFilter(orders));
+    return _applyUrgencyFilter(_applySearchFilter(_applyStatusFilter(orders)));
   }
 
   /// Groups orders by due date, returning a mixed list of String headers and Order items.
@@ -265,6 +274,26 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
           // ── Tab 0: Order list ──────────────────────────────────────
           Column(
             children: [
+              // Urgency attention banner
+              Consumer(
+                builder: (context, ref, _) {
+                  final orders = ref.watch(orderListProvider).asData?.value ?? [];
+                  final critical = orders
+                      .where((o) => o.urgency == 'critical')
+                      .length;
+                  final urgent = orders
+                      .where((o) => o.urgency == 'urgent')
+                      .length;
+                  return UrgencyBanner(
+                    criticalCount: critical,
+                    urgentCount: urgent,
+                    onTap: () => setState(
+                      () => _urgencyFilterEnabled = !_urgencyFilterEnabled,
+                    ),
+                  );
+                },
+              ),
+
               // Search bar
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -357,9 +386,11 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                           if (filtered.isEmpty) {
                             return Center(
                               child: Text(
-                                _searchQuery.isNotEmpty
-                                    ? 'Không có đơn hàng phù hợp'
-                                    : 'Không có đơn hàng',
+                                _urgencyFilterEnabled
+                                    ? 'Không có đơn hàng khẩn cấp'
+                                    : _searchQuery.isNotEmpty
+                                        ? 'Không có đơn hàng phù hợp'
+                                        : 'Không có đơn hàng',
                                 style: Theme.of(context).textTheme.bodyMedium,
                               ),
                             );

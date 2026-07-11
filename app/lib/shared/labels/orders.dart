@@ -82,4 +82,22 @@ class OrdersLabels {
   static const urgencyNormal = '';
   static const urgencyCriticalBadge = 'KHẨN CẤP';
   static const urgencyUrgentBadge = 'GẤP';
+
+  // Urgency banner (DG-221 Phase 3 — FR-6)
+  static const urgencyBannerTitle = 'Đơn hàng khẩn cấp';
+  static const urgencyBannerCritical = 'Khẩn cấp';
+  static const urgencyBannerUrgent = 'Gấp';
+  static String urgencyBannerText(int critical, int urgent) {
+    if (critical > 0 && urgent > 0) {
+      return '$critical khẩn cấp, $urgent gấp';
+    }
+    if (critical > 0) {
+      return '$critical khẩn cấp';
+    }
+    return '$urgent gấp';
+  }
+
+  // Urgency badge tooltip (DG-221 Phase 3 — FR-5)
+  static String urgencyBadgeTooltip(int count) =>
+      '$count đơn hàng khẩn cấp/gấp';
 }

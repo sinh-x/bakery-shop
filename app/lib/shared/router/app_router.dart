@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../providers/order/urgency_count_provider.dart';
+
 import '../../data/api/api_client.dart';
 import '../../data/models/catalog_photo.dart';
 import '../../data/models/event.dart';
@@ -498,7 +500,7 @@ class _KnowledgeEditLoader extends ConsumerWidget {
   }
 }
 
-class _ShellScaffold extends StatelessWidget {
+class _ShellScaffold extends ConsumerWidget {
   final Widget child;
 
   const _ShellScaffold({required this.child});
@@ -542,35 +544,58 @@ class _ShellScaffold extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final urgencyCount = ref.watch(urgencyCountProvider);
+    final showBadge = urgencyCount > 0;
+
     return Scaffold(
       body: child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex(context),
         onDestinationSelected: (index) =>
             _onDestinationSelected(context, index),
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
             selectedIcon: Icon(Icons.dashboard),
             label: VN.tabDashboard,
           ),
           NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long),
+            icon: showBadge
+                ? Badge(
+                    label: Text('$urgencyCount'),
+                    backgroundColor: Colors.red,
+                    textStyle: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                    ),
+                    child: const Icon(Icons.receipt_long_outlined),
+                  )
+                : const Icon(Icons.receipt_long_outlined),
+            selectedIcon: showBadge
+                ? Badge(
+                    label: Text('$urgencyCount'),
+                    backgroundColor: Colors.red,
+                    textStyle: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                    ),
+                    child: const Icon(Icons.receipt_long),
+                  )
+                : const Icon(Icons.receipt_long),
             label: VN.tabOrders,
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.cake_outlined),
             selectedIcon: Icon(Icons.cake),
             label: VN.tabProducts,
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.menu_book_outlined),
             selectedIcon: Icon(Icons.menu_book),
             label: VN.tabKnowledgeBase,
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.storefront_outlined),
             selectedIcon: Icon(Icons.storefront),
             label: VN.banHang,
