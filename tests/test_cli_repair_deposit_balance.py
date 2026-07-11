@@ -830,3 +830,26 @@ def test_repair_cancelled_orders_vn_labels_empty():
     result = _invoke_cancelled(["--all"])
     assert result.exit_code == 0, result.output
     assert "không có đơn hàng đã huỷ nào có bút toán mồ côi" in result.output
+
+
+def test_repair_cancelled_order_journal_sync_failure():
+    from unittest.mock import patch
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(
+            conn, order_ref="ORD-260711-ERR", customer_name="Anh E",
+            total_price=300000, status="cancelled",
+        )
+        _insert_payment(conn, order_id=oid, amount=300000)
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(conn, 1, 300000, "deposit", "cash", order_id=oid)
+        conn.commit()
+
+    with patch("baker.commands.repair._sync_cancelled_order_journal") as mock_sync:
+        mock_sync.side_effect = RuntimeError("simulated journal sync failure")
+        result = _invoke_cancelled(["--order-id", str(oid)])
+
+    assert result.exit_code == 0, result.output
+    assert "ORD-260711-ERR" in result.output
+    assert "đã sửa, có lỗi" in result.output

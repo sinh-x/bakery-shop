@@ -208,6 +208,7 @@ _ACTION_LABELS = {
     "will-create": "sẽ tạo",
     "backfilled": "đã sửa",
     "will-backfill": "sẽ sửa",
+    "repaired-with-errors": "đã sửa, có lỗi",
 }
 
 
@@ -1650,7 +1651,7 @@ def _process_cancelled_order(conn, order_id, order_ref, *, dry_run):
             "action": "will-repair",
         }
 
-    run_journal_sync(
+    sync_result = run_journal_sync(
         _sync_cancelled_order_journal,
         conn,
         order_id,
@@ -1659,7 +1660,7 @@ def _process_cancelled_order(conn, order_id, order_ref, *, dry_run):
     return {
         "order_id": order_id,
         "order_ref": order_ref,
-        "action": "repaired",
+        "action": "repaired" if sync_result == "ok" else "repaired-with-errors",
     }
 
 
@@ -1677,7 +1678,7 @@ def _print_cancelled_orders_report(results, *, dry_run):
         )
     click.echo("-" * 36)
 
-    repaired = sum(1 for r in results if r["action"] == "repaired")
+    repaired = sum(1 for r in results if r["action"] in ("repaired", "repaired-with-errors"))
     will_repair = sum(1 for r in results if r["action"] == "will-repair")
 
     parts = []
