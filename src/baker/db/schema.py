@@ -1940,8 +1940,8 @@ def _backfill_delivered_order_journal_entries(conn) -> None:
     for orow in orders:
         order_id = int(orow["id"])
         order_ref = orow["order_ref"]
-        # FR11: orders.due_date is the only nullable source date field; fall
-        # back to created_at when it is NULL or empty.
+        # Phase 3: use now_utc() as the authoritative transaction timestamp
+        # for backfilled delivered-order journal entries.
         transaction_date = now_utc()
 
         # Revenue reconciliation — shared with live sync (handles lock checks
@@ -2385,10 +2385,7 @@ def _backfill_journal_transaction_date(conn) -> None:
         conn.execute(
             """
             UPDATE journal_entries
-            SET transaction_date = COALESCE(
-                ?,
-                (SELECT o.created_at FROM orders o WHERE o.id = journal_entries.source_id)
-            )
+            SET transaction_date = ?
             WHERE source_type = ?
               AND (transaction_date IS NULL OR transaction_date = '')
             """,
