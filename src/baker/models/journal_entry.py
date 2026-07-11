@@ -168,6 +168,83 @@ class JournalEntry:
         return [JournalEntry.from_row(r) for r in rows]
 
     @staticmethod
+    def list_for_order(conn, order_id: int) -> list[dict]:
+        """Query all journal entries linked to an order with enriched line data.
+
+        Covers direct source_types (order, order_cogs, order_shipping_hold,
+        order_shipping_release) via source_id = order_id, and payment
+        transaction entries via JOIN to payment_transactions.order_id.
+
+        Returns list of dicts with keys:
+            id, description, source_type, source_id, created_at,
+            transaction_date, lines (list of dicts with id, account_id,
+            account_code, account_name, debit, credit, description).
+        """
+        direct_rows = conn.execute(
+            "SELECT * FROM journal_entries "
+            "WHERE source_type IN ('order', 'order_cogs', 'order_shipping_hold', 'order_shipping_release') "
+            "AND source_id = ? "
+            "ORDER BY created_at DESC",
+            (order_id,),
+        ).fetchall()
+
+        payment_rows = conn.execute(
+            "SELECT je.* FROM journal_entries je "
+            "JOIN payment_transactions pt ON pt.id = je.source_id "
+            "WHERE je.source_type = 'payment_transaction' "
+            "AND pt.order_id = ? "
+            "AND pt.invalidated_at IS NULL "
+            "ORDER BY je.created_at DESC",
+            (order_id,),
+        ).fetchall()
+
+        entries = [JournalEntry.from_row(r) for r in direct_rows]
+        entries.extend(JournalEntry.from_row(r) for r in payment_rows)
+
+        if not entries:
+            return []
+
+        entry_ids = [e.id for e in entries]
+        placeholders = ",".join("?" for _ in entry_ids)
+        lines_rows = conn.execute(
+            f"SELECT jl.*, a.code AS account_code, a.name AS account_name "
+            f"FROM journal_lines jl "
+            f"JOIN accounts a ON a.id = jl.account_id "
+            f"WHERE jl.journal_entry_id IN ({placeholders}) "
+            f"ORDER BY jl.id",
+            entry_ids,
+        ).fetchall()
+
+        lines_by_entry: dict[int, list[dict]] = {}
+        for row in lines_rows:
+            eid = int(row["journal_entry_id"])
+            if eid not in lines_by_entry:
+                lines_by_entry[eid] = []
+            lines_by_entry[eid].append({
+                "id": int(row["id"]),
+                "account_id": int(row["account_id"]),
+                "account_code": row["account_code"],
+                "account_name": row["account_name"],
+                "debit": float(row["debit"]),
+                "credit": float(row["credit"]),
+                "description": row["description"] or "",
+            })
+
+        result = []
+        for entry in entries:
+            result.append({
+                "id": entry.id,
+                "description": entry.description,
+                "source_type": entry.source_type,
+                "source_id": entry.source_id,
+                "created_at": entry.created_at,
+                "transaction_date": entry.transaction_date,
+                "lines": lines_by_entry.get(entry.id, []),
+            })
+
+        return result
+
+    @staticmethod
     def lock_range(
         conn,
         since: str,

@@ -1,7 +1,7 @@
 """Rich formatters for terminal output."""
 
 import json
-from rich.console import Console
+from rich.console import Console, Group
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
@@ -264,17 +264,16 @@ def print_order_accounting(entries):
     console.print()
 
     for entry in entries:
-        entry_lines = []
-        entry_lines.append(
+        header_lines = [
             f"[bold]Bút toán #{entry['id']}[/bold]  "
-            f"[dim]{entry['description']}[/dim]"
-        )
+            f"[dim]{entry['description']}[/dim]",
+        ]
         if entry.get("transaction_date"):
-            entry_lines.append(f"  Ngày: {entry['transaction_date']}")
-        entry_lines.append(
+            header_lines.append(f"  Ngày: {entry['transaction_date']}")
+        header_lines.append(
             f"  Nguồn: {source_type_groups.get(entry['source_type'], entry['source_type'])}"
         )
-        entry_lines.append("")
+        header_lines.append("")
 
         table = Table(show_lines=False, padding=(0, 1), box=None)
         table.add_column("TK", style="bold", width=8)
@@ -291,9 +290,8 @@ def print_order_accounting(entries):
                 f"{line['credit']:.2f}" if line["credit"] else "",
                 line["description"],
             )
-        entry_lines.append(table)
 
-        console.print(Panel("\n".join(entry_lines), border_style="dim"))
+        console.print(Panel(Group("\n".join(header_lines), table), border_style="dim"))
         console.print()
 
 
