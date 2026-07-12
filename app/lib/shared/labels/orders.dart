@@ -131,4 +131,15 @@ class OrdersLabels {
 
   // Missing fields section title (DG-241 Phase 3 — order detail)
   static const missingFieldsSection = 'Thông tin còn thiếu';
+
+  // Missing field short labels (DG-241 Phase 4 — card indicators)
+  static const missingFieldCustomerName = 'tên KH';
+  static const missingFieldItems = 'sản phẩm';
+  static const missingFieldTotalPrice = 'tổng tiền';
+  static const missingFieldDueDate = 'ngày giao';
+  static const missingFieldDueTime = 'giờ giao';
+  static const missingFieldDeliveryAddress = 'địa chỉ';
+  static const missingFieldCustomerPhone = 'SĐT';
+  static const missingFieldDeliveryPhone = 'SĐT nhận';
+  static const missingFieldSource = 'nguồn';
 }

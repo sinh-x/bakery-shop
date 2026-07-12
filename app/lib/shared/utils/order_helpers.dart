@@ -99,23 +99,23 @@ String completenessTierLabel(String? completeness) {
 String missingFieldLabel(String field) {
   switch (field) {
     case 'customer_name':
-      return 'tên KH';
+      return OrdersLabels.missingFieldCustomerName;
     case 'items':
-      return 'sản phẩm';
+      return OrdersLabels.missingFieldItems;
     case 'total_price':
-      return 'tổng tiền';
+      return OrdersLabels.missingFieldTotalPrice;
     case 'due_date':
-      return 'ngày giao';
+      return OrdersLabels.missingFieldDueDate;
     case 'due_time':
-      return 'giờ giao';
+      return OrdersLabels.missingFieldDueTime;
     case 'delivery_address':
-      return 'địa chỉ';
+      return OrdersLabels.missingFieldDeliveryAddress;
     case 'customer_phone':
-      return 'SĐT';
+      return OrdersLabels.missingFieldCustomerPhone;
     case 'delivery_phone':
-      return 'SĐT nhận';
+      return OrdersLabels.missingFieldDeliveryPhone;
     case 'source':
-      return 'nguồn';
+      return OrdersLabels.missingFieldSource;
     default:
       return field;
   }
