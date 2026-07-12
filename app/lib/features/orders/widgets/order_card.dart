@@ -32,44 +32,44 @@ class OrderCard extends ConsumerStatefulWidget {
 
 class _OrderCardState extends ConsumerState<OrderCard>
     with SingleTickerProviderStateMixin {
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
+  late AnimationController _flashController;
+  late Animation<double> _flashAnimation;
 
   Order get order => widget.order;
 
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
+    _flashController = AnimationController(
       vsync: this,
       duration: _pulseDuration,
     );
-    _pulseAnimation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.92), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: 0.92, end: 1.0), weight: 1),
+    _flashAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 0.35), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 0.35, end: 0.0), weight: 3),
     ]).animate(CurvedAnimation(
-      parent: _pulseController,
+      parent: _flashController,
       curve: Curves.easeInOut,
     ));
     if (order.urgency == urgencyCritical) {
-      _pulseController.repeat();
+      _flashController.repeat();
     }
   }
 
   @override
   void didUpdateWidget(OrderCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (order.urgency == urgencyCritical && !_pulseController.isAnimating) {
-      _pulseController.repeat();
-    } else if (order.urgency != urgencyCritical && _pulseController.isAnimating) {
-      _pulseController.stop();
-      _pulseController.value = 1.0;
+    if (order.urgency == urgencyCritical && !_flashController.isAnimating) {
+      _flashController.repeat();
+    } else if (order.urgency != urgencyCritical && _flashController.isAnimating) {
+      _flashController.stop();
+      _flashController.value = 0.0;
     }
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
+    _flashController.dispose();
     super.dispose();
   }
 
@@ -545,13 +545,13 @@ class _OrderCardState extends ConsumerState<OrderCard>
 
     if (order.urgency == urgencyCritical) {
       return AnimatedBuilder(
-        animation: _pulseAnimation,
-        builder: (context, child) => Transform.scale(
-          scale: _pulseAnimation.value,
-          child: Opacity(
-            opacity: _pulseAnimation.value,
-            child: child,
+        animation: _flashAnimation,
+        builder: (context, child) => ColorFiltered(
+          colorFilter: ColorFilter.mode(
+            Colors.red.withAlpha((_flashAnimation.value * 255).round()),
+            BlendMode.srcATop,
           ),
+          child: child!,
         ),
         child: card,
       );
