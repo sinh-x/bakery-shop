@@ -17,6 +17,7 @@ String deliveryTypeLabel(String type) {
     case 'bus':
       return VN.deliveryBus;
     case 'door':
+    case 'delivery':
       return VN.deliveryDoor;
     case 'pickup':
     default:
@@ -139,6 +140,7 @@ IconData deliveryIcon(String? deliveryType) {
     case 'bus':
       return Icons.directions_bus;
     case 'door':
+    case 'delivery':
       return Icons.local_shipping;
     case 'pickup':
     default:
@@ -152,6 +154,7 @@ Color deliveryIconColor(String? deliveryType, Color defaultColor) {
     case 'bus':
       return Colors.orange;
     case 'door':
+    case 'delivery':
       return Colors.deepOrange;
     default:
       return defaultColor;
@@ -160,7 +163,7 @@ Color deliveryIconColor(String? deliveryType, Color defaultColor) {
 
 /// Whether delivery type is bus or door (requires delivery).
 bool isDeliveryType(String? deliveryType) =>
-    deliveryType == 'bus' || deliveryType == 'door';
+    deliveryType == 'bus' || deliveryType == 'door' || deliveryType == 'delivery';
 
 String visualOrderCode({required String orderRef, String? publicOrderCode}) {
   final code = (publicOrderCode ?? '').trim();

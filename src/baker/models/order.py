@@ -74,6 +74,9 @@ class CompletenessTier(str, Enum):
     INCOMPLETE = "incomplete"
 
 
+WALK_IN_CUSTOMER_NAME = "Khách"
+
+
 def is_junk_phone(phone: str) -> bool:
     """Detect junk/placeholder phone numbers.
 
@@ -411,7 +414,7 @@ class Order:
         """
         missing: list[str] = []
 
-        if not self.customer_name or self.customer_name.strip() == "Khách":
+        if not self.customer_name or self.customer_name.strip() == WALK_IN_CUSTOMER_NAME:
             missing.append("customer_name")
 
         if not self.items or len(self.items) == 0:
@@ -426,14 +429,15 @@ class Order:
         if not self.due_time:
             missing.append("due_time")
 
-        if self.delivery_type in ("delivery", "bus") and not self.delivery_address:
+        if self.delivery_type in ("delivery", "door", "bus") and not self.delivery_address:
             missing.append("delivery_address")
 
         if not self.customer_phone or is_junk_phone(self.customer_phone):
             missing.append("customer_phone")
 
         if not self.delivery_phone or is_junk_phone(self.delivery_phone):
-            missing.append("delivery_phone")
+            if not self.customer_phone or is_junk_phone(self.customer_phone):
+                missing.append("delivery_phone")
 
         if not self.source:
             missing.append("source")

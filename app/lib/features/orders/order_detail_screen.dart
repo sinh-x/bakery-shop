@@ -334,8 +334,8 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     try {
       final service = ref.read(orderServiceProvider);
       await service.acknowledgeOrder(order.orderRef);
-    } catch (_) {
-      // Acknowledge is best-effort — no user-facing error for failure.
+    } catch (e) {
+      debugPrint('order_detail: acknowledge failed for ${order.orderRef}: $e');
     }
   }
 

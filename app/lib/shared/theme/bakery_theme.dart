@@ -81,18 +81,15 @@ class BakeryTheme {
   static const urgencyTierColors = {
     'critical': Color(0xFFD32F2F),  // Red
     'urgent': Color(0xFFFFA000),    // Amber
-    'normal': null,
   };
 
   // Completeness tier colors (DG-241 Phase 2)
   static const completenessTierColors = {
-    'complete': null,
     'incomplete': Color(0xFFFFA000),  // Amber — distinct from urgency red
   };
 
   // Completeness tier icons (DG-241 Phase 2)
   static const completenessTierIcons = {
-    'complete': null,
     'incomplete': Icons.warning_amber_rounded,
   };
 

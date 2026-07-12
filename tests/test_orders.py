@@ -686,3 +686,24 @@ def test_completeness_missing_source():
     )
     missing, tier = order.compute_completeness()
     assert "source" in missing
+
+
+def test_completeness_delivery_phone_fallback_to_customer_phone():
+    """F1: order with customer_phone set but delivery_phone empty
+    should NOT flag delivery_phone as missing."""
+    from baker.models.order import Order, OrderItem
+    order = Order(
+        customer_name="Nguyễn Văn A",
+        items=[OrderItem(product="Bánh kem", qty=1, price=200000)],
+        total_price=200000,
+        due_date="2026-07-15",
+        due_time="10:00",
+        delivery_type="delivery",
+        delivery_address="123 Main St",
+        customer_phone="0912345678",
+        delivery_phone="",
+        source="Facebook",
+    )
+    missing, tier = order.compute_completeness()
+    assert "delivery_phone" not in missing
+    assert tier == "complete"

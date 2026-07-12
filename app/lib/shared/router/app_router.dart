@@ -642,7 +642,7 @@ class _BadgeCircle extends StatelessWidget {
         shape: BoxShape.circle,
       ),
       child: Text(
-        '$count',
+        count > 99 ? '99+' : '$count',
         style: const TextStyle(
           color: Colors.white,
           fontSize: 10,

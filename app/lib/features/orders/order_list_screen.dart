@@ -11,6 +11,7 @@ import '../../providers/order_providers.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/date_formatting.dart';
+import '../../shared/utils/order_helpers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../providers/order/critical_alert_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
@@ -181,21 +182,21 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   List<Order> _applyUrgencyFilter(List<Order> orders) {
     if (!_urgencyFilterEnabled) return orders;
     return orders
-        .where((o) => o.urgency == 'critical' || o.urgency == 'urgent')
+        .where((o) => o.urgency == urgencyCritical || o.urgency == urgencyUrgent)
         .toList();
   }
 
   List<Order> _applyIncompleteFilter(List<Order> orders) {
     if (!_incompleteFilterEnabled) return orders;
-    return orders.where((o) => o.completeness == 'incomplete').toList();
+    return orders.where((o) => o.completeness == completenessIncomplete).toList();
   }
 
   /// Sorts incomplete orders to the top of the list when the incomplete filter
   /// is active. Preserves relative order within each group.
   List<Order> _sortIncompleteToTop(List<Order> orders) {
     if (!_incompleteFilterEnabled) return orders;
-    final incomplete = orders.where((o) => o.completeness == 'incomplete').toList();
-    final complete = orders.where((o) => o.completeness != 'incomplete').toList();
+    final incomplete = orders.where((o) => o.completeness == completenessIncomplete).toList();
+    final complete = orders.where((o) => o.completeness != completenessIncomplete).toList();
     return [...incomplete, ...complete];
   }
 
@@ -304,10 +305,10 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                 builder: (context, ref, _) {
                   final orders = ref.watch(orderListProvider).asData?.value ?? [];
                   final critical = orders
-                      .where((o) => o.urgency == 'critical')
+                      .where((o) => o.urgency == urgencyCritical)
                       .length;
                   final urgent = orders
-                      .where((o) => o.urgency == 'urgent')
+                      .where((o) => o.urgency == urgencyUrgent)
                       .length;
                   return UrgencyBanner(
                     criticalCount: critical,
@@ -322,7 +323,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                 builder: (context, ref, _) {
                   final orders = ref.watch(orderListProvider).asData?.value ?? [];
                   final count = orders
-                      .where((o) => o.completeness == 'incomplete')
+                      .where((o) => o.completeness == completenessIncomplete)
                       .length;
                   return IncompleteBanner(
                     count: count,
