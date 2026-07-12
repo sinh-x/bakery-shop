@@ -25,7 +25,7 @@ import '../../features/events/event_detail_screen.dart';
 import '../../features/events/event_form_screen.dart';
 import '../../features/events/event_list_screen.dart';
 import '../../features/orders/cake_detail_screen.dart';
-import '../../features/orders/critical_orders_screen.dart';
+import '../../features/orders/filtered_orders_screen.dart';
 import '../../features/orders/order_create_screen.dart';
 import '../../features/orders/order_detail_screen.dart';
 import '../../features/orders/order_edit_screen.dart';
@@ -130,7 +130,12 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/orders/critical',
       parentNavigatorKey: _rootNavigatorKey,
-      builder: (context, state) => const CriticalOrdersScreen(),
+      builder: (context, state) => const FilteredOrdersScreen(filter: 'critical'),
+    ),
+    GoRoute(
+      path: '/orders/incomplete',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const FilteredOrdersScreen(filter: 'incomplete'),
     ),
     GoRoute(
       path: '/orders/history',

@@ -9,7 +9,7 @@ import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/order_helpers.dart';
 import 'widgets/order_card.dart';
 
-const _statuses = <String>[
+const _criticalStatuses = <String>[
   'new',
   'confirmed',
   'in_progress',
@@ -19,23 +19,44 @@ const _statuses = <String>[
   'cancelled',
 ];
 
-class CriticalOrdersScreen extends ConsumerStatefulWidget {
-  const CriticalOrdersScreen({super.key});
+const _incompleteStatuses = <String>[
+  'new',
+  'confirmed',
+  'in_progress',
+  'ready',
+  'delivered',
+];
+
+class FilteredOrdersScreen extends ConsumerStatefulWidget {
+  const FilteredOrdersScreen({super.key, required this.filter});
+
+  final String filter;
 
   @override
-  ConsumerState<CriticalOrdersScreen> createState() =>
-      _CriticalOrdersScreenState();
+  ConsumerState<FilteredOrdersScreen> createState() =>
+      _FilteredOrdersScreenState();
 }
 
-class _CriticalOrdersScreenState extends ConsumerState<CriticalOrdersScreen> {
+class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
   final _searchController = TextEditingController();
   String _searchQuery = '';
+
+  bool get _isIncomplete => widget.filter == 'incomplete';
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
   }
+
+  List<String> get _statuses =>
+      _isIncomplete ? _incompleteStatuses : _criticalStatuses;
+
+  String get _title =>
+      _isIncomplete ? OrdersLabels.incompleteBannerTitle : OrdersLabels.criticalOrdersTitle;
+
+  String get _emptyText =>
+      _isIncomplete ? OrdersLabels.incompleteFilterEmpty : OrdersLabels.urgencyFilterEmpty;
 
   List<Order> _applySearch(List<Order> orders) {
     if (_searchQuery.trim().isEmpty) return orders;
@@ -52,12 +73,16 @@ class _CriticalOrdersScreenState extends ConsumerState<CriticalOrdersScreen> {
     final ordersAsync = ref.watch(orderListProvider);
     final notifier = ref.read(orderListProvider.notifier);
 
-    List<Order> criticalOnly(List<Order> orders) =>
-        orders.where((o) => o.urgency == urgencyCritical).toList();
+    List<Order> applyFilter(List<Order> orders) {
+      if (_isIncomplete) {
+        return orders.where((o) => o.completeness == completenessIncomplete).toList();
+      }
+      return orders.where((o) => o.urgency == urgencyCritical).toList();
+    }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(OrdersLabels.criticalOrdersTitle),
+        title: Text(_title),
       ),
       body: Column(
         children: [
@@ -106,15 +131,18 @@ class _CriticalOrdersScreenState extends ConsumerState<CriticalOrdersScreen> {
                 ),
               ),
               data: (orders) {
-                final critical = criticalOnly(orders);
-                if (critical.isEmpty) {
-                  return const Center(
-                    child: Text(OrdersLabels.urgencyFilterEmpty),
+                final filtered = applyFilter(orders);
+                if (filtered.isEmpty) {
+                  return Center(
+                    child: Text(
+                      _emptyText,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   );
                 }
 
-                final filtered = _applySearch(critical);
-                if (filtered.isEmpty) {
+                final searched = _applySearch(filtered);
+                if (searched.isEmpty) {
                   return const Center(
                     child: Text(VN.lichSuDonHangKhongTimThay),
                   );
@@ -124,7 +152,7 @@ class _CriticalOrdersScreenState extends ConsumerState<CriticalOrdersScreen> {
                 for (final status in _statuses) {
                   grouped[status] = <Order>[];
                 }
-                for (final order in filtered) {
+                for (final order in searched) {
                   grouped
                       .putIfAbsent(order.status, () => <Order>[])
                       .add(order);

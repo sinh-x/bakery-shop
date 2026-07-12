@@ -49,7 +49,6 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   String _statusFilter = 'new';
   String _searchQuery = '';
   final bool _urgencyFilterEnabled = false;
-  bool _incompleteFilterEnabled = false;
   final _searchController = TextEditingController();
 
   // View mode: 'list' or 'kanban'
@@ -142,8 +141,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
             .where(
               (o) =>
                   o.status == 'ready' &&
-                  o.deliveryType != 'bus' &&
-                  o.deliveryType != 'door',
+                  !isDeliveryType(o.deliveryType),
             )
             .toList();
       case 'to_deliver':
@@ -152,7 +150,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
             .where(
               (o) =>
                   o.status == 'ready' &&
-                  (o.deliveryType == 'bus' || o.deliveryType == 'door'),
+                  isDeliveryType(o.deliveryType),
             )
             .toList();
       case 'awaiting_payment':
@@ -186,24 +184,10 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         .toList();
   }
 
-  List<Order> _applyIncompleteFilter(List<Order> orders) {
-    if (!_incompleteFilterEnabled) return orders;
-    return orders.where((o) => o.completeness == completenessIncomplete).toList();
-  }
-
-  /// Sorts incomplete orders to the top of the list when the incomplete filter
-  /// is active. Preserves relative order within each group.
-  List<Order> _sortIncompleteToTop(List<Order> orders) {
-    if (!_incompleteFilterEnabled) return orders;
-    final incomplete = orders.where((o) => o.completeness == completenessIncomplete).toList();
-    final complete = orders.where((o) => o.completeness != completenessIncomplete).toList();
-    return [...incomplete, ...complete];
-  }
-
   List<Order> _applyFilters(List<Order> orders) {
-    var filtered = _applyIncompleteFilter(_applySearchFilter(_applyStatusFilter(orders)));
+    var filtered = _applySearchFilter(_applyStatusFilter(orders));
     filtered = _applyUrgencyFilter(filtered);
-    return _sortIncompleteToTop(filtered);
+    return filtered;
   }
 
   /// Groups orders by due date, returning a mixed list of String headers and Order items.
@@ -327,9 +311,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                       .length;
                   return IncompleteBanner(
                     count: count,
-                    onTap: () => setState(() {
-                      _incompleteFilterEnabled = !_incompleteFilterEnabled;
-                    }),
+                    onTap: () => context.push('/orders/incomplete'),
                   );
                 },
               ),
@@ -428,9 +410,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                               child: Text(
                                 _urgencyFilterEnabled
                                     ? OrdersLabels.urgencyFilterEmpty
-                                    : _incompleteFilterEnabled
-                                        ? OrdersLabels.incompleteFilterEmpty
-                                        : _searchQuery.isNotEmpty
+                                    : _searchQuery.isNotEmpty
                                             ? 'Không có đơn hàng phù hợp'
                                             : 'Không có đơn hàng',
                                 style: Theme.of(context).textTheme.bodyMedium,
@@ -523,7 +503,7 @@ Map<String, List<Order>> groupOrdersByKanbanStatus(List<Order> orders) {
           .where(
             (o) =>
                 o.status == 'ready' &&
-                (o.deliveryType == 'bus' || o.deliveryType == 'door'),
+                isDeliveryType(o.deliveryType),
           )
           .toList();
     } else if (status == 'ready') {
@@ -532,8 +512,7 @@ Map<String, List<Order>> groupOrdersByKanbanStatus(List<Order> orders) {
           .where(
             (o) =>
                 o.status == 'ready' &&
-                o.deliveryType != 'bus' &&
-                o.deliveryType != 'door',
+                !isDeliveryType(o.deliveryType),
           )
           .toList();
     } else if (status == 'awaiting_payment') {
