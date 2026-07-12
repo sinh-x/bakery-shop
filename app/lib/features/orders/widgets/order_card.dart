@@ -176,26 +176,38 @@ class _OrderCardState extends ConsumerState<OrderCard>
         ? '${VN.printStatusPrintedShort}: $printedBy'
         : VN.printStatusPrintedShort;
 
+    // Build left border decoration using backend completeness + urgency tiers
+    final borderSides = <BorderSide>[];
+    if (completenessColor != null) {
+      borderSides.add(BorderSide(color: completenessColor, width: 4));
+    }
+    if (tierColor != null) {
+      borderSides.add(BorderSide(color: tierColor, width: 4));
+    }
+    if (borderSides.isEmpty) {
+      borderSides.add(const BorderSide(color: Colors.transparent, width: 4));
+    }
+
     final card = Card(
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: widget.onTap,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (completenessColor != null)
-              Container(width: 4, color: completenessColor),
-            if (tierColor != null)
-              Container(width: 4, color: tierColor),
-            if (completenessColor == null && tierColor == null)
-              const SizedBox(width: 4),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(
+              left: borderSides.length > 1
+                  ? BorderSide(
+                      color: completenessColor ?? tierColor!,
+                      width: 4,
+                    )
+                  : borderSides.first,
+            ),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               // ── Customer name + delivery icon + urgency badge ──
               Row(
                 children: [
@@ -582,11 +594,8 @@ class _OrderCardState extends ConsumerState<OrderCard>
                   ],
                 ),
               ],
-                  ],
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
