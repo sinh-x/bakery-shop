@@ -46,7 +46,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   late final TabController _tabController;
   String _statusFilter = 'new';
   String _searchQuery = '';
-  bool _urgencyFilterEnabled = false;
+  final bool _urgencyFilterEnabled = false;
   final _searchController = TextEditingController();
 
   // View mode: 'list' or 'kanban'
@@ -294,9 +294,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                   return UrgencyBanner(
                     criticalCount: critical,
                     urgentCount: urgent,
-                    onTap: () => setState(
-                      () => _urgencyFilterEnabled = !_urgencyFilterEnabled,
-                    ),
+                    onTap: () => context.push('/orders/critical'),
                   );
                 },
               ),

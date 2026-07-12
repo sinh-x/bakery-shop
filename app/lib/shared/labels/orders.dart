@@ -109,4 +109,7 @@ class OrdersLabels {
 
   // Urgency filter empty state (DG-221 Phase 5)
   static const urgencyFilterEmpty = 'Không có đơn hàng khẩn cấp';
+
+  // Critical orders screen
+  static const criticalOrdersTitle = 'Đơn hàng khẩn cấp';
 }
