@@ -70,6 +70,28 @@ def test_list_orders_returns_created(api_client):
     assert len(resp.json()) == 1
 
 
+def test_list_orders_includes_completeness(api_client):
+    _create_order(api_client)
+    resp = api_client.get("/api/orders")
+    assert resp.status_code == 200
+    orders = resp.json()
+    assert len(orders) == 1
+    order = orders[0]
+    assert "missingFields" in order
+    assert "completeness" in order
+    assert isinstance(order["missingFields"], list)
+    assert order["completeness"] in ("complete", "incomplete")
+
+
+def test_get_order_includes_completeness(api_client):
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    resp = api_client.get(f"/api/orders/{ref}")
+    assert resp.status_code == 200
+    assert "missingFields" in resp.json()
+    assert "completeness" in resp.json()
+
+
 def test_list_orders_filter_by_status(api_client):
     _create_order(api_client, customer="A")
     _create_order(api_client, customer="B")

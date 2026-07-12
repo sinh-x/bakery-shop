@@ -69,6 +69,35 @@ class UrgencyTier(str, Enum):
     NORMAL = "normal"
 
 
+class CompletenessTier(str, Enum):
+    COMPLETE = "complete"
+    INCOMPLETE = "incomplete"
+
+
+def is_junk_phone(phone: str) -> bool:
+    """Detect junk/placeholder phone numbers.
+
+    Strip non-digits; flag if:
+    - length < 10, OR
+    - all same digit, OR
+    - sequential ascending (e.g. 0123456789), OR
+    - sequential descending (e.g. 9876543210), OR
+    - fewer than 4 unique digits.
+    """
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if not digits or len(digits) < 10:
+        return True
+    if len(set(digits)) == 1:
+        return True
+    if all(int(digits[i]) == int(digits[i - 1]) + 1 for i in range(1, len(digits))):
+        return True
+    if all(int(digits[i]) == int(digits[i - 1]) - 1 for i in range(1, len(digits))):
+        return True
+    if len(set(digits)) < 4:
+        return True
+    return False
+
+
 def compute_urgency(
     due_date: Optional[str],
     due_time: Optional[str],
@@ -374,8 +403,47 @@ class Order:
             acknowledged_at=row["acknowledged_at"] if "acknowledged_at" in row.keys() else None,
         )
 
+    def compute_completeness(self) -> tuple[list[str], str]:
+        """Check required fields and return (missing_fields, completeness_tier).
+
+        Required: customer_name, items, total_price, due_date, due_time,
+        delivery_address (door/bus only), customer_phone, delivery_phone, source.
+        """
+        missing: list[str] = []
+
+        if not self.customer_name or self.customer_name.strip() == "Khách":
+            missing.append("customer_name")
+
+        if not self.items or len(self.items) == 0:
+            missing.append("items")
+
+        if not self.total_price or self.total_price <= 0:
+            missing.append("total_price")
+
+        if not self.due_date:
+            missing.append("due_date")
+
+        if not self.due_time:
+            missing.append("due_time")
+
+        if self.delivery_type in ("delivery", "bus") and not self.delivery_address:
+            missing.append("delivery_address")
+
+        if not self.customer_phone or is_junk_phone(self.customer_phone):
+            missing.append("customer_phone")
+
+        if not self.delivery_phone or is_junk_phone(self.delivery_phone):
+            missing.append("delivery_phone")
+
+        if not self.source:
+            missing.append("source")
+
+        tier = CompletenessTier.INCOMPLETE.value if missing else CompletenessTier.COMPLETE.value
+        return (missing, tier)
+
     def to_api_dict(self) -> dict:
         """Return Dart-compatible camelCase JSON representation."""
+        missing_fields, completeness = self.compute_completeness()
         return {
             "id": str(self.id),
             "orderRef": self.order_ref,
@@ -406,4 +474,6 @@ class Order:
             "urgency": compute_urgency(
                 self.due_date, self.due_time, self.status, self.acknowledged_at
             ),
+            "missingFields": missing_fields,
+            "completeness": completeness,
         }
