@@ -75,4 +75,71 @@ class OrdersLabels {
   static const walkInCustomerFallback = 'Khách';
   static String photoUploadResult(int success, int total, int failed) =>
       'Tải lên ảnh: $success/$total thành công, $failed lỗi';
+
+  // Urgency tier labels (DG-221 Phase 2)
+  static const urgencyCritical = 'Khẩn cấp';
+  static const urgencyUrgent = 'Gấp';
+  static const urgencyNormal = '';
+  static const urgencyCriticalBadge = 'KHẨN CẤP';
+  static const urgencyUrgentBadge = 'GẤP';
+
+  // Urgency banner (DG-221 Phase 3 — FR-6)
+  static const urgencyBannerTitle = 'Đơn hàng khẩn cấp';
+  static const urgencyBannerCritical = 'Khẩn cấp';
+  static const urgencyBannerUrgent = 'Gấp';
+  static String urgencyBannerText(int critical, int urgent) {
+    if (critical > 0 && urgent > 0) {
+      return '$critical khẩn cấp, $urgent gấp';
+    }
+    if (critical > 0) {
+      return '$critical khẩn cấp';
+    }
+    return '$urgent gấp';
+  }
+
+  // Urgency badge tooltip (DG-221 Phase 3 — FR-5)
+  static String urgencyBadgeTooltip(int count) =>
+      '$count đơn hàng khẩn cấp/gấp';
+
+  // In-app alert (DG-221 Phase 4 — FR-7)
+  static const criticalAlertTitle = 'Đơn hàng khẩn cấp mới';
+  static String criticalAlertBody(int count) =>
+      '$count đơn hàng khẩn cấp vừa xuất hiện';
+  static const criticalAlertDismiss = 'Đã hiểu';
+
+  // Urgency filter empty state (DG-221 Phase 5)
+  static const urgencyFilterEmpty = 'Không có đơn hàng khẩn cấp';
+
+  // Critical orders screen
+  static const criticalOrdersTitle = 'Đơn hàng khẩn cấp';
+
+  // Completeness labels (DG-241 Phase 2 — FR-3, FR-4)
+  static const completenessIncompleteBadge = 'THIẾU THÔNG TIN';
+  static const completenessMissingPrefix = 'Thiếu: ';
+  static const completenessComplete = '';
+
+  // Incomplete banner (DG-241 Phase 3 — FR-5)
+  static const incompleteBannerTitle = 'Đơn hàng thiếu thông tin';
+  static String incompleteBannerText(int count) => '$count đơn hàng thiếu thông tin';
+
+  // Incomplete badge tooltip (DG-241 Phase 3 — FR-6)
+  static String incompleteBadgeTooltip(int count) =>
+      '$count đơn hàng thiếu thông tin';
+
+  // Incomplete filter empty state (DG-241 Phase 3 — FR-7)
+  static const incompleteFilterEmpty = 'Không có đơn hàng thiếu thông tin';
+
+  // Missing fields section title (DG-241 Phase 3 — order detail)
+  static const missingFieldsSection = 'Thông tin còn thiếu';
+
+  // Missing field short labels (DG-241 Phase 4 — card indicators)
+  static const missingFieldCustomerName = 'tên KH';
+  static const missingFieldItems = 'sản phẩm';
+  static const missingFieldTotalPrice = 'tổng tiền';
+  static const missingFieldDueDate = 'ngày giao';
+  static const missingFieldDueTime = 'giờ giao';
+  static const missingFieldDeliveryAddress = 'địa chỉ';
+  static const missingFieldCustomerPhone = 'SĐT';
+  static const missingFieldDeliveryPhone = 'SĐT nhận';
+  static const missingFieldSource = 'nguồn';
 }

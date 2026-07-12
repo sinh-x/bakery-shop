@@ -70,6 +70,28 @@ def test_list_orders_returns_created(api_client):
     assert len(resp.json()) == 1
 
 
+def test_list_orders_includes_completeness(api_client):
+    _create_order(api_client)
+    resp = api_client.get("/api/orders")
+    assert resp.status_code == 200
+    orders = resp.json()
+    assert len(orders) == 1
+    order = orders[0]
+    assert "missingFields" in order
+    assert "completeness" in order
+    assert isinstance(order["missingFields"], list)
+    assert order["completeness"] in ("complete", "incomplete")
+
+
+def test_get_order_includes_completeness(api_client):
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    resp = api_client.get(f"/api/orders/{ref}")
+    assert resp.status_code == 200
+    assert "missingFields" in resp.json()
+    assert "completeness" in resp.json()
+
+
 def test_list_orders_filter_by_status(api_client):
     _create_order(api_client, customer="A")
     _create_order(api_client, customer="B")
@@ -2725,6 +2747,62 @@ def test_cancel_order_with_no_journal_entries_succeeds(api_client):
 
 
 # AC4 — Journal reversal failure does not block cancellation; accountingSyncWarning returned
+# --- Acknowledge endpoint (DG-221 Phase 1) ---
+
+
+def test_acknowledge_order_sets_acknowledged_at(api_client):
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    assert created.get("acknowledgedAt") is None
+
+    resp = api_client.post(f"/api/orders/{ref}/acknowledge")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["acknowledgedAt"] is not None
+    assert data["orderRef"] == ref
+
+
+def test_acknowledge_order_idempotent(api_client):
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+
+    resp1 = api_client.post(f"/api/orders/{ref}/acknowledge")
+    acked_at = resp1.json()["acknowledgedAt"]
+
+    resp2 = api_client.post(f"/api/orders/{ref}/acknowledge")
+    assert resp2.status_code == 200
+    assert resp2.json()["acknowledgedAt"] == acked_at
+
+
+def test_acknowledge_nonexistent_order_returns_404(api_client):
+    resp = api_client.post("/api/orders/NONEXISTENT/acknowledge")
+    assert resp.status_code == 404
+
+
+def test_acknowledge_updates_urgency_in_response(api_client):
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    urgency_before = created.get("urgency")
+
+    resp = api_client.post(f"/api/orders/{ref}/acknowledge")
+    assert resp.status_code == 200
+    acknowledged_at = resp.json()["acknowledgedAt"]
+    assert acknowledged_at is not None
+
+
+def test_urgency_present_in_list_response(api_client):
+    created = _create_order(api_client)
+    assert "urgency" in created, f"Expected 'urgency' in order dict, got keys: {list(created.keys())}"
+
+
+def test_urgency_present_in_get_response(api_client):
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    resp = api_client.get(f"/api/orders/{ref}")
+    assert resp.status_code == 200
+    assert "urgency" in resp.json()
+
+
 def test_cancel_order_returns_warning_when_journal_sync_fails(api_client):
     ref, order_id, txn_id, before_bal, entry_ids = _setup_order_with_all_journal_entries(
         api_client, lock_entries=False,

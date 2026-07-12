@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 
-import '../widgets/vietnamese_labels.dart';
+import '../labels/orders.dart';
+import '../theme/bakery_theme.dart';
 
 /// Shared order/work-item helper functions.
 /// Eliminates duplication across OrderCard, CakeQueueCard, DeliveryOrderCard.
+
+const urgencyCritical = 'critical';
+const urgencyUrgent = 'urgent';
+const completenessComplete = 'complete';
+const completenessIncomplete = 'incomplete';
 
 /// Returns Vietnamese display label for a delivery type.
 String deliveryTypeLabel(String type) {
@@ -11,6 +17,7 @@ String deliveryTypeLabel(String type) {
     case 'bus':
       return VN.deliveryBus;
     case 'door':
+    case 'delivery':
       return VN.deliveryDoor;
     case 'pickup':
     default:
@@ -56,12 +63,84 @@ bool isDueWithin2Hours(String? dueDate, String? dueTime) {
   return false;
 }
 
+/// Returns urgency tier color from backend-computed [urgency] field.
+/// Uses `BakeryTheme.urgencyTierColors` as single source of truth.
+Color? urgencyTierColor(String? urgency) {
+  if (urgency == null || urgency == 'normal') return null;
+  return BakeryTheme.urgencyTierColors[urgency];
+}
+
+/// Returns urgency tier icon data from backend-computed [urgency] field.
+IconData? urgencyTierIcon(String? urgency) {
+  if (urgency == null || urgency == 'normal') return null;
+  return BakeryTheme.urgencyTierIcons[urgency];
+}
+
+/// Returns completeness tier color from backend-computed [completeness] field.
+Color? completenessTierColor(String? completeness) {
+  if (completeness == null || completeness == 'complete') return null;
+  return BakeryTheme.completenessTierColors[completeness];
+}
+
+/// Returns completeness tier icon from backend-computed [completeness] field.
+IconData? completenessTierIcon(String? completeness) {
+  if (completeness == null || completeness == 'complete') return null;
+  return BakeryTheme.completenessTierIcons[completeness];
+}
+
+/// Returns completeness tier label from backend-computed [completeness] field.
+String completenessTierLabel(String? completeness) {
+  if (completeness == 'incomplete') {
+    return OrdersLabels.completenessIncompleteBadge;
+  }
+  return '';
+}
+
+/// Maps a backend missing-field key to a short VN display label for card use.
+String missingFieldLabel(String field) {
+  switch (field) {
+    case 'customer_name':
+      return OrdersLabels.missingFieldCustomerName;
+    case 'items':
+      return OrdersLabels.missingFieldItems;
+    case 'total_price':
+      return OrdersLabels.missingFieldTotalPrice;
+    case 'due_date':
+      return OrdersLabels.missingFieldDueDate;
+    case 'due_time':
+      return OrdersLabels.missingFieldDueTime;
+    case 'delivery_address':
+      return OrdersLabels.missingFieldDeliveryAddress;
+    case 'customer_phone':
+      return OrdersLabels.missingFieldCustomerPhone;
+    case 'delivery_phone':
+      return OrdersLabels.missingFieldDeliveryPhone;
+    case 'source':
+      return OrdersLabels.missingFieldSource;
+    default:
+      return field;
+  }
+}
+
+/// Returns urgency tier label from backend-computed [urgency] field.
+String urgencyTierLabel(String? urgency) {
+  switch (urgency) {
+    case 'critical':
+      return OrdersLabels.urgencyCriticalBadge;
+    case 'urgent':
+      return OrdersLabels.urgencyUrgentBadge;
+    default:
+      return '';
+  }
+}
+
 /// Returns delivery icon based on delivery type.
 IconData deliveryIcon(String? deliveryType) {
   switch (deliveryType) {
     case 'bus':
       return Icons.directions_bus;
     case 'door':
+    case 'delivery':
       return Icons.local_shipping;
     case 'pickup':
     default:
@@ -75,6 +154,7 @@ Color deliveryIconColor(String? deliveryType, Color defaultColor) {
     case 'bus':
       return Colors.orange;
     case 'door':
+    case 'delivery':
       return Colors.deepOrange;
     default:
       return defaultColor;
@@ -83,7 +163,7 @@ Color deliveryIconColor(String? deliveryType, Color defaultColor) {
 
 /// Whether delivery type is bus or door (requires delivery).
 bool isDeliveryType(String? deliveryType) =>
-    deliveryType == 'bus' || deliveryType == 'door';
+    deliveryType == 'bus' || deliveryType == 'door' || deliveryType == 'delivery';
 
 String visualOrderCode({required String orderRef, String? publicOrderCode}) {
   final code = (publicOrderCode ?? '').trim();

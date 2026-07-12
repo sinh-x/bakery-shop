@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../providers/order/incomplete_count_provider.dart';
+import '../../providers/order/urgency_count_provider.dart';
+
 import '../../data/api/api_client.dart';
 import '../../data/models/catalog_photo.dart';
 import '../../data/models/event.dart';
@@ -22,6 +25,7 @@ import '../../features/events/event_detail_screen.dart';
 import '../../features/events/event_form_screen.dart';
 import '../../features/events/event_list_screen.dart';
 import '../../features/orders/cake_detail_screen.dart';
+import '../../features/orders/filtered_orders_screen.dart';
 import '../../features/orders/order_create_screen.dart';
 import '../../features/orders/order_detail_screen.dart';
 import '../../features/orders/order_edit_screen.dart';
@@ -123,6 +127,16 @@ final appRouter = GoRouter(
       builder: (context, state) => const OrderCreateScreen(),
     ),
     // Order detail — full-screen (outside shell)
+    GoRoute(
+      path: '/orders/critical',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const FilteredOrdersScreen(filter: 'critical'),
+    ),
+    GoRoute(
+      path: '/orders/incomplete',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const FilteredOrdersScreen(filter: 'incomplete'),
+    ),
     GoRoute(
       path: '/orders/history',
       parentNavigatorKey: _rootNavigatorKey,
@@ -498,7 +512,7 @@ class _KnowledgeEditLoader extends ConsumerWidget {
   }
 }
 
-class _ShellScaffold extends StatelessWidget {
+class _ShellScaffold extends ConsumerWidget {
   final Widget child;
 
   const _ShellScaffold({required this.child});
@@ -542,40 +556,103 @@ class _ShellScaffold extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final urgencyCount = ref.watch(urgencyCountProvider);
+    final incompleteCount = ref.watch(incompleteCountProvider);
+    final showUrgencyBadge = urgencyCount > 0;
+    final showIncompleteBadge = incompleteCount > 0;
+
+    Widget ordersIcon({required IconData icon}) {
+      if (!showUrgencyBadge && !showIncompleteBadge) {
+        return Icon(icon);
+      }
+      final children = <Widget>[
+        Icon(icon),
+      ];
+      if (showUrgencyBadge) {
+        children.add(
+          Positioned(
+            right: -2,
+            top: -2,
+            child: _BadgeCircle(color: Colors.red, count: urgencyCount),
+          ),
+        );
+      }
+      if (showIncompleteBadge) {
+        children.add(
+          Positioned(
+            right: -2,
+            top: showUrgencyBadge ? 14 : -2,
+            child: _BadgeCircle(color: Colors.amber, count: incompleteCount),
+          ),
+        );
+      }
+      return Stack(clipBehavior: Clip.none, children: children);
+    }
+
     return Scaffold(
       body: child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex(context),
         onDestinationSelected: (index) =>
             _onDestinationSelected(context, index),
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
             selectedIcon: Icon(Icons.dashboard),
             label: VN.tabDashboard,
           ),
           NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long),
+            icon: ordersIcon(icon: Icons.receipt_long_outlined),
+            selectedIcon: ordersIcon(icon: Icons.receipt_long),
             label: VN.tabOrders,
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.cake_outlined),
             selectedIcon: Icon(Icons.cake),
             label: VN.tabProducts,
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.menu_book_outlined),
             selectedIcon: Icon(Icons.menu_book),
             label: VN.tabKnowledgeBase,
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.storefront_outlined),
             selectedIcon: Icon(Icons.storefront),
             label: VN.banHang,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Small circular badge dot for nav tab indicators.
+class _BadgeCircle extends StatelessWidget {
+  const _BadgeCircle({
+    required this.color,
+    required this.count,
+  });
+
+  final Color color;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        count > 99 ? '99+' : '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }

@@ -3885,6 +3885,10 @@ MIGRATIONS = {
         "sql": "",
         "callable": _migrate_v66_repair_customer_links,
     },
+    67: {
+        "description": "Add acknowledged_at column to orders for order acknowledgment tracking — DG-221 Phase 1",
+        "sql": "ALTER TABLE orders ADD COLUMN acknowledged_at TEXT DEFAULT NULL;",
+    },
 }
 
 

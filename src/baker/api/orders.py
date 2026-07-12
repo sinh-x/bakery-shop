@@ -577,6 +577,27 @@ def get_order(ref: str):
         return _order_detail(conn, row)
 
 
+@router.post("/{ref}/acknowledge")
+def acknowledge_order(ref: str):
+    """Ghi nhận đã xem đơn hàng (đặt acknowledged_at nếu đang null)."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        if row["acknowledged_at"] is None:
+            conn.execute(
+                "UPDATE orders SET acknowledged_at = ?, updated_at = ? WHERE id = ?",
+                (now_utc(), now_utc(), row["id"]),
+            )
+
+        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
+        return _order_detail(conn, updated)
+
+
 @router.patch("/{ref}")
 def edit_order(ref: str, body: OrderEdit):
     """Cập nhật thông tin đơn hàng."""

@@ -205,6 +205,15 @@ class OrderService {
     await _dio.delete('/api/orders/$orderRef/photos/$photoId');
   }
 
+  /// Acknowledges an order by setting `acknowledgedAt` on the backend.
+  ///
+  /// Called when the user opens an order detail that has not been acknowledged
+  /// yet. Idempotent — safe to call multiple times.
+  Future<Order> acknowledgeOrder(String ref) async {
+    final response = await _dio.post('/api/orders/$ref/acknowledge');
+    return Order.fromJson(response.data as Map<String, dynamic>);
+  }
+
   /// Fetches all active (non-terminal) orders for the dashboard view.
   Future<List<Order>> listActiveOrders({int limit = 200}) async {
     final response = await _dio.get(

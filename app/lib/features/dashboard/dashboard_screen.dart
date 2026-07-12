@@ -9,6 +9,7 @@ import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import '../../providers/order/critical_alert_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 // Active (non-terminal) statuses shown in the summary
@@ -35,6 +36,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   @override
   void invalidateProviders() {
     ref.invalidate(dashboardOrdersProvider);
+  }
+
+  @override
+  void onAutoRefreshTriggered() {
+    super.onAutoRefreshTriggered();
+    checkAndShowCriticalAlert(ref: ref, context: context, mounted: mounted);
   }
 
   @override

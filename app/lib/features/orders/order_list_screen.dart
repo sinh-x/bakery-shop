@@ -11,10 +11,14 @@ import '../../providers/order_providers.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/date_formatting.dart';
+import '../../shared/utils/order_helpers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import '../../providers/order/critical_alert_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
+import 'widgets/incomplete_banner.dart';
 import 'widgets/order_card.dart';
+import 'widgets/urgency_banner.dart';
 
 // Status filter chips for list view (mirrors Kanban column statuses + extras)
 // List view filters mirror Kanban columns (one column at a time)
@@ -44,6 +48,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   late final TabController _tabController;
   String _statusFilter = 'new';
   String _searchQuery = '';
+  final bool _urgencyFilterEnabled = false;
   final _searchController = TextEditingController();
 
   // View mode: 'list' or 'kanban'
@@ -57,6 +62,12 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     ref.invalidate(orderListProvider);
     ref.invalidate(cakeQueueProvider);
     ref.invalidate(deliveryQueueProvider);
+  }
+
+  @override
+  void onAutoRefreshTriggered() {
+    super.onAutoRefreshTriggered();
+    checkAndShowCriticalAlert(ref: ref, context: context, mounted: mounted);
   }
 
   Future<void> _loadViewMode() async {
@@ -130,8 +141,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
             .where(
               (o) =>
                   o.status == 'ready' &&
-                  o.deliveryType != 'bus' &&
-                  o.deliveryType != 'door',
+                  !isDeliveryType(o.deliveryType),
             )
             .toList();
       case 'to_deliver':
@@ -140,7 +150,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
             .where(
               (o) =>
                   o.status == 'ready' &&
-                  (o.deliveryType == 'bus' || o.deliveryType == 'door'),
+                  isDeliveryType(o.deliveryType),
             )
             .toList();
       case 'awaiting_payment':
@@ -167,8 +177,17 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         .toList();
   }
 
+  List<Order> _applyUrgencyFilter(List<Order> orders) {
+    if (!_urgencyFilterEnabled) return orders;
+    return orders
+        .where((o) => o.urgency == urgencyCritical || o.urgency == urgencyUrgent)
+        .toList();
+  }
+
   List<Order> _applyFilters(List<Order> orders) {
-    return _applySearchFilter(_applyStatusFilter(orders));
+    var filtered = _applySearchFilter(_applyStatusFilter(orders));
+    filtered = _applyUrgencyFilter(filtered);
+    return filtered;
   }
 
   /// Groups orders by due date, returning a mixed list of String headers and Order items.
@@ -265,6 +284,38 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
           // ── Tab 0: Order list ──────────────────────────────────────
           Column(
             children: [
+              // Urgency attention banner
+              Consumer(
+                builder: (context, ref, _) {
+                  final orders = ref.watch(orderListProvider).asData?.value ?? [];
+                  final critical = orders
+                      .where((o) => o.urgency == urgencyCritical)
+                      .length;
+                  final urgent = orders
+                      .where((o) => o.urgency == urgencyUrgent)
+                      .length;
+                  return UrgencyBanner(
+                    criticalCount: critical,
+                    urgentCount: urgent,
+                    onTap: () => context.push('/orders/critical'),
+                  );
+                },
+              ),
+
+              // Incomplete-order banner (DG-241 Phase 3 — FR-5)
+              Consumer(
+                builder: (context, ref, _) {
+                  final orders = ref.watch(orderListProvider).asData?.value ?? [];
+                  final count = orders
+                      .where((o) => o.completeness == completenessIncomplete)
+                      .length;
+                  return IncompleteBanner(
+                    count: count,
+                    onTap: () => context.push('/orders/incomplete'),
+                  );
+                },
+              ),
+
               // Search bar
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -357,9 +408,11 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                           if (filtered.isEmpty) {
                             return Center(
                               child: Text(
-                                _searchQuery.isNotEmpty
-                                    ? 'Không có đơn hàng phù hợp'
-                                    : 'Không có đơn hàng',
+                                _urgencyFilterEnabled
+                                    ? OrdersLabels.urgencyFilterEmpty
+                                    : _searchQuery.isNotEmpty
+                                            ? 'Không có đơn hàng phù hợp'
+                                            : 'Không có đơn hàng',
                                 style: Theme.of(context).textTheme.bodyMedium,
                               ),
                             );
@@ -450,7 +503,7 @@ Map<String, List<Order>> groupOrdersByKanbanStatus(List<Order> orders) {
           .where(
             (o) =>
                 o.status == 'ready' &&
-                (o.deliveryType == 'bus' || o.deliveryType == 'door'),
+                isDeliveryType(o.deliveryType),
           )
           .toList();
     } else if (status == 'ready') {
@@ -459,8 +512,7 @@ Map<String, List<Order>> groupOrdersByKanbanStatus(List<Order> orders) {
           .where(
             (o) =>
                 o.status == 'ready' &&
-                o.deliveryType != 'bus' &&
-                o.deliveryType != 'door',
+                !isDeliveryType(o.deliveryType),
           )
           .toList();
     } else if (status == 'awaiting_payment') {
