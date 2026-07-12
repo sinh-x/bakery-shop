@@ -38,6 +38,12 @@ _Order _$OrderFromJson(Map<String, dynamic> json) => _Order(
   workTicketPrintedBy: json['workTicketPrintedBy'] as String?,
   urgency: json['urgency'] as String? ?? 'normal',
   acknowledgedAt: json['acknowledgedAt'] as String?,
+  missingFields:
+      (json['missingFields'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList() ??
+      const [],
+  completeness: json['completeness'] as String? ?? 'complete',
   createdAt: parseApiDateTimeRequired(json['createdAt'] as String),
   updatedAt: parseApiDateTimeRequired(json['updatedAt'] as String),
 );
@@ -68,6 +74,8 @@ Map<String, dynamic> _$OrderToJson(_Order instance) => <String, dynamic>{
   'workTicketPrintedBy': instance.workTicketPrintedBy,
   'urgency': instance.urgency,
   'acknowledgedAt': instance.acknowledgedAt,
+  'missingFields': instance.missingFields,
+  'completeness': instance.completeness,
   'createdAt': timestampToJson(instance.createdAt),
   'updatedAt': timestampToJson(instance.updatedAt),
 };

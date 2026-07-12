@@ -8,6 +8,8 @@ import '../theme/bakery_theme.dart';
 
 const urgencyCritical = 'critical';
 const urgencyUrgent = 'urgent';
+const completenessComplete = 'complete';
+const completenessIncomplete = 'incomplete';
 
 /// Returns Vietnamese display label for a delivery type.
 String deliveryTypeLabel(String type) {
@@ -71,6 +73,52 @@ Color? urgencyTierColor(String? urgency) {
 IconData? urgencyTierIcon(String? urgency) {
   if (urgency == null || urgency == 'normal') return null;
   return BakeryTheme.urgencyTierIcons[urgency];
+}
+
+/// Returns completeness tier color from backend-computed [completeness] field.
+Color? completenessTierColor(String? completeness) {
+  if (completeness == null || completeness == 'complete') return null;
+  return BakeryTheme.completenessTierColors[completeness];
+}
+
+/// Returns completeness tier icon from backend-computed [completeness] field.
+IconData? completenessTierIcon(String? completeness) {
+  if (completeness == null || completeness == 'complete') return null;
+  return BakeryTheme.completenessTierIcons[completeness];
+}
+
+/// Returns completeness tier label from backend-computed [completeness] field.
+String completenessTierLabel(String? completeness) {
+  if (completeness == 'incomplete') {
+    return OrdersLabels.completenessIncompleteBadge;
+  }
+  return '';
+}
+
+/// Maps a backend missing-field key to a short VN display label for card use.
+String missingFieldLabel(String field) {
+  switch (field) {
+    case 'customer_name':
+      return 'tên KH';
+    case 'items':
+      return 'sản phẩm';
+    case 'total_price':
+      return 'tổng tiền';
+    case 'due_date':
+      return 'ngày giao';
+    case 'due_time':
+      return 'giờ giao';
+    case 'delivery_address':
+      return 'địa chỉ';
+    case 'customer_phone':
+      return 'SĐT';
+    case 'delivery_phone':
+      return 'SĐT nhận';
+    case 'source':
+      return 'nguồn';
+    default:
+      return field;
+  }
 }
 
 /// Returns urgency tier label from backend-computed [urgency] field.

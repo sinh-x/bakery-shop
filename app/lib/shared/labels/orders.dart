@@ -112,4 +112,9 @@ class OrdersLabels {
 
   // Critical orders screen
   static const criticalOrdersTitle = 'Đơn hàng khẩn cấp';
+
+  // Completeness labels (DG-241 Phase 2 — FR-3, FR-4)
+  static const completenessIncompleteBadge = 'THIẾU THÔNG TIN';
+  static const completenessMissingPrefix = 'Thiếu: ';
+  static const completenessComplete = '';
 }

@@ -162,14 +162,10 @@ class _OrderCardState extends ConsumerState<OrderCard>
     final tierIcon = urgencyTierIcon(order.urgency);
     final tierLabel = urgencyTierLabel(order.urgency);
 
-    // Build left border decoration using backend urgency tier
-    final borderSides = <BorderSide>[];
-    if (tierColor != null) {
-      borderSides.add(BorderSide(color: tierColor, width: 4));
-    }
-    if (borderSides.isEmpty) {
-      borderSides.add(const BorderSide(color: Colors.transparent, width: 4));
-    }
+    final completenessColor = completenessTierColor(order.completeness);
+    final completenessIcon = completenessTierIcon(order.completeness);
+    final completenessLabel = completenessTierLabel(order.completeness);
+    final isIncomplete = order.completeness == completenessIncomplete;
 
     final paymentColor = _paymentBadge().$1;
     final paymentLabel = _paymentBadge().$2;
@@ -185,14 +181,21 @@ class _OrderCardState extends ConsumerState<OrderCard>
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: widget.onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border(left: borderSides.first),
-          ),
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (completenessColor != null)
+              Container(width: 4, color: completenessColor),
+            if (tierColor != null)
+              Container(width: 4, color: tierColor),
+            if (completenessColor == null && tierColor == null)
+              const SizedBox(width: 4),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
               // ── Customer name + delivery icon + urgency badge ──
               Row(
                 children: [
@@ -240,8 +243,50 @@ class _OrderCardState extends ConsumerState<OrderCard>
                       ),
                     ),
                   ],
+                  if (isIncomplete) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: completenessColor!.withAlpha(25),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: completenessColor.withAlpha(100)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (completenessIcon != null) ...[
+                            Icon(completenessIcon, size: 12, color: completenessColor),
+                            const SizedBox(width: 3),
+                          ],
+                          Text(
+                            completenessLabel,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: completenessColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
+              // ── Missing fields indicator ──
+              if (isIncomplete && order.missingFields.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '${OrdersLabels.completenessMissingPrefix}${order.missingFields.map(missingFieldLabel).join(', ')}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: completenessColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
               // ── Photo badge + thumbnail (below name row) ──
               Row(
                 children: [
@@ -537,8 +582,11 @@ class _OrderCardState extends ConsumerState<OrderCard>
                   ],
                 ),
               ],
-            ],
-          ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

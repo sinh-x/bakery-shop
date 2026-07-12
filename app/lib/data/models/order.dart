@@ -35,6 +35,8 @@ sealed class Order with _$Order {
     String? workTicketPrintedBy,
     @Default('normal') String urgency,
     String? acknowledgedAt,
+    @Default([]) List<String> missingFields,
+    @Default('complete') String completeness,
     @JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)
     required DateTime createdAt,
     @JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)
