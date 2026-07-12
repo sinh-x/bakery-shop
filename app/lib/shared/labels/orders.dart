@@ -117,4 +117,18 @@ class OrdersLabels {
   static const completenessIncompleteBadge = 'THIẾU THÔNG TIN';
   static const completenessMissingPrefix = 'Thiếu: ';
   static const completenessComplete = '';
+
+  // Incomplete banner (DG-241 Phase 3 — FR-5)
+  static const incompleteBannerTitle = 'Đơn hàng thiếu thông tin';
+  static String incompleteBannerText(int count) => '$count đơn hàng thiếu thông tin';
+
+  // Incomplete badge tooltip (DG-241 Phase 3 — FR-6)
+  static String incompleteBadgeTooltip(int count) =>
+      '$count đơn hàng thiếu thông tin';
+
+  // Incomplete filter empty state (DG-241 Phase 3 — FR-7)
+  static const incompleteFilterEmpty = 'Không có đơn hàng thiếu thông tin';
+
+  // Missing fields section title (DG-241 Phase 3 — order detail)
+  static const missingFieldsSection = 'Thông tin còn thiếu';
 }

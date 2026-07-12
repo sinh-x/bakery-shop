@@ -15,6 +15,7 @@ import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../providers/order/critical_alert_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
+import 'widgets/incomplete_banner.dart';
 import 'widgets/order_card.dart';
 import 'widgets/urgency_banner.dart';
 
@@ -47,6 +48,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   String _statusFilter = 'new';
   String _searchQuery = '';
   final bool _urgencyFilterEnabled = false;
+  bool _incompleteFilterEnabled = false;
   final _searchController = TextEditingController();
 
   // View mode: 'list' or 'kanban'
@@ -183,8 +185,24 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         .toList();
   }
 
+  List<Order> _applyIncompleteFilter(List<Order> orders) {
+    if (!_incompleteFilterEnabled) return orders;
+    return orders.where((o) => o.completeness == 'incomplete').toList();
+  }
+
+  /// Sorts incomplete orders to the top of the list when the incomplete filter
+  /// is active. Preserves relative order within each group.
+  List<Order> _sortIncompleteToTop(List<Order> orders) {
+    if (!_incompleteFilterEnabled) return orders;
+    final incomplete = orders.where((o) => o.completeness == 'incomplete').toList();
+    final complete = orders.where((o) => o.completeness != 'incomplete').toList();
+    return [...incomplete, ...complete];
+  }
+
   List<Order> _applyFilters(List<Order> orders) {
-    return _applyUrgencyFilter(_applySearchFilter(_applyStatusFilter(orders)));
+    var filtered = _applyIncompleteFilter(_applySearchFilter(_applyStatusFilter(orders)));
+    filtered = _applyUrgencyFilter(filtered);
+    return _sortIncompleteToTop(filtered);
   }
 
   /// Groups orders by due date, returning a mixed list of String headers and Order items.
@@ -299,6 +317,22 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                 },
               ),
 
+              // Incomplete-order banner (DG-241 Phase 3 — FR-5)
+              Consumer(
+                builder: (context, ref, _) {
+                  final orders = ref.watch(orderListProvider).asData?.value ?? [];
+                  final count = orders
+                      .where((o) => o.completeness == 'incomplete')
+                      .length;
+                  return IncompleteBanner(
+                    count: count,
+                    onTap: () => setState(() {
+                      _incompleteFilterEnabled = !_incompleteFilterEnabled;
+                    }),
+                  );
+                },
+              ),
+
               // Search bar
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -393,9 +427,11 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                               child: Text(
                                 _urgencyFilterEnabled
                                     ? OrdersLabels.urgencyFilterEmpty
-                                    : _searchQuery.isNotEmpty
-                                        ? 'Không có đơn hàng phù hợp'
-                                        : 'Không có đơn hàng',
+                                    : _incompleteFilterEnabled
+                                        ? OrdersLabels.incompleteFilterEmpty
+                                        : _searchQuery.isNotEmpty
+                                            ? 'Không có đơn hàng phù hợp'
+                                            : 'Không có đơn hàng',
                                 style: Theme.of(context).textTheme.bodyMedium,
                               ),
                             );

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../providers/order/incomplete_count_provider.dart';
 import '../../providers/order/urgency_count_provider.dart';
 
 import '../../data/api/api_client.dart';
@@ -552,7 +553,37 @@ class _ShellScaffold extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final urgencyCount = ref.watch(urgencyCountProvider);
-    final showBadge = urgencyCount > 0;
+    final incompleteCount = ref.watch(incompleteCountProvider);
+    final showUrgencyBadge = urgencyCount > 0;
+    final showIncompleteBadge = incompleteCount > 0;
+
+    Widget ordersIcon({required IconData icon}) {
+      if (!showUrgencyBadge && !showIncompleteBadge) {
+        return Icon(icon);
+      }
+      final children = <Widget>[
+        Icon(icon),
+      ];
+      if (showUrgencyBadge) {
+        children.add(
+          Positioned(
+            right: -2,
+            top: -2,
+            child: _BadgeCircle(color: Colors.red, count: urgencyCount),
+          ),
+        );
+      }
+      if (showIncompleteBadge) {
+        children.add(
+          Positioned(
+            right: -2,
+            top: showUrgencyBadge ? 14 : -2,
+            child: _BadgeCircle(color: Colors.amber, count: incompleteCount),
+          ),
+        );
+      }
+      return Stack(clipBehavior: Clip.none, children: children);
+    }
 
     return Scaffold(
       body: child,
@@ -567,28 +598,8 @@ class _ShellScaffold extends ConsumerWidget {
             label: VN.tabDashboard,
           ),
           NavigationDestination(
-            icon: showBadge
-                ? Badge(
-                    label: Text('$urgencyCount'),
-                    backgroundColor: Colors.red,
-                    textStyle: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                    ),
-                    child: const Icon(Icons.receipt_long_outlined),
-                  )
-                : const Icon(Icons.receipt_long_outlined),
-            selectedIcon: showBadge
-                ? Badge(
-                    label: Text('$urgencyCount'),
-                    backgroundColor: Colors.red,
-                    textStyle: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                    ),
-                    child: const Icon(Icons.receipt_long),
-                  )
-                : const Icon(Icons.receipt_long),
+            icon: ordersIcon(icon: Icons.receipt_long_outlined),
+            selectedIcon: ordersIcon(icon: Icons.receipt_long),
             label: VN.tabOrders,
           ),
           const NavigationDestination(
@@ -607,6 +618,36 @@ class _ShellScaffold extends ConsumerWidget {
             label: VN.banHang,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Small circular badge dot for nav tab indicators.
+class _BadgeCircle extends StatelessWidget {
+  const _BadgeCircle({
+    required this.color,
+    required this.count,
+  });
+
+  final Color color;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }

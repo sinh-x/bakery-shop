@@ -580,6 +580,70 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
         ),
         const SizedBox(height: 16),
 
+        // ── Missing-field warning (DG-241 Phase 3) ──────────────────────
+        if (order.completeness == completenessIncomplete &&
+            order.missingFields.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: BakeryTheme.completenessTierColors['incomplete']?.withAlpha(15) ?? Colors.amber.withAlpha(15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: BakeryTheme.completenessTierColors['incomplete'] ?? Colors.amber,
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        BakeryTheme.completenessTierIcons['incomplete'] ?? Icons.warning_amber_rounded,
+                        size: 20,
+                        color: BakeryTheme.completenessTierColors['incomplete'] ?? Colors.amber,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        OrdersLabels.missingFieldsSection,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: BakeryTheme.completenessTierColors['incomplete'] ?? Colors.amber,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ...order.missingFields.map((field) => Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.circle,
+                          size: 6,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            missingFieldLabel(field),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )),
+                ],
+              ),
+            ),
+          ),
+
         // ── Print status line ──────────────────────────────────────────
         _PrintStatusRow(
           printedAt: order.workTicketPrintedAt,
