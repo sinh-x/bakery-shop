@@ -52,6 +52,7 @@ import '../../features/stock/stock_reconciliation_history_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../providers/products_provider.dart';
+import '../widgets/admin_guard.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -66,18 +67,52 @@ final _shellNavigatorKey = GlobalKey<NavigatorState>();
 /// - While the auth state is `unknown` (initial boot, before the notifier has
 ///   resolved the stored token) the guard does nothing — the splash/loading
 ///   state is owned by the `/login` route's initial frame.
-String? _authRedirect(GoRouterState state, AuthStatus status) {
+///
+/// Role-based gating (FR16/AC10/AC11): when authenticated, staff users are
+/// blocked from the admin-only routes listed in [_adminOnlyRoutes]. They are
+/// redirected to the dedicated [_adminAccessRoute] page so deep links do not
+/// silently land on a blank screen. Admin users pass through unaffected.
+String? _authRedirect(GoRouterState state, AuthStatus status, String? role) {
   final location = state.uri.path;
   final onLogin = location == '/login';
   switch (status) {
     case AuthStatus.authenticated:
-      return onLogin ? '/orders' : null;
+      if (onLogin) return '/orders';
+      if (role != 'admin' && _isAdminOnlyRoute(location)) {
+        return _adminAccessRoute;
+      }
+      return null;
     case AuthStatus.unauthenticated:
       return onLogin ? null : '/login';
     case AuthStatus.unknown:
       return null;
   }
 }
+
+/// Admin-only routes (FR16). Staff users are redirected away from these.
+///
+/// NOTE: `/audit-log` is registered here as a placeholder route for Phase 8;
+/// Phase 7 only ensures its nav entry and route guard are admin-gated. The
+/// audit log *screen with filters* is built in Phase 8.
+const Set<String> _adminOnlyRoutes = {
+  '/checklist/config',
+  '/categories/manage',
+  '/stock/reconciliation',
+  '/stock/reconciliation/history',
+  '/audit-log',
+};
+
+/// Match admin-only routes that take path parameters (e.g.
+/// `/stock/reconciliation/history/123`). Prefix match is used for those.
+bool _isAdminOnlyRoute(String location) {
+  if (_adminOnlyRoutes.contains(location)) return true;
+  for (final route in _adminOnlyRoutes) {
+    if (location.startsWith('$route/')) return true;
+  }
+  return false;
+}
+
+const String _adminAccessRoute = '/admin-access';
 
 /// Router provider — listens to [authProvider] so that auth state changes
 /// (login, logout, 401 handling) trigger the redirect guard without needing
@@ -87,13 +122,27 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/orders',
-    redirect: (context, state) => _authRedirect(state, authState.status),
+    redirect: (context, state) =>
+        _authRedirect(state, authState.status, authState.role),
     routes: [
       // Login — full-screen, outside the shell (FR14/AC8).
       GoRoute(
         path: '/login',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const LoginScreen(),
+      ),
+      // Admin access denied — shown when staff hit an admin-only route (FR16).
+      GoRoute(
+        path: _adminAccessRoute,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const AdminAccessScreen(),
+      ),
+      // Audit log — admin-only placeholder route (Phase 7 gating only; the
+      // filterable screen is built in Phase 8).
+      GoRoute(
+        path: '/audit-log',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const _AuditLogPlaceholder(),
       ),
       ShellRoute(
       navigatorKey: _shellNavigatorKey,
@@ -689,6 +738,30 @@ class _BadgeCircle extends StatelessWidget {
           color: Colors.white,
           fontSize: 10,
           fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+}
+
+/// Placeholder for the `/audit-log` route (Phase 7). The full filterable
+/// audit log screen is built in Phase 8 — this only ensures the route exists
+/// and is admin-gated by the redirect guard in [_authRedirect].
+class _AuditLogPlaceholder extends StatelessWidget {
+  const _AuditLogPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text(VN.openAuditLog)),
+      body: const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Tính năng nhật ký thay đổi sẽ có ở giai đoạn tiếp theo.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey),
+          ),
         ),
       ),
     );

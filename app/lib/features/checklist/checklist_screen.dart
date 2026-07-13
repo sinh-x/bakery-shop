@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/checklist_entry.dart';
 import '../../data/providers/checklist_provider.dart';
+import '../../features/auth/auth_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/date_formatting.dart';
@@ -90,6 +91,7 @@ class _ChecklistScreenState extends ConsumerState<ChecklistScreen>
   @override
   Widget build(BuildContext context) {
     final checklistAsync = ref.watch(dailyChecklistProvider);
+    final isAdmin = ref.watch(authProvider).isAdmin;
 
     return Scaffold(
       appBar: AppBar(
@@ -103,9 +105,16 @@ class _ChecklistScreenState extends ConsumerState<ChecklistScreen>
           ),
           AppBarOverflowMenu(
             onSelected: _onAppBarMenuSelected,
-            items: const [
-              PopupMenuItem<String>(value: 'history', child: Text('Lịch sử')),
-              PopupMenuItem<String>(value: 'config', child: Text('Cấu hình')),
+            items: [
+              const PopupMenuItem<String>(
+                value: 'history',
+                child: Text('Lịch sử'),
+              ),
+              if (isAdmin)
+                const PopupMenuItem<String>(
+                  value: 'config',
+                  child: Text('Cấu hình'),
+                ),
             ],
           ),
         ],
