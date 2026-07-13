@@ -9,16 +9,20 @@ Implements FR7-FR11 + FR19 unlock extension:
   - ``baker user unlock <username>``                       (FR19)
 
 Passwords are hashed with bcrypt (cost factor 12, NFR4) via passlib.
-``create`` and ``set-password`` print a generated (or accepted) plaintext
-password to stdout so the admin can distribute credentials. ``set-password``
-accepts an optional ``--password`` flag; when omitted a random password is
-generated and printed (matching the migration seeding behaviour).
+``create`` generates a random password and prints it to stdout so the
+admin can distribute credentials (unless ``--quiet`` is passed for
+CI/scripted runs). ``set-password`` prompts for a new password
+interactively (hidden input + confirmation) matching standard ``passwd``
+UX; when ``--random`` is passed instead, a random password is generated
+and printed. Both commands accept ``--quiet`` to suppress the plaintext
+password stdout output for CI/scripted use (MJ-1/MJ-2, DG-029 phase 5.6-c1).
 """
 
 from __future__ import annotations
 
+import os
 import secrets
-from typing import Optional
+from datetime import datetime, timezone
 
 import click
 from passlib.context import CryptContext
@@ -70,11 +74,17 @@ def user_cmd():
     callback=_validate_role,
     help="System role: admin or staff (default: staff).",
 )
-def user_create(username: str, role: str):
+@click.option(
+    "--quiet",
+    is_flag=True,
+    help="Suppress plaintext password output (for CI/scripted use).",
+)
+def user_create(username: str, role: str, quiet: bool):
     """Create a new user account with a random password (FR7).
 
     The generated password is printed to stdout so it can be distributed to
-    the user. The password is bcrypt-hashed before storage (NFR4).
+    the user. The password is bcrypt-hashed before storage (NFR4). Pass
+    ``--quiet`` to suppress the plaintext password output (CI/scripted use).
     """
     with get_db() as conn:
         existing = conn.execute(
@@ -92,23 +102,35 @@ def user_create(username: str, role: str):
             (username, hashed, role),
         )
         console.print(f"  [green]Created[/green] user '{username}' (role={role})")
-        console.print(f"  [bold]Password:[/bold] {plain}")
-        console.print("[dim]Distribute this password to the user.[/dim]")
+        if not quiet:
+            console.print(f"  [bold]Password:[/bold] {plain}")
+            console.print("[dim]Distribute this password to the user.[/dim]")
 
 
 @user_cmd.command("set-password")
 @click.argument("username")
 @click.option(
-    "--password",
-    default=None,
-    help="New password. If omitted, a random password is generated and printed.",
+    "--random",
+    "use_random",
+    is_flag=True,
+    help="Generate a random password instead of prompting interactively.",
 )
-def user_set_password(username: str, password: Optional[str]):
+@click.option(
+    "--quiet",
+    is_flag=True,
+    help="Suppress plaintext password output (for CI/scripted use).",
+)
+def user_set_password(username: str, use_random: bool, quiet: bool):
     """Set a new password for an existing user (FR8).
 
-    When ``--password`` is omitted, a random password is generated and printed
-    to stdout (matching the create/migration behaviour). When provided, the
-    password is hashed and stored silently.
+    By default prompts for a new password interactively with hidden input
+    and confirmation (matching standard ``passwd`` UX) — passwords are no
+    longer accepted via ``--password`` to avoid exposing them via
+    ``ps aux`` / shell history (MJ-1, DG-029 phase 5.6-c1).
+
+    Pass ``--random`` to generate a random password instead of prompting;
+    the generated password is printed to stdout unless ``--quiet`` is also
+    passed (MJ-2, for CI/scripted use).
     """
     with get_db() as conn:
         row = conn.execute(
@@ -119,16 +141,24 @@ def user_set_password(username: str, password: Optional[str]):
             return
 
         generated = False
-        if not password:
+        if use_random:
             password = _generate_password()
             generated = True
+        else:
+            # Interactive prompt — hidden input + confirmation (MJ-1).
+            # Click's CliRunner drives this via `input=...` in tests.
+            password = click.prompt(
+                "New password",
+                hide_input=True,
+                confirmation_prompt=True,
+            )
         hashed = _hash(password)
         conn.execute(
             "UPDATE users SET password_hash = ? WHERE username = ?",
             (hashed, username),
         )
         console.print(f"  [green]Updated[/green] password for '{username}'.")
-        if generated:
+        if generated and not quiet:
             console.print(f"  [bold]New password:[/bold] {password}")
             console.print("[dim]Distribute this password to the user.[/dim]")
 
@@ -183,8 +213,6 @@ def user_list(show_all: bool):
     table.add_column("Active", width=7)
     table.add_column("Locked", width=8)
     table.add_column("Created", style="dim", width=20)
-
-    from datetime import datetime, timezone
 
     now = datetime.now(timezone.utc)
     for row in rows:

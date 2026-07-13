@@ -334,6 +334,36 @@ def _assert_soft_delete_columns(conn) -> None:
     assert event_columns["deleted_by"]["notnull"] == 0
 
 
+def _assert_users_role_check_constraint(conn) -> None:
+    """Mn-3 (DG-029 phase 5.6-c1): users.role has a DB-level CHECK constraint."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+    ).fetchone()
+    assert row is not None, "users table missing"
+    create_sql = (row["sql"] or "").replace("\n", " ")
+    assert "CHECK(role IN" in create_sql, (
+        f"users table missing CHECK(role IN ...) constraint; sql={create_sql!r}"
+    )
+    # Inserting an invalid role must be rejected by the DB itself.
+    import pytest as _pytest
+    try:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, active) "
+            "VALUES ('__check_probe__', 'x', 'superuser', 1)"
+        )
+    except Exception as exc:
+        # CHECK constraint violation — expected.
+        if "CHECK" not in str(exc).upper() and "constraint" not in str(exc).lower():
+            raise
+    else:
+        # Roll back the offending insert so we don't poison other tests.
+        conn.execute("DELETE FROM users WHERE username = '__check_probe__'")
+        conn.commit()
+        raise _pytest.fail(
+            "users.role CHECK constraint did not reject role='superuser'"
+        )
+
+
 def _seed_v35_stock(conn) -> tuple[int, int, int]:
     conn.execute(
         """INSERT INTO products (name, category, base_price, cost, recipe_notes)
@@ -366,7 +396,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 70
+        assert _migrated_version(conn) == 71
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -375,6 +405,7 @@ def test_schema_migration_v31_fresh_db():
         _assert_v40_v41_schema(conn)
         _assert_event_history_schema(conn)
         _assert_soft_delete_columns(conn)
+        _assert_users_role_check_constraint(conn)
 
 
 def test_schema_migration_v30_to_v31():
@@ -383,7 +414,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 70
+        assert _migrated_version(conn) == 71
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -392,15 +423,16 @@ def test_schema_migration_v30_to_v31():
         _assert_v40_v41_schema(conn)
         _assert_event_history_schema(conn)
         _assert_soft_delete_columns(conn)
+        _assert_users_role_check_constraint(conn)
 
 
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 70
+        assert _migrated_version(conn) == 71
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 70
+        assert _migrated_version(conn) == 71
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -419,6 +451,7 @@ def test_schema_migration_v31_idempotent():
         _assert_reconciliation_sale_rows_schema(conn)
         _assert_chip_aware_inventory_schema(conn)
         _assert_v40_v41_schema(conn)
+        _assert_users_role_check_constraint(conn)
 
 
 def test_schema_migration_v32_handles_preexisting_printed_by_column():
@@ -3318,3 +3351,85 @@ def test_v65_idempotent():
         _migrate_v65_journal_sync_failure_log(conn)
         assert _migrated_version(conn) == 65
         _assert_journal_sync_failure_log_schema(conn)
+
+
+# ---------------------------------------------------------------------------
+# v71 — DB-level CHECK(role IN ('admin','staff')) on users (Mn-3, DG-029 5.6-c1)
+# ---------------------------------------------------------------------------
+
+
+def test_v71_fresh_db_has_role_check():
+    """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 71
+        _assert_users_role_check_constraint(conn)
+
+
+def test_v71_rebuilds_existing_users_table_to_add_check():
+    """An existing DB where v68 ran *before* the CHECK fix gets it added by v71.
+
+    To simulate a pre-fix v68 run we migrate to v67, then create the users
+    table manually with the *old* schema (no CHECK) — exactly what an
+    existing DB would look like before this migration slot was added. Then
+    we run v68..v71 and verify v71 rebuilds the table with the CHECK.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 67)
+        assert _migrated_version(conn) == 67
+        # Manually create the users table with the pre-fix schema (no CHECK),
+        # simulating an existing DB where v68 ran before the Mn-3 fix landed.
+        conn.executescript(
+            """
+            CREATE TABLE users (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                username      TEXT UNIQUE NOT NULL,
+                password_hash  TEXT NOT NULL,
+                role          TEXT NOT NULL DEFAULT 'staff',
+                active        INTEGER NOT NULL DEFAULT 1,
+                locked_until  TEXT DEFAULT NULL,
+                created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+            );
+            CREATE INDEX idx_users_username ON users(username);
+            CREATE INDEX idx_users_active ON users(active);
+            INSERT INTO schema_version (version, description) VALUES
+                (68, 'Auth RBAC users table (pre-fix, no CHECK)'),
+                (69, 'audit_log table'),
+                (70, 'sessions table');
+            """
+        )
+        # Seed an existing user so the rebuild must preserve data.
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, active) "
+            "VALUES ('preserve_me', 'hashed', 'admin', 1)"
+        )
+        conn.commit()
+
+        # Pre-condition: no CHECK yet.
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+        ).fetchone()
+        assert "CHECK(role IN" not in (row["sql"] or "").replace("\n", " ")
+
+        _migrate_to_version(conn, 71)
+        assert _migrated_version(conn) == 71
+        _assert_users_role_check_constraint(conn)
+
+        # Data was preserved across the rebuild.
+        kept = conn.execute(
+            "SELECT username, role, active FROM users WHERE username = 'preserve_me'"
+        ).fetchone()
+        assert kept is not None
+        assert kept["role"] == "admin"
+        assert kept["active"] == 1
+
+
+def test_v71_idempotent():
+    """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 71
+        from baker.db.schema import _migrate_v71_users_role_check
+
+        _migrate_v71_users_role_check(conn)
+        _assert_users_role_check_constraint(conn)

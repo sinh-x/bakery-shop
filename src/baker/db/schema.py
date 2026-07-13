@@ -1,3 +1,4 @@
+import os
 from typing import Optional
 
 from baker.utils.time import now_utc
@@ -3575,7 +3576,7 @@ CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     username      TEXT UNIQUE NOT NULL,
     password_hash  TEXT NOT NULL,
-    role          TEXT NOT NULL DEFAULT 'staff',
+    role          TEXT NOT NULL DEFAULT 'staff' CHECK(role IN ('admin', 'staff')),
     active        INTEGER NOT NULL DEFAULT 1,
     locked_until  TEXT DEFAULT NULL,
     created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
@@ -3634,13 +3635,82 @@ def _migrate_v68_users_table(conn):
     if inserted:
         import sys
 
-        print("=" * 60, file=sys.stdout)
-        print("DG-029 users migration: seeded initial user accounts", file=sys.stdout)
-        print("Distribute these temporary passwords to each user:", file=sys.stdout)
-        print("-" * 60, file=sys.stdout)
+        # MJ-2 (DG-029 phase 5.6-c1): gate plaintext password printing behind
+        # BAKER_SEED_QUIET so CI logs don't capture plaintext credentials.
+        # When unset/empty the admin-distribution UX is preserved.
+        seed_quiet = os.environ.get("BAKER_SEED_QUIET", "").strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+        if seed_quiet:
+            print(
+                "DG-029 users migration: seeded initial user accounts "
+                f"({len(inserted)} users) — passwords suppressed (BAKER_SEED_QUIET=1)",
+                file=sys.stdout,
+            )
+        else:
+            print("=" * 60, file=sys.stdout)
+            print("DG-029 users migration: seeded initial user accounts", file=sys.stdout)
+            print("Distribute these temporary passwords to each user:", file=sys.stdout)
+            print("-" * 60, file=sys.stdout)
         for username, role, plain in inserted:
             print(f"  {username} ({role}): {plain}", file=sys.stdout)
         print("=" * 60, file=sys.stdout)
+
+
+def _migrate_v71_users_role_check(conn):
+    """Add a DB-level CHECK(role IN ('admin','staff')) to the ``users`` table.
+
+    Mn-3 (DG-029 phase 5.6-c1): v68 created the users table without a
+    DB-level CHECK on ``role``, so application bugs could persist invalid
+    role values. Fresh DBs created on or after this migration get the
+    constraint directly in ``USERS_SCHEMA``. Existing DBs where v68 has
+    already run need a forward rebuild: SQLite has no ``ALTER TABLE ...
+    ADD CONSTRAINT`` so we recreate the table with the CHECK, copy data,
+    and recreate indexes. Idempotent: if the constraint is already
+    present (fresh DB created post-fix, or this migration already ran),
+    the rebuild is skipped.
+    """
+    # Detect whether the CHECK constraint is already in place. SQLite
+    # exposes table-level CHECK constraints via the `sql` column of
+    # sqlite_master. A fresh USERS_SCHEMA create includes the CHECK, so
+    # re-running this migration on a fresh DB is a no-op.
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+    ).fetchone()
+    if row is None:
+        # users table does not exist yet — nothing to migrate. The
+        # USERS_SCHEMA block in this same migration slot will create it
+        # with the CHECK already in place.
+        return
+    create_sql = row["sql"] or ""
+    if "CHECK(role IN" in create_sql.replace("\n", " "):
+        return
+
+    # Rebuild users with the CHECK constraint (table-rebuild pattern,
+    # same approach used by _migrate_v28_cascade_and_reseed).
+    conn.executescript(
+        """
+        CREATE TABLE users_new (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            username      TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role          TEXT NOT NULL DEFAULT 'staff' CHECK(role IN ('admin', 'staff')),
+            active        INTEGER NOT NULL DEFAULT 1,
+            locked_until  TEXT DEFAULT NULL,
+            created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+        );
+
+        INSERT INTO users_new (id, username, password_hash, role, active, locked_until, created_at)
+        SELECT id, username, password_hash, role, active, locked_until, created_at
+        FROM users;
+
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+
+        CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+        CREATE INDEX IF NOT EXISTS idx_users_active ON users(active);
+        """
+    )
 
 
 AUDIT_LOG_SCHEMA = """
@@ -4021,6 +4091,15 @@ MIGRATIONS = {
     70: {
         "description": "Auth RBAC: sessions table for active session tracking — DG-029 Phase 4",
         "sql": SESSIONS_SCHEMA,
+    },
+    71: {
+        "description": "Auth RBAC: DB-level CHECK(role IN ('admin','staff')) on users table — DG-029 phase 5.6-c1 (Mn-3)",
+        # No-op SQL block; the callable does the conditional rebuild. On
+        # fresh DBs USERS_SCHEMA (with the CHECK) is applied by v68's
+        # `CREATE TABLE IF NOT EXISTS`, which is a no-op if the table
+        # already exists, so this migration's callable is the authority.
+        "sql": "",
+        "callable": _migrate_v71_users_role_check,
     },
 }
 

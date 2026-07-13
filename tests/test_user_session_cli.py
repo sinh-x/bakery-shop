@@ -176,31 +176,106 @@ def test_user_create_then_login_yields_correct_role(api_client):
 
 
 def test_user_set_password_random():
-    """FR8: `baker user set-password` without --password generates a new password."""
+    """FR8: `baker user set-password --random` generates a new password."""
     runner.invoke(app, ["user", "create", "SetPwdUser"])
-    result = runner.invoke(app, ["user", "set-password", "SetPwdUser"])
+    result = runner.invoke(app, ["user", "set-password", "SetPwdUser", "--random"])
     assert result.exit_code == 0, result.output
     assert "Updated" in result.output
     assert "New password:" in result.output
 
 
-def test_user_set_password_explicit():
-    """FR8: `baker user set-password --password <p>` stores the provided password."""
-    runner.invoke(app, ["user", "create", "SetPwdExplicit"])
+def test_user_set_password_random_quiet_suppresses_plaintext():
+    """MJ-2: `baker user set-password --random --quiet` suppresses the password."""
+    runner.invoke(app, ["user", "create", "SetPwdQuiet"])
     result = runner.invoke(
-        app, ["user", "set-password", "SetPwdExplicit", "--password", "newpass456"]
+        app, ["user", "set-password", "SetPwdQuiet", "--random", "--quiet"]
     )
     assert result.exit_code == 0, result.output
     assert "Updated" in result.output
-    # The explicit password should NOT be printed back.
-    assert "newpass456" not in result.output
+    assert "New password:" not in result.output
 
-    # Verify the new password works by hashing and checking via passlib.
+
+def test_user_set_password_interactive_prompt():
+    """MJ-1: `baker user set-password` prompts interactively (no --password flag)."""
+    runner.invoke(app, ["user", "create", "SetPwdInteractive"])
+    # CliRunner drives click.prompt via stdin; confirmation_prompt requires
+    # the password to be entered twice.
+    result = runner.invoke(
+        app,
+        ["user", "set-password", "SetPwdInteractive"],
+        input="interactive-pass-123\ninteractive-pass-123\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "Updated" in result.output
+    # The interactive password must NOT be echoed back to stdout.
+    assert "interactive-pass-123" not in result.output
+
+    # Verify the prompted password was actually stored.
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT password_hash FROM users WHERE username = 'SetPwdInteractive'"
+        ).fetchone()
+        assert _pwd_ctx.verify("interactive-pass-123", row["password_hash"])
+
+
+def test_user_set_password_interactive_mismatch_confirmation():
+    """MJ-1: mismatched confirmation prompt aborts without changing the password."""
+    runner.invoke(app, ["user", "create", "SetPwdMismatch"])
+    result = runner.invoke(
+        app,
+        ["user", "set-password", "SetPwdMismatch"],
+        input="first-pass\nsecond-pass\n",
+    )
+    # Click aborts with exit_code 1 when confirmation_prompt fails.
+    assert result.exit_code != 0
+
+
+def test_user_set_password_explicit():
+    """FR8: `baker user set-password --random` stores a generated password (no --password flag).
+
+    The old ``--password`` flag was removed (MJ-1) to avoid leaking plaintext
+    passwords via ``ps aux`` / shell history. Interactive prompts replace it.
+    """
+    runner.invoke(app, ["user", "create", "SetPwdExplicit"])
+    result = runner.invoke(
+        app, ["user", "set-password", "SetPwdExplicit", "--random"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Updated" in result.output
+    # The generated password IS printed (interactive default would not be).
+    assert "New password:" in result.output
+
+    # Extract the generated password and verify it works.
+    password = None
+    for line in result.output.splitlines():
+        if "New password:" in line:
+            password = line.split("New password:", 1)[1].strip()
+            break
+    assert password is not None
+
     with get_db() as conn:
         row = conn.execute(
             "SELECT password_hash FROM users WHERE username = 'SetPwdExplicit'"
         ).fetchone()
-        assert _pwd_ctx.verify("newpass456", row["password_hash"])
+        assert _pwd_ctx.verify(password, row["password_hash"])
+
+
+def test_user_set_password_no_password_flag_exposed():
+    """MJ-1: the old `--password` flag is gone (would leak via ps aux / shell history)."""
+    runner.invoke(app, ["user", "create", "NoPasswordFlag"])
+    result = runner.invoke(
+        app, ["user", "set-password", "NoPasswordFlag", "--password", "leaked123"]
+    )
+    # Click rejects unknown options with exit_code != 0.
+    assert result.exit_code != 0
+
+
+def test_user_create_quiet_suppresses_plaintext():
+    """MJ-2: `baker user create --quiet` suppresses the password output."""
+    result = runner.invoke(app, ["user", "create", "QuietCreate", "--quiet"])
+    assert result.exit_code == 0, result.output
+    assert "Created" in result.output
+    assert "Password:" not in result.output
 
 
 def test_user_set_password_nonexistent_user():

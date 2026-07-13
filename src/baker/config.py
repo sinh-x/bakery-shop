@@ -30,6 +30,7 @@ BUILD_FINGERPRINT: str
 PRINT_IPP_URL: str | None
 TIMEZONE: ZoneInfo
 JWT_SECRET: str
+JWT_SECRET_EPHEMERAL: bool
 AUTH_REQUIRED: bool
 
 
@@ -46,7 +47,7 @@ def reload(config_path: Path | str | None = None) -> None:
     Falls back to DEFAULT_CONFIG_PATH, then built-in defaults.
     Called automatically on first import; call again with a path to switch configs.
     """
-    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT, LOG_LEVEL, LOG_DIR, BUILD_FINGERPRINT, PRINT_IPP_URL, TIMEZONE, JWT_SECRET, AUTH_REQUIRED
+    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT, LOG_LEVEL, LOG_DIR, BUILD_FINGERPRINT, PRINT_IPP_URL, TIMEZONE, JWT_SECRET, JWT_SECRET_EPHEMERAL, AUTH_REQUIRED
 
     path = Path(config_path).expanduser() if config_path else DEFAULT_CONFIG_PATH
     cfg = _load_from(path)
@@ -76,10 +77,12 @@ def reload(config_path: Path | str | None = None) -> None:
 
     _logger = logging.getLogger("baker.config")
     JWT_SECRET = os.environ.get("BAKER_JWT_SECRET") or ""
+    JWT_SECRET_EPHEMERAL = False
     if not JWT_SECRET:
         import secrets
 
         JWT_SECRET = secrets.token_urlsafe(32)
+        JWT_SECRET_EPHEMERAL = True
         _logger.warning(
             "BAKER_JWT_SECRET not set — generated an ephemeral secret. "
             "Tokens will be invalidated on server restart. Set BAKER_JWT_SECRET "

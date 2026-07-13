@@ -428,6 +428,46 @@ def test_filter_by_date_only_bounds_inclusive(auth_client):
     assert data["total"] == 3
 
 
+def test_filter_by_date_only_date_to_includes_same_day(auth_client):
+    """Mn-1 (DG-029 phase 5.6-c1): date_to=YYYY-MM-DD (no T) includes same-day entries.
+
+    A date-only ``date_to`` value sorts *before* every same-day timestamp
+    (``2026-07-13T..`` > ``2026-07-13``), so a naive lexical comparison
+    would drop same-day entries. The server expands a date-only ``date_to``
+    to ``{date}T23:59:59Z`` so the whole day is included.
+    """
+    with get_db() as conn:
+        admin_token = _seed_user(conn, "adminuser", "admin")
+        _insert_audit_row(
+            conn, username="alice", entity_type="config", entity_id="1",
+            created_at="2026-07-13T00:00:00Z",
+        )
+        _insert_audit_row(
+            conn, username="bob", entity_type="config", entity_id="2",
+            created_at="2026-07-13T10:00:00Z",
+        )
+        _insert_audit_row(
+            conn, username="alice", entity_type="config", entity_id="3",
+            created_at="2026-07-13T23:59:59Z",
+        )
+        _insert_audit_row(
+            conn, username="bob", entity_type="config", entity_id="4",
+            created_at="2026-07-14T00:00:00Z",
+        )
+
+    # date_to=2026-07-13 (date-only, 10 chars, no T) — must include all
+    # three 2026-07-13 rows but exclude 2026-07-14.
+    resp = auth_client.get(
+        "/api/audit-log?date_to=2026-07-13",
+        headers=_auth_headers(admin_token),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 3
+    for r in data["items"]:
+        assert r["created_at"].startswith("2026-07-13")
+
+
 # ---------------------------------------------------------------------------
 # Combined filters
 # ---------------------------------------------------------------------------

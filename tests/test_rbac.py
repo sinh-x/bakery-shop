@@ -439,3 +439,32 @@ def test_audit_log_not_recorded_when_blocked_by_role(auth_client):
         rows = _audit_log_rows(conn)
         config_rows = [r for r in rows if r["entity_type"] == "config"]
         assert not config_rows, f"audit row created despite 403: {config_rows}"
+
+
+# ---------------------------------------------------------------------------
+# Mn-4 (DG-029 phase 5.6-c1): grace-period actor recorded as "anonymous"
+# ---------------------------------------------------------------------------
+
+
+def test_grace_period_audit_actor_recorded_as_anonymous(anon_client):
+    """Mn-4: a grace-period write (no token) records actor="anonymous", not ""."""
+    resp = anon_client.post(
+        "/api/config/order_source",
+        json={"value": "AnonActor-Test", "sort_order": 1},
+    )
+    assert resp.status_code == 200, resp.text
+
+    with get_db() as conn:
+        rows = _audit_log_rows(conn)
+        matches = [
+            r for r in rows
+            if r["entity_type"] == "config"
+            and r["action"] == "create"
+            and r["new_value"]
+            and "AnonActor-Test" in r["new_value"]
+        ]
+        assert matches, "no grace-period config create audit row found"
+        assert matches[-1]["username"] == "anonymous", (
+            f"grace-period actor should be 'anonymous', got "
+            f"{matches[-1]['username']!r}"
+        )

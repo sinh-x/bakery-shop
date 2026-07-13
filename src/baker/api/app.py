@@ -38,6 +38,25 @@ from baker.logging import setup_logging
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    # Mn-5 (DG-029 phase 5.6-c1): refuse to start when AUTH_REQUIRED=true
+    # and BAKER_JWT_SECRET is empty/ephemeral — otherwise every restart
+    # silently rotates the signing key and invalidates all issued tokens.
+    # Grace-period mode (AUTH_REQUIRED=false) keeps the existing warning
+    # behavior and is intentionally not enforced here.
+    import logging
+
+    from baker.config import AUTH_REQUIRED as _AUTH_REQUIRED
+    from baker.config import JWT_SECRET_EPHEMERAL as _JWT_EPHEMERAL
+
+    _logger = logging.getLogger("baker.config")
+    if _AUTH_REQUIRED and _JWT_EPHEMERAL:
+        raise RuntimeError(
+            "BAKER_JWT_SECRET is not set while AUTH_REQUIRED=true — refusing to "
+            "start (an ephemeral secret would invalidate all tokens on every "
+            "restart). Set BAKER_JWT_SECRET to a stable 256-bit secret, or set "
+            "AUTH_REQUIRED=false for the grace-period mode."
+        )
+
     app = FastAPI(
         title="Baker API",
         description="Bakery shop operations API",

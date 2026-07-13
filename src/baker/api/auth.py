@@ -19,6 +19,7 @@ import json
 import time
 import uuid
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import jwt
@@ -134,8 +135,6 @@ def _is_account_locked(locked_until: Optional[str]) -> bool:
     if not locked_until:
         return False
     try:
-        from datetime import datetime, timezone
-
         lock_dt = datetime.fromisoformat(locked_until.replace("Z", "+00:00"))
         return datetime.now(timezone.utc) < lock_dt
     except (ValueError, TypeError):
@@ -144,8 +143,6 @@ def _is_account_locked(locked_until: Optional[str]) -> bool:
 
 def _lock_account(conn, username: str) -> None:
     """Set ``users.locked_until`` to now + 30 minutes (NFR8)."""
-    from datetime import datetime, timedelta, timezone
-
     lock_until = (datetime.now(timezone.utc) + timedelta(seconds=_LOCKOUT_DURATION_SECONDS))
     lock_until_str = lock_until.strftime("%Y-%m-%dT%H:%M:%SZ")
     conn.execute(
@@ -424,8 +421,10 @@ def RequireRole(required_role: str):
         username = getattr(request.state, "auth_username", "") or ""
 
         # Grace-period pass-through: no auth enforced when token absent.
+        # Mn-4 (DG-029 phase 5.6-c1): record a distinguishable actor so
+        # grace-period audit rows are not empty strings.
         if role is None and not AUTH_REQUIRED:
-            return username
+            return username or "anonymous"
 
         if role != required_role:
             raise HTTPException(

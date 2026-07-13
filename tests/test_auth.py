@@ -436,3 +436,46 @@ def test_denied_jti_rejected(auth_client):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Mn-5 (DG-029 phase 5.6-c1): startup validation refuses to start when
+# AUTH_REQUIRED=true and BAKER_JWT_SECRET is unset (ephemeral).
+# ---------------------------------------------------------------------------
+
+
+def test_create_app_refuses_to_start_when_auth_required_and_jwt_ephemeral():
+    """Mn-5: AUTH_REQUIRED=true + ephemeral JWT_SECRET → RuntimeError."""
+    from unittest.mock import patch
+
+    with patch("baker.config.AUTH_REQUIRED", True):
+        with patch("baker.config.JWT_SECRET_EPHEMERAL", True):
+            # create_app is imported lazily so the patched module-level
+            # attributes are read at call time.
+            from baker.api.app import create_app
+            with pytest.raises(RuntimeError, match="BAKER_JWT_SECRET"):
+                create_app()
+
+
+def test_create_app_starts_when_auth_required_and_jwt_set(monkeypatch):
+    """Mn-5: AUTH_REQUIRED=true + stable JWT_SECRET → starts normally."""
+    from unittest.mock import patch
+
+    stable_secret = "a" * 48  # >= 32 bytes, stable, not ephemeral
+    with patch("baker.config.AUTH_REQUIRED", True):
+        with patch("baker.config.JWT_SECRET_EPHEMERAL", False):
+            with patch("baker.config.JWT_SECRET", stable_secret):
+                from baker.api.app import create_app
+                app = create_app()
+                assert app is not None
+
+
+def test_create_app_starts_in_grace_period_without_jwt(monkeypatch):
+    """Mn-5: AUTH_REQUIRED=false (grace period) → starts even with ephemeral secret."""
+    from unittest.mock import patch
+
+    with patch("baker.config.AUTH_REQUIRED", False):
+        with patch("baker.config.JWT_SECRET_EPHEMERAL", True):
+            from baker.api.app import create_app
+            app = create_app()
+            assert app is not None

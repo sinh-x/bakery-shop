@@ -67,8 +67,17 @@ def list_audit_log(
         params.append(date_from)
 
     if date_to:
+        # Mn-1 (DG-029 phase 5.6-c1): a date-only ``date_to`` (YYYY-MM-DD,
+        # 10 chars, no ``T``) sorts before every same-day timestamp
+        # (``2026-07-13T..`` > ``2026-07-13``), which would exclude
+        # same-day entries. Expand it to end-of-day so the whole day is
+        # included. Full ISO-8601 bounds are used as-is.
+        if len(date_to) == 10 and "T" not in date_to:
+            effective_date_to = f"{date_to}T23:59:59Z"
+        else:
+            effective_date_to = date_to
         conditions.append("created_at <= ?")
-        params.append(date_to)
+        params.append(effective_date_to)
 
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     offset = (page - 1) * page_size
