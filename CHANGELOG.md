@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.7.5+85] — 2026-07-13
+
+- feat(DG-221): Notification & highlight system for critical/urgent orders
+- fix(DG-237): Explicit now_utc() for journal_entries.created_at
+- fix(DG-238): Remove _create_test_accounts stub, add JournalEntry.create_with_lines, replace summary with per-account view
+- feat(DG-240): Add accounting flag to order show with full timestamp display (HH:MM DD/MM/YYYY)
+- fix(schema): Mn-1 update stale comment, Mn-2 remove dead COALESCE subquery
+- chore(release): bump patch version to 0.7.5+85 [skip ci]
+
+## [0.7.4+84] — 2026-07-12
+
+- feat(DG-236): Cancelled-order journal sync with AR entry cleanup and CLI command
+- fix(validation): Fallback to unit_price*30% when product_code lookup also fails
+- fix(validation): Resolve non-numeric product_ids via product_code in COGS check
+- fix(validation): Pass selling_price to resolve_product_cost in cogs_amount_accuracy
+- chore(release): bump patch version to 0.7.4+84 [skip ci]
+
+## [0.7.3+83] — 2026-07-11
+
+- feat(DG-226): Journal audit with CLI tests for backfill assertions
+- feat(DG-227): Customer link repair with phone normalization and name deduplication
+- feat(DG-229): Repair-order-revenue with idempotent reconciliation
+- fix(repair): Categorize cancelled orders by cash vs non-cash entries
+- fix(repair): Tighten cancelled orders query to check actual net_2100 balance
+- chore(release): bump patch version to 0.7.3+83 [skip ci]
+
 ## [0.7.0+79] — 2026-07-06
 
 > **Release summary:** This release bundles all features from v0.6.1 through v0.6.13 (approximately 178 commits across 18 milestone features), including double-entry accounting (DG-175, DG-189–199), customer management (DG-182, DG-204–206), negative inventory flow (DG-200), UTC timestamp standardization (DG-202), printing module (DG-186), expense events (DG-185), printer paper mode (DG-183), and COGS audit/cost_history (DG-208). See the entries below for the full delta.

@@ -257,6 +257,8 @@ def test_repair_deposit_balance_cancelled_order_idempotent():
 def test_repair_delivered_order_negative_balance():
     with get_db() as conn:
         ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
         oid = _insert_order(
             conn, order_ref="ORD-260710-010", customer_name="Anh N",
             total_price=300000, status="delivered",
@@ -295,6 +297,8 @@ def test_repair_delivered_order_negative_balance():
 def test_repair_delivered_negative_dry_run():
     with get_db() as conn:
         ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
         oid = _insert_order(
             conn, order_ref="ORD-260710-011", customer_name="Anh D",
             total_price=400000, status="delivered",
@@ -321,6 +325,8 @@ def test_repair_delivered_negative_dry_run():
 def test_repair_delivered_negative_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
         oid = _insert_order(
             conn, order_ref="ORD-260710-012", customer_name="Anh I",
             total_price=250000, status="delivered",
@@ -352,6 +358,8 @@ def test_repair_delivered_negative_idempotent():
 def test_repair_deposit_balance_all_repairs_multiple():
     with get_db() as conn:
         ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
 
         # Order 1: cancelled with orphaned deposits
         oid1 = _insert_order(
@@ -392,6 +400,8 @@ def test_repair_deposit_balance_all_repairs_multiple():
 def test_repair_deposit_balance_all_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
 
         oid1 = _insert_order(
             conn, order_ref="ORD-260707-A03", customer_name="Khách 3",
@@ -454,6 +464,8 @@ def test_repair_deposit_balance_all_dry_run():
 def test_deposit_balance_correct_order_not_flagged():
     with get_db() as conn:
         ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
         oid = _insert_order(
             conn, order_ref="ORD-260710-020", customer_name="Anh C",
             total_price=200000, status="delivered",
@@ -538,6 +550,8 @@ def test_process_deposit_balance_cancelled_order():
 def test_process_deposit_balance_delivered_order():
     with get_db() as conn:
         ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
         oid = _insert_order(
             conn, order_ref="ORD-260710-S02", customer_name="SV Test",
             total_price=400000, status="delivered",
