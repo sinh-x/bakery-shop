@@ -40,6 +40,17 @@ _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12
 _VALID_ROLES = ("admin", "staff")
 
 
+def _normalize_username(username: str) -> str:
+    """Normalize a username to lowercase (DG-029 follow-on).
+
+    All users.username values are stored lowercase. CLI commands accept
+    mixed-case input for ergonomics but look up/insert the lowercased form.
+    Uses Python str.lower() (Unicode-aware, correct for Vietnamese
+    diacritics like Â→â, Ư→ư).
+    """
+    return username.lower()
+
+
 def _validate_role(ctx, param, value):
     """Click callback that validates the ``--role`` option."""
     if value is None:
@@ -86,6 +97,7 @@ def user_create(username: str, role: str, quiet: bool):
     the user. The password is bcrypt-hashed before storage (NFR4). Pass
     ``--quiet`` to suppress the plaintext password output (CI/scripted use).
     """
+    username = _normalize_username(username)
     with get_db() as conn:
         existing = conn.execute(
             "SELECT id FROM users WHERE username = ?", (username,)
@@ -132,6 +144,7 @@ def user_set_password(username: str, use_random: bool, quiet: bool):
     the generated password is printed to stdout unless ``--quiet`` is also
     passed (MJ-2, for CI/scripted use).
     """
+    username = _normalize_username(username)
     with get_db() as conn:
         row = conn.execute(
             "SELECT id FROM users WHERE username = ?", (username,)
@@ -168,6 +181,7 @@ def user_set_password(username: str, use_random: bool, quiet: bool):
 @click.argument("role", callback=_validate_role)
 def user_set_role(username: str, role: str):
     """Change an existing user's system role (FR9)."""
+    username = _normalize_username(username)
     with get_db() as conn:
         row = conn.execute(
             "SELECT id, role FROM users WHERE username = ?", (username,)
@@ -237,6 +251,7 @@ def user_list(show_all: bool):
 @click.argument("username")
 def user_deactivate(username: str):
     """Deactivate a user account (soft delete, active=0) (FR11)."""
+    username = _normalize_username(username)
     with get_db() as conn:
         row = conn.execute(
             "SELECT id, active FROM users WHERE username = ?", (username,)
@@ -263,6 +278,7 @@ def user_unlock(username: str):
     and clears the in-memory consecutive-failure counter for that username so
     a fresh attempt does not carry over residual state.
     """
+    username = _normalize_username(username)
     with get_db() as conn:
         row = conn.execute(
             "SELECT id, locked_until FROM users WHERE username = ?", (username,)

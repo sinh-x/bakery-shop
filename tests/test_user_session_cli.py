@@ -2,7 +2,7 @@
 
 Covers:
   - AC12: `baker user list` shows 5 seeded users (Sinh=admin, others=staff)
-  - AC13: `baker user create "NewStaff" --role staff` → login yields JWT role=staff
+  - AC13: `baker user create "NewStaff" --role staff` → login as "newstaff" yields JWT role=staff
   - AC17: `baker session list` shows active sessions with metadata
   - AC18: `baker session logout <username>` → old token returns 401
   - AC19: `baker session logout-all` → all old tokens return 401
@@ -68,11 +68,11 @@ def _login(api_client, username: str, password: str, device: str = "Pixel-7"):
 
 def test_user_list_shows_seeded_users():
     """AC12: `baker user list` lists the 5 seeded users with correct roles."""
-    # The v68 migration seeds Sinh (admin) + Ân/Ngân/Phượng/Tân (staff).
+    # The v68 migration seeds sinh (admin) + ân/ngân/phượng/tân (staff).
     # The CLI `app` group runs ensure_schema on startup, so seeding happens.
     result = runner.invoke(app, ["user", "list"])
     assert result.exit_code == 0, result.output
-    assert "Sinh" in result.output
+    assert "sinh" in result.output
     assert "admin" in result.output
     assert "staff" in result.output
 
@@ -96,18 +96,22 @@ def test_user_list_empty_db_still_runs():
 
 
 def test_user_create_default_role_staff():
-    """FR7: `baker user create` defaults to staff role and prints a password."""
+    """FR7: `baker user create` defaults to staff role and prints a password.
+
+    DG-029 follow-on: the username is normalized to lowercase, so
+    `TestStaff1` becomes `teststaff1` in output and in the DB.
+    """
     result = runner.invoke(app, ["user", "create", "TestStaff1"])
     assert result.exit_code == 0, result.output
     assert "Created" in result.output
-    assert "TestStaff1" in result.output
+    assert "teststaff1" in result.output
     assert "staff" in result.output
     # A password is printed to stdout.
     assert "Password:" in result.output
 
     with get_db() as conn:
         row = conn.execute(
-            "SELECT role, active FROM users WHERE username = 'TestStaff1'"
+            "SELECT role, active FROM users WHERE username = 'teststaff1'"
         ).fetchone()
         assert row is not None
         assert row["role"] == "staff"
@@ -122,7 +126,7 @@ def test_user_create_with_admin_role():
 
     with get_db() as conn:
         row = conn.execute(
-            "SELECT role FROM users WHERE username = 'TestAdmin1'"
+            "SELECT role FROM users WHERE username = 'testadmin1'"
         ).fetchone()
         assert row["role"] == "admin"
 
@@ -147,7 +151,11 @@ def test_user_create_invalid_role_rejected():
 
 
 def test_user_create_then_login_yields_correct_role(api_client):
-    """AC13: `baker user create "NewStaff" --role staff` then login → JWT role=staff."""
+    """AC13: `baker user create "NewStaff" --role staff` then login → JWT role=staff.
+
+    DG-029 follow-on: usernames are normalized to lowercase, so the created
+    username becomes "newstaff". The login must use the lowercased form.
+    """
     result = runner.invoke(app, ["user", "create", "NewStaff", "--role", "staff"])
     assert result.exit_code == 0, result.output
     # Extract the printed password from the output.
@@ -160,13 +168,13 @@ def test_user_create_then_login_yields_correct_role(api_client):
 
     resp = api_client.post(
         "/api/auth/login",
-        json={"username": "NewStaff", "password": password},
+        json={"username": "newstaff", "password": password},
     )
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["role"] == "staff"
     payload = jwt.decode(data["token"], JWT_SECRET, algorithms=["HS256"])
-    assert payload["sub"] == "NewStaff"
+    assert payload["sub"] == "newstaff"
     assert payload["role"] == "staff"
 
 
@@ -213,7 +221,7 @@ def test_user_set_password_interactive_prompt():
     # Verify the prompted password was actually stored.
     with get_db() as conn:
         row = conn.execute(
-            "SELECT password_hash FROM users WHERE username = 'SetPwdInteractive'"
+            "SELECT password_hash FROM users WHERE username = 'setpwdinteractive'"
         ).fetchone()
         assert _pwd_ctx.verify("interactive-pass-123", row["password_hash"])
 
@@ -255,7 +263,7 @@ def test_user_set_password_explicit():
 
     with get_db() as conn:
         row = conn.execute(
-            "SELECT password_hash FROM users WHERE username = 'SetPwdExplicit'"
+            "SELECT password_hash FROM users WHERE username = 'setpwdexplicit'"
         ).fetchone()
         assert _pwd_ctx.verify(password, row["password_hash"])
 
@@ -299,7 +307,7 @@ def test_user_set_role_staff_to_admin():
 
     with get_db() as conn:
         row = conn.execute(
-            "SELECT role FROM users WHERE username = 'RoleSwap'"
+            "SELECT role FROM users WHERE username = 'roleswap'"
         ).fetchone()
         assert row["role"] == "admin"
 
@@ -331,11 +339,11 @@ def test_user_list_all_includes_inactive():
 
     # Without --all the deactivated user is hidden.
     result = runner.invoke(app, ["user", "list"])
-    assert "DeactivateMe" not in result.output
+    assert "deactivateme" not in result.output
 
     # With --all the deactivated user appears.
     result = runner.invoke(app, ["user", "list", "--all"])
-    assert "DeactivateMe" in result.output
+    assert "deactivateme" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +360,7 @@ def test_user_deactivate_sets_inactive():
 
     with get_db() as conn:
         row = conn.execute(
-            "SELECT active FROM users WHERE username = 'DeacUser'"
+            "SELECT active FROM users WHERE username = 'deacuser'"
         ).fetchone()
         assert row["active"] == 0
 
@@ -405,7 +413,7 @@ def test_user_unlock_clears_locked_until():
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
     with get_db() as conn:
         conn.execute(
-            "UPDATE users SET locked_until = ? WHERE username = 'LockedUser'",
+            "UPDATE users SET locked_until = ? WHERE username = 'lockeduser'",
             (lock_until,),
         )
         conn.commit()
@@ -416,7 +424,7 @@ def test_user_unlock_clears_locked_until():
 
     with get_db() as conn:
         row = conn.execute(
-            "SELECT locked_until FROM users WHERE username = 'LockedUser'"
+            "SELECT locked_until FROM users WHERE username = 'lockeduser'"
         ).fetchone()
         assert row["locked_until"] is None
 
