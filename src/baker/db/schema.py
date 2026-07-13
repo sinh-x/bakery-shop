@@ -3570,6 +3570,79 @@ def _migrate_v66_repair_customer_links(conn):
     )
 
 
+USERS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT UNIQUE NOT NULL,
+    password_hash  TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'staff',
+    active        INTEGER NOT NULL DEFAULT 1,
+    locked_until  TEXT DEFAULT NULL,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_active ON users(active);
+"""
+
+
+# Map SEED_STAFF roles to system-user roles. "owner" → "admin" for full system
+# access; all other roles → "staff" for daily operational access only.
+_SEED_STAFF_ROLE_TO_USER_ROLE = {
+    "owner": "admin",
+}
+
+
+def _migrate_v68_users_table(conn):
+    """Create the ``users`` table and seed existing staff as users with random
+    bcrypt-hashed passwords (DG-029 Phase 1, FR12/FR13).
+
+    Each staff member in :data:`SEED_STAFF` is inserted as a user. Sinh (role
+    "owner") becomes ``admin``; all others become ``staff``. A random password
+    is generated for each user, bcrypt-hashed (cost factor 12), and the plain
+    password is printed to stdout so the admin can distribute credentials.
+
+    Idempotent: re-running on a DB where users already exist skips seeding
+    (INSERT OR IGNORE on the unique ``username``); printed passwords are only
+    emitted on the first run when a row is actually inserted.
+    """
+    import secrets as _secrets
+
+    from passlib.context import CryptContext
+
+    _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+
+    inserted: list[tuple[str, str, str]] = []  # (username, role, plain_password)
+
+    for name, staff_role in SEED_STAFF:
+        user_role = _SEED_STAFF_ROLE_TO_USER_ROLE.get(staff_role, "staff")
+        username = name
+        existing = conn.execute(
+            "SELECT id FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        if existing:
+            continue
+        plain = _secrets.token_urlsafe(12)
+        hashed = _pwd_ctx.hash(plain)
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, active) "
+            "VALUES (?, ?, ?, 1)",
+            (username, hashed, user_role),
+        )
+        inserted.append((username, user_role, plain))
+
+    if inserted:
+        import sys
+
+        print("=" * 60, file=sys.stdout)
+        print("DG-029 users migration: seeded initial user accounts", file=sys.stdout)
+        print("Distribute these temporary passwords to each user:", file=sys.stdout)
+        print("-" * 60, file=sys.stdout)
+        for username, role, plain in inserted:
+            print(f"  {username} ({role}): {plain}", file=sys.stdout)
+        print("=" * 60, file=sys.stdout)
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -3888,6 +3961,11 @@ MIGRATIONS = {
     67: {
         "description": "Add acknowledged_at column to orders for order acknowledgment tracking — DG-221 Phase 1",
         "sql": "ALTER TABLE orders ADD COLUMN acknowledged_at TEXT DEFAULT NULL;",
+    },
+    68: {
+        "description": "Auth RBAC: users table for JWT authentication + seed existing staff as users — DG-029 Phase 1",
+        "sql": USERS_SCHEMA,
+        "callable": _migrate_v68_users_table,
     },
 }
 
