@@ -9,6 +9,7 @@ import '../../providers/events_provider.dart';
 import '../../providers/staff_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/settings_sections.dart';
+import 'catalog_tags_settings_tab.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -36,7 +37,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _urlController = TextEditingController();
     _manualNameCtrl = TextEditingController();
     _loadAppVersion();
@@ -179,6 +180,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             Tab(icon: Icon(Icons.person), text: VN.generalSettings),
             Tab(icon: Icon(Icons.settings), text: VN.technicalSettings),
             Tab(icon: Icon(Icons.card_giftcard), text: VN.extrasSettings),
+            Tab(icon: Icon(Icons.label_outline), text: VN.catalogTagEditor),
           ],
         ),
       ),
@@ -329,6 +331,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
           // ── Tab 3: Phụ kiện đi kèm ────────────────────────────────
           const ExtrasSettingsTab(),
+
+          // ── Tab 4: Thẻ ảnh ────────────────────────────────────────
+          const CatalogTagsSettingsTab(),
         ],
       ),
     );
