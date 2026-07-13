@@ -10,6 +10,7 @@ import '../../data/models/catalog_photo.dart';
 import '../../data/models/event.dart';
 import '../../data/api/receipt_service.dart';
 import '../../data/providers/knowledge_provider.dart';
+import '../../features/audit_log/audit_log_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/categories/category_management_screen.dart';
@@ -91,9 +92,8 @@ String? _authRedirect(GoRouterState state, AuthStatus status, String? role) {
 
 /// Admin-only routes (FR16). Staff users are redirected away from these.
 ///
-/// NOTE: `/audit-log` is registered here as a placeholder route for Phase 8;
-/// Phase 7 only ensures its nav entry and route guard are admin-gated. The
-/// audit log *screen with filters* is built in Phase 8.
+/// NOTE: `/audit-log` is wired to the real filterable audit log screen as of
+/// Phase 8 (FR24/AC20); the route itself was already admin-gated in Phase 7.
 const Set<String> _adminOnlyRoutes = {
   '/checklist/config',
   '/categories/manage',
@@ -137,12 +137,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const AdminAccessScreen(),
       ),
-      // Audit log — admin-only placeholder route (Phase 7 gating only; the
-      // filterable screen is built in Phase 8).
+      // Audit log — admin-only (Phase 8 filterable screen; route guard was
+      // set up in Phase 7).
       GoRoute(
         path: '/audit-log',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const _AuditLogPlaceholder(),
+        builder: (context, state) => const AuditLogScreen(),
       ),
       ShellRoute(
       navigatorKey: _shellNavigatorKey,
@@ -738,30 +738,6 @@ class _BadgeCircle extends StatelessWidget {
           color: Colors.white,
           fontSize: 10,
           fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-}
-
-/// Placeholder for the `/audit-log` route (Phase 7). The full filterable
-/// audit log screen is built in Phase 8 — this only ensures the route exists
-/// and is admin-gated by the redirect guard in [_authRedirect].
-class _AuditLogPlaceholder extends StatelessWidget {
-  const _AuditLogPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text(VN.openAuditLog)),
-      body: const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'Tính năng nhật ký thay đổi sẽ có ở giai đoạn tiếp theo.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey),
-          ),
         ),
       ),
     );
