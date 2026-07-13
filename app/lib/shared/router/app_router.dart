@@ -10,6 +10,8 @@ import '../../data/models/catalog_photo.dart';
 import '../../data/models/event.dart';
 import '../../data/api/receipt_service.dart';
 import '../../data/providers/knowledge_provider.dart';
+import '../../features/auth/login_screen.dart';
+import '../../features/auth/auth_provider.dart';
 import '../../features/categories/category_management_screen.dart';
 import '../../features/checklist/checklist_config_screen.dart';
 import '../../features/checklist/checklist_history_screen.dart';
@@ -55,11 +57,45 @@ import 'package:bakery_app/shared/labels/shared.dart';
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
-final appRouter = GoRouter(
-  navigatorKey: _rootNavigatorKey,
-  initialLocation: '/orders',
-  routes: [
-    ShellRoute(
+/// Auth-redirect guard (FR14/FR15, AC8/AC9).
+///
+/// - When the auth state is `unauthenticated`, any route other than `/login`
+///   redirects to `/login`.
+/// - When the auth state is `authenticated`, `/login` redirects to `/orders`
+///   (the main shell).
+/// - While the auth state is `unknown` (initial boot, before the notifier has
+///   resolved the stored token) the guard does nothing — the splash/loading
+///   state is owned by the `/login` route's initial frame.
+String? _authRedirect(GoRouterState state, AuthStatus status) {
+  final location = state.uri.path;
+  final onLogin = location == '/login';
+  switch (status) {
+    case AuthStatus.authenticated:
+      return onLogin ? '/orders' : null;
+    case AuthStatus.unauthenticated:
+      return onLogin ? null : '/login';
+    case AuthStatus.unknown:
+      return null;
+  }
+}
+
+/// Router provider — listens to [authProvider] so that auth state changes
+/// (login, logout, 401 handling) trigger the redirect guard without needing
+/// a manual `router.refresh()`.
+final appRouterProvider = Provider<GoRouter>((ref) {
+  final authState = ref.watch(authProvider);
+  return GoRouter(
+    navigatorKey: _rootNavigatorKey,
+    initialLocation: '/orders',
+    redirect: (context, state) => _authRedirect(state, authState.status),
+    routes: [
+      // Login — full-screen, outside the shell (FR14/AC8).
+      GoRoute(
+        path: '/login',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const LoginScreen(),
+      ),
+      ShellRoute(
       navigatorKey: _shellNavigatorKey,
       builder: (context, state, child) => _ShellScaffold(child: child),
       routes: [
@@ -388,8 +424,9 @@ final appRouter = GoRouter(
         return _KnowledgeEditLoader(entryId: id);
       },
     ),
-  ],
-);
+    ],
+  );
+});
 
 /// Loads the product from the API before showing the edit form.
 class _ProductEditLoader extends ConsumerWidget {

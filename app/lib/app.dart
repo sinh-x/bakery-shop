@@ -14,6 +14,7 @@ class BakeryApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final comparisonAsync = ref.watch(fingerprintComparisonProvider);
+    final router = ref.watch(appRouterProvider);
 
     return MaterialApp.router(
       title: VN.appName,
@@ -26,7 +27,7 @@ class BakeryApp extends ConsumerWidget {
       ],
       theme: BakeryTheme.light(),
       darkTheme: BakeryTheme.dark(),
-      routerConfig: appRouter,
+      routerConfig: router,
       builder: (context, child) {
         final comparison = comparisonAsync.asData?.value;
         final warningState = comparison?.state;

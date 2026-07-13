@@ -1,11 +1,12 @@
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/reconciliation_service.dart';
 import 'package:bakery_app/data/providers/reconciliation_provider.dart';
-import 'package:bakery_app/providers/events_provider.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../auth/login_screen_test_helpers.dart';
 
 class _FakeReconciliationService extends ReconciliationService {
   _FakeReconciliationService(this._draft) : super(Dio());
@@ -45,7 +46,14 @@ void main() {
   }
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    // Seed an authenticated session so `loggedByProvider` (which now derives
+    // from the JWT `sub` claim per FR17) returns 'An' as it did when it was
+    // a free-text SharedPreferences field.
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
   });
 
   test(
