@@ -3596,3 +3596,66 @@ def test_v72_skips_collision_pair_without_crashing():
         # Either 'An' was kept as-is (skipped) OR lowercased — but not both.
         # Per the defensive guard, 'An' is skipped so it stays capitalized.
         assert "An" in usernames
+
+
+# ---------------------------------------------------------------------------
+# DG-029 phase 5.6-c2 (SEC-1): BAKER_SEED_QUIET must suppress plaintext
+# password output during v68 user seeding. Regression test for the
+# indentation/scoping bug where the per-user plaintext print loop ran in
+# BOTH the quiet and non-quiet branches.
+# ---------------------------------------------------------------------------
+
+
+def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
+    """SEC-1: BAKER_SEED_QUIET=1 suppresses per-user plaintext password output.
+
+    Running ensure_schema on a fresh DB with BAKER_SEED_QUIET=1 must print
+    the "passwords suppressed" summary line and MUST NOT print any per-user
+    plaintext password line (pattern ``<username> (<role>): <plain>``).
+    Mirrors the CLI ``test_user_create_quiet_suppresses_plaintext`` style.
+    """
+    monkeypatch.setenv("BAKER_SEED_QUIET", "1")
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 72
+
+    out = capsys.readouterr().out
+    # The "passwords suppressed" summary line IS present.
+    assert "passwords suppressed" in out
+    assert "BAKER_SEED_QUIET=1" in out
+    # No per-user plaintext password line leaked. The non-quiet path prints
+    # lines of the form "  <username> (<role>): <plain>".
+    import re
+
+    leaked = [
+        line for line in out.splitlines()
+        if re.match(r"^\s+\S+ \((admin|staff)\): \S+", line)
+    ]
+    assert not leaked, f"plaintext password lines leaked under BAKER_SEED_QUIET=1: {leaked!r}"
+    # The non-quiet header/separator banners must NOT appear either.
+    assert "Distribute these temporary passwords" not in out
+
+
+def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
+    """SEC-1 positive control: the default (no BAKER_SEED_QUIET) path still
+    prints per-user plaintext passwords so the admin-distribution UX is
+    preserved exactly.
+    """
+    monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 72
+
+    out = capsys.readouterr().out
+    # The non-quiet header banner IS present.
+    assert "Distribute these temporary passwords to each user:" in out
+    # At least one per-user plaintext password line IS present.
+    import re
+
+    user_lines = [
+        line for line in out.splitlines()
+        if re.match(r"^\s+\S+ \((admin|staff)\): \S+", line)
+    ]
+    assert user_lines, "expected per-user plaintext password lines in default path"
+    # The "passwords suppressed" summary must NOT appear in the default path.
+    assert "passwords suppressed" not in out

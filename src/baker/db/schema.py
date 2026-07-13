@@ -3656,9 +3656,9 @@ def _migrate_v68_users_table(conn):
             print("DG-029 users migration: seeded initial user accounts", file=sys.stdout)
             print("Distribute these temporary passwords to each user:", file=sys.stdout)
             print("-" * 60, file=sys.stdout)
-        for username, role, plain in inserted:
-            print(f"  {username} ({role}): {plain}", file=sys.stdout)
-        print("=" * 60, file=sys.stdout)
+            for username, role, plain in inserted:
+                print(f"  {username} ({role}): {plain}", file=sys.stdout)
+            print("=" * 60, file=sys.stdout)
 
 
 def _migrate_v71_users_role_check(conn):
