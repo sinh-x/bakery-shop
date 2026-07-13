@@ -1,35 +1,30 @@
 # Changelog
 
-## [0.7.2+84] — 2026-07-11
-- chore(release): auto-changelog entry for 0.7.2+83
+## [0.7.5+85] — 2026-07-13
 
-## [0.7.2+83] — 2026-07-11
-- chore(release): add CHANGELOG 0.7.2+82 entry, sync uv.lock version
+- feat(DG-221): Notification & highlight system for critical/urgent orders
+- fix(DG-237): Explicit now_utc() for journal_entries.created_at
+- fix(DG-238): Remove _create_test_accounts stub, add JournalEntry.create_with_lines, replace summary with per-account view
+- feat(DG-240): Add accounting flag to order show with full timestamp display (HH:MM DD/MM/YYYY)
+- fix(schema): Mn-1 update stale comment, Mn-2 remove dead COALESCE subquery
+- chore(release): bump patch version to 0.7.5+85 [skip ci]
 
-## [0.7.2+82] — 2026-07-11
+## [0.7.4+84] — 2026-07-12
 
-> **Release summary:** This release bundles all features from v0.7.0 through v0.7.2+82 (approximately 108 commits), including 4-stage unified order creation pipeline (DG-211, DG-214, DG-218), order edit/create wizard UI parity (DG-217, DG-220), customer picker improvements (DG-222), cart attribute sync (DG-221), journal backfill prevention (DG-226), customer link repair (DG-227), missing revenue repair (DG-229), expense debt management, Tailscale MagicDNS HTTPS dev server (DG-219), and COGS audit/business-health metrics (DG-208, DG-209). See the entries below for the full delta.
-- feat(DG-229): repair missing revenue — fix all query, create missing entries, check-revenue-gaps command, --since date filtering
-- feat(DG-227): customer link repair — name fallback, update endpoint fix, migration v66
-- feat(DG-226): journal backfill prevention — audit log, proactive detection, missing source_type/source_id params
-- feat(DG-225): POS fixes — useInventory persistence, trailing newline, health check retry
-- feat(DG-224): POS order creation — extract _createOrderInternal, guard debugPrint
-- feat(DG-223): POS review findings resolution (4/4)
-- feat(DG-222): customer picker — inline list, adaptive fetch/mode, selection states, VN labels
-- feat(DG-221): POS cart attribute sync — lossless cart↔wizard isBirthday, age, rut_tien, cash_fee
-- feat(DG-220): order edit UI parity — single-state customer model, stage-widget decomposition
-- feat(DG-219): Tailscale MagicDNS HTTPS dev server via central drgnfly-caddy gateway
-- feat(DG-218): POS unified order creation — 4-stage pipeline, dedicated payment step, gift logic dedup
-- feat(DG-217): order wizard — swipe navigation, stage gating, post-submit navigation, VN labels
-- feat(DG-216): delivery options polish — layout/UX, shipping fee config, due date/time picker
-- feat(DG-215): Facebook source labels — align with backend values, Stage 2 customer info polish
-- feat(DG-214): order wizard UI — tien_rut fixes, cash amount defaults, state management
-- feat(DG-213): VN label policy + const lint warnings resolution
-- feat(DG-211): 4-stage unified order creation pipeline — OrderWizardData, PageView, error handling
-- feat(delivery): phone input formatter, delivery_phone NULL handling
-- feat(expense-debt): debt expense creation, settlement API, Flutter UI, vendor autocomplete
-- feat(reports): COGS ratio in income statement, business-health metrics with severity classification
-- chore(release): bump patch version to 0.7.2+82 [skip ci]
+- feat(DG-236): Cancelled-order journal sync with AR entry cleanup and CLI command
+- fix(validation): Fallback to unit_price*30% when product_code lookup also fails
+- fix(validation): Resolve non-numeric product_ids via product_code in COGS check
+- fix(validation): Pass selling_price to resolve_product_cost in cogs_amount_accuracy
+- chore(release): bump patch version to 0.7.4+84 [skip ci]
+
+## [0.7.3+83] — 2026-07-11
+
+- feat(DG-226): Journal audit with CLI tests for backfill assertions
+- feat(DG-227): Customer link repair with phone normalization and name deduplication
+- feat(DG-229): Repair-order-revenue with idempotent reconciliation
+- fix(repair): Categorize cancelled orders by cash vs non-cash entries
+- fix(repair): Tighten cancelled orders query to check actual net_2100 balance
+- chore(release): bump patch version to 0.7.3+83 [skip ci]
 
 ## [0.7.0+79] — 2026-07-06
 

@@ -70,6 +70,28 @@ def test_list_orders_returns_created(api_client):
     assert len(resp.json()) == 1
 
 
+def test_list_orders_includes_completeness(api_client):
+    _create_order(api_client)
+    resp = api_client.get("/api/orders")
+    assert resp.status_code == 200
+    orders = resp.json()
+    assert len(orders) == 1
+    order = orders[0]
+    assert "missingFields" in order
+    assert "completeness" in order
+    assert isinstance(order["missingFields"], list)
+    assert order["completeness"] in ("complete", "incomplete")
+
+
+def test_get_order_includes_completeness(api_client):
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    resp = api_client.get(f"/api/orders/{ref}")
+    assert resp.status_code == 200
+    assert "missingFields" in resp.json()
+    assert "completeness" in resp.json()
+
+
 def test_list_orders_filter_by_status(api_client):
     _create_order(api_client, customer="A")
     _create_order(api_client, customer="B")
@@ -2417,3 +2439,392 @@ def test_get_order_with_null_delivery_phone_returns_empty_string(api_client):
     body = resp.json()
     assert body["deliveryPhone"] == ""
     assert body["deliveryPhone"] is not None
+
+
+# --- DG-236 Phase 4: Cancel order journal reversal tests ---
+
+
+def _account_id(conn, code: str) -> int:
+    return int(
+        conn.execute("SELECT id FROM accounts WHERE code = ?", (code,)).fetchone()[0]
+    )
+
+
+def _insert_order_direct(
+    conn, *, order_ref: str, customer_name: str = "Khách test",
+    total_price: float = 200000.0, status: str = "new",
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO orders (order_ref, customer_name, total_price, status,"
+        " due_date, delivery_type, shipping_fee)"
+        " VALUES (?, ?, ?, ?, '2026-07-11', 'pickup', 0.0)",
+        (order_ref, customer_name, total_price, status),
+    )
+    return int(cur.lastrowid)
+
+
+def _insert_payment_direct(conn, *, order_id: int, amount: float) -> int:
+    cur = conn.execute(
+        "INSERT INTO payment_transactions (order_id, amount, type, method)"
+        " VALUES (?, ?, 'deposit', 'cash')",
+        (order_id, amount),
+    )
+    return int(cur.lastrowid)
+
+
+def _deposit_2100_balance(conn, order_id: int) -> dict:
+    deposits_code = "2100"
+    row = conn.execute("""
+        SELECT
+            COALESCE((
+                SELECT SUM(jl.credit - jl.debit)
+                FROM payment_transactions pt
+                JOIN journal_entries je ON je.source_type = 'payment_transaction'
+                  AND je.source_id = pt.id
+                JOIN journal_lines jl ON jl.journal_entry_id = je.id
+                JOIN accounts a ON a.id = jl.account_id AND a.code = ?
+                WHERE pt.order_id = ?
+                  AND (pt.invalidated_at IS NULL OR pt.invalidated_at = '')
+            ), 0) AS pt_net,
+            COALESCE((
+                SELECT SUM(jl.debit)
+                FROM journal_entries je
+                JOIN journal_lines jl ON jl.journal_entry_id = je.id
+                JOIN accounts a ON a.id = jl.account_id AND a.code = ?
+                WHERE je.source_type = 'order' AND je.source_id = ?
+                  AND je.description NOT LIKE 'Reversal:%'
+            ), 0) AS rev_debit,
+            COALESCE((
+                SELECT SUM(jl.debit)
+                FROM journal_entries je
+                JOIN journal_lines jl ON jl.journal_entry_id = je.id
+                JOIN accounts a ON a.id = jl.account_id AND a.code = ?
+                WHERE je.source_type = 'order_shipping_release' AND je.source_id = ?
+            ), 0) AS ship_debit
+    """, (deposits_code, order_id, deposits_code, order_id, deposits_code, order_id)).fetchone()
+
+    pt_net = float(row["pt_net"]) if row else 0.0
+    rev_debit = float(row["rev_debit"]) if row else 0.0
+    ship_debit = float(row["ship_debit"]) if row else 0.0
+    return {
+        "pt_net": pt_net,
+        "rev_debit": rev_debit,
+        "ship_debit": ship_debit,
+        "net": pt_net - rev_debit - ship_debit,
+    }
+
+
+def _insert_revenue_entry_direct(
+    conn, *, order_id: int, deposits_account_id: int,
+    revenue_account_id: int, amount: float,
+) -> int:
+    from baker.db.schema import _insert_journal_entry
+    return _insert_journal_entry(
+        conn,
+        description=f"Order revenue: {order_id}",
+        source_type="order",
+        source_id=order_id,
+        lines=[
+            (deposits_account_id, amount, 0.0, "Chuyển cọc sang doanh thu"),
+            (revenue_account_id, 0.0, amount, "Doanh thu bán hàng"),
+        ],
+    )
+
+
+def _insert_cogs_entry_direct(
+    conn, *, order_id: int, cogs_account_id: int,
+    inventory_account_id: int, amount: float,
+) -> int:
+    from baker.db.schema import _insert_journal_entry
+    return _insert_journal_entry(
+        conn,
+        description=f"COGS for order {order_id}",
+        source_type="order_cogs",
+        source_id=order_id,
+        lines=[
+            (cogs_account_id, amount, 0.0, "Giá vốn hàng bán"),
+            (inventory_account_id, 0.0, amount, "Giảm hàng tồn kho"),
+        ],
+    )
+
+
+def _insert_shipping_entry_direct(
+    conn, *, order_id: int, deposits_account_id: int,
+    shipping_held_account_id: int, amount: float,
+) -> int:
+    from baker.db.schema import _insert_journal_entry
+    return _insert_journal_entry(
+        conn,
+        description=f"Shipping release for order {order_id}",
+        source_type="order_shipping_release",
+        source_id=order_id,
+        lines=[
+            (deposits_account_id, amount, 0.0, "Phí ship từ cọc"),
+            (shipping_held_account_id, 0.0, amount, "Giữ phí ship"),
+        ],
+    )
+
+
+def _insert_tien_rut_entry_direct(
+    conn, *, order_id: int, deposits_account_id: int,
+    tien_rut_account_id: int, amount: float,
+) -> int:
+    from baker.db.schema import _insert_journal_entry
+    return _insert_journal_entry(
+        conn,
+        description=f"Tien rut return: {order_id}",
+        source_type="order",
+        source_id=order_id,
+        lines=[
+            (deposits_account_id, amount, 0.0, "Hoàn trả tien rut vào cọc"),
+            (tien_rut_account_id, 0.0, amount, "Hoàn trả tien rut"),
+        ],
+    )
+
+
+def _setup_order_with_all_journal_entries(api_client, *, lock_entries: bool = False):
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+    from baker.services.journal_sync import _sync_payment_journal
+
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_id = int(
+            conn.execute("SELECT id FROM orders WHERE order_ref = ?", (ref,)).fetchone()["id"]
+        )
+
+        txn_id = _insert_payment_direct(conn, order_id=order_id, amount=100000)
+        _sync_payment_journal(conn, txn_id, 100000, "deposit", "cash", order_id=order_id)
+
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
+        cogs_acc = _account_id(conn, "5900")
+        inventory_acc = _account_id(conn, "1300")
+        ship_held_acc = _account_id(conn, "2200")
+        tien_rut_acc = _account_id(conn, "2400")
+
+        _insert_revenue_entry_direct(
+            conn, order_id=order_id, deposits_account_id=deposits_acc,
+            revenue_account_id=revenue_acc, amount=100000,
+        )
+        _insert_cogs_entry_direct(
+            conn, order_id=order_id, cogs_account_id=cogs_acc,
+            inventory_account_id=inventory_acc, amount=50000,
+        )
+        _insert_shipping_entry_direct(
+            conn, order_id=order_id, deposits_account_id=deposits_acc,
+            shipping_held_account_id=ship_held_acc, amount=20000,
+        )
+        _insert_tien_rut_entry_direct(
+            conn, order_id=order_id, deposits_account_id=deposits_acc,
+            tien_rut_account_id=tien_rut_acc, amount=10000,
+        )
+
+        if lock_entries:
+            conn.execute(
+                "UPDATE journal_entries SET locked_at = datetime('now')"
+            )
+
+        conn.commit()
+
+        bal = _deposit_2100_balance(conn, order_id)
+        entry_ids = [
+            eid for (eid,) in conn.execute(
+                "SELECT id FROM journal_entries WHERE source_id = ? OR source_id = ?",
+                (order_id, txn_id),
+            ).fetchall()
+        ]
+
+    return ref, order_id, txn_id, bal, entry_ids
+
+
+# AC1 — Cancellation with unlocked entries: cascade-delete non-cash entries,
+# payment_transaction entry intentionally preserved (real cash needs human decision).
+def test_cancel_order_cascade_deletes_unlocked_entries(api_client):
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    ref, order_id, txn_id, before_bal, entry_ids = _setup_order_with_all_journal_entries(
+        api_client, lock_entries=False,
+    )
+
+    assert len(entry_ids) == 5
+    assert before_bal["pt_net"] > 0
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "cancelled", "reason": "Khách hủy"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "cancelled"
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        remaining = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE id IN ("
+            + ",".join("?" for _ in entry_ids) + ")",
+            entry_ids,
+        ).fetchone()[0]
+        assert remaining == 1  # payment_transaction entry intentionally preserved
+
+        bal = _deposit_2100_balance(conn, order_id)
+        assert bal["pt_net"] > 0   # payment_transaction entry still present
+        assert bal["rev_debit"] == 0.0
+        assert bal["ship_debit"] == 0.0
+
+
+# AC2 — Cancellation with locked entries: reversals for non-cash entries,
+# payment_transaction left untouched.
+def test_cancel_order_creates_reversals_for_locked_entries(api_client):
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    ref, order_id, txn_id, before_bal, entry_ids = _setup_order_with_all_journal_entries(
+        api_client, lock_entries=True,
+    )
+
+    assert len(entry_ids) == 5
+    assert before_bal["pt_net"] > 0
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "cancelled", "reason": "Khách hủy"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "cancelled"
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        reversals = conn.execute(
+            "SELECT id, description, transaction_date FROM journal_entries "
+            "WHERE description LIKE 'Reversal:%' ",
+        ).fetchall()
+        assert len(reversals) == 4  # revenue + COGS + shipping + tien rut (not payment_transaction)
+
+        for rev in reversals:
+            assert rev["description"].startswith("Reversal:")
+
+        # Verify reversals for the 4 non-cash entries only
+        non_cash_entry_ids = [
+            eid for eid in entry_ids
+            if conn.execute(
+                "SELECT source_type FROM journal_entries WHERE id = ?", (eid,)
+            ).fetchone()["source_type"] != "payment_transaction"
+        ]
+        for orig_id in non_cash_entry_ids:
+            orig = conn.execute(
+                "SELECT description, transaction_date FROM journal_entries WHERE id = ?",
+                (orig_id,),
+            ).fetchone()
+            rev = conn.execute(
+                "SELECT id, transaction_date FROM journal_entries "
+                "WHERE description = ? AND id NOT IN ("
+                + ",".join("?" for _ in entry_ids) + ")",
+                (f"Reversal: {orig['description']}", *entry_ids),
+            ).fetchone()
+            assert rev is not None
+            assert rev["transaction_date"] == orig["transaction_date"]
+
+
+# AC3 — Cancellation of order with no journal entries succeeds without errors
+def test_cancel_order_with_no_journal_entries_succeeds(api_client):
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+
+    api_client.post(
+        f"/api/orders/{ref}/status", json={"status": "confirmed", "reason": "ok"}
+    )
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "cancelled", "reason": "Khách hủy"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "cancelled"
+
+
+# AC4 — Journal reversal failure does not block cancellation; accountingSyncWarning returned
+# --- Acknowledge endpoint (DG-221 Phase 1) ---
+
+
+def test_acknowledge_order_sets_acknowledged_at(api_client):
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    assert created.get("acknowledgedAt") is None
+
+    resp = api_client.post(f"/api/orders/{ref}/acknowledge")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["acknowledgedAt"] is not None
+    assert data["orderRef"] == ref
+
+
+def test_acknowledge_order_idempotent(api_client):
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+
+    resp1 = api_client.post(f"/api/orders/{ref}/acknowledge")
+    acked_at = resp1.json()["acknowledgedAt"]
+
+    resp2 = api_client.post(f"/api/orders/{ref}/acknowledge")
+    assert resp2.status_code == 200
+    assert resp2.json()["acknowledgedAt"] == acked_at
+
+
+def test_acknowledge_nonexistent_order_returns_404(api_client):
+    resp = api_client.post("/api/orders/NONEXISTENT/acknowledge")
+    assert resp.status_code == 404
+
+
+def test_acknowledge_updates_urgency_in_response(api_client):
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    urgency_before = created.get("urgency")
+
+    resp = api_client.post(f"/api/orders/{ref}/acknowledge")
+    assert resp.status_code == 200
+    acknowledged_at = resp.json()["acknowledgedAt"]
+    assert acknowledged_at is not None
+
+
+def test_urgency_present_in_list_response(api_client):
+    created = _create_order(api_client)
+    assert "urgency" in created, f"Expected 'urgency' in order dict, got keys: {list(created.keys())}"
+
+
+def test_urgency_present_in_get_response(api_client):
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    resp = api_client.get(f"/api/orders/{ref}")
+    assert resp.status_code == 200
+    assert "urgency" in resp.json()
+
+
+def test_cancel_order_returns_warning_when_journal_sync_fails(api_client):
+    ref, order_id, txn_id, before_bal, entry_ids = _setup_order_with_all_journal_entries(
+        api_client, lock_entries=False,
+    )
+
+    assert before_bal["pt_net"] > 0
+
+    from baker.services import journal_sync as js_mod
+    original = js_mod._sync_cancelled_order_journal
+
+    def _failing_sync(*args, **kwargs):
+        raise RuntimeError("simulated journal sync failure")
+
+    try:
+        js_mod._sync_cancelled_order_journal = _failing_sync
+
+        resp = api_client.post(
+            f"/api/orders/{ref}/status",
+            json={"status": "cancelled", "reason": "Khách hủy"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "cancelled"
+        assert resp.json().get("accountingSyncWarning") == "journal_sync_failed"
+    finally:
+        js_mod._sync_cancelled_order_journal = original

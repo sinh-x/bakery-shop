@@ -577,6 +577,27 @@ def get_order(ref: str):
         return _order_detail(conn, row)
 
 
+@router.post("/{ref}/acknowledge")
+def acknowledge_order(ref: str):
+    """Ghi nhận đã xem đơn hàng (đặt acknowledged_at nếu đang null)."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
+            (ref, ref),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        if row["acknowledged_at"] is None:
+            conn.execute(
+                "UPDATE orders SET acknowledged_at = ?, updated_at = ? WHERE id = ?",
+                (now_utc(), now_utc(), row["id"]),
+            )
+
+        updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
+        return _order_detail(conn, updated)
+
+
 @router.patch("/{ref}")
 def edit_order(ref: str, body: OrderEdit):
     """Cập nhật thông tin đơn hàng."""
@@ -866,8 +887,19 @@ def transition_status(ref: str, body: StatusTransition):
         if body.status == "confirmed":
             auto_decrement_stock(conn, row["id"], row["order_ref"])
 
+        accounting_sync_warning = None
+
         if body.status == "cancelled":
             restore_stock_for_order(conn, row["id"], row["order_ref"])
+            from baker.services.journal_sync import _sync_cancelled_order_journal, run_journal_sync, sync_status_to_warning
+            sync_status = run_journal_sync(
+                _sync_cancelled_order_journal,
+                conn, row["id"],
+                log_label=f"cancelled order journal sync for order {row['id']}",
+                source_type="order",
+                source_id=row["id"],
+            )
+            accounting_sync_warning = sync_status_to_warning(sync_status)
 
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:
@@ -882,7 +914,6 @@ def transition_status(ref: str, body: StatusTransition):
         _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, body.changedBy)
 
         # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
-        accounting_sync_warning = None
         if body.status == "delivered" and row["status"] != "delivered":
             from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync, sync_status_to_warning
             sync_status = run_journal_sync(

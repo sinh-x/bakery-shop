@@ -7,26 +7,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/api_client.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
-import '../../../shared/utils/order_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import '../../../shared/utils/order_helpers.dart';
+
+const _pulseDuration = Duration(milliseconds: 1500);
 
 /// Unified OrderCard widget for use across order list, kanban, and dashboard.
 ///
-/// Displays all FR-5 card content items:
-/// - Main product names with prices (non-extra items only)
-/// - Delivery type icon
-/// - customer name + source badge
-/// - due date/time with urgency coloring
-/// - total price
-/// - status chip
-/// - photo thumbnail (first cake photo)
-/// - print status indicator
-/// - notes preview
-///
-/// Also includes:
-/// - Payment badge (FR-2): Đã TT / Cọc / Chưa TT
-/// - Urgency indicators (FR-3): overdue red, due-soon amber, today subtle
-class OrderCard extends ConsumerWidget {
+/// Displays all FR-5 card content items, plus a slow pulse animation on
+/// critical (overdue) order cards (FR-4) at ≤1 pulse/1.5s.
+class OrderCard extends ConsumerStatefulWidget {
   const OrderCard({
     super.key,
     required this.order,
@@ -35,6 +25,53 @@ class OrderCard extends ConsumerWidget {
 
   final Order order;
   final VoidCallback? onTap;
+
+  @override
+  ConsumerState<OrderCard> createState() => _OrderCardState();
+}
+
+class _OrderCardState extends ConsumerState<OrderCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _flashController;
+  late Animation<double> _flashAnimation;
+
+  Order get order => widget.order;
+
+  @override
+  void initState() {
+    super.initState();
+    _flashController = AnimationController(
+      vsync: this,
+      duration: _pulseDuration,
+    );
+    _flashAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 0.35), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 0.35, end: 0.0), weight: 3),
+    ]).animate(CurvedAnimation(
+      parent: _flashController,
+      curve: Curves.easeInOut,
+    ));
+    if (order.urgency == urgencyCritical) {
+      _flashController.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(OrderCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (order.urgency == urgencyCritical && !_flashController.isAnimating) {
+      _flashController.repeat();
+    } else if (order.urgency != urgencyCritical && _flashController.isAnimating) {
+      _flashController.stop();
+      _flashController.value = 0.0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _flashController.dispose();
+    super.dispose();
+  }
 
   // ── Payment badge helpers ───────────────────────────────────────────────
 
@@ -96,7 +133,7 @@ class OrderCard extends ConsumerWidget {
   // ── Build ───────────────────────────────────────────────────────────────
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final photosAsync = ref.watch(orderPhotosProvider(order.orderRef));
     final baseUrl = ref.watch(apiBaseUrlProvider);
@@ -121,17 +158,14 @@ class OrderCard extends ConsumerWidget {
         ? '$baseUrl/api/photos/${cakePhoto.photoHash}.jpg'
         : null;
 
-    final urgencyColor = urgencyBorderColor(order.dueDate);
-    final dueSoon = isDueWithin2Hours(order.dueDate, order.dueTime);
+    final tierColor = urgencyTierColor(order.urgency);
+    final tierIcon = urgencyTierIcon(order.urgency);
+    final tierLabel = urgencyTierLabel(order.urgency);
 
-    // Build left border decoration
-    final borderSides = <BorderSide>[];
-    if (urgencyColor != null) {
-      borderSides.add(BorderSide(color: urgencyColor, width: 4));
-    }
-    if (borderSides.isEmpty) {
-      borderSides.add(const BorderSide(color: Colors.transparent, width: 4));
-    }
+    final completenessColor = completenessTierColor(order.completeness);
+    final completenessIcon = completenessTierIcon(order.completeness);
+    final completenessLabel = completenessTierLabel(order.completeness);
+    final isIncomplete = order.completeness == completenessIncomplete;
 
     final paymentColor = _paymentBadge().$1;
     final paymentLabel = _paymentBadge().$2;
@@ -142,20 +176,39 @@ class OrderCard extends ConsumerWidget {
         ? '${VN.printStatusPrintedShort}: $printedBy'
         : VN.printStatusPrintedShort;
 
-    return Card(
+    // Build left border decoration using backend completeness + urgency tiers
+    final borderSides = <BorderSide>[];
+    if (completenessColor != null) {
+      borderSides.add(BorderSide(color: completenessColor, width: 4));
+    }
+    if (tierColor != null) {
+      borderSides.add(BorderSide(color: tierColor, width: 4));
+    }
+    if (borderSides.isEmpty) {
+      borderSides.add(const BorderSide(color: Colors.transparent, width: 4));
+    }
+
+    final card = Card(
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onTap,
         child: Container(
           decoration: BoxDecoration(
-            border: Border(left: borderSides.first),
+            border: Border(
+              left: borderSides.length > 1
+                  ? BorderSide(
+                      color: completenessColor ?? tierColor!,
+                      width: 4,
+                    )
+                  : borderSides.first,
+            ),
           ),
           padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Customer name + delivery icon (own line, above everything) ──
+              // ── Customer name + delivery icon + urgency badge ──
               Row(
                 children: [
                   Icon(
@@ -174,8 +227,78 @@ class OrderCard extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (tierColor != null && tierLabel.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: tierColor.withAlpha(25),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: tierColor.withAlpha(100)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (tierIcon != null) ...[
+                            Icon(tierIcon, size: 12, color: tierColor),
+                            const SizedBox(width: 3),
+                          ],
+                          Text(
+                            tierLabel,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: tierColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  if (isIncomplete) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: completenessColor!.withAlpha(25),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: completenessColor.withAlpha(100)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (completenessIcon != null) ...[
+                            Icon(completenessIcon, size: 12, color: completenessColor),
+                            const SizedBox(width: 3),
+                          ],
+                          Text(
+                            completenessLabel,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: completenessColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
+              // ── Missing fields indicator ──
+              if (isIncomplete && order.missingFields.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '${OrdersLabels.completenessMissingPrefix}${order.missingFields.map(missingFieldLabel).join(', ')}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: completenessColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
               // ── Photo badge + thumbnail (below name row) ──
               Row(
                 children: [
@@ -379,27 +502,25 @@ class OrderCard extends ConsumerWidget {
                 Row(
                   children: [
                     Icon(
-                      dueSoon ? Icons.warning_amber_rounded : Icons.schedule,
+                      tierIcon ?? Icons.schedule,
                       size: 14,
-                      color: dueSoon
-                          ? Colors.orange
-                          : (urgencyColor ?? theme.colorScheme.outline),
+                      color: tierColor ?? theme.colorScheme.outline,
                     ),
                     const SizedBox(width: 4),
-                    if (dueSoon)
+                    if (tierColor != null)
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withAlpha(25),
+                          color: tierColor.withAlpha(25),
                           borderRadius: BorderRadius.circular(4),
                           border:
-                              Border.all(color: Colors.orange.withAlpha(80)),
+                              Border.all(color: tierColor.withAlpha(80)),
                         ),
                         child: Text(
                           _formatDue(order.dueDate, order.dueTime),
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: Colors.orange,
+                            color: tierColor,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -408,10 +529,7 @@ class OrderCard extends ConsumerWidget {
                       Text(
                         _formatDue(order.dueDate, order.dueTime),
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color:
-                              urgencyColor ?? theme.colorScheme.outline,
-                          fontWeight:
-                              urgencyColor != null ? FontWeight.bold : null,
+                          color: theme.colorScheme.outline,
                         ),
                       ),
                     const SizedBox(width: 12),
@@ -481,5 +599,21 @@ class OrderCard extends ConsumerWidget {
         ),
       ),
     );
+
+    if (order.urgency == urgencyCritical) {
+      return AnimatedBuilder(
+        animation: _flashAnimation,
+        builder: (context, child) => ColorFiltered(
+          colorFilter: ColorFilter.mode(
+            Colors.red.withAlpha((_flashAnimation.value * 255).round()),
+            BlendMode.srcATop,
+          ),
+          child: child!,
+        ),
+        child: card,
+      );
+    }
+
+    return card;
   }
 }

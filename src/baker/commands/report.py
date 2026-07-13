@@ -25,6 +25,7 @@ import click
 
 from baker.db.connection import get_db
 from baker.db.schema import COGS_CODE, ORDER_REVENUE_CODE
+from baker.utils.time import utc_to_local
 
 
 # Account types whose natural balance is debit - credit (asset/expense).
@@ -341,7 +342,7 @@ def general_ledger_cmd(since, until):
 
         for je in entries:
             click.echo(
-                f"#{je['id']}  {je['transaction_date']}  {je['description']}  "
+                f"#{je['id']}  {utc_to_local(je['transaction_date'])}  {je['description']}  "
                 f"[source={je['source_type']}:{je['source_id']}]"
                 + ("  (LOCKED)" if je["locked_at"] else "")
             )
@@ -428,7 +429,7 @@ def account_ledger_cmd(account_code, since, until):
             else:
                 movement = f"CR {credit:>12,.2f}"
             click.echo(
-                f"{r['transaction_date']}  #{r['entry_id']:<6}{movement}  "
+                f"{utc_to_local(r['transaction_date'])}  #{r['entry_id']:<6}{movement}  "
                 f"balance={running:>14,.2f}  {r['line_description']}"
             )
 

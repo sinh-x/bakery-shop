@@ -14,6 +14,8 @@ import logging
 import traceback
 from typing import Any, Callable, Optional
 
+from baker.utils.time import now_utc
+
 from baker.db.schema import (
     ACCOUNTS_PAYABLE_CODE,
     ACCOUNTS_RECEIVABLE_CODE,
@@ -803,11 +805,7 @@ def _reconcile_order_revenue_entry(
     # Tien rut held in 2400 (credits at payment time minus debits at return).
     tien_rut_held = _held_tien_rut_for_order(conn, order_id)
 
-    # FR4/FR11: order revenue uses the order's due_date (fallback created_at)
-    # as the business event date.
-    order_transaction_date = None
-    if order_row is not None:
-        order_transaction_date = order_row["due_date"] or order_row["created_at"] or None
+    order_transaction_date = now_utc()
 
     # --- Revenue entry (deposits → 4100) -----------------------------------
     _reconcile_revenue_entry_lines(
@@ -868,6 +866,35 @@ def _replace_order_entry(
         _reverse_journal_entry(conn, existing_id)
     else:
         _delete_journal_entry_cascade(conn, existing_id)
+
+
+def _sync_cancelled_order_journal(conn, order_id: int) -> None:
+    """Reverse (locked) or delete (unlocked) accounting entries for a cancelled order.
+
+    Handles revenue, COGS, and shipping release entries — internal accounting
+    entries that can be auto-reversed on cancellation. Payment transaction
+    entries are deliberately excluded: they represent real cash that requires
+    a human decision (refund vs. manual invalidation).
+    """
+    entry_id = _find_order_entry_by_prefix(conn, order_id, _REVENUE_ENTRY_PREFIX)
+    if entry_id is not None:
+        _replace_order_entry(conn, entry_id, respect_locks=True)
+
+    entry_id = _find_order_entry_by_prefix(conn, order_id, _AR_ENTRY_PREFIX)
+    if entry_id is not None:
+        _replace_order_entry(conn, entry_id, respect_locks=True)
+
+    entry_id = _find_order_entry_by_prefix(conn, order_id, _TIEN_RUT_RETURN_PREFIX)
+    if entry_id is not None:
+        _replace_order_entry(conn, entry_id, respect_locks=True)
+
+    entry_id = _find_journal_entry(conn, 'order_cogs', order_id)
+    if entry_id is not None:
+        _replace_order_entry(conn, entry_id, respect_locks=True)
+
+    entry_id = _find_journal_entry(conn, 'order_shipping_release', order_id)
+    if entry_id is not None:
+        _replace_order_entry(conn, entry_id, respect_locks=True)
 
 
 def _reconcile_revenue_entry_lines(
@@ -1113,8 +1140,7 @@ def _sync_bus_shipping_release_entry(
     asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get("cash", "1100")
     asset_account_id = _account_id_by_code(conn, asset_code)
     description = f"Shipping release: {order_ref}"
-    # FR4/FR11: shipping release uses the order's due_date (fallback created_at).
-    order_transaction_date = order_row["due_date"] or order_row["created_at"] or None
+    order_transaction_date = now_utc()
 
     existing_id = _find_journal_entry(
         conn, "order_shipping_release", order_id
@@ -1315,14 +1341,7 @@ def _sync_order_cogs_entry(
 
     cogs_account_id = _account_id_by_code(conn, COGS_CODE)
     inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
-    # FR4/FR11: order COGS uses the order's due_date (fallback created_at).
-    order_date_row = conn.execute(
-        "SELECT due_date, created_at FROM orders WHERE id = ?", (order_id,)
-    ).fetchone()
-    order_transaction_date = (
-        order_date_row["due_date"] or order_date_row["created_at"] or None
-        if order_date_row else None
-    )
+    order_transaction_date = now_utc()
     _insert_journal_entry(
         conn,
         description=f"Order COGS: {order_ref}",

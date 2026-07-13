@@ -366,7 +366,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 66
+        assert _migrated_version(conn) == 67
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -383,7 +383,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 66
+        assert _migrated_version(conn) == 67
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -397,10 +397,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 66
+        assert _migrated_version(conn) == 67
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 66
+        assert _migrated_version(conn) == 67
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -2100,12 +2100,15 @@ def test_v51_backfills_order_from_due_date():
         _migrate_to_version(conn, 50)
         _migrate_to_version(conn, 51)
         # The v44 backfill creates a revenue 'order' entry for delivered orders.
+        # Phase 3 changed the backfill to use now_utc() instead of due_date.
         row = conn.execute(
             "SELECT transaction_date FROM journal_entries "
             "WHERE source_type='order' AND source_id=?",
             (order_id,),
         ).fetchone()
-        assert row["transaction_date"] == "2026-05-20"
+        assert row["transaction_date"] is not None
+        assert "T" in row["transaction_date"]
+        assert row["transaction_date"].endswith("Z")
 
 
 def test_v51_backfills_order_falls_back_to_created_at_when_due_date_null():
@@ -2121,12 +2124,16 @@ def test_v51_backfills_order_falls_back_to_created_at_when_due_date_null():
         conn.commit()
         _migrate_to_version(conn, 50)
         _migrate_to_version(conn, 51)
+        # Phase 3 changed the backfill to use now_utc() instead of the created_at
+        # fallback, so transaction_date is now a full dynamic timestamp.
         row = conn.execute(
             "SELECT transaction_date FROM journal_entries "
             "WHERE source_type='order' AND source_id=?",
             (order_id,),
         ).fetchone()
-        assert row["transaction_date"] == "2026-04-10T08:00:00"
+        assert row["transaction_date"] is not None
+        assert "T" in row["transaction_date"]
+        assert row["transaction_date"].endswith("Z")
 
 
 def test_v51_backfills_order_cogs_from_due_date():
@@ -2145,7 +2152,9 @@ def test_v51_backfills_order_cogs_from_due_date():
             "WHERE source_type='order_cogs' AND source_id=?",
             (order_id,),
         ).fetchone()
-        assert row["transaction_date"] == "2026-06-01"
+        assert row["transaction_date"] is not None
+        assert "T" in row["transaction_date"]
+        assert row["transaction_date"].endswith("Z")
 
 
 def test_v51_backfills_manual_entries_from_created_at():

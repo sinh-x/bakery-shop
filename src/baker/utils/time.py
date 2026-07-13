@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from baker.config import TIMEZONE
+
 
 def now_utc() -> str:
     """Return the current UTC time as an ISO-8601 string with a ``Z`` suffix.
@@ -21,6 +23,28 @@ def now_utc() -> str:
     ``datetime.now().isoformat()`` calls throughout the codebase.
     """
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def utc_to_local(ts_str: str | None) -> str:
+    """Convert a UTC ISO-8601 timestamp string to local time for display.
+
+    Accepts ``YYYY-MM-DDTHH:MM:SSZ`` / ``YYYY-MM-DDTHH:MM:SS`` (full
+    timestamp) or ``YYYY-MM-DD`` (date-only, backward compat).
+    Returns ``HH:MM DD/MM/YYYY`` for full timestamps or ``DD/MM/YYYY``
+    for date-only strings, in the configured ``TIMEZONE``.
+    Returns empty string for None/empty input.
+    """
+    if not ts_str:
+        return ""
+    try:
+        if "T" not in ts_str and ":" not in ts_str:
+            dt = datetime.strptime(ts_str, "%Y-%m-%d")
+            return dt.strftime("%d/%m/%Y")
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        local_dt = dt.astimezone(TIMEZONE)
+        return local_dt.strftime("%H:%M %d/%m/%Y")
+    except (ValueError, TypeError):
+        return ts_str
 
 
 class InvalidEffectiveFrom(ValueError):
@@ -41,7 +65,7 @@ def parse_effective_from(date_str: str | None) -> datetime:
 
     Accepts ``YYYY-MM-DD`` (treated as start-of-day) or a full ISO-8601
     string (trailing ``Z`` accepted). Returns ``None``-equivalent for
-    empty/``None`` input by raising :class:`InvalidEffectiveFrom` only on
+    empty/``None`` input by calling :class:`InvalidEffectiveFrom` only on
     malformed values — callers should call :func:`now_utc` themselves when
     the input is empty.
 

@@ -1,15 +1,16 @@
 """``baker repair-order-revenue`` CLI command (DG-190 Phase 4.2).
 
 Repairs stale order-revenue journal entries whose 2100 (Customer Deposits)
-debit no longer matches the order's current net deposits
-(deposits − outflows (refund only); ``PaymentTransaction.total_paid_net``).
-``tien_rut`` is a deposit inflow (DG-198 reversal), not an outflow, so it is
-not subtracted from the deposit balance.
+debit no longer matches the order's effective deposit balance
+(``total_paid_net − total_tien_rut``). ``tien_rut`` journals to 2400
+(Tien Rut Held) and is returned separately at delivery, so it must be
+excluded from the 2100 debit comparison — matching the logic in
+:func:`_reconcile_order_revenue_entry`.
 
 The repair deletes the existing ``source_type = 'order'`` journal entry and
 re-runs :func:`_sync_delivered_order_journal` to recreate it with the current
 net deposit amounts. The command is idempotent: entries already within 0.005 of
-the net deposits are skipped.
+the effective deposit balance are skipped.
 
 Modes:
 - ``--order-id <id>`` — repair a single order
@@ -36,6 +37,7 @@ success and 1 on error; errors are written to stderr only — following the
 existing ``validate-accounts`` pattern.
 """
 
+import json
 import logging
 
 import click
@@ -43,10 +45,12 @@ import click
 from baker.db.connection import get_db
 from baker.db.schema import (
     CUSTOMER_DEPOSITS_CODE,
+    INVENTORY_PURCHASE_CATEGORIES,
     REVENUE_UPDATE_TOLERANCE,
     TIEN_RUT_HELD_CODE,
 )
 from baker.formatters import format_vnd_amount
+from baker.utils.time import now_utc
 from baker.models.payment_transaction import PaymentTransaction
 from baker.services.journal_sync import (
     _compute_order_cogs_total,
@@ -54,9 +58,13 @@ from baker.services.journal_sync import (
     _is_locked,
     _order_cogs_entry,
     _reconcile_order_revenue_entry,
+    _reverse_journal_entry,
+    _sync_cancelled_order_journal,
     _sync_delivered_order_journal,
+    _sync_expense_journal,
     _sync_order_cogs_entry,
     _sync_payment_journal,
+    run_journal_sync,
 )
 
 logger = logging.getLogger(__name__)
@@ -114,7 +122,15 @@ def _process_order(conn, order_id: int, *, dry_run: bool) -> dict:
     """
     order_ref = _order_ref(conn, order_id)
     entry_id, old_debit = _order_revenue_2100_debit(conn, order_id)
-    net = PaymentTransaction.total_paid_net(conn, order_id)
+    net_deposits = PaymentTransaction.total_paid_net(conn, order_id)
+    tien_rut = PaymentTransaction.total_tien_rut(conn, order_id)
+    shipping_held = 0.0
+    order_row = conn.execute(
+        "SELECT delivery_type, shipping_fee FROM orders WHERE id = ?", (order_id,)
+    ).fetchone()
+    if order_row and (order_row["delivery_type"] or "pickup") == "bus" and float(order_row["shipping_fee"] or 0) > 0:
+        shipping_held = float(order_row["shipping_fee"])
+    net = max(0.0, net_deposits - tien_rut - shipping_held)
 
     if entry_id is None:
         if net <= 0:
@@ -192,6 +208,8 @@ _ACTION_LABELS = {
     "will-create": "sẽ tạo",
     "backfilled": "đã sửa",
     "will-backfill": "sẽ sửa",
+    "repaired-with-errors": "đã sửa, có lỗi",
+    "cash-only": "chỉ có tiền mặt — cần xem xét",
 }
 
 
@@ -734,3 +752,1092 @@ def check_revenue_gaps_cmd():
         )
     click.echo("-" * 60)
     click.echo(f"Tổng: {len(rows)} đơn thiếu bút toán doanh thu")
+
+
+# ---------------------------------------------------------------------------
+# ``baker repair-payment-journal`` — DG-233 Phase 1 payment journal backfill
+# (FR1, AC2, AC7, AC9)
+# ---------------------------------------------------------------------------
+
+
+def _payment_transactions_needing_backfill(conn, order_id=None):
+    """Payment transactions without journal entries (non-invalidated).
+
+    Returns rows from payment_transactions that have no matching journal entry
+    with source_type = 'payment_transaction'. Invalidated transactions are
+    excluded (their journal entry is intentionally reversed/removed).
+    """
+    sql = """
+        SELECT pt.id, pt.amount, pt.type, pt.method, pt.order_id
+        FROM payment_transactions pt
+        WHERE (pt.invalidated_at IS NULL OR pt.invalidated_at = '')
+          AND NOT EXISTS (
+              SELECT 1 FROM journal_entries je
+              WHERE je.source_type = 'payment_transaction' AND je.source_id = pt.id
+          )
+    """
+    params = []
+    if order_id is not None:
+        sql += " AND pt.order_id = ?"
+        params.append(order_id)
+    sql += " ORDER BY pt.id ASC"
+    return conn.execute(sql, params).fetchall()
+
+
+@click.command("repair-payment-journal")
+@click.option("--order-id", "order_id", type=int, default=None, help="ID đơn hàng cần bổ sung bút toán thanh toán.")
+@click.option("--all", "repair_all", is_flag=True, default=False, help="Bổ sung bút toán cho tất cả giao dịch thanh toán còn thiếu.")
+@click.option("--dry-run", is_flag=True, default=False, help="Xem trước thay đổi, không ghi vào CSDL.")
+def repair_payment_journal_cmd(order_id, repair_all, dry_run):
+    """Bổ sung bút toán nhật ký cho các giao dịch thanh toán còn thiếu.
+
+    Tìm tất cả payment_transactions chưa có bút toán nhật ký tương ứng
+    (source_type = 'payment_transaction') và gọi ``_sync_payment_journal``
+    để tạo bút toán. Lệnh idempotent: chạy lần hai sẽ không tìm thấy giao
+    dịch nào cần bổ sung.
+    """
+    if order_id is None and not repair_all:
+        click.echo("Cần chỉ định --order-id <id> hoặc --all.", err=True)
+        raise SystemExit(1)
+    if order_id is not None and repair_all:
+        click.echo("Không thể dùng --order-id và --all cùng lúc.", err=True)
+        raise SystemExit(1)
+
+    try:
+        with get_db() as conn:
+            txns = _payment_transactions_needing_backfill(
+                conn, order_id=order_id
+            )
+
+            results = []
+            for t in txns:
+                txn_id = int(t["id"])
+                amount = float(t["amount"] or 0)
+                ptype = t["type"]
+                method = t["method"] or "cash"
+                txn_order_id = int(t["order_id"]) if t["order_id"] is not None else None
+                order_ref = _order_ref(conn, txn_order_id) if txn_order_id else "-"
+
+                if dry_run:
+                    results.append({
+                        "txn_id": txn_id,
+                        "amount": amount,
+                        "type": ptype,
+                        "order_ref": order_ref,
+                        "action": "will-backfill",
+                    })
+                else:
+                    _sync_payment_journal(
+                        conn, txn_id, amount, ptype, method,
+                        order_id=txn_order_id,
+                    )
+                    results.append({
+                        "txn_id": txn_id,
+                        "amount": amount,
+                        "type": ptype,
+                        "order_ref": order_ref,
+                        "action": "backfilled",
+                    })
+
+            if not dry_run:
+                conn.commit()
+    except Exception:  # noqa: BLE001 — top-level CLI guard
+        logger.exception("Repair payment-journal CLI error")
+        click.echo(
+            "Lỗi khi bổ sung bút toán thanh toán. Xem log máy chủ để biết chi tiết.",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    if not results:
+        click.echo("(không có giao dịch thanh toán nào cần bổ sung bút toán)")
+        return
+
+    click.echo("Bổ sung bút toán nhật ký thanh toán")
+    click.echo("=" * 40)
+    click.echo("")
+    click.echo(
+        f"{'Mã GD':<10}{'Số tiền':>16}{'Loại':<14}{'Đơn hàng':<12}{'Hành động':<16}"
+    )
+    click.echo("-" * 68)
+    for r in results:
+        order_ref = r.get("order_ref", "-")
+        click.echo(
+            f"#{r['txn_id']:<9}"
+            f"{_vn_amount(r['amount']):>16}"
+            f"{r['type']:<14}"
+            f"{order_ref[:11]:<12}"
+            f"{_ACTION_LABELS.get(r['action'], r['action']):<16}"
+        )
+    click.echo("-" * 68)
+
+    backfilled = sum(1 for r in results if r["action"] == "backfilled")
+    will_backfill = sum(1 for r in results if r["action"] == "will-backfill")
+
+    parts = []
+    if dry_run:
+        parts.append(f"sẽ sửa: {will_backfill}")
+    else:
+        parts.append(f"đã sửa: {backfilled}")
+    click.echo(f"Tổng: {len(results)} giao dịch  |  " + ", ".join(parts))
+
+
+# ---------------------------------------------------------------------------
+# ``baker repair-ar-entries`` — DG-233 Phase 2 AR entry backfill
+# (FR2, AC8, AC7, AC9)
+# ---------------------------------------------------------------------------
+
+
+def _orders_needing_ar_entry(conn, order_id=None):
+    """Find delivered/completed orders needing AR entries.
+
+    Returns orders with total_price > 0, status in DELIVERED_STATUSES,
+    no existing ``source_type='order'`` journal entry, and
+    ``deposits_in - tien_rut_total <= 0`` (zero net deposits after
+    excluding tien_rut — truly unpaid orders that need AR recognition).
+    """
+    sql = f"""
+        SELECT o.id, o.order_ref, o.total_price
+        FROM orders o
+        WHERE o.status IN ({','.join('?' * len(DELIVERED_STATUSES))})
+          AND o.total_price > 0
+          AND NOT EXISTS (
+              SELECT 1 FROM journal_entries je
+              WHERE je.source_type = 'order' AND je.source_id = o.id
+          )
+    """
+    params = list(DELIVERED_STATUSES)
+    if order_id is not None:
+        sql += " AND o.id = ?"
+        params.append(order_id)
+    sql += " ORDER BY o.id ASC"
+
+    rows = conn.execute(sql, params).fetchall()
+
+    result = []
+    for r in rows:
+        oid = int(r["id"])
+        deposits_in = PaymentTransaction.total_paid_excl_outflows(conn, oid)
+        tien_rut_total = PaymentTransaction.total_tien_rut(conn, oid)
+        if deposits_in - tien_rut_total <= 0:
+            result.append(r)
+
+    return result
+
+
+@click.command("repair-ar-entries")
+@click.option("--order-id", "order_id", type=int, default=None, help="ID đơn hàng cần bổ sung bút toán công nợ.")
+@click.option("--all", "repair_all", is_flag=True, default=False, help="Bổ sung bút toán công nợ cho tất cả đơn hàng còn thiếu.")
+@click.option("--dry-run", is_flag=True, default=False, help="Xem trước thay đổi, không ghi vào CSDL.")
+def repair_ar_entries_cmd(order_id, repair_all, dry_run):
+    """Bổ sung bút toán công nợ phải thu (AR) cho đơn hàng đã giao không có cọc.
+
+    Tìm các đơn hàng đã giao/hoàn thành với total_price > 0, không có
+    bút toán doanh thu (source_type = 'order'), và không có cọc thực tế
+    (deposits_in - tien_rut_total <= 0). Tạo bút toán công nợ DR 1500 /
+    CR 4100 qua ``_reconcile_order_revenue_entry``. Lệnh idempotent: chạy
+    lần hai sẽ không tìm thấy đơn hàng nào cần bổ sung.
+    """
+    if order_id is None and not repair_all:
+        click.echo("Cần chỉ định --order-id <id> hoặc --all.", err=True)
+        raise SystemExit(1)
+    if order_id is not None and repair_all:
+        click.echo("Không thể dùng --order-id và --all cùng lúc.", err=True)
+        raise SystemExit(1)
+
+    try:
+        with get_db() as conn:
+            orders = _orders_needing_ar_entry(conn, order_id=order_id)
+
+            results = []
+            for o in orders:
+                oid = int(o["id"])
+                order_ref = o["order_ref"]
+                total_price = float(o["total_price"] or 0)
+
+                if dry_run:
+                    results.append({
+                        "order_id": oid,
+                        "order_ref": order_ref,
+                        "total_price": total_price,
+                        "action": "will-create",
+                    })
+                else:
+                    _reconcile_order_revenue_entry(
+                        conn, oid, order_ref, total_price=total_price,
+                    )
+                    results.append({
+                        "order_id": oid,
+                        "order_ref": order_ref,
+                        "total_price": total_price,
+                        "action": "created",
+                    })
+
+            if not dry_run:
+                conn.commit()
+    except Exception:  # noqa: BLE001 — top-level CLI guard
+        logger.exception("Repair AR entries CLI error")
+        click.echo(
+            "Lỗi khi bổ sung bút toán công nợ. Xem log máy chủ để biết chi tiết.",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    if not results:
+        click.echo("(không có đơn hàng nào cần bổ sung bút toán công nợ)")
+        return
+
+    click.echo("Bổ sung bút toán công nợ phải thu (AR)")
+    click.echo("=" * 40)
+    click.echo("")
+    click.echo(
+        f"{'Mã đơn':<20}{'Tổng tiền':>16}{'Hành động':<16}"
+    )
+    click.echo("-" * 52)
+    for r in results:
+        click.echo(
+            f"{r['order_ref'][:19]:<20}"
+            f"{_vn_amount(r['total_price']):>16}"
+            f"{_ACTION_LABELS.get(r['action'], r['action']):<16}"
+        )
+    click.echo("-" * 52)
+
+    created = sum(1 for r in results if r["action"] == "created")
+    will_create = sum(1 for r in results if r["action"] == "will-create")
+
+    parts = []
+    if dry_run:
+        parts.append(f"sẽ sửa: {will_create}")
+    else:
+        parts.append(f"đã sửa: {created}")
+    click.echo(f"Tổng: {len(results)} đơn  |  " + ", ".join(parts))
+
+
+# ---------------------------------------------------------------------------
+# ``baker repair-future-dates`` — DG-233 Phase 5 future-dated entries fix
+# (FR5, AC5, AC7, AC9)
+# ---------------------------------------------------------------------------
+
+
+def _future_dated_entries(conn):
+    """Return journal entries whose ``created_at`` is in the future."""
+    rows = conn.execute(
+        """
+        SELECT je.id          AS entry_id,
+               je.description AS description,
+               je.source_type AS source_type,
+               je.source_id   AS source_id,
+               je.created_at  AS created_at,
+               je.locked_at   AS locked_at
+        FROM journal_entries je
+        WHERE je.created_at > ?
+        ORDER BY je.id
+        """,
+        (now_utc(),),
+    ).fetchall()
+    return [
+        {
+            "entry_id": int(r["entry_id"]),
+            "description": r["description"],
+            "source_type": r["source_type"],
+            "source_id": int(r["source_id"]) if r["source_id"] is not None else None,
+            "created_at": r["created_at"],
+            "locked": bool(r["locked_at"]),
+        }
+        for r in rows
+    ]
+
+
+@click.command("repair-future-dates")
+@click.option("--entry-id", "entry_id", type=int, default=None, help="ID bút toán cần sửa ngày.")
+@click.option("--all", "repair_all", is_flag=True, default=False, help="Sửa tất cả bút toán có ngày trong tương lai.")
+@click.option("--dry-run", is_flag=True, default=False, help="Xem trước thay đổi, không ghi vào CSDL.")
+def repair_future_dates_cmd(entry_id, repair_all, dry_run):
+    """Sửa bút toán nhật ký có created_at trong tương lai về thời điểm hiện tại.
+
+    Các bút toán có ``created_at > now_utc()`` (thường do lỗi múi giờ khi
+    dùng ``strftime`` trong SQLite) sẽ được đặt lại ``created_at`` về thời
+    điểm hiện tại. Bút toán đã khoá sẽ bị bỏ qua. Lệnh idempotent: chạy
+    lần hai sẽ không tìm thấy bút toán nào cần sửa.
+    """
+    if entry_id is None and not repair_all:
+        click.echo("Cần chỉ định --entry-id <id> hoặc --all.", err=True)
+        raise SystemExit(1)
+    if entry_id is not None and repair_all:
+        click.echo("Không thể dùng --entry-id và --all cùng lúc.", err=True)
+        raise SystemExit(1)
+
+    try:
+        with get_db() as conn:
+            entries = _future_dated_entries(conn)
+            if entry_id is not None:
+                entries = [e for e in entries if e["entry_id"] == entry_id]
+                if not entries:
+                    click.echo(f"(không tìm thấy bút toán #{entry_id} hoặc bút toán không có ngày trong tương lai)")
+                    return
+
+            results = []
+            now = now_utc()
+            for e in entries:
+                eid = e["entry_id"]
+                if e["locked"]:
+                    results.append({
+                        "entry_id": eid,
+                        "description": e["description"],
+                        "source_type": e["source_type"],
+                        "source_id": e["source_id"],
+                        "created_at": e["created_at"],
+                        "action": "locked",
+                    })
+                    continue
+
+                if dry_run:
+                    results.append({
+                        "entry_id": eid,
+                        "description": e["description"],
+                        "source_type": e["source_type"],
+                        "source_id": e["source_id"],
+                        "created_at": e["created_at"],
+                        "action": "will-repair",
+                    })
+                else:
+                    conn.execute(
+                        "UPDATE journal_entries SET created_at = ? WHERE id = ?",
+                        (now, eid),
+                    )
+                    results.append({
+                        "entry_id": eid,
+                        "description": e["description"],
+                        "source_type": e["source_type"],
+                        "source_id": e["source_id"],
+                        "created_at": now,
+                        "action": "repaired",
+                    })
+
+            if not dry_run:
+                conn.commit()
+    except Exception:
+        logger.exception("Repair future-dates CLI error")
+        click.echo(
+            "Lỗi khi sửa bút toán có ngày trong tương lai. Xem log máy chủ để biết chi tiết.",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    if not results:
+        click.echo("(không có bút toán nào cần sửa ngày)")
+        return
+
+    click.echo("Sửa bút toán có ngày trong tương lai")
+    click.echo("=" * 40)
+    click.echo("")
+    click.echo(
+        f"{'ID bút toán':<12}{'Mô tả':<30}{'Ngày cũ':<22}{'Hành động':<16}"
+    )
+    click.echo("-" * 80)
+    for r in results:
+        desc = (r["description"] or "")[:29]
+        old_date = r["created_at"] or ""
+        click.echo(
+            f"{r['entry_id']:<12}"
+            f"{desc:<30}"
+            f"{old_date:<22}"
+            f"{_ACTION_LABELS.get(r['action'], r['action']):<16}"
+        )
+    click.echo("-" * 80)
+
+    repaired = sum(1 for r in results if r["action"] == "repaired")
+    locked = sum(1 for r in results if r["action"] == "locked")
+    will_repair = sum(1 for r in results if r["action"] == "will-repair")
+
+    parts = []
+    if dry_run:
+        parts.append(f"sẽ sửa: {will_repair}")
+    else:
+        if repaired:
+            parts.append(f"đã sửa: {repaired}")
+        if locked:
+            parts.append(f"khoá: {locked}")
+    click.echo(f"Tổng: {len(results)} bút toán  |  " + ", ".join(parts))
+
+
+# ---------------------------------------------------------------------------
+# ``baker repair-inventory`` — DG-233 Phase 4 inventory balance fix
+# (FR4, AC4, AC7, AC9)
+# ---------------------------------------------------------------------------
+
+
+def _expense_events_needing_inventory_backfill(conn, event_id=None):
+    """Find expense events with inventory purchase categories missing journal entries.
+
+    Inventory purchase categories (``Nguyên liệu``, ``Bao bì``) debit Account 1300
+    (Inventory) instead of an expense account. Missing journal entries for these
+    events mean the purchase debit to 1300 was never recorded, which can cause a
+    negative inventory balance.
+    """
+    import json
+
+    sql = """
+        SELECT e.id, e.summary, e.data
+        FROM events e
+        WHERE e.type = 'expense'
+          AND (e.deleted_at IS NULL OR e.deleted_at = '')
+          AND NOT EXISTS (
+              SELECT 1 FROM journal_entries je
+              WHERE je.source_type = 'expense' AND je.source_id = e.id
+          )
+    """
+    params = []
+    if event_id is not None:
+        sql += " AND e.id = ?"
+        params.append(event_id)
+    sql += " ORDER BY e.id ASC"
+
+    rows = conn.execute(sql, params).fetchall()
+
+    result = []
+    for r in rows:
+        data = json.loads(r["data"] or "{}")
+        category = data.get("category")
+        if category in INVENTORY_PURCHASE_CATEGORIES:
+            result.append({
+                "id": int(r["id"]),
+                "summary": r["summary"],
+                "data": data,
+            })
+    return result
+
+
+def _process_inventory_backfill(conn, expense_event, *, dry_run):
+    """Process one inventory expense event backfill.
+
+    Calls :func:`_sync_expense_journal` to create the missing journal entry.
+    Idempotent: resyncing an already-correct entry is a no-op.
+    """
+    event_id = expense_event["id"]
+    summary = expense_event["summary"]
+    data = expense_event["data"]
+    category = data.get("category", "")
+    amount = data.get("amount_vnd", 0)
+
+    if dry_run:
+        return {
+            "event_id": event_id,
+            "summary": summary,
+            "category": category,
+            "amount": float(amount) if amount else 0.0,
+            "action": "will-backfill",
+        }
+
+    _sync_expense_journal(conn, event_id, data, summary)
+    return {
+        "event_id": event_id,
+        "summary": summary,
+        "category": category,
+        "amount": float(amount) if amount else 0.0,
+        "action": "backfilled",
+    }
+
+
+@click.command("repair-inventory")
+@click.option("--event-id", "event_id", type=int, default=None, help="ID sự kiện chi phí cần bổ sung bút toán nhập kho.")
+@click.option("--all", "repair_all", is_flag=True, default=False, help="Bổ sung bút toán cho tất cả sự kiện nhập kho còn thiếu.")
+@click.option("--dry-run", is_flag=True, default=False, help="Xem trước thay đổi, không ghi vào CSDL.")
+def repair_inventory_cmd(event_id, repair_all, dry_run):
+    """Sửa số dư âm của tài khoản Hàng tồn kho (1300).
+
+    Tìm các sự kiện chi phí thuộc danh mục nhập kho (``Nguyên liệu``,
+    ``Bao bì``) chưa có bút toán nhật ký tương ứng và tạo bút toán
+    Nợ 1300 / Có tài khoản thanh toán. Lệnh idempotent: chạy lần hai
+    sẽ không tìm thấy sự kiện nào cần bổ sung.
+    """
+    if event_id is None and not repair_all:
+        click.echo("Cần chỉ định --event-id <id> hoặc --all.", err=True)
+        raise SystemExit(1)
+    if event_id is not None and repair_all:
+        click.echo("Không thể dùng --event-id và --all cùng lúc.", err=True)
+        raise SystemExit(1)
+
+    try:
+        with get_db() as conn:
+            events = _expense_events_needing_inventory_backfill(
+                conn, event_id=event_id
+            )
+
+            results = []
+            for e in events:
+                results.append(
+                    _process_inventory_backfill(conn, e, dry_run=dry_run)
+                )
+
+            if not dry_run:
+                conn.commit()
+    except Exception:  # noqa: BLE001 — top-level CLI guard
+        logger.exception("Repair inventory CLI error")
+        click.echo(
+            "Lỗi khi sửa bút toán nhập kho. Xem log máy chủ để biết chi tiết.",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    if not results:
+        click.echo("(không có sự kiện nhập kho nào cần bổ sung bút toán)")
+        return
+
+    click.echo("Sửa bút toán nhập kho (Hàng tồn kho 1300)")
+    click.echo("=" * 50)
+    click.echo("")
+    click.echo(
+        f"{'Mã SK':<10}{'Danh mục':<16}{'Số tiền':>16}{'Hành động':<16}"
+    )
+    click.echo("-" * 58)
+    for r in results:
+        click.echo(
+            f"#{r['event_id']:<9}"
+            f"{r['category'][:15]:<16}"
+            f"{_vn_amount(r['amount']):>16}"
+            f"{_ACTION_LABELS.get(r['action'], r['action']):<16}"
+        )
+    click.echo("-" * 58)
+
+    backfilled = sum(1 for r in results if r["action"] == "backfilled")
+    will_backfill = sum(1 for r in results if r["action"] == "will-backfill")
+
+    parts = []
+    if dry_run:
+        parts.append(f"sẽ sửa: {will_backfill}")
+    else:
+        parts.append(f"đã sửa: {backfilled}")
+    click.echo(f"Tổng: {len(results)} sự kiện  |  " + ", ".join(parts))
+
+
+# ---------------------------------------------------------------------------
+# ``baker repair-deposit-balance`` — DG-233 Phase 6 deposit balance cleanup
+# (FR6, AC6, AC7, AC9)
+# ---------------------------------------------------------------------------
+
+
+def _orders_with_deposit_balance_issue(conn, order_id=None):
+    """Return orders flagged by the deposit_balance_integrity check.
+
+    Mirrors :func:`_check_deposit_balance_integrity` — returns rows with
+    ``net_2100 != 0`` for terminal/overdue orders. Excludes active orders
+    that haven't passed their due date.
+    """
+    deposits_code = CUSTOMER_DEPOSITS_CODE
+    sql = f"""
+        SELECT o.id, o.order_ref, o.status, o.due_date,
+               COALESCE(pt.dep_credit, 0) AS deposits_in,
+               COALESCE(pt.ref_debit, 0) AS refunds_out,
+               COALESCE(ord.rev_debit, 0) AS revenue_cleared,
+               COALESCE(ship.ship_debit, 0) AS shipping_cleared,
+               (COALESCE(pt.dep_credit, 0) - COALESCE(pt.ref_debit, 0)
+                - COALESCE(ord.rev_debit, 0) - COALESCE(ship.ship_debit, 0)
+               ) AS net_2100
+        FROM orders o
+        LEFT JOIN (
+            SELECT pt2.order_id,
+                   SUM(CASE WHEN jl2.credit > 0 THEN jl2.credit ELSE 0 END) AS dep_credit,
+                   SUM(CASE WHEN jl2.debit > 0 THEN jl2.debit ELSE 0 END) AS ref_debit
+            FROM payment_transactions pt2
+            JOIN journal_entries je2
+              ON je2.source_type = 'payment_transaction' AND je2.source_id = pt2.id
+            JOIN journal_lines jl2 ON jl2.journal_entry_id = je2.id
+            JOIN accounts a2 ON a2.id = jl2.account_id AND a2.code = ?
+            WHERE (pt2.invalidated_at IS NULL OR pt2.invalidated_at = '')
+            GROUP BY pt2.order_id
+        ) pt ON pt.order_id = o.id
+        LEFT JOIN (
+            SELECT je3.source_id AS order_id,
+                   SUM(CASE WHEN jl3.debit > 0 THEN jl3.debit ELSE 0 END) AS rev_debit
+            FROM journal_entries je3
+            JOIN journal_lines jl3 ON jl3.journal_entry_id = je3.id
+            JOIN accounts a3 ON a3.id = jl3.account_id AND a3.code = ?
+            WHERE je3.source_type = 'order'
+              AND je3.description NOT LIKE 'Reversal:%'
+            GROUP BY je3.source_id
+        ) ord ON ord.order_id = o.id
+        LEFT JOIN (
+            SELECT je4.source_id AS order_id,
+                   SUM(CASE WHEN jl4.debit > 0 THEN jl4.debit ELSE 0 END) AS ship_debit
+            FROM journal_entries je4
+            JOIN journal_lines jl4 ON jl4.journal_entry_id = je4.id
+            JOIN accounts a4 ON a4.id = jl4.account_id AND a4.code = ?
+            WHERE je4.source_type = 'order_shipping_hold'
+            GROUP BY je4.source_id
+        ) ship ON ship.order_id = o.id
+        WHERE COALESCE(pt.dep_credit, 0) > 0
+           OR COALESCE(ord.rev_debit, 0) > 0
+    """
+    params = [deposits_code, deposits_code, deposits_code]
+    if order_id is not None:
+        sql += " AND o.id = ?"
+        params.append(order_id)
+    sql += " ORDER BY o.id ASC"
+
+    rows = conn.execute(sql, params).fetchall()
+
+    result = []
+    for r in rows:
+        net = float(r["net_2100"])
+        if abs(net) <= MISMATCH_TOLERANCE:
+            continue
+        status = r["status"]
+        due_date = r["due_date"]
+        if status not in ("delivered", "completed", "cancelled"):
+            if not due_date:
+                continue
+            today = conn.execute(
+                "SELECT strftime('%Y-%m-%d', 'now', 'localtime')"
+            ).fetchone()[0]
+            if due_date >= today:
+                continue
+        result.append(r)
+    return result
+
+
+def _process_deposit_balance_order(conn, order_id, *, dry_run):
+    """Repair one order's deposit balance integrity (FR6).
+
+    - Cancelled orders: reverse the payment transaction journal entries
+      (the deposits were taken but never returned).
+    - Delivered/completed/overdue orders: reconcile the revenue entry
+      via :func:`_reconcile_order_revenue_entry`.
+
+    Returns a result dict with keys: order_id, order_ref, status,
+    deposits_in, revenue_cleared, shipping_cleared, net_2100, action.
+    """
+    deposits_code = CUSTOMER_DEPOSITS_CODE
+    row = conn.execute(
+        """
+        SELECT o.id, o.order_ref, o.status, o.due_date,
+               COALESCE((
+                   SELECT SUM(jl.credit)
+                   FROM payment_transactions pt
+                   JOIN journal_entries je ON je.source_type = 'payment_transaction'
+                     AND je.source_id = pt.id
+                   JOIN journal_lines jl ON jl.journal_entry_id = je.id
+                   JOIN accounts a ON a.id = jl.account_id AND a.code = ?
+                   WHERE pt.order_id = o.id
+                     AND (pt.invalidated_at IS NULL OR pt.invalidated_at = '')
+                     AND jl.credit > 0
+               ), 0) AS deposits_in,
+               COALESCE((
+                   SELECT SUM(jl.debit)
+                   FROM journal_entries je
+                   JOIN journal_lines jl ON jl.journal_entry_id = je.id
+                   JOIN accounts a ON a.id = jl.account_id AND a.code = ?
+                   WHERE je.source_type = 'order' AND je.source_id = o.id
+                     AND je.description NOT LIKE 'Reversal:%'
+                     AND jl.debit > 0
+               ), 0) AS revenue_cleared,
+               COALESCE((
+                   SELECT SUM(jl.debit)
+                   FROM journal_entries je
+                   JOIN journal_lines jl ON jl.journal_entry_id = je.id
+                   JOIN accounts a ON a.id = jl.account_id AND a.code = ?
+                   WHERE je.source_type = 'order_shipping_hold'
+                     AND je.source_id = o.id
+                     AND jl.debit > 0
+               ), 0) AS shipping_cleared
+        FROM orders o
+        WHERE o.id = ?
+        """,
+        (deposits_code, deposits_code, deposits_code, order_id),
+    ).fetchone()
+    if row is None:
+        return {
+            "order_id": order_id,
+            "order_ref": f"#{order_id}",
+            "status": "unknown",
+            "deposits_in": 0.0,
+            "revenue_cleared": 0.0,
+            "shipping_cleared": 0.0,
+            "net_2100": 0.0,
+            "action": "not-applicable",
+        }
+
+    order_ref = row["order_ref"]
+    status = row["status"]
+    deposits_in = float(row["deposits_in"])
+    revenue_cleared = float(row["revenue_cleared"])
+    shipping_cleared = float(row["shipping_cleared"])
+    net_2100 = deposits_in - revenue_cleared - shipping_cleared
+
+    if status == "cancelled":
+        if deposits_in <= 0:
+            action = "not-applicable"
+        elif dry_run:
+            action = "will-repair"
+        else:
+            txn_ids = conn.execute(
+                """
+                SELECT pt.id
+                FROM payment_transactions pt
+                JOIN journal_entries je
+                  ON je.source_type = 'payment_transaction' AND je.source_id = pt.id
+                WHERE pt.order_id = ?
+                  AND (pt.invalidated_at IS NULL OR pt.invalidated_at = '')
+                """,
+                (order_id,),
+            ).fetchall()
+            for t in txn_ids:
+                entry_id_row = conn.execute(
+                    "SELECT id FROM journal_entries "
+                    "WHERE source_type = 'payment_transaction' AND source_id = ?",
+                    (int(t["id"]),),
+                ).fetchone()
+                if entry_id_row:
+                    eid = int(entry_id_row["id"])
+                    if _is_locked(conn, eid):
+                        _reverse_journal_entry(conn, eid)
+                    else:
+                        _delete_journal_entry_cascade(conn, eid)
+            action = "repaired"
+        return {
+            "order_id": order_id,
+            "order_ref": order_ref,
+            "status": status,
+            "deposits_in": deposits_in,
+            "revenue_cleared": revenue_cleared,
+            "shipping_cleared": shipping_cleared,
+            "net_2100": net_2100,
+            "action": action,
+        }
+
+    if dry_run:
+        action = "will-repair"
+    else:
+        _reconcile_order_revenue_entry(conn, order_id, order_ref, respect_locks=True)
+        action = "repaired"
+    return {
+        "order_id": order_id,
+        "order_ref": order_ref,
+        "status": status,
+        "deposits_in": deposits_in,
+        "revenue_cleared": revenue_cleared,
+        "shipping_cleared": shipping_cleared,
+        "net_2100": net_2100,
+        "action": action,
+    }
+
+
+def _print_deposit_balance_report(results, *, dry_run):
+    """Print the deposit balance repair report table and summary."""
+    click.echo("Sửa số dư cọc khách hàng (2100)")
+    click.echo("=" * 60)
+    click.echo("")
+    click.echo(
+        f"{'Mã đơn':<20}{'Trạng thái':<14}{'Cọc vào':>14}{'Đã ghi nhận':>14}"
+        f"{'VC giữ':>12}{'Còn lại':>14}{'Hành động':<14}"
+    )
+    click.echo("-" * 102)
+    for r in results:
+        action_label = _ACTION_LABELS.get(r["action"], r["action"])
+        click.echo(
+            f"{r['order_ref'][:19]:<20}"
+            f"{r['status']:<14}"
+            f"{_vn_amount(r['deposits_in']):>14}"
+            f"{_vn_amount(r['revenue_cleared']):>14}"
+            f"{_vn_amount(r['shipping_cleared']):>12}"
+            f"{_vn_amount(r['net_2100']):>14}"
+            f"{action_label:<14}"
+        )
+    click.echo("-" * 102)
+
+    repaired = sum(1 for r in results if r["action"] == "repaired")
+    will_repair = sum(1 for r in results if r["action"] == "will-repair")
+    not_applicable = sum(1 for r in results if r["action"] == "not-applicable")
+
+    parts = []
+    if dry_run:
+        parts.append(f"sẽ sửa: {will_repair}")
+    else:
+        parts.append(f"đã sửa: {repaired}")
+    if not_applicable:
+        parts.append(f"không áp dụng: {not_applicable}")
+    click.echo(f"Tổng: {len(results)} đơn  |  " + ", ".join(parts))
+
+
+@click.command("repair-deposit-balance")
+@click.option("--order-id", "order_id", type=int, default=None, help="ID đơn hàng cần sửa.")
+@click.option("--all", "repair_all", is_flag=True, default=False, help="Sửa tất cả đơn có số dư cọc bất thường.")
+@click.option("--dry-run", is_flag=True, default=False, help="Xem trước thay đổi, không ghi vào CSDL.")
+def repair_deposit_balance_cmd(order_id, repair_all, dry_run):
+    """Sửa số dư cọc khách hàng (2100) bị lệch.
+
+    Xử lý các vấn đề về tính toàn vẹn số dư cọc:
+    - Đơn hàng đã hủy có cọc chưa hoàn trả → xoá/hoàn nhập bút toán cọc
+    - Đơn hàng đã giao/hoàn thành có số dư 2100 âm hoặc dương
+      bất thường → tạo lại bút toán doanh thu
+
+    Lệnh idempotent: chạy lần hai sẽ không tìm thấy đơn hàng nào cần sửa.
+    """
+    if order_id is None and not repair_all:
+        click.echo("Cần chỉ định --order-id <id> hoặc --all.", err=True)
+        raise SystemExit(1)
+    if order_id is not None and repair_all:
+        click.echo("Không thể dùng --order-id và --all cùng lúc.", err=True)
+        raise SystemExit(1)
+
+    try:
+        with get_db() as conn:
+            if repair_all:
+                orders = _orders_with_deposit_balance_issue(conn)
+            else:
+                orders = _orders_with_deposit_balance_issue(conn, order_id=order_id)
+
+            results = []
+            for o in orders:
+                results.append(
+                    _process_deposit_balance_order(
+                        conn, int(o["id"]), dry_run=dry_run
+                    )
+                )
+            if not dry_run:
+                conn.commit()
+    except Exception:  # noqa: BLE001 — top-level CLI guard
+        logger.exception("Repair deposit-balance CLI error")
+        click.echo(
+            "Lỗi khi sửa số dư cọc. Xem log máy chủ để biết chi tiết.",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    if not results:
+        click.echo("(không có đơn hàng nào cần sửa số dư cọc)")
+        return
+
+    _print_deposit_balance_report(results, dry_run=dry_run)
+
+
+# ---------------------------------------------------------------------------
+# ``baker repair-cancelled-orders`` — DG-236 Phase 3 cancelled order journal repair
+# (FR9, NFR4, NFR5, AC5)
+# ---------------------------------------------------------------------------
+
+
+def _cancelled_orders_with_orphaned_entries(conn, order_id=None):
+    """Return cancelled orders with non-zero 2100 balance, classified by category.
+
+    Mirrors :func:`_check_deposit_balance_integrity` — calculates
+    ``net_2100 = deposits_in - refunds_out - revenue_cleared - shipping_cleared``
+    and returns only cancelled orders where ``abs(net_2100) > MISMATCH_TOLERANCE``.
+
+    Each row is annotated with:
+    - ``has_cash_issue``: ``deposits_in - refunds_out != 0`` (payment_transaction entries)
+    - ``has_non_cash_issue``: ``revenue_cleared + shipping_cleared != 0`` (revenue/COGS/shipping)
+    """
+    deposits_code = CUSTOMER_DEPOSITS_CODE
+    sql = """
+        SELECT o.id, o.order_ref,
+               COALESCE(pt.dep_credit, 0) AS deposits_in,
+               COALESCE(pt.ref_debit, 0) AS refunds_out,
+               COALESCE(ord.rev_debit, 0) AS revenue_cleared,
+               COALESCE(ship.ship_debit, 0) AS shipping_cleared,
+               (COALESCE(pt.dep_credit, 0) - COALESCE(pt.ref_debit, 0)
+                - COALESCE(ord.rev_debit, 0) - COALESCE(ship.ship_debit, 0)
+               ) AS net_2100
+        FROM orders o
+        LEFT JOIN (
+            SELECT pt2.order_id,
+                   SUM(CASE WHEN jl2.credit > 0 THEN jl2.credit ELSE 0 END) AS dep_credit,
+                   SUM(CASE WHEN jl2.debit > 0 THEN jl2.debit ELSE 0 END) AS ref_debit
+            FROM payment_transactions pt2
+            JOIN journal_entries je2
+              ON je2.source_type = 'payment_transaction' AND je2.source_id = pt2.id
+            JOIN journal_lines jl2 ON jl2.journal_entry_id = je2.id
+            JOIN accounts a2 ON a2.id = jl2.account_id AND a2.code = ?
+            WHERE (pt2.invalidated_at IS NULL OR pt2.invalidated_at = '')
+            GROUP BY pt2.order_id
+        ) pt ON pt.order_id = o.id
+        LEFT JOIN (
+            SELECT je3.source_id AS order_id,
+                   SUM(CASE WHEN jl3.debit > 0 THEN jl3.debit ELSE 0 END) AS rev_debit
+            FROM journal_entries je3
+            JOIN journal_lines jl3 ON jl3.journal_entry_id = je3.id
+            JOIN accounts a3 ON a3.id = jl3.account_id AND a3.code = ?
+            WHERE je3.source_type = 'order'
+              AND je3.description NOT LIKE 'Reversal:%'
+            GROUP BY je3.source_id
+        ) ord ON ord.order_id = o.id
+        LEFT JOIN (
+            SELECT je4.source_id AS order_id,
+                   SUM(CASE WHEN jl4.debit > 0 THEN jl4.debit ELSE 0 END) AS ship_debit
+            FROM journal_entries je4
+            JOIN journal_lines jl4 ON jl4.journal_entry_id = je4.id
+            JOIN accounts a4 ON a4.id = jl4.account_id AND a4.code = ?
+            WHERE je4.source_type = 'order_shipping_hold'
+            GROUP BY je4.source_id
+        ) ship ON ship.order_id = o.id
+        WHERE o.status = 'cancelled'
+    """
+    params = [deposits_code, deposits_code, deposits_code]
+    if order_id is not None:
+        sql += " AND o.id = ?"
+        params.append(order_id)
+    sql += " ORDER BY o.id ASC"
+
+    rows = conn.execute(sql, params).fetchall()
+
+    result = []
+    for r in rows:
+        net = float(r["net_2100"])
+        if abs(net) <= MISMATCH_TOLERANCE:
+            continue
+        deposits_in = float(r["deposits_in"])
+        refunds_out = float(r["refunds_out"])
+        revenue_cleared = float(r["revenue_cleared"])
+        shipping_cleared = float(r["shipping_cleared"])
+        has_cash = abs(deposits_in - refunds_out) > MISMATCH_TOLERANCE
+        has_non_cash = abs(revenue_cleared + shipping_cleared) > MISMATCH_TOLERANCE
+        r_dict = dict(r)
+        r_dict["has_cash_issue"] = has_cash
+        r_dict["has_non_cash_issue"] = has_non_cash
+        result.append(r_dict)
+    return result
+
+
+def _process_cancelled_order(conn, order_id, order_ref, *, dry_run, has_non_cash_issue):
+    """Auto-fix non-cash (revenue/COGS/shipping) entries for one cancelled order.
+
+    Cash entries (payment_transaction deposits) are intentionally skipped —
+    they represent real money that requires a human decision (refund vs.
+    manual invalidation).
+    """
+    if dry_run:
+        return {
+            "order_id": order_id,
+            "order_ref": order_ref,
+            "action": "will-repair",
+        }
+    if not has_non_cash_issue:
+        return {
+            "order_id": order_id,
+            "order_ref": order_ref,
+            "action": "cash-only",
+        }
+
+    sync_result = run_journal_sync(
+        _sync_cancelled_order_journal,
+        conn,
+        order_id,
+        log_label=f"cancel-journal-{order_id}",
+    )
+    return {
+        "order_id": order_id,
+        "order_ref": order_ref,
+        "action": "repaired" if sync_result == "ok" else "repaired-with-errors",
+    }
+
+
+def _print_cancelled_orders_report(results, *, dry_run):
+    """Print the cancelled orders repair report, split by category."""
+    auto_fixable = [r for r in results if r.get("has_non_cash_issue")]
+    cash_only = [r for r in results if r.get("has_cash_issue") and not r.get("has_non_cash_issue")]
+    mixed = [r for r in results if r.get("has_cash_issue") and r.get("has_non_cash_issue")]
+
+    if auto_fixable or mixed:
+        click.echo("Bút toán doanh thu / COGS / ship (tự động sửa)")
+        click.echo("=" * 52)
+        click.echo(f"{'Mã đơn':<20}{'Hành động':<16}")
+        click.echo("-" * 36)
+        auto_rows = []
+        for cat_results in (mixed, auto_fixable):
+            for r in cat_results:
+                if r not in auto_rows:
+                    auto_rows.append(r)
+        for r in auto_rows:
+            label = _ACTION_LABELS.get(r["action"], r["action"])
+            click.echo(f"{r['order_ref'][:19]:<20}{label:<16}")
+        click.echo("-" * 36)
+        repaired = sum(1 for r in auto_rows if r["action"] in ("repaired", "repaired-with-errors"))
+        will_repair = sum(1 for r in auto_rows if r["action"] == "will-repair")
+        if dry_run:
+            click.echo(f"Tổng: {len(auto_rows)} đơn  |  sẽ sửa: {will_repair}")
+        else:
+            click.echo(f"Tổng: {len(auto_rows)} đơn  |  đã sửa: {repaired}")
+        click.echo("")
+
+    if cash_only or mixed:
+        click.echo("Bút toán thanh toán (cần xem xét — không tự động sửa)")
+        click.echo("=" * 56)
+        click.echo(f"{'Mã đơn':<20}{'Tiền cọc':>12}{'Hoàn lại':>12}")
+        click.echo("-" * 44)
+        cash_rows = []
+        for cat_results in (mixed, cash_only):
+            for r in cat_results:
+                if r not in cash_rows:
+                    cash_rows.append(r)
+        for r in cash_rows:
+            dep = float(r.get("deposits_in", 0))
+            ref = float(r.get("refunds_out", 0))
+            click.echo(f"{r['order_ref'][:19]:<20}{dep:>12,.0f}{ref:>12,.0f}")
+        click.echo("-" * 44)
+        total_dep = sum(float(r.get("deposits_in", 0)) for r in cash_rows)
+        total_ref = sum(float(r.get("refunds_out", 0)) for r in cash_rows)
+        click.echo(f"Tổng: {len(cash_rows)} đơn  |  cọc: {total_dep:,.0f}  |  hoàn: {total_ref:,.0f}")
+        click.echo("")
+        click.echo("Các đơn này cần hoàn tiền hoặc huỷ giao dịch thủ công trước.")
+        click.echo("Sau đó chạy lại lệnh này để làm sạch bút toán còn lại.")
+
+
+@click.command("repair-cancelled-orders")
+@click.option("--order-id", "order_id", type=int, default=None, help="ID đơn hàng đã huỷ cần sửa.")
+@click.option("--all", "repair_all", is_flag=True, default=False, help="Sửa tất cả đơn đã huỷ có bút toán mồ côi.")
+@click.option("--dry-run", is_flag=True, default=False, help="Xem trước thay đổi, không ghi vào CSDL.")
+def repair_cancelled_orders_cmd(order_id, repair_all, dry_run):
+    """Xoá/hoàn nhập bút toán doanh thu của đơn hàng đã huỷ.
+
+    Tìm đơn hàng ở trạng thái ``cancelled`` có bút toán mồ côi và tự động
+    đảo ngược (locked) hoặc xoá (unlocked) bút toán doanh thu / COGS /
+    ship (source_type='order', 'order_cogs', 'order_shipping_release').
+
+    Bút toán thanh toán (payment_transaction) bị bỏ qua — đây là tiền
+    thật cần người dùng quyết định (hoàn tiền hoặc huỷ giao dịch thủ công).
+    Sau khi xử lý các giao dịch tiền mặt, chạy lại lệnh này để làm sạch
+    bút toán còn lại.
+    """
+    if order_id is None and not repair_all:
+        click.echo("Cần chỉ định --order-id <id> hoặc --all.", err=True)
+        raise SystemExit(1)
+    if order_id is not None and repair_all:
+        click.echo("Không thể dùng --order-id và --all cùng lúc.", err=True)
+        raise SystemExit(1)
+
+    try:
+        with get_db() as conn:
+            if repair_all:
+                orders = _cancelled_orders_with_orphaned_entries(conn)
+            else:
+                orders = _cancelled_orders_with_orphaned_entries(conn, order_id=order_id)
+
+            results = []
+            for o in orders:
+                r = _process_cancelled_order(
+                    conn,
+                    int(o["id"]),
+                    o["order_ref"],
+                    dry_run=dry_run,
+                    has_non_cash_issue=o.get("has_non_cash_issue", False),
+                )
+                r["deposits_in"] = o.get("deposits_in", 0)
+                r["refunds_out"] = o.get("refunds_out", 0)
+                r["has_cash_issue"] = o.get("has_cash_issue", False)
+                r["has_non_cash_issue"] = o.get("has_non_cash_issue", False)
+                results.append(r)
+            if not dry_run:
+                conn.commit()
+    except Exception:  # noqa: BLE001 — top-level CLI guard
+        logger.exception("Repair cancelled-orders CLI error")
+        click.echo(
+            "Lỗi khi sửa bút toán đơn đã huỷ. Xem log máy chủ để biết chi tiết.",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    if not results:
+        click.echo("(không có đơn hàng đã huỷ nào có bút toán mồ côi)")
+        return
+
+    _print_cancelled_orders_report(results, dry_run=dry_run)

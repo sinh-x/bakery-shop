@@ -1,5 +1,6 @@
 from typing import Optional
 
+from baker.utils.time import now_utc
 
 INITIAL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -1492,7 +1493,7 @@ CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(parent_id);
 CREATE TABLE IF NOT EXISTS journal_entries (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     description TEXT NOT NULL,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now', 'utc')),
     source_type TEXT NOT NULL,
     source_id   INTEGER,
     locked_at   TEXT,
@@ -1709,9 +1710,10 @@ def _insert_journal_entry(
 
     `transaction_date` is the business event date the entry relates to (used
     by reports, API filtering, and journal locks). When ``None``, defaults to
-    the current local time — preserving the historical INSERT-time behavior of
-    ``created_at`` so existing call sites work unchanged during the transition.
-    The audit-only ``created_at`` column still records the actual INSERT time.
+    the current local time.
+    The audit-only ``created_at`` column is set explicitly via
+    ``now_utc()`` — the same pattern used by Event.save(), Order.save(),
+    PaymentTransaction.save(), etc.
     """
     total_debit = sum(d for _, d, _, _ in lines)
     total_credit = sum(c for _, _, c, _ in lines)
@@ -1733,18 +1735,19 @@ def _insert_journal_entry(
     has_col = "transaction_date" in {
         r[1] for r in conn.execute("PRAGMA table_info(journal_entries)").fetchall()
     }
+    now = now_utc()
     if has_col:
         cursor = conn.execute(
             "INSERT INTO journal_entries "
-            "(description, source_type, source_id, transaction_date) "
-            "VALUES (?, ?, ?, ?)",
-            (description, source_type, source_id, transaction_date),
+            "(description, source_type, source_id, transaction_date, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (description, source_type, source_id, transaction_date, now),
         )
     else:
         cursor = conn.execute(
-            "INSERT INTO journal_entries (description, source_type, source_id) "
-            "VALUES (?, ?, ?)",
-            (description, source_type, source_id),
+            "INSERT INTO journal_entries (description, source_type, source_id, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (description, source_type, source_id, now),
         )
     entry_id = int(cursor.lastrowid)
     for account_id, debit, credit, line_desc in lines:
@@ -1937,9 +1940,9 @@ def _backfill_delivered_order_journal_entries(conn) -> None:
     for orow in orders:
         order_id = int(orow["id"])
         order_ref = orow["order_ref"]
-        # FR11: orders.due_date is the only nullable source date field; fall
-        # back to created_at when it is NULL or empty.
-        transaction_date = orow["due_date"] or orow["created_at"] or ""
+        # Phase 3: use now_utc() as the authoritative transaction timestamp
+        # for backfilled delivered-order journal entries.
+        transaction_date = now_utc()
 
         # Revenue reconciliation — shared with live sync (handles lock checks
         # and idempotent creation via _reconcile_order_revenue_entry).
@@ -2376,19 +2379,17 @@ def _backfill_journal_transaction_date(conn) -> None:
           AND (transaction_date IS NULL OR transaction_date = '')
         """
     )
+    now = now_utc()
     for source_type in ("order", "order_cogs", "order_shipping_hold",
                         "order_shipping_release"):
         conn.execute(
             """
             UPDATE journal_entries
-            SET transaction_date = COALESCE(
-                (SELECT o.due_date FROM orders o WHERE o.id = journal_entries.source_id),
-                (SELECT o.created_at FROM orders o WHERE o.id = journal_entries.source_id)
-            )
+            SET transaction_date = ?
             WHERE source_type = ?
               AND (transaction_date IS NULL OR transaction_date = '')
             """,
-            (source_type,),
+            (now, source_type,),
         )
     conn.execute(
         """
@@ -3883,6 +3884,10 @@ MIGRATIONS = {
         "description": "Repair unlinked orders — link all NULL customer_id orders by phone/name/walk-in, idempotent re-run (DG-227 Phase 2)",
         "sql": "",
         "callable": _migrate_v66_repair_customer_links,
+    },
+    67: {
+        "description": "Add acknowledged_at column to orders for order acknowledgment tracking — DG-221 Phase 1",
+        "sql": "ALTER TABLE orders ADD COLUMN acknowledged_at TEXT DEFAULT NULL;",
     },
 }
 
