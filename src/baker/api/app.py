@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from baker.api.accounts import router as accounts_router
+from baker.api.auth import router as auth_router
 from baker.api.cake_queue import router as cake_queue_router
 from baker.api.catalog import catalog_router as catalog_browse_router
 from baker.api.catalog import router as catalog_router
@@ -14,7 +15,7 @@ from baker.api.customers import router as customers_router
 from baker.api.events import expenses_router, router as events_router
 from baker.api.exception_handlers import global_exception_handler
 from baker.api.knowledge import router as knowledge_router
-from baker.api.middleware import LoggingMiddleware
+from baker.api.middleware import AuthMiddleware, LoggingMiddleware
 from baker.api.order_photos import router as order_photos_router
 from baker.api.orders import router as orders_router
 from baker.api.payment_transactions import router as payment_transactions_router
@@ -54,6 +55,11 @@ def create_app() -> FastAPI:
 
     # Logging middleware (added before CORS so it wraps all requests)
     app.add_middleware(LoggingMiddleware)
+
+    # Auth middleware (added after logging so it is the outermost layer —
+    # auth rejection happens before request logging sees the handler response).
+    # DG-029 Phase 2: JWT validation, role extraction, denylist check (FR2/FR6).
+    app.add_middleware(AuthMiddleware)
 
     # Tailscale network is air-gapped; only lily.tail10c2c6.ts.net is trusted
     app.add_middleware(
@@ -98,6 +104,7 @@ def create_app() -> FastAPI:
             "journalSyncFailureLogRows": failure_log_rows,
         }
 
+    app.include_router(auth_router)
     app.include_router(photos_router)
     app.include_router(products_router)
     app.include_router(accounts_router)

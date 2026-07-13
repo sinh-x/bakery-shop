@@ -1,0 +1,285 @@
+"""Auth API routes — login endpoint with rate limiting and account lockout.
+
+DG-029 Phase 2. Implements:
+  - POST /api/auth/login (FR1): bcrypt password verify, JWT issuance with
+    {sub, role, exp, jti} claims, 7-day expiry (NFR2).
+  - Login rate limiting (FR18): 3 failed attempts per IP within 1 minute
+    triggers HTTP 429 for 5 minutes. In-memory per-IP counter (NFR7).
+  - Brute-force account lockout (FR19): 5 consecutive failed attempts for
+    the same username triggers HTTP 423 (Locked) for 30 minutes. Lock
+    timestamp stored in users.locked_until (NFR8).
+
+The middleware (AuthMiddleware) and router registration live in
+``baker.api.app`` and ``baker.api.middleware`` respectively.
+"""
+
+from __future__ import annotations
+
+import time
+import uuid
+from collections import defaultdict
+from typing import Optional
+
+import jwt
+from fastapi import APIRouter, HTTPException, Request
+from passlib.context import CryptContext
+from pydantic import BaseModel
+
+from baker.config import JWT_SECRET
+from baker.db.connection import get_db
+from baker.utils.time import now_utc
+
+router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# bcrypt password hashing context (NFR4: cost factor 12).
+_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+
+# JWT token expiry: 7 days from issuance (NFR2). No refresh mechanism.
+_JWT_EXPIRY_SECONDS = 7 * 24 * 60 * 60
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    token: str
+    username: str
+    role: str
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting (FR18 / NFR7) — in-memory per-IP failed-attempt tracking.
+#
+# Tracks failed login attempts per client IP address. When 3 failures occur
+# within a 1-minute sliding window, the IP is blocked for 5 minutes (returns
+# HTTP 429 on any login attempt during the block window). State is in-memory
+# and resets on server restart (NFR7 — acceptable for bakery use case).
+#
+# Structure:
+#   _rate_failures[ip] = [timestamp1, timestamp2, ...]  (failed attempts)
+#   _rate_blocked_until[ip] = epoch_seconds             (block expiry)
+# ---------------------------------------------------------------------------
+
+_RATE_WINDOW_SECONDS = 60          # 1-minute sliding window for failures.
+_RATE_MAX_FAILURES = 3             # 3 failures within the window → block.
+_RATE_BLOCK_SECONDS = 5 * 60      # Block duration: 5 minutes.
+
+_rate_failures: dict[str, list[float]] = defaultdict(list)
+_rate_blocked_until: dict[str, float] = {}
+
+
+def _client_ip(request: Request) -> str:
+    """Return the client IP address for rate-limit keying."""
+    return request.client.host if request.client else "unknown"
+
+
+def _is_rate_blocked(ip: str) -> bool:
+    """Check whether ``ip`` is currently blocked by rate limiting (FR18)."""
+    until = _rate_blocked_until.get(ip)
+    if until is None:
+        return False
+    if time.monotonic() >= until:
+        # Block expired — clean up.
+        _rate_blocked_until.pop(ip, None)
+        return False
+    return True
+
+
+def _record_rate_failure(ip: str) -> None:
+    """Record a failed login attempt for ``ip`` and block if threshold reached."""
+    now = time.monotonic()
+    failures = _rate_failures[ip]
+    # Prune failures outside the sliding window.
+    _rate_failures[ip] = [t for t in failures if now - t < _RATE_WINDOW_SECONDS]
+    _rate_failures[ip].append(now)
+
+    if len(_rate_failures[ip]) >= _RATE_MAX_FAILURES:
+        _rate_blocked_until[ip] = now + _RATE_BLOCK_SECONDS
+        # Clear the failure list so post-block failures start fresh.
+        _rate_failures[ip] = []
+
+
+def _clear_rate_failures(ip: str) -> None:
+    """Clear rate-limit failures for ``ip`` (called on successful login)."""
+    _rate_failures.pop(ip, None)
+
+
+# ---------------------------------------------------------------------------
+# Account lockout (FR19 / NFR8) — 5 consecutive failed attempts → 30 min lock.
+#
+# Tracks consecutive failed login attempts per username in-memory for fast
+# threshold checking, and persists the lock expiry timestamp in the
+# ``users.locked_until`` column so the lock survives server restarts
+# (NFR8: auto-expiring after 30 minutes, no manual intervention needed for
+# expiry). A successful login resets the consecutive-failure counter.
+# ---------------------------------------------------------------------------
+
+_LOCKOUT_MAX_FAILURES = 5             # 5 consecutive fails → lock.
+_LOCKOUT_DURATION_SECONDS = 30 * 60  # 30-minute lock.
+
+# In-memory consecutive-failure counter per username. Survives until server
+# restart; the DB locked_until column is the persistent authority.
+_lockout_failures: dict[str, int] = defaultdict(int)
+
+
+def _is_account_locked(locked_until: Optional[str]) -> bool:
+    """Check whether a user is currently locked based on ``locked_until``.
+
+    ``locked_until`` is an ISO-8601 UTC timestamp string or NULL. Returns
+    ``True`` when the lock has not yet expired.
+    """
+    if not locked_until:
+        return False
+    try:
+        from datetime import datetime, timezone
+
+        lock_dt = datetime.fromisoformat(locked_until.replace("Z", "+00:00"))
+        return datetime.now(timezone.utc) < lock_dt
+    except (ValueError, TypeError):
+        return False
+
+
+def _lock_account(conn, username: str) -> None:
+    """Set ``users.locked_until`` to now + 30 minutes (NFR8)."""
+    from datetime import datetime, timedelta, timezone
+
+    lock_until = (datetime.now(timezone.utc) + timedelta(seconds=_LOCKOUT_DURATION_SECONDS))
+    lock_until_str = lock_until.strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn.execute(
+        "UPDATE users SET locked_until = ? WHERE username = ?",
+        (lock_until_str, username),
+    )
+
+
+def _record_login_failure(conn, username: str) -> bool:
+    """Record a consecutive failed login attempt for ``username`` (FR19).
+
+    Increments the in-memory counter and, on the 5th consecutive failure,
+    locks the account by setting ``locked_until`` in the DB. Returns
+    ``True`` if the account was just locked on this call, ``False`` otherwise.
+    """
+    _lockout_failures[username] += 1
+    if _lockout_failures[username] >= _LOCKOUT_MAX_FAILURES:
+        _lock_account(conn, username)
+        return True
+    return False
+
+
+def _clear_login_failures(username: str) -> None:
+    """Reset the consecutive-failure counter for ``username`` on success."""
+    _lockout_failures.pop(username, None)
+
+
+# ---------------------------------------------------------------------------
+# Login endpoint (FR1)
+# ---------------------------------------------------------------------------
+
+@router.post("/login", response_model=LoginResponse)
+def login(body: LoginRequest, request: Request):
+    """Authenticate a user and return a JWT token (FR1).
+
+    Accepts ``{username, password}``. On success returns ``{token,
+    username, role}`` with a JWT containing ``{sub, role, exp, jti}`` claims
+    (7-day expiry, NFR2). On failure returns 401 (invalid credentials), 423
+    (account locked), or 429 (rate limited).
+    """
+    ip = _client_ip(request)
+
+    # FR18: rate limiting — check IP block first.
+    if _is_rate_blocked(ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Quá nhiều lần đăng nhập thất bại. Vui lòng thử lại sau 5 phút.",
+        )
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, username, password_hash, role, active, locked_until "
+            "FROM users WHERE username = ?",
+            (body.username,),
+        ).fetchone()
+
+        # FR19: account lockout — check before password verify.
+        if row is not None:
+            if not row["active"]:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Tài khoản đã bị vô hiệu hóa.",
+                )
+            if _is_account_locked(row["locked_until"]):
+                raise HTTPException(
+                    status_code=423,
+                    detail="Tài khoản đã bị khóa tạm thời do quá nhiều lần đăng nhập thất bại. Vui lòng thử lại sau 30 phút.",
+                )
+
+        # Verify password (NFR1: bcrypt cost factor 12).
+        if row is None or not _pwd_ctx.verify(body.password, row["password_hash"]):
+            # Record failures for rate limiting and lockout.
+            _record_rate_failure(ip)
+            just_locked = False
+            if row is not None:
+                just_locked = _record_login_failure(conn, row["username"])
+            # Commit the lockout UPDATE before raising (the get_db context
+            # manager rolls back on exception, which would undo the lock).
+            if just_locked:
+                conn.commit()
+                raise HTTPException(
+                    status_code=423,
+                    detail="Tài khoản đã bị khóa tạm thời do quá nhiều lần đăng nhập thất bại. Vui lòng thử lại sau 30 phút.",
+                )
+            raise HTTPException(
+                status_code=401,
+                detail="Tên đăng nhập hoặc mật khẩu không đúng.",
+            )
+
+        # Success — clear failure counters.
+        _clear_rate_failures(ip)
+        _clear_login_failures(row["username"])
+
+        # Generate JWT with {sub, role, exp, jti} claims (FR1, NFR2).
+        now = int(time.time())
+        payload = {
+            "sub": row["username"],
+            "role": row["role"],
+            "exp": now + _JWT_EXPIRY_SECONDS,
+            "jti": str(uuid.uuid4()),
+        }
+        token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+        return LoginResponse(
+            token=token,
+            username=row["username"],
+            role=row["role"],
+        )
+
+
+# ---------------------------------------------------------------------------
+# Token denylist (NFR3) — in-memory set of revoked jti values.
+#
+# Used by AuthMiddleware to reject tokens that have been force-logged-out via
+# CLI session management (Phase 4). Adding a jti here invalidates the token
+# immediately. State is in-memory; resets on server restart (same trade-off
+# as rate limiting — acceptable for bakery use case).
+# ---------------------------------------------------------------------------
+
+_token_denylist: set[str] = set()
+
+
+def revoke_token_jti(jti: str) -> None:
+    """Add a JWT ID to the in-memory denylist (NFR3, Phase 4 integration)."""
+    _token_denylist.add(jti)
+
+
+def is_jti_revoked(jti: str) -> bool:
+    """Check whether a JWT ID has been revoked via the denylist."""
+    return jti in _token_denylist
+
+
+def _reset_auth_state() -> None:
+    """Clear all in-memory auth state (test helper)."""
+    _rate_failures.clear()
+    _rate_blocked_until.clear()
+    _lockout_failures.clear()
+    _token_denylist.clear()
