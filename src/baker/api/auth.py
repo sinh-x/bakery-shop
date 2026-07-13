@@ -15,17 +15,18 @@ The middleware (AuthMiddleware) and router registration live in
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from collections import defaultdict
-from typing import Optional
+from typing import Any, Optional
 
 import jwt
 from fastapi import APIRouter, HTTPException, Request
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
-from baker.config import JWT_SECRET
+from baker.config import AUTH_REQUIRED, JWT_SECRET
 from baker.db.connection import get_db
 from baker.utils.time import now_utc
 
@@ -283,3 +284,97 @@ def _reset_auth_state() -> None:
     _rate_blocked_until.clear()
     _lockout_failures.clear()
     _token_denylist.clear()
+
+
+# ---------------------------------------------------------------------------
+# Role-gated dependency (DG-029 Phase 3, FR3/FR4/FR5)
+#
+# ``RequireRole("admin")`` is a FastAPI dependency that inspects the role
+# attached by ``AuthMiddleware`` to ``request.state.auth_role``. It raises
+# HTTP 403 when the caller's role does not match the required role.
+#
+# Behavior under AUTH_REQUIRED=false (grace period, NFR6):
+#   - When no token is presented, ``auth_role`` is unset. The dependency
+#     allows the request through (backward compatible — no auth enforced).
+#   - When a token *is* presented, the decoded role is honored, so updated
+#     clients still get correct RBAC feedback during rollout.
+# ---------------------------------------------------------------------------
+
+
+def RequireRole(required_role: str):
+    """FastAPI dependency factory enforcing a minimum JWT role (FR3/FR4/FR5).
+
+    Reads ``request.state.auth_role`` set by ``AuthMiddleware``. Returns the
+    authenticated username on success; raises HTTP 403 when the role does
+    not match. When ``AUTH_REQUIRED`` is false and no token is present, the
+    dependency passes through (NFR6 backward compatibility).
+    """
+
+    def _check(request: Request) -> str:
+        role = getattr(request.state, "auth_role", None)
+        username = getattr(request.state, "auth_username", "") or ""
+
+        # Grace-period pass-through: no auth enforced when token absent.
+        if role is None and not AUTH_REQUIRED:
+            return username
+
+        if role != required_role:
+            raise HTTPException(
+                status_code=403,
+                detail="Bạn không có quyền thực hiện thao tác này.",
+            )
+        return username
+
+    return _check
+
+
+# ---------------------------------------------------------------------------
+# Audit log recording (DG-029 Phase 3, FR22)
+#
+# ``record_audit_log`` writes a single row to the ``audit_log`` table for
+# admin write operations. ``old_value`` and ``new_value`` are JSON-encoded
+# snapshots of the affected entity (or ``None`` for creates/deletes where a
+# snapshot is not applicable). The helper is fire-and-forget safe to call
+# inside an existing ``get_db()`` transaction — it uses the provided conn.
+# ---------------------------------------------------------------------------
+
+
+def record_audit_log(
+    conn,
+    username: str,
+    action: str,
+    entity_type: str,
+    entity_id: Any,
+    old_value: Any = None,
+    new_value: Any = None,
+) -> None:
+    """Write an audit_log row for an admin write operation (FR22).
+
+    ``old_value``/``new_value`` are JSON-serialized when not None. Must be
+    called within the caller's open DB transaction so the audit entry
+    commits atomically with the audited mutation.
+    """
+    def _serialize(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        try:
+            return json.dumps(value, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            return str(value)
+
+    conn.execute(
+        "INSERT INTO audit_log "
+        "(username, action, entity_type, entity_id, old_value, new_value, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            username or "",
+            action,
+            entity_type,
+            str(entity_id) if entity_id is not None else None,
+            _serialize(old_value),
+            _serialize(new_value),
+            now_utc(),
+        ),
+    )

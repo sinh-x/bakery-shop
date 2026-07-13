@@ -3643,6 +3643,24 @@ def _migrate_v68_users_table(conn):
         print("=" * 60, file=sys.stdout)
 
 
+AUDIT_LOG_SCHEMA = """
+CREATE TABLE IF NOT EXISTS audit_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    username    TEXT NOT NULL DEFAULT '',
+    action      TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id   TEXT,
+    old_value   TEXT,
+    new_value   TEXT,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_username ON audit_log(username);
+CREATE INDEX IF NOT EXISTS idx_audit_log_entity_type ON audit_log(entity_type);
+"""
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -3966,6 +3984,10 @@ MIGRATIONS = {
         "description": "Auth RBAC: users table for JWT authentication + seed existing staff as users — DG-029 Phase 1",
         "sql": USERS_SCHEMA,
         "callable": _migrate_v68_users_table,
+    },
+    69: {
+        "description": "Auth RBAC: audit_log table for recording admin write operations — DG-029 Phase 3",
+        "sql": AUDIT_LOG_SCHEMA,
     },
 }
 

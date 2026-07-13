@@ -3,9 +3,10 @@
 import logging
 from datetime import date
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from baker.api.auth import RequireRole
 from baker.api.inventory_fifo import (
     available_quantity,
     consume_fifo_items,
@@ -566,7 +567,7 @@ def get_reconciliation_draft():
 
 
 @router.post("/submit", status_code=201)
-def submit_reconciliation(payload: ReconciliationSubmitIn):
+def submit_reconciliation(payload: ReconciliationSubmitIn, actor: str = Depends(RequireRole("admin"))):
     with get_db() as conn:
         _validate_submit(payload)
 

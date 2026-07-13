@@ -1,8 +1,9 @@
 """Product price chip management API routes."""
 
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel
 
+from baker.api.auth import RequireRole
 from baker.db.connection import get_db
 from baker.utils.time import now_utc
 
@@ -84,6 +85,7 @@ def list_product_price_chips(
 def create_product_price_chip(
     chip: PriceChipCreate,
     product_id: int = Path(ge=0, description="Product ID"),
+    actor: str = Depends(RequireRole("admin")),
 ):
     """Create a preset price chip for a product."""
     label = chip.label.strip()
@@ -116,6 +118,7 @@ def update_product_price_chip(
     chip: PriceChipUpdate,
     product_id: int = Path(ge=0, description="Product ID"),
     chip_id: int = Path(ge=0, description="Price chip ID"),
+    actor: str = Depends(RequireRole("admin")),
 ):
     """Update a product preset price chip."""
     data = chip.model_dump(exclude_unset=True)
@@ -166,6 +169,7 @@ def update_product_price_chip(
 def delete_product_price_chip(
     product_id: int = Path(ge=0, description="Product ID"),
     chip_id: int = Path(ge=0, description="Price chip ID"),
+    actor: str = Depends(RequireRole("admin")),
 ):
     """Delete a preset price chip from a product."""
     with get_db() as conn:

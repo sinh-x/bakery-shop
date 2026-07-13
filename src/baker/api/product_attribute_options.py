@@ -2,9 +2,10 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel
 
+from baker.api.auth import RequireRole
 from baker.db.connection import get_db
 
 
@@ -90,6 +91,7 @@ def list_options(
 def create_option(
     body: OptionCreate,
     attribute_type: str,
+    actor: str = Depends(RequireRole("admin")),
 ):
     """Create a new option for an enum attribute."""
     value_vi = body.value_vi.strip() if isinstance(body.value_vi, str) else ""
@@ -128,6 +130,7 @@ def create_option(
 def update_option(
     body: OptionUpdate,
     option_id: int = Path(ge=0, description="Option ID"),
+    actor: str = Depends(RequireRole("admin")),
 ):
     """Update an option's value_vi, sort_order, or active flag."""
     data = body.model_dump(exclude_unset=True)
@@ -170,6 +173,7 @@ def update_option(
 @router.delete("/product-attribute-options/{option_id}", status_code=204)
 def delete_option(
     option_id: int = Path(ge=0, description="Option ID"),
+    actor: str = Depends(RequireRole("admin")),
 ):
     """Soft-delete an option by setting active=0 (preserves value_vi for historical orders)."""
     with get_db() as conn:
@@ -184,6 +188,7 @@ def delete_option(
 def reorder_options(
     body: ReorderBody,
     attribute_type: str,
+    actor: str = Depends(RequireRole("admin")),
 ):
     """Bulk-reorder options for an enum attribute by reassigning sort_order to list position."""
     with get_db() as conn:
