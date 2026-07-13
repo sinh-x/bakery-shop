@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from baker.config import TIMEZONE
@@ -70,29 +70,141 @@ def create_config(config_key: str, body: ConfigValueIn):
         return {"id": cursor.lastrowid, "config_key": config_key, "value": body.value, "sort_order": body.sort_order}
 
 
+
+
+
+@router.get("/{config_key}/usage")
+def get_config_usage(config_key: str, key: str = Query(...)):
+    """Trả về thông tin sử dụng của một key trong config.
+    
+    Chỉ áp dụng cho config_key = 'catalog_tag'. Trả về count và product_ids
+    của các catalog_photo_tags đang sử dụng key này.
+    """
+    if config_key != "catalog_tag":
+        raise HTTPException(status_code=404, detail="Usage endpoint chỉ hỗ trợ catalog_tag")
+    
+    with get_db() as conn:
+        # Kiểm tra key có tồn tại trong app_config không (match only the key segment)
+        tag_row = conn.execute(
+            "SELECT 1 FROM app_config WHERE config_key = 'catalog_tag' AND config_value LIKE ?",
+            (f"%:{key}:%",)
+        ).fetchone()
+        
+        if not tag_row:
+            raise HTTPException(status_code=404, detail="Key không tồn tại")
+        
+        # Đếm số lượng và lấy product_ids từ catalog_photo_tags
+        rows = conn.execute("""
+            SELECT DISTINCT pcp.product_id 
+            FROM catalog_photo_tags cpt
+            JOIN product_catalog_photos pcp ON cpt.photo_id = pcp.id
+            WHERE cpt.tag_key = ?
+        """, (key,)).fetchall()
+        
+        product_ids = [row["product_id"] for row in rows]
+        count = len(product_ids)
+        
+        return {
+            "key": key,
+            "count": count,
+            "product_ids": product_ids
+        }
+
+
+def _apply_config_update(conn, config_key: str, old_value: str, new_value: str,
+                         sort_order: int | None) -> None:
+    """Apply a single UPDATE on app_config, optionally setting sort_order.
+
+    Extracted (QUAL-1) to remove ~50 lines of duplicated UPDATE blocks across
+    the catalog_tag key-change, label-only-change, and non-catalog_tag paths.
+    """
+    if sort_order is not None:
+        conn.execute(
+            "UPDATE app_config SET config_value = ?, sort_order = ?"
+            " WHERE config_key = ? AND config_value = ?",
+            (new_value, sort_order, config_key, old_value),
+        )
+    else:
+        conn.execute(
+            "UPDATE app_config SET config_value = ?"
+            " WHERE config_key = ? AND config_value = ?",
+            (new_value, config_key, old_value),
+        )
+
+
+def _parse_catalog_tag_key(value: str) -> str | None:
+    """Extract the key segment from a 'category:key:label' config value.
+
+    Uses split(':', 2) so labels containing colons do not break parsing
+    (BUG-2). Returns None if the value has fewer than 2 segments.
+    """
+    parts = value.split(":", 2)
+    if len(parts) < 2:
+        return None
+    return parts[1]
+
+
 @router.put("/{config_key}")
 def update_config(config_key: str, body: ConfigValueUpdate):
-    """Cập nhật giá trị cấu hình (theo old_value)."""
+    """Cập nhật giá trị cấu hình (theo old_value).
+
+    Với config_key = 'catalog_tag', nếu key trong config_value thay đổi thì
+    cập nhật tất cả catalog_photo_tags.tag_key cùng transaction.
+    """
     with get_db() as conn:
-        if body.sort_order is not None:
-            conn.execute(
-                "UPDATE app_config SET config_value = ?, sort_order = ?"
-                " WHERE config_key = ? AND config_value = ?",
-                (body.new_value, body.sort_order, config_key, body.old_value),
-            )
+        if config_key == "catalog_tag":
+            old_key = _parse_catalog_tag_key(body.old_value)
+            new_key = _parse_catalog_tag_key(body.new_value)
+
+            # Nếu key thay đổi, kiểm tra xem new_key đã tồn tại chưa
+            if old_key is not None and new_key is not None and old_key != new_key:
+                existing = conn.execute(
+                    "SELECT 1 FROM app_config WHERE config_key = 'catalog_tag' AND config_value LIKE ?",
+                    (f"%:{new_key}:%",)
+                ).fetchone()
+
+                if existing:
+                    raise HTTPException(status_code=409, detail=f"Khoá '{new_key}' đã tồn tại")
+
+                _apply_config_update(conn, config_key, body.old_value, body.new_value, body.sort_order)
+
+                # Cập nhật tất cả catalog_photo_tags có tag_key = old_key
+                conn.execute(
+                    "UPDATE catalog_photo_tags SET tag_key = ? WHERE tag_key = ?",
+                    (new_key, old_key)
+                )
+            else:
+                _apply_config_update(conn, config_key, body.old_value, body.new_value, body.sort_order)
+
+            return {"config_key": config_key, "old_value": body.old_value, "new_value": body.new_value}
         else:
-            conn.execute(
-                "UPDATE app_config SET config_value = ?"
-                " WHERE config_key = ? AND config_value = ?",
-                (body.new_value, config_key, body.old_value),
-            )
-        return {"config_key": config_key, "old_value": body.old_value, "new_value": body.new_value}
+            _apply_config_update(conn, config_key, body.old_value, body.new_value, body.sort_order)
+            return {"config_key": config_key, "old_value": body.old_value, "new_value": body.new_value}
 
 
 @router.delete("/{config_key}")
 def delete_config(config_key: str, value: str):
-    """Xóa một giá trị cấu hình theo config_key và value."""
+    """Xóa một giá trị cấu hình theo config_key và value.
+
+    Với config_key = 'catalog_tag', kiểm tra xem key có đang được sử dụng
+    trong catalog_photo_tags hay không.
+    """
     with get_db() as conn:
+        if config_key == "catalog_tag":
+            # Parse value để lấy key (split(':', 2) so colons in label don't break)
+            key = _parse_catalog_tag_key(value)
+            # Delete-in-use guard ALWAYS runs when a key can be extracted (BUG-2):
+            # previously skipped when len(parts) != 3, which happened whenever
+            # the label contained a colon.
+            if key is not None:
+                usage = conn.execute(
+                    "SELECT COUNT(*) as count FROM catalog_photo_tags WHERE tag_key = ?",
+                    (key,)
+                ).fetchone()
+
+                if usage and usage["count"] > 0:
+                    raise HTTPException(status_code=409, detail="Tag đang được sử dụng bởi các ảnh")
+
         conn.execute(
             "DELETE FROM app_config WHERE config_key = ? AND config_value = ?",
             (config_key, value),

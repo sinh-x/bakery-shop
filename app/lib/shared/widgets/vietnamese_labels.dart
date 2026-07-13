@@ -989,6 +989,32 @@ class VN {
   static const daLuuNTrenM = 'Đã lưu n/m ảnh';
   static const khongTheTaiNTrenM = 'Không thể tải n/m ảnh';
   static const daChiaSeNAnh = 'Đã chia sẻ n ảnh';
+
+  // Catalog tag vocabulary (DG-096 Phase 4.2)
+  static const catalogTagEditor = 'Thẻ ảnh';
+  static const addCatalogTag = 'Thêm thẻ';
+  static const editCatalogTag = 'Sửa thẻ';
+  static const tagCategory = 'Danh mục';
+  static const tagKey = 'Khoá';
+  static const tagLabel = 'Nhãn';
+  static const tagKeyHint = 'vd: sinh-nhat, 8-3';
+  static const tagKeyInvalid = 'Khoá chỉ dùng chữ thường, số và dấu gạch nối';
+  static const tagLabelEmpty = 'Nhập nhãn hiển thị';
+  static const tagLabelTooLong = 'Nhãn không được vượt quá 40 ký tự';
+  static const tagLabelNoColon = 'Nhãn không được chứa dấu hai chấm';
+  static const tagCannotDelete = 'Không thể xoá';
+  static String tagInUse(int n) => 'Thẻ này đang được dùng bởi $n ảnh. Hãy gỡ thẻ khỏi các ảnh đó trước.';
+  static String tagDeleteConfirm(String label) => 'Xoá thẻ "$label"?';
+  static const tagAdded = 'Đã thêm thẻ';
+  static const tagUpdated = 'Đã cập nhật thẻ';
+  static const tagDeleted = 'Đã xoá thẻ';
+  static const tagGenericError = 'Lỗi: ';
+  static const tagUsageCheckError = 'Lỗi kiểm tra sử dụng thẻ: ';
+  static const noTagsInCategory = 'Chưa có thẻ';
+  static const tagCategoriesDoiTuong = 'audience';
+  static const tagCategoriesDip = 'occasion';
+  static const tagCategoriesPhongCach = 'style';
+  static const tagKeyRegexPattern = r'^[a-z0-9][a-z0-9-]*$';
 }
 
 // Category mapping (new slugs)

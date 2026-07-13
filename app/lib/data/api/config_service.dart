@@ -24,6 +24,18 @@ class ConfigValue {
       );
 }
 
+class TagUsage {
+  final int count;
+  final List<String> productIds;
+
+  TagUsage({required this.count, required this.productIds});
+
+  factory TagUsage.fromJson(Map<String, dynamic> json) => TagUsage(
+        count: (json['count'] as num).toInt(),
+        productIds: (json['product_ids'] as List).map((e) => e.toString()).toList(),
+      );
+}
+
 class ConfigService {
   final Dio _dio;
 
@@ -57,6 +69,11 @@ class ConfigService {
 
   Future<void> deleteConfigValue(String configKey, String value) async {
     await _dio.delete('/api/config/$configKey', queryParameters: {'value': value});
+  }
+
+  Future<TagUsage> getTagUsage(String key) async {
+    final response = await _dio.get('/api/config/catalog_tag/usage', queryParameters: {'key': key});
+    return TagUsage.fromJson(response.data as Map<String, dynamic>);
   }
 }
 
