@@ -44,7 +44,6 @@ void main() {
         configServiceProvider.overrideWithValue(mockConfigService),
         catalogServiceProvider.overrideWithValue(_SeededCatalogService(
           tagDefs: const [],
-          tagUsage: TagUsage(count: 0, productIds: const []),
         )),
       ]);
       addTearDown(container.dispose);
@@ -130,7 +129,6 @@ void main() {
         configServiceProvider.overrideWithValue(mockConfigService),
         catalogServiceProvider.overrideWithValue(_SeededCatalogService(
           tagDefs: [seededTag],
-          tagUsage: TagUsage(count: 0, productIds: const []),
         )),
       ]);
       addTearDown(container.dispose);
@@ -186,7 +184,6 @@ void main() {
         configServiceProvider.overrideWithValue(mockConfigService),
         catalogServiceProvider.overrideWithValue(_SeededCatalogService(
           tagDefs: [seededTag],
-          tagUsage: TagUsage(count: 3, productIds: const ['p1', 'p2', 'p3']),
         )),
       ]);
       addTearDown(container.dispose);
@@ -231,7 +228,6 @@ void main() {
         configServiceProvider.overrideWithValue(mockConfigService),
         catalogServiceProvider.overrideWithValue(_SeededCatalogService(
           tagDefs: [seededTag],
-          tagUsage: TagUsage(count: 0, productIds: const []),
         )),
       ]);
       addTearDown(container.dispose);
@@ -296,7 +292,6 @@ void main() {
       final container = ProviderContainer(overrides: [
         catalogServiceProvider.overrideWithValue(_SeededCatalogService(
           tagDefs: seededTags,
-          tagUsage: TagUsage(count: 0, productIds: const []),
         )),
       ]);
       addTearDown(container.dispose);
@@ -336,16 +331,12 @@ void main() {
 class _SeededCatalogService implements CatalogService {
   _SeededCatalogService({
     required this.tagDefs,
-    required this.tagUsage,
   });
 
   final List<CatalogTagDef> tagDefs;
-  final TagUsage tagUsage;
 
   @override
   Future<List<CatalogTagDef>> getCatalogTagDefs() async => tagDefs;
-
-  Future<TagUsage> getTagUsage(String key) async => tagUsage;
 
   // Unused by these tests but required by the interface.
   @override

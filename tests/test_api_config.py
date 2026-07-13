@@ -383,3 +383,33 @@ def test_non_catalog_config_unchanged():
     # Test deleting non-catalog config
     response = client.delete("/api/config/order_source?value=Facebook Page")
     assert response.status_code == 200
+
+
+def test_catalog_tag_label_with_colon():
+    """Test that tags with colons in labels work correctly (BUG-2 regression)."""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO app_config (config_key, config_value) VALUES (?, ?)",
+            ("catalog_tag", "occasion:gio-tan:Gìơ tần: 12:00"),
+        )
+
+    # Usage check works despite colon in label (split(':', 2) fix)
+    response = client.get("/api/config/catalog_tag/usage?key=gio-tan")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 0
+
+    # Delete succeeds when tag not in use
+    response = client.delete(
+        "/api/config/catalog_tag?value=occasion:gio-tan:Gìơ tần: 12:00"
+    )
+    assert response.status_code == 200
+
+    # Verify deleted
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM app_config WHERE config_key = 'catalog_tag'"
+            " AND config_value = ?",
+            ("occasion:gio-tan:Gìơ tần: 12:00",)
+        ).fetchone()
+        assert row is None
