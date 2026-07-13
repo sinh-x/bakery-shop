@@ -241,13 +241,30 @@ def login(body: LoginRequest, request: Request):
 
         # Generate JWT with {sub, role, exp, jti} claims (FR1, NFR2).
         now = int(time.time())
+        jti = str(uuid.uuid4())
         payload = {
             "sub": row["username"],
             "role": row["role"],
             "exp": now + _JWT_EXPIRY_SECONDS,
-            "jti": str(uuid.uuid4()),
+            "jti": jti,
         }
         token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+        # DG-029 Phase 4: record the active session (FR20). IP/device metadata
+        # is captured from the request so `baker session list` can display it.
+        device_model = request.headers.get("x-device-model", "")
+        app_version = request.headers.get("x-app-version", "")
+        os_version = request.headers.get("x-os-version", "")
+        _record_session(
+            conn,
+            jti=jti,
+            username=row["username"],
+            role=row["role"],
+            client_ip=ip,
+            device_model=device_model,
+            app_version=app_version,
+            os_version=os_version,
+        )
 
         return LoginResponse(
             token=token,
@@ -276,6 +293,98 @@ def revoke_token_jti(jti: str) -> None:
 def is_jti_revoked(jti: str) -> bool:
     """Check whether a JWT ID has been revoked via the denylist."""
     return jti in _token_denylist
+
+
+# ---------------------------------------------------------------------------
+# Session tracking (DG-029 Phase 4, FR20/FR21)
+#
+# Active login sessions are persisted in the ``sessions`` table so that
+# ``baker session list`` can display username/role/IP/device/login time/last
+# activity. Force-logout (``baker session logout`` / ``logout-all``) revokes
+# rows by adding their jti to the in-memory denylist checked by
+# AuthMiddleware (FR21) and stamping ``revoked_at`` so future ``session
+# list`` runs omit them. The DB is the source of truth for session metadata;
+# the denylist is the runtime enforcement point.
+# ---------------------------------------------------------------------------
+
+
+def _record_session(
+    conn,
+    *,
+    jti: str,
+    username: str,
+    role: str,
+    client_ip: str = "",
+    device_model: str = "",
+    app_version: str = "",
+    os_version: str = "",
+) -> None:
+    """Insert an active session row on successful login (FR20).
+
+    Called inside the caller's ``get_db()`` transaction so the session row
+    commits atomically with the login response.
+    """
+    ts = now_utc()
+    conn.execute(
+        "INSERT INTO sessions "
+        "(jti, username, role, client_ip, device_model, app_version, "
+        " os_version, logged_in_at, last_activity, revoked_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+        (jti, username, role, client_ip, device_model, app_version, os_version, ts, ts),
+    )
+
+
+def fetch_active_sessions(conn) -> list:
+    """Return all active (non-revoked) session rows for `baker session list` (FR20).
+
+    Rows are ordered by most recent login first.
+    """
+    return conn.execute(
+        "SELECT id, jti, username, role, client_ip, device_model, app_version, "
+        "       os_version, logged_in_at, last_activity, revoked_at "
+        "FROM sessions WHERE revoked_at IS NULL "
+        "ORDER BY logged_in_at DESC"
+    ).fetchall()
+
+
+def revoke_user_sessions(conn, username: str) -> int:
+    """Revoke all active sessions for ``username`` (FR21 — `baker session logout`).
+
+    Adds each session's jti to the in-memory denylist and stamps
+    ``revoked_at`` in the DB. Returns the number of sessions revoked.
+    """
+    rows = conn.execute(
+        "SELECT jti FROM sessions WHERE username = ? AND revoked_at IS NULL",
+        (username,),
+    ).fetchall()
+    ts = now_utc()
+    for row in rows:
+        _token_denylist.add(row["jti"])
+    conn.execute(
+        "UPDATE sessions SET revoked_at = ? "
+        "WHERE username = ? AND revoked_at IS NULL",
+        (ts, username),
+    )
+    return len(rows)
+
+
+def revoke_all_sessions(conn) -> int:
+    """Revoke all active sessions for all users (FR21 — `baker session logout-all`).
+
+    Adds every active session's jti to the in-memory denylist and stamps
+    ``revoked_at``. Returns the number of sessions revoked.
+    """
+    rows = conn.execute(
+        "SELECT jti FROM sessions WHERE revoked_at IS NULL"
+    ).fetchall()
+    ts = now_utc()
+    for row in rows:
+        _token_denylist.add(row["jti"])
+    conn.execute(
+        "UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL",
+        (ts,),
+    )
+    return len(rows)
 
 
 def _reset_auth_state() -> None:

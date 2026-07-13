@@ -34,3 +34,21 @@ def api_client(use_memory_db):
     app = create_app()
     with TestClient(app) as client:
         yield client
+
+
+@pytest.fixture
+def auth_client(api_client):
+    """api_client variant with AUTH_REQUIRED=true for middleware tests."""
+    from unittest.mock import patch
+
+    with patch("baker.api.middleware.AUTH_REQUIRED", True):
+        yield api_client
+
+
+@pytest.fixture
+def anon_client(api_client):
+    """api_client variant with AUTH_REQUIRED=false (grace period, default)."""
+    from unittest.mock import patch
+
+    with patch("baker.api.middleware.AUTH_REQUIRED", False):
+        yield api_client

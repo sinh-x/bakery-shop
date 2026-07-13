@@ -14,7 +14,6 @@ from __future__ import annotations
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
 
 import jwt
 import pytest
@@ -46,18 +45,8 @@ def _reset_auth():
     _reset_auth_state()
 
 
-@pytest.fixture
-def auth_client(api_client):
-    """api_client variant with AUTH_REQUIRED=true for middleware tests."""
-    with patch("baker.api.middleware.AUTH_REQUIRED", True):
-        yield api_client
-
-
-@pytest.fixture
-def anon_client(api_client):
-    """api_client variant with AUTH_REQUIRED=false (grace period, default)."""
-    with patch("baker.api.middleware.AUTH_REQUIRED", False):
-        yield api_client
+# auth_client and anon_client fixtures live in conftest.py so they are shared
+# with test_user_session_cli.py and other Phase 4+ test modules.
 
 
 def _seed_user_and_get_token(api_client, username="testadmin", password="testpass123"):

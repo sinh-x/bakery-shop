@@ -3661,6 +3661,35 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_entity_type ON audit_log(entity_type);
 """
 
 
+# DG-029 Phase 4: sessions table for active session tracking (FR20/FR21).
+#
+# One row per active login session. Created on successful login (auth.py) and
+# consulted by `baker session list` to show active sessions with IP/device
+# metadata. The ``jti`` column links the session row to the JWT issued at
+# login; force-logout adds that jti to the in-memory denylist checked by
+# AuthMiddleware (FR21). ``revoked_at`` is set when a session is force-logged
+# out so `session list` can omit revoked sessions.
+SESSIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS sessions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    jti             TEXT NOT NULL UNIQUE,
+    username        TEXT NOT NULL,
+    role            TEXT NOT NULL,
+    client_ip       TEXT NOT NULL DEFAULT '',
+    device_model    TEXT NOT NULL DEFAULT '',
+    app_version     TEXT NOT NULL DEFAULT '',
+    os_version      TEXT NOT NULL DEFAULT '',
+    logged_in_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    last_activity   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    revoked_at      TEXT DEFAULT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_username ON sessions(username);
+CREATE INDEX IF NOT EXISTS idx_sessions_jti ON sessions(jti);
+CREATE INDEX IF NOT EXISTS idx_sessions_revoked_at ON sessions(revoked_at);
+"""
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -3988,6 +4017,10 @@ MIGRATIONS = {
     69: {
         "description": "Auth RBAC: audit_log table for recording admin write operations — DG-029 Phase 3",
         "sql": AUDIT_LOG_SCHEMA,
+    },
+    70: {
+        "description": "Auth RBAC: sessions table for active session tracking — DG-029 Phase 4",
+        "sql": SESSIONS_SCHEMA,
     },
 }
 

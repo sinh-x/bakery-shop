@@ -37,6 +37,8 @@ from baker.commands.staff import staff_cmd
 from baker.commands.serve import serve_cmd
 from baker.commands.db import db_cmd
 from baker.commands.server_log import server_log_cmd
+from baker.commands.user import user_cmd
+from baker.commands.session import session_cmd
 from baker.commands.validate import validate_accounts_cmd
 from baker.commands.report import report_cmd
 from baker.commands.pipeline import pipeline_cmd
@@ -56,6 +58,8 @@ app.add_command(staff_cmd, "staff")
 app.add_command(serve_cmd, "serve")
 app.add_command(db_cmd)
 app.add_command(server_log_cmd, "server-log")
+app.add_command(user_cmd, "user")
+app.add_command(session_cmd, "session")
 app.add_command(validate_accounts_cmd, "validate-accounts")
 app.add_command(report_cmd, "report")
 app.add_command(pipeline_cmd, "pipeline")

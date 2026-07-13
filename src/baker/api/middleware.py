@@ -139,6 +139,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.auth_username = payload.get("sub")
         request.state.auth_role = payload.get("role")
 
+        # DG-029 Phase 4: refresh last_activity for this session (FR20).
+        # Best-effort — never fail a valid request because of a session-DB error.
+        jti = payload.get("jti")
+        if jti:
+            try:
+                from baker.db.connection import get_db
+                from baker.utils.time import now_utc
+                with get_db() as conn:
+                    conn.execute(
+                        "UPDATE sessions SET last_activity = ? WHERE jti = ? "
+                        "AND revoked_at IS NULL",
+                        (now_utc(), jti),
+                    )
+            except Exception:
+                logger.debug("session last_activity update failed", exc_info=True)
+
         return await call_next(request)
 
     @staticmethod
