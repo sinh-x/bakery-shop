@@ -47,7 +47,7 @@ void main() {
           tagUsage: TagUsage(count: 0, productIds: const []),
         )),
       ]);
-      addTearDown(() => container.dispose());
+      addTearDown(container.dispose);
 
       await tester.pumpWidget(
         UncontrolledProviderScope(
@@ -63,7 +63,7 @@ void main() {
       int tagDefsRefreshCount = 0;
       container.listen<AsyncValue<List<CatalogTagDef>>>(
         catalogTagDefsProvider,
-        (_, __) {},
+        (_, _) {},
       );
       // We approximate "invalidation" by observing a re-read: invalidate() causes
       // the provider to rebuild on next read/watch. We assert indirectly by
@@ -120,7 +120,7 @@ void main() {
               sortOrder: anyNamed('sortOrder')))
           .thenAnswer((_) async {});
 
-      final seededTag = CatalogTagDef(
+      const seededTag = CatalogTagDef(
         category: VN.tagCategoriesDoiTuong,
         key: 'khach-le',
         label: 'Khách lẻ',
@@ -133,7 +133,7 @@ void main() {
           tagUsage: TagUsage(count: 0, productIds: const []),
         )),
       ]);
-      addTearDown(() => container.dispose());
+      addTearDown(container.dispose);
 
       await tester.pumpWidget(
         UncontrolledProviderScope(
@@ -176,7 +176,7 @@ void main() {
       when(mockConfigService.deleteConfigValue(any, any))
           .thenAnswer((_) async {});
 
-      final seededTag = CatalogTagDef(
+      const seededTag = CatalogTagDef(
         category: VN.tagCategoriesDip,
         key: 'sinh-nhat',
         label: 'Sinh nhật',
@@ -189,7 +189,7 @@ void main() {
           tagUsage: TagUsage(count: 3, productIds: const ['p1', 'p2', 'p3']),
         )),
       ]);
-      addTearDown(() => container.dispose());
+      addTearDown(container.dispose);
 
       await tester.pumpWidget(
         UncontrolledProviderScope(
@@ -221,7 +221,7 @@ void main() {
       when(mockConfigService.deleteConfigValue(any, any))
           .thenAnswer((_) async {});
 
-      final seededTag = CatalogTagDef(
+      const seededTag = CatalogTagDef(
         category: VN.tagCategoriesPhongCach,
         key: 'hoa-hong',
         label: 'Hoa hồng',
@@ -234,7 +234,7 @@ void main() {
           tagUsage: TagUsage(count: 0, productIds: const []),
         )),
       ]);
-      addTearDown(() => container.dispose());
+      addTearDown(container.dispose);
 
       await tester.pumpWidget(
         UncontrolledProviderScope(
@@ -269,25 +269,25 @@ void main() {
     testWidgets('renders three groups with non-empty tags (CR-1 guard)',
         (tester) async {
       final seededTags = [
-        CatalogTagDef(
+        const CatalogTagDef(
             category: VN.tagCategoriesDoiTuong,
             key: 'khach-le',
             label: 'Khách lẻ'),
-        CatalogTagDef(
+        const CatalogTagDef(
             category: VN.tagCategoriesDoiTuong,
             key: 'khach-cu',
             label: 'Khách cũ'),
-        CatalogTagDef(
+        const CatalogTagDef(
             category: VN.tagCategoriesDip,
             key: 'sinh-nhat',
             label: 'Sinh nhật'),
-        CatalogTagDef(
+        const CatalogTagDef(
             category: VN.tagCategoriesDip, key: '8-3', label: '8/3'),
-        CatalogTagDef(
+        const CatalogTagDef(
             category: VN.tagCategoriesPhongCach,
             key: 'hoa-hong',
             label: 'Hoa hồng'),
-        CatalogTagDef(
+        const CatalogTagDef(
             category: VN.tagCategoriesPhongCach,
             key: 'gan-dau',
             label: 'Gan đầu'),
@@ -299,7 +299,7 @@ void main() {
           tagUsage: TagUsage(count: 0, productIds: const []),
         )),
       ]);
-      addTearDown(() => container.dispose());
+      addTearDown(container.dispose);
 
       await tester.pumpWidget(
         UncontrolledProviderScope(
@@ -345,7 +345,6 @@ class _SeededCatalogService implements CatalogService {
   @override
   Future<List<CatalogTagDef>> getCatalogTagDefs() async => tagDefs;
 
-  @override
   Future<TagUsage> getTagUsage(String key) async => tagUsage;
 
   // Unused by these tests but required by the interface.

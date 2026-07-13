@@ -218,6 +218,9 @@ class _AddTagDialogState extends ConsumerState<_AddTagDialog> {
                 if (value.length > 40) {
                   return VN.tagLabelTooLong;
                 }
+                if (value.contains(':')) {
+                  return VN.tagLabelNoColon;
+                }
                 return null;
               },
             ),
@@ -338,6 +341,9 @@ class _EditTagDialogState extends ConsumerState<_EditTagDialog> {
                 }
                 if (value.length > 40) {
                   return VN.tagLabelTooLong;
+                }
+                if (value.contains(':')) {
+                  return VN.tagLabelNoColon;
                 }
                 return null;
               },

@@ -32,7 +32,7 @@ class TagUsage {
 
   factory TagUsage.fromJson(Map<String, dynamic> json) => TagUsage(
         count: (json['count'] as num).toInt(),
-        productIds: List<String>.from(json['product_ids'] as List),
+        productIds: (json['product_ids'] as List).map((e) => e.toString()).toList(),
       );
 }
 

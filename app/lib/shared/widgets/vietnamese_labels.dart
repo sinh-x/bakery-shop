@@ -999,9 +999,9 @@ class VN {
   static const tagLabel = 'Nhãn';
   static const tagKeyHint = 'vd: sinh-nhat, 8-3';
   static const tagKeyInvalid = 'Khoá chỉ dùng chữ thường, số và dấu gạch nối';
-  static const tagKeyDuplicate = 'Khoá đã tồn tại';
   static const tagLabelEmpty = 'Nhập nhãn hiển thị';
   static const tagLabelTooLong = 'Nhãn không được vượt quá 40 ký tự';
+  static const tagLabelNoColon = 'Nhãn không được chứa dấu hai chấm';
   static const tagCannotDelete = 'Không thể xoá';
   static String tagInUse(int n) => 'Thẻ này đang được dùng bởi $n ảnh. Hãy gỡ thẻ khỏi các ảnh đó trước.';
   static String tagDeleteConfirm(String label) => 'Xoá thẻ "$label"?';
