@@ -84,7 +84,7 @@ def get_config_usage(config_key: str, key: str = Query(...)):
         raise HTTPException(status_code=404, detail="Usage endpoint chỉ hỗ trợ catalog_tag")
     
     with get_db() as conn:
-        # Kiểm tra key có tồn tại trong app_config không
+        # Kiểm tra key có tồn tại trong app_config không (match only the key segment)
         tag_row = conn.execute(
             "SELECT 1 FROM app_config WHERE config_key = 'catalog_tag' AND config_value LIKE ?",
             (f"%:{key}:%",)

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/labels/shared.dart';
+import '../../../shared/helpers/catalog_tag_helpers.dart';
 import '../../../data/models/catalog_tag.dart';
 import 'tag_row.dart';
 
@@ -9,19 +10,6 @@ class TagGroup extends StatelessWidget {
 
   final String category;
   final List<CatalogTagDef> tags;
-
-  String _getCategoryLabel() {
-    switch (category) {
-      case VN.tagCategoriesDoiTuong:
-        return VN.doiTuong;
-      case VN.tagCategoriesDip:
-        return VN.dip;
-      case VN.tagCategoriesPhongCach:
-        return VN.phongCach;
-      default:
-        return category;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +20,7 @@ class TagGroup extends StatelessWidget {
         Row(
           children: [
             Text(
-              _getCategoryLabel(),
+              getCategoryLabel(category),
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),

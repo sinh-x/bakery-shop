@@ -2,22 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/labels/shared.dart';
+import '../../../shared/helpers/catalog_tag_helpers.dart';
 import '../../../data/models/catalog_tag.dart';
 import '../../../data/api/config_service.dart';
 import '../../../providers/catalog_provider.dart';
-
-String _getCategoryLabel(String category) {
-  switch (category) {
-    case VN.tagCategoriesDoiTuong:
-      return VN.doiTuong;
-    case VN.tagCategoriesDip:
-      return VN.dip;
-    case VN.tagCategoriesPhongCach:
-      return VN.phongCach;
-    default:
-      return category;
-  }
-}
 
 Future<void> showAddDialog(BuildContext context, WidgetRef ref) async {
   final formKey = GlobalKey<FormState>();
@@ -48,7 +36,7 @@ Future<void> showAddDialog(BuildContext context, WidgetRef ref) async {
                   items: categories.map((category) {
                     return DropdownMenuItem(
                       value: category,
-                      child: Text(_getCategoryLabel(category)),
+                      child: Text(getCategoryLabel(category)),
                     );
                   }).toList(),
                   onChanged: (value) {
@@ -104,9 +92,30 @@ Future<void> showAddDialog(BuildContext context, WidgetRef ref) async {
               child: const Text(VN.cancel),
             ),
             FilledButton(
-              onPressed: () {
+              onPressed: () async {
                 if (formKey.currentState!.validate()) {
-                  Navigator.pop(ctx, true);
+                  // Don't pop immediately, run the mutation first
+                  try {
+                    final value = '${selectedCategory!}:${keyCtrl.text.trim()}:${labelCtrl.text.trim()}';
+                    await ref.read(configServiceProvider).createConfigValue('catalog_tag', value);
+                    ref.invalidate(catalogTagDefsProvider);
+                    ref.invalidate(catalogBrowseProvider);
+                    if (ctx.mounted) {
+                      Navigator.pop(ctx, true);
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text(VN.tagAdded)),
+                      );
+                    }
+                  } catch (e) {
+                    if (ctx.mounted) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        SnackBar(
+                          content: Text('${VN.tagGenericError}$e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
                 }
               },
               child: const Text(VN.save),
@@ -165,7 +174,7 @@ Future<void> showEditDialog(BuildContext context, WidgetRef ref, CatalogTagDef t
                 labelText: VN.tagCategory,
                 border: OutlineInputBorder(),
               ),
-              child: Text(_getCategoryLabel(tag.category)),
+              child: Text(getCategoryLabel(tag.category)),
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -213,9 +222,31 @@ Future<void> showEditDialog(BuildContext context, WidgetRef ref, CatalogTagDef t
           child: const Text(VN.cancel),
         ),
         FilledButton(
-          onPressed: () {
+          onPressed: () async {
             if (formKey.currentState!.validate()) {
-              Navigator.pop(ctx, true);
+              // Don't pop immediately, run the mutation first
+              try {
+                final oldValue = '${tag.category}:${tag.key}:${tag.label}';
+                final newValue = '${tag.category}:${keyCtrl.text.trim()}:${labelCtrl.text.trim()}';
+                await ref.read(configServiceProvider).updateConfigValue('catalog_tag', oldValue, newValue);
+                ref.invalidate(catalogTagDefsProvider);
+                ref.invalidate(catalogBrowseProvider);
+                if (ctx.mounted) {
+                  Navigator.pop(ctx, true);
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(content: Text(VN.tagUpdated)),
+                  );
+                }
+              } catch (e) {
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(
+                      content: Text('${VN.tagGenericError}$e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
             }
           },
           child: const Text(VN.save),
@@ -255,7 +286,7 @@ Future<void> showEditDialog(BuildContext context, WidgetRef ref, CatalogTagDef t
 Future<void> showDeleteDialog(BuildContext context, WidgetRef ref, CatalogTagDef tag) async {
   try {
     // Check tag usage
-    final usage = await ref.read(configServiceProvider).getTagUsage('${tag.category}:${tag.key}');
+    final usage = await ref.read(configServiceProvider).getTagUsage(tag.key);
     
     if (usage.count > 0) {
       // Show blocking dialog

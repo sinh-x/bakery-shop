@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/catalog_tag.dart';
 import 'tag_group.dart';
 import '../../../shared/labels/shared.dart';
 
 class TagList extends StatelessWidget {
-  const TagList({required this.tags, required this.ref, super.key});
+  const TagList({required this.tags, super.key});
 
   final List<CatalogTagDef> tags;
-  final WidgetRef ref;
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +24,9 @@ class TagList extends StatelessWidget {
           occasionTags.add(tag);
         case VN.tagCategoriesPhongCach:
           styleTags.add(tag);
+        default:
+          // Handle unknown-category tags by adding them to objectTags for visibility
+          objectTags.add(tag);
       }
     }
 

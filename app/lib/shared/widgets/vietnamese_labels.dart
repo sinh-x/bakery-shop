@@ -999,7 +999,7 @@ class VN {
   static const tagLabel = 'Nhãn';
   static const tagKeyHint = 'vd: sinh-nhat, 8-3';
   static const tagKeyInvalid = 'Khoá chỉ dùng chữ thường, số và dấu gạch nối';
-  static const tagKeyDuplicate = 'Khoá đã tồn tại trong danh mục này';
+  static const tagKeyDuplicate = 'Khoá đã tồn tại';
   static const tagLabelEmpty = 'Nhập nhãn hiển thị';
   static const tagLabelTooLong = 'Nhãn không được vượt quá 40 ký tự';
   static const tagCannotDelete = 'Không thể xoá';
@@ -1011,9 +1011,9 @@ class VN {
   static const tagGenericError = 'Lỗi: ';
   static const tagUsageCheckError = 'Lỗi kiểm tra sử dụng thẻ: ';
   static const noTagsInCategory = 'Chưa có thẻ';
-  static const tagCategoriesDoiTuong = 'doi_tuong';
-  static const tagCategoriesDip = 'dip';
-  static const tagCategoriesPhongCach = 'phong_cach';
+  static const tagCategoriesDoiTuong = 'audience';
+  static const tagCategoriesDip = 'occasion';
+  static const tagCategoriesPhongCach = 'style';
   static const tagKeyRegexPattern = r'^[a-z0-9][a-z0-9-]*$';
 }
 
