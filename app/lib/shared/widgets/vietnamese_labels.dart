@@ -1001,13 +1001,20 @@ class VN {
   static const tagKeyInvalid = 'Khoá chỉ dùng chữ thường, số và dấu gạch nối';
   static const tagKeyDuplicate = 'Khoá đã tồn tại trong danh mục này';
   static const tagLabelEmpty = 'Nhập nhãn hiển thị';
+  static const tagLabelTooLong = 'Nhãn không được vượt quá 40 ký tự';
   static const tagCannotDelete = 'Không thể xoá';
   static String tagInUse(int n) => 'Thẻ này đang được dùng bởi $n ảnh. Hãy gỡ thẻ khỏi các ảnh đó trước.';
   static String tagDeleteConfirm(String label) => 'Xoá thẻ "$label"?';
   static const tagAdded = 'Đã thêm thẻ';
   static const tagUpdated = 'Đã cập nhật thẻ';
   static const tagDeleted = 'Đã xoá thẻ';
+  static const tagGenericError = 'Lỗi: ';
+  static const tagUsageCheckError = 'Lỗi kiểm tra sử dụng thẻ: ';
   static const noTagsInCategory = 'Chưa có thẻ';
+  static const tagCategoriesDoiTuong = 'doi_tuong';
+  static const tagCategoriesDip = 'dip';
+  static const tagCategoriesPhongCach = 'phong_cach';
+  static const tagKeyRegexPattern = r'^[a-z0-9][a-z0-9-]*$';
 }
 
 // Category mapping (new slugs)
