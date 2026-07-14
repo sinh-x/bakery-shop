@@ -10,67 +10,14 @@ is still used so legacy unauthenticated flows keep working.
 
 from __future__ import annotations
 
-import time
-import uuid
-from unittest.mock import patch
-
-import jwt
-import pytest
-
-from baker.api.auth import _pwd_ctx, _reset_auth_state
-from baker.config import JWT_SECRET
 from baker.db.connection import get_db
 
-
-def _create_test_user(conn, username: str, password: str, role: str = "admin") -> None:
-    hashed = _pwd_ctx.hash(password)
-    conn.execute(
-        "INSERT INTO users (username, password_hash, role, active) VALUES (?, ?, ?, 1)",
-        (username, hashed, role),
-    )
-    conn.commit()
-
-
-def _make_token(username: str, role: str) -> str:
-    payload = {
-        "sub": username,
-        "role": role,
-        "exp": int(time.time()) + 3600,
-        "jti": str(uuid.uuid4()),
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
-
-
-def _seed_user(conn, username: str, role: str, password: str = "pass123") -> str:
-    _create_test_user(conn, username, password, role=role)
-    return _make_token(username, role)
-
-
-def _auth_headers(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}"}
-
-
-@pytest.fixture(autouse=True)
-def _reset_auth():
-    _reset_auth_state()
-    yield
-    _reset_auth_state()
-
-
-@pytest.fixture
-def auth_client(api_client):
-    """api_client with AUTH_REQUIRED=true."""
-    with patch("baker.api.middleware.AUTH_REQUIRED", True):
-        with patch("baker.api.auth.AUTH_REQUIRED", True):
-            yield api_client
-
-
-@pytest.fixture
-def anon_client(api_client):
-    """api_client with AUTH_REQUIRED=false (grace period, default)."""
-    with patch("baker.api.middleware.AUTH_REQUIRED", False):
-        with patch("baker.api.auth.AUTH_REQUIRED", False):
-            yield api_client
+# DG-029 Phase 5.6-c3 / CQ-2: shared auth test helpers (_create_test_user,
+# _make_token, _seed_user, _auth_headers) live in tests/auth_helpers.py and
+# the _reset_auth / auth_client / anon_client fixtures live in
+# tests/conftest.py — both auto-discovered by pytest, so no duplicate
+# definitions remain in this module.
+from tests.auth_helpers import _auth_headers, _seed_user
 
 
 TODAY = "2026-07-14"

@@ -82,8 +82,7 @@ def create_event(body: EventCreate, request: Request):
     # AC14/FR17: derive the logger identity from the authenticated JWT
     # session rather than trusting free-text client input. Grace period
     # (AUTH_REQUIRED=false) falls back to body.logged_by.
-    auth_username = getattr(request.state, "auth_username", None)
-    logged_by = auth_username or body.logged_by
+    logged_by = resolve_actor(request, body.logged_by)
 
     event = Event(
         summary=body.summary.strip(),

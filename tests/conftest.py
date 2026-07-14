@@ -12,7 +12,31 @@ import pytest
 os.environ.setdefault("BAKER_BCRYPT_ROUNDS", "4")
 
 
+# ---------------------------------------------------------------------------
+# Shared autouse fixture (DG-029 Phase 5.6-c3 / CQ-2)
+#
+# ``_reset_auth`` was previously duplicated as an autouse fixture across
+# test_rbac.py, test_actor_derivation.py, test_audit_log_api.py,
+# test_auth.py, and test_user_session_cli.py. Centralizing it here means
+# modules that no longer redefine it still get auth state cleared between
+# tests. Modules that still redefine it (test_auth.py,
+# test_user_session_cli.py, test_audit_log_api.py) keep their local
+# definition, which shadows this one per pytest's fixture resolution —
+# behavior unchanged for them.
+# ---------------------------------------------------------------------------
+
+
 @pytest.fixture(autouse=True)
+def _reset_auth():
+    """Clear in-memory auth state before and after each test."""
+    from baker.api.auth import _reset_auth_state
+
+    _reset_auth_state()
+    yield
+    _reset_auth_state()
+
+
+@pytest.fixture
 def use_memory_db(tmp_path, monkeypatch):
     """Use a temp file DB for each test and isolated photos dir."""
     db_path = str(tmp_path / "test.db")
@@ -46,17 +70,33 @@ def api_client(use_memory_db):
 
 @pytest.fixture
 def auth_client(api_client):
-    """api_client variant with AUTH_REQUIRED=true for middleware tests."""
+    """api_client with AUTH_REQUIRED=true (patches both middleware + auth).
+
+    Both ``baker.api.middleware.AUTH_REQUIRED`` (the gate the middleware
+    reads) and ``baker.api.auth.AUTH_REQUIRED`` (the gate ``RequireRole``
+    reads) are patched so role checks and actor derivation see the enforced
+    mode consistently. The previous conftest version only patched
+    middleware, which left ``RequireRole`` evaluating the grace-period
+    branch; the per-module redefinitions in test_rbac/test_actor_derivation
+    patched both, and that is the correct behavior, so it is centralized
+    here.
+    """
     from unittest.mock import patch
 
     with patch("baker.api.middleware.AUTH_REQUIRED", True):
-        yield api_client
+        with patch("baker.api.auth.AUTH_REQUIRED", True):
+            yield api_client
 
 
 @pytest.fixture
 def anon_client(api_client):
-    """api_client variant with AUTH_REQUIRED=false (grace period, default)."""
+    """api_client with AUTH_REQUIRED=false (grace period, default).
+
+    Patches both middleware and auth so the grace-period branches align
+    across the request gate and ``RequireRole``.
+    """
     from unittest.mock import patch
 
     with patch("baker.api.middleware.AUTH_REQUIRED", False):
-        yield api_client
+        with patch("baker.api.auth.AUTH_REQUIRED", False):
+            yield api_client
