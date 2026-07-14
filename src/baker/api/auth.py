@@ -439,6 +439,41 @@ def RequireRole(required_role: str):
 
 
 # ---------------------------------------------------------------------------
+# Actor derivation helper (DG-029 Phase 5.6-c2, AC14/FR17)
+#
+# ``resolve_actor`` derives the acting username from the authenticated JWT
+# session (``request.state.auth_username`` set by ``AuthMiddleware``) instead
+# of trusting free-text client input. When the authenticated identity is
+# present it always wins — the client-supplied fallback is ignored. When
+# ``AUTH_REQUIRED=false`` (grace period) and no token is present, it falls
+# back to the client-provided name so legacy unauthenticated flows keep
+# working (NFR6 / DG-119 grace-period baseline).
+#
+# Use this for any write path that records an actor/``completed_by`` /
+# ``logged_by`` / ``staff_name`` field: checklist toggle, event log create/
+# edit/delete, stock reconciliation submit.
+# ---------------------------------------------------------------------------
+
+
+def resolve_actor(request: Request, fallback: str = "") -> str:
+    """Return the acting username, preferring the authenticated JWT identity.
+
+    DG-029 AC14/FR17: the authenticated ``sub`` claim always wins over any
+    client-supplied free-text name. During the grace period
+    (``AUTH_REQUIRED=false``) with no token, the client-supplied
+    ``fallback`` is returned unchanged so existing unauthenticated clients
+    keep working (NFR6 backward compatibility). Note this intentionally
+    does *not* substitute ``"anonymous"`` for an empty fallback — that
+    sentinel is reserved for admin-gated audit rows via ``RequireRole``
+    (Mn-4); these actor fields preserve the legacy empty-string contract.
+    """
+    auth_username = getattr(request.state, "auth_username", None)
+    if auth_username:
+        return auth_username
+    return fallback
+
+
+# ---------------------------------------------------------------------------
 # Audit log recording (DG-029 Phase 3, FR22)
 #
 # ``record_audit_log`` writes a single row to the ``audit_log`` table for

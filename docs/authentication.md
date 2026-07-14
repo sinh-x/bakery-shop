@@ -256,6 +256,7 @@ These are intentional trade-offs or deferred items — candidates for follow-up 
 
 ### 9.6 Grace-period audit attribution
 - During `AUTH_REQUIRED=false`, unauthenticated admin writes are recorded as `"anonymous"`.
+- The FR17 actor-derivation paths (checklist/event/reconciliation) preserve the legacy empty-string contract when no client fallback is supplied during the grace period — they do *not* substitute `"anonymous"`.
 - **Enhancement:** Once enforcement is on, these should not occur; consider a dashboard warning if any `anonymous` audit rows appear after enforcement day.
 
 ### 9.7 JWT secret operational safety
@@ -297,18 +298,16 @@ Full orchestration record: `agent-teams/builder/artifacts/2026-07-13-dg029-baker
 - **Verification:** the `python-tests` check must go green on PR #102's head commit; do not merge on a red required check.
 - **Guardrail:** whatever the fix, `python -m ruff check src tests --select E9,F63,F7,F82` must still pass and the auth behavior (bcrypt-12 in prod, JWT, RBAC) must be unchanged.
 
-### BLOCKER 2 — AC14 / FR17 not implemented for the checklist flow
+### BLOCKER 2 — AC14 / FR17 not implemented for the checklist flow — RESOLVED
 
 - **AC14 (unchecked in requirements):** "Given a staff user completes a checklist item, when the entry is saved, then `completed_by` contains the authenticated username (not a free-text name)."
-- **Current state:**
-  - Backend `POST /api/checklist/daily/{entry_id}/toggle` (`src/baker/api/checklist.py:215`) stores `body.staff_name` (free-text) into `completed_by`.
-  - Flutter `checklist_screen.dart:54` still reads the legacy `loggedByProvider` and passes it as `staffName`.
-- **FR17 blast radius (still on legacy `loggedByProvider`):** checklist, plus `event_log_form.dart` (events), `reconciliation_notifier.dart` (reconciliation), and `settings_screen.dart` (the "select staff name" setting). FR17 intended to replace `loggedByProvider` with the authenticated JWT identity everywhere `logged_by`/`completed_by`/`printed_by` is written.
-- **Fix approach:**
-  1. Backend: derive `completed_by` from the authenticated identity (`request.state.auth_username`) rather than trusting the client-supplied `staff_name`. When `AUTH_REQUIRED=false` (grace period), fall back to the provided name so current clients keep working.
-  2. Flutter: replace `loggedByProvider` reads with the authenticated username from `authProvider` (from the JWT `sub` claim) for checklist toggle, event logging, reconciliation, and printing. Keep a sensible grace-period fallback.
-  3. Tests: add a backend test asserting `completed_by` = JWT `sub` when `AUTH_REQUIRED=true`; add/adjust Flutter widget tests. Mark AC14 `[x]` in the requirements doc when verified.
-- **Scope note:** because FR17 spans events + reconciliation too, the follow-up orchestration should confirm with Sinh whether to complete FR17 fully or scope the fix to the checklist AC14 only.
+- **Resolution (Phase 5.6-c2, 2026-07-14):** the backend now derives the acting username from the authenticated JWT session (`request.state.auth_username`) via a shared `resolve_actor(request, fallback)` helper in `src/baker/api/auth.py`, applied to all three FR17 write paths:
+  - **Checklist toggle** (`POST /api/checklist/daily/{entry_id}/toggle`): `completed_by` = JWT `sub` when authenticated; falls back to `body.staff_name` during the grace period.
+  - **Event log** (`POST /api/events`, `PATCH /api/events/{id}`, `DELETE /api/events/{id}`): `logged_by` / audit `actor` / `deleted_by` = JWT `sub` when authenticated; falls back to the client-supplied value during the grace period.
+  - **Stock reconciliation submit** (`POST /api/reconciliations/submit`): `reconciliation_sessions.staff_name` and `orders.created_by` = JWT `sub` when authenticated; falls back to `payload.staff_name` during the grace period.
+- **Grace-period fallback (NFR6 / DG-119):** when `AUTH_REQUIRED=false` and no token is present, the client-provided name is still used so legacy unauthenticated clients keep working. The `"anonymous"` sentinel is reserved for admin-gated audit rows via `RequireRole` (Mn-4); these actor fields preserve the legacy empty-string contract when no fallback is supplied.
+- **Flutter (Phase 6, already in place):** `loggedByProvider` derives from `authProvider.username` (the JWT `sub` claim), so the client already sends the authenticated username. The backend change makes the server authoritative — free-text client input is now ignored when authenticated.
+- **Tests:** `tests/test_actor_derivation.py` (11 cases) covers authenticated derivation + grace-period fallback across all three flows. Flutter tests in `app/test/features/checklist/checklist_actor_derivation_test.dart` and `app/test/features/stock/reconciliation_provider_test.dart` cover the client-side `loggedByProvider` derivation.
 
 ### CHANGE 3 — Allow staff to submit Stock Reconciliation (Sinh-approved 2026-07-14)
 

@@ -174,6 +174,46 @@ void main() {
     expect(saleRows.length, 2);
   });
 
+  test(
+    'FR17/AC14: submit derives staffName from loggedByProvider (authenticated username)',
+    () async {
+      final service = _FakeReconciliationService(
+        ReconciliationDraft(
+          date: '2026-05-04',
+          products: [
+            ReconciliationDraftProduct(
+              productId: 1,
+              name: 'Bánh kem dâu',
+              category: 'banh_kem',
+              expectedQty: 5,
+              basePrice: 100000,
+              priceChips: [],
+            ),
+          ],
+        ),
+      );
+      final container = await buildContainer(service);
+      addTearDown(container.dispose);
+
+      await container.read(reconciliationProvider.notifier).loadDraft();
+      container.read(reconciliationProvider.notifier).setCountedQty(1, 4);
+      container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
+      container
+          .read(reconciliationProvider.notifier)
+          .setSaleRowUnitPrice(1, 0, 15000);
+      container
+          .read(reconciliationProvider.notifier)
+          .setSaleRowPaymentMethod(1, 0, 'cash');
+
+      final ok = await container.read(reconciliationProvider.notifier).submit();
+      expect(ok, isTrue);
+      expect(service.submitCalls, 1);
+      // FR17: staffName is sourced from loggedByProvider, which derives from
+      // the authenticated JWT `sub` claim (seeded as 'An' in setUp).
+      expect(service.capturedRequest!.staffName, 'An');
+    },
+  );
+
   test('validates 200 sale rows client side without submit call', () async {
     final products = List.generate(
       100,

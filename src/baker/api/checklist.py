@@ -3,10 +3,10 @@
 from datetime import date as date_type
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from baker.api.auth import RequireRole, record_audit_log
+from baker.api.auth import RequireRole, record_audit_log, resolve_actor
 from baker.db.connection import get_db
 from baker.utils.time import now_utc
 
@@ -213,7 +213,7 @@ def get_daily_checklist(date: Optional[str] = None):
 
 
 @router.post("/daily/{entry_id}/toggle")
-def toggle_entry(entry_id: int, body: ToggleRequest):
+def toggle_entry(entry_id: int, body: ToggleRequest, request: Request):
     """Đánh dấu hoàn thành / bỏ đánh dấu một mục checklist."""
     with get_db() as conn:
         existing = conn.execute(
@@ -229,11 +229,14 @@ def toggle_entry(entry_id: int, body: ToggleRequest):
                 (entry_id,),
             )
         else:
-            # Tick
+            # Tick — AC14/FR17: derive completed_by from the authenticated JWT
+            # identity rather than trusting free-text client input. Grace
+            # period (AUTH_REQUIRED=false) falls back to body.staff_name.
+            actor = resolve_actor(request, body.staff_name)
             conn.execute(
                 "UPDATE checklist_entries SET completed = 1, completed_by = ?, "
                 "completed_at = ? WHERE id = ?",
-                (body.staff_name, now_utc(), entry_id),
+                (actor, now_utc(), entry_id),
             )
 
         row = conn.execute(
