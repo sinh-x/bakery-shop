@@ -2,9 +2,10 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from baker.api.auth import RequireRole, record_audit_log
 from baker.config import TIMEZONE
 from baker.db.connection import get_db
 from baker.utils.time import now_utc
@@ -52,7 +53,7 @@ def get_config(config_key: str):
 
 
 @router.post("/{config_key}")
-def create_config(config_key: str, body: ConfigValueIn):
+def create_config(config_key: str, body: ConfigValueIn, actor: str = Depends(RequireRole("admin"))):
     """Tạo mới một giá trị cấu hình cho config_key."""
     with get_db() as conn:
         # Check if already exists
@@ -67,7 +68,17 @@ def create_config(config_key: str, body: ConfigValueIn):
             "INSERT INTO app_config (config_key, config_value, sort_order, created_at) VALUES (?, ?, ?, ?)",
             (config_key, body.value, body.sort_order, now_utc()),
         )
-        return {"id": cursor.lastrowid, "config_key": config_key, "value": body.value, "sort_order": body.sort_order}
+        new_id = cursor.lastrowid
+        record_audit_log(
+            conn,
+            actor,
+            "create",
+            "config",
+            f"{config_key}:{body.value}",
+            old_value=None,
+            new_value={"config_key": config_key, "config_value": body.value, "sort_order": body.sort_order},
+        )
+        return {"id": new_id, "config_key": config_key, "value": body.value, "sort_order": body.sort_order}
 
 
 
@@ -145,7 +156,7 @@ def _parse_catalog_tag_key(value: str) -> str | None:
 
 
 @router.put("/{config_key}")
-def update_config(config_key: str, body: ConfigValueUpdate):
+def update_config(config_key: str, body: ConfigValueUpdate, actor: str = Depends(RequireRole("admin"))):
     """Cập nhật giá trị cấu hình (theo old_value).
 
     Với config_key = 'catalog_tag', nếu key trong config_value thay đổi thì
@@ -176,14 +187,32 @@ def update_config(config_key: str, body: ConfigValueUpdate):
             else:
                 _apply_config_update(conn, config_key, body.old_value, body.new_value, body.sort_order)
 
+            record_audit_log(
+                conn,
+                actor,
+                "update",
+                "config",
+                f"{config_key}:{body.old_value}",
+                old_value={"config_key": config_key, "config_value": body.old_value},
+                new_value={"config_key": config_key, "config_value": body.new_value, "sort_order": body.sort_order},
+            )
             return {"config_key": config_key, "old_value": body.old_value, "new_value": body.new_value}
         else:
             _apply_config_update(conn, config_key, body.old_value, body.new_value, body.sort_order)
+            record_audit_log(
+                conn,
+                actor,
+                "update",
+                "config",
+                f"{config_key}:{body.old_value}",
+                old_value={"config_key": config_key, "config_value": body.old_value},
+                new_value={"config_key": config_key, "config_value": body.new_value, "sort_order": body.sort_order},
+            )
             return {"config_key": config_key, "old_value": body.old_value, "new_value": body.new_value}
 
 
 @router.delete("/{config_key}")
-def delete_config(config_key: str, value: str):
+def delete_config(config_key: str, value: str, actor: str = Depends(RequireRole("admin"))):
     """Xóa một giá trị cấu hình theo config_key và value.
 
     Với config_key = 'catalog_tag', kiểm tra xem key có đang được sử dụng
@@ -208,5 +237,14 @@ def delete_config(config_key: str, value: str):
         conn.execute(
             "DELETE FROM app_config WHERE config_key = ? AND config_value = ?",
             (config_key, value),
+        )
+        record_audit_log(
+            conn,
+            actor,
+            "delete",
+            "config",
+            f"{config_key}:{value}",
+            old_value={"config_key": config_key, "config_value": value},
+            new_value=None,
         )
         return {"config_key": config_key, "value": value}

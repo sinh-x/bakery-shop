@@ -3,9 +3,10 @@
 import json
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from baker.api.auth import RequireRole
 from baker.db.connection import get_db
 
 router = APIRouter(prefix="/api", tags=["product-attributes"])
@@ -89,7 +90,7 @@ def list_attribute_types(category: Optional[str] = None):
 
 
 @router.post("/product-attributes", status_code=201)
-def create_attribute_type(body: AttributeTypeCreate):
+def create_attribute_type(body: AttributeTypeCreate, actor: str = Depends(RequireRole("admin"))):
     """Create a new attribute type (system-level)."""
     with get_db() as conn:
         existing = conn.execute(
@@ -128,7 +129,7 @@ def create_attribute_type(body: AttributeTypeCreate):
 
 
 @router.patch("/product-attributes/{attribute_type}")
-def update_attribute_type(attribute_type: str, body: AttributeTypeUpdate):
+def update_attribute_type(attribute_type: str, body: AttributeTypeUpdate, actor: str = Depends(RequireRole("admin"))):
     """Update an attribute type (system-level)."""
     with get_db() as conn:
         row = conn.execute(
@@ -214,7 +215,7 @@ def update_attribute_type(attribute_type: str, body: AttributeTypeUpdate):
 
 
 @router.delete("/product-attributes/{attribute_type}", status_code=204)
-def deactivate_attribute_type(attribute_type: str):
+def deactivate_attribute_type(attribute_type: str, actor: str = Depends(RequireRole("admin"))):
     """Soft-delete an attribute type by setting active=0."""
     with get_db() as conn:
         row = conn.execute(
@@ -273,7 +274,7 @@ def get_product_attributes(product_id: int):
 
 
 @router.post("/products/{product_id}/attributes", status_code=200)
-def set_product_attribute(product_id: int, body: ProductAttributeValueSet):
+def set_product_attribute(product_id: int, body: ProductAttributeValueSet, actor: str = Depends(RequireRole("admin"))):
     """Set or update an attribute value for a specific product."""
     with get_db() as conn:
         product = conn.execute(
@@ -300,7 +301,7 @@ def set_product_attribute(product_id: int, body: ProductAttributeValueSet):
 
 
 @router.delete("/products/{product_id}/attributes/{attribute_type}", status_code=204)
-def delete_product_attribute(product_id: int, attribute_type: str):
+def delete_product_attribute(product_id: int, attribute_type: str, actor: str = Depends(RequireRole("admin"))):
     """Remove a per-product attribute value (reverts to default)."""
     with get_db() as conn:
         conn.execute(

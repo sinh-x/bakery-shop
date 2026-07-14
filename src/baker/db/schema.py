@@ -1,3 +1,4 @@
+import os
 from typing import Optional
 
 from baker.utils.time import now_utc
@@ -3570,6 +3571,255 @@ def _migrate_v66_repair_customer_links(conn):
     )
 
 
+USERS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT UNIQUE NOT NULL,
+    password_hash  TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'staff' CHECK(role IN ('admin', 'staff')),
+    active        INTEGER NOT NULL DEFAULT 1,
+    locked_until  TEXT DEFAULT NULL,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_active ON users(active);
+"""
+
+
+# Map SEED_STAFF roles to system-user roles. "owner" → "admin" for full system
+# access; all other roles → "staff" for daily operational access only.
+_SEED_STAFF_ROLE_TO_USER_ROLE = {
+    "owner": "admin",
+}
+
+
+def _migrate_v68_users_table(conn):
+    """Create the ``users`` table and seed existing staff as users with random
+    bcrypt-hashed passwords (DG-029 Phase 1, FR12/FR13).
+
+    Each staff member in :data:`SEED_STAFF` is inserted as a user. Sinh (role
+    "owner") becomes ``admin``; all others become ``staff``. A random password
+    is generated for each user, bcrypt-hashed (cost factor 12), and the plain
+    password is printed to stdout so the admin can distribute credentials.
+
+    Idempotent: re-running on a DB where users already exist skips seeding
+    (INSERT OR IGNORE on the unique ``username``); printed passwords are only
+    emitted on the first run when a row is actually inserted.
+    """
+    import secrets as _secrets
+
+    from passlib.context import CryptContext
+
+    from baker.config import BCRYPT_ROUNDS
+
+    _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=BCRYPT_ROUNDS)
+
+    inserted: list[tuple[str, str, str]] = []  # (username, role, plain_password)
+
+    for name, staff_role in SEED_STAFF:
+        user_role = _SEED_STAFF_ROLE_TO_USER_ROLE.get(staff_role, "staff")
+        # DG-029 follow-on: lowercase the system username (staff.name display
+        # name is left unchanged — users.username is the login account name).
+        # Python str.lower() is Unicode-aware and correct for Vietnamese
+        # diacritics (Â→â, Ư→ư, Ầ→ầ, etc.).
+        username = name.lower()
+        existing = conn.execute(
+            "SELECT id FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        if existing:
+            continue
+        plain = _secrets.token_urlsafe(12)
+        hashed = _pwd_ctx.hash(plain)
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, active) "
+            "VALUES (?, ?, ?, 1)",
+            (username, hashed, user_role),
+        )
+        inserted.append((username, user_role, plain))
+
+    if inserted:
+        import sys
+
+        # MJ-2 (DG-029 phase 5.6-c1): gate plaintext password printing behind
+        # BAKER_SEED_QUIET so CI logs don't capture plaintext credentials.
+        # When unset/empty the admin-distribution UX is preserved.
+        seed_quiet = os.environ.get("BAKER_SEED_QUIET", "").strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+        if seed_quiet:
+            print(
+                "DG-029 users migration: seeded initial user accounts "
+                f"({len(inserted)} users) — passwords suppressed (BAKER_SEED_QUIET=1)",
+                file=sys.stdout,
+            )
+        else:
+            print("=" * 60, file=sys.stdout)
+            print("DG-029 users migration: seeded initial user accounts", file=sys.stdout)
+            print("Distribute these temporary passwords to each user:", file=sys.stdout)
+            print("-" * 60, file=sys.stdout)
+            for username, role, plain in inserted:
+                print(f"  {username} ({role}): {plain}", file=sys.stdout)
+            print("=" * 60, file=sys.stdout)
+
+
+def _migrate_v71_users_role_check(conn):
+    """Add a DB-level CHECK(role IN ('admin','staff')) to the ``users`` table.
+
+    Mn-3 (DG-029 phase 5.6-c1): v68 created the users table without a
+    DB-level CHECK on ``role``, so application bugs could persist invalid
+    role values. Fresh DBs created on or after this migration get the
+    constraint directly in ``USERS_SCHEMA``. Existing DBs where v68 has
+    already run need a forward rebuild: SQLite has no ``ALTER TABLE ...
+    ADD CONSTRAINT`` so we recreate the table with the CHECK, copy data,
+    and recreate indexes. Idempotent: if the constraint is already
+    present (fresh DB created post-fix, or this migration already ran),
+    the rebuild is skipped.
+    """
+    # Detect whether the CHECK constraint is already in place. SQLite
+    # exposes table-level CHECK constraints via the `sql` column of
+    # sqlite_master. A fresh USERS_SCHEMA create includes the CHECK, so
+    # re-running this migration on a fresh DB is a no-op.
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+    ).fetchone()
+    if row is None:
+        # users table does not exist yet — nothing to migrate. The
+        # USERS_SCHEMA block in this same migration slot will create it
+        # with the CHECK already in place.
+        return
+    create_sql = row["sql"] or ""
+    if "CHECK(role IN" in create_sql.replace("\n", " "):
+        return
+
+    # Rebuild users with the CHECK constraint (table-rebuild pattern,
+    # same approach used by _migrate_v28_cascade_and_reseed).
+    conn.executescript(
+        """
+        CREATE TABLE users_new (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            username      TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role          TEXT NOT NULL DEFAULT 'staff' CHECK(role IN ('admin', 'staff')),
+            active        INTEGER NOT NULL DEFAULT 1,
+            locked_until  TEXT DEFAULT NULL,
+            created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+        );
+
+        INSERT INTO users_new (id, username, password_hash, role, active, locked_until, created_at)
+        SELECT id, username, password_hash, role, active, locked_until, created_at
+        FROM users;
+
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+
+        CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+        CREATE INDEX IF NOT EXISTS idx_users_active ON users(active);
+        """
+    )
+
+
+AUDIT_LOG_SCHEMA = """
+CREATE TABLE IF NOT EXISTS audit_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    username    TEXT NOT NULL DEFAULT '',
+    action      TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id   TEXT,
+    old_value   TEXT,
+    new_value   TEXT,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_username ON audit_log(username);
+CREATE INDEX IF NOT EXISTS idx_audit_log_entity_type ON audit_log(entity_type);
+"""
+
+
+# DG-029 Phase 4: sessions table for active session tracking (FR20/FR21).
+#
+# One row per active login session. Created on successful login (auth.py) and
+# consulted by `baker session list` to show active sessions with IP/device
+# metadata. The ``jti`` column links the session row to the JWT issued at
+# login; force-logout adds that jti to the in-memory denylist checked by
+# AuthMiddleware (FR21). ``revoked_at`` is set when a session is force-logged
+# out so `session list` can omit revoked sessions.
+SESSIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS sessions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    jti             TEXT NOT NULL UNIQUE,
+    username        TEXT NOT NULL,
+    role            TEXT NOT NULL,
+    client_ip       TEXT NOT NULL DEFAULT '',
+    device_model    TEXT NOT NULL DEFAULT '',
+    app_version     TEXT NOT NULL DEFAULT '',
+    os_version      TEXT NOT NULL DEFAULT '',
+    logged_in_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    last_activity   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    revoked_at      TEXT DEFAULT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_username ON sessions(username);
+CREATE INDEX IF NOT EXISTS idx_sessions_jti ON sessions(jti);
+CREATE INDEX IF NOT EXISTS idx_sessions_revoked_at ON sessions(revoked_at);
+"""
+
+
+def _migrate_v72_lowercase_usernames(conn):
+    """Lowercase all existing ``users.username`` values (DG-029 follow-on).
+
+    SQLite ``lower()`` only lowercases ASCII by default, so a pure-SQL
+    ``UPDATE`` would leave Vietnamese diacritics (Â, Ư, Ầ, ...) untouched.
+    Instead this migration reads each row, lowercases the username in Python
+    (str.lower() is Unicode-aware), and per-row UPDATEs the value.
+
+    Defensive collision guard: if two rows would collapse to the same
+    lowercased username (e.g. "An" and "an"), the conflicting pair is
+    skipped + logged. There should be none for the seeded set, but existing
+    DBs may have arbitrary history. We never raise — a migration must not
+    crash the server.
+
+    Idempotent: re-running on a DB where all usernames are already lowercase
+    is a no-op (the UPDATE matches no rows).
+
+    Scope: only ``users.username``. Does NOT touch ``audit_log``,
+    ``sessions``, ``staff``, or any ``logged_by`` / ``completed_by``
+    historical data (per DG-029 follow-on requirements).
+    """
+    import sys
+
+    rows = conn.execute("SELECT id, username FROM users ORDER BY id").fetchall()
+    if not rows:
+        return
+
+    # Pre-collect existing lowercase usernames (already-correct rows) so we
+    # can detect collisions before any UPDATE.
+    existing_lower = {row["username"] for row in rows if row["username"] == row["username"].lower()}
+
+    skipped: list[tuple[str, str]] = []  # (original, would_be)
+    for row in rows:
+        original = row["username"]
+        lowered = original.lower()
+        if lowered == original:
+            continue  # already lowercase
+        if lowered in existing_lower:
+            skipped.append((original, lowered))
+            continue
+        conn.execute(
+            "UPDATE users SET username = ? WHERE id = ?",
+            (lowered, row["id"]),
+        )
+        existing_lower.add(lowered)
+
+    if skipped:
+        print(
+            "DG-029 v72 migration: skipped lowercase-colliding usernames "
+            f"({len(skipped)} pairs): {skipped}",
+            file=sys.stdout,
+        )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -3888,6 +4138,33 @@ MIGRATIONS = {
     67: {
         "description": "Add acknowledged_at column to orders for order acknowledgment tracking — DG-221 Phase 1",
         "sql": "ALTER TABLE orders ADD COLUMN acknowledged_at TEXT DEFAULT NULL;",
+    },
+    68: {
+        "description": "Auth RBAC: users table for JWT authentication + seed existing staff as users — DG-029 Phase 1",
+        "sql": USERS_SCHEMA,
+        "callable": _migrate_v68_users_table,
+    },
+    69: {
+        "description": "Auth RBAC: audit_log table for recording admin write operations — DG-029 Phase 3",
+        "sql": AUDIT_LOG_SCHEMA,
+    },
+    70: {
+        "description": "Auth RBAC: sessions table for active session tracking — DG-029 Phase 4",
+        "sql": SESSIONS_SCHEMA,
+    },
+    71: {
+        "description": "Auth RBAC: DB-level CHECK(role IN ('admin','staff')) on users table — DG-029 phase 5.6-c1 (Mn-3)",
+        # No-op SQL block; the callable does the conditional rebuild. On
+        # fresh DBs USERS_SCHEMA (with the CHECK) is applied by v68's
+        # `CREATE TABLE IF NOT EXISTS`, which is a no-op if the table
+        # already exists, so this migration's callable is the authority.
+        "sql": "",
+        "callable": _migrate_v71_users_role_check,
+    },
+    72: {
+        "description": "Auth RBAC: lowercase existing users.username values — DG-029 follow-on",
+        "sql": "",
+        "callable": _migrate_v72_lowercase_usernames,
     },
 }
 

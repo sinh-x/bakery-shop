@@ -10,6 +10,9 @@ import '../../data/models/catalog_photo.dart';
 import '../../data/models/event.dart';
 import '../../data/api/receipt_service.dart';
 import '../../data/providers/knowledge_provider.dart';
+import '../../features/audit_log/audit_log_screen.dart';
+import '../../features/auth/login_screen.dart';
+import '../../features/auth/auth_provider.dart';
 import '../../features/categories/category_management_screen.dart';
 import '../../features/checklist/checklist_config_screen.dart';
 import '../../features/checklist/checklist_history_screen.dart';
@@ -50,16 +53,102 @@ import '../../features/stock/stock_reconciliation_history_screen.dart';
 import '../../features/products/product_form_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../providers/products_provider.dart';
+import '../widgets/admin_guard.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
-final appRouter = GoRouter(
-  navigatorKey: _rootNavigatorKey,
-  initialLocation: '/orders',
-  routes: [
-    ShellRoute(
+/// Auth-redirect guard (FR14/FR15, AC8/AC9).
+///
+/// - When the auth state is `unauthenticated`, any route other than `/login`
+///   redirects to `/login`.
+/// - When the auth state is `authenticated`, `/login` redirects to `/orders`
+///   (the main shell).
+/// - While the auth state is `unknown` (initial boot, before the notifier has
+///   resolved the stored token) the guard does nothing — the splash/loading
+///   state is owned by the `/login` route's initial frame.
+///
+/// Role-based gating (FR16/AC10/AC11): when authenticated, staff users are
+/// blocked from the admin-only routes listed in [_adminOnlyRoutes]. They are
+/// redirected to the dedicated [_adminAccessRoute] page so deep links do not
+/// silently land on a blank screen. Admin users pass through unaffected.
+String? _authRedirect(GoRouterState state, AuthStatus status, String? role) {
+  final location = state.uri.path;
+  final onLogin = location == '/login';
+  switch (status) {
+    case AuthStatus.authenticated:
+      if (onLogin) return '/orders';
+      if (role != 'admin' && _isAdminOnlyRoute(location)) {
+        return _adminAccessRoute;
+      }
+      return null;
+    case AuthStatus.unauthenticated:
+      return onLogin ? null : '/login';
+    case AuthStatus.unknown:
+      return null;
+  }
+}
+
+/// Admin-only routes (FR16). Staff users are redirected away from these.
+///
+/// NOTE: `/audit-log` is wired to the real filterable audit log screen as of
+/// Phase 8 (FR24/AC20); the route itself was already admin-gated in Phase 7.
+///
+/// DG-029 Phase 5.6 follow-up Item 3 (Sinh-approved 2026-07-14):
+/// `/stock/reconciliation` and `/stock/reconciliation/history` were removed
+/// from this set so STAFF can now reach the reconciliation screen and
+/// submit (backend submit gate was also removed). History is reachable
+/// because the reconciliation screen links to it.
+const Set<String> _adminOnlyRoutes = {
+  '/checklist/config',
+  '/categories/manage',
+  '/audit-log',
+};
+
+/// Match admin-only routes that take path parameters (e.g.
+/// `/stock/reconciliation/history/123`). Prefix match is used for those.
+bool _isAdminOnlyRoute(String location) {
+  if (_adminOnlyRoutes.contains(location)) return true;
+  for (final route in _adminOnlyRoutes) {
+    if (location.startsWith('$route/')) return true;
+  }
+  return false;
+}
+
+const String _adminAccessRoute = '/admin-access';
+
+/// Router provider — listens to [authProvider] so that auth state changes
+/// (login, logout, 401 handling) trigger the redirect guard without needing
+/// a manual `router.refresh()`.
+final appRouterProvider = Provider<GoRouter>((ref) {
+  final authState = ref.watch(authProvider);
+  return GoRouter(
+    navigatorKey: _rootNavigatorKey,
+    initialLocation: '/orders',
+    redirect: (context, state) =>
+        _authRedirect(state, authState.status, authState.role),
+    routes: [
+      // Login — full-screen, outside the shell (FR14/AC8).
+      GoRoute(
+        path: '/login',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const LoginScreen(),
+      ),
+      // Admin access denied — shown when staff hit an admin-only route (FR16).
+      GoRoute(
+        path: _adminAccessRoute,
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const AdminAccessScreen(),
+      ),
+      // Audit log — admin-only (Phase 8 filterable screen; route guard was
+      // set up in Phase 7).
+      GoRoute(
+        path: '/audit-log',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const AuditLogScreen(),
+      ),
+      ShellRoute(
       navigatorKey: _shellNavigatorKey,
       builder: (context, state, child) => _ShellScaffold(child: child),
       routes: [
@@ -388,8 +477,9 @@ final appRouter = GoRouter(
         return _KnowledgeEditLoader(entryId: id);
       },
     ),
-  ],
-);
+    ],
+  );
+});
 
 /// Loads the product from the API before showing the edit form.
 class _ProductEditLoader extends ConsumerWidget {

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/api/api_client.dart';
 import '../../data/models/category.dart';
 import '../../data/models/product.dart';
+import '../../features/auth/auth_provider.dart';
 import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
@@ -133,12 +134,13 @@ class _ProductCatalogScreenState extends ConsumerState<ProductCatalogScreen>
               ),
               AppBarOverflowMenu(
                 onSelected: (value) => _onAppBarMenuSelected(context, value),
-                items: const [
-                  PopupMenuItem<String>(
-                    value: 'manage_categories',
-                    child: Text(VN.openCategoryManagement),
-                  ),
-                  PopupMenuItem<String>(
+                items: [
+                  if (ref.watch(authProvider).isAdmin)
+                    const PopupMenuItem<String>(
+                      value: 'manage_categories',
+                      child: Text(VN.openCategoryManagement),
+                    ),
+                  const PopupMenuItem<String>(
                     value: 'browse_catalog',
                     child: Text(VN.openCatalogBrowse),
                   ),

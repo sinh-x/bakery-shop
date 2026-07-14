@@ -1,7 +1,6 @@
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/api/reconciliation_service.dart';
 import 'package:bakery_app/features/stock/stock_reconciliation_screen.dart';
-import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../auth/login_screen_test_helpers.dart';
 
 class _FakeService extends ReconciliationService {
   _FakeService(this._draft, {this.failDraftTimes = 0}) : super(Dio());
@@ -98,7 +99,11 @@ void main() {
   testWidgets('product card toggles and shows collapsed summary', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
     final prefs = await SharedPreferences.getInstance();
     final service = _FakeService(
       ReconciliationDraft(
@@ -148,7 +153,11 @@ void main() {
   testWidgets(
     'reconciliation list filters out products with expectedQty <= 0',
     (tester) async {
-      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+      SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
       final prefs = await SharedPreferences.getInstance();
       final service = _FakeService(
         ReconciliationDraft(
@@ -195,7 +204,11 @@ void main() {
   testWidgets('add row defaults option unit price and keeps manual edit', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
     final prefs = await SharedPreferences.getInstance();
     final service = _FakeService(
       ReconciliationDraft(
@@ -279,7 +292,11 @@ void main() {
   testWidgets('expanded option header hides chips without initial inventory', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
     final prefs = await SharedPreferences.getInstance();
     final service = _FakeService(
       ReconciliationDraft(
@@ -354,7 +371,11 @@ void main() {
   testWidgets('multi-chip option header excludes same-price no-stock chip', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
     final prefs = await SharedPreferences.getInstance();
     final service = _FakeService(
       ReconciliationDraft(
@@ -415,7 +436,11 @@ void main() {
   testWidgets('sale row hides chip shortcut area when no chips qualify', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
     final prefs = await SharedPreferences.getInstance();
     final service = _FakeService(
       ReconciliationDraft(
@@ -485,7 +510,11 @@ void main() {
   testWidgets(
     'sale row has no ActionChip and manual unit price stays editable',
     (tester) async {
-      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+      SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
       final prefs = await SharedPreferences.getInstance();
       final service = _FakeService(
         ReconciliationDraft(
@@ -595,7 +624,11 @@ void main() {
   testWidgets(
     'no-chip single price inventory renders expanded without option collapse',
     (tester) async {
-      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+      SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
       final prefs = await SharedPreferences.getInstance();
       final service = _FakeService(
         ReconciliationDraft(
@@ -757,7 +790,11 @@ void main() {
   testWidgets('invalid submit review shows issues and blocks final submit', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
     final prefs = await SharedPreferences.getInstance();
     final service = _FakeService(
       ReconciliationDraft(
@@ -840,7 +877,11 @@ void main() {
   testWidgets('missing sale row payment method blocks submit review', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
     final prefs = await SharedPreferences.getInstance();
     final service = _FakeService(
       ReconciliationDraft(
@@ -904,7 +945,11 @@ void main() {
   testWidgets('load failure and empty states show guidance with retry', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
     final prefs = await SharedPreferences.getInstance();
     final service = _FakeService(
       ReconciliationDraft(date: '2026-05-04', products: const []),
@@ -936,7 +981,11 @@ void main() {
   testWidgets('submit success keeps action to open saved history detail', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
     final prefs = await SharedPreferences.getInstance();
     final service = _FakeService(
       ReconciliationDraft(
@@ -984,7 +1033,11 @@ void main() {
   testWidgets(
     'variance indicator updates value, sign, color, and wraps at 360',
     (tester) async {
-      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+      SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
       final prefs = await SharedPreferences.getInstance();
       final service = _FakeService(
         ReconciliationDraft(
@@ -1062,7 +1115,11 @@ void main() {
   testWidgets(
     'auto sales row supports reorder, manual price, and waste-only path',
     (tester) async {
-      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+      SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
       final prefs = await SharedPreferences.getInstance();
       final service = _FakeService(
         ReconciliationDraft(
@@ -1155,7 +1212,11 @@ void main() {
   testWidgets(
     'surplus displays inflow quantity and restock indicator and hides sale/waste editors',
     (tester) async {
-      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+      SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
       final prefs = await SharedPreferences.getInstance();
       final service = _FakeService(
         ReconciliationDraft(
@@ -1229,7 +1290,11 @@ void main() {
   testWidgets(
     'surplus submit review succeeds when counted > expected and no sale/waste',
     (tester) async {
-      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+      SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
       final prefs = await SharedPreferences.getInstance();
       final service = _FakeService(
         ReconciliationDraft(
@@ -1296,7 +1361,11 @@ void main() {
   testWidgets(
     'surplus with leftover sale row blocks submit and shows error',
     (tester) async {
-      SharedPreferences.setMockInitialValues({kLoggedByKey: 'An'});
+      SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
       final prefs = await SharedPreferences.getInstance();
       final service = _FakeService(
         ReconciliationDraft(

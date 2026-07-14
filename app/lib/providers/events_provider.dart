@@ -2,15 +2,26 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/api/api_client.dart';
 import '../data/api/event_service.dart';
 import '../data/mappers/expense_event_mapper.dart';
 import '../data/models/event.dart';
+import '../features/auth/auth_provider.dart';
 import '../shared/utils/date_formatting.dart';
 
 const kLoggedByKey = 'logged_by_name';
 
-/// Provider for the saved staff name (who is logging events).
+/// Provider for the staff member logging events (FR17).
+///
+/// Previously this was a free-text field the user typed in the Settings
+/// screen. As of DG-029 Phase 6 it derives from the authenticated identity
+/// in the JWT token: when the user is logged in, `loggedByProvider` returns
+/// the JWT `sub` claim (the username). When unauthenticated it returns an
+/// empty string — preserving the pre-auth behavior so the app still functions
+/// during the `AUTH_REQUIRED=false` grace period (NFR6).
+///
+/// The old `setName` API is retained as a no-op so existing call sites
+/// (`ref.read(loggedByProvider.notifier).setName(...)`) compile without
+/// changes; the value is now read-only and sourced from [authProvider].
 final loggedByProvider = NotifierProvider<LoggedByNotifier, String>(
   LoggedByNotifier.new,
 );
@@ -18,15 +29,14 @@ final loggedByProvider = NotifierProvider<LoggedByNotifier, String>(
 class LoggedByNotifier extends Notifier<String> {
   @override
   String build() {
-    final prefs = ref.watch(sharedPreferencesProvider);
-    return prefs.getString(kLoggedByKey) ?? '';
+    final auth = ref.watch(authProvider);
+    return auth.username ?? '';
   }
 
-  Future<void> setName(String name) async {
-    final prefs = ref.read(sharedPreferencesProvider);
-    await prefs.setString(kLoggedByKey, name);
-    state = name;
-  }
+  /// Deprecated no-op (FR17). The logger identity is now sourced from the
+  /// authenticated JWT and cannot be set manually. Retained for source
+  /// compatibility with existing call sites.
+  Future<void> setName(String name) async {}
 }
 
 class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {

@@ -229,6 +229,11 @@ class VN {
   static const apiError = 'Không thể kết nối máy chủ';
   static const apiTimeout = 'Kết nối máy chủ quá thời gian, vui lòng thử lại';
 
+  // RBAC / UI gating
+  static const accessDeniedTitle = 'Không có quyền truy cập';
+  static const accessDeniedBody =
+      'Chỉ quản trị viên mới được sử dụng tính năng này.';
+
   // Category management
   static const manageCategories = 'Quản lý danh mục';
   static const addCategory = 'Thêm danh mục';
@@ -265,6 +270,7 @@ class VN {
   static const openStockReconciliationHistory = 'Lịch sử đối soát tồn kho';
   static const openCategoryManagement = 'Quản lý danh mục';
   static const openCatalogBrowse = 'Duyệt ảnh mẫu';
+  static const openAuditLog = 'Nhật ký thay đổi';
   static const switchToKanbanView = 'Dạng Kanban';
   static const switchToListView = 'Dạng danh sách';
   static const apiUrlLabel = 'Địa chỉ máy chủ';

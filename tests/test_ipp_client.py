@@ -32,6 +32,7 @@ from baker.ipp_client import (
 
 def _free_port():
     sock = socket.socket()
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
     sock.close()
@@ -94,12 +95,36 @@ class MockIppHandler(http.server.BaseHTTPRequestHandler):
 
 
 def _start_server(handler_class=None, **kwargs):
-    port = _free_port()
-    server = http.server.HTTPServer(("127.0.0.1", port), handler_class or MockIppHandler)
+    # Retry bind on OSError to tolerate ephemeral-port races with other
+    # pytest-xdist workers (DG-029 Post-UAT Item 1). _free_port() closes the
+    # probe socket before the server re-binds, leaving a small window where
+    # another worker can grab the port; retrying picks a fresh port.
+    handler = handler_class or MockIppHandler
+
+    class _Server(http.server.HTTPServer):
+        allow_reuse_address = True
+
+    for _ in range(10):
+        port = _free_port()
+        try:
+            server = _Server(("127.0.0.1", port), handler)
+            break
+        except OSError:
+            continue
+    else:
+        raise RuntimeError("could not bind a free port after 10 attempts")
     for k, v in kwargs.items():
         setattr(server, k, v)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    # Wait until the server socket is actually accepting connections so the
+    # client does not race ahead of the listener under xdist parallel load.
+    for _ in range(50):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+                break
+        except OSError:
+            time.sleep(0.02)
     return server, port, thread
 
 
@@ -156,7 +181,10 @@ class TestBuildIppPrintJobRequest:
     def test_tspl_bytes_after_end_tag(self):
         tspl = b"TSPL_COMMANDS_HERE"
         req = _build_ipp_print_job_request(tspl, "http://lily:631/printers/Y41BT")
-        end_tag = req.index(bytes([TAG_END_OF_ATTRS]))
+        # Use rindex: the request_id field (bytes 4-7) may contain 0x03 (e.g.
+        # request_id=3), which would make index() match too early. The
+        # end-of-attributes tag is the last 0x03 before the TSPL payload.
+        end_tag = req.rindex(bytes([TAG_END_OF_ATTRS]))
         assert req[end_tag + 1 :] == tspl
 
     def test_document_format_is_octet_stream(self):
@@ -420,7 +448,9 @@ class TestIppClientIntegration:
             def do_POST(self):
                 content_length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(content_length)
-                end_idx = body.index(bytes([TAG_END_OF_ATTRS]))
+                # Use rindex: the request_id field (bytes 4-7) may contain 0x03
+                # (e.g. request_id=3), which would make index() match too early.
+                end_idx = body.rindex(bytes([TAG_END_OF_ATTRS]))
                 tspl_received.append(body[end_idx + 1 :])
                 self.send_response(200)
                 self.end_headers()

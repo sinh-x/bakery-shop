@@ -29,6 +29,10 @@ LOG_DIR: Path
 BUILD_FINGERPRINT: str
 PRINT_IPP_URL: str | None
 TIMEZONE: ZoneInfo
+JWT_SECRET: str
+JWT_SECRET_EPHEMERAL: bool
+AUTH_REQUIRED: bool
+BCRYPT_ROUNDS: int
 
 
 def _load_from(path: Path) -> dict:
@@ -44,7 +48,7 @@ def reload(config_path: Path | str | None = None) -> None:
     Falls back to DEFAULT_CONFIG_PATH, then built-in defaults.
     Called automatically on first import; call again with a path to switch configs.
     """
-    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT, LOG_LEVEL, LOG_DIR, BUILD_FINGERPRINT, PRINT_IPP_URL, TIMEZONE
+    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT, LOG_LEVEL, LOG_DIR, BUILD_FINGERPRINT, PRINT_IPP_URL, TIMEZONE, JWT_SECRET, JWT_SECRET_EPHEMERAL, AUTH_REQUIRED, BCRYPT_ROUNDS
 
     path = Path(config_path).expanduser() if config_path else DEFAULT_CONFIG_PATH
     cfg = _load_from(path)
@@ -66,6 +70,40 @@ def reload(config_path: Path | str | None = None) -> None:
         TIMEZONE = ZoneInfo(tz_name)
     except ZoneInfoNotFoundError:
         TIMEZONE = ZoneInfo("Asia/Ho_Chi_Minh")
+
+    # JWT secret for auth tokens (DG-029 Phase 1). Minimum 256-bit random key
+    # loaded from BAKER_JWT_SECRET. Falls back to an auto-generated key with a
+    # warning when unset — grace period behavior (NFR5).
+    import logging
+
+    _logger = logging.getLogger("baker.config")
+    JWT_SECRET = os.environ.get("BAKER_JWT_SECRET") or ""
+    JWT_SECRET_EPHEMERAL = False
+    if not JWT_SECRET:
+        import secrets
+
+        JWT_SECRET = secrets.token_urlsafe(32)
+        JWT_SECRET_EPHEMERAL = True
+        _logger.warning(
+            "BAKER_JWT_SECRET not set — generated an ephemeral secret. "
+            "Tokens will be invalidated on server restart. Set BAKER_JWT_SECRET "
+            "in the environment for production use."
+        )
+
+    AUTH_REQUIRED = (
+        os.environ.get("BAKER_AUTH_REQUIRED", "false").strip().lower() in ("1", "true", "yes", "on")
+    )
+
+    # bcrypt work factor for password hashing (NFR4: production default 12).
+    # Override via BAKER_BCRYPT_ROUNDS for TEST environments only — lowering this
+    # in production weakens password security and violates NFR4. Tests set this
+    # to a low value (4) via conftest to keep the suite fast under CI's 10-min cap.
+    try:
+        BCRYPT_ROUNDS = int(os.environ.get("BAKER_BCRYPT_ROUNDS", "12"))
+    except ValueError:
+        BCRYPT_ROUNDS = 12
+    if BCRYPT_ROUNDS < 4:
+        BCRYPT_ROUNDS = 12
 
 
 # Load defaults on import

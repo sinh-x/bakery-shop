@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../data/models/category.dart';
 import '../../../data/models/product.dart';
+import '../../../features/auth/auth_provider.dart';
 import '../../../providers/categories_provider.dart';
 import '../../../providers/products_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
@@ -166,6 +167,7 @@ class _PosScreenState extends ConsumerState<PosScreen>
   Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(categoriesProvider);
     final productsAsync = ref.watch(productsProvider);
+    final isAdmin = ref.watch(authProvider).isAdmin;
 
     return Scaffold(
       appBar: AppBar(
@@ -178,20 +180,25 @@ class _PosScreenState extends ConsumerState<PosScreen>
           ),
           AppBarOverflowMenu(
             onSelected: _onPosAppBarMenuSelected,
-            items: const [
-              PopupMenuItem<String>(
-                value: 'stock_reconciliation',
-                child: Text(VN.openStockReconciliation),
-              ),
-              PopupMenuItem<String>(
-                value: 'stock_reconciliation_history',
-                child: Text(VN.openStockReconciliationHistory),
-              ),
-              PopupMenuItem<String>(
+            items: [
+              if (isAdmin)
+                const PopupMenuItem<String>(
+                  value: 'stock_reconciliation',
+                  child: Text(VN.openStockReconciliation),
+                ),
+              if (isAdmin)
+                const PopupMenuItem<String>(
+                  value: 'stock_reconciliation_history',
+                  child: Text(VN.openStockReconciliationHistory),
+                ),
+              const PopupMenuItem<String>(
                 value: 'orders_history',
                 child: Text(VN.openOrderHistory),
               ),
-              PopupMenuItem<String>(value: 'stock', child: Text(VN.openStock)),
+              const PopupMenuItem<String>(
+                value: 'stock',
+                child: Text(VN.openStock),
+              ),
             ],
           ),
         ],

@@ -3,9 +3,10 @@
 import logging
 from datetime import date
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from baker.api.auth import resolve_actor
 from baker.api.inventory_fifo import (
     available_quantity,
     consume_fifo_items,
@@ -334,6 +335,7 @@ def _create_sale_orders(
     payload: ReconciliationSubmitIn,
     session_id: int,
     latest_by_key: dict[tuple[int, int | None], dict],
+    actor: str,
 ) -> list[list[dict]]:
     orders_by_line: list[list[dict]] = []
 
@@ -376,7 +378,7 @@ def _create_sale_orders(
                 status="new",
                 source="reconciliation",
                 notes=f"Đối soát phiên #{session_id}",
-                created_by=payload.staff_name.strip(),
+                created_by=actor,
             )
             order.calculate_total()
             order.save(conn)
@@ -566,7 +568,15 @@ def get_reconciliation_draft():
 
 
 @router.post("/submit", status_code=201)
-def submit_reconciliation(payload: ReconciliationSubmitIn):
+def submit_reconciliation(payload: ReconciliationSubmitIn, request: Request):
+    # DG-029 Phase 5.6 follow-up Item 3 (Sinh-approved 2026-07-14):
+    # STAFF role may now submit reconciliations — admin-only gate removed.
+    # The AuthMiddleware still enforces JWT authentication (AUTH_REQUIRED=true),
+    # so an authenticated identity (admin or staff) is required to submit.
+    # AC14/FR17: derive the recording actor from the authenticated JWT
+    # identity rather than trusting free-text client input. Grace period
+    # (AUTH_REQUIRED=false) falls back to payload.staff_name.
+    staff_name = resolve_actor(request, payload.staff_name.strip()) or payload.staff_name.strip()
     with get_db() as conn:
         _validate_submit(payload)
 
@@ -606,7 +616,7 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
                VALUES (?, ?, ?, ?, ?)""",
             (
                 date.today().isoformat(),
-                payload.staff_name.strip(),
+                staff_name,
                 (payload.payment_method or "").strip(),
                 (payload.waste_reason or "").strip(),
                 now_utc(),
@@ -619,6 +629,7 @@ def submit_reconciliation(payload: ReconciliationSubmitIn):
             payload,
             session_id,
             latest_by_key,
+            staff_name,
         )
 
         waste_movement_ids_by_option: dict[tuple[int, int | None], int] = {}
