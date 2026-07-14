@@ -36,7 +36,7 @@ def _reset_auth():
     _reset_auth_state()
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def use_memory_db(tmp_path, monkeypatch):
     """Use a temp file DB for each test and isolated photos dir."""
     db_path = str(tmp_path / "test.db")
