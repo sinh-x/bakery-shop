@@ -1,6 +1,10 @@
 import 'package:bakery_app/data/api/api_client.dart';
+import 'package:bakery_app/data/api/category_service.dart';
+import 'package:bakery_app/data/api/reconciliation_service.dart';
+import 'package:bakery_app/data/models/category.dart';
 import 'package:bakery_app/shared/router/app_router.dart';
 import 'package:bakery_app/shared/widgets/admin_guard.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +12,49 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/auth/login_screen_test_helpers.dart';
+
+/// Fake reconciliation service so the reconciliation/history screens do not
+/// fire real network calls during router gating tests (DG-029 Phase 5.6
+/// follow-up Item 3 — staff can now reach these routes).
+class _FakeReconciliationService extends ReconciliationService {
+  _FakeReconciliationService() : super(Dio());
+
+  @override
+  Future<ReconciliationDraft> getDraft() async {
+    return ReconciliationDraft(date: '2026-07-14', products: const []);
+  }
+
+  @override
+  Future<List<ReconciliationHistorySession>> getHistorySessions() async {
+    return const [];
+  }
+
+  @override
+  Future<ReconciliationHistoryDetail> getHistoryDetail(int sessionId) async {
+    return ReconciliationHistoryDetail(
+      id: sessionId,
+      reconciliationDate: '2026-07-14',
+      staffName: 'An',
+      paymentMethod: 'cash',
+      wasteReason: '',
+      linkedOrderRef: null,
+      linkedPaymentRef: null,
+      createdAt: '2026-07-14T10:00:00Z',
+      lines: const [],
+    );
+  }
+}
+
+/// Fake category service so the reconciliation screen's
+/// `categoriesProvider` watch does not fire a real network call.
+class _FakeCategoryService extends CategoryService {
+  _FakeCategoryService() : super(Dio());
+
+  @override
+  Future<List<Category>> listCategories({bool includeInactive = false}) async {
+    return const [];
+  }
+}
 
 /// Helper to build a ProviderContainer seeded with the given role.
 ProviderContainer _container(SharedPreferences prefs, {String role = 'staff'}) {
@@ -21,7 +68,11 @@ ProviderContainer _container(SharedPreferences prefs, {String role = 'staff'}) {
   prefs.setString('auth_username', role == 'admin' ? 'Sinh' : 'An');
   prefs.setString('auth_role', role);
   final container = ProviderContainer(
-    overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    overrides: [
+      sharedPreferencesProvider.overrideWithValue(prefs),
+      reconciliationServiceProvider.overrideWithValue(_FakeReconciliationService()),
+      categoryServiceProvider.overrideWithValue(_FakeCategoryService()),
+    ],
   );
   addTearDown(container.dispose);
   return container;
@@ -107,7 +158,7 @@ void main() {
     });
 
     testWidgets(
-        'staff is redirected from /stock/reconciliation to /admin-access',
+        'staff can reach /stock/reconciliation (not redirected, DG-029 5.6 Item 3)',
         (tester) async {
       final container = _container(prefs, role: 'staff');
       await tester.pumpWidget(buildApp(container));
@@ -115,7 +166,7 @@ void main() {
       final ctx = tester.element(find.byType(Navigator).first);
       GoRouter.of(ctx).go('/stock/reconciliation');
       await tester.pumpAndSettle();
-      expect(find.text(VNForTest.accessDeniedTitle), findsWidgets);
+      expect(find.text(VNForTest.accessDeniedTitle), findsNothing);
     });
 
     testWidgets('staff is redirected from /audit-log to /admin-access',
@@ -129,7 +180,8 @@ void main() {
       expect(find.text(VNForTest.accessDeniedTitle), findsWidgets);
     });
 
-    testWidgets('staff is redirected from /stock/reconciliation/history/:id',
+    testWidgets(
+        'staff can reach /stock/reconciliation/history/:id (not redirected, DG-029 5.6 Item 3)',
         (tester) async {
       final container = _container(prefs, role: 'staff');
       await tester.pumpWidget(buildApp(container));
@@ -137,7 +189,7 @@ void main() {
       final ctx = tester.element(find.byType(Navigator).first);
       GoRouter.of(ctx).go('/stock/reconciliation/history/123');
       await tester.pumpAndSettle();
-      expect(find.text(VNForTest.accessDeniedTitle), findsWidgets);
+      expect(find.text(VNForTest.accessDeniedTitle), findsNothing);
     });
 
     testWidgets('admin can reach /checklist/config (not redirected)',

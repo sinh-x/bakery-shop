@@ -313,6 +313,31 @@ def test_reconciliation_submit_authenticated_uses_jwt_username(auth_client):
     assert session["staff_name"] == "reconadmin"
 
 
+def test_reconciliation_submit_staff_role_uses_jwt_username(auth_client):
+    """DG-029 Phase 5.6 follow-up Item 3 (Sinh-approved 2026-07-14):
+    STAFF role may now submit reconciliations (admin gate removed). The
+    JWT-derived actor (AC14/FR17) still applies — staff_name = JWT sub."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 5)
+        token = _seed_user(conn, "reconstaff", "staff")
+
+    resp = auth_client.post(
+        "/api/reconciliations/submit",
+        json=_reconciliation_payload(staff_name="Imposter"),
+        headers=_auth_headers(token),
+    )
+    assert resp.status_code == 201, resp.text
+    session_id = resp.json()["id"]
+
+    with get_db() as conn:
+        session = conn.execute(
+            "SELECT staff_name FROM reconciliation_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+    assert session["staff_name"] == "reconstaff"
+
+
 def test_reconciliation_submit_grace_period_falls_back_to_staff_name(anon_client):
     """NFR6: AUTH_REQUIRED=false + no token → client-provided staff_name is used."""
     with get_db() as conn:

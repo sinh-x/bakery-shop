@@ -135,8 +135,13 @@ def test_staff_cannot_create_checklist_template_returns_403(auth_client):
     assert resp.status_code == 403
 
 
-def test_staff_cannot_submit_reconciliation_returns_403(auth_client):
-    """FR4: staff blocked from reconciliation submit."""
+def test_staff_can_submit_reconciliation_not_blocked_by_role(auth_client):
+    """DG-029 Phase 5.6 follow-up Item 3 (Sinh-approved 2026-07-14):
+    STAFF role may now submit reconciliations — the admin-only gate was
+    removed. Auth still required (AUTH_REQUIRED=true), so an unauthenticated
+    request still 401s. With a valid staff JWT the request reaches the
+    validation layer (422 for empty lines) instead of being rejected 403.
+    """
     with get_db() as conn:
         staff_token = _seed_user(conn, "staffuser", "staff")
 
@@ -145,8 +150,13 @@ def test_staff_cannot_submit_reconciliation_returns_403(auth_client):
         json={"staff_name": "staffuser", "lines": []},
         headers=_auth_headers(staff_token),
     )
-    # 403 must take precedence over 422 validation
-    assert resp.status_code == 403
+    # Auth passes (no 403); empty-lines validation returns 422.
+    assert resp.status_code != 403, (
+        f"staff should not be blocked from reconciliation submit; got 403: {resp.text}"
+    )
+    assert resp.status_code == 422, (
+        f"expected 422 validation for empty lines, got {resp.status_code}: {resp.text}"
+    )
 
 
 # ---------------------------------------------------------------------------

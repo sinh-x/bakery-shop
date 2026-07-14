@@ -94,11 +94,15 @@ String? _authRedirect(GoRouterState state, AuthStatus status, String? role) {
 ///
 /// NOTE: `/audit-log` is wired to the real filterable audit log screen as of
 /// Phase 8 (FR24/AC20); the route itself was already admin-gated in Phase 7.
+///
+/// DG-029 Phase 5.6 follow-up Item 3 (Sinh-approved 2026-07-14):
+/// `/stock/reconciliation` and `/stock/reconciliation/history` were removed
+/// from this set so STAFF can now reach the reconciliation screen and
+/// submit (backend submit gate was also removed). History is reachable
+/// because the reconciliation screen links to it.
 const Set<String> _adminOnlyRoutes = {
   '/checklist/config',
   '/categories/manage',
-  '/stock/reconciliation',
-  '/stock/reconciliation/history',
   '/audit-log',
 };
 

@@ -77,7 +77,7 @@ Source: `src/baker/api/middleware.py` (`AuthMiddleware`).
 
 Source: `src/baker/api/auth.py` (`RequireRole`).
 
-`RequireRole("admin")` is a FastAPI dependency that inspects `request.state.auth_role` and raises `403` when the role doesn't match. Applied to **write** endpoints across 9 routers:
+`RequireRole("admin")` is a FastAPI dependency that inspects `request.state.auth_role` and raises `403` when the role doesn't match. Applied to **write** endpoints across 8 routers:
 
 | Router | Gated writes |
 |--------|--------------|
@@ -88,12 +88,14 @@ Source: `src/baker/api/auth.py` (`RequireRole`).
 | `product_price_chips.py` | price-chip writes |
 | `product_attributes.py` | attribute writes |
 | `product_attribute_options.py` | attribute-option writes |
-| `reconciliations.py` | stock reconciliation writes — **PENDING CHANGE:** `POST /submit` to be opened to staff (Sinh-approved 2026-07-14, see §11 Item 3); currently still admin-only on the branch |
 | `audit_log.py` | `GET /api/audit-log` (admin-only read) |
 
-GET endpoints on these routers remain **staff-accessible**. Staff have full access to daily operational endpoints (orders, events, knowledge, photos, catalog, cake_queue, receipts, printing, stock reads, daily checklist, health).
+> [!NOTE] **Approved deviation (Sinh, 2026-07-14)** — DG-029 Phase 5.6 follow-up Item 3
+> `POST /api/reconciliations/submit` is **no longer admin-only**. The `RequireRole("admin")` dependency was removed so STAFF can submit stock reconciliations. The `AuthMiddleware` still requires a valid JWT (`AUTH_REQUIRED=true`), so the submit remains authenticated. The submitting actor is still captured via `resolve_actor` (AC14/FR17 — JWT `sub` wins over client-supplied `staff_name`). `draft`/`history` reads were already staff-accessible and are unchanged. This deviates from the 2026-07-04 requirements doc FR4/FR16 (which listed reconciliation as staff-blocked / admin-only). See §11 Item 3.
 
-**What staff can still do (not gated):** take/manage orders, log events, complete the **daily checklist** (`POST /api/checklist/daily/{id}/toggle` is intentionally *not* role-gated), run POS, print receipts/labels, view catalog & product/category/config reads, and read stock/reconciliation history. Only *structural* changes (catalog/config/template mutations, submitting reconciliations) and the audit log are admin-only. In short: staff run the day-to-day; admin controls configuration and sees the audit trail.
+GET endpoints on these routers remain **staff-accessible**. Staff have full access to daily operational endpoints (orders, events, knowledge, photos, catalog, cake_queue, receipts, printing, stock reads, daily checklist, health, **and stock reconciliation submit + screen**).
+
+**What staff can still do (not gated):** take/manage orders, log events, complete the **daily checklist** (`POST /api/checklist/daily/{id}/toggle` is intentionally *not* role-gated), run POS, print receipts/labels, view catalog & product/category/config reads, read stock/reconciliation history, **and submit stock reconciliations**. Only *structural* changes (catalog/config/template mutations) and the audit log are admin-only. In short: staff run the day-to-day (including reconciliation); admin controls configuration and sees the audit trail.
 
 Grace-period nuance: when `AUTH_REQUIRED=false` and no token is present, `RequireRole` returns the actor as `"anonymous"` (not an empty string) so audit rows remain attributable.
 
@@ -203,7 +205,7 @@ baker session logout-all
 | `app/lib/features/audit_log/` | Admin-only audit log screen (filter panel: user/date/entity-type; paginated "load more") |
 | `app/lib/providers/events_provider.dart` | `loggedByProvider` replaced with authenticated identity (FR17) |
 
-Admin-only screens hidden from staff: Settings technical tab, Checklist Config, Category Management, Stock Reconciliation, Audit Log.
+Admin-only screens hidden from staff: Settings technical tab, Checklist Config, Category Management, Audit Log. **Stock Reconciliation is no longer admin-only** (DG-029 Phase 5.6 Item 3, Sinh-approved 2026-07-14) — staff can now reach and submit reconciliations.
 
 ---
 
@@ -311,12 +313,12 @@ Full orchestration record: `agent-teams/builder/artifacts/2026-07-13-dg029-baker
 
 ### CHANGE 3 — Allow staff to submit Stock Reconciliation (Sinh-approved 2026-07-14)
 
-Approved policy change that **deviates from the 2026-07-04 requirements** (FR4/FR16 list reconciliation as admin-only). Scope confirmed with Sinh: **Backend + Flutter UI** (open `submit` + screen access to staff; do NOT blanket-open all future reconciliation writes).
+Approved policy change that **deviates from the 2026-07-04 requirements** (FR4/FR16 list reconciliation as admin-only). Scope confirmed with Sinh: **Backend + Flutter UI** (open `submit` + screen access to staff; do NOT blanket-open all future reconciliation writes). **Status: IMPLEMENTED (DG-029 Phase 5.6 follow-up Item 3).**
 
-- **Backend:** remove `RequireRole("admin")` from `POST /api/reconciliations/submit` (`src/baker/api/reconciliations.py:570`) so staff can submit. Keep `draft`/`history` reads unchanged. Decide whether to still capture the submitting actor / record an audit entry.
-- **Flutter:** un-gate the Stock Reconciliation screen for staff — remove `'/stock/reconciliation'` from `_adminOnlyRoutes` in `app/lib/shared/router/app_router.dart:100` and drop any `AdminOnly` wrapper on the reconciliation entry so staff can navigate to and use it.
-- **Docs/requirements:** update the requirements doc FR4/FR16 (reconciliation no longer admin-only) as an approved deviation; §2.4 table above already flags this as pending.
-- **Tests:** backend — staff JWT can `POST /submit` (200) under `AUTH_REQUIRED=true`; Flutter — widget test that staff can reach the reconciliation route.
+- **Backend:** removed `RequireRole("admin")` from `POST /api/reconciliations/submit` (`src/baker/api/reconciliations.py`) so staff can submit. `draft`/`history` reads left unchanged. The submitting actor is still captured via `resolve_actor` (AC14/FR17 — JWT `sub` wins over client-supplied `staff_name`), preserving the audit trace.
+- **Flutter:** un-gated the Stock Reconciliation screen for staff — removed `'/stock/reconciliation'` and `'/stock/reconciliation/history'` from `_adminOnlyRoutes` in `app/lib/shared/router/app_router.dart`. No `AdminOnly` wrapper was present on the reconciliation entry, so none needed removal.
+- **Docs/requirements:** §2.4 table above updated (reconciliation row removed from the admin-gated table; note added). Admin-only screens list updated.
+- **Tests:** backend — `tests/test_rbac.py` updated: `test_staff_cannot_submit_reconciliation_returns_403` replaced with `test_staff_can_submit_reconciliation_not_blocked_by_role` (asserts no 403; 422 for empty lines) plus `test_staff_submit_reconciliation_records_staff_name_from_jwt` (verifies JWT-derived actor). Flutter — `app/test/shared/router/ui_gating_test.dart` updated: staff no longer redirected from `/stock/reconciliation` or `/stock/reconciliation/history/:id`.
 
 ### Resume instructions for the next orchestration
 
