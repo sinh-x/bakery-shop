@@ -34,6 +34,7 @@ from baker.db.schema import (
     TIEN_RUT_HELD_CODE,
     _account_id_by_code,
     _baseline_cost_for_product,
+    _ensure_ap_vendor_sub_account,
     _ensure_staff_payable_sub_account,
     _insert_journal_entry,
 )
@@ -239,10 +240,14 @@ def _build_expense_journal_lines(
         return None
 
     if is_debt:
-        # FR3 (DG-212): debt expenses credit Accounts Payable (2500) instead
-        # of an asset account. The vendor field serves as creditor identifier
-        # but does not create a per-creditor sub-account in this phase.
-        payment_account_id = _account_id_by_code(conn, ACCOUNTS_PAYABLE_CODE)
+        # FR3 (DG-245 Phase 3): debt expenses credit a per-vendor sub-account
+        # under Accounts Payable (2500) — not the 2500 parent. The vendor
+        # field is the creditor identifier (FR2) and resolves to a single
+        # sub-account via _ensure_ap_vendor_sub_account (MAX-based 25xx code).
+        vendor_name = (data.get("vendor") or "").strip()
+        if not vendor_name:
+            return None
+        payment_account_id = _ensure_ap_vendor_sub_account(conn, vendor_name)
     elif payment_source == STAFF_ADVANCE_PAYMENT_SOURCE:
         staff_name = (data.get("paid_by_name") or "").strip()
         if not staff_name:

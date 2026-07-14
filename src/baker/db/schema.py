@@ -1688,6 +1688,58 @@ def _ensure_staff_payable_sub_account(conn, staff_name: str) -> int:
     return int(cursor.lastrowid)
 
 
+def _ensure_ap_vendor_sub_account(conn, vendor_name: str) -> int:
+    """Create (or return) a per-vendor sub-account under Accounts Payable (2500).
+
+    Mirrors :func:`_ensure_staff_payable_sub_account` but uses a MAX-based
+    25XX code derivation instead of COUNT-based indexing. MAX-based avoids
+    collision risk when sub-accounts are deleted and re-created: a COUNT-based
+    counter would reuse the freed index and could clash with stale references,
+    whereas MAX-based only ever moves forward (DG-245 Phase 3, FR2).
+
+    The parent is the 2500 Accounts Payable account seeded by the v73
+    migration (Phase 2). The sub-account name is the vendor's name, so the
+    vendor → sub-account resolution is a single source of truth.
+    """
+    parent_row = conn.execute(
+        "SELECT id FROM accounts WHERE code = ?", (ACCOUNTS_PAYABLE_CODE,)
+    ).fetchone()
+    if parent_row is None:
+        raise RuntimeError(
+            "Accounts Payable parent account (2500) missing; "
+            "run v73 migration or seed COA first"
+        )
+    parent_id = int(parent_row[0])
+
+    existing = conn.execute(
+        "SELECT id FROM accounts WHERE parent_id = ? AND name = ?",
+        (parent_id, vendor_name),
+    ).fetchone()
+    if existing:
+        return int(existing[0])
+
+    # MAX-based code derivation: scan existing 25xx child codes and pick
+    # MAX+1. Start at 2501 so the first vendor sub-account does not collide
+    # with the parent 2500 code itself.
+    max_row = conn.execute(
+        "SELECT code FROM accounts "
+        "WHERE parent_id = ? AND code GLOB '25[0-9][0-9]' "
+        "ORDER BY code DESC LIMIT 1",
+        (parent_id,),
+    ).fetchone()
+    if max_row is None:
+        next_num = 2501
+    else:
+        next_num = int(max_row[0]) + 1
+    code = f"{next_num}"
+    cursor = conn.execute(
+        "INSERT INTO accounts (code, name, type, parent_id) "
+        "VALUES (?, ?, 'liability', ?)",
+        (code, vendor_name, parent_id),
+    )
+    return int(cursor.lastrowid)
+
+
 def _account_id_by_code(conn, code: str) -> int:
     row = conn.execute(
         "SELECT id FROM accounts WHERE code = ?", (code,)
