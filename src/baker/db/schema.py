@@ -1642,13 +1642,15 @@ def _seed_chart_of_accounts(conn) -> None:
             "VALUES (?, ?, ?, ?)",
             (code, name, acc_type, parent_id),
         )
-        if cursor.lastrowid:
-            code_to_id[code] = int(cursor.lastrowid)
-        else:
-            row = conn.execute(
-                "SELECT id FROM accounts WHERE code = ?", (code,)
-            ).fetchone()
-            code_to_id[code] = int(row[0])
+        # NOTE: ``cursor.lastrowid`` is NOT a reliable "did we insert?" flag.
+        # On an ignored INSERT OR IGNORE, sqlite3 returns the lastrowid of the
+        # most recent successful INSERT on this connection (stale), not 0. So
+        # always resolve the actual row id by code — this is correct whether
+        # the row was just inserted or already existed (DG-245 Phase 2).
+        row = conn.execute(
+            "SELECT id FROM accounts WHERE code = ?", (code,)
+        ).fetchone()
+        code_to_id[code] = int(row[0])
 
 
 def _ensure_staff_payable_sub_account(conn, staff_name: str) -> int:
@@ -3820,6 +3822,17 @@ def _migrate_v72_lowercase_usernames(conn):
         )
 
 
+def _migrate_v73_add_account_2500(conn):
+    """Ensure account 2500 (Phải trả người bán / Accounts Payable) exists in chart of accounts.
+
+    DG-245 Phase 2 (migration v73). This mirrors ``_migrate_v54_add_account_2400``:
+    it calls the existing ``_seed_chart_of_accounts()`` which uses
+    ``INSERT OR IGNORE`` for every account, so re-running v73 on an
+    already-migrated DB is a no-op (idempotent by design).
+    """
+    _seed_chart_of_accounts(conn)
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -4165,6 +4178,11 @@ MIGRATIONS = {
         "description": "Auth RBAC: lowercase existing users.username values — DG-029 follow-on",
         "sql": "",
         "callable": _migrate_v72_lowercase_usernames,
+    },
+    73: {
+        "description": "Chart of accounts: ensure account 2500 (Accounts Payable) exists — DG-245 Phase 2",
+        "sql": "",
+        "callable": _migrate_v73_add_account_2500,
     },
 }
 
