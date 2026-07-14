@@ -10,6 +10,7 @@ Accounting failures must never block the primary business operation: callers
 wrap each ``_sync_*`` call in try/except with ``logger.exception``.
 """
 
+import json
 import logging
 import traceback
 from typing import Any, Callable, Optional
@@ -342,19 +343,32 @@ def _sync_expense_journal(
 
 
 def _build_debt_settlement_journal_lines(
-    conn, event_summary: str, amount: float, payment_source: str
+    conn, event_summary: str, amount: float, payment_source: str,
+    vendor_name: str = "",
 ) -> Optional[tuple[str, list[tuple[int, float, float, str]]]]:
-    """Build (description, lines) for a debt settlement journal entry (FR4).
+    """Build (description, lines) for a debt settlement journal entry (FR4/FR5).
 
-    Settlement journals DR Accounts Payable (2500) and CR the asset account
-    chosen by ``payment_source`` (FR4). When ``payment_source`` is the staff
-    advance source, the credit goes to a per-staff sub-account under 2300 —
-    but settlements do not currently carry ``paid_by_name``, so the staff
-    advance path is unsupported and the function returns None.
+    Settlement journals DR the vendor's per-vendor 25xx sub-account under
+    Accounts Payable (2500) and CR the asset account chosen by
+    ``payment_source`` (FR4). FR5 (DG-245 Phase 4): the debit must hit the
+    *same* per-vendor sub-account that the originating debt expense credited,
+    so a full settlement nets that sub-account to zero. The sub-account is
+    resolved via the single-source-of-truth ``_ensure_ap_vendor_sub_account``
+    helper (Phase 3).
+
+    When ``vendor_name`` is empty, fall back to the 2500 parent account
+    (preserves backwards compatibility for any legacy settlements that lack a
+    vendor). When ``payment_source`` is the staff advance source, the credit
+    would go to a per-staff sub-account under 2300 — but settlements do not
+    currently carry ``paid_by_name``, so the staff advance path is unsupported
+    and the function returns None.
     """
     if amount <= 0:
         return None
-    ap_account_id = _account_id_by_code(conn, ACCOUNTS_PAYABLE_CODE)
+    if vendor_name and vendor_name.strip():
+        ap_account_id = _ensure_ap_vendor_sub_account(conn, vendor_name.strip())
+    else:
+        ap_account_id = _account_id_by_code(conn, ACCOUNTS_PAYABLE_CODE)
     account_code = EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE.get(payment_source)
     if not account_code:
         return None
@@ -384,6 +398,12 @@ def _sync_debt_settlement_journal(
     ``source_type='expense_settlement'`` and ``source_id=settlement_id`` so
     multiple partial settlements can coexist on the same expense event. On
     delete, unlocked entries are removed and locked entries are reversed.
+
+    FR5 (DG-245 Phase 4): the vendor is resolved from the originating expense
+    event's ``data`` JSON (``event.data["vendor"]``) and passed to
+    :func:`_build_debt_settlement_journal_lines` so the settlement debits the
+    same per-vendor 25xx sub-account the expense credited. A full settlement
+    nets that sub-account to zero.
     """
     existing_id = _find_journal_entry(conn, "expense_settlement", settlement_id)
 
@@ -396,8 +416,23 @@ def _sync_debt_settlement_journal(
             _delete_journal_entry_cascade(conn, existing_id)
         return
 
+    # FR5: resolve the vendor from the originating expense event so the
+    # settlement debits the same per-vendor 25xx sub-account.
+    vendor_name = ""
+    event_row = conn.execute(
+        "SELECT data, timestamp FROM events WHERE id = ?", (event_id,)
+    ).fetchone()
+    transaction_date = None
+    if event_row:
+        transaction_date = event_row["timestamp"] if "timestamp" in event_row.keys() else None
+        try:
+            event_data = json.loads(event_row["data"]) if event_row["data"] else {}
+        except (ValueError, TypeError):
+            event_data = {}
+        vendor_name = (event_data.get("vendor") or "").strip() if isinstance(event_data, dict) else ""
+
     built = _build_debt_settlement_journal_lines(
-        conn, event_summary, amount, payment_source
+        conn, event_summary, amount, payment_source, vendor_name=vendor_name
     )
     if built is None:
         if existing_id is not None and not _is_locked(conn, existing_id):
@@ -407,10 +442,9 @@ def _sync_debt_settlement_journal(
 
     # The settlement's business date is the event's timestamp (the debt was
     # incurred on the event date; settlement records the cash outflow).
-    event_row = conn.execute(
-        "SELECT timestamp FROM events WHERE id = ?", (event_id,)
-    ).fetchone()
-    transaction_date = event_row["timestamp"] if event_row else None
+    # `transaction_date` is already resolved from `event_row` above.
+    if event_row is None:
+        transaction_date = None
 
     if existing_id is None:
         _insert_journal_entry(
