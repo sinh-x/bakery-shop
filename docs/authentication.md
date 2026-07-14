@@ -88,10 +88,12 @@ Source: `src/baker/api/auth.py` (`RequireRole`).
 | `product_price_chips.py` | price-chip writes |
 | `product_attributes.py` | attribute writes |
 | `product_attribute_options.py` | attribute-option writes |
-| `reconciliations.py` | stock reconciliation writes |
+| `reconciliations.py` | stock reconciliation writes — **PENDING CHANGE:** `POST /submit` to be opened to staff (Sinh-approved 2026-07-14, see §11 Item 3); currently still admin-only on the branch |
 | `audit_log.py` | `GET /api/audit-log` (admin-only read) |
 
 GET endpoints on these routers remain **staff-accessible**. Staff have full access to daily operational endpoints (orders, events, knowledge, photos, catalog, cake_queue, receipts, printing, stock reads, daily checklist, health).
+
+**What staff can still do (not gated):** take/manage orders, log events, complete the **daily checklist** (`POST /api/checklist/daily/{id}/toggle` is intentionally *not* role-gated), run POS, print receipts/labels, view catalog & product/category/config reads, and read stock/reconciliation history. Only *structural* changes (catalog/config/template mutations, submitting reconciliations) and the audit log are admin-only. In short: staff run the day-to-day; admin controls configuration and sees the audit trail.
 
 Grace-period nuance: when `AUTH_REQUIRED=false` and no token is present, `RequireRole` returns the actor as `"anonymous"` (not an empty string) so audit rows remain attributable.
 
@@ -277,3 +279,49 @@ Two automated review cycles were run against the branch:
 - **Cycle 2** (`2026-07-14-review-bakery-auth-rbac-rereview.md`): found SEC-1 (a `BAKER_SEED_QUIET` indentation bug introduced by the cycle-1 fix) — resolved; final re-review clean (0 findings).
 
 Full orchestration record: `agent-teams/builder/artifacts/2026-07-13-dg029-bakery-auth-rbac-orchestration-report.md`.
+
+---
+
+## 11. Outstanding Work — Merge Blockers (DG-029 NOT yet merged)
+
+> As of 2026-07-14, PR #102 is **OPEN and NOT merged**. Two blockers must be resolved by a follow-up orchestration before merge/close. The ticket remains in `review-uat`.
+
+### BLOCKER 1 — CI `python-tests` job times out (required check FAILING)
+
+- **Symptom:** CI job `python-tests` (`.github/workflows/ci.yml`) fails on every run; `##[error]The action 'Run tests' has timed out after 10 minutes` — only ~20% of the suite executes. PR mergeStateStatus = `UNSTABLE`.
+- **Root cause:** DG-029 added ~215 auth tests (`test_auth.py` 22, `test_rbac.py` 21, `test_user_session_cli.py` 35, `test_audit_log_api.py` 19, `test_db_schema.py` 118) that exercise **bcrypt cost factor 12** (deliberately slow, NFR4). Combined with the existing suite this exceeds the CI step's `timeout-minutes: 10` cap. `flutter-checks` and `docker-build` jobs pass.
+- **Fix options (pick per maintainer guidance):**
+  1. **Speed up bcrypt in tests** — use a low cost factor (e.g. 4) under a test env flag/fixture while keeping cost 12 in production config. Cleanest; large runtime win. Ensure it does not weaken any production path or the NFR4 assertion tests.
+  2. **Parallelize** — add `pytest-xdist` and run `pytest tests -n auto` in CI.
+  3. **Raise the cap** — bump `timeout-minutes` (least preferred; masks the slowdown and CI stays slow).
+- **Verification:** the `python-tests` check must go green on PR #102's head commit; do not merge on a red required check.
+- **Guardrail:** whatever the fix, `python -m ruff check src tests --select E9,F63,F7,F82` must still pass and the auth behavior (bcrypt-12 in prod, JWT, RBAC) must be unchanged.
+
+### BLOCKER 2 — AC14 / FR17 not implemented for the checklist flow
+
+- **AC14 (unchecked in requirements):** "Given a staff user completes a checklist item, when the entry is saved, then `completed_by` contains the authenticated username (not a free-text name)."
+- **Current state:**
+  - Backend `POST /api/checklist/daily/{entry_id}/toggle` (`src/baker/api/checklist.py:215`) stores `body.staff_name` (free-text) into `completed_by`.
+  - Flutter `checklist_screen.dart:54` still reads the legacy `loggedByProvider` and passes it as `staffName`.
+- **FR17 blast radius (still on legacy `loggedByProvider`):** checklist, plus `event_log_form.dart` (events), `reconciliation_notifier.dart` (reconciliation), and `settings_screen.dart` (the "select staff name" setting). FR17 intended to replace `loggedByProvider` with the authenticated JWT identity everywhere `logged_by`/`completed_by`/`printed_by` is written.
+- **Fix approach:**
+  1. Backend: derive `completed_by` from the authenticated identity (`request.state.auth_username`) rather than trusting the client-supplied `staff_name`. When `AUTH_REQUIRED=false` (grace period), fall back to the provided name so current clients keep working.
+  2. Flutter: replace `loggedByProvider` reads with the authenticated username from `authProvider` (from the JWT `sub` claim) for checklist toggle, event logging, reconciliation, and printing. Keep a sensible grace-period fallback.
+  3. Tests: add a backend test asserting `completed_by` = JWT `sub` when `AUTH_REQUIRED=true`; add/adjust Flutter widget tests. Mark AC14 `[x]` in the requirements doc when verified.
+- **Scope note:** because FR17 spans events + reconciliation too, the follow-up orchestration should confirm with Sinh whether to complete FR17 fully or scope the fix to the checklist AC14 only.
+
+### CHANGE 3 — Allow staff to submit Stock Reconciliation (Sinh-approved 2026-07-14)
+
+Approved policy change that **deviates from the 2026-07-04 requirements** (FR4/FR16 list reconciliation as admin-only). Scope confirmed with Sinh: **Backend + Flutter UI** (open `submit` + screen access to staff; do NOT blanket-open all future reconciliation writes).
+
+- **Backend:** remove `RequireRole("admin")` from `POST /api/reconciliations/submit` (`src/baker/api/reconciliations.py:570`) so staff can submit. Keep `draft`/`history` reads unchanged. Decide whether to still capture the submitting actor / record an audit entry.
+- **Flutter:** un-gate the Stock Reconciliation screen for staff — remove `'/stock/reconciliation'` from `_adminOnlyRoutes` in `app/lib/shared/router/app_router.dart:100` and drop any `AdminOnly` wrapper on the reconciliation entry so staff can navigate to and use it.
+- **Docs/requirements:** update the requirements doc FR4/FR16 (reconciliation no longer admin-only) as an approved deviation; §2.4 table above already flags this as pending.
+- **Tests:** backend — staff JWT can `POST /submit` (200) under `AUTH_REQUIRED=true`; Flutter — widget test that staff can reach the reconciliation route.
+
+### Resume instructions for the next orchestration
+
+1. Launch the builder orchestrator against ticket **DG-029** (it will detect the existing orchestration doc-ref and resume). Branch: `feature/DG-029-bakery-auth-rbac`.
+2. The orchestration report `## Resume Hint` and `## Post-UAT Follow-up` block enumerate the 3 work items (2 blockers + 1 approved policy change).
+3. Run `builder/implement` fix deploys for: (a) CI-speed fix, (b) AC14/FR17 implementation, (c) staff reconciliation access. Then re-review (Phase 5.5/5.6) and re-run CI.
+4. Only advance to merge (routine mode) once the `python-tests` check is green AND AC14 is verified/checked AND the staff-reconciliation change is in. Then merge PR #102 into `develop` and close DG-029.
