@@ -29,13 +29,16 @@ from passlib.context import CryptContext
 from rich.console import Console
 from rich.table import Table
 
+from baker.config import BCRYPT_ROUNDS
 from baker.db.connection import get_db
 
 console = Console()
 
-# bcrypt password hashing context (NFR4: cost factor 12). Kept in sync with
-# the auth module and v68 migration seeding.
-_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+# bcrypt password hashing context (NFR4: cost factor 12 in prod). Kept in sync
+# with the auth module and v68 migration seeding. BCRYPT_ROUNDS defaults to 12
+# in production; tests override it via BAKER_BCRYPT_ROUNDS (DG-029 Post-UAT
+# Follow-up Item 1).
+_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=BCRYPT_ROUNDS)
 
 _VALID_ROLES = ("admin", "staff")
 

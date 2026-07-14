@@ -3611,7 +3611,9 @@ def _migrate_v68_users_table(conn):
 
     from passlib.context import CryptContext
 
-    _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+    from baker.config import BCRYPT_ROUNDS
+
+    _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=BCRYPT_ROUNDS)
 
     inserted: list[tuple[str, str, str]] = []  # (username, role, plain_password)
 

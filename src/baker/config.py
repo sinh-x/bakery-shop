@@ -32,6 +32,7 @@ TIMEZONE: ZoneInfo
 JWT_SECRET: str
 JWT_SECRET_EPHEMERAL: bool
 AUTH_REQUIRED: bool
+BCRYPT_ROUNDS: int
 
 
 def _load_from(path: Path) -> dict:
@@ -47,7 +48,7 @@ def reload(config_path: Path | str | None = None) -> None:
     Falls back to DEFAULT_CONFIG_PATH, then built-in defaults.
     Called automatically on first import; call again with a path to switch configs.
     """
-    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT, LOG_LEVEL, LOG_DIR, BUILD_FINGERPRINT, PRINT_IPP_URL, TIMEZONE, JWT_SECRET, JWT_SECRET_EPHEMERAL, AUTH_REQUIRED
+    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT, LOG_LEVEL, LOG_DIR, BUILD_FINGERPRINT, PRINT_IPP_URL, TIMEZONE, JWT_SECRET, JWT_SECRET_EPHEMERAL, AUTH_REQUIRED, BCRYPT_ROUNDS
 
     path = Path(config_path).expanduser() if config_path else DEFAULT_CONFIG_PATH
     cfg = _load_from(path)
@@ -92,6 +93,17 @@ def reload(config_path: Path | str | None = None) -> None:
     AUTH_REQUIRED = (
         os.environ.get("BAKER_AUTH_REQUIRED", "false").strip().lower() in ("1", "true", "yes", "on")
     )
+
+    # bcrypt work factor for password hashing (NFR4: production default 12).
+    # Override via BAKER_BCRYPT_ROUNDS for TEST environments only — lowering this
+    # in production weakens password security and violates NFR4. Tests set this
+    # to a low value (4) via conftest to keep the suite fast under CI's 10-min cap.
+    try:
+        BCRYPT_ROUNDS = int(os.environ.get("BAKER_BCRYPT_ROUNDS", "12"))
+    except ValueError:
+        BCRYPT_ROUNDS = 12
+    if BCRYPT_ROUNDS < 4:
+        BCRYPT_ROUNDS = 12
 
 
 # Load defaults on import

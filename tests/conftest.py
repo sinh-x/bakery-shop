@@ -3,6 +3,14 @@ from pathlib import Path
 
 import pytest
 
+# DG-029 Post-UAT Follow-up Item 1: lower bcrypt work factor in TEST only so the
+# full backend suite completes well under CI's 10-min timeout-minutes cap.
+# Production default stays 12 (NFR4) — this override is set before importing
+# baker so baker.config.reload() picks it up on first import. Must be set at
+# module top (not in a fixture) because the CryptContext instances in auth.py,
+# commands/user.py, and db/schema.py read BCRYPT_ROUNDS at import time.
+os.environ.setdefault("BAKER_BCRYPT_ROUNDS", "4")
+
 
 @pytest.fixture(autouse=True)
 def use_memory_db(tmp_path, monkeypatch):

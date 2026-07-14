@@ -22,14 +22,18 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install -e ".[dev,web]" ruff
+        run: pip install -e ".[dev,web]" ruff pytest-xdist
 
       - name: Lint (Ruff minimal)
         run: python -m ruff check src tests --select E9,F63,F7,F82
 
       - name: Run tests
         timeout-minutes: 10
-        run: python -m pytest tests -v
+        env:
+          # Lower bcrypt work factor in TEST only so the full suite completes
+          # well under the 10-min cap. Production default stays 12 (NFR4).
+          BAKER_BCRYPT_ROUNDS: "4"
+        run: python -m pytest tests -v -n auto
 
   flutter-checks:
     # Runs when Flutter app changes

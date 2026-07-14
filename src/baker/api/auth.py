@@ -27,14 +27,16 @@ from fastapi import APIRouter, HTTPException, Request
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
-from baker.config import AUTH_REQUIRED, JWT_SECRET
+from baker.config import AUTH_REQUIRED, BCRYPT_ROUNDS, JWT_SECRET
 from baker.db.connection import get_db
 from baker.utils.time import now_utc
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# bcrypt password hashing context (NFR4: cost factor 12).
-_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+# bcrypt password hashing context (NFR4: cost factor 12 by default in prod).
+# BCRYPT_ROUNDS defaults to 12 in production; tests override it via
+# BAKER_BCRYPT_ROUNDS to keep the suite fast (DG-029 Post-UAT Follow-up Item 1).
+_pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=BCRYPT_ROUNDS)
 
 # JWT token expiry: 7 days from issuance (NFR2). No refresh mechanism.
 _JWT_EXPIRY_SECONDS = 7 * 24 * 60 * 60
