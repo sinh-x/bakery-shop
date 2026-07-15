@@ -86,6 +86,7 @@ from baker.db.schema import (
     ORDER_REVENUE_CODE,
     STAFF_PAYABLES_CODE,
     TIEN_RUT_HELD_CODE,
+    _baseline_cost_for_product,
 )
 from baker.utils.time import now_utc
 
@@ -467,8 +468,20 @@ def _check_source_completeness(conn) -> dict[str, Any]:
 
 def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
     """Flag order_cogs journal entries whose debit does not match
-    SUM(resolved_cost × quantity) using the canonical cost resolution order:
-    product.cost → cost_history → baseline.
+    SUM(resolved_cost × quantity) using the snapshot-first cost resolution
+    order, mirroring ``_compute_order_cogs_total`` in journal_sync.py:
+
+    - When ``cost_at_sale > 0`` the snapshotted value is used as-is so that
+      cost_history edits after delivery do not produce false-positive
+      mismatches (historical cost snapshots stay authoritative).
+    - When ``cost_at_sale`` is 0/NULL the cost is recomputed via
+      :func:`resolve_product_cost` using ``unit_price`` as the baseline
+      anchor. Unresolvable ``product_id`` values fall back to
+      :func:`_baseline_cost_for_product` with ``price_override=unit_price``
+      — exact parity with journal_sync.py:1341-1345.
+
+    The validator performs no writes: ``cost_at_sale`` is read but never
+    updated (read-only guarantee, FR5/NFR1).
     """
     from baker.services.cost_resolver import resolve_product_cost
 
@@ -496,7 +509,8 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
 
         items = conn.execute(
             """
-            SELECT oi.product_id, oi.product_name, oi.quantity, oi.unit_price
+            SELECT oi.product_id, oi.product_name, oi.quantity, oi.unit_price,
+                   oi.cost_at_sale
             FROM order_items oi
             WHERE oi.order_id = ?
               AND oi.is_extra = 0
@@ -507,26 +521,41 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
 
         expected = 0.0
         for i in items:
-            pid_str = i["product_id"]
-            if pid_str is None:
-                continue
-            try:
-                pid = int(pid_str)
-            except (TypeError, ValueError):
-                prod_row = conn.execute(
-                    "SELECT id FROM products WHERE product_code = ?", (pid_str,)
-                ).fetchone()
-                if prod_row is None:
-                    unit_price = i["unit_price"]
-                    if unit_price is not None:
-                        expected += round(float(unit_price) * 0.3, 2) * int(i["quantity"] or 0)
-                    continue
-                pid = int(prod_row["id"])
-            unit_price = i["unit_price"]
-            selling_price = float(unit_price) if unit_price is not None else None
-            cost = resolve_product_cost(conn, pid, selling_price=selling_price)
             qty = int(i["quantity"] or 0)
-            expected += cost * qty
+            if qty <= 0:
+                continue
+            cost_at_sale = float(i["cost_at_sale"] or 0)
+            if cost_at_sale == 0:
+                pid_str = i["product_id"]
+                pid: int | None = None
+                if pid_str is not None:
+                    try:
+                        pid = int(pid_str)
+                    except (TypeError, ValueError):
+                        pid = None
+                    if pid is None:
+                        prod_row = conn.execute(
+                            "SELECT id FROM products WHERE product_code = ?",
+                            (pid_str,),
+                        ).fetchone()
+                        if prod_row is not None:
+                            pid = int(prod_row["id"])
+                unit_price = i["unit_price"]
+                selling_price = float(unit_price) if unit_price is not None else None
+                if pid is None:
+                    anchor = selling_price if (selling_price and selling_price > 0) else 0.0
+                    if anchor > 0:
+                        cost_at_sale = _baseline_cost_for_product(
+                            "", 0.0, price_override=anchor
+                        )
+                    else:
+                        cost_at_sale = 0.0
+                else:
+                    cost_at_sale = resolve_product_cost(
+                        conn, pid, selling_price=selling_price
+                    )
+            if cost_at_sale > 0:
+                expected += cost_at_sale * qty
 
         if abs(actual - expected) > DEBIT_CREDIT_TOLERANCE:
             findings.append({
