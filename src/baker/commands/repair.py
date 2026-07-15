@@ -46,7 +46,6 @@ from baker.db.connection import get_db
 from baker.db.schema import (
     ACCOUNTS_PAYABLE_CODE,
     CUSTOMER_DEPOSITS_CODE,
-    EXPENSE_CATEGORY_TO_ACCOUNT_CODE,
     EXPENSE_DEBT_PAYMENT_METHOD,
     EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
     INVENTORY_PURCHASE_CATEGORIES,
@@ -62,6 +61,7 @@ from baker.services.journal_sync import (
     STAFF_ADVANCE_PAYMENT_SOURCE,
     _compute_order_cogs_total,
     _delete_journal_entry_cascade,
+    _is_expense_journallable,
     _is_locked,
     _order_cogs_entry,
     _reconcile_order_revenue_entry,
@@ -1913,21 +1913,15 @@ def _expected_expense_credit(conn, data: dict, *, dry_run: bool = False):
     category = data.get("category")
     payment_source = data.get("payment_source")
     payment_method = data.get("payment_method", "")
-    if not isinstance(amount, (int, float)) or amount <= 0:
-        return None, None
-    if not isinstance(category, str) or not category:
-        return None, None
-    is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
-    if not is_debt and (not isinstance(payment_source, str) or not payment_source):
+    # Mirror the ``_build_expense_journal_lines`` skip predicate via the shared
+    # ``_is_expense_journallable`` helper (CQ-5): events that produce no JE at
+    # build time must not be flagged as missing/stale here, or repair would
+    # re-flag the same unmapped-category event forever (non-idempotent) and
+    # create phantom vendor sub-accounts during detection (CQ-3/CQ-4).
+    if not _is_expense_journallable(data):
         return None, None
 
-    # Mirror the ``_build_expense_journal_lines`` category-map skip (CQ-3):
-    # unmapped categories produce no JE at build time, so detection must not
-    # flag them as missing/stale. Without this guard repair would re-flag the
-    # same unmapped-category event forever (non-idempotent) and create phantom
-    # vendor sub-accounts during detection.
-    if not EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category):
-        return None, None
+    is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
 
     if is_debt:
         vendor_name = (data.get("vendor") or "").strip()

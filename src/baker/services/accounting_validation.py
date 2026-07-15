@@ -89,6 +89,8 @@ from baker.db.schema import (
 )
 from baker.utils.time import now_utc
 
+from baker.services.journal_sync import _is_expense_journallable
+
 # Tolerance for double-entry imbalance. Sub-cent rounding from REAL storage
 # and per-line float arithmetic is expected; only imbalances above this
 # threshold are reported as integrity violations.
@@ -1384,33 +1386,13 @@ def _source_sum_expense(conn):
         if not isinstance(data, dict):
             continue
         amount = data.get("amount_vnd")
-        category = data.get("category")
-        payment_source = data.get("payment_source")
-        payment_method = data.get("payment_method", "")
-        if not isinstance(amount, (int, float)) or amount <= 0:
+        # Mirror the ``_build_expense_journal_lines`` skip predicate via the
+        # shared ``_is_expense_journallable`` helper (CQ-5): events that produce
+        # no JE at build time must be excluded from the source SUM, or the
+        # source_ledger_totals check reports a phantom delta for events that
+        # are by-design unjournalled.
+        if not _is_expense_journallable(data):
             continue
-        if not isinstance(category, str) or not category:
-            continue
-        # Mirror the ``_build_expense_journal_lines`` category-map skip (CQ-3):
-        # unmapped categories produce no JE at build time, so the source-side
-        # SUM must exclude them too — otherwise the source_ledger_totals check
-        # reports a phantom delta for events that are by-design unjournalled.
-        if not EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category):
-            continue
-        is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
-        if not is_debt and (not isinstance(payment_source, str) or not payment_source):
-            continue
-        # Also mirror the debt/staff-advance vendor/staff-name requirements —
-        # events missing them are skipped at build time and produce no JE.
-        if is_debt:
-            if not (data.get("vendor") or "").strip():
-                continue
-        elif payment_source == _STAFF_ADVANCE_PAYMENT_SOURCE:
-            if not (data.get("paid_by_name") or "").strip():
-                continue
-        else:
-            if payment_source not in EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE:
-                continue
         total += float(amount)
         source_ids.append(int(r["event_id"]))
     return total, source_ids
@@ -1891,6 +1873,11 @@ _SOURCE_LEDGER_CLASSES = [
 def _check_source_ledger_totals(conn) -> dict[str, Any]:
     """Per-class lump-sum source vs journal reconciliation (DG-245 Phase 5,
     FR8/AC6).
+
+    Note: This module (accounting_validation.py) exceeds the recommended file
+    size and is tracked for future extraction under DG-138 (see
+    docs/code-quality-audit.md). The structural split is deferred to DG-138;
+    no file-size changes are made in this iteration (CQ-6).
 
     For each event class, sums the source-side amount (events/payment
     transactions/stock movements) and the matching journal-side amount, then

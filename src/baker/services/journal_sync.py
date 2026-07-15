@@ -216,6 +216,55 @@ def _update_journal_entry_in_place(
     )
 
 
+def _is_expense_journallable(data: dict) -> bool:
+    """Return True iff an expense event should produce a journal entry.
+
+    Encodes the build-time skip predicate shared by three call sites that must
+    agree on which expense events are by-design journalled:
+
+      - ``_build_expense_journal_lines`` (journal_sync) — the create path.
+      - ``_source_sum_expense`` (accounting_validation) — the source-ledger
+        SUM must exclude events that produce no JE, or it reports a phantom
+        delta (CQ-3).
+      - ``_expected_expense_credit`` (repair) — detection must not flag
+        unjournalled events as missing/stale, or repair becomes
+        non-idempotent and creates phantom vendor sub-accounts (CQ-3/CQ-4).
+
+    An event is journallable iff it has a positive numeric ``amount_vnd``, a
+    non-empty ``category`` mapped by ``EXPENSE_CATEGORY_TO_ACCOUNT_CODE``, a
+    resolvable payment configuration (``payment_method`` debt, or a
+    ``payment_source`` in the asset map), and — for debt / staff-advance
+    events — a non-empty ``vendor`` / ``paid_by_name`` respectively.
+
+    This predicate performs no I/O and mutates nothing; callers retain the
+    branch-specific resolution (sub-account creation, account-id lookup) after
+    it returns True (CQ-5).
+    """
+    amount = data.get("amount_vnd")
+    category = data.get("category")
+    payment_source = data.get("payment_source")
+    payment_method = data.get("payment_method", "")
+    if not isinstance(amount, (int, float)) or amount <= 0:
+        return False
+    if not isinstance(category, str) or not category:
+        return False
+    if not EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category):
+        return False
+    is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
+    if not is_debt and (not isinstance(payment_source, str) or not payment_source):
+        return False
+    if is_debt:
+        if not (data.get("vendor") or "").strip():
+            return False
+    elif payment_source == STAFF_ADVANCE_PAYMENT_SOURCE:
+        if not (data.get("paid_by_name") or "").strip():
+            return False
+    else:
+        if payment_source not in EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE:
+            return False
+    return True
+
+
 def _build_expense_journal_lines(
     conn, data: dict[str, Any], summary: str
 ) -> Optional[tuple[str, list[tuple[int, float, float, str]]]]:
@@ -227,18 +276,11 @@ def _build_expense_journal_lines(
     category = data.get("category")
     payment_source = data.get("payment_source")
     payment_method = data.get("payment_method", "")
-    if not isinstance(amount, (int, float)) or amount <= 0:
-        return None
-    if not isinstance(category, str) or not category:
+    if not _is_expense_journallable(data):
         return None
 
     is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
-    if not is_debt and (not isinstance(payment_source, str) or not payment_source):
-        return None
-
     expense_code = EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category)
-    if not expense_code:
-        return None
 
     if is_debt:
         # FR3 (DG-245 Phase 3): debt expenses credit a per-vendor sub-account
