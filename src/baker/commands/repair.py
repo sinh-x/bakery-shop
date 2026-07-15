@@ -46,6 +46,7 @@ from baker.db.connection import get_db
 from baker.db.schema import (
     ACCOUNTS_PAYABLE_CODE,
     CUSTOMER_DEPOSITS_CODE,
+    EXPENSE_CATEGORY_TO_ACCOUNT_CODE,
     EXPENSE_DEBT_PAYMENT_METHOD,
     EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
     INVENTORY_PURCHASE_CATEGORIES,
@@ -1890,7 +1891,7 @@ def _expense_credit_account(conn, entry_id: int):
     )
 
 
-def _expected_expense_credit(conn, data: dict):
+def _expected_expense_credit(conn, data: dict, *, dry_run: bool = False):
     """Resolve the expected credit account id for an expense event.
 
     Mirrors the credit-account resolution in ``_build_expense_journal_lines``
@@ -1899,6 +1900,14 @@ def _expected_expense_credit(conn, data: dict):
     account. Returns ``(account_id, kind)`` where ``kind`` is one of
     ``'debt'``, ``'staff'``, ``'cash'``, or ``None`` when the expense data is
     incomplete/unsupported (by-design unjournalled).
+
+    When ``dry_run`` is True the resolution is read-only: a missing per-vendor
+    or per-staff sub-account is *not* created (CQ-4). In that case the function
+    returns ``(None, kind)`` — the event is still flagged as a repair candidate
+    (its JE is missing or stale), but no INSERT is issued against ``accounts``
+    during detection. The mutating ``_ensure_*`` helpers are only called in
+    apply mode (``dry_run=False``), where the subsequent ``conn.commit()`` is
+    expected.
     """
     amount = data.get("amount_vnd")
     category = data.get("category")
@@ -1911,15 +1920,42 @@ def _expected_expense_credit(conn, data: dict):
     is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
     if not is_debt and (not isinstance(payment_source, str) or not payment_source):
         return None, None
+
+    # Mirror the ``_build_expense_journal_lines`` category-map skip (CQ-3):
+    # unmapped categories produce no JE at build time, so detection must not
+    # flag them as missing/stale. Without this guard repair would re-flag the
+    # same unmapped-category event forever (non-idempotent) and create phantom
+    # vendor sub-accounts during detection.
+    if not EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category):
+        return None, None
+
     if is_debt:
         vendor_name = (data.get("vendor") or "").strip()
         if not vendor_name:
             return None, None
+        if dry_run:
+            # Read-only lookup: do not create the sub-account during detection.
+            row = conn.execute(
+                "SELECT a.id FROM accounts a "
+                "JOIN accounts p ON p.id = a.parent_id "
+                "WHERE p.code = ? AND a.name = ?",
+                (ACCOUNTS_PAYABLE_CODE, vendor_name),
+            ).fetchone()
+            return (int(row[0]) if row else None), "debt"
         return _ensure_ap_vendor_sub_account(conn, vendor_name), "debt"
     if payment_source == STAFF_ADVANCE_PAYMENT_SOURCE:
         staff_name = (data.get("paid_by_name") or "").strip()
         if not staff_name:
             return None, None
+        if dry_run:
+            from baker.db.schema import STAFF_PAYABLES_CODE
+            row = conn.execute(
+                "SELECT a.id FROM accounts a "
+                "JOIN accounts p ON p.id = a.parent_id "
+                "WHERE p.code = ? AND a.name = ?",
+                (STAFF_PAYABLES_CODE, staff_name),
+            ).fetchone()
+            return (int(row[0]) if row else None), "staff"
         from baker.db.schema import _ensure_staff_payable_sub_account
         return _ensure_staff_payable_sub_account(conn, staff_name), "staff"
     account_code = EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE.get(payment_source)
@@ -1928,7 +1964,7 @@ def _expected_expense_credit(conn, data: dict):
     return _account_id_by_code(conn, account_code), "cash"
 
 
-def _expense_events_needing_debt_repair(conn, event_id=None):
+def _expense_events_needing_debt_repair(conn, event_id=None, *, dry_run: bool = False):
     """Find debt/expense events whose journal entry is missing or stale.
 
     Mirrors the detection logic of ``_check_expense_payment_account_mismatch``
@@ -1945,6 +1981,11 @@ def _expense_events_needing_debt_repair(conn, event_id=None):
     Returns a list of dicts: ``{id, summary, data, action_kind}`` where
     ``action_kind`` is ``'create'`` or ``'fix'``. Reversal entries are
     excluded.
+
+    When ``dry_run`` is True the per-vendor/per-staff sub-account resolution
+    is read-only (CQ-4): a missing sub-account does not trigger an INSERT
+    against ``accounts``. Such events are still reported as ``'create'``
+    candidates (the JE is missing), but no vendor sub-account is persisted.
     """
     sql = """
         SELECT e.id, e.summary, e.data
@@ -1968,8 +2009,10 @@ def _expense_events_needing_debt_repair(conn, event_id=None):
         if not isinstance(data, dict):
             continue
 
-        expected_id, _kind = _expected_expense_credit(conn, data)
-        if expected_id is None:
+        expected_id, kind = _expected_expense_credit(conn, data, dry_run=dry_run)
+        # kind is None → by-design unjournalled (unmapped category, missing
+        # vendor/staff name, etc.); never a repair candidate.
+        if kind is None:
             continue
 
         entry_id = _expense_journal_entry_id(conn, int(r["id"]))
@@ -2103,9 +2146,11 @@ def repair_debt_expenses_cmd(event_id, repair_all, dry_run):
     try:
         with get_db() as conn:
             if repair_all:
-                events = _expense_events_needing_debt_repair(conn)
+                events = _expense_events_needing_debt_repair(conn, dry_run=dry_run)
             else:
-                events = _expense_events_needing_debt_repair(conn, event_id=event_id)
+                events = _expense_events_needing_debt_repair(
+                    conn, event_id=event_id, dry_run=dry_run,
+                )
 
             results = []
             for e in events:

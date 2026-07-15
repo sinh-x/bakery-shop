@@ -1,4 +1,5 @@
 import os
+import sqlite3
 from typing import Optional
 
 from baker.utils.time import now_utc
@@ -1718,26 +1719,51 @@ def _ensure_ap_vendor_sub_account(conn, vendor_name: str) -> int:
     if existing:
         return int(existing[0])
 
-    # MAX-based code derivation: scan existing 25xx child codes and pick
-    # MAX+1. Start at 2501 so the first vendor sub-account does not collide
-    # with the parent 2500 code itself.
+    # MAX-based code derivation: scan existing vendor sub-account codes under
+    # the 2500 parent and pick MAX+1. The GLOB patterns match both the legacy
+    # 4-digit ``25[0-9][0-9]`` range (2501..2599, vendors 1-99) and the expanded
+    # 5-digit ``25[0-9][0-9][0-9]`` range (25001..25999, vendors 100-999), so the
+    # prior overflow at vendor #99 (2599 → 2600, escaping the 25xx namespace and
+    # tripping the accounts.code UNIQUE constraint) is avoided without
+    # disturbing existing 4-digit sub-accounts (CQ-2). Start at 2501 so the
+    # first vendor sub-account does not collide with the parent 2500 code.
     max_row = conn.execute(
         "SELECT code FROM accounts "
-        "WHERE parent_id = ? AND code GLOB '25[0-9][0-9]' "
-        "ORDER BY code DESC LIMIT 1",
+        "WHERE parent_id = ? "
+        "  AND (code GLOB '25[0-9][0-9]' OR code GLOB '25[0-9][0-9][0-9]') "
+        "ORDER BY CAST(code AS INTEGER) DESC LIMIT 1",
         (parent_id,),
     ).fetchone()
     if max_row is None:
         next_num = 2501
     else:
         next_num = int(max_row[0]) + 1
+    # Guard against the 4-digit overflow (CQ-2): when the max code is a 4-digit
+    # 25xx value (2501..2599) and incrementing it would leave the 25-prefixed
+    # namespace (2600+), roll to the 5-digit range so the new code stays under
+    # the 2500 parent's 25xxx namespace (25001..25999). This preserves existing
+    # 4-digit sub-accounts while accommodating up to 999 vendors total.
+    if next_num >= 2600 and next_num < 25001:
+        next_num = 25001
     code = f"{next_num}"
-    cursor = conn.execute(
-        "INSERT INTO accounts (code, name, type, parent_id) "
-        "VALUES (?, ?, 'liability', ?)",
-        (code, vendor_name, parent_id),
-    )
-    return int(cursor.lastrowid)
+    try:
+        cursor = conn.execute(
+            "INSERT INTO accounts (code, name, type, parent_id) "
+            "VALUES (?, ?, 'liability', ?)",
+            (code, vendor_name, parent_id),
+        )
+        return int(cursor.lastrowid)
+    except sqlite3.IntegrityError:
+        # A concurrent insert may have created the same-name sub-account
+        # between our existence check and the INSERT. Re-fetch rather than
+        # swallow the error — silently losing the JE is the CQ-2 failure mode.
+        existing = conn.execute(
+            "SELECT id FROM accounts WHERE parent_id = ? AND name = ?",
+            (parent_id, vendor_name),
+        ).fetchone()
+        if existing:
+            return int(existing[0])
+        raise
 
 
 def _account_id_by_code(conn, code: str) -> int:

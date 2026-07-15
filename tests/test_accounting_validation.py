@@ -1438,3 +1438,91 @@ def test_transaction_date_empty_when_not_set():
         ).fetchone()
     # transaction_date may be NULL or empty string.
     assert row["transaction_date"] is None or row["transaction_date"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Review-remediation verification (d-045718, DG-245 review d-b1fbbc)
+# CQ-1: source_ledger_totals expense_settlement delta = 0 for debt settlement
+# CQ-3: unmapped-category expense produces no source_ledger_totals delta
+# ---------------------------------------------------------------------------
+
+
+def test_source_ledger_totals_settlement_delta_zero_for_debt_settlement():
+    """CQ-1 (Major): a debt expense + full settlement produces a 0 delta for the
+    ``expense_settlement`` class. The journal-side SUM must match the vendor
+    25xx sub-account debit (not the 2500 parent), so the prior exact-match on
+    ``ACCOUNTS_PAYABLE_CODE`` (which always summed 0) no longer yields a
+    false-positive delta."""
+    import json
+    from baker.db.schema import EXPENSE_DEBT_PAYMENT_METHOD, _ensure_ap_vendor_sub_account
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # 1. Debt expense event — source side for `expense` class.
+        eid = _insert_expense_event_full(
+            conn, category="Vận chuyển", amount=300000,
+            payment_method=EXPENSE_DEBT_PAYMENT_METHOD, vendor="NCC CQ1",
+        )
+        vendor_acc = _ensure_ap_vendor_sub_account(conn, "NCC CQ1")
+        expense_acc = _account_id(conn, "5300")
+        _insert_balanced_entry(
+            conn, expense_acc, vendor_acc, amount=300000,
+            source_type="expense", source_id=eid,
+        )
+        # 2. Full settlement — source side for `expense_settlement` class.
+        settlement_id = 9001
+        conn.execute(
+            "UPDATE events SET data = ? WHERE id = ?",
+            (json.dumps({
+                "amount_vnd": 300000,
+                "category": "Vận chuyển",
+                "payment_method": EXPENSE_DEBT_PAYMENT_METHOD,
+                "vendor": "NCC CQ1",
+                "settlements": [{"id": settlement_id, "amount": 300000}],
+            }), eid),
+        )
+        asset_acc = _account_id(conn, "1100")
+        # Settlement JE: DR vendor 25xx sub-account, CR asset 1100.
+        _insert_balanced_entry(
+            conn, vendor_acc, asset_acc, amount=300000,
+            source_type="expense_settlement", source_id=settlement_id,
+        )
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "source_ledger_totals"
+    )
+    settlement_cls = next(
+        (d for d in check["details"] if d["class"] == "expense_settlement"), None,
+    )
+    # The settlement class must be in sync (delta 0) — no false positive.
+    assert settlement_cls is None, (
+        f"expense_settlement class reported a delta: {settlement_cls}"
+    )
+    assert check["status"] == "pass", (
+        f"source_ledger_totals failed: {check['details']}"
+    )
+
+
+def test_source_ledger_totals_skips_unmapped_category_expense():
+    """CQ-3 (Minor): an expense event with an unmapped category (not in
+    ``EXPENSE_CATEGORY_TO_ACCOUNT_CODE``) produces no JE at build time, so the
+    ``expense`` source-sum must skip it too — otherwise source_ledger_totals
+    reports a phantom delta for a by-design unjournalled event."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Unmapped category — _build_expense_journal_lines returns None.
+        eid = _insert_expense_event_full(
+            conn, category="UnmappedCategoryXYZ", payment_source="Shop tiền mặt",
+            amount=12000,
+        )
+        # No JE created (mirrors build-time skip).
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "source_ledger_totals"
+    )
+    expense_cls = next(
+        (d for d in check["details"] if d["class"] == "expense"), None,
+    )
+    assert expense_cls is None, (
+        f"expense class reported a delta for an unmapped category: {expense_cls}"
+    )

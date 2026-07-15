@@ -3783,3 +3783,49 @@ def test_v73_ensures_account_2500_exists_when_missing():
             "SELECT id FROM accounts WHERE code = '2500'"
         ).fetchone()
         assert row2["id"] == id_first
+
+
+# ---------------------------------------------------------------------------
+# Review-remediation verification (d-045718, DG-245 review d-b1fbbc)
+# CQ-2: vendor sub-account code overflow at vendor >99
+# ---------------------------------------------------------------------------
+
+
+def test_ap_vendor_sub_account_overflow_above_99():
+    """CQ-2 (Major): creating 100+ vendor sub-accounts under 2500 must not
+    overflow the 25xx namespace. The first 99 vendors use 4-digit codes
+    (2501..2599); vendor #100 rolls to the 5-digit 25xxx range (25001+) so the
+    code stays under the 2500 parent and the accounts.code UNIQUE constraint
+    is not tripped."""
+    from baker.db.schema import _ensure_ap_vendor_sub_account
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        parent_id = int(conn.execute(
+            "SELECT id FROM accounts WHERE code = '2500'"
+        ).fetchone()[0])
+
+        # Create 100 vendor sub-accounts (vendors 1-100).
+        ids = []
+        for i in range(1, 101):
+            vid = _ensure_ap_vendor_sub_account(conn, f"Vendor {i}")
+            ids.append(vid)
+        conn.commit()
+
+        # All 100 sub-accounts exist, each with a unique code under 2500.
+        rows = conn.execute(
+            "SELECT code, name FROM accounts WHERE parent_id = ? ORDER BY CAST(code AS INTEGER)",
+            (parent_id,),
+        ).fetchall()
+        assert len(rows) == 100
+        codes = [r["code"] for r in rows]
+        # All codes are unique (UNIQUE constraint respected — no silent failures).
+        assert len(set(codes)) == 100
+        # First 99 codes stay in the 4-digit 25xx range (2501..2599).
+        for c in codes[:99]:
+            assert len(c) == 4 and c.startswith("25"), c
+        # Vendor #100 rolls to the 5-digit 25xxx range (does not escape to 2600).
+        assert codes[99] == "25001", codes[99]
+        # Idempotency: re-resolving an existing vendor reuses its sub-account.
+        reuse = _ensure_ap_vendor_sub_account(conn, "Vendor 1")
+        assert reuse == ids[0]

@@ -754,3 +754,82 @@ def test_after_repair_validator_passes_for_fixed_event():
         post = _check_expense_payment_account_mismatch(conn)
         flagged_ids_after = {f.get("event_id") for f in post.get("details", [])}
         assert eid not in flagged_ids_after
+
+
+# ---------------------------------------------------------------------------
+# Review-remediation verification (d-045718, DG-245 review d-b1fbbc)
+# CQ-3: unmapped category is skipped (not flagged "will-create")
+# CQ-4: --dry-run does not persist vendor sub-accounts
+# ---------------------------------------------------------------------------
+
+
+def test_dry_run_does_not_persist_vendor_sub_account():
+    """CQ-4 (Minor): ``--dry-run`` detection must not INSERT vendor sub-accounts
+    into ``accounts``. The detection path resolves the vendor → sub-account via
+    a read-only lookup; the mutating ``_ensure_ap_vendor_sub_account`` helper is
+    only called in apply mode."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_debt_expense_event(
+            conn, summary="Nợ dry persist",
+            amount=100000, vendor="Nhà cung cấp NoPersist",
+        )
+        parent_id = int(conn.execute(
+            "SELECT id FROM accounts WHERE code = '2500'"
+        ).fetchone()[0])
+        before = conn.execute(
+            "SELECT COUNT(*) AS c FROM accounts WHERE parent_id = ?",
+            (parent_id,),
+        ).fetchone()["c"]
+        conn.commit()
+
+    result = _invoke(["repair-debt-expenses", "--all", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "sẽ sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        after = conn.execute(
+            "SELECT COUNT(*) AS c FROM accounts WHERE parent_id = ?",
+            (parent_id,),
+        ).fetchone()["c"]
+        # No new vendor sub-account was persisted during dry-run detection.
+        assert after == before, (
+            f"dry-run persisted a vendor sub-account: before={before} after={after}"
+        )
+        # The vendor sub-account for "Nhà cung cấp NoPersist" does not exist.
+        row = conn.execute(
+            "SELECT id FROM accounts WHERE parent_id = ? AND name = ?",
+            (parent_id, "Nhà cung cấp NoPersist"),
+        ).fetchone()
+        assert row is None
+
+
+def test_dry_run_unmapped_category_reports_skipped_not_will_create():
+    """CQ-3 (Minor): an unmapped-category debt expense is by-design unjournalled,
+    so ``--dry-run`` must not report it as ``will-create``. Detection mirrors the
+    ``_build_expense_journal_lines`` category-map skip."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Unmapped category — _build_expense_journal_lines returns None.
+        data = json.dumps({
+            "amount_vnd": 200000,
+            "category": "UnmappedCatXYZ",
+            "payment_method": EXPENSE_DEBT_PAYMENT_METHOD,
+            "payment_source": "",
+            "vendor": "Nhà cung cấp Unmapped",
+            "note": "",
+            "paid_by_name": "",
+        })
+        cur = conn.execute(
+            "INSERT INTO events (type, summary, data) VALUES (?, ?, ?)",
+            ("expense", "Nợ unmapped", data),
+        )
+        eid = int(cur.lastrowid)
+        conn.commit()
+
+    result = _invoke(["repair-debt-expenses", "--event-id", str(eid), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    # The event is skipped (no JE expected) — not reported as a create candidate.
+    assert "không có sự kiện chi phí nợ nào cần sửa" in result.output
+    assert f"#{eid}" not in result.output

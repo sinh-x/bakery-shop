@@ -1334,6 +1334,12 @@ def _check_deposit_balance_integrity(conn) -> dict[str, Any]:
 #   source_type   — the journal_entries.source_type to aggregate
 #   journal_side — "debit" | "credit" — which side of the JE to SUM
 #   account_code  — the account code whose line side is summed (None = all)
+#   account_glob  — optional SQLite GLOB pattern matching the account codes
+#                   whose line side is summed (takes precedence over account_code;
+#                   used for expense_settlement to match all 25xx sub-accounts)
+#   account_glob_alt — optional second GLOB pattern; codes matching either
+#                      account_glob or account_glob_alt are summed (used to
+#                      match both 4-digit 25xx and 5-digit 25xxx vendor sub-accounts)
 #   description_prefix — restrict to JEs whose description starts with this
 #                        prefix (used to split `order` into revenue/AR/return)
 #   exclude_reversals — drop `description LIKE 'Reversal:%'` (always True here)
@@ -1384,6 +1390,12 @@ def _source_sum_expense(conn):
         if not isinstance(amount, (int, float)) or amount <= 0:
             continue
         if not isinstance(category, str) or not category:
+            continue
+        # Mirror the ``_build_expense_journal_lines`` category-map skip (CQ-3):
+        # unmapped categories produce no JE at build time, so the source-side
+        # SUM must exclude them too — otherwise the source_ledger_totals check
+        # reports a phantom delta for events that are by-design unjournalled.
+        if not EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category):
             continue
         is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
         if not is_debt and (not isinstance(payment_source, str) or not payment_source):
@@ -1709,10 +1721,17 @@ def _journal_sum(
     account_code: str | None,
     side: str,
     description_prefix: str | None = None,
+    account_glob: str | None = None,
+    account_glob_alt: str | None = None,
 ) -> tuple[float, list[int]]:
-    """SUM the debit/credit on ``account_code`` for non-reversal
-    ``source_type`` journal entries, optionally restricted to a description
-    prefix. Returns ``(total, source_ids)``.
+    """SUM the debit/credit on ``account_code`` (or codes matching ``account_glob``
+    / ``account_glob_alt``) for non-reversal ``source_type`` journal entries,
+    optionally restricted to a description prefix. Returns ``(total, source_ids)``.
+
+    ``account_glob`` and ``account_glob_alt`` (SQLite GLOB patterns) take
+    precedence over ``account_code`` when set; codes matching either pattern are
+    summed (used by the ``expense_settlement`` class to sum across per-vendor
+    25xx/25xxx sub-accounts under 2500).
     """
     side_col = "jl.debit" if side == "debit" else "jl.credit"
     params: list = []
@@ -1722,7 +1741,14 @@ def _journal_sum(
         FROM journal_entries je
         JOIN journal_lines jl ON jl.journal_entry_id = je.id
     """
-    if account_code is not None:
+    if account_glob is not None:
+        sql += " JOIN accounts a ON a.id = jl.account_id AND (a.code GLOB ?"
+        params.append(account_glob)
+        if account_glob_alt is not None:
+            sql += " OR a.code GLOB ?"
+            params.append(account_glob_alt)
+        sql += ")\n"
+    elif account_code is not None:
         sql += " JOIN accounts a ON a.id = jl.account_id AND a.code = ?\n"
         params.append(account_code)
     sql += " WHERE je.source_type = ? AND je.description NOT LIKE 'Reversal:%'\n"
@@ -1761,7 +1787,14 @@ _SOURCE_LEDGER_CLASSES = [
     {
         "label": "expense_settlement",
         "source_type": "expense_settlement",
-        "account_code": ACCOUNTS_PAYABLE_CODE,
+        "account_code": None,
+        # Match all AP vendor sub-accounts under 2500: both the legacy 4-digit
+        # ``25xx`` range (2501..2599) and the expanded 5-digit ``25xxx`` range
+        # (25001..25999) introduced by CQ-2. The prior exact-match on the 2500
+        # parent code missed Phase 4 settlements that debit per-vendor 25xx
+        # sub-accounts, yielding a false-positive delta (CQ-1).
+        "account_glob": "25[0-9][0-9]",
+        "account_glob_alt": "25[0-9][0-9][0-9]",
         "side": "debit",
         "prefix": None,
         "source_fn": _source_sum_expense_settlement,
@@ -1882,6 +1915,8 @@ def _check_source_ledger_totals(conn) -> dict[str, Any]:
             account_code=cls["account_code"],
             side=cls["side"],
             description_prefix=cls["prefix"],
+            account_glob=cls.get("account_glob"),
+            account_glob_alt=cls.get("account_glob_alt"),
         )
         delta = round(source_total - journal_total, 4)
         if abs(delta) <= DEBIT_CREDIT_TOLERANCE:
