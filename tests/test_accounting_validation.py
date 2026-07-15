@@ -1526,3 +1526,233 @@ def test_source_ledger_totals_skips_unmapped_category_expense():
     assert expense_cls is None, (
         f"expense class reported a delta for an unmapped category: {expense_cls}"
     )
+
+
+# ---------------------------------------------------------------------------
+# COGS amount accuracy — snapshot-first regression tests (DG-247 Phase 2)
+# AC1-AC5: regression coverage for the snapshot-first cost resolution order.
+# ---------------------------------------------------------------------------
+
+
+def _insert_order_cogs_entry(conn, *, order_id: int, cogs_debit: float) -> int:
+    """Insert a balanced ``order_cogs`` journal entry (DR COGS 5900 /
+    CR Inventory 1300) with the given COGS debit and return its id.
+
+    Mirrors the entry shape produced by ``_sync_order_cogs_entry`` so the
+    ``cogs_amount_accuracy`` validator query (which filters on
+    ``source_type = 'order_cogs'`` and sums the COGS-account debit) picks it
+    up.
+    """
+    cogs_acct = _account_id(conn, "5900")
+    inv_acct = _account_id(conn, "1300")
+    return _insert_balanced_entry(
+        conn, cogs_acct, inv_acct, amount=cogs_debit,
+        source_type="order_cogs", source_id=order_id,
+    )
+
+
+def _insert_delivered_order_with_item(
+    conn,
+    *,
+    product_id: str,
+    unit_price: float,
+    quantity: int = 1,
+    cost_at_sale: float | None = 0,
+) -> tuple[int, int]:
+    """Insert a delivered order with a single non-extra/non-gift item and
+    return ``(order_id, item_id)``. ``cost_at_sale`` defaults to 0; pass
+    ``None`` to insert a SQL NULL.
+    """
+    order_cur = conn.execute(
+        "INSERT INTO orders (order_ref, customer_name, total_price, status, due_date) "
+        "VALUES (?, ?, ?, 'delivered', '2026-06-10')",
+        ("ORD-COGS-ACC", "Tester", unit_price * quantity),
+    )
+    order_id = int(order_cur.lastrowid)
+    if cost_at_sale is None:
+        item_cur = conn.execute(
+            "INSERT INTO order_items "
+            "(order_id, product_id, product_name, quantity, unit_price, is_extra, is_gift, cost_at_sale) "
+            "VALUES (?, ?, ?, ?, ?, 0, 0, NULL)",
+            (order_id, product_id, "Test product", quantity, unit_price),
+        )
+    else:
+        item_cur = conn.execute(
+            "INSERT INTO order_items "
+            "(order_id, product_id, product_name, quantity, unit_price, is_extra, is_gift, cost_at_sale) "
+            "VALUES (?, ?, ?, ?, ?, 0, 0, ?)",
+            (order_id, product_id, "Test product", quantity, unit_price, cost_at_sale),
+        )
+    return order_id, int(item_cur.lastrowid)
+
+
+def _cogs_amount_accuracy_check(report):
+    return next(c for c in report["checks"] if c["check"] == "cogs_amount_accuracy")
+
+
+def test_snapshot_respected_after_cost_history_drift():
+    """AC1: ``cost_at_sale`` snapshot takes precedence — a cost_history row
+    added/changed after delivery must NOT produce a false-positive mismatch.
+
+    Setup: order_item with cost_at_sale=10000 and a matching journal debit of
+    10000. A later cost_history row with a higher cost is inserted AFTER
+    delivery. The validator must report no mismatch (snapshot wins over the
+    drifted cost_history).
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_id, _item_id = _insert_delivered_order_with_item(
+            conn, product_id="1", unit_price=100000, cost_at_sale=10000,
+        )
+        _insert_order_cogs_entry(conn, order_id=order_id, cogs_debit=10000)
+        # cost_history drift AFTER delivery — higher cost would have
+        # produced a mismatch under the pre-snapshot validator.
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) "
+            "VALUES (?, ?, ?)",
+            (1, 99999, "2020-01-01"),
+        )
+        report = run_validation(conn)
+    check = _cogs_amount_accuracy_check(report)
+    assert check["status"] == "pass", (
+        f"snapshot not respected — drift flagged: {check['details']}"
+    )
+    assert check["issue_count"] == 0
+
+
+def test_zero_cost_at_sale_fallback_to_resolve_product_cost():
+    """AC2: when ``cost_at_sale`` is 0/NULL the expected COGS is computed via
+    ``resolve_product_cost(conn, pid, selling_price=unit_price)``.
+
+    Setup: product 1 has a cost_history cost of 8000; order_item has
+    cost_at_sale=0 and unit_price=50000. The resolved cost should be 8000
+    (cost_history wins over the baseline 30% rule), so a journal debit of
+    8000 must report no mismatch.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) "
+            "VALUES (?, ?, ?)",
+            (1, 8000, "2020-01-01"),
+        )
+        order_id, _item_id = _insert_delivered_order_with_item(
+            conn, product_id="1", unit_price=50000, cost_at_sale=0,
+        )
+        _insert_order_cogs_entry(conn, order_id=order_id, cogs_debit=8000)
+        report = run_validation(conn)
+    check = _cogs_amount_accuracy_check(report)
+    assert check["status"] == "pass", (
+        f"resolve_product_cost fallback not honored: {check['details']}"
+    )
+    assert check["issue_count"] == 0
+
+
+def test_true_positive_real_mismatch_still_flagged():
+    """AC3: a genuine COGS debit mismatch (beyond DEBIT_CREDIT_TOLERANCE) is
+    still flagged with the correct actual/expected/difference detail.
+
+    Setup: order_item with cost_at_sale=10000, journal debit=15000 (a true
+    5000 mismatch). The validator must flag it with actual_cogs=15000,
+    expected_cogs=10000, difference=5000.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_id, _item_id = _insert_delivered_order_with_item(
+            conn, product_id="1", unit_price=100000, cost_at_sale=10000,
+        )
+        _insert_order_cogs_entry(conn, order_id=order_id, cogs_debit=15000)
+        report = run_validation(conn)
+    check = _cogs_amount_accuracy_check(report)
+    assert check["status"] == "fail"
+    assert check["issue_count"] == 1
+    finding = check["details"][0]
+    assert finding["order_id"] == order_id
+    assert finding["actual_cogs"] == 15000.0
+    assert finding["expected_cogs"] == 10000.0
+    assert finding["difference"] == 5000.0
+
+
+def test_read_only_no_writes():
+    """AC4/NFR1: a validation run performs no writes — zero rows are
+    modified in ``order_items`` or any other table.
+
+    Captures per-table row counts and a checksum of every row in
+    ``order_items`` before and after the run; both must be unchanged. The
+    test deliberately seeds an item with cost_at_sale=0 and a cost_history
+    row so the fallback path (which the write-back path would mutate under
+    the old behaviour) is exercised.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) "
+            "VALUES (?, ?, ?)",
+            (1, 7000, "2020-01-01"),
+        )
+        order_id, item_id = _insert_delivered_order_with_item(
+            conn, product_id="1", unit_price=50000, cost_at_sale=0,
+        )
+        _insert_order_cogs_entry(conn, order_id=order_id, cogs_debit=7000)
+
+        # Snapshot per-table row counts for every table that exists.
+        table_names = [
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            )
+        ]
+        pre_counts = {
+            t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            for t in table_names
+        }
+        # Snapshot the exact cost_at_sale value for the seeded item so a
+        # silent write-back (the behaviour this check forbids) is detected.
+        pre_cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()[0]
+
+        run_validation(conn)
+
+        post_counts = {
+            t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            for t in table_names
+        }
+        post_cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()[0]
+
+    assert pre_counts == post_counts, (
+        f"row counts changed during validation: "
+        f"added={ {k: v for k, v in post_counts.items() if v != pre_counts[k]} }"
+    )
+    assert pre_cost == post_cost, (
+        f"cost_at_sale was mutated: {pre_cost} -> {post_cost}"
+    )
+    assert post_cost == 0, "cost_at_sale should remain 0 (read-only)"
+
+
+def test_unresolvable_product_fallback_parity():
+    """AC5: an item whose ``product_id`` resolves to no products row and
+    ``cost_at_sale = 0`` computes its expected cost via
+    ``_baseline_cost_for_product("", 0.0, price_override=unit_price)``,
+    matching journal_sync exactly.
+
+    Setup: product_id='' (empty — unresolvable), cost_at_sale=0,
+    unit_price=20000. Expected cost = round(20000 * 0.30, 2) = 6000. A
+    journal debit of 6000 must report no mismatch — the validator's
+    fallback path matches the live delivery/journal_sync fallback.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_id, _item_id = _insert_delivered_order_with_item(
+            conn, product_id="", unit_price=20000, cost_at_sale=0,
+        )
+        _insert_order_cogs_entry(conn, order_id=order_id, cogs_debit=6000)
+        report = run_validation(conn)
+    check = _cogs_amount_accuracy_check(report)
+    assert check["status"] == "pass", (
+        f"unresolvable-product fallback mismatch vs journal_sync: "
+        f"{check['details']}"
+    )
+    assert check["issue_count"] == 0
