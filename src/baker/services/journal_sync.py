@@ -10,6 +10,7 @@ Accounting failures must never block the primary business operation: callers
 wrap each ``_sync_*`` call in try/except with ``logger.exception``.
 """
 
+import json
 import logging
 import traceback
 from typing import Any, Callable, Optional
@@ -34,6 +35,7 @@ from baker.db.schema import (
     TIEN_RUT_HELD_CODE,
     _account_id_by_code,
     _baseline_cost_for_product,
+    _ensure_ap_vendor_sub_account,
     _ensure_staff_payable_sub_account,
     _insert_journal_entry,
 )
@@ -214,6 +216,55 @@ def _update_journal_entry_in_place(
     )
 
 
+def _is_expense_journallable(data: dict) -> bool:
+    """Return True iff an expense event should produce a journal entry.
+
+    Encodes the build-time skip predicate shared by three call sites that must
+    agree on which expense events are by-design journalled:
+
+      - ``_build_expense_journal_lines`` (journal_sync) — the create path.
+      - ``_source_sum_expense`` (accounting_validation) — the source-ledger
+        SUM must exclude events that produce no JE, or it reports a phantom
+        delta (CQ-3).
+      - ``_expected_expense_credit`` (repair) — detection must not flag
+        unjournalled events as missing/stale, or repair becomes
+        non-idempotent and creates phantom vendor sub-accounts (CQ-3/CQ-4).
+
+    An event is journallable iff it has a positive numeric ``amount_vnd``, a
+    non-empty ``category`` mapped by ``EXPENSE_CATEGORY_TO_ACCOUNT_CODE``, a
+    resolvable payment configuration (``payment_method`` debt, or a
+    ``payment_source`` in the asset map), and — for debt / staff-advance
+    events — a non-empty ``vendor`` / ``paid_by_name`` respectively.
+
+    This predicate performs no I/O and mutates nothing; callers retain the
+    branch-specific resolution (sub-account creation, account-id lookup) after
+    it returns True (CQ-5).
+    """
+    amount = data.get("amount_vnd")
+    category = data.get("category")
+    payment_source = data.get("payment_source")
+    payment_method = data.get("payment_method", "")
+    if not isinstance(amount, (int, float)) or amount <= 0:
+        return False
+    if not isinstance(category, str) or not category:
+        return False
+    if not EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category):
+        return False
+    is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
+    if not is_debt and (not isinstance(payment_source, str) or not payment_source):
+        return False
+    if is_debt:
+        if not (data.get("vendor") or "").strip():
+            return False
+    elif payment_source == STAFF_ADVANCE_PAYMENT_SOURCE:
+        if not (data.get("paid_by_name") or "").strip():
+            return False
+    else:
+        if payment_source not in EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE:
+            return False
+    return True
+
+
 def _build_expense_journal_lines(
     conn, data: dict[str, Any], summary: str
 ) -> Optional[tuple[str, list[tuple[int, float, float, str]]]]:
@@ -225,24 +276,21 @@ def _build_expense_journal_lines(
     category = data.get("category")
     payment_source = data.get("payment_source")
     payment_method = data.get("payment_method", "")
-    if not isinstance(amount, (int, float)) or amount <= 0:
-        return None
-    if not isinstance(category, str) or not category:
+    if not _is_expense_journallable(data):
         return None
 
     is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
-    if not is_debt and (not isinstance(payment_source, str) or not payment_source):
-        return None
-
     expense_code = EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category)
-    if not expense_code:
-        return None
 
     if is_debt:
-        # FR3 (DG-212): debt expenses credit Accounts Payable (2500) instead
-        # of an asset account. The vendor field serves as creditor identifier
-        # but does not create a per-creditor sub-account in this phase.
-        payment_account_id = _account_id_by_code(conn, ACCOUNTS_PAYABLE_CODE)
+        # FR3 (DG-245 Phase 3): debt expenses credit a per-vendor sub-account
+        # under Accounts Payable (2500) — not the 2500 parent. The vendor
+        # field is the creditor identifier (FR2) and resolves to a single
+        # sub-account via _ensure_ap_vendor_sub_account (MAX-based 25xx code).
+        vendor_name = (data.get("vendor") or "").strip()
+        if not vendor_name:
+            return None
+        payment_account_id = _ensure_ap_vendor_sub_account(conn, vendor_name)
     elif payment_source == STAFF_ADVANCE_PAYMENT_SOURCE:
         staff_name = (data.get("paid_by_name") or "").strip()
         if not staff_name:
@@ -337,19 +385,32 @@ def _sync_expense_journal(
 
 
 def _build_debt_settlement_journal_lines(
-    conn, event_summary: str, amount: float, payment_source: str
+    conn, event_summary: str, amount: float, payment_source: str,
+    vendor_name: str = "",
 ) -> Optional[tuple[str, list[tuple[int, float, float, str]]]]:
-    """Build (description, lines) for a debt settlement journal entry (FR4).
+    """Build (description, lines) for a debt settlement journal entry (FR4/FR5).
 
-    Settlement journals DR Accounts Payable (2500) and CR the asset account
-    chosen by ``payment_source`` (FR4). When ``payment_source`` is the staff
-    advance source, the credit goes to a per-staff sub-account under 2300 —
-    but settlements do not currently carry ``paid_by_name``, so the staff
-    advance path is unsupported and the function returns None.
+    Settlement journals DR the vendor's per-vendor 25xx sub-account under
+    Accounts Payable (2500) and CR the asset account chosen by
+    ``payment_source`` (FR4). FR5 (DG-245 Phase 4): the debit must hit the
+    *same* per-vendor sub-account that the originating debt expense credited,
+    so a full settlement nets that sub-account to zero. The sub-account is
+    resolved via the single-source-of-truth ``_ensure_ap_vendor_sub_account``
+    helper (Phase 3).
+
+    When ``vendor_name`` is empty, fall back to the 2500 parent account
+    (preserves backwards compatibility for any legacy settlements that lack a
+    vendor). When ``payment_source`` is the staff advance source, the credit
+    would go to a per-staff sub-account under 2300 — but settlements do not
+    currently carry ``paid_by_name``, so the staff advance path is unsupported
+    and the function returns None.
     """
     if amount <= 0:
         return None
-    ap_account_id = _account_id_by_code(conn, ACCOUNTS_PAYABLE_CODE)
+    if vendor_name and vendor_name.strip():
+        ap_account_id = _ensure_ap_vendor_sub_account(conn, vendor_name.strip())
+    else:
+        ap_account_id = _account_id_by_code(conn, ACCOUNTS_PAYABLE_CODE)
     account_code = EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE.get(payment_source)
     if not account_code:
         return None
@@ -379,6 +440,12 @@ def _sync_debt_settlement_journal(
     ``source_type='expense_settlement'`` and ``source_id=settlement_id`` so
     multiple partial settlements can coexist on the same expense event. On
     delete, unlocked entries are removed and locked entries are reversed.
+
+    FR5 (DG-245 Phase 4): the vendor is resolved from the originating expense
+    event's ``data`` JSON (``event.data["vendor"]``) and passed to
+    :func:`_build_debt_settlement_journal_lines` so the settlement debits the
+    same per-vendor 25xx sub-account the expense credited. A full settlement
+    nets that sub-account to zero.
     """
     existing_id = _find_journal_entry(conn, "expense_settlement", settlement_id)
 
@@ -391,8 +458,23 @@ def _sync_debt_settlement_journal(
             _delete_journal_entry_cascade(conn, existing_id)
         return
 
+    # FR5: resolve the vendor from the originating expense event so the
+    # settlement debits the same per-vendor 25xx sub-account.
+    vendor_name = ""
+    event_row = conn.execute(
+        "SELECT data, timestamp FROM events WHERE id = ?", (event_id,)
+    ).fetchone()
+    transaction_date = None
+    if event_row:
+        transaction_date = event_row["timestamp"] if "timestamp" in event_row.keys() else None
+        try:
+            event_data = json.loads(event_row["data"]) if event_row["data"] else {}
+        except (ValueError, TypeError):
+            event_data = {}
+        vendor_name = (event_data.get("vendor") or "").strip() if isinstance(event_data, dict) else ""
+
     built = _build_debt_settlement_journal_lines(
-        conn, event_summary, amount, payment_source
+        conn, event_summary, amount, payment_source, vendor_name=vendor_name
     )
     if built is None:
         if existing_id is not None and not _is_locked(conn, existing_id):
@@ -402,10 +484,9 @@ def _sync_debt_settlement_journal(
 
     # The settlement's business date is the event's timestamp (the debt was
     # incurred on the event date; settlement records the cash outflow).
-    event_row = conn.execute(
-        "SELECT timestamp FROM events WHERE id = ?", (event_id,)
-    ).fetchone()
-    transaction_date = event_row["timestamp"] if event_row else None
+    # `transaction_date` is already resolved from `event_row` above.
+    if event_row is None:
+        transaction_date = None
 
     if existing_id is None:
         _insert_journal_entry(

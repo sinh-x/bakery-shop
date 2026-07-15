@@ -1,4 +1,5 @@
 import os
+import sqlite3
 from typing import Optional
 
 from baker.utils.time import now_utc
@@ -1642,13 +1643,15 @@ def _seed_chart_of_accounts(conn) -> None:
             "VALUES (?, ?, ?, ?)",
             (code, name, acc_type, parent_id),
         )
-        if cursor.lastrowid:
-            code_to_id[code] = int(cursor.lastrowid)
-        else:
-            row = conn.execute(
-                "SELECT id FROM accounts WHERE code = ?", (code,)
-            ).fetchone()
-            code_to_id[code] = int(row[0])
+        # NOTE: ``cursor.lastrowid`` is NOT a reliable "did we insert?" flag.
+        # On an ignored INSERT OR IGNORE, sqlite3 returns the lastrowid of the
+        # most recent successful INSERT on this connection (stale), not 0. So
+        # always resolve the actual row id by code — this is correct whether
+        # the row was just inserted or already existed (DG-245 Phase 2).
+        row = conn.execute(
+            "SELECT id FROM accounts WHERE code = ?", (code,)
+        ).fetchone()
+        code_to_id[code] = int(row[0])
 
 
 def _ensure_staff_payable_sub_account(conn, staff_name: str) -> int:
@@ -1684,6 +1687,83 @@ def _ensure_staff_payable_sub_account(conn, staff_name: str) -> int:
         (code, staff_name, parent_id),
     )
     return int(cursor.lastrowid)
+
+
+def _ensure_ap_vendor_sub_account(conn, vendor_name: str) -> int:
+    """Create (or return) a per-vendor sub-account under Accounts Payable (2500).
+
+    Mirrors :func:`_ensure_staff_payable_sub_account` but uses a MAX-based
+    25XX code derivation instead of COUNT-based indexing. MAX-based avoids
+    collision risk when sub-accounts are deleted and re-created: a COUNT-based
+    counter would reuse the freed index and could clash with stale references,
+    whereas MAX-based only ever moves forward (DG-245 Phase 3, FR2).
+
+    The parent is the 2500 Accounts Payable account seeded by the v73
+    migration (Phase 2). The sub-account name is the vendor's name, so the
+    vendor → sub-account resolution is a single source of truth.
+    """
+    parent_row = conn.execute(
+        "SELECT id FROM accounts WHERE code = ?", (ACCOUNTS_PAYABLE_CODE,)
+    ).fetchone()
+    if parent_row is None:
+        raise RuntimeError(
+            "Accounts Payable parent account (2500) missing; "
+            "run v73 migration or seed COA first"
+        )
+    parent_id = int(parent_row[0])
+
+    existing = conn.execute(
+        "SELECT id FROM accounts WHERE parent_id = ? AND name = ?",
+        (parent_id, vendor_name),
+    ).fetchone()
+    if existing:
+        return int(existing[0])
+
+    # MAX-based code derivation: scan existing vendor sub-account codes under
+    # the 2500 parent and pick MAX+1. The GLOB patterns match both the legacy
+    # 4-digit ``25[0-9][0-9]`` range (2501..2599, vendors 1-99) and the expanded
+    # 5-digit ``25[0-9][0-9][0-9]`` range (25001..25999, vendors 100-999), so the
+    # prior overflow at vendor #99 (2599 → 2600, escaping the 25xx namespace and
+    # tripping the accounts.code UNIQUE constraint) is avoided without
+    # disturbing existing 4-digit sub-accounts (CQ-2). Start at 2501 so the
+    # first vendor sub-account does not collide with the parent 2500 code.
+    max_row = conn.execute(
+        "SELECT code FROM accounts "
+        "WHERE parent_id = ? "
+        "  AND (code GLOB '25[0-9][0-9]' OR code GLOB '25[0-9][0-9][0-9]') "
+        "ORDER BY CAST(code AS INTEGER) DESC LIMIT 1",
+        (parent_id,),
+    ).fetchone()
+    if max_row is None:
+        next_num = 2501
+    else:
+        next_num = int(max_row[0]) + 1
+    # Guard against the 4-digit overflow (CQ-2): when the max code is a 4-digit
+    # 25xx value (2501..2599) and incrementing it would leave the 25-prefixed
+    # namespace (2600+), roll to the 5-digit range so the new code stays under
+    # the 2500 parent's 25xxx namespace (25001..25999). This preserves existing
+    # 4-digit sub-accounts while accommodating up to 999 vendors total.
+    if next_num >= 2600 and next_num < 25001:
+        next_num = 25001
+    code = f"{next_num}"
+    try:
+        cursor = conn.execute(
+            "INSERT INTO accounts (code, name, type, parent_id) "
+            "VALUES (?, ?, 'liability', ?)",
+            (code, vendor_name, parent_id),
+        )
+        return int(cursor.lastrowid)
+    except sqlite3.IntegrityError:
+        # A concurrent insert may have created the same-name sub-account
+        # between our existence check and the INSERT. Re-fetch rather than
+        # swallow the error — silently losing the JE is the CQ-2 failure mode.
+        existing = conn.execute(
+            "SELECT id FROM accounts WHERE parent_id = ? AND name = ?",
+            (parent_id, vendor_name),
+        ).fetchone()
+        if existing:
+            return int(existing[0])
+        raise
 
 
 def _account_id_by_code(conn, code: str) -> int:
@@ -3820,6 +3900,17 @@ def _migrate_v72_lowercase_usernames(conn):
         )
 
 
+def _migrate_v73_add_account_2500(conn):
+    """Ensure account 2500 (Phải trả người bán / Accounts Payable) exists in chart of accounts.
+
+    DG-245 Phase 2 (migration v73). This mirrors ``_migrate_v54_add_account_2400``:
+    it calls the existing ``_seed_chart_of_accounts()`` which uses
+    ``INSERT OR IGNORE`` for every account, so re-running v73 on an
+    already-migrated DB is a no-op (idempotent by design).
+    """
+    _seed_chart_of_accounts(conn)
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -4165,6 +4256,11 @@ MIGRATIONS = {
         "description": "Auth RBAC: lowercase existing users.username values — DG-029 follow-on",
         "sql": "",
         "callable": _migrate_v72_lowercase_usernames,
+    },
+    73: {
+        "description": "Chart of accounts: ensure account 2500 (Accounts Payable) exists — DG-245 Phase 2",
+        "sql": "",
+        "callable": _migrate_v73_add_account_2500,
     },
 }
 

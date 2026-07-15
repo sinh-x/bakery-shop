@@ -396,7 +396,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 72
+        assert _migrated_version(conn) == 73
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -414,7 +414,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 72
+        assert _migrated_version(conn) == 73
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -429,10 +429,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 72
+        assert _migrated_version(conn) == 73
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 72
+        assert _migrated_version(conn) == 73
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3362,7 +3362,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 72
+        assert _migrated_version(conn) == 73
         _assert_users_role_check_constraint(conn)
 
 
@@ -3428,7 +3428,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 72
+        assert _migrated_version(conn) == 73
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3543,7 +3543,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 72
+        assert _migrated_version(conn) == 73
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3617,7 +3617,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 72
+        assert _migrated_version(conn) == 73
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3644,7 +3644,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 72
+        assert _migrated_version(conn) == 73
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -3659,3 +3659,173 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     assert user_lines, "expected per-user plaintext password lines in default path"
     # The "passwords suppressed" summary must NOT appear in the default path.
     assert "passwords suppressed" not in out
+
+
+# ── v73 Migration: Account 2500 (DG-245 Phase 2) ───────────────────────────
+
+
+def test_v73_registered_in_migration_chain():
+    """v73 is registered in MIGRATIONS with the expected callable."""
+    assert 73 in MIGRATIONS
+    assert (
+        MIGRATIONS[73]["callable"].__name__
+        == "_migrate_v73_add_account_2500"
+    )
+
+
+def test_v73_adds_account_2500_on_incremental_db():
+    """Applying v73 on top of a v72 DB: account 2500 already exists from v44,
+    so v73 is a no-op (INSERT OR IGNORE on all accounts)."""
+    from baker.db.schema import _migrate_v73_add_account_2500
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 72)
+        # Account 2500 already exists (seeded by v44).
+        before = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2500'"
+        ).fetchone()
+        assert before is not None
+        assert before["type"] == "liability"
+
+        # v73 on an already-correct DB is a no-op.
+        _migrate_v73_add_account_2500(conn)
+        after = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2500'"
+        ).fetchone()
+        assert after is not None
+        assert after["id"] == before["id"]
+        assert after["name"] == before["name"]
+
+
+def test_v73_applies_in_full_migration_chain():
+    """v73 executes as part of ensure_schema and account 2500 exists on fresh DB."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 73)
+        assert _migrated_version(conn) == 73
+        row = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2500'"
+        ).fetchone()
+        assert row is not None
+        assert row["type"] == "liability"
+
+
+def test_v73_idempotent_on_already_migrated_db():
+    """Re-running the v73 callable after it has already run is a no-op."""
+    from baker.db.schema import _migrate_v73_add_account_2500
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 72)
+        _migrate_v73_add_account_2500(conn)
+        count_after_first = conn.execute(
+            "SELECT COUNT(*) FROM accounts WHERE code = '2500'"
+        ).fetchone()[0]
+        assert count_after_first == 1
+
+        # Second application must not raise or duplicate.
+        _migrate_v73_add_account_2500(conn)
+        count_after_second = conn.execute(
+            "SELECT COUNT(*) FROM accounts WHERE code = '2500'"
+        ).fetchone()[0]
+        assert count_after_second == 1
+
+
+def test_v73_idempotent_on_fresh_db():
+    """v73 on a fresh DB (already at v73 via ensure_schema) is a no-op."""
+    from baker.db.schema import _migrate_v73_add_account_2500
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 73
+        row_before = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2500'"
+        ).fetchone()
+        _migrate_v73_add_account_2500(conn)
+        row_after = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2500'"
+        ).fetchone()
+        assert row_before is not None
+        assert row_before["id"] == row_after["id"]
+        assert row_before["name"] == row_after["name"]
+        assert row_before["type"] == row_after["type"]
+
+
+def test_v73_ensures_account_2500_exists_when_missing():
+    """AC1: Given a live db without account 2500, when migration v73 runs,
+    then account 2500 exists and re-running v73 makes no further change."""
+    from baker.db.schema import _migrate_v73_add_account_2500
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 72)
+        # Simulate a live DB missing account 2500.
+        conn.execute("DELETE FROM accounts WHERE code = '2500'")
+        conn.commit()
+        assert conn.execute(
+            "SELECT COUNT(*) FROM accounts WHERE code = '2500'"
+        ).fetchone()[0] == 0
+
+        # Run v73 — account 2500 now exists.
+        _migrate_v73_add_account_2500(conn)
+        row = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2500'"
+        ).fetchone()
+        assert row is not None
+        assert row["name"] == "Phải trả người bán (Accounts Payable)"
+        assert row["type"] == "liability"
+
+        # Re-running v73 makes no further change (idempotent).
+        id_first = row["id"]
+        _migrate_v73_add_account_2500(conn)
+        count = conn.execute(
+            "SELECT COUNT(*) FROM accounts WHERE code = '2500'"
+        ).fetchone()[0]
+        assert count == 1
+        row2 = conn.execute(
+            "SELECT id FROM accounts WHERE code = '2500'"
+        ).fetchone()
+        assert row2["id"] == id_first
+
+
+# ---------------------------------------------------------------------------
+# Review-remediation verification (d-045718, DG-245 review d-b1fbbc)
+# CQ-2: vendor sub-account code overflow at vendor >99
+# ---------------------------------------------------------------------------
+
+
+def test_ap_vendor_sub_account_overflow_above_99():
+    """CQ-2 (Major): creating 100+ vendor sub-accounts under 2500 must not
+    overflow the 25xx namespace. The first 99 vendors use 4-digit codes
+    (2501..2599); vendor #100 rolls to the 5-digit 25xxx range (25001+) so the
+    code stays under the 2500 parent and the accounts.code UNIQUE constraint
+    is not tripped."""
+    from baker.db.schema import _ensure_ap_vendor_sub_account
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        parent_id = int(conn.execute(
+            "SELECT id FROM accounts WHERE code = '2500'"
+        ).fetchone()[0])
+
+        # Create 100 vendor sub-accounts (vendors 1-100).
+        ids = []
+        for i in range(1, 101):
+            vid = _ensure_ap_vendor_sub_account(conn, f"Vendor {i}")
+            ids.append(vid)
+        conn.commit()
+
+        # All 100 sub-accounts exist, each with a unique code under 2500.
+        rows = conn.execute(
+            "SELECT code, name FROM accounts WHERE parent_id = ? ORDER BY CAST(code AS INTEGER)",
+            (parent_id,),
+        ).fetchall()
+        assert len(rows) == 100
+        codes = [r["code"] for r in rows]
+        # All codes are unique (UNIQUE constraint respected — no silent failures).
+        assert len(set(codes)) == 100
+        # First 99 codes stay in the 4-digit 25xx range (2501..2599).
+        for c in codes[:99]:
+            assert len(c) == 4 and c.startswith("25"), c
+        # Vendor #100 rolls to the 5-digit 25xxx range (does not escape to 2600).
+        assert codes[99] == "25001", codes[99]
+        # Idempotency: re-resolving an existing vendor reuses its sub-account.
+        reuse = _ensure_ap_vendor_sub_account(conn, "Vendor 1")
+        assert reuse == ids[0]

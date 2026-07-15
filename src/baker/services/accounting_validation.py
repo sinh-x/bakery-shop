@@ -46,6 +46,22 @@ Checks:
        where deposits are expected). Computed across ``payment_transaction``,
        ``order``, and ``order_shipping_hold`` journal entries grouped by
        ``payment_transactions.order_id``.
+   17. ``expense_payment_account_mismatch`` — expense journal entries whose
+       credit-side account disagrees with the event's current
+       ``payment_method``/``payment_source``. Debt expenses must credit a
+       per-vendor sub-account under Accounts Payable (2500) or, for the legacy
+       staff-advance debt path, a sub-account under Staff Payables (2300);
+       staff-advance expenses must credit a 2300 sub-account; cash/transfer
+       expenses must credit the account mapped by
+       ``EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE`` (DG-245 Phase 5, FR7/AC5).
+   18. ``source_ledger_totals`` — per-class lump-sum reconciliation of
+       SUM(source amount) vs SUM(matching journal amount) across every
+       cash/finance event class (expense, expense_settlement, order revenue/AR
+       /tien-rut-return, order_cogs, order_shipping_hold,
+       order_shipping_release, payment_transaction, waste_cogs,
+       negative_sale_cogs, restock_inflow). Reports the delta and offending
+       ``source_ids`` for each class where the totals diverge beyond tolerance
+       (DG-245 Phase 5, FR8/AC6).
 
 The module is deliberately side-effect free: it only reads the database.
 It is exposed via the CLI (``baker validate-accounts``) and the API
@@ -57,12 +73,23 @@ import json
 from typing import Any
 
 from baker.db.schema import (
+    ACCOUNTS_PAYABLE_CODE,
+    ACCOUNTS_RECEIVABLE_CODE,
+    BUS_SHIPPING_HELD_CODE,
     COGS_CODE,
     CUSTOMER_DEPOSITS_CODE,
+    EXPENSE_CATEGORY_TO_ACCOUNT_CODE,
+    EXPENSE_DEBT_PAYMENT_METHOD,
+    EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
+    INVENTORY_CODE,
+    INVENTORY_PURCHASE_CATEGORIES,
     ORDER_REVENUE_CODE,
+    STAFF_PAYABLES_CODE,
     TIEN_RUT_HELD_CODE,
 )
 from baker.utils.time import now_utc
+
+from baker.services.journal_sync import _is_expense_journallable
 
 # Tolerance for double-entry imbalance. Sub-cent rounding from REAL storage
 # and per-line float arithmetic is expected; only imbalances above this
@@ -882,6 +909,220 @@ def _check_expense_category_mismatch(conn) -> dict[str, Any]:
     }
 
 
+# Staff-advance payment source — expense events with this source credit a
+# per-staff sub-account under Staff Payables (2300). Imported here so the
+# payment-account-mismatch check mirrors the create-path branching in
+# ``_build_expense_journal_lines`` (journal_sync.py) without duplicating the
+# literal string.
+_STAFF_ADVANCE_PAYMENT_SOURCE = "Nhân viên ứng trước"
+
+
+def _check_expense_payment_account_mismatch(conn) -> dict[str, Any]:
+    """Flag expense journal entries whose credit-side account disagrees with
+    the event's current ``payment_method``/``payment_source`` (DG-245 Phase 5,
+    FR7/AC5).
+
+    The expected credit account for an expense event depends on the event's
+    payment configuration (mirrors the create-path in
+    ``_build_expense_journal_lines``):
+
+      - **Debt** (``payment_method == EXPENSE_DEBT_PAYMENT_METHOD``): the credit
+        must hit a per-vendor sub-account whose parent is Accounts Payable
+        (2500). The vendor name comes from ``events.data.vendor``.
+      - **Staff advance** (``payment_source == "Nhân viên ứng trước"``): the
+        credit must hit a per-staff sub-account whose parent is Staff Payables
+        (2300). The staff name comes from ``events.data.paid_by_name``.
+      - **Cash/transfer** (any other ``payment_source``): the credit must hit
+        the account mapped by ``EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE``.
+
+    Events whose ``amount_vnd <= 0``, lack a category, or lack a
+    payment_method/payment_source are by-design excluded from journal creation
+    (``_build_expense_journal_lines`` returns None) and are skipped here so
+    the check does not flag non-journalled events.
+
+    Reversal entries (``description LIKE 'Reversal:%'``) are excluded — they
+    legitimately preserve the original credit account.
+
+    The check is read-only (NFR2).
+    """
+    rows = conn.execute(
+        """
+        SELECT je.id    AS entry_id,
+               je.source_id AS event_id,
+               je.description AS description,
+               jl.account_id AS credit_account_id,
+               a.code       AS credit_account_code,
+               a.parent_id  AS credit_parent_id,
+               a.name       AS credit_account_name
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'expense'
+          AND jl.credit > 0
+          AND je.description NOT LIKE 'Reversal:%'
+        ORDER BY je.id
+        """,
+    ).fetchall()
+
+    # Resolve the parent account ids once so per-event lookups can compare
+    # against them without repeating the query.
+    ap_parent = conn.execute(
+        "SELECT id FROM accounts WHERE code = ?", (ACCOUNTS_PAYABLE_CODE,)
+    ).fetchone()
+    ap_parent_id = int(ap_parent["id"]) if ap_parent else None
+    staff_parent = conn.execute(
+        "SELECT id FROM accounts WHERE code = ?", (STAFF_PAYABLES_CODE,)
+    ).fetchone()
+    staff_parent_id = int(staff_parent["id"]) if staff_parent else None
+
+    findings: list[dict[str, Any]] = []
+    for r in rows:
+        event_id = r["event_id"]
+        if event_id is None:
+            continue
+        event_id = int(event_id)
+        event_row = conn.execute(
+            "SELECT data FROM events WHERE id = ?", (event_id,),
+        ).fetchone()
+        if event_row is None or not event_row["data"]:
+            continue
+        try:
+            data = json.loads(event_row["data"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+
+        amount = data.get("amount_vnd")
+        category = data.get("category")
+        payment_source = data.get("payment_source")
+        payment_method = data.get("payment_method", "")
+
+        # Mirror the build-time skip predicate so the check only flags events
+        # that *should* have a journal entry. Events without amount/category or
+        # a resolvable payment source are by-design unjournalled.
+        if not isinstance(amount, (int, float)) or amount <= 0:
+            continue
+        if not isinstance(category, str) or not category:
+            continue
+
+        is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
+        if not is_debt and (not isinstance(payment_source, str) or not payment_source):
+            continue
+
+        expected_code: str | None = None
+        expected_parent_id: int | None = None
+        expected_sub_name: str | None = None
+        mismatch_kind = "payment_account"
+
+        if is_debt:
+            vendor_name = (data.get("vendor") or "").strip()
+            if not vendor_name:
+                continue
+            expected_parent_id = ap_parent_id
+            expected_sub_name = vendor_name
+        elif payment_source == _STAFF_ADVANCE_PAYMENT_SOURCE:
+            staff_name = (data.get("paid_by_name") or "").strip()
+            if not staff_name:
+                continue
+            expected_parent_id = staff_parent_id
+            expected_sub_name = staff_name
+        else:
+            expected_code = EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE.get(payment_source)
+            if not expected_code:
+                continue
+
+        actual_id = int(r["credit_account_id"])
+        actual_code = r["credit_account_code"]
+        actual_parent_id = int(r["credit_parent_id"]) if r["credit_parent_id"] is not None else None
+        actual_name = r["credit_account_name"]
+
+        # Cash/transfer: the credit account code must match the mapped code.
+        if expected_code is not None:
+            if actual_code != expected_code:
+                findings.append({
+                    "entry_id": int(r["entry_id"]),
+                    "event_id": event_id,
+                    "description": r["description"],
+                    "payment_method": payment_method,
+                    "payment_source": payment_source,
+                    "expected_account_code": expected_code,
+                    "actual_account_code": actual_code,
+                    "actual_account_id": actual_id,
+                    "mismatch_kind": mismatch_kind,
+                })
+            continue
+
+        # Debt / staff-advance: the credit must be a sub-account under the
+        # expected parent, named after the vendor/staff. When the parent id is
+        # unknown (account missing — e.g. 2500 not seeded) skip rather than
+        # flag, because no event could have journalled to it correctly.
+        if expected_parent_id is None:
+            continue
+        # A direct credit to the parent account (e.g. 2500 itself, not a
+        # 25xx sub-account) is also a mismatch — the sub-account must exist.
+        if actual_id == expected_parent_id:
+            findings.append({
+                "entry_id": int(r["entry_id"]),
+                "event_id": event_id,
+                "description": r["description"],
+                "payment_method": payment_method,
+                "payment_source": payment_source,
+                "expected_parent_code": (
+                    ACCOUNTS_PAYABLE_CODE if is_debt else STAFF_PAYABLES_CODE
+                ),
+                "expected_sub_account_name": expected_sub_name,
+                "actual_account_code": actual_code,
+                "actual_account_id": actual_id,
+                "mismatch_kind": "parent_not_sub_account",
+            })
+            continue
+        if actual_parent_id != expected_parent_id:
+            findings.append({
+                "entry_id": int(r["entry_id"]),
+                "event_id": event_id,
+                "description": r["description"],
+                "payment_method": payment_method,
+                "payment_source": payment_source,
+                "expected_parent_code": (
+                    ACCOUNTS_PAYABLE_CODE if is_debt else STAFF_PAYABLES_CODE
+                ),
+                "expected_sub_account_name": expected_sub_name,
+                "actual_account_code": actual_code,
+                "actual_account_id": actual_id,
+                "actual_parent_id": actual_parent_id,
+                "mismatch_kind": "wrong_parent",
+            })
+            continue
+        # Parent matches — the sub-account name should also match the
+        # vendor/staff. A name mismatch indicates the event was edited (vendor
+        # changed) but the JE was not re-synced. Only flag when the name
+        # diverges to surface stale sub-account credits.
+        if expected_sub_name and actual_name != expected_sub_name:
+            findings.append({
+                "entry_id": int(r["entry_id"]),
+                "event_id": event_id,
+                "description": r["description"],
+                "payment_method": payment_method,
+                "payment_source": payment_source,
+                "expected_parent_code": (
+                    ACCOUNTS_PAYABLE_CODE if is_debt else STAFF_PAYABLES_CODE
+                ),
+                "expected_sub_account_name": expected_sub_name,
+                "actual_account_code": actual_code,
+                "actual_account_id": actual_id,
+                "actual_account_name": actual_name,
+                "mismatch_kind": "sub_account_name_mismatch",
+            })
+
+    return {
+        "check": "expense_payment_account_mismatch",
+        "status": "pass" if not findings else "fail",
+        "issue_count": len(findings),
+        "details": findings,
+    }
+
+
 def _check_deposit_revenue_integrity(conn) -> dict[str, Any]:
     """Flag delivered order revenue entries where the deposit balance moved
     into revenue does not reconcile with the net revenue recognised.
@@ -1087,6 +1328,609 @@ def _check_deposit_balance_integrity(conn) -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# source_ledger_totals — per-class lump-sum source vs journal reconciliation.
+#
+# Each entry in SOURCE_LEDGER_CLASSES is a dict describing one sub-identity:
+#   label         — human-readable class label (used in the report)
+#   source_type   — the journal_entries.source_type to aggregate
+#   journal_side — "debit" | "credit" — which side of the JE to SUM
+#   account_code  — the account code whose line side is summed (None = all)
+#   account_glob  — optional SQLite GLOB pattern matching the account codes
+#                   whose line side is summed (takes precedence over account_code;
+#                   used for expense_settlement to match all 25xx sub-accounts)
+#   account_glob_alt — optional second GLOB pattern; codes matching either
+#                      account_glob or account_glob_alt are summed (used to
+#                      match both 4-digit 25xx and 5-digit 25xxx vendor sub-accounts)
+#   description_prefix — restrict to JEs whose description starts with this
+#                        prefix (used to split `order` into revenue/AR/return)
+#   exclude_reversals — drop `description LIKE 'Reversal:%'` (always True here)
+#
+# The ``compute_source_sum`` callable returns the source-side SUM (float) and
+# a list of source_ids that contributed to it (used when the delta is non-zero
+# to surface offending ids). The callable receives ``conn``.
+#
+# Source-side sums that are not expressible as a single SQL GROUP BY (order
+# revenue, order AR, order shipping release) are computed in Python over a
+# small per-order query, mirroring the live sync logic so the identity matches
+# exactly what the sync function wrote.
+# ---------------------------------------------------------------------------
+
+
+def _source_sum_expense(conn):
+    """SUM(events.data.amount_vnd) for buildable, non-deleted expense events.
+
+    Mirrors the ``_build_expense_journal_lines`` skip predicate: events with
+    amount_vnd <= 0, no category, or no payment_method/payment_source are
+    by-design unjournalled and excluded. Reversed (deleted) events are excluded
+    via the deleted_at filter.
+    """
+    rows = conn.execute(
+        """
+        SELECT e.id AS event_id, e.data AS data
+        FROM events e
+        WHERE e.type = 'expense'
+          AND (e.deleted_at IS NULL OR e.deleted_at = '')
+        ORDER BY e.id
+        """,
+    ).fetchall()
+    total = 0.0
+    source_ids: list[int] = []
+    for r in rows:
+        if not r["data"]:
+            continue
+        try:
+            data = json.loads(r["data"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        amount = data.get("amount_vnd")
+        # Mirror the ``_build_expense_journal_lines`` skip predicate via the
+        # shared ``_is_expense_journallable`` helper (CQ-5): events that produce
+        # no JE at build time must be excluded from the source SUM, or the
+        # source_ledger_totals check reports a phantom delta for events that
+        # are by-design unjournalled.
+        if not _is_expense_journallable(data):
+            continue
+        total += float(amount)
+        source_ids.append(int(r["event_id"]))
+    return total, source_ids
+
+
+def _source_sum_expense_settlement(conn):
+    """SUM(settlements.amount) across all debt expense events.
+
+    Settlements live inside ``events.data.settlements[]`` (a list of
+    ``{id, amount, ...}`` dicts). The source SUM iterates non-deleted debt
+    expense events and sums every settlement's ``amount``.
+    """
+    rows = conn.execute(
+        """
+        SELECT e.id AS event_id, e.data AS data
+        FROM events e
+        WHERE e.type = 'expense'
+          AND (e.deleted_at IS NULL OR e.deleted_at = '')
+        ORDER BY e.id
+        """,
+    ).fetchall()
+    total = 0.0
+    source_ids: list[int] = []
+    for r in rows:
+        if not r["data"]:
+            continue
+        try:
+            data = json.loads(r["data"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        if data.get("payment_method") != EXPENSE_DEBT_PAYMENT_METHOD:
+            continue
+        settlements = data.get("settlements")
+        if not isinstance(settlements, list):
+            continue
+        for s in settlements:
+            if not isinstance(s, dict):
+                continue
+            amount = s.get("amount")
+            if not isinstance(amount, (int, float)) or amount <= 0:
+                continue
+            sid = s.get("id")
+            total += float(amount)
+            if isinstance(sid, int):
+                source_ids.append(sid)
+    return total, source_ids
+
+
+def _source_sum_order_revenue(conn):
+    """SUM(max(0, deposits_in - tien_rut - refunds - shipping_held)) over
+    delivered/completed orders that have a revenue entry.
+
+    Mirrors ``_reconcile_revenue_entry_lines``: the revenue entry debits 2100
+    for ``deposit_balance`` and credits 4100. Orders with deposit_balance <= 0
+    are not journalled as revenue (AR or skipped), so they are excluded from
+    this sub-identity. The journal-side match restricts to descriptions
+    starting with ``Order revenue:``.
+    """
+    from baker.models.payment_transaction import PaymentTransaction
+
+    orders = conn.execute(
+        """
+        SELECT o.id AS order_id, o.delivery_type, o.shipping_fee
+        FROM orders o
+        WHERE o.status IN ('delivered', 'completed')
+        ORDER BY o.id
+        """,
+    ).fetchall()
+    total = 0.0
+    source_ids: list[int] = []
+    for o in orders:
+        order_id = int(o["order_id"])
+        deposits_in = float(PaymentTransaction.total_paid_excl_outflows(conn, order_id))
+        tien_rut_total = float(PaymentTransaction.total_tien_rut(conn, order_id))
+        refund_total = float(PaymentTransaction.total_outflows(conn, order_id))
+        shipping_held = 0.0
+        delivery_type = o["delivery_type"] or "pickup"
+        shipping_fee = float(o["shipping_fee"] or 0)
+        if delivery_type == "bus" and shipping_fee > 0:
+            shipping_held = shipping_fee
+        deposit_balance = max(
+            0.0, deposits_in - tien_rut_total - refund_total - shipping_held
+        )
+        if deposit_balance <= 0:
+            continue
+        total += deposit_balance
+        source_ids.append(order_id)
+    return total, source_ids
+
+
+def _source_sum_order_ar(conn):
+    """SUM(orders.total_price) over truly-unpaid delivered orders (AR entries).
+
+    AR entries are created when ``deposit_balance <= 0`` AND
+    ``deposits_in - tien_rut <= 0`` (no deposits, no refunds). The journal-side
+    match restricts to descriptions starting with ``Order revenue (AR):``.
+    """
+    from baker.models.payment_transaction import PaymentTransaction
+
+    orders = conn.execute(
+        """
+        SELECT o.id AS order_id, o.total_price, o.delivery_type, o.shipping_fee
+        FROM orders o
+        WHERE o.status IN ('delivered', 'completed')
+        ORDER BY o.id
+        """,
+    ).fetchall()
+    total = 0.0
+    source_ids: list[int] = []
+    for o in orders:
+        order_id = int(o["order_id"])
+        deposits_in = float(PaymentTransaction.total_paid_excl_outflows(conn, order_id))
+        tien_rut_total = float(PaymentTransaction.total_tien_rut(conn, order_id))
+        if (deposits_in - tien_rut_total) > 0:
+            continue
+        total_price = float(o["total_price"] or 0)
+        if total_price <= 0:
+            continue
+        total += total_price
+        source_ids.append(order_id)
+    return total, source_ids
+
+
+def _source_sum_order_tien_rut_return(conn):
+    """SUM(held_in_2400) over delivered orders with a tien-rut return entry.
+
+    The tien-rut return entry debits 2400 for the held amount (credits asset).
+    The source-side amount is the net 2400 held at delivery, mirroring
+    ``_held_tien_rut_for_order``. Orders with held <= 0 are not journalled.
+    """
+    from baker.services.journal_sync import _held_tien_rut_for_order
+
+    orders = conn.execute(
+        """
+        SELECT o.id AS order_id
+        FROM orders o
+        WHERE o.status IN ('delivered', 'completed')
+        ORDER BY o.id
+        """,
+    ).fetchall()
+    total = 0.0
+    source_ids: list[int] = []
+    for o in orders:
+        order_id = int(o["order_id"])
+        held = float(_held_tien_rut_for_order(conn, order_id))
+        if held <= 0:
+            continue
+        total += held
+        source_ids.append(order_id)
+    return total, source_ids
+
+
+def _source_sum_order_cogs(conn):
+    """SUM(order_items.cost_at_sale * quantity) for non-extra/gift items on
+    delivered/completed orders, excluding all-zero-cost orders (no JE by
+    design).
+    """
+    rows = conn.execute(
+        """
+        SELECT o.id AS order_id,
+               COALESCE(SUM(oi.cost_at_sale * oi.quantity), 0) AS cogs_total
+        FROM orders o
+        JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.status IN ('delivered', 'completed')
+          AND oi.is_extra = 0
+          AND oi.is_gift = 0
+          AND oi.cost_at_sale IS NOT NULL
+          AND oi.cost_at_sale > 0
+        GROUP BY o.id
+        HAVING cogs_total > 0
+        ORDER BY o.id
+        """,
+    ).fetchall()
+    total = 0.0
+    source_ids: list[int] = []
+    for r in rows:
+        total += float(r["cogs_total"])
+        source_ids.append(int(r["order_id"]))
+    return total, source_ids
+
+
+def _source_sum_order_shipping_hold(conn):
+    """SUM(orders.shipping_fee) over bus orders that have an
+    ``order_shipping_hold`` entry. The source-side is restricted to orders
+    that actually have such an entry (legacy backfill); comparing against all
+    bus orders would double-count orders whose shipping is held via
+    ``payment_transaction``.
+    """
+    rows = conn.execute(
+        """
+        SELECT o.id AS order_id, o.shipping_fee
+        FROM orders o
+        JOIN journal_entries je
+            ON je.source_type = 'order_shipping_hold' AND je.source_id = o.id
+        WHERE o.delivery_type = 'bus'
+          AND o.shipping_fee > 0
+          AND je.description NOT LIKE 'Reversal:%'
+        ORDER BY o.id
+        """,
+    ).fetchall()
+    total = 0.0
+    source_ids: list[int] = []
+    for r in rows:
+        total += float(r["shipping_fee"] or 0)
+        source_ids.append(int(r["order_id"]))
+    return total, source_ids
+
+
+def _source_sum_order_shipping_release(conn):
+    """SUM(min(shipping_fee, held_in_2200)) over delivered bus orders.
+
+    Mirrors ``_sync_bus_shipping_release_entry``: the release amount is the
+    smaller of the order's shipping_fee and the net amount held in 2200 across
+    ``payment_transaction`` and ``order_shipping_hold`` entries. Orders with
+    release_amount <= 0 are not journalled.
+    """
+    from baker.services.journal_sync import _held_shipping_for_order
+
+    orders = conn.execute(
+        """
+        SELECT o.id AS order_id, o.shipping_fee
+        FROM orders o
+        WHERE o.status IN ('delivered', 'completed')
+          AND o.delivery_type = 'bus'
+          AND o.shipping_fee > 0
+        ORDER BY o.id
+        """,
+    ).fetchall()
+    total = 0.0
+    source_ids: list[int] = []
+    for o in orders:
+        order_id = int(o["order_id"])
+        shipping_fee = float(o["shipping_fee"] or 0)
+        held = float(_held_shipping_for_order(conn, order_id))
+        release_amount = min(shipping_fee, held)
+        if release_amount <= 0:
+            continue
+        total += release_amount
+        source_ids.append(order_id)
+    return total, source_ids
+
+
+def _source_sum_payment_transaction(conn):
+    """SUM(payment_transactions.amount) for non-invalidated transactions.
+
+    The journal-side matches the asset-debit side (uniform across inflow,
+    refund, and tien-rut). Invalidated transactions are excluded.
+    """
+    rows = conn.execute(
+        """
+        SELECT COALESCE(SUM(amount), 0) AS total,
+               GROUP_CONCAT(id) AS ids
+        FROM payment_transactions
+        WHERE invalidated_at IS NULL OR invalidated_at = ''
+        """,
+    ).fetchone()
+    total = float(rows["total"] or 0)
+    ids_str = rows["ids"] or ""
+    source_ids = [int(x) for x in str(ids_str).split(",") if x]
+    return total, source_ids
+
+
+def _source_sum_stock_movement_cogs(conn, movement_type: str, source_type: str):
+    """SUM(resolve_product_cost * quantity) for resolvable-cost movements of
+    the given type. Movements with zero resolved cost are excluded (no JE by
+    design).
+    """
+    from baker.services.cost_resolver import resolve_product_cost
+
+    rows = conn.execute(
+        """
+        SELECT sm.id AS movement_id, sm.product_id AS product_id,
+               sm.quantity AS quantity
+        FROM stock_movements sm
+        WHERE sm.movement_type = ?
+        ORDER BY sm.id
+        """,
+        (movement_type,),
+    ).fetchall()
+    total = 0.0
+    source_ids: list[int] = []
+    for r in rows:
+        movement_id = int(r["movement_id"])
+        product_id = r["product_id"]
+        if product_id is None:
+            continue
+        try:
+            pid = int(product_id)
+        except (TypeError, ValueError):
+            continue
+        qty = int(r["quantity"] or 0)
+        if qty <= 0:
+            continue
+        unit_cost = resolve_product_cost(conn, pid)
+        if unit_cost <= 0:
+            continue
+        total += unit_cost * qty
+        source_ids.append(movement_id)
+    return total, source_ids
+
+
+def _journal_sum(
+    conn,
+    *,
+    source_type: str,
+    account_code: str | None,
+    side: str,
+    description_prefix: str | None = None,
+    account_glob: str | None = None,
+    account_glob_alt: str | None = None,
+) -> tuple[float, list[int]]:
+    """SUM the debit/credit on ``account_code`` (or codes matching ``account_glob``
+    / ``account_glob_alt``) for non-reversal ``source_type`` journal entries,
+    optionally restricted to a description prefix. Returns ``(total, source_ids)``.
+
+    ``account_glob`` and ``account_glob_alt`` (SQLite GLOB patterns) take
+    precedence over ``account_code`` when set; codes matching either pattern are
+    summed (used by the ``expense_settlement`` class to sum across per-vendor
+    25xx/25xxx sub-accounts under 2500).
+    """
+    side_col = "jl.debit" if side == "debit" else "jl.credit"
+    params: list = []
+    sql = f"""
+        SELECT je.source_id AS source_id,
+               COALESCE(SUM({side_col}), 0) AS amount
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+    """
+    if account_glob is not None:
+        sql += " JOIN accounts a ON a.id = jl.account_id AND (a.code GLOB ?"
+        params.append(account_glob)
+        if account_glob_alt is not None:
+            sql += " OR a.code GLOB ?"
+            params.append(account_glob_alt)
+        sql += ")\n"
+    elif account_code is not None:
+        sql += " JOIN accounts a ON a.id = jl.account_id AND a.code = ?\n"
+        params.append(account_code)
+    sql += " WHERE je.source_type = ? AND je.description NOT LIKE 'Reversal:%'\n"
+    params.append(source_type)
+    if description_prefix is not None:
+        sql += " AND je.description LIKE ?\n"
+        params.append(description_prefix + "%")
+    sql += " GROUP BY je.source_id\n"
+    rows = conn.execute(sql, params).fetchall()
+    total = 0.0
+    source_ids: list[int] = []
+    for r in rows:
+        amt = float(r["amount"] or 0)
+        if abs(amt) <= DEBIT_CREDIT_TOLERANCE:
+            continue
+        total += amt
+        if r["source_id"] is not None:
+            source_ids.append(int(r["source_id"]))
+    return total, source_ids
+
+
+# Each sub-identity in the source_ledger_totals check. The ``journal_side`` /
+# ``account_code`` / ``prefix`` drive the journal-side SUM; ``source_fn``
+# computes the source-side SUM. ``journal_account_code = None`` means sum the
+# side across all accounts on the matching source_type (used for
+# payment_transaction where the debit always hits an asset account).
+_SOURCE_LEDGER_CLASSES = [
+    {
+        "label": "expense",
+        "source_type": "expense",
+        "account_code": None,
+        "side": "debit",
+        "prefix": None,
+        "source_fn": _source_sum_expense,
+    },
+    {
+        "label": "expense_settlement",
+        "source_type": "expense_settlement",
+        "account_code": None,
+        # Match all AP vendor sub-accounts under 2500: both the legacy 4-digit
+        # ``25xx`` range (2501..2599) and the expanded 5-digit ``25xxx`` range
+        # (25001..25999) introduced by CQ-2. The prior exact-match on the 2500
+        # parent code missed Phase 4 settlements that debit per-vendor 25xx
+        # sub-accounts, yielding a false-positive delta (CQ-1).
+        "account_glob": "25[0-9][0-9]",
+        "account_glob_alt": "25[0-9][0-9][0-9]",
+        "side": "debit",
+        "prefix": None,
+        "source_fn": _source_sum_expense_settlement,
+    },
+    {
+        "label": "order_revenue",
+        "source_type": "order",
+        "account_code": CUSTOMER_DEPOSITS_CODE,
+        "side": "debit",
+        "prefix": "Order revenue:",
+        "source_fn": _source_sum_order_revenue,
+    },
+    {
+        "label": "order_ar",
+        "source_type": "order",
+        "account_code": ACCOUNTS_RECEIVABLE_CODE,
+        "side": "debit",
+        "prefix": "Order revenue (AR):",
+        "source_fn": _source_sum_order_ar,
+    },
+    {
+        "label": "order_tien_rut_return",
+        "source_type": "order",
+        "account_code": TIEN_RUT_HELD_CODE,
+        "side": "debit",
+        "prefix": "Tien rut return:",
+        "source_fn": _source_sum_order_tien_rut_return,
+    },
+    {
+        "label": "order_cogs",
+        "source_type": "order_cogs",
+        "account_code": COGS_CODE,
+        "side": "debit",
+        "prefix": None,
+        "source_fn": _source_sum_order_cogs,
+    },
+    {
+        "label": "order_shipping_hold",
+        "source_type": "order_shipping_hold",
+        "account_code": BUS_SHIPPING_HELD_CODE,
+        "side": "credit",
+        "prefix": None,
+        "source_fn": _source_sum_order_shipping_hold,
+    },
+    {
+        "label": "order_shipping_release",
+        "source_type": "order_shipping_release",
+        "account_code": BUS_SHIPPING_HELD_CODE,
+        "side": "debit",
+        "prefix": None,
+        "source_fn": _source_sum_order_shipping_release,
+    },
+    {
+        "label": "payment_transaction",
+        "source_type": "payment_transaction",
+        "account_code": None,
+        "side": "debit",
+        "prefix": None,
+        "source_fn": _source_sum_payment_transaction,
+    },
+    {
+        "label": "waste_cogs",
+        "source_type": "waste_cogs",
+        "account_code": COGS_CODE,
+        "side": "debit",
+        "prefix": None,
+        "source_fn": lambda conn: _source_sum_stock_movement_cogs(
+            conn, "waste", "waste_cogs"
+        ),
+    },
+    {
+        "label": "negative_sale_cogs",
+        "source_type": "negative_sale_cogs",
+        "account_code": COGS_CODE,
+        "side": "debit",
+        "prefix": None,
+        "source_fn": lambda conn: _source_sum_stock_movement_cogs(
+            conn, "negative_sale", "negative_sale_cogs"
+        ),
+    },
+    {
+        "label": "restock_inflow",
+        "source_type": "restock_inflow",
+        "account_code": INVENTORY_CODE,
+        "side": "debit",
+        "prefix": None,
+        "source_fn": lambda conn: _source_sum_stock_movement_cogs(
+            conn, "restock", "restock_inflow"
+        ),
+    },
+]
+
+
+def _check_source_ledger_totals(conn) -> dict[str, Any]:
+    """Per-class lump-sum source vs journal reconciliation (DG-245 Phase 5,
+    FR8/AC6).
+
+    Note: This module (accounting_validation.py) exceeds the recommended file
+    size and is tracked for future extraction under DG-138 (see
+    docs/code-quality-audit.md). The structural split is deferred to DG-138;
+    no file-size changes are made in this iteration (CQ-6).
+
+    For each event class, sums the source-side amount (events/payment
+    transactions/stock movements) and the matching journal-side amount, then
+    reports the delta. When the delta exceeds ``DEBIT_CREDIT_TOLERANCE`` for a
+    class, the offending ``source_ids`` are included so operators can drill in.
+
+    Reversal entries (``description LIKE 'Reversal:%'``) are excluded from the
+    journal SUM — they legitimately share a source_type/source_id and would
+    double-count.
+
+    The check is read-only (NFR2). Aggregation is SQL-driven where possible;
+    the ``order`` revenue/AR/return and ``order_shipping_release`` classes
+    require per-order computation because their source-side amount depends on
+    held balances (2200/2400) that are not a simple column SUM (NFR3).
+    """
+    findings: list[dict[str, Any]] = []
+    for cls in _SOURCE_LEDGER_CLASSES:
+        source_total, source_ids = cls["source_fn"](conn)
+        journal_total, journal_ids = _journal_sum(
+            conn,
+            source_type=cls["source_type"],
+            account_code=cls["account_code"],
+            side=cls["side"],
+            description_prefix=cls["prefix"],
+            account_glob=cls.get("account_glob"),
+            account_glob_alt=cls.get("account_glob_alt"),
+        )
+        delta = round(source_total - journal_total, 4)
+        if abs(delta) <= DEBIT_CREDIT_TOLERANCE:
+            continue
+        # Offending ids = source ids without a matching journal id OR journal
+        # ids without a matching source id (whichever side is short). Surface
+        # the symmetric difference so both gaps and extras are visible.
+        offending = sorted(set(source_ids).symmetric_difference(set(journal_ids)))
+        findings.append({
+            "class": cls["label"],
+            "source_type": cls["source_type"],
+            "source_total": round(source_total, 2),
+            "journal_total": round(journal_total, 2),
+            "delta": delta,
+            "source_id_count": len(source_ids),
+            "journal_id_count": len(journal_ids),
+            "offending_source_ids": offending[:200],
+        })
+
+    return {
+        "check": "source_ledger_totals",
+        "status": "pass" if not findings else "fail",
+        "issue_count": len(findings),
+        "details": findings,
+    }
+
+
 CHECKS = (
     _check_double_entry_integrity,
     _check_cogs_completeness,
@@ -1104,6 +1948,8 @@ CHECKS = (
     _check_expense_category_mismatch,
     _check_deposit_revenue_integrity,
     _check_deposit_balance_integrity,
+    _check_expense_payment_account_mismatch,
+    _check_source_ledger_totals,
 )
 
 
@@ -1113,7 +1959,7 @@ def run_validation(conn) -> dict[str, Any]:
     The report has the shape::
 
         {
-          "summary": {"total_checks": 15, "passed": N, "failed": M,
+          "summary": {"total_checks": 18, "passed": N, "failed": M,
                        "total_issues": K, "overall_status": "pass"|"fail"},
           "checks": [ <per-check result dicts> ]
         }
