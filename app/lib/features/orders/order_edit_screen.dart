@@ -10,6 +10,7 @@ import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/api_error.dart';
+import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'order_edit/utils/edit_public_code_dialog.dart';
@@ -78,9 +79,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     if (_initialized) return;
     _initialized = true;
     _nameCtrl.text = order.customerName;
-    _phoneCtrl.text = order.customerPhone;
+    _phoneCtrl.text = formatPhone(order.customerPhone);
     _addressCtrl.text = order.deliveryAddress;
-    _deliveryPhoneCtrl.text = order.deliveryPhone;
+    _deliveryPhoneCtrl.text = formatPhone(order.deliveryPhone);
     _notesCtrl.text = order.notes;
     _source = order.source;
     _deliveryType = order.deliveryType;
@@ -258,7 +259,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
       _customerTouched = true;
       if (c != null) {
         _nameCtrl.text = c.name;
-        if (c.phone.isNotEmpty) _phoneCtrl.text = c.phone;
+        if (c.phone.isNotEmpty) _phoneCtrl.text = formatPhone(c.phone);
       }
     });
   }

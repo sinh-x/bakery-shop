@@ -120,21 +120,24 @@ void main() {
     await tester.tap(stars.at(0));
     await tester.pumpAndSettle();
 
-    // Fill name + phones then save.
+    // Fill name + phones then save. PhoneInputFormatter dash-formats the
+    // typed digits (10 digits -> xxxx-xxx-xxx).
     await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
-    await tester.enterText(find.byType(TextFormField).at(1), '0901');
-    await tester.enterText(find.byType(TextFormField).at(2), '0902');
+    await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
+    await tester.enterText(find.byType(TextFormField).at(2), '0987654321');
     await tester.tap(find.text(VN.save));
     await tester.pumpAndSettle();
 
     expect(service.lastCreatedPhones, isNotNull);
     expect(service.lastCreatedPhones!.length, 2);
     expect(
-      service.lastCreatedPhones!.firstWhere((p) => p.phone == '0902').isPrimary,
+      service.lastCreatedPhones!
+          .firstWhere((p) => p.phone == '0987-654-321').isPrimary,
       isTrue,
     );
     expect(
-      service.lastCreatedPhones!.firstWhere((p) => p.phone == '0901').isPrimary,
+      service.lastCreatedPhones!
+          .firstWhere((p) => p.phone == '0901-234-567').isPrimary,
       isFalse,
     );
   });
@@ -170,7 +173,8 @@ void main() {
 
     expect(service.lastCreatedPhones, isNotNull);
     expect(service.lastCreatedPhones!.length, 1);
-    expect(service.lastCreatedPhones!.single.phone, '0901234567');
+    // PhoneInputFormatter formats 10 digits as xxxx-xxx-xxx.
+    expect(service.lastCreatedPhones!.single.phone, '0901-234-567');
     expect(service.lastCreatedPhones!.single.isPrimary, isTrue);
   });
 
@@ -192,5 +196,54 @@ void main() {
     // Save blocked: duplicate snackbar shown, no creation attempted.
     expect(service.lastCreated, isNull);
     expect(find.text(VN.customerPhoneDuplicate), findsOneWidget);
+  });
+
+  // DG-251 Phase 3 / §11 Risk: formatter changes the text the duplicate
+  // detector compares. Two entries that normalize to the same formatted
+  // string must still be flagged as duplicates.
+  testWidgets(
+      'duplicate detection fires for formatted duplicates (same digits, '
+      'different dash placement)', (tester) async {
+    final service = _RecordingCustomerService();
+    await _pumpForm(tester, service);
+
+    // Add a second phone row.
+    await tester.tap(find.text(VN.customerAddPhone));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
+    // Row 1: typed digits get dash-formatted by PhoneInputFormatter.
+    await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
+    // Row 2: same digits typed again -> identical formatted value.
+    await tester.enterText(find.byType(TextFormField).at(2), '0901234567');
+    await tester.tap(find.text(VN.save));
+    await tester.pumpAndSettle();
+
+    // Both rows format to '0901-234-567', so duplicate detection must fire.
+    expect(service.lastCreated, isNull);
+    expect(find.text(VN.customerPhoneDuplicate), findsOneWidget);
+  });
+
+  // DG-251 Phase 3 / FR5: prefilled (edit-mode) phone values render
+  // dash-formatted via formatPhone when the form opens.
+  testWidgets('edit mode renders prefilled phones dash-formatted via formatPhone',
+      (tester) async {
+    final service = _RecordingCustomerService();
+    const customer = Customer(
+      id: 9,
+      name: 'Hoa',
+      phones: [
+        CustomerPhone(phone: '0901234567', isPrimary: true),
+        CustomerPhone(phone: '0987654321', isPrimary: false),
+      ],
+    );
+    await _pumpForm(tester, service, customer: customer);
+
+    // 10-digit stored values are displayed dash-formatted (xxxx-xxx-xxx).
+    expect(find.text('0901-234-567'), findsOneWidget);
+    expect(find.text('0987-654-321'), findsOneWidget);
+    // Raw unformatted values must NOT be shown.
+    expect(find.text('0901234567'), findsNothing);
+    expect(find.text('0987654321'), findsNothing);
   });
 }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/widgets/phone_text_field.dart';
 
 /// A single editable phone row (controller + primary flag).
 ///
@@ -44,17 +44,10 @@ class PhoneEntryRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: TextFormField(
+            child: PhoneTextField(
               controller: entry.controller,
-              keyboardType: TextInputType.phone,
-              inputFormatters: [
-                LengthLimitingTextInputFormatter(20),
-              ],
+              labelText: VN.customerPhoneField,
               textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                labelText: VN.customerPhoneField,
-                border: OutlineInputBorder(),
-              ),
             ),
           ),
           const SizedBox(width: 8),

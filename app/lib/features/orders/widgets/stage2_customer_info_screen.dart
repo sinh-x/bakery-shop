@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/customer.dart';
 import '../../../providers/config_provider.dart';
 import '../../../providers/order/order_create_state_provider.dart';
+import '../../../shared/utils/phone_formatter.dart';
 import 'order_customer_section.dart';
 import 'section_header.dart';
 import 'stage1_responsive_content.dart';
@@ -40,7 +41,7 @@ class _Stage2CustomerInfoScreenState
     super.initState();
     final state = ref.read(widget.orderStateProvider);
     _nameCtrl.text = state.wizardData.customerName;
-    _phoneCtrl.text = state.wizardData.customerPhone;
+    _phoneCtrl.text = formatPhone(state.wizardData.customerPhone);
     if (state.wizardData.selectedCustomer != null) {
       _customerTouched = true;
     }
@@ -78,7 +79,7 @@ class _Stage2CustomerInfoScreenState
     );
     if (c != null) {
       _nameCtrl.text = c.name;
-      if (c.phone.isNotEmpty) _phoneCtrl.text = c.phone;
+      if (c.phone.isNotEmpty) _phoneCtrl.text = formatPhone(c.phone);
       updated = updated.copyWith(
         customerName: c.name,
         customerPhone: c.phone,
