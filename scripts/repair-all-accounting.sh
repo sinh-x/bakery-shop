@@ -9,6 +9,10 @@ if [[ "${1:-}" == "--dry-run" ]]; then
   DRY_RUN="--dry-run"
   echo "=== DRY RUN MODE (no changes will be written) ==="
   echo
+elif [[ $# -gt 0 ]]; then
+  echo "Usage: $0 [--dry-run]" >&2
+  echo "Error: unrecognized argument(s): $*" >&2
+  exit 2
 fi
 
 run_repair() {
@@ -20,13 +24,13 @@ run_repair() {
 }
 
 # 1. Inventory backfill: fix negative 1300 balance by creating missing stock-in JEs
-run_repair "1/6 Inventory stock-in backfill" repair-inventory --all
+run_repair "1/7 Inventory stock-in backfill" repair-inventory --all
 
 # 2. COGS completeness: backfill cost_at_sale + create missing order_cogs JEs
-run_repair "2/6 COGS backfill" repair-order-revenue --cogs --all
+run_repair "2/7 COGS backfill" repair-order-revenue --cogs --all
 
 # 3. Payment journal: create missing payment_transaction JEs
-run_repair "3/6 Payment journal backfill" repair-payment-journal --all
+run_repair "3/7 Payment journal backfill" repair-payment-journal --all
 
 # 4. Deposit balance: fix outstanding_balance + cancelled_with_deposits
 #    (DG-249 Phase 2: must run before AR entries so deposit-style revenue

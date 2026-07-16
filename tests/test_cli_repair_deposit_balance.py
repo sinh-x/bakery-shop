@@ -637,6 +637,54 @@ def test_deposit_balance_skips_order_with_ar_style_revenue_je_order_id():
         assert _order_has_ar_style_je(conn, oid)
 
 
+def test_deposit_balance_dry_run_skips_order_with_ar_style_revenue_je():
+    """CQ-1 (Major): ``--dry-run`` must report an AR-guarded order as
+    ``bỏ qua`` (skipped), NOT as ``sẽ sửa`` (will-repair).
+
+    The ar_exists guard is hoisted above the dry-run branch so preview
+    and apply agree. Before the fix, the guard only ran in the apply
+    branch, so dry-run reported guarded orders as ``will-repair`` even
+    though applying them would skip — a preview/apply mismatch.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        ar_acc = _account_id(conn, "1500")
+        revenue_acc = _account_id(conn, "4100")
+        oid = _insert_order(
+            conn, order_ref="ORD-260716-CQ1", customer_name="Khách CQ1",
+            total_price=500000, status="delivered",
+        )
+        _insert_payment(conn, order_id=oid, amount=500000, ptype="deposit")
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(conn, 1, 500000, "deposit", "cash", order_id=oid)
+        _insert_ar_style_revenue_entry(
+            conn, order_id=oid, ar_account_id=ar_acc,
+            revenue_account_id=revenue_acc, amount=500000,
+        )
+        assert _order_has_ar_style_je(conn, oid)
+
+        # Service-level: dry-run returns "skipped", not "will-repair".
+        result = _process_deposit_balance_order(conn, oid, dry_run=True)
+        assert result["action"] == "skipped", (
+            f"expected 'skipped', got {result['action']!r}"
+        )
+
+    # CLI-level: dry-run report shows "bỏ qua", not "sẽ sửa".
+    result = _invoke(["repair-deposit-balance", "--all", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "bỏ qua" in result.output
+    # The guarded order must NOT appear as a will-repair candidate.
+    assert "ORD-260716-CQ1" in result.output
+    will_repair_line = [
+        line for line in result.output.splitlines()
+        if "ORD-260716-CQ1" in line
+    ]
+    assert will_repair_line, "guarded order should appear in the dry-run report"
+    assert "sẽ sửa" not in will_repair_line[0], (
+        f"guarded order reported as 'sẽ sửa': {will_repair_line[0]!r}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # VN labels
 # ---------------------------------------------------------------------------
