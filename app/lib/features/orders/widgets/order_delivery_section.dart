@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 // EXEMPT: 200-line widget threshold exceeded because OrderDeliverySection
 // is the canonical shared delivery widget with multiple sub-sections
@@ -9,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/order_helpers.dart';
+import '../../../shared/widgets/phone_text_field.dart';
 import 'due_date_time_picker_row.dart';
 import 'section_header.dart';
 import 'stage1_responsive_content.dart';
@@ -26,7 +26,6 @@ class OrderDeliverySection extends StatelessWidget {
     this.onShippingFeeChanged,
     this.addressCtrl,
     this.phoneCtrl,
-    this.phoneInputFormatters,
     this.notesCtrl,
     this.shippingBusDefault = 25000,
     this.shippingDoorDefault = 20000,
@@ -52,7 +51,6 @@ class OrderDeliverySection extends StatelessWidget {
   final ValueChanged<double>? onShippingFeeChanged;
   final TextEditingController? addressCtrl;
   final TextEditingController? phoneCtrl;
-  final List<TextInputFormatter>? phoneInputFormatters;
   final TextEditingController? notesCtrl;
   final double shippingBusDefault;
   final double shippingDoorDefault;
@@ -153,14 +151,9 @@ class OrderDeliverySection extends StatelessWidget {
         if (_needsAddress && addressCtrl != null) ...[
           const SizedBox(height: 12),
           if (phoneCtrl != null) ...[
-            TextFormField(
-              controller: phoneCtrl,
-              decoration: const InputDecoration(
-                labelText: OrdersLabels.deliveryPhone,
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.phone,
-              inputFormatters: phoneInputFormatters,
+            PhoneTextField(
+              controller: phoneCtrl!,
+              labelText: OrdersLabels.deliveryPhone,
             ),
             const SizedBox(height: 12),
           ],
