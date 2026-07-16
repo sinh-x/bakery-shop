@@ -16,6 +16,7 @@ import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../providers/order/critical_alert_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
+import 'filtered_orders_screen.dart' show countCriticalActive, countUrgentActive, countIncompleteActive;
 import 'widgets/incomplete_banner.dart';
 import 'widgets/order_card.dart';
 import 'widgets/urgency_banner.dart';
@@ -288,12 +289,8 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
               Consumer(
                 builder: (context, ref, _) {
                   final orders = ref.watch(orderListProvider).asData?.value ?? [];
-                  final critical = orders
-                      .where((o) => o.urgency == urgencyCritical)
-                      .length;
-                  final urgent = orders
-                      .where((o) => o.urgency == urgencyUrgent)
-                      .length;
+                  final critical = countCriticalActive(orders);
+                  final urgent = countUrgentActive(orders);
                   return UrgencyBanner(
                     criticalCount: critical,
                     urgentCount: urgent,
@@ -306,9 +303,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
               Consumer(
                 builder: (context, ref, _) {
                   final orders = ref.watch(orderListProvider).asData?.value ?? [];
-                  final count = orders
-                      .where((o) => o.completeness == completenessIncomplete)
-                      .length;
+                  final count = countIncompleteActive(orders);
                   return IncompleteBanner(
                     count: count,
                     onTap: () => context.push('/orders/incomplete'),
