@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.7.9+93] — 2026-07-16
+- chore: update changelog
+
 ## [0.7.9+92] — 2026-07-16
 - chore: update changelog for version bump
 
