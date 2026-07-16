@@ -1,9 +1,9 @@
 import 'package:bakery_app/data/api/order_service.dart';
 import 'package:bakery_app/data/models/order.dart';
+import 'package:bakery_app/features/orders/filtered_orders_screen.dart' show filterUrgencyActive, filterIncompleteActive;
 import 'package:bakery_app/providers/order/incomplete_count_provider.dart';
 import 'package:bakery_app/providers/order/order_crud_providers.dart';
 import 'package:bakery_app/providers/order/urgency_count_provider.dart';
-import 'package:bakery_app/shared/utils/order_helpers.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -186,30 +186,13 @@ void main() {
   });
 
   group('FR-6: urgency listing includes both critical AND urgent', () {
-    // Reuse the same filter logic as filtered_orders_screen.dart applyFilter
-    List<Order> applyUrgencyFilter(List<Order> orders) {
-      const activeStatuses = [
-        'new',
-        'confirmed',
-        'in_progress',
-        'ready',
-        'delivered',
-      ];
-      final active = orders.where((o) => activeStatuses.contains(o.status));
-      return active
-          .where(
-            (o) => o.urgency == urgencyCritical || o.urgency == urgencyUrgent,
-          )
-          .toList();
-    }
-
     test('includes both critical and urgent active orders', () {
       final orders = [
         _order(ref: 'A', status: 'new', urgency: 'critical'),
         _order(ref: 'B', status: 'confirmed', urgency: 'urgent'),
         _order(ref: 'C', status: 'new', urgency: 'normal'),
       ];
-      final filtered = applyUrgencyFilter(orders);
+      final filtered = filterUrgencyActive(orders);
       expect(filtered, hasLength(2));
       expect(filtered.map((o) => o.orderRef), containsAll(['A', 'B']));
     });
@@ -220,7 +203,7 @@ void main() {
         _order(ref: 'B', status: 'cancelled', urgency: 'urgent'),
         _order(ref: 'C', status: 'new', urgency: 'critical'),
       ];
-      final filtered = applyUrgencyFilter(orders);
+      final filtered = filterUrgencyActive(orders);
       expect(filtered, hasLength(1));
       expect(filtered.first.orderRef, 'C');
     });
@@ -243,7 +226,7 @@ void main() {
       await container.read(orderListProvider.future);
       final orders = container.read(orderListProvider).asData!.value;
       final providerCount = container.read(urgencyCountProvider);
-      final listingCount = applyUrgencyFilter(orders).length;
+      final listingCount = filterUrgencyActive(orders).length;
 
       expect(providerCount, listingCount);
       expect(providerCount, 3);
@@ -251,20 +234,6 @@ void main() {
   });
 
   group('FR-7: incomplete listing matches incompleteCountProvider', () {
-    List<Order> applyIncompleteFilter(List<Order> orders) {
-      const activeStatuses = [
-        'new',
-        'confirmed',
-        'in_progress',
-        'ready',
-        'delivered',
-      ];
-      final active = orders.where((o) => activeStatuses.contains(o.status));
-      return active
-          .where((o) => o.completeness == completenessIncomplete)
-          .toList();
-    }
-
     test('listing count matches incompleteCountProvider count', () async {
       final fakeService = _FakeOrderService();
       fakeService.orders = [
@@ -282,7 +251,7 @@ void main() {
       await container.read(orderListProvider.future);
       final orders = container.read(orderListProvider).asData!.value;
       final providerCount = container.read(incompleteCountProvider);
-      final listingCount = applyIncompleteFilter(orders).length;
+      final listingCount = filterIncompleteActive(orders).length;
 
       expect(providerCount, listingCount);
       expect(providerCount, 2);
