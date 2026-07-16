@@ -1142,6 +1142,77 @@ def test_ar_entries_vn_labels():
 
 
 # ---------------------------------------------------------------------------
+# Cross-guard: deposit-style revenue JE prevents AR entry (DG-249 Phase 1, AC1)
+# ---------------------------------------------------------------------------
+
+
+def test_ar_entries_skips_order_with_deposit_style_revenue_je():
+    """AC1: an order with a deposit-style revenue JE (source_type='order',
+    debit on 2100) must be skipped by ``repair-ar-entries --all`` so no
+    duplicate AR entry is created.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
+        oid = _insert_order(
+            conn, order_ref="ORD-260716-AC1", customer_name="Khách Cọc",
+            total_price=500000, status="delivered",
+        )
+        # Insert a deposit-style revenue JE (DR 2100 / CR 4100) directly so
+        # the order already has a source_type='order' entry with a 2100 debit.
+        _insert_revenue_entry(
+            conn, order_id=oid, deposits_account_id=deposits_acc,
+            revenue_account_id=revenue_acc, amount=500000,
+        )
+        assert _revenue_2100_debit(conn, oid) == 500000.0
+        je_before = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+
+    result = _invoke(["repair-ar-entries", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "không có đơn hàng nào cần bổ sung bút toán công nợ" in result.output
+    assert "ORD-260716-AC1" not in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # No new AR entry created — JE count unchanged.
+        je_after = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        assert je_before == je_after
+        # The deposit-style entry is still the only order entry; no AR entry.
+        assert not _ar_entry_has_ar_desc(conn, oid)
+        assert _revenue_2100_debit(conn, oid) == 500000.0
+
+
+def test_ar_entries_skips_order_with_deposit_style_revenue_je_order_id():
+    """AC1 (single-order path): ``--order-id`` on an order with a deposit-style
+    revenue JE is also skipped — no duplicate AR entry created.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        deposits_acc = _account_id(conn, "2100")
+        revenue_acc = _account_id(conn, "4100")
+        oid = _insert_order(
+            conn, order_ref="ORD-260716-AC1b", customer_name="Khách Cọc2",
+            total_price=300000, status="delivered",
+        )
+        _insert_revenue_entry(
+            conn, order_id=oid, deposits_account_id=deposits_acc,
+            revenue_account_id=revenue_acc, amount=300000,
+        )
+        je_before = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+
+    result = _invoke(["repair-ar-entries", "--order-id", str(oid)])
+    assert result.exit_code == 0, result.output
+    assert "không có đơn hàng nào cần bổ sung bút toán công nợ" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        je_after = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        assert je_before == je_after
+        assert not _ar_entry_has_ar_desc(conn, oid)
+
+
+# ---------------------------------------------------------------------------
 # ``baker repair-inventory`` CLI tests — DG-233 Phase 4
 # (FR4, AC4, AC7, AC9)
 # ---------------------------------------------------------------------------

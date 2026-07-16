@@ -899,7 +899,9 @@ def _orders_needing_ar_entry(conn, order_id=None):
     """Find delivered/completed orders needing AR entries.
 
     Returns orders with total_price > 0, status in DELIVERED_STATUSES,
-    no existing ``source_type='order'`` journal entry, and
+    no existing ``source_type='order'`` journal entry, no deposit-style
+    revenue JE (``source_type='order'`` with a debit line on account
+    ``CUSTOMER_DEPOSITS_CODE`` — DG-249 Phase 1 cross-guard), and
     ``deposits_in - tien_rut_total <= 0`` (zero net deposits after
     excluding tien_rut — truly unpaid orders that need AR recognition).
     """
@@ -912,8 +914,16 @@ def _orders_needing_ar_entry(conn, order_id=None):
               SELECT 1 FROM journal_entries je
               WHERE je.source_type = 'order' AND je.source_id = o.id
           )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM journal_entries je2
+              JOIN journal_lines jl2 ON jl2.journal_entry_id = je2.id
+              JOIN accounts a2 ON a2.id = jl2.account_id
+              WHERE je2.source_type = 'order' AND je2.source_id = o.id
+                AND a2.code = ? AND jl2.debit > 0
+          )
     """
-    params = list(DELIVERED_STATUSES)
+    params = [*DELIVERED_STATUSES, CUSTOMER_DEPOSITS_CODE]
     if order_id is not None:
         sql += " AND o.id = ?"
         params.append(order_id)
