@@ -127,11 +127,15 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       _duplicateError = null;
       return null;
     }
-    // Detect duplicate non-empty phone numbers.
+    // Detect duplicate non-empty phone numbers. Compare on digit-only key so
+    // that a prefilled raw value (e.g. 11 digits shown unformatted) and the
+    // same digits typed (dash-formatted by PhoneInputFormatter) are still
+    // flagged as duplicates.
     final seen = <String>{};
     for (final phone in trimmed) {
       if (phone.isEmpty) continue;
-      if (!seen.add(phone)) {
+      final key = phone.replaceAll(RegExp(r'\D'), '');
+      if (!seen.add(key)) {
         _duplicateError = VN.customerPhoneDuplicate;
         return null;
       }

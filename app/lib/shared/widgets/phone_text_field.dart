@@ -60,22 +60,20 @@ class PhoneTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = InputDecoration(
-      labelText: labelText,
-      border: const OutlineInputBorder(),
-    );
+    // Start from the caller's decoration (when supplied) and fill in our
+    // defaults only where the caller did not provide a value. This preserves
+    // every field the caller set (e.g. counterText, fillColor, contentPadding)
+    // instead of silently dropping the ones not listed in the old manual
+    // copyWith whitelist.
     final decoration = decorationExtras == null
-        ? base
-        : base.copyWith(
-            labelText: decorationExtras!.labelText,
-            hintText: decorationExtras!.hintText,
-            helperText: decorationExtras!.helperText,
-            errorText: decorationExtras!.errorText,
-            prefixIcon: decorationExtras!.prefixIcon,
-            suffixIcon: decorationExtras!.suffixIcon,
-            border: decorationExtras!.border,
-            enabledBorder: decorationExtras!.enabledBorder,
-            focusedBorder: decorationExtras!.focusedBorder,
+        ? InputDecoration(
+            labelText: labelText,
+            border: const OutlineInputBorder(),
+          )
+        : decorationExtras!.copyWith(
+            labelText: decorationExtras!.labelText ?? labelText,
+            border:
+                decorationExtras!.border ?? const OutlineInputBorder(),
           );
 
     return TextFormField(

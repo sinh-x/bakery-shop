@@ -224,6 +224,40 @@ void main() {
     expect(find.text(VN.customerPhoneDuplicate), findsOneWidget);
   });
 
+  // CQ-1: a prefilled 11-digit phone (formatPhone leaves it raw since only
+  // 9/10-digit inputs are dash-grouped) must still be flagged as a duplicate
+  // of the same digits typed in another row (which PhoneInputFormatter dash-
+  // formats). Duplicate detection compares digit-only keys, not raw strings.
+  testWidgets(
+      'duplicate detection fires for 11-digit prefilled vs same digits typed',
+      (tester) async {
+    final service = _RecordingCustomerService();
+    // Stored phone is 11 digits; formatPhone returns it as-is (no dash
+    // grouping for lengths other than 9/10), so the prefilled controller
+    // shows the raw '09012345678'.
+    const customer = Customer(
+      id: 11,
+      name: 'Long',
+      phones: [CustomerPhone(phone: '09012345678', isPrimary: true)],
+    );
+    await _pumpForm(tester, service, customer: customer);
+
+    // Add a second phone row and type the same 11 digits. PhoneInputFormatter
+    // dash-formats them to '0901-234-5678'.
+    await tester.tap(find.text(VN.customerAddPhone));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).at(0), 'Long');
+    await tester.enterText(find.byType(TextFormField).at(2), '09012345678');
+    await tester.tap(find.text(VN.save));
+    await tester.pumpAndSettle();
+
+    // Despite different raw strings ('09012345678' vs '0901-234-5678'),
+    // digit-only normalization must flag the duplicate.
+    expect(service.lastUpdatedId, isNull);
+    expect(find.text(VN.customerPhoneDuplicate), findsOneWidget);
+  });
+
   // DG-251 Phase 3 / FR5: prefilled (edit-mode) phone values render
   // dash-formatted via formatPhone when the form opens.
   testWidgets('edit mode renders prefilled phones dash-formatted via formatPhone',

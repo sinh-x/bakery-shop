@@ -82,7 +82,7 @@ class _Stage2CustomerInfoScreenState
       if (c.phone.isNotEmpty) _phoneCtrl.text = formatPhone(c.phone);
       updated = updated.copyWith(
         customerName: c.name,
-        customerPhone: c.phone,
+        customerPhone: formatPhone(c.phone),
       );
     }
     notifier.updateWizardData(updated);
