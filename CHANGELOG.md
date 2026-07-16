@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.7.9+90] — 2026-07-16
+- feat(DG-249): add fix script for 8 duplicate AR entries
+
 ## [0.7.5+85] — 2026-07-13
 
 - feat(DG-221): Notification & highlight system for critical/urgent orders
