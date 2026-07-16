@@ -11,6 +11,17 @@ const urgencyUrgent = 'urgent';
 const completenessComplete = 'complete';
 const completenessIncomplete = 'incomplete';
 
+/// Active (non-terminal) order statuses. Single source of truth shared by
+/// banner counts, filtered listings, and the dashboard summary so all stay
+/// in sync. Completed and cancelled orders are excluded.
+const activeOrderStatuses = <String>[
+  'new',
+  'confirmed',
+  'in_progress',
+  'ready',
+  'delivered',
+];
+
 /// Returns Vietnamese display label for a delivery type.
 String deliveryTypeLabel(String type) {
   switch (type) {

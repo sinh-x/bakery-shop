@@ -17,8 +17,7 @@ import 'order_crud_providers.dart';
 /// is intentional to avoid displaying potentially incorrect counts.
 final incompleteCountProvider = Provider<int>((ref) {
   final orders = ref.watch(orderListProvider).asData?.value ?? [];
-  const activeStatuses = ['new', 'confirmed', 'in_progress', 'ready', 'delivered'];
   return orders.where(
-    (o) => o.completeness == completenessIncomplete && activeStatuses.contains(o.status),
+    (o) => o.completeness == completenessIncomplete && activeOrderStatuses.contains(o.status),
   ).length;
 });
