@@ -1,10 +1,16 @@
 import 'package:flutter/services.dart';
 
-/// Format phone: 10 digits → xxxx-xxx-xxx, 9 digits → xxx-xxx-xxx, else as-is.
+/// Format phone to match PhoneInputFormatter rendering:
+/// - 9 digits → xxx-xxx-xxx
+/// - 10 digits → xxxx-xxx-xxx
+/// - 11+ digits → xxxx-xxx-xxxx with trailing digits appended raw
+/// - otherwise → as-is
 String formatPhone(String phone) {
   final digits = phone.replaceAll(RegExp(r'\D'), '');
-  if (digits.length == 10) {
-    return '${digits.substring(0, 4)}-${digits.substring(4, 7)}-${digits.substring(7)}';
+  if (digits.length >= 10) {
+    final base =
+        '${digits.substring(0, 4)}-${digits.substring(4, 7)}-${digits.substring(7, 10)}';
+    return digits.length > 10 ? base + digits.substring(10) : base;
   } else if (digits.length == 9) {
     return '${digits.substring(0, 3)}-${digits.substring(3, 6)}-${digits.substring(6)}';
   }

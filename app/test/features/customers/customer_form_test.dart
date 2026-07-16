@@ -224,17 +224,15 @@ void main() {
     expect(find.text(VN.customerPhoneDuplicate), findsOneWidget);
   });
 
-  // CQ-1: a prefilled 11-digit phone (formatPhone leaves it raw since only
-  // 9/10-digit inputs are dash-grouped) must still be flagged as a duplicate
-  // of the same digits typed in another row (which PhoneInputFormatter dash-
-  // formats). Duplicate detection compares digit-only keys, not raw strings.
+  // CQ-6: prefilled and typed 11-digit phones render identically via
+  // formatPhone / PhoneInputFormatter (both produce 'xxxx-xxx-xxxx' with
+  // trailing digits appended). Duplicate detection compares digit-only keys.
   testWidgets(
       'duplicate detection fires for 11-digit prefilled vs same digits typed',
       (tester) async {
     final service = _RecordingCustomerService();
-    // Stored phone is 11 digits; formatPhone returns it as-is (no dash
-    // grouping for lengths other than 9/10), so the prefilled controller
-    // shows the raw '09012345678'.
+    // Stored phone is 11 digits; formatPhone now formats it to
+    // '0901-234-5678' (matching PhoneInputFormatter behavior).
     const customer = Customer(
       id: 11,
       name: 'Long',
@@ -242,8 +240,12 @@ void main() {
     );
     await _pumpForm(tester, service, customer: customer);
 
+    // Prefilled controller shows formatted 11-digit value.
+    expect(find.text('0901-234-5678'), findsOneWidget);
+    expect(find.text('09012345678'), findsNothing);
+
     // Add a second phone row and type the same 11 digits. PhoneInputFormatter
-    // dash-formats them to '0901-234-5678'.
+    // dash-formats them to '0901-234-5678' as well.
     await tester.tap(find.text(VN.customerAddPhone));
     await tester.pumpAndSettle();
 
@@ -252,8 +254,7 @@ void main() {
     await tester.tap(find.text(VN.save));
     await tester.pumpAndSettle();
 
-    // Despite different raw strings ('09012345678' vs '0901-234-5678'),
-    // digit-only normalization must flag the duplicate.
+    // Both rows render identically; digit-only normalization flags duplicate.
     expect(service.lastUpdatedId, isNull);
     expect(find.text(VN.customerPhoneDuplicate), findsOneWidget);
   });
