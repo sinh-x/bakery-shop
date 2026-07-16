@@ -484,6 +484,208 @@ def test_deposit_balance_correct_order_not_flagged():
 
 
 # ---------------------------------------------------------------------------
+# Cross-guard: AR-style revenue JE prevents deposit-balance duplicate
+# (DG-249 Phase 2, AC2)
+# ---------------------------------------------------------------------------
+
+
+def _insert_ar_style_revenue_entry(
+    conn,
+    *,
+    order_id: int,
+    ar_account_id: int,
+    revenue_account_id: int,
+    amount: float,
+) -> int:
+    """Insert an AR-style revenue JE (DR 1500 / CR 4100) for an order.
+
+    Mirrors what ``_reconcile_order_revenue_entry`` produces for an
+    unpaid delivered order: a ``source_type='order'`` journal entry with
+    a debit line on account 1500 (Accounts Receivable) and a credit line
+    on account 4100 (Revenue).
+    """
+    cur = conn.execute(
+        "INSERT INTO journal_entries (description, source_type, source_id) "
+        "VALUES (?, 'order', ?)",
+        (f"Order revenue (AR): {order_id}", order_id),
+    )
+    entry_id = int(cur.lastrowid)
+    conn.execute(
+        "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+        "VALUES (?, ?, ?, 0.0, 'Công nợ phải thu')",
+        (entry_id, ar_account_id, amount),
+    )
+    conn.execute(
+        "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+        "VALUES (?, ?, 0.0, ?, 'Doanh thu bán hàng')",
+        (entry_id, revenue_account_id, amount),
+    )
+    return entry_id
+
+
+def _order_has_ar_style_je(conn, order_id: int) -> bool:
+    """Return True if the order has a source_type='order' JE with a debit
+    line on account code 1500 (Accounts Receivable)."""
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'order' AND je.source_id = ?
+          AND a.code = '1500' AND jl.debit > 0
+        LIMIT 1
+        """,
+        (order_id,),
+    ).fetchone()
+    return row is not None
+
+
+def test_deposit_balance_skips_order_with_ar_style_revenue_je():
+    """AC2: an order with an AR-style revenue JE (source_type='order',
+    debit on 1500) must be skipped by ``repair-deposit-balance --all``
+    so no duplicate deposit-style revenue JE is created.
+
+    Setup: a delivered order with a deposit payment (so the deposit
+    balance check would flag it — deposits_in > 0 with no deposit-style
+    revenue entry) AND an AR-style JE already present. Without the guard,
+    ``_reconcile_order_revenue_entry`` would create a deposit-style JE,
+    duplicating revenue.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        ar_acc = _account_id(conn, "1500")
+        revenue_acc = _account_id(conn, "4100")
+        oid = _insert_order(
+            conn, order_ref="ORD-260716-AC2", customer_name="Khách AR",
+            total_price=500000, status="delivered",
+        )
+        # Deposit payment so deposits_in > 0 (would flag deposit balance).
+        _insert_payment(conn, order_id=oid, amount=500000, ptype="deposit")
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(conn, 1, 500000, "deposit", "cash", order_id=oid)
+        # Insert an AR-style revenue JE (DR 1500 / CR 4100).
+        _insert_ar_style_revenue_entry(
+            conn, order_id=oid, ar_account_id=ar_acc,
+            revenue_account_id=revenue_acc, amount=500000,
+        )
+        assert _order_has_ar_style_je(conn, oid)
+        je_before = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries WHERE source_type = 'order'"
+        ).fetchone()["c"]
+
+    result = _invoke(["repair-deposit-balance", "--all"])
+    assert result.exit_code == 0, result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # No new order-source JE created — count unchanged.
+        je_after = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries WHERE source_type = 'order'"
+        ).fetchone()["c"]
+        assert je_before == je_after
+        # The AR-style JE is still the only order entry; no deposit-style JE.
+        assert _order_has_ar_style_je(conn, oid)
+        # No debit on 2100 (deposit-style revenue) was created.
+        dep_debit = conn.execute(
+            """
+            SELECT COALESCE(SUM(jl.debit), 0) AS d
+            FROM journal_entries je
+            JOIN journal_lines jl ON jl.journal_entry_id = je.id
+            JOIN accounts a ON a.id = jl.account_id
+            WHERE je.source_type = 'order' AND je.source_id = ?
+              AND a.code = '2100'
+            """,
+            (oid,),
+        ).fetchone()["d"]
+        assert float(dep_debit) == 0.0
+
+
+def test_deposit_balance_skips_order_with_ar_style_revenue_je_order_id():
+    """AC2 (single-order path): ``--order-id`` on an order with an
+    AR-style revenue JE is also skipped — no duplicate deposit-style
+    revenue JE created.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        ar_acc = _account_id(conn, "1500")
+        revenue_acc = _account_id(conn, "4100")
+        oid = _insert_order(
+            conn, order_ref="ORD-260716-AC2b", customer_name="Khách AR2",
+            total_price=300000, status="delivered",
+        )
+        _insert_payment(conn, order_id=oid, amount=300000, ptype="deposit")
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(conn, 1, 300000, "deposit", "cash", order_id=oid)
+        _insert_ar_style_revenue_entry(
+            conn, order_id=oid, ar_account_id=ar_acc,
+            revenue_account_id=revenue_acc, amount=300000,
+        )
+        je_before = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries WHERE source_type = 'order'"
+        ).fetchone()["c"]
+
+    result = _invoke(["repair-deposit-balance", "--order-id", str(oid)])
+    assert result.exit_code == 0, result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        je_after = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries WHERE source_type = 'order'"
+        ).fetchone()["c"]
+        assert je_before == je_after
+        assert _order_has_ar_style_je(conn, oid)
+
+
+def test_deposit_balance_dry_run_skips_order_with_ar_style_revenue_je():
+    """CQ-1 (Major): ``--dry-run`` must report an AR-guarded order as
+    ``bỏ qua`` (skipped), NOT as ``sẽ sửa`` (will-repair).
+
+    The ar_exists guard is hoisted above the dry-run branch so preview
+    and apply agree. Before the fix, the guard only ran in the apply
+    branch, so dry-run reported guarded orders as ``will-repair`` even
+    though applying them would skip — a preview/apply mismatch.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        ar_acc = _account_id(conn, "1500")
+        revenue_acc = _account_id(conn, "4100")
+        oid = _insert_order(
+            conn, order_ref="ORD-260716-CQ1", customer_name="Khách CQ1",
+            total_price=500000, status="delivered",
+        )
+        _insert_payment(conn, order_id=oid, amount=500000, ptype="deposit")
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(conn, 1, 500000, "deposit", "cash", order_id=oid)
+        _insert_ar_style_revenue_entry(
+            conn, order_id=oid, ar_account_id=ar_acc,
+            revenue_account_id=revenue_acc, amount=500000,
+        )
+        assert _order_has_ar_style_je(conn, oid)
+
+        # Service-level: dry-run returns "skipped", not "will-repair".
+        result = _process_deposit_balance_order(conn, oid, dry_run=True)
+        assert result["action"] == "skipped", (
+            f"expected 'skipped', got {result['action']!r}"
+        )
+
+    # CLI-level: dry-run report shows "bỏ qua", not "sẽ sửa".
+    result = _invoke(["repair-deposit-balance", "--all", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "bỏ qua" in result.output
+    # The guarded order must NOT appear as a will-repair candidate.
+    assert "ORD-260716-CQ1" in result.output
+    will_repair_line = [
+        line for line in result.output.splitlines()
+        if "ORD-260716-CQ1" in line
+    ]
+    assert will_repair_line, "guarded order should appear in the dry-run report"
+    assert "sẽ sửa" not in will_repair_line[0], (
+        f"guarded order reported as 'sẽ sửa': {will_repair_line[0]!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # VN labels
 # ---------------------------------------------------------------------------
 

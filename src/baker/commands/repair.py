@@ -45,6 +45,7 @@ import click
 from baker.db.connection import get_db
 from baker.db.schema import (
     ACCOUNTS_PAYABLE_CODE,
+    ACCOUNTS_RECEIVABLE_CODE,
     CUSTOMER_DEPOSITS_CODE,
     EXPENSE_DEBT_PAYMENT_METHOD,
     EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
@@ -902,6 +903,12 @@ def _orders_needing_ar_entry(conn, order_id=None):
     no existing ``source_type='order'`` journal entry, and
     ``deposits_in - tien_rut_total <= 0`` (zero net deposits after
     excluding tien_rut — truly unpaid orders that need AR recognition).
+
+    The generic ``source_type='order'`` JE guard covers deposit-style
+    revenue JEs (DG-249 Phase 1 cross-guard) implicitly: any order with
+    a deposit-style revenue JE already has a ``source_type='order'`` JE
+    and is therefore excluded — no separate deposit-style subquery is
+    needed.
     """
     sql = f"""
         SELECT o.id, o.order_ref, o.total_price
@@ -913,7 +920,7 @@ def _orders_needing_ar_entry(conn, order_id=None):
               WHERE je.source_type = 'order' AND je.source_id = o.id
           )
     """
-    params = list(DELIVERED_STATUSES)
+    params = [*DELIVERED_STATUSES]
     if order_id is not None:
         sql += " AND o.id = ?"
         params.append(order_id)
@@ -1512,6 +1519,38 @@ def _process_deposit_balance_order(conn, order_id, *, dry_run):
             "action": action,
         }
 
+    # DG-249 Phase 2 cross-guard: skip orders that already have an
+    # AR-style revenue JE (source_type='order' with a debit line on
+    # account ``ACCOUNTS_RECEIVABLE_CODE``). Such orders have already
+    # been recognised via AR (DR 1500 / CR 4100); reconciling again
+    # would create a duplicate deposit-style revenue JE. The guard is
+    # evaluated before the dry-run branch so preview and apply agree
+    # (both return "skipped" for guarded orders). Detection uses the
+    # account-code lookup pattern (FR5) with an O(1)
+    # ``SELECT 1 ... LIMIT 1`` query (NFR1).
+    ar_exists = conn.execute(
+        """
+        SELECT 1
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE je.source_type = 'order' AND je.source_id = ?
+          AND a.code = ? AND jl.debit > 0
+        LIMIT 1
+        """,
+        (order_id, ACCOUNTS_RECEIVABLE_CODE),
+    ).fetchone()
+    if ar_exists is not None:
+        return {
+            "order_id": order_id,
+            "order_ref": order_ref,
+            "status": status,
+            "deposits_in": deposits_in,
+            "revenue_cleared": revenue_cleared,
+            "shipping_cleared": shipping_cleared,
+            "net_2100": net_2100,
+            "action": "skipped",
+        }
     if dry_run:
         action = "will-repair"
     else:
@@ -1555,6 +1594,7 @@ def _print_deposit_balance_report(results, *, dry_run):
     repaired = sum(1 for r in results if r["action"] == "repaired")
     will_repair = sum(1 for r in results if r["action"] == "will-repair")
     not_applicable = sum(1 for r in results if r["action"] == "not-applicable")
+    skipped = sum(1 for r in results if r["action"] == "skipped")
 
     parts = []
     if dry_run:
@@ -1563,6 +1603,8 @@ def _print_deposit_balance_report(results, *, dry_run):
         parts.append(f"đã sửa: {repaired}")
     if not_applicable:
         parts.append(f"không áp dụng: {not_applicable}")
+    if skipped:
+        parts.append(f"bỏ qua: {skipped}")
     click.echo(f"Tổng: {len(results)} đơn  |  " + ", ".join(parts))
 
 
