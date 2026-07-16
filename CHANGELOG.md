@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.7.9+92] — 2026-07-16
+- chore: update changelog for version bump
+
 ## [0.7.9+91] — 2026-07-16
 - chore: add accounting health monitoring doc, fix pubspec.lock mockito dep
 
