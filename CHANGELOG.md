@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.7.9+91] — 2026-07-16
+- chore: add accounting health monitoring doc, fix pubspec.lock mockito dep
+
 ## [0.7.9+90] — 2026-07-16
 - feat(DG-249): add fix script for 8 duplicate AR entries
 
