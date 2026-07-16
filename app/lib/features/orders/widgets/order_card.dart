@@ -176,17 +176,10 @@ class _OrderCardState extends ConsumerState<OrderCard>
         ? '${VN.printStatusPrintedShort}: $printedBy'
         : VN.printStatusPrintedShort;
 
-    // Build left border decoration using backend completeness + urgency tiers
-    final borderSides = <BorderSide>[];
-    if (completenessColor != null) {
-      borderSides.add(BorderSide(color: completenessColor, width: 4));
-    }
-    if (tierColor != null) {
-      borderSides.add(BorderSide(color: tierColor, width: 4));
-    }
-    if (borderSides.isEmpty) {
-      borderSides.add(const BorderSide(color: Colors.transparent, width: 4));
-    }
+    // Build left border decoration driven by urgency tier only (FR-3).
+    // When both completeness and urgency colors are present, prefer urgency
+    // (critical=red, urgent=amber, normal=none), regardless of completeness.
+    final borderColor = tierColor ?? completenessColor ?? Colors.transparent;
 
     final card = Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -196,12 +189,7 @@ class _OrderCardState extends ConsumerState<OrderCard>
         child: Container(
           decoration: BoxDecoration(
             border: Border(
-              left: borderSides.length > 1
-                  ? BorderSide(
-                      color: completenessColor ?? tierColor!,
-                      width: 4,
-                    )
-                  : borderSides.first,
+              left: BorderSide(color: borderColor, width: 4),
             ),
           ),
           padding: const EdgeInsets.all(12),
@@ -223,7 +211,7 @@ class _OrderCardState extends ConsumerState<OrderCard>
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
-                      maxLines: 1,
+                      maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -255,8 +243,13 @@ class _OrderCardState extends ConsumerState<OrderCard>
                       ),
                     ),
                   ],
-                  if (isIncomplete) ...[
-                    const SizedBox(width: 6),
+                ],
+              ),
+              // ── Completeness badge on its own row (FR-2) ──
+              if (isIncomplete) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
@@ -283,8 +276,8 @@ class _OrderCardState extends ConsumerState<OrderCard>
                       ),
                     ),
                   ],
-                ],
-              ),
+                ),
+              ],
               // ── Missing fields indicator ──
               if (isIncomplete && order.missingFields.isNotEmpty) ...[
                 const SizedBox(height: 4),
