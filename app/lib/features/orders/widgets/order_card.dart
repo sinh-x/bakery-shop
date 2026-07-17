@@ -177,9 +177,8 @@ class _OrderCardState extends ConsumerState<OrderCard>
         : VN.printStatusPrintedShort;
 
     // Build left border decoration driven by urgency tier only (FR-3).
-    // When both completeness and urgency colors are present, prefer urgency
-    // (critical=red, urgent=amber, normal=none), regardless of completeness.
-    final borderColor = tierColor ?? completenessColor ?? Colors.transparent;
+    // Completeness is shown as a badge only, not as a border color.
+    final borderColor = tierColor ?? Colors.transparent;
 
     final card = Card(
       margin: const EdgeInsets.only(bottom: 8),

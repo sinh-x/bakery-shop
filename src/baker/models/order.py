@@ -5,8 +5,14 @@ from datetime import datetime, timezone, timedelta
 from enum import Enum
 from typing import Optional
 
+from baker import config
 from baker.models.event import Event
 from baker.utils.time import now_utc
+
+# Delivery types that use the early critical threshold (FR2/FR6).
+# Shared between compute_urgency() and Order.compute_completeness() so the
+# transit set stays in sync (MINOR-2, DG-253 Phase 5.6-c1).
+TRANSIT_DELIVERY_TYPES = ("delivery", "bus", "door")
 
 
 class OrderStatus(str, Enum):
@@ -106,14 +112,29 @@ def compute_urgency(
     due_time: Optional[str],
     status: str,
     acknowledged_at: Optional[str],
+    delivery_type: str = "pickup",
+    threshold_minutes: Optional[int] = None,
 ) -> str:
     """Compute the urgency tier for an order.
 
     Rules (FR-1):
-    - ``critical`` = past due datetime and not delivered/completed/cancelled.
+    - ``critical`` = past due datetime and not delivered/completed/cancelled,
+      OR (delivery/bus/door only) due within the configurable early critical
+      threshold (default 60 min) — prep/transit buffer.
     - ``urgent`` = due ≤ 2h from now, OR status='new' and unacknowledged,
       OR status in (new, confirmed) and due today.
     - ``normal`` = everything else.
+
+    ``delivery_type`` defaults to ``"pickup"`` for backward compatibility.
+    Only delivery/bus/door orders get the early critical threshold; pickup
+    orders fall through to the existing rules.
+
+    ``threshold_minutes`` lets callers with a DB connection pass the runtime
+    override from ``get_delivery_critical_threshold(conn)`` (NFR1). When
+    ``None`` (default), falls back to the module-level env var default
+    ``config.DELIVERY_CRITICAL_THRESHOLD_MINUTES``. Reading via ``config.``
+    (not a top-level ``TIMEZONE`` import) keeps the value live across
+    ``config.reload(--config)`` (MINOR-1, DG-253 Phase 5.6-c1).
     """
     terminal = {"delivered", "completed", "cancelled"}
     if status in terminal:
@@ -127,16 +148,34 @@ def compute_urgency(
         try:
             if due_time:
                 due_dt = datetime.strptime(f"{due_date}T{due_time}", "%Y-%m-%dT%H:%M")
-                due_dt = due_dt.replace(tzinfo=timezone.utc)
+                due_dt = due_dt.replace(tzinfo=config.TIMEZONE).astimezone(timezone.utc)
             else:
                 due_dt = datetime.strptime(due_date, "%Y-%m-%d")
-                due_dt = due_dt.replace(tzinfo=timezone.utc)
+                due_dt = due_dt.replace(tzinfo=config.TIMEZONE).astimezone(timezone.utc)
         except (ValueError, TypeError):
             pass
 
     if due_dt:
         if due_dt < now:
             return UrgencyTier.CRITICAL.value
+        # Early critical threshold for delivery/bus/door orders (FR2, FR6).
+        # Caller may pass the DB override (NFR1); otherwise fall back to the
+        # env-var default from baker.config so reload() stays live (MINOR-1).
+        if delivery_type in TRANSIT_DELIVERY_TYPES:
+            effective_threshold = (
+                threshold_minutes
+                if threshold_minutes is not None
+                else config.DELIVERY_CRITICAL_THRESHOLD_MINUTES
+            )
+            # Defensive cap (DG-253 review-auto r2 MAJOR): clamp to 10080 min
+            # (7 days) so an out-of-range value can never reach timedelta and
+            # raise OverflowError, which would 500 all order list/detail reads.
+            if effective_threshold > 10080:
+                effective_threshold = 10080
+            if effective_threshold < 1:
+                effective_threshold = 1
+            if due_dt - now <= timedelta(minutes=effective_threshold):
+                return UrgencyTier.CRITICAL.value
         if due_dt - now <= timedelta(hours=2):
             return UrgencyTier.URGENT.value
 
@@ -144,7 +183,7 @@ def compute_urgency(
         return UrgencyTier.URGENT.value
 
     if status in ("new", "confirmed") and due_date:
-        today_str = now.strftime("%Y-%m-%d")
+        today_str = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
         if due_date == today_str:
             return UrgencyTier.URGENT.value
 
@@ -429,7 +468,7 @@ class Order:
         if not self.due_time:
             missing.append("due_time")
 
-        if self.delivery_type in ("delivery", "door", "bus") and not self.delivery_address:
+        if self.delivery_type in TRANSIT_DELIVERY_TYPES and not self.delivery_address:
             missing.append("delivery_address")
 
         if not self.customer_phone or is_junk_phone(self.customer_phone):
@@ -445,8 +484,13 @@ class Order:
         tier = CompletenessTier.INCOMPLETE.value if missing else CompletenessTier.COMPLETE.value
         return (missing, tier)
 
-    def to_api_dict(self) -> dict:
-        """Return Dart-compatible camelCase JSON representation."""
+    def to_api_dict(self, threshold_minutes: Optional[int] = None) -> dict:
+        """Return Dart-compatible camelCase JSON representation.
+
+        ``threshold_minutes`` is forwarded to ``compute_urgency`` so callers
+        with a DB connection can apply the runtime override from
+        ``get_delivery_critical_threshold(conn)`` (NFR1, DG-253 Phase 5.6-c1).
+        """
         missing_fields, completeness = self.compute_completeness()
         return {
             "id": str(self.id),
@@ -476,7 +520,12 @@ class Order:
             "workTicketPrintedBy": self.work_ticket_printed_by,
             "acknowledgedAt": self.acknowledged_at,
             "urgency": compute_urgency(
-                self.due_date, self.due_time, self.status, self.acknowledged_at
+                self.due_date,
+                self.due_time,
+                self.status,
+                self.acknowledged_at,
+                delivery_type=self.delivery_type,
+                threshold_minutes=threshold_minutes,
             ),
             "missingFields": missing_fields,
             "completeness": completeness,

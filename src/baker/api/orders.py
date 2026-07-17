@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from baker.db.connection import get_db
 from baker.db.schema import _order_year, _recompute_customer_year_summary, _strip_diacritics
 from baker.logging import log_context, logger
+from baker.config import get_delivery_critical_threshold
 from baker.models.order import (
     PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN,
     Order,
@@ -216,10 +217,15 @@ def _item_in_to_model(item: OrderItemIn) -> OrderItem:
     )
 
 
-def _order_detail(conn, row) -> dict:
-    """Build full order detail dict including work items and payment transactions."""
+def _order_detail(conn, row, threshold_minutes: Optional[int] = None) -> dict:
+    """Build full order detail dict including work items and payment transactions.
+
+    ``threshold_minutes`` is forwarded to ``Order.to_api_dict`` so the DB
+    override from ``get_delivery_critical_threshold(conn)`` (NFR1) is applied
+    to the urgency tier. Resolved once per request by the caller.
+    """
     order = Order.from_row(row, conn)
-    result = order.to_api_dict()
+    result = order.to_api_dict(threshold_minutes=threshold_minutes)
 
     item_rows = conn.execute(
         "SELECT * FROM order_items WHERE order_id = ? ORDER BY position, id",
@@ -392,6 +398,11 @@ def list_orders(
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
+        # NFR1 (DG-253 Phase 5.6-c1): resolve DB override once per request so
+        # Settings-screen changes take effect on the next call without a
+        # server restart.
+        threshold_minutes = get_delivery_critical_threshold(conn)
+
         if active_only:
             rows = conn.execute(
                 f"SELECT * FROM orders {where} ORDER BY id DESC",
@@ -402,7 +413,7 @@ def list_orders(
                 order = Order.from_row(r, conn)
                 if order.status == "delivered" and order.amount_paid >= order.total_price:
                     continue
-                result.append(order.to_api_dict())
+                result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
         active_statuses = {"new", "confirmed", "in_progress", "ready", "delivered"}
@@ -416,7 +427,7 @@ def list_orders(
                 order = Order.from_row(r, conn)
                 if order.status == "delivered" and order.amount_paid >= order.total_price:
                     continue
-                result.append(order.to_api_dict())
+                result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
         rows = conn.execute(
@@ -424,7 +435,10 @@ def list_orders(
             params + [limit, offset],
         ).fetchall()
 
-        return [Order.from_row(r, conn).to_api_dict() for r in rows]
+        return [
+            Order.from_row(r, conn).to_api_dict(threshold_minutes=threshold_minutes)
+            for r in rows
+        ]
 
 
 @router.post("", status_code=201)
@@ -538,7 +552,7 @@ def create_order(body: OrderCreate, request: Request):
                 conn, body.customerId, _order_year(order.created_at or now_utc())
             )
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
-        response = _order_detail(conn, row)
+        response = _order_detail(conn, row, threshold_minutes=get_delivery_critical_threshold(conn))
         if accounting_sync_warning is not None:
             response["accountingSyncWarning"] = accounting_sync_warning
         return response
@@ -574,7 +588,7 @@ def get_order(ref: str):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
-        return _order_detail(conn, row)
+        return _order_detail(conn, row, threshold_minutes=get_delivery_critical_threshold(conn))
 
 
 @router.post("/{ref}/acknowledge")
@@ -595,7 +609,7 @@ def acknowledge_order(ref: str):
             )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return _order_detail(conn, updated)
+        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
 
 
 @router.patch("/{ref}")
@@ -832,7 +846,7 @@ def edit_order(ref: str, body: OrderEdit):
                 _recompute_customer_year_summary(conn, new_customer_id, old_year)
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        response = _order_detail(conn, updated)
+        response = _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
         response["publicOrderCodeUpdate"] = public_code_update or {
             "action": "unchanged",
             "reason": "none",
@@ -937,7 +951,7 @@ def transition_status(ref: str, body: StatusTransition):
         sync_extras_to_order_status(conn, row["id"], body.status)
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        response = _order_detail(conn, updated)
+        response = _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
         if accounting_sync_warning is not None:
             response["accountingSyncWarning"] = accounting_sync_warning
         return response
@@ -981,7 +995,7 @@ def update_payment_method(ref: str, body: PaymentMethodUpdate):
         )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return _order_detail(conn, updated)
+        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
 
 
 @router.patch("/{ref}/payment")
@@ -1012,4 +1026,4 @@ def update_payment(ref: str, body: PaymentUpdate):
             )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return _order_detail(conn, updated)
+        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))

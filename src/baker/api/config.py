@@ -3,10 +3,15 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from baker.api.auth import RequireRole, record_audit_log
-from baker.config import TIMEZONE
+from baker.config import (
+    DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY,
+    DELIVERY_CRITICAL_THRESHOLD_MINUTES,
+    TIMEZONE,
+    get_delivery_critical_threshold,
+)
 from baker.db.connection import get_db
 from baker.utils.time import now_utc
 
@@ -35,6 +40,82 @@ def get_server_config() -> dict:
     offset = TIMEZONE.utcoffset(datetime.now(timezone.utc))
     offset_minutes = int(offset.total_seconds() // 60) if offset else 0
     return {"timezone": str(TIMEZONE), "timezone_offset": offset_minutes}
+
+
+class DeliveryCriticalThresholdIn(BaseModel):
+    minutes: int = Field(ge=1, le=10080)
+
+
+@router.get("/delivery_critical_threshold_minutes")
+def get_delivery_critical_threshold_endpoint():
+    """Return the effective delivery critical threshold (minutes).
+
+    DB override (app_config.delivery_critical_threshold_minutes) takes
+    precedence over the env var default (NFR1, DG-253 Phase 5.6-c1). Mirrors
+    the paper-mode GET pattern. Declared before the generic ``/{config_key}``
+    route so the literal path wins.
+    """
+    with get_db() as conn:
+        return {
+            "minutes": get_delivery_critical_threshold(conn),
+            "default": DELIVERY_CRITICAL_THRESHOLD_MINUTES,
+        }
+
+
+@router.put("/delivery_critical_threshold_minutes")
+def set_delivery_critical_threshold(
+    body: DeliveryCriticalThresholdIn,
+    actor: str = Depends(RequireRole("admin")),
+):
+    """Set the delivery critical threshold runtime override (persists to app_config).
+
+    Takes effect on the next order/list/detail request (no restart required).
+    Mirrors the ``set_paper_mode`` upsert pattern. Rejects values < 1 or > 10080
+    (7 days) — values above 10080 overflow ``timedelta`` and break all order
+    endpoints with 500s (DG-253 review-auto r2 MAJOR).
+    """
+    value = body.minutes
+    if value < 1:
+        raise HTTPException(
+            status_code=422,
+            detail="Threshold phải ≥ 1 phút",
+        )
+    if value > 10080:
+        raise HTTPException(
+            status_code=422,
+            detail="Threshold phải ≤ 10080 phút (7 ngày)",
+        )
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT id, config_value FROM app_config WHERE config_key = ?",
+            (DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY,),
+        ).fetchone()
+        if existing is not None:
+            old_value_payload = {
+                "config_key": DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY,
+                "config_value": existing["config_value"],
+            }
+            conn.execute(
+                "UPDATE app_config SET config_value = ?, active = 1 WHERE config_key = ?",
+                (str(value), DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY),
+            )
+        else:
+            old_value_payload = None
+            conn.execute(
+                "INSERT INTO app_config (config_key, config_value, sort_order, active, created_at)"
+                " VALUES (?, ?, 0, 1, ?)",
+                (DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, str(value), now_utc()),
+            )
+        record_audit_log(
+            conn,
+            actor,
+            "update",
+            "config",
+            f"{DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY}",
+            old_value=old_value_payload,
+            new_value={"config_key": DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, "config_value": str(value)},
+        )
+    return {"minutes": value}
 
 
 @router.get("/{config_key}")

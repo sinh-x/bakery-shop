@@ -423,9 +423,11 @@ def test_urgency_critical_when_past_due():
 
 def test_urgency_urgent_when_due_soon():
     from baker.models.order import compute_urgency
-    from datetime import datetime, timezone, timedelta
-    soon = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%Y-%m-%d")
-    soon_time = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%H:%M")
+    from baker.config import TIMEZONE
+    from datetime import datetime, timedelta
+    soon_local = (datetime.now(TIMEZONE) + timedelta(hours=1))
+    soon = soon_local.strftime("%Y-%m-%d")
+    soon_time = soon_local.strftime("%H:%M")
     result = compute_urgency(soon, soon_time, "new", None)
     assert result == "urgent", f"Expected urgent for due in 1h, got {result}"
 
@@ -463,6 +465,81 @@ def test_urgency_normal_no_match():
     from baker.utils.time import now_utc
     far_future = "2099-01-01"
     assert compute_urgency(far_future, "10:00", "confirmed", now_utc()) == "normal"
+
+
+# --- Delivery critical threshold tests (DG-253 Phase 4) ---
+
+
+def _soon_local_dt(minutes_from_now):
+    """Return a timezone-aware local datetime `minutes_from_now` from now."""
+    from baker.config import TIMEZONE
+    from datetime import datetime, timedelta
+    return datetime.now(TIMEZONE) + timedelta(minutes=minutes_from_now)
+
+
+def _format_due(dt_local):
+    return dt_local.strftime("%Y-%m-%d"), dt_local.strftime("%H:%M")
+
+
+def test_delivery_critical_within_threshold():
+    """AC1: delivery order due within default threshold (60 min) -> critical."""
+    from baker.models.order import compute_urgency
+    soon = _soon_local_dt(30)
+    due_date, due_time = _format_due(soon)
+    assert compute_urgency(due_date, due_time, "new", None, "delivery") == "critical"
+
+
+def test_delivery_critical_past_due():
+    """AC2: delivery order past due -> critical."""
+    from baker.models.order import compute_urgency
+    past = _soon_local_dt(-30)
+    due_date, due_time = _format_due(past)
+    assert compute_urgency(due_date, due_time, "new", None, "delivery") == "critical"
+
+
+def test_pickup_not_critical_within_threshold():
+    """AC3: pickup order due within threshold -> urgent (not critical)."""
+    from baker.models.order import compute_urgency
+    soon = _soon_local_dt(30)
+    due_date, due_time = _format_due(soon)
+    assert compute_urgency(due_date, due_time, "new", None, "pickup") == "urgent"
+
+
+def test_terminal_status_normal():
+    """AC4: terminal status order -> normal regardless of delivery type."""
+    from baker.models.order import compute_urgency
+    soon = _soon_local_dt(30)
+    due_date, due_time = _format_due(soon)
+    for status in ("delivered", "completed", "cancelled"):
+        for dtype in ("delivery", "bus", "door", "pickup"):
+            assert compute_urgency(due_date, due_time, status, None, dtype) == "normal"
+
+
+def test_bus_door_critical_within_threshold():
+    """AC6: bus/door orders within threshold -> critical."""
+    from baker.models.order import compute_urgency
+    soon = _soon_local_dt(30)
+    due_date, due_time = _format_due(soon)
+    assert compute_urgency(due_date, due_time, "new", None, "bus") == "critical"
+    assert compute_urgency(due_date, due_time, "new", None, "door") == "critical"
+
+
+def test_configurable_threshold_respected(monkeypatch):
+    """AC5: with threshold=30, delivery order due in 45 min -> urgent (not critical).
+
+    `compute_urgency` reads `DELIVERY_CRITICAL_THRESHOLD_MINUTES` from
+    `baker.config` on each call via local import. We monkeypatch the module
+    attribute so the smaller threshold is used for this test only.
+    """
+    from baker.models.order import compute_urgency
+    import baker.config
+    from datetime import datetime, timedelta
+    from baker.config import TIMEZONE
+
+    monkeypatch.setattr(baker.config, "DELIVERY_CRITICAL_THRESHOLD_MINUTES", 30)
+    soon_local = datetime.now(TIMEZONE) + timedelta(minutes=45)
+    due_date, due_time = _format_due(soon_local)
+    assert compute_urgency(due_date, due_time, "new", None, "delivery") == "urgent"
 
 
 def test_cli_accounting_read_only():
@@ -707,3 +784,227 @@ def test_completeness_delivery_phone_fallback_to_customer_phone():
     missing, tier = order.compute_completeness()
     assert "delivery_phone" not in missing
     assert tier == "complete"
+
+
+# --- DB-override + boundary tests (DG-253 Phase 5.6-c1) ---
+
+
+def test_get_delivery_critical_threshold_default_no_db_row():
+    """DB override missing -> returns env-var default (60)."""
+    from baker.config import get_delivery_critical_threshold
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert get_delivery_critical_threshold(conn) == 60
+
+
+def test_get_delivery_critical_threshold_db_override_active():
+    """Active DB row takes precedence over env-var default (NFR1)."""
+    from baker.config import DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, get_delivery_critical_threshold
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+    from baker.utils.time import now_utc
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO app_config (config_key, config_value, sort_order, active, created_at)"
+            " VALUES (?, ?, 0, 1, ?)",
+            (DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, "45", now_utc()),
+        )
+        assert get_delivery_critical_threshold(conn) == 45
+
+
+def test_get_delivery_critical_threshold_db_inactive_falls_back():
+    """Inactive DB row (active=0) -> falls back to env-var default."""
+    from baker.config import DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, get_delivery_critical_threshold
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+    from baker.utils.time import now_utc
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO app_config (config_key, config_value, sort_order, active, created_at)"
+            " VALUES (?, ?, 0, 0, ?)",
+            (DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, "45", now_utc()),
+        )
+        assert get_delivery_critical_threshold(conn) == 60
+
+
+def test_get_delivery_critical_threshold_db_invalid_falls_back():
+    """DB row with invalid value (< 1 or non-int) -> falls back to env-var default."""
+    from baker.config import DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, get_delivery_critical_threshold
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+    from baker.utils.time import now_utc
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Invalid: 0 (< 1)
+        conn.execute(
+            "INSERT INTO app_config (config_key, config_value, sort_order, active, created_at)"
+            " VALUES (?, ?, 0, 1, ?)",
+            (DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, "0", now_utc()),
+        )
+        assert get_delivery_critical_threshold(conn) == 60
+
+
+def test_get_delivery_critical_threshold_db_non_int_falls_back():
+    """DB row with non-integer value -> falls back to env-var default."""
+    from baker.config import DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, get_delivery_critical_threshold
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+    from baker.utils.time import now_utc
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO app_config (config_key, config_value, sort_order, active, created_at)"
+            " VALUES (?, ?, 0, 1, ?)",
+            (DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, "not-a-number", now_utc()),
+        )
+        assert get_delivery_critical_threshold(conn) == 60
+
+
+def test_delivery_critical_boundary_exactly_threshold():
+    """Boundary: delivery order due exactly 60 min out -> critical.
+
+    The threshold is inclusive (due_dt - now <= threshold), so an order due
+    exactly at the threshold boundary counts as critical (NFR1, MINOR-3).
+    """
+    from baker.models.order import compute_urgency
+
+    # Build a due datetime exactly 60 minutes from now in local TZ, then round
+    # the seconds down to avoid flakiness from sub-minute strptime truncation.
+    soon = _soon_local_dt(60).replace(second=0, microsecond=0)
+    due_date, due_time = _format_due(soon)
+    assert compute_urgency(due_date, due_time, "new", None, "delivery") == "critical"
+
+
+def test_compute_urgency_threshold_minutes_param_overrides_env():
+    """threshold_minutes param takes precedence over env-var default.
+
+    With threshold_minutes=30 and an order due in 45 min, urgency is 'urgent'
+    (not critical) — same as the env-var-override test but via the new param.
+    """
+    from baker.models.order import compute_urgency
+    from datetime import datetime, timedelta
+    from baker.config import TIMEZONE
+
+    soon_local = datetime.now(TIMEZONE) + timedelta(minutes=45)
+    due_date, due_time = _format_due(soon_local)
+    assert compute_urgency(due_date, due_time, "new", None, "delivery", threshold_minutes=30) == "urgent"
+
+
+def test_compute_urgency_threshold_minutes_zero_not_used_when_none():
+    """threshold_minutes=None -> falls back to env-var default (60).
+
+    Sanity: passing None must NOT short-circuit the threshold check to 0.
+    """
+    from baker.models.order import compute_urgency
+    from datetime import datetime, timedelta
+    from baker.config import TIMEZONE
+
+    soon_local = datetime.now(TIMEZONE) + timedelta(minutes=90)
+    due_date, due_time = _format_due(soon_local)
+    # 90 min out > 60 min default -> urgent (not critical)
+    assert compute_urgency(due_date, due_time, "new", None, "delivery", threshold_minutes=None) == "urgent"
+
+
+def test_set_delivery_critical_threshold_endpoint_upserts(api_client):
+    """PUT /api/config/delivery_critical_threshold_minutes upserts into app_config."""
+    from baker.config import DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+
+    # First PUT — INSERT path.
+    resp = api_client.put(
+        "/api/config/delivery_critical_threshold_minutes",
+        json={"minutes": 45},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"minutes": 45}
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        row = conn.execute(
+            "SELECT config_value, active FROM app_config WHERE config_key = ?",
+            (DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY,),
+        ).fetchone()
+        assert row is not None
+        assert row["config_value"] == "45"
+        assert row["active"] == 1
+
+    # Second PUT — UPDATE path (existing row).
+    resp = api_client.put(
+        "/api/config/delivery_critical_threshold_minutes",
+        json={"minutes": 90},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"minutes": 90}
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT config_value FROM app_config WHERE config_key = ?",
+            (DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY,),
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["config_value"] == "90"
+
+
+def test_get_delivery_critical_threshold_endpoint_no_override(api_client):
+    """GET /api/config/delivery_critical_threshold_minutes returns default when no DB row."""
+    from baker.config import DELIVERY_CRITICAL_THRESHOLD_MINUTES
+
+    resp = api_client.get("/api/config/delivery_critical_threshold_minutes")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["minutes"] == DELIVERY_CRITICAL_THRESHOLD_MINUTES
+    assert body["default"] == DELIVERY_CRITICAL_THRESHOLD_MINUTES
+
+
+def test_set_delivery_critical_threshold_rejects_below_one(api_client):
+    """PUT with minutes < 1 -> 422."""
+    resp = api_client.put(
+        "/api/config/delivery_critical_threshold_minutes",
+        json={"minutes": 0},
+    )
+    assert resp.status_code == 422
+
+
+def test_set_delivery_critical_threshold_rejects_above_max(api_client):
+    """PUT with minutes > 10080 (7 days) -> 422.
+
+    Without an upper bound, large values overflow timedelta in
+    compute_urgency and break all order endpoints with 500s
+    (DG-253 review-auto r2 MAJOR).
+    """
+    resp = api_client.put(
+        "/api/config/delivery_critical_threshold_minutes",
+        json={"minutes": 10081},
+    )
+    assert resp.status_code == 422
+
+
+def test_get_delivery_critical_threshold_db_oversized_falls_back():
+    """DB row with value > 10080 -> falls back to env-var default.
+
+    Guards the upper-bound validation on the DB read path so a stale
+    oversized row can never overflow timedelta (DG-253 review-auto r2 MAJOR).
+    """
+    from baker.config import DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, get_delivery_critical_threshold
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+    from baker.utils.time import now_utc
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO app_config (config_key, config_value, sort_order, active, created_at)"
+            " VALUES (?, ?, 0, 1, ?)",
+            (DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, "99999999", now_utc()),
+        )
+        assert get_delivery_critical_threshold(conn) == 60

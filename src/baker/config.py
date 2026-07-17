@@ -33,6 +33,7 @@ JWT_SECRET: str
 JWT_SECRET_EPHEMERAL: bool
 AUTH_REQUIRED: bool
 BCRYPT_ROUNDS: int
+DELIVERY_CRITICAL_THRESHOLD_MINUTES: int
 
 
 def _load_from(path: Path) -> dict:
@@ -48,7 +49,7 @@ def reload(config_path: Path | str | None = None) -> None:
     Falls back to DEFAULT_CONFIG_PATH, then built-in defaults.
     Called automatically on first import; call again with a path to switch configs.
     """
-    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT, LOG_LEVEL, LOG_DIR, BUILD_FINGERPRINT, PRINT_IPP_URL, TIMEZONE, JWT_SECRET, JWT_SECRET_EPHEMERAL, AUTH_REQUIRED, BCRYPT_ROUNDS
+    global DATA_DIR, DB_PATH, PHOTOS_DIR, HOST, PORT, LOG_LEVEL, LOG_DIR, BUILD_FINGERPRINT, PRINT_IPP_URL, TIMEZONE, JWT_SECRET, JWT_SECRET_EPHEMERAL, AUTH_REQUIRED, BCRYPT_ROUNDS, DELIVERY_CRITICAL_THRESHOLD_MINUTES
 
     path = Path(config_path).expanduser() if config_path else DEFAULT_CONFIG_PATH
     cfg = _load_from(path)
@@ -105,6 +106,61 @@ def reload(config_path: Path | str | None = None) -> None:
     if BCRYPT_ROUNDS < 4:
         BCRYPT_ROUNDS = 12
 
+    # Delivery critical threshold (DG-253 Phase 1).
+    # Early critical window (minutes) for delivery/bus/door orders so they are
+    # highlighted as critical before the due time (prep/transit buffer).
+    # Override via BAKER_DELIVERY_CRITICAL_THRESHOLD_MINUTES; default 60.
+    # Validates >= 1 and <= 10080 (7 days) on read; out-of-range or invalid
+    # values fall back to default 60 (DG-253 review-auto r2 MAJOR — without an
+    # upper bound, large values overflow ``timedelta`` in compute_urgency and
+    # break all order endpoints with 500s).
+    _raw_threshold = os.environ.get("BAKER_DELIVERY_CRITICAL_THRESHOLD_MINUTES", "60").strip()
+    try:
+        _threshold = int(_raw_threshold)
+    except ValueError:
+        _threshold = 60
+    if _threshold < 1 or _threshold > 10080:
+        _threshold = 60
+    DELIVERY_CRITICAL_THRESHOLD_MINUTES = _threshold
+
 
 # Load defaults on import
 reload()
+
+
+# DB-override config keys (DG-253 Phase 1).
+# app_config key for runtime override (DB value takes precedence over env var).
+DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY = "delivery_critical_threshold_minutes"
+
+
+def get_delivery_critical_threshold(conn) -> int:
+    """Return the effective delivery critical threshold in minutes for the
+    current urgency computation.
+
+    DB override (app_config.delivery_critical_threshold_minutes) takes
+    precedence over the env var default (NFR1). Read on each call so
+    Settings-screen changes take effect on the next request without a server
+    restart (mirrors `paper_mode`/`trail_mm` pattern in usb_printer.py).
+
+    Args:
+        conn: SQLite connection (from get_db() context manager).
+
+    Returns:
+        Effective threshold in minutes (1..10080). Falls back to
+        DELIVERY_CRITICAL_THRESHOLD_MINUTES (env var default) when the DB
+        value is missing, inactive, or invalid (out of range / non-int).
+    """
+    row = conn.execute(
+        "SELECT config_value FROM app_config WHERE config_key = ? AND active = 1"
+        " ORDER BY id DESC LIMIT 1",
+        (DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY,),
+    ).fetchone()
+    if row is not None:
+        raw = (row["config_value"] or "").strip()
+        try:
+            value = int(raw)
+            if 1 <= value <= 10080:
+                return value
+        except ValueError:
+            pass
+    return DELIVERY_CRITICAL_THRESHOLD_MINUTES
