@@ -493,7 +493,11 @@ class Order:
             "workTicketPrintedBy": self.work_ticket_printed_by,
             "acknowledgedAt": self.acknowledged_at,
             "urgency": compute_urgency(
-                self.due_date, self.due_time, self.status, self.acknowledged_at
+                self.due_date,
+                self.due_time,
+                self.status,
+                self.acknowledged_at,
+                delivery_type=self.delivery_type,
             ),
             "missingFields": missing_fields,
             "completeness": completeness,
