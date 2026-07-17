@@ -116,6 +116,64 @@ def _resolve_customer_id_by_phone(conn, phone: str, customer_name: Optional[str]
     return None
 
 
+# DG-252 Phase 1 (FR1/FR2/FR3) — the canonical shared walk-in customer name.
+# Reuses the v66 convention (``schema.py:_migrate_v66_repair_customer_links``)
+# so there is exactly one shared "Khách lẻ" record for all identity-less orders.
+WALK_IN_SHARED_CUSTOMER_NAME = "Khách lẻ"
+
+
+def _get_or_create_walk_in_customer_id(conn) -> int:
+    """Return the id of the single shared "Khách lẻ" walk-in customer.
+
+    DG-252 Phase 1 (FR2). Matches the v66 semantics at
+    ``schema.py:_migrate_v66_repair_customer_links``: exactly one shared record
+    (LOWERCASE comparison on ``customers.name``), never one-per-order. Creates
+    the row if it does not yet exist so the first identity-less order
+    materialises it.
+    """
+    existing = conn.execute(
+        "SELECT id FROM customers WHERE LOWER(name) = ? ORDER BY id ASC LIMIT 1",
+        (WALK_IN_SHARED_CUSTOMER_NAME.lower(),),
+    ).fetchone()
+    if existing is not None:
+        return existing["id"]
+    from baker.models.customer import Customer
+
+    cust = Customer(name=WALK_IN_SHARED_CUSTOMER_NAME, phone="")
+    return cust.save(conn)
+
+
+def _resolve_or_create_customer_id(
+    conn, phone: Optional[str], customer_name: Optional[str]
+) -> int:
+    """Guarantee a non-NULL ``customer_id`` for an order (DG-252 Phase 1).
+
+    Resolution chain (matches FR1/FR2/AC1):
+      1. ``phone``→``name`` resolution via ``_resolve_customer_id_by_phone``
+         (existing phone-then-name lookup with earliest-order-wins tiebreak).
+      2. Auto-create a server-side customer when step 1 returns ``None`` AND
+         the order carries a name and/or a phone (FR1).
+      3. Otherwise (no name AND no phone) link to the shared "Khách lẻ"
+         walk-in record via ``_get_or_create_walk_in_customer_id`` (FR2).
+
+    Always returns a positive integer customer id.
+    """
+    resolved = _resolve_customer_id_by_phone(conn, phone, customer_name=customer_name)
+    if resolved is not None:
+        return resolved
+
+    has_name = bool(customer_name and customer_name.strip())
+    has_phone = bool(phone and phone.strip())
+    if has_name or has_phone:
+        from baker.models.customer import Customer
+
+        name = customer_name.strip() if has_name else "Khách"
+        cust = Customer(name=name, phone=phone or "")
+        return cust.save(conn)
+
+    return _get_or_create_walk_in_customer_id(conn)
+
+
 class OrderItemIn(BaseModel):
     productId: str = ""
     productName: str
@@ -456,9 +514,11 @@ def create_order(body: OrderCreate, request: Request):
             # DG-205 Phase 3 (FR8): resolve customer_id from customerPhone via
             # customer_phones when the caller did not pass an explicit customerId.
             # DG-227 Phase 1: pass customerName for name-based fallback.
-            resolved = _resolve_customer_id_by_phone(conn, body.customerPhone, customer_name=body.customerName)
-            if resolved is not None:
-                body.customerId = resolved
+            # DG-252 Phase 1 (FR1/FR2/AC1): guarantee a non-NULL customer_id —
+            # resolve → auto-create → shared "Khách lẻ" walk-in record.
+            body.customerId = _resolve_or_create_customer_id(
+                conn, body.customerPhone, body.customerName
+            )
         public_order_code = _generate_unique_public_order_code(conn, body.dueDate, body.deliveryType)
         order = Order(
             customer_name=body.customerName,
@@ -631,18 +691,34 @@ def edit_order(ref: str, body: OrderEdit):
             exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (data["customerId"],)).fetchone()
             if not exists:
                 raise HTTPException(status_code=422, detail="Khách hàng không tồn tại")
-        elif "customerPhone" in data and data["customerPhone"] is not None:
-            # DG-227 Phase 1 (FR8): When customerId is explicitly null (the
-            # ``if`` above only matches non-None values) but customerPhone is
-            # provided, we deliberately fall through to re-resolve the customer
-            # link from phone + name. This is the intended FR8 flow — not a bug.
-            # Pass customer_name so the name-based fallback can match when the
-            # phone fails to resolve.
-            resolved = _resolve_customer_id_by_phone(
-                conn, data["customerPhone"], customer_name=data.get("customerName")
+        elif "customerId" in data and data["customerId"] is None:
+            # DG-252 Phase 1 (FR3): explicit ``customerId: null`` no longer
+            # leaves the order unlinked. Re-resolve from the (possibly new)
+            # phone/name in the patch body via the resolve → auto-create →
+            # "Khách lẻ" walk-in chain. Falls back to the row's existing
+            # phone/name when the patch does not supply them.
+            phone_for_resolve = data.get("customerPhone")
+            if phone_for_resolve is None:
+                phone_for_resolve = row["customer_phone"] or ""
+            name_for_resolve = data.get("customerName")
+            if name_for_resolve is None:
+                name_for_resolve = row["customer_name"] or ""
+            data["customerId"] = _resolve_or_create_customer_id(
+                conn, phone_for_resolve, name_for_resolve
             )
-            if resolved is not None:
-                data["customerId"] = resolved
+        elif "customerPhone" in data and data["customerPhone"] is not None:
+            # DG-227 Phase 1 (FR8): customerId was not touched in the patch
+            # but customerPhone changed — re-resolve the customer link from
+            # phone + name. Pass customer_name so the name-based fallback can
+            # match when the phone fails to resolve.
+            # DG-252 Phase 1 (FR3): the re-resolution chain now guarantees a
+            # non-NULL customer_id (resolve → auto-create → "Khách lẻ").
+            name_for_resolve = data.get("customerName")
+            if name_for_resolve is None:
+                name_for_resolve = row["customer_name"] or ""
+            data["customerId"] = _resolve_or_create_customer_id(
+                conn, data["customerPhone"], name_for_resolve
+            )
 
         updates = []
         params: list = []
