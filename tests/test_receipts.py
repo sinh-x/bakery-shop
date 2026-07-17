@@ -763,6 +763,81 @@ class TestSplitPages:
         assert len(pages) == 1
         assert pages[0].width == RECEIPT_WIDTH
 
+    def test_boundary_poor_image_every_page_within_cap(self):
+        """CQ-1 regression: a boundary-poor image must not emit an over-cap tail.
+
+        Two dense text blocks with a single whitespace gap between them
+        previously produced a final page taller than RECEIPT_MAX_HEIGHT
+        because the tail was never re-checked against the budget. Every
+        emitted page (including the tail) must now be ≤ the cap.
+        """
+        from PIL import Image, ImageDraw
+        from baker.api.receipts import _font
+        img = Image.new("RGB", (RECEIPT_WIDTH, 2600), "white")
+        draw = ImageDraw.Draw(img)
+        font = _font(20)
+        # Dense block 1: rows 20..1080 (no internal whitespace gaps)
+        y = 20
+        line = 0
+        while y < 1080:
+            draw.text((MARGIN, y), f"Block1 line {line}", fill=(0, 0, 0), font=font)
+            y += 24
+            line += 1
+        # Single 40px whitespace gap at y=1080..1120
+        # Dense block 2: rows 1120..2600
+        y = 1120
+        line = 0
+        while y < 2600:
+            draw.text((MARGIN, y), f"Block2 line {line}", fill=(0, 0, 0), font=font)
+            y += 24
+            line += 1
+        pages = _split_pages(img)
+        assert len(pages) >= 2, f"Expected split, got {len(pages)} page(s)"
+        for idx, p in enumerate(pages):
+            assert p.height <= RECEIPT_MAX_HEIGHT, (
+                f"Page {idx + 1} height {p.height} > cap {RECEIPT_MAX_HEIGHT}"
+            )
+
+    def test_split_does_not_slice_through_text_row(self):
+        """CQ-1 regression: splits occur at whitespace boundaries, not mid-text.
+
+        When a natural boundary exists within the budget, the page break must
+        land at that boundary so the last content row of one page and the
+        first content row of the next page are not both inked at the cut
+        point (which would indicate a text row sliced through its glyphs).
+        """
+        from PIL import Image, ImageDraw
+        from baker.api.receipts import _font
+        img = Image.new("RGB", (RECEIPT_WIDTH, 3200), "white")
+        draw = ImageDraw.Draw(img)
+        font = _font(20)
+        y = MARGIN
+        line = 0
+        while y < 3200 - 40:
+            draw.text((MARGIN, y), f"Line {line}", fill=(0, 0, 0), font=font)
+            y += 24
+            line += 1
+            # A 60px whitespace gap every ~200px gives _find_split_boundaries
+            # plenty of natural candidates within each budget window.
+            if line % 8 == 0:
+                y += 60
+        pages = _split_pages(img)
+        assert len(pages) >= 2
+        for idx in range(len(pages) - 1):
+            cur = pages[idx]
+            nxt = pages[idx + 1]
+            # The bottom content row of the current page (just above the
+            # footer band) and the top content row of the next page must not
+            # BOTH contain ink at the seam — a slice would ink both sides.
+            cur_content_h = cur.height - 40  # subtract footer band
+            seam_row_cur = [cur.getpixel((x, cur_content_h - 2)) for x in range(MARGIN, RECEIPT_WIDTH - MARGIN)]
+            seam_row_nxt = [nxt.getpixel((x, 2)) for x in range(MARGIN, RECEIPT_WIDTH - MARGIN)]
+            cur_has_ink = any(p != (255, 255, 255) for p in seam_row_cur)
+            nxt_has_ink = any(p != (255, 255, 255) for p in seam_row_nxt)
+            assert not (cur_has_ink and nxt_has_ink), (
+                f"Page {idx + 1}/{idx + 2} seam appears to slice through text"
+            )
+
 
 class TestMergedRefNumbering:
     """Tests for merged sub-item index in work ticket ref line (DG-228 Phase 3 / FR-3)."""
@@ -1309,4 +1384,169 @@ class TestEmptySectionSkipping:
         ref, _ = _create_order(api_client, [("Bánh A", 1, 300000)], notes="", dtype="pickup")
         img = _get_receipt(api_client, ref, "type=customer")
         assert img.size[1] <= RECEIPT_MAX_HEIGHT
+        assert img.size[0] == 576
+
+
+# ---------------------------------------------------------------------------
+# DG-228 review-auto cycle 1 / Phase 5.6-c1-fix: regression tests for the
+# Major and Minor findings raised against the compact receipt layout.
+# ---------------------------------------------------------------------------
+
+class TestSplitGatingByTypeAndPaperMode:
+    """CQ-2 regression: splitting only applies to work_ticket/customer on label paper.
+
+    Shop/delivery/bus_label receipts and roll-mode receipts must NOT be split
+    (long roll receipts print continuously; shop/delivery previews must not be
+    truncated to page 1).
+    """
+
+    def test_shop_receipt_in_roll_mode_not_split(self, api_client):
+        """A shop receipt in roll mode returns the full image (not split at 1040px).
+
+        We force roll mode, create a shop receipt that exceeds the 1040px cap,
+        and assert the response is a single un-split image taller than the cap
+        (in label mode it would be cropped to ≤ 1040px by _split_pages).
+        """
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO app_config (config_key, config_value, sort_order, active)"
+                " VALUES ('paper_mode', 'roll', 0, 1)"
+            )
+        _seed_shop_config(api_client)
+        # Many items + long notes → a tall shop receipt that exceeds 1040px.
+        items = [("Bánh kem " + chr(ord('A') + i), 2, 300000) for i in range(8)]
+        ref, _ = _create_order(
+            api_client, items, dtype="pickup",
+            notes="ghi chú đơn rất dài " * 60,
+        )
+        img = _get_receipt(api_client, ref, "type=shop")
+        assert img.size[0] == 576
+        # Roll-mode shop receipt is NOT split — it must exceed the 1040px cap.
+        assert img.size[1] > RECEIPT_MAX_HEIGHT, (
+            f"Shop receipt in roll mode should be taller than {RECEIPT_MAX_HEIGHT}px "
+            f"(un-split), got {img.size[1]}px"
+        )
+
+    def test_work_ticket_in_roll_mode_not_split(self, api_client):
+        """A work ticket in roll mode returns the full image (not split at 1040px)."""
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO app_config (config_key, config_value, sort_order, active)"
+                " VALUES ('paper_mode', 'roll', 0, 1)"
+            )
+        _seed_shop_config(api_client)
+        ref, data = _create_order(
+            api_client, [("Bánh kem", 1, 300000)],
+            notes="x " * 400,  # long note → tall receipt
+        )
+        item_id = data["workItems"][0]["id"]
+        img = _get_receipt(api_client, ref, f"type=work_ticket&item_id={item_id}")
+        assert img.size[0] == 576
+        # Roll-mode work ticket is NOT split — it must exceed the 1040px cap.
+        assert img.size[1] > RECEIPT_MAX_HEIGHT, (
+            f"Work ticket in roll mode should be taller than {RECEIPT_MAX_HEIGHT}px "
+            f"(un-split), got {img.size[1]}px"
+        )
+
+    def test_shop_receipt_in_label_mode_capped(self, api_client):
+        """CQ-2 contrast: a shop receipt in label mode is NOT split either.
+
+        Shop/delivery receipts keep the single-image path in both modes (per
+        CQ-2, splitting is gated to work_ticket/customer only). The shop
+        receipt in label mode is therefore returned as-is — we assert it
+        renders without error and has the expected width.
+        """
+        _seed_shop_config(api_client)
+        items = [("Bánh kem " + chr(ord('A') + i), 2, 300000) for i in range(8)]
+        ref, _ = _create_order(api_client, items, dtype="pickup")
+        img = _get_receipt(api_client, ref, "type=shop")
+        assert img.size[0] == 576
+        # Shop receipts are not paginated; they return the full content image.
+        assert img.size[1] > 0
+
+
+class TestCanvasOverflowMultiKBNote:
+    """CQ-3 regression: a multi-KB note must not produce solid-black rows.
+
+    A long note pushes the work-ticket cursor past the fixed 2000px canvas;
+    without the grow-canvas fix PIL silently discards the text and the crop
+    fills the missing region with solid black, producing solid-black labels.
+    """
+
+    def test_work_ticket_long_note_no_full_black_row(self, api_client):
+        _seed_shop_config(api_client)
+        long_note = "Ghi chú rất dài: " + ("ngữ " * 600)  # ~5KB of note text
+        ref, data = _create_order(
+            api_client, [("Bánh kem", 1, 300000)], notes=long_note, dtype="pickup"
+        )
+        item_id = data["workItems"][0]["id"]
+        img = _get_receipt(api_client, ref, f"type=work_ticket&item_id={item_id}")
+        assert img.size[0] == 576
+        # Scan every row; no row should be entirely (0,0,0) solid black.
+        black = (0, 0, 0)
+        px = img.load()
+        for y in range(img.height):
+            row = [px[x, y] for x in range(0, img.width, 8)]  # sample every 8th px
+            if all(p == black for p in row):
+                pytest.fail(
+                    f"Full-black row at y={y} — canvas overflow corrupted the "
+                    f"receipt (height={img.height})"
+                )
+
+    def test_customer_receipt_long_note_no_full_black_row(self, api_client):
+        _seed_shop_config(api_client)
+        long_note = "Ghi chú rất dài: " + ("ngữ " * 600)
+        ref, _ = _create_order(
+            api_client, [("Bánh kem", 1, 300000)], notes=long_note, dtype="door",
+            daddr="123 Đường Test",
+        )
+        img = _get_receipt(api_client, ref, "type=customer")
+        assert img.size[0] == 576
+        black = (0, 0, 0)
+        px = img.load()
+        for y in range(img.height):
+            row = [px[x, y] for x in range(0, img.width, 8)]
+            if all(p == black for p in row):
+                pytest.fail(
+                    f"Full-black row at y={y} — canvas overflow corrupted the "
+                    f"customer receipt (height={img.height})"
+                )
+
+
+class TestCashFeeMalformedHandling:
+    """CQ-6 regression: a malformed ``cash_fee`` must not raise HTTP 500.
+
+    ``attributes`` is an arbitrary client-supplied dict, so ``cash_fee: "abc"``
+    with ``rut_tien: "true"`` previously made every customer-receipt render fail
+    with an unhandled ValueError. The shared ``_cash_fee_amount`` helper now
+    tolerates missing/malformed values and returns 0.0.
+    """
+
+    def test_cash_fee_amount_helper_malformed_returns_zero(self):
+        from baker.api.receipts import _cash_fee_amount
+        assert _cash_fee_amount({"attributes": {"rut_tien": "true", "cash_fee": "abc"}}) == 0.0
+        assert _cash_fee_amount({"attributes": {"rut_tien": "true", "cash_fee": None}}) == 0.0
+        assert _cash_fee_amount({"attributes": {"rut_tien": "true"}}) == 0.0
+        assert _cash_fee_amount({"attributes": {"rut_tien": "false", "cash_fee": "1000"}}) == 0.0
+        assert _cash_fee_amount({"attributes": {"rut_tien": "true", "cash_fee": "5000"}}) == 5000.0
+        assert _cash_fee_amount({"attributes": {"rut_tien": "true", "cash_fee": 5000}}) == 5000.0
+
+    def test_customer_receipt_with_malformed_cash_fee_renders(self, api_client):
+        _seed_shop_config(api_client)
+        # Create an order then patch an item's attributes to a malformed fee.
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)], dtype="pickup")
+        item_id = data["workItems"][0]["id"]
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE order_items SET attributes = ? WHERE id = ?",
+                (
+                    '{"rut_tien": "true", "cash_fee": "abc", "cash_amount": "1000"}',
+                    item_id,
+                ),
+            )
+        # Rendering must not raise HTTP 500.
+        img = _get_receipt(api_client, ref, "type=customer")
         assert img.size[0] == 576

@@ -285,31 +285,38 @@ def _split_pages(img: Image.Image) -> list:
 
     # Multi-page: divide at natural section boundaries.
     boundaries = _find_split_boundaries(img, RECEIPT_MAX_HEIGHT)
-    # Greedy pack: accumulate boundaries into pages each with content <= content_budget.
-    pages = []
+    # CQ-1: greedy pack tracking the last boundary that fits within the budget.
+    # Previously the loop only split when boundary - page_start == budget exactly,
+    # so any boundary strictly beyond the budget caused a hard cut through text
+    # rows and any boundary before the budget was forgotten — effectively never
+    # splitting at natural section breaks. Now we remember the last in-budget
+    # boundary and split there, falling back to a hard cut only when no
+    # boundary fits in the window. The final tail is also re-checked: any
+    # oversized segment (including the tail) is hard-cut to stay within budget.
+    pages: list = []
     page_start = 0
-    for boundary in boundaries:
-        if boundary - page_start >= content_budget:
-            # The boundary is at or beyond the budget — emit a page.
-            if boundary - page_start > content_budget:
-                page_end = page_start + content_budget
-            else:
-                page_end = boundary
-            pages.append((page_start, page_end))
-            page_start = page_end
-    # Final page: from page_start to content_bottom.
-    if page_start < content_bottom:
-        pages.append((page_start, content_bottom))
-
-    # If greedy packing produced no splits (no usable boundaries), fall back to
-    # hard cuts at every content_budget interval.
-    if len(pages) <= 1:
-        pages = []
-        page_start = 0
-        while page_start < content_bottom:
-            page_end = min(page_start + content_budget, content_bottom)
-            pages.append((page_start, page_end))
-            page_start = page_end
+    idx = 0
+    n = len(boundaries)
+    while page_start < content_bottom:
+        limit = page_start + content_budget
+        if limit >= content_bottom:
+            # Remaining content fits within one page.
+            pages.append((page_start, content_bottom))
+            break
+        # Find the last boundary within [page_start, limit].
+        last_fit = None
+        while idx < n and boundaries[idx] <= limit:
+            last_fit = boundaries[idx]
+            idx += 1
+        if last_fit is not None and last_fit > page_start:
+            pages.append((page_start, last_fit))
+            page_start = last_fit
+            # next iteration resumes from the same idx (boundaries are sorted
+            # and strictly increasing; the next boundary is beyond `limit`).
+        else:
+            # No boundary fits in the window — hard cut at the budget.
+            pages.append((page_start, limit))
+            page_start = limit
 
     total_pages = len(pages)
     result = []
@@ -445,6 +452,87 @@ def _wrap(text, font, max_w):
         if cur:
             lines.append(cur)
     return lines
+
+
+def _draw_wrapped(draw, y, text, font, max_w, align="left", prefix="") -> int:
+    """Wrap ``text`` to ``max_w`` then draw each line, returning y after.
+
+    CQ-7: consolidates the wrap-then-draw idiom duplicated across five sites.
+
+    When ``prefix`` is provided, it is prepended to the first wrapped line only
+    and the first line's wrap width is reduced by the prefix width so the
+    prefix + first line fits within ``max_w`` (the address-variant behavior).
+
+    ``align`` may be "left" (drawn at MARGIN via ``_left``) or "center"
+    (drawn centered via ``_center``).
+    """
+    if not text and not prefix:
+        return y
+    if prefix:
+        first_w = max_w - _tw(prefix, font)
+        lines = _wrap(text, font, first_w) or [text]
+        if align == "center":
+            y = _center(draw, y, f"{prefix}{lines[0]}", font)
+        else:
+            y = _left(draw, y, f"{prefix}{lines[0]}", font)
+        for ln in lines[1:]:
+            if align == "center":
+                y = _center(draw, y, ln, font)
+            else:
+                y = _left(draw, y, ln, font)
+    else:
+        lines = _wrap(text, font, max_w) or [text]
+        for ln in lines:
+            if align == "center":
+                y = _center(draw, y, ln, font)
+            else:
+                y = _left(draw, y, ln, font)
+    return y
+
+
+def _cash_fee_amount(item: dict) -> float:
+    """Return the ``cash_fee`` amount for an item, or 0.0 when missing/malformed.
+
+    CQ-6: tolerates arbitrary client-supplied ``attributes`` values without
+    raising ValueError/TypeError, so a malformed ``cash_fee`` cannot cause
+    an HTTP 500 during receipt rendering. Only returns a non-zero amount
+    when the item has ``rut_tien == "true"`` and a parseable numeric fee.
+    """
+    attrs = item.get("attributes") or {}
+    if attrs.get("rut_tien") != "true":
+        return 0.0
+    raw = attrs.get("cash_fee")
+    if not raw:
+        return 0.0
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _ensure_canvas_capacity(img: Image.Image, draw: ImageDraw.ImageDraw,
+                            y: int, headroom: int = 200) -> tuple:
+    """Grow ``img`` vertically if ``y + headroom`` would exceed the canvas.
+
+    CQ-3: the work-ticket (2000px) and customer-receipt (4000px) canvases are
+    fixed-height, but page splitting now makes tall content a supported case.
+    When a long note pushes the cursor past the canvas, PIL silently discards
+    `draw.text` beyond the canvas and the later crop fills the missing region
+    with solid black, producing solid-black printed labels. This helper grows
+    the canvas (doubling until it fits) and blits the existing content into the
+    top of the new canvas so no text is lost. Returns ``(new_img, new_draw)`` —
+    callers must rebind their local ``img``/``draw`` references.
+    """
+    needed = y + headroom
+    if needed <= img.height:
+        return img, draw
+    new_h = img.height
+    while new_h < needed:
+        new_h *= 2
+    new_img = Image.new("RGB", (RECEIPT_WIDTH, new_h), "white")
+    new_img.paste(img, (0, 0))
+    new_draw = ImageDraw.Draw(new_img)
+    return new_img, new_draw
 
 
 # --- Config ---
@@ -698,13 +786,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
         y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
 
     if dtype != "pickup" and daddr:
-        addr_prefix = "Địa chỉ: "
-        addr_lines = _wrap(daddr, fb, CONTENT_WIDTH - _tw(addr_prefix, fb))
-        if not addr_lines:
-            addr_lines = [daddr]
-        y = _left(draw, y, f"{addr_prefix}{addr_lines[0]}", fb)
-        for ln in addr_lines[1:]:
-            y = _left(draw, y, ln, fb)
+        y = _draw_wrapped(draw, y, daddr, fb, CONTENT_WIDTH, align="left", prefix="Địa chỉ: ")
 
     y = _double(draw, y)
 
@@ -717,12 +799,10 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
             (pid, pid),
         ).fetchone()
         if cat_name_row:
-            for ln in _wrap(cat_name_row["name"].upper(), fbig, CONTENT_WIDTH) or [cat_name_row["name"].upper()]:
-                y = _left(draw, y, ln, fbig)
+            y = _draw_wrapped(draw, y, cat_name_row["name"].upper(), fbig, CONTENT_WIDTH)
 
     product = work_item.get("productName", "") or work_item.get("product_name", "")
-    for ln in _wrap(product, fproduct, CONTENT_WIDTH) or [product]:
-        y = _left(draw, y, ln, fproduct)
+    y = _draw_wrapped(draw, y, product, fproduct, CONTENT_WIDTH)
 
     qty = work_item.get("quantity", 1)
     unit_price = float(work_item.get("unitPrice", 0) or work_item.get("unit_price", 0))
@@ -796,6 +876,10 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
     order_notes = order.get("notes", "") or ""
 
     if notes or order_notes:
+        # CQ-3: grow the canvas before drawing long notes so the cursor never
+        # runs past the fixed 2000px canvas (which would silently discard text
+        # and append a solid-black band to the cropped output).
+        img, draw = _ensure_canvas_capacity(img, draw, y, headroom=max(len(notes), len(order_notes)) * 30)
         y = _left(draw, y, "GHI CHÚ", fnormal)
         y = _sep(draw, y)
 
@@ -803,6 +887,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
         if notes:
             for ln in _wrap(notes, note_font, CONTENT_WIDTH):
                 y = _left_mixed(draw, y, ln, note_font)
+                img, draw = _ensure_canvas_capacity(img, draw, y)
 
         if order_notes:
             if notes:
@@ -811,6 +896,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
             y = _left(draw, y, "Ghi chú đơn:", _font(_SZ_BODY, True), (100, 100, 100))
             for ln in _wrap(order_notes, note_font, CONTENT_WIDTH):
                 y = _left_mixed(draw, y, ln, note_font, (80, 80, 80))
+                img, draw = _ensure_canvas_capacity(img, draw, y)
 
     # ── Extras and Payment section (between notes and bottom boxes) ──
     work_items = order.get("workItems", [])
@@ -941,7 +1027,9 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
     # DG-228 Phase 3: page splitting handled by _split_pages() at the API layer.
     # Crop to content bottom (no max-height cap here) so the splitter can divide
     # the full content at natural section boundaries when it exceeds the cap.
-    crop_h = max(y, 1)
+    # CQ-3: clamp crop to the canvas height so a cursor that somehow exceeds
+    # the canvas cannot append a solid-black band to the cropped output.
+    crop_h = min(max(y, 1), img.height)
     return img.crop((0, 0, RECEIPT_WIDTH, crop_h))
 
 
@@ -1182,10 +1270,8 @@ def _render_financial_summary(draw, y, order, conn, fbb, fb) -> int:
         y = _row(draw, y, "Phí giao hàng:", _format_vnd_full(shipping_fee), fb)
     # Cash-in-cake fee (non-bold, like shipping fee)
     for item in work_items:
-        attrs = item.get("attributes") or {}
-        cash_fee = attrs.get("cash_fee")
-        if attrs.get("rut_tien") == "true" and cash_fee and int(float(cash_fee)) > 0:
-            fee_str = _format_vnd_full(float(cash_fee))
+        if _cash_fee_amount(item) > 0:
+            fee_str = _format_vnd_full(_cash_fee_amount(item))
             y = _row(draw, y, "Phí rút tiền:", fee_str, fb)
     y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
 
@@ -1401,8 +1487,7 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
 
     # Order ref
     ref_font = _font(_SZ_SUBTITLE, True)
-    for ln in _wrap(_customer_reference_text(order), ref_font, CONTENT_WIDTH) or [_customer_reference_text(order)]:
-        y = _center(draw, y, ln, ref_font)
+    y = _draw_wrapped(draw, y, _customer_reference_text(order), ref_font, CONTENT_WIDTH, align="center")
 
     # Date
     created = order.get("createdAt", "") or order.get("created_at", "")
@@ -1412,8 +1497,7 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
     # --- Section 1: Customer Info ---
     heading_font = _font(_SZ_SUBTITLE, True)
     heading_text = _customer_heading_text(order)
-    for ln in _wrap(heading_text, heading_font, CONTENT_WIDTH) or [heading_text]:
-        y = _left(draw, y, ln, heading_font)
+    y = _draw_wrapped(draw, y, heading_text, heading_font, CONTENT_WIDTH)
     y = _sep(draw, y)
 
     y += 4
@@ -1573,10 +1657,7 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
 
     # FR-7: hide "Tạm tính" when it equals "Tổng cộng" (no shipping/cash fees).
     has_fee_additions = shipping_fee > 0 or any(
-        (item.get("attributes") or {}).get("rut_tien") == "true"
-        and (item.get("attributes") or {}).get("cash_fee")
-        and int(float((item.get("attributes") or {}).get("cash_fee"))) > 0
-        for item in work_items
+        _cash_fee_amount(item) > 0 for item in work_items
     )
     if has_fee_additions or abs(subtotal - total_price) > 0.01:
         y = _row(draw, y, "Tạm tính:", _format_vnd_full(subtotal), fbb)
@@ -1584,10 +1665,9 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
         y = _row(draw, y, "Phí giao hàng:", _format_vnd_full(shipping_fee), fb)
     # Cash-in-cake fee in summary (like shipping fee, black text, not bold)
     for item in work_items:
-        attrs = item.get("attributes") or {}
-        cash_fee = attrs.get("cash_fee")
-        if attrs.get("rut_tien") == "true" and cash_fee and int(float(cash_fee)) > 0:
-            fee_str = _format_vnd_full(float(cash_fee))
+        fee_amt = _cash_fee_amount(item)
+        if fee_amt > 0:
+            fee_str = _format_vnd_full(fee_amt)
             y = _row(draw, y, "Phí rút tiền:", fee_str, fb)
     y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
 
@@ -1652,9 +1732,14 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
 
         # Order-level notes
         if order_notes:
+            # CQ-3: grow the 4000px canvas before drawing long order notes so
+            # the cursor never runs past the canvas (which would silently
+            # discard text and append a solid-black band to the crop).
+            img, draw = _ensure_canvas_capacity(img, draw, y, headroom=len(order_notes) * 30)
             y = _left(draw, y, "Ghi chú:", fbb)
             for ln in _wrap(order_notes, fb, CONTENT_WIDTH):
                 y = _left_mixed(draw, y, ln, fb, (80, 80, 80))
+                img, draw = _ensure_canvas_capacity(img, draw, y)
 
     # Footer
     y += 4
@@ -1666,7 +1751,9 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
     # DG-228 Phase 3: page splitting handled by _split_pages() at the API layer.
     # Crop to content bottom (no max-height cap here) so the splitter can divide
     # the full content at natural section boundaries when it exceeds the cap.
-    crop_h = max(y, 1)
+    # CQ-3: clamp crop to the canvas height so a cursor that somehow exceeds
+    # the canvas cannot append a solid-black band to the cropped output.
+    crop_h = min(max(y, 1), img.height)
     return img.crop((0, 0, RECEIPT_WIDTH, crop_h))
 
 
@@ -1777,7 +1864,14 @@ def get_receipt(
         # The GET receipt endpoint returns the first page as a single PNG for
         # backward compatibility with the Flutter preview (multi-page print flow
         # is handled by printing.py in Phase 4).
-        pages = _split_pages(img)
+        # CQ-2: only split work_ticket/customer receipts on label paper — roll
+        # mode and shop/delivery/bus_label types keep the single-image path so
+        # long roll receipts print continuously and shop/delivery previews are
+        # not truncated to page 1.
+        if type in ("work_ticket", "customer") and paper_mode == "label":
+            pages = _split_pages(img)
+        else:
+            pages = [img]
         first_page = pages[0]
 
         buf = io.BytesIO()
