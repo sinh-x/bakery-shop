@@ -107,14 +107,21 @@ def compute_urgency(
     due_time: Optional[str],
     status: str,
     acknowledged_at: Optional[str],
+    delivery_type: str = "pickup",
 ) -> str:
     """Compute the urgency tier for an order.
 
     Rules (FR-1):
-    - ``critical`` = past due datetime and not delivered/completed/cancelled.
+    - ``critical`` = past due datetime and not delivered/completed/cancelled,
+      OR (delivery/bus/door only) due within the configurable early critical
+      threshold (default 60 min) — prep/transit buffer.
     - ``urgent`` = due ≤ 2h from now, OR status='new' and unacknowledged,
       OR status in (new, confirmed) and due today.
     - ``normal`` = everything else.
+
+    ``delivery_type`` defaults to ``"pickup"`` for backward compatibility.
+    Only delivery/bus/door orders get the early critical threshold; pickup
+    orders fall through to the existing rules.
     """
     terminal = {"delivered", "completed", "cancelled"}
     if status in terminal:
@@ -138,6 +145,15 @@ def compute_urgency(
     if due_dt:
         if due_dt < now:
             return UrgencyTier.CRITICAL.value
+        # Early critical threshold for delivery/bus/door orders (FR2, FR6).
+        # compute_urgency is a pure function without DB access, so it uses the
+        # module-level env var default; callers with a DB connection may read
+        # the runtime override via get_delivery_critical_threshold(conn).
+        if delivery_type in ("delivery", "bus", "door"):
+            from baker.config import DELIVERY_CRITICAL_THRESHOLD_MINUTES
+
+            if due_dt - now <= timedelta(minutes=DELIVERY_CRITICAL_THRESHOLD_MINUTES):
+                return UrgencyTier.CRITICAL.value
         if due_dt - now <= timedelta(hours=2):
             return UrgencyTier.URGENT.value
 
