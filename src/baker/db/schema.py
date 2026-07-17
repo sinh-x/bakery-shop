@@ -3701,8 +3701,11 @@ def _migrate_v74_backfill_null_customer_links(conn):
     same phone → name → new customer → shared "Khách lẻ" chain.
 
     Idempotent (NFR2): a second run reports ``null_before = 0`` and changes
-    zero rows. Reports pre/post NULL counts via the returned summary dict,
-    which ``baker db`` and tests can read without scraping log lines.
+    zero rows. Pre/post NULL counts are written to logs by
+    :func:`_repair_null_customer_links`; this wrapper does not return the
+    summary dict (Mn-10, DG-252 review). Tests that need the summary call
+    :func:`_repair_null_customer_links` directly; ``baker db`` surfaces
+    counts via log lines only.
     """
     _repair_null_customer_links(conn)
 

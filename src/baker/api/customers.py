@@ -191,6 +191,10 @@ def list_duplicate_customers(actor: str = Depends(RequireRole("admin"))):
     is not shadowed by the int path parameter.
     """
     with get_db() as conn:
+        # Mn-6: compute order counts once with a single grouped query rather
+        # than issuing one COUNT(*) per customer row (the previous N+1).
+        order_counts = _load_order_counts_by_customer(conn)
+
         # --- Phone-keyed groups: any normalized phone shared by ≥2 customers.
         phone_groups_raw = conn.execute(
             "SELECT cp.phone AS key, c.id AS customer_id, c.name, c.phone, "
@@ -203,7 +207,13 @@ def list_duplicate_customers(actor: str = Depends(RequireRole("admin"))):
         phone_groups: dict[str, list[dict]] = {}
         for r in phone_groups_raw:
             phone_groups.setdefault(r["key"], []).append(
-                _duplicate_customer_row(conn, r["customer_id"], r["name"], r["phone"])
+                _duplicate_customer_row(
+                    conn,
+                    r["customer_id"],
+                    r["name"],
+                    r["phone"],
+                    order_counts=order_counts,
+                )
             )
 
         # --- Name-keyed groups: diacritic-stripped search_name shared by ≥2.
@@ -214,11 +224,19 @@ def list_duplicate_customers(actor: str = Depends(RequireRole("admin"))):
         name_groups: dict[str, list[dict]] = {}
         for r in name_groups_raw:
             name_groups.setdefault(r["search_name"], []).append(
-                _duplicate_customer_row(conn, r["id"], r["name"], r["phone"])
+                _duplicate_customer_row(
+                    conn,
+                    r["id"],
+                    r["name"],
+                    r["phone"],
+                    order_counts=order_counts,
+                )
             )
 
         groups: list[dict] = []
-        seen_customer_sets: set[tuple[str, tuple[int, ...]]] = set()
+        # Dedupe across group kinds: emit each customer set at most once.
+        # Phone groups win since they are emitted first (more specific key).
+        seen_customer_sets: set[tuple[int, ...]] = set()
 
         def _emit_group(key: str, kind: str, members: list[dict]) -> None:
             if len(members) < 2:
@@ -235,9 +253,11 @@ def list_duplicate_customers(actor: str = Depends(RequireRole("admin"))):
                 unique.append(m)
             if len(unique) < 2:
                 return
-            # Dedupe across group kinds: avoid emitting the same customer set
-            # twice when a phone group and a name group cover the same ids.
-            set_key = (kind, tuple(sorted(ids_seen)))
+            # Mn-4: dedupe across group kinds — drop `kind` from the set key so
+            # the same customer set is emitted once even when a phone group
+            # and a name group cover the same ids. Phone groups are emitted
+            # first, so they win.
+            set_key = tuple(sorted(ids_seen))
             if set_key in seen_customer_sets:
                 return
             seen_customer_sets.add(set_key)
@@ -321,12 +341,20 @@ def update_customer(customer_id: int, body: CustomerUpdate):
 
 
 @router.delete("/{customer_id}")
-def delete_customer(customer_id: int):
+def delete_customer(
+    customer_id: int,
+    actor: str = Depends(RequireRole("admin")),
+):
     """Xóa khách hàng (hard-delete).
 
     FR10/AC7: nếu khách hàng đang liên kết với ≥1 đơn hàng, trả về 409 và
     KHÔNG thay đổi dữ liệu. Khách hàng không liên kết đơn nào vẫn xóa được.
     Gợi ý thay thế: gộp khách (merge) thay vì xóa khi còn đơn liên kết.
+
+    Mn-5 (DG-252 review): admin-only via ``RequireRole("admin")`` and
+    audited via ``record_audit_log``, mirroring the merge endpoint. The
+    grace-period pass-through (``AUTH_REQUIRED=false``) preserves the
+    DG-119 backward-compat baseline.
     """
     with get_db() as conn:
         row = conn.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
@@ -343,10 +371,23 @@ def delete_customer(customer_id: int):
                 detail=CUSTOMER_DELETE_LINKED_ORDERS_MSG,
             )
 
+        old_value = _row_to_customer_dict(row)
+
         # FR9: cascade-delete customer_phones rows (also handled by ON DELETE CASCADE,
         # but explicit DELETE ensures correctness even if FK enforcement is off)
         conn.execute("DELETE FROM customer_phones WHERE customer_id = ?", (customer_id,))
         conn.execute("DELETE FROM customers WHERE id = ?", (customer_id,))
+
+        record_audit_log(
+            conn,
+            actor,
+            "delete",
+            "customer",
+            customer_id,
+            old_value=old_value,
+            new_value=None,
+        )
+
         return {
             "ok": True,
             "id": customer_id,
@@ -597,18 +638,45 @@ def _row_to_customer_dict(row) -> dict:
     }
 
 
-def _duplicate_customer_row(conn, customer_id: int, name: str, phone: str) -> dict:
+def _duplicate_customer_row(
+    conn,
+    customer_id: int,
+    name: str,
+    phone: str,
+    order_counts: dict[int, int] | None = None,
+) -> dict:
     """Build one customer entry for a duplicates-group payload (FR6).
 
     Includes the per-customer order count used by the finder UI's
-    confirmation dialog.
+    confirmation dialog. When [order_counts] is supplied (Mn-6: a single
+    grouped ``SELECT customer_id, COUNT(*) FROM orders GROUP BY
+    customer_id`` result), the count is read from the dict instead of
+    issuing a per-row COUNT query. This eliminates the previous N+1
+    pattern where every ``customer_phones`` row and every customer with a
+    non-empty ``search_name`` issued its own ``COUNT(*)`` query.
     """
-    order_count = conn.execute(
-        "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (customer_id,)
-    ).fetchone()[0]
+    if order_counts is not None:
+        order_count = order_counts.get(customer_id, 0)
+    else:
+        order_count = conn.execute(
+            "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (customer_id,)
+        ).fetchone()[0]
     return {
         "id": customer_id,
         "name": name,
         "phone": phone or "",
         "orderCount": int(order_count),
     }
+
+
+def _load_order_counts_by_customer(conn) -> dict[int, int]:
+    """Single grouped query returning ``{customer_id: order_count}`` (Mn-6).
+
+    Replaces the previous N+1 pattern of issuing one ``COUNT(*)`` per
+    customer row in ``/duplicates``. Returns a dict keyed by customer id
+    so the per-row helper can look up counts in O(1).
+    """
+    rows = conn.execute(
+        "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id"
+    ).fetchall()
+    return {r["customer_id"]: int(r["n"]) for r in rows}

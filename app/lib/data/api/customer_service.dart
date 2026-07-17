@@ -97,7 +97,7 @@ class MergeResult {
   final Customer customer;
   final int movedOrders;
   final int addedPhones;
-  final int recomputedYears;
+  final List<int> recomputedYears;
 
   factory MergeResult.fromJson(Map<String, dynamic> json) {
     return MergeResult(
@@ -109,7 +109,9 @@ class MergeResult {
       ),
       movedOrders: (json['movedOrders'] as num?)?.toInt() ?? 0,
       addedPhones: (json['addedPhones'] as num?)?.toInt() ?? 0,
-      recomputedYears: (json['recomputedYears'] as num?)?.toInt() ?? 0,
+      recomputedYears: ((json['recomputedYears'] as List?) ?? const [])
+          .map((e) => (e as num).toInt())
+          .toList(),
     );
   }
 }

@@ -69,4 +69,20 @@ class CustomersLabels {
   static const duplicateFinderMergeFailed = 'Gộp khách thất bại';
   static const duplicateFinderLoadingGroups = 'Đang tải...';
   static const duplicateFinderRetry = 'Thử lại';
+  static const duplicateFinderSwapDirection = 'Đảo chiều gộp (giữ ↔ gộp vào)';
+
+  /// Hint shown beneath a duplicate group when the admin has not yet selected
+  /// two members to merge (DG-252 review M3 + Mn9 — replaces the previous
+  /// inline `'${n} khách — chọn 2 để gộp'` string). The hint adapts to the
+  /// number of members already selected so the admin knows the two-tap
+  /// selection model.
+  static String duplicateFinderPickTwoHint(int memberCount, int selectedCount) {
+    if (selectedCount == 0) {
+      return '$memberCount khách — chạm để chọn khách giữ, rồi chọn khách gộp';
+    }
+    if (selectedCount == 1) {
+      return 'Đã chọn 1 — chạm tiếp để chọn khách gộp';
+    }
+    return '$memberCount khách — chạm để chọn khách giữ, rồi chọn khách gộp';
+  }
 }

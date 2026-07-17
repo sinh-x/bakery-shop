@@ -46,7 +46,7 @@ class _FakeDuplicateService extends CustomerService {
       customer: Customer(id: targetId, name: 'kept', phone: '09'),
       movedOrders: 2,
       addedPhones: 1,
-      recomputedYears: 1,
+      recomputedYears: const [2025, 2026],
     );
   }
 }
@@ -85,6 +85,22 @@ Future<void> _pumpScreen(
   await tester.pumpAndSettle();
 }
 
+/// Two-tap selection flow used by the merge tests: tap [keep] then [mergeFrom]
+/// to set the keep/merge-from roles, then tap the merge button to open the
+/// confirmation dialog. Mirrors the DG-252 review M3 selection model.
+Future<void> _selectTwoAndTapMerge(
+  WidgetTester tester, {
+  required String keep,
+  required String mergeFrom,
+}) async {
+  await tester.tap(find.text(keep));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(mergeFrom));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(CustomersLabels.duplicateFinderMergeButton));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets(
       'renders empty state when no duplicates (FR7/AC4)',
@@ -117,8 +133,79 @@ void main() {
         findsOneWidget);
     expect(find.text('Nguyễn Văn A'), findsOneWidget);
     expect(find.text('Nguyễn Văn Á'), findsOneWidget);
-    // Two merge buttons (one per 2-member group).
-    expect(find.text(CustomersLabels.duplicateFinderMergeButton), findsNWidgets(2));
+    // No merge button is shown until the admin selects two members per group
+    // (DG-252 review M3 — two-tap selection model).
+    expect(find.text(CustomersLabels.duplicateFinderMergeButton), findsNothing);
+    // Each group shows the two-tap selection hint instead.
+    expect(
+      find.text(CustomersLabels.duplicateFinderPickTwoHint(2, 0)),
+      findsNWidgets(2),
+    );
+  });
+
+  testWidgets(
+      'selecting two members in a group reveals the merge button (DG-252 review M3)',
+      (tester) async {
+    final service = _FakeDuplicateService(groups: [_phoneGroup()]);
+    await _pumpScreen(tester, service);
+
+    // Initially no merge button — only the hint.
+    expect(find.text(CustomersLabels.duplicateFinderMergeButton), findsNothing);
+
+    // Tap first member → keep role label appears.
+    await tester.tap(find.text('Sinh'));
+    await tester.pumpAndSettle();
+    expect(find.text(CustomersLabels.duplicateFinderMergeIntoLabel),
+        findsOneWidget);
+    expect(find.text(CustomersLabels.duplicateFinderPickTwoHint(2, 1)),
+        findsOneWidget);
+
+    // Tap second member → merge-from role label + merge button appears.
+    await tester.tap(find.text('Sinh A'));
+    await tester.pumpAndSettle();
+    expect(find.text(CustomersLabels.duplicateFinderMergeFromLabel),
+        findsOneWidget);
+    expect(find.text(CustomersLabels.duplicateFinderMergeButton),
+        findsOneWidget);
+  });
+
+  testWidgets(
+      'groups of three members have a merge path via two-tap selection (DG-252 review M3)',
+      (tester) async {
+    const triple = DuplicateGroup(
+      key: '0901234567',
+      kind: 'phone',
+      customers: [
+        DuplicateCustomerEntry(id: 1, name: 'Sinh', phone: '0901234567', orderCount: 5),
+        DuplicateCustomerEntry(id: 2, name: 'Sinh A', phone: '0901234567', orderCount: 2),
+        DuplicateCustomerEntry(id: 3, name: 'Sinh B', phone: '0901234567', orderCount: 1),
+      ],
+    );
+    final service = _FakeDuplicateService(groups: [triple]);
+    await _pumpScreen(tester, service);
+
+    // No merge button initially; the hint adapts to the 3-member count.
+    expect(find.text(CustomersLabels.duplicateFinderMergeButton), findsNothing);
+    expect(find.text(CustomersLabels.duplicateFinderPickTwoHint(3, 0)),
+        findsOneWidget);
+
+    // Select two of the three members to enable merging.
+    await tester.tap(find.text('Sinh B'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sinh A'));
+    await tester.pumpAndSettle();
+    expect(find.text(CustomersLabels.duplicateFinderMergeButton),
+        findsOneWidget);
+
+    // Confirm the merge: keep=Sinh B (id 3, first tap), mergeFrom=Sinh A (id 2).
+    await tester.tap(find.text(CustomersLabels.duplicateFinderMergeButton));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(CustomersLabels.duplicateFinderMergeConfirm));
+    await tester.pumpAndSettle();
+
+    expect(service.mergeCallCount, 1);
+    expect(service.lastTargetId, 3);
+    expect(service.lastSourceId, 2);
   });
 
   testWidgets(
@@ -127,8 +214,7 @@ void main() {
     final service = _FakeDuplicateService(groups: [_phoneGroup()]);
     await _pumpScreen(tester, service);
 
-    await tester.tap(find.text(CustomersLabels.duplicateFinderMergeButton));
-    await tester.pumpAndSettle();
+    await _selectTwoAndTapMerge(tester, keep: 'Sinh', mergeFrom: 'Sinh A');
 
     final dialog = find.byType(AlertDialog);
     expect(dialog, findsOneWidget);
@@ -190,8 +276,7 @@ void main() {
     final service = _FakeDuplicateService(groups: [_phoneGroup()]);
     await _pumpScreen(tester, service);
 
-    await tester.tap(find.text(CustomersLabels.duplicateFinderMergeButton));
-    await tester.pumpAndSettle();
+    await _selectTwoAndTapMerge(tester, keep: 'Sinh', mergeFrom: 'Sinh A');
     await tester.tap(find.text(CustomersLabels.duplicateFinderMergeConfirm));
     await tester.pumpAndSettle();
 
@@ -210,8 +295,7 @@ void main() {
     final service = _FakeDuplicateService(groups: [_phoneGroup()]);
     await _pumpScreen(tester, service);
 
-    await tester.tap(find.text(CustomersLabels.duplicateFinderMergeButton));
-    await tester.pumpAndSettle();
+    await _selectTwoAndTapMerge(tester, keep: 'Sinh', mergeFrom: 'Sinh A');
     await tester.tap(find.text(CustomersLabels.duplicateFinderMergeCancel));
     await tester.pumpAndSettle();
 
@@ -228,8 +312,7 @@ void main() {
     );
     await _pumpScreen(tester, service);
 
-    await tester.tap(find.text(CustomersLabels.duplicateFinderMergeButton));
-    await tester.pumpAndSettle();
+    await _selectTwoAndTapMerge(tester, keep: 'Sinh', mergeFrom: 'Sinh A');
     await tester.tap(find.text(CustomersLabels.duplicateFinderMergeConfirm));
     await tester.pumpAndSettle();
 
@@ -293,5 +376,72 @@ void main() {
         findsOneWidget);
     expect(find.textContaining('3 ${CustomersLabels.duplicateFinderOrderCountSuffix}'),
         findsOneWidget);
+  });
+
+  testWidgets(
+      'DuplicateMergeDialog swap affordance inverts keep/merge-from direction (DG-252 review M3)',
+      (tester) async {
+    MergeChoice? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (ctx) => Center(
+              child: ElevatedButton(
+                onPressed: () async {
+                  result = await showDialog<MergeChoice>(
+                    context: ctx,
+                    builder: (_) => const DuplicateMergeDialog(
+                      keep: DuplicateCustomerEntry(
+                          id: 1, name: 'Sinh', phone: '090', orderCount: 7),
+                      mergeFrom: DuplicateCustomerEntry(
+                          id: 2, name: 'An', phone: '091', orderCount: 3),
+                    ),
+                  );
+                },
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // Initial direction: keep=Sinh (id 1), mergeFrom=An (id 2).
+    expect(find.text('Sinh'), findsOneWidget);
+    expect(find.text('An'), findsOneWidget);
+
+    // Tap the swap affordance.
+    await tester.tap(find.byTooltip(CustomersLabels.duplicateFinderSwapDirection));
+    await tester.pumpAndSettle();
+
+    // Confirm and capture the returned choice.
+    await tester.tap(find.text(CustomersLabels.duplicateFinderMergeConfirm));
+    await tester.pumpAndSettle();
+
+    expect(result, isNotNull);
+    expect(result!.keep.id, 2, reason: 'swap inverts keep → mergeFrom');
+    expect(result!.mergeFrom.id, 1, reason: 'swap inverts mergeFrom → keep');
+  });
+
+  testWidgets(
+      'confirming merge after swap applies the swapped direction to the service (DG-252 review M3)',
+      (tester) async {
+    final service = _FakeDuplicateService(groups: [_phoneGroup()]);
+    await _pumpScreen(tester, service);
+
+    await _selectTwoAndTapMerge(tester, keep: 'Sinh', mergeFrom: 'Sinh A');
+    await tester.tap(find.byTooltip(CustomersLabels.duplicateFinderSwapDirection));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(CustomersLabels.duplicateFinderMergeConfirm));
+    await tester.pumpAndSettle();
+
+    expect(service.mergeCallCount, 1);
+    expect(service.lastTargetId, 2,
+        reason: 'after swap the original mergeFrom (id 2) becomes the keep target');
+    expect(service.lastSourceId, 1,
+        reason: 'after swap the original keep (id 1) becomes the merge source');
   });
 }

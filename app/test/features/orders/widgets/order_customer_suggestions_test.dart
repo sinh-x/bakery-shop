@@ -199,6 +199,25 @@ void main() {
         reason: 'refine hint shown when results exceed cap');
   });
 
+  testWidgets(
+      'shows no-match label when the search returns zero results (DG-252 review Mn8)',
+      (tester) async {
+    final svc = _FakeCustomerService([
+      const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
+    ]);
+    await _pump(tester, svc);
+
+    // Query that matches nothing.
+    await tester.enterText(find.byType(TextField).first, 'ZZZZ');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    expect(find.text(CustomersLabels.orderSuggestionsNoMatch), findsOneWidget,
+        reason: 'no-match label surfaces when zero results return');
+    expect(find.byType(ListTile), findsNothing,
+        reason: 'no suggestion rows when no results');
+  });
+
   testWidgets('phone field drives suggestions when longer than name', (tester) async {
     final svc = _RecordingCustomerService([
       const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
@@ -211,6 +230,27 @@ void main() {
 
     expect(_suggestion('Sinh'), findsOneWidget);
     expect(svc.calls, contains('0901'));
+  });
+
+  testWidgets(
+      'strips dashes from phone query so dashed phones match digits-only stored phones (DG-252 review M2)',
+      (tester) async {
+    final svc = _RecordingCustomerService([
+      const Customer(id: 1, name: 'Sinh', phone: '0901234567'),
+    ]);
+    await _pump(tester, svc);
+
+    // Simulate PhoneInputFormatter dash insertion starting at the 4th digit.
+    await tester.enterText(find.byType(TextField).last, '090-123');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    expect(_suggestion('Sinh'), findsOneWidget,
+        reason: 'dashed phone query must match digits-only stored phones');
+    expect(svc.calls, contains('090123'),
+        reason: 'query sent to the service must be dashes-stripped');
+    expect(svc.calls.any((c) => c.contains('-')), isFalse,
+        reason: 'no dashed query should reach the service');
   });
 
   testWidgets('hides suggestions when query drops below 2 chars', (tester) async {

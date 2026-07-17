@@ -402,6 +402,45 @@ void main() {
   });
 
   testWidgets(
+      'duplicate warning: explicit "Dùng khách sẵn có" button invokes onUseExisting with the first match (DG-252 review Mn8)',
+      (tester) async {
+    const existing = Customer(
+      id: 42,
+      name: 'Sinh',
+      phone: '0901-234-567',
+    );
+    final service = _RecordingCustomerService(searchResults: {
+      'Sinh': [existing],
+    });
+    Customer? picked;
+    await _pumpForm(
+      tester,
+      service,
+      onUseExisting: (c) => picked = c,
+    );
+
+    await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
+    await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
+    await tester.tap(find.text(VN.save));
+    await tester.pumpAndSettle();
+
+    expect(find.text(CustomersLabels.duplicateWarningTitle), findsOneWidget);
+
+    // Tap the explicit "Dùng khách sẵn có" button in the dialog.
+    final useExistingButton = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.text(CustomersLabels.duplicateWarningUseExisting),
+    );
+    await tester.tap(useExistingButton);
+    await tester.pumpAndSettle();
+
+    // onUseExisting fired with the first match.
+    expect(picked, isNotNull);
+    expect(picked!.id, 42);
+    expect(service.createCallCount, 0);
+  });
+
+  testWidgets(
       'duplicate warning: cancel does not create and keeps the form open '
       '(FR8/AC6)', (tester) async {
     const existing = Customer(

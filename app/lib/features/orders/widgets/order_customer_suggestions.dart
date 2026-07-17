@@ -54,6 +54,7 @@ class _OrderCustomerSuggestionsState
   Timer? _debounce;
   List<Customer> _results = const [];
   bool _loading = false;
+  bool _searched = false;
   String? _error;
   bool _showRefineHint = false;
 
@@ -76,7 +77,7 @@ class _OrderCustomerSuggestionsState
     final name = widget.nameCtrl.text.trim();
     final phone = widget.phoneCtrl.text.trim();
     final stripped = phone.replaceAll(RegExp(r'[\s-]'), '');
-    final query = name.length >= stripped.length ? name : phone;
+    final query = name.length >= stripped.length ? name : stripped;
     if (query.length < 2) return '';
     return query;
   }
@@ -116,6 +117,7 @@ class _OrderCustomerSuggestionsState
     setState(() {
       _results = const [];
       _loading = false;
+      _searched = false;
       _error = null;
       _showRefineHint = false;
     });
@@ -137,6 +139,7 @@ class _OrderCustomerSuggestionsState
         _results = capped;
         _showRefineHint = results.length > cap;
         _loading = false;
+        _searched = true;
       });
     } catch (e) {
       debugPrint('[OrderCustomerSuggestions] search failed: $e');
@@ -180,7 +183,26 @@ class _OrderCustomerSuggestionsState
       );
     }
     if (_results.isEmpty) {
-      return const SizedBox.shrink();
+      // Only surface the no-match label after a search has actually run,
+      // so the widget does not flash "no match" before the first debounce.
+      if (!_searched) {
+        return const SizedBox.shrink();
+      }
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Row(
+          children: [
+            const Icon(Icons.search_off, size: 16),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                CustomersLabels.orderSuggestionsNoMatch,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ),
+      );
     }
     return _resultsList(context);
   }

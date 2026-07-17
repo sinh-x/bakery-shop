@@ -141,7 +141,7 @@ void main() {
         'customer': {'id': 1, 'name': 'Sinh', 'phone': '0901234567'},
         'movedOrders': 2,
         'addedPhones': 1,
-        'recomputedYears': 1,
+        'recomputedYears': [2025, 2026],
       });
       dio.interceptors.add(interceptor);
       final container = ProviderContainer(
@@ -159,7 +159,7 @@ void main() {
       expect(result.customer.name, 'Sinh');
       expect(result.movedOrders, 2);
       expect(result.addedPhones, 1);
-      expect(result.recomputedYears, 1);
+      expect(result.recomputedYears, [2025, 2026]);
 
       expect(interceptor.lastRequest, isNotNull);
       expect(interceptor.lastRequest!.targetId, 1);

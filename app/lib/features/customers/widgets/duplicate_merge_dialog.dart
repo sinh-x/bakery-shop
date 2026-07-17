@@ -9,19 +9,47 @@ import '../../../shared/labels/customers.dart';
 /// the admin can confirm the destructive merge. The "keep" customer becomes
 /// the merge target (path param `customer_id`); the "merge-from" customer
 /// becomes the source (`sourceCustomerId`) and is hard-deleted by the
-/// backend. Returns `true` when the admin confirms, `false`/`null` otherwise.
-class DuplicateMergeDialog extends StatelessWidget {
+/// backend. The admin can swap the keep/merge-from direction before
+/// confirming (DG-252 review M3 — direction choice for the merge UI).
+/// Returns a [MergeChoice] when the admin confirms, `null` otherwise.
+class DuplicateMergeDialog extends StatefulWidget {
   const DuplicateMergeDialog({
     super.key,
     required this.keep,
     required this.mergeFrom,
   });
 
-  /// Customer to keep (merge target).
+  /// Customer to keep (merge target) — initial direction; the admin can swap.
   final DuplicateCustomerEntry keep;
 
-  /// Customer to merge into [keep] and delete (merge source).
+  /// Customer to merge into [keep] and delete (merge source) — initial
+  /// direction; the admin can swap via the swap affordance.
   final DuplicateCustomerEntry mergeFrom;
+
+  @override
+  State<DuplicateMergeDialog> createState() => _DuplicateMergeDialogState();
+}
+
+/// Result returned by [DuplicateMergeDialog] reflecting the admin's chosen
+/// keep/merge-from direction after an optional swap.
+typedef MergeChoice = ({DuplicateCustomerEntry keep, DuplicateCustomerEntry mergeFrom});
+
+class _DuplicateMergeDialogState extends State<DuplicateMergeDialog> {
+  late bool _swapped;
+
+  @override
+  void initState() {
+    super.initState();
+    _swapped = false;
+  }
+
+  DuplicateCustomerEntry get _keep => _swapped ? widget.mergeFrom : widget.keep;
+  DuplicateCustomerEntry get _mergeFrom =>
+      _swapped ? widget.keep : widget.mergeFrom;
+
+  void _toggleSwap() {
+    setState(() => _swapped = !_swapped);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,24 +64,37 @@ class DuplicateMergeDialog extends StatelessWidget {
             const SizedBox(height: 16),
             _CustomerSummary(
               label: CustomersLabels.duplicateFinderMergeIntoLabel,
-              entry: keep,
+              entry: _keep,
               highlight: true,
             ),
-            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.center,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: IconButton.outlined(
+                  onPressed: _toggleSwap,
+                  tooltip: CustomersLabels.duplicateFinderSwapDirection,
+                  icon: const Icon(Icons.swap_vert, size: 20),
+                ),
+              ),
+            ),
             _CustomerSummary(
               label: CustomersLabels.duplicateFinderMergeFromLabel,
-              entry: mergeFrom,
+              entry: _mergeFrom,
             ),
           ],
         ),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
+          onPressed: () => Navigator.of(context).pop<MergeChoice?>(null),
           child: const Text(CustomersLabels.duplicateFinderMergeCancel),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(context).pop(true),
+          onPressed: () => Navigator.of(context).pop<MergeChoice?>((
+            keep: _keep,
+            mergeFrom: _mergeFrom,
+          )),
           child: const Text(CustomersLabels.duplicateFinderMergeConfirm),
         ),
       ],

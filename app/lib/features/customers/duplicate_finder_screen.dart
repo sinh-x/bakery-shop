@@ -17,42 +17,56 @@ import 'widgets/duplicate_merge_dialog.dart';
 /// Route-gated by the router redirect guard via `_adminOnlyRoutes`
 /// (`app_router.dart`). Staff users hitting `/customers/duplicates` are
 /// redirected to the admin-access-denied page.
-class DuplicateFinderScreen extends ConsumerWidget {
+class DuplicateFinderScreen extends ConsumerStatefulWidget {
   const DuplicateFinderScreen({super.key});
 
+  @override
+  ConsumerState<DuplicateFinderScreen> createState() =>
+      _DuplicateFinderScreenState();
+}
+
+class _DuplicateFinderScreenState extends ConsumerState<DuplicateFinderScreen> {
+  /// Group key currently in flight (DG-252 review Mn7 — in-flight guard
+  /// against double merge taps). `null` when no merge is running.
+  String? _mergingKey;
+
   Future<void> _onMerge(
-    BuildContext context,
-    WidgetRef ref,
+    DuplicateGroup group,
     DuplicateCustomerEntry keep,
     DuplicateCustomerEntry mergeFrom,
   ) async {
-    final confirmed = await showDialog<bool>(
+    final choice = await showDialog<MergeChoice>(
           context: context,
           barrierDismissible: false,
-          builder: (_) => DuplicateMergeDialog(keep: keep, mergeFrom: mergeFrom),
-        ) ??
-        false;
-    if (!confirmed) return;
+          builder: (_) =>
+              DuplicateMergeDialog(keep: keep, mergeFrom: mergeFrom),
+        );
+    if (choice == null) return;
+    setState(() => _mergingKey = group.key);
     try {
       await ref.read(customerServiceProvider).mergeCustomers(
-            targetId: keep.id,
-            sourceId: mergeFrom.id,
+            targetId: choice.keep.id,
+            sourceId: choice.mergeFrom.id,
           );
       ref.invalidate(customerListProvider);
       await ref.read(duplicateGroupsProvider.notifier).refresh();
-      if (context.mounted) {
+      if (mounted) {
         showTopSnackBar(context, CustomersLabels.duplicateFinderMergeSuccess);
       }
     } catch (e) {
-      if (context.mounted) {
+      if (mounted) {
         showTopSnackBar(context, CustomersLabels.duplicateFinderMergeFailed);
         debugPrint('duplicate_finder merge failed: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _mergingKey = null);
       }
     }
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final async = ref.watch(duplicateGroupsProvider);
     return Scaffold(
       appBar: AppBar(
@@ -68,7 +82,14 @@ class DuplicateFinderScreen extends ConsumerWidget {
       ),
       body: async.when(
         loading: () => const Center(
-          child: CircularProgressIndicator(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 12),
+              Text(CustomersLabels.duplicateFinderLoadingGroups),
+            ],
+          ),
         ),
         error: (e, _) => Center(
           child: Column(
@@ -106,9 +127,9 @@ class DuplicateFinderScreen extends ConsumerWidget {
               final group = groups[index];
               return DuplicateGroupTile(
                 group: group,
-                merging: false,
+                merging: _mergingKey == group.key,
                 onMerge: (keep, mergeFrom) =>
-                    _onMerge(context, ref, keep, mergeFrom),
+                    _onMerge(group, keep, mergeFrom),
               );
             },
           );

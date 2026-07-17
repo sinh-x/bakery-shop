@@ -477,3 +477,94 @@ def test_duplicates_emits_both_phone_and_name_groups_when_sets_differ(auth_clien
     assert len(name_groups) == 1
     assert phone_groups[0]["key"] == "0900"
     assert name_groups[0]["key"] == "trung ten"
+
+
+def test_duplicates_emits_one_group_when_phone_and_name_cover_same_set(auth_client):
+    """Mn-4 (DG-252 review) — two customers sharing BOTH the same phone AND
+    the same (diacritic-stripped) name should produce exactly one group, not
+    two. Phone groups are emitted first and win; the matching name group is
+    suppressed by the cross-kind dedupe (set_key excludes ``kind``).
+    """
+    headers, _ = _admin_setup(auth_client)
+
+    # Two customers sharing both phone and diacritic-stripped name.
+    a = _create_customer(auth_client, name="Nguyễn A", phone="0900555777", headers=headers)
+    b = _create_customer(auth_client, name="Nguyen A", phone="0900555777", headers=headers)
+    _create_order(auth_client, a["id"], a["name"], headers=headers)
+    _create_order(auth_client, b["id"], b["name"], headers=headers)
+    _create_order(auth_client, b["id"], b["name"], headers=headers)
+
+    resp = auth_client.get("/api/customers/duplicates", headers=headers)
+    assert resp.status_code == 200, resp.text
+    groups = resp.json()["groups"]
+    # The two customers form one customer set; only the phone group should
+    # be emitted (phone wins because phone groups are emitted first).
+    matching = [
+        g for g in groups
+        if {m["id"] for m in g["customers"]} == {a["id"], b["id"]}
+    ]
+    assert len(matching) == 1, (
+        f"expected one group for the shared set, got {len(matching)}: {matching}"
+    )
+    assert matching[0]["kind"] == "phone"
+    # Order counts still accurate after the grouped-query refactor (Mn-6).
+    members = {m["id"]: m for m in matching[0]["customers"]}
+    assert members[a["id"]]["orderCount"] == 1
+    assert members[b["id"]]["orderCount"] == 2
+
+
+# ---------------------------------------------------------------------------
+# DELETE admin-gate + audit-log (Mn-5, DG-252 review)
+# ---------------------------------------------------------------------------
+
+
+def test_delete_customer_non_admin_returns_403(auth_client):
+    """Mn-5 — DELETE /api/customers/{id} is admin-only; staff JWT → 403."""
+    headers, _ = _admin_setup(auth_client)
+    cust = _create_customer(auth_client, name="Xóa", phone="0900", headers=headers)
+    staff_token = _seed_staff(auth_client)
+    staff_headers = _auth_headers(staff_token)
+
+    resp = auth_client.delete(f"/api/customers/{cust['id']}", headers=staff_headers)
+    assert resp.status_code == 403
+
+    # Customer still exists.
+    assert auth_client.get(
+        f"/api/customers/{cust['id']}", headers=headers
+    ).status_code == 200
+
+
+def test_delete_customer_admin_writes_audit_log(auth_client):
+    """Mn-5 — admin DELETE writes an audit_log entry (mirrors merge)."""
+    import json
+
+    headers, _ = _admin_setup(auth_client)
+    cust = _create_customer(auth_client, name="Xóa audit", phone="0900", headers=headers)
+
+    resp = auth_client.delete(f"/api/customers/{cust['id']}", headers=headers)
+    assert resp.status_code == 200
+
+    with get_db() as conn:
+        audit = conn.execute(
+            "SELECT action, entity_type, entity_id, old_value, new_value "
+            "FROM audit_log WHERE entity_type = 'customer' AND action = 'delete' "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    assert audit is not None
+    assert audit["entity_id"] == str(cust["id"])
+    old = json.loads(audit["old_value"])
+    assert old["name"] == "Xóa audit"
+    assert audit["new_value"] is None
+
+
+def test_delete_customer_grace_period_anon_allowed(anon_client):
+    """Mn-5 — AUTH_REQUIRED=false lets an unauthenticated delete through
+    (grace period), preserving the DG-119 backward-compat baseline."""
+    # Seed a customer via the create endpoint (also unauthenticated under
+    # grace period).
+    created = anon_client.post(
+        "/api/customers", json={"name": "Grace xóa", "phone": "0900"}
+    ).json()
+    resp = anon_client.delete(f"/api/customers/{created['id']}")
+    assert resp.status_code == 200
+    assert anon_client.get(f"/api/customers/{created['id']}").status_code == 404

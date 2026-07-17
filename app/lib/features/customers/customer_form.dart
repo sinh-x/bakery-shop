@@ -432,6 +432,14 @@ class _DuplicateWarningDialog extends StatelessWidget {
           child: const Text(CustomersLabels.duplicateWarningCancel),
         ),
         FilledButton.tonal(
+          onPressed: matches.isEmpty
+              ? null
+              : () => Navigator.of(context).pop<_DuplicateChoice>(
+                    (useExisting: matches.first, createAnyway: false),
+                  ),
+          child: const Text(CustomersLabels.duplicateWarningUseExisting),
+        ),
+        FilledButton(
           onPressed: () => Navigator.of(context).pop<_DuplicateChoice>(
             const (useExisting: null, createAnyway: true),
           ),
