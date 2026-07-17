@@ -423,9 +423,11 @@ def test_urgency_critical_when_past_due():
 
 def test_urgency_urgent_when_due_soon():
     from baker.models.order import compute_urgency
-    from datetime import datetime, timezone, timedelta
-    soon = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%Y-%m-%d")
-    soon_time = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%H:%M")
+    from baker.config import TIMEZONE
+    from datetime import datetime, timedelta
+    soon_local = (datetime.now(TIMEZONE) + timedelta(hours=1))
+    soon = soon_local.strftime("%Y-%m-%d")
+    soon_time = soon_local.strftime("%H:%M")
     result = compute_urgency(soon, soon_time, "new", None)
     assert result == "urgent", f"Expected urgent for due in 1h, got {result}"
 

@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 from enum import Enum
 from typing import Optional
 
+from baker.config import TIMEZONE
 from baker.models.event import Event
 from baker.utils.time import now_utc
 
@@ -127,10 +128,10 @@ def compute_urgency(
         try:
             if due_time:
                 due_dt = datetime.strptime(f"{due_date}T{due_time}", "%Y-%m-%dT%H:%M")
-                due_dt = due_dt.replace(tzinfo=timezone.utc)
+                due_dt = due_dt.replace(tzinfo=TIMEZONE).astimezone(timezone.utc)
             else:
                 due_dt = datetime.strptime(due_date, "%Y-%m-%d")
-                due_dt = due_dt.replace(tzinfo=timezone.utc)
+                due_dt = due_dt.replace(tzinfo=TIMEZONE).astimezone(timezone.utc)
         except (ValueError, TypeError):
             pass
 
@@ -144,7 +145,7 @@ def compute_urgency(
         return UrgencyTier.URGENT.value
 
     if status in ("new", "confirmed") and due_date:
-        today_str = now.strftime("%Y-%m-%d")
+        today_str = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
         if due_date == today_str:
             return UrgencyTier.URGENT.value
 
