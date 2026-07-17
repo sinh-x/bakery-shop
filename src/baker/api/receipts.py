@@ -29,6 +29,7 @@ MARGIN = 20
 CONTENT_WIDTH = RECEIPT_WIDTH - 2 * MARGIN
 THUMBNAIL_SIZE = 128
 LINE_GAP = 4  # DG-228 Phase 2: reduced from 6 for vertical compaction
+_SZ_FOOTER = 14  # DG-228 Phase 3 / FR-6: "Trang N/M" footer marker font (metadata-only exception to 16pt floor)
 
 # Font sizes (optimized for 203 DPI thermal print)
 _SZ_TITLE = 32
@@ -204,6 +205,126 @@ def _find_content_bottom(img):
     inverted = img.point(lambda p: 255 - p)
     bbox = inverted.getbbox()
     return bbox[3] + 1 if bbox else 0
+
+
+def _find_split_boundaries(img, max_h: int) -> list:
+    """Find natural section-break y-coordinates suitable as page split points.
+
+    Scans the image for horizontal rows that are entirely white (content gaps)
+    and returns a list of candidate y-coordinates. These are rows where the
+    receipt has vertical whitespace, so splitting there keeps sections intact
+    on each page. Only rows in the range [MARGIN, content_bottom - MARGIN] are
+    considered; the very top and bottom are excluded to avoid degenerate splits.
+    """
+    inverted = img.point(lambda p: 255 - p)
+    bbox = inverted.getbbox()
+    if not bbox:
+        return []
+    content_bottom = bbox[3] + 1
+    if content_bottom <= max_h:
+        return []
+
+    # Scan each row; a row is a "gap" if it is entirely white across content width.
+    gap_rows = []
+    px = img.load()
+    for y in range(MARGIN, content_bottom - MARGIN):
+        is_gap = True
+        for x in range(MARGIN, RECEIPT_WIDTH - MARGIN):
+            if px[x, y] != (255, 255, 255):
+                is_gap = False
+                break
+        if is_gap:
+            gap_rows.append(y)
+
+    if not gap_rows:
+        return []
+
+    # Collapse consecutive gap rows into a single midpoint boundary.
+    boundaries = []
+    run_start = gap_rows[0]
+    prev = gap_rows[0]
+    for y in gap_rows[1:]:
+        if y == prev + 1:
+            prev = y
+        else:
+            boundaries.append((run_start + prev) // 2)
+            run_start = y
+            prev = y
+    boundaries.append((run_start + prev) // 2)
+    return boundaries
+
+
+def _split_pages(img: Image.Image) -> list:
+    """Split a receipt image into pages each no taller than RECEIPT_MAX_HEIGHT.
+
+    Divides the image at natural section boundaries (horizontal whitespace gaps)
+    when the content exceeds the cap. Each page is cropped to its content and a
+    "Trang N/M" footer marker (14pt, centered) is drawn on every page when more
+    than one page results. When the content fits within the cap, a single page is
+    returned with no footer.
+
+    The footer marker occupies a small band below the content; the content portion
+    of each page is sized so content + footer together stay within RECEIPT_MAX_HEIGHT.
+
+    Returns:
+        list[PIL.Image.Image]: one or more receipt page images (each width=RECEIPT_WIDTH).
+    """
+    content_bottom = _find_content_bottom(img)
+    if content_bottom == 0:
+        return [img.crop((0, 0, RECEIPT_WIDTH, MARGIN))]
+
+    footer_font = _font(_SZ_FOOTER)
+    footer_marker_h = _th("Trang", footer_font)
+    footer_band_h = footer_marker_h + 12  # marker + small padding above/below
+    # Content budget per page: leave room for the footer band within the cap.
+    content_budget = RECEIPT_MAX_HEIGHT - footer_band_h
+
+    # Single page — content fits within the cap (footer only added on multi-page).
+    if content_bottom <= RECEIPT_MAX_HEIGHT:
+        return [img.crop((0, 0, RECEIPT_WIDTH, content_bottom))]
+
+    # Multi-page: divide at natural section boundaries.
+    boundaries = _find_split_boundaries(img, RECEIPT_MAX_HEIGHT)
+    # Greedy pack: accumulate boundaries into pages each with content <= content_budget.
+    pages = []
+    page_start = 0
+    for boundary in boundaries:
+        if boundary - page_start >= content_budget:
+            # The boundary is at or beyond the budget — emit a page.
+            if boundary - page_start > content_budget:
+                page_end = page_start + content_budget
+            else:
+                page_end = boundary
+            pages.append((page_start, page_end))
+            page_start = page_end
+    # Final page: from page_start to content_bottom.
+    if page_start < content_bottom:
+        pages.append((page_start, content_bottom))
+
+    # If greedy packing produced no splits (no usable boundaries), fall back to
+    # hard cuts at every content_budget interval.
+    if len(pages) <= 1:
+        pages = []
+        page_start = 0
+        while page_start < content_bottom:
+            page_end = min(page_start + content_budget, content_bottom)
+            pages.append((page_start, page_end))
+            page_start = page_end
+
+    total_pages = len(pages)
+    result = []
+    for idx, (start, end) in enumerate(pages):
+        content_img = img.crop((0, start, RECEIPT_WIDTH, end))
+        marker = f"Trang {idx + 1}/{total_pages}"
+        # Append a white footer band below the content and draw the marker centered.
+        page_h = content_img.height + footer_band_h
+        page_img = Image.new("RGB", (RECEIPT_WIDTH, page_h), "white")
+        page_img.paste(content_img, (0, 0))
+        draw = ImageDraw.Draw(page_img)
+        footer_y = content_img.height + 6
+        _center(draw, footer_y, marker, footer_font, color=(100, 100, 100))
+        result.append(page_img)
+    return result
 
 
 def _dots(draw, y, x_start, x_end, font, color=(180, 180, 180)):
@@ -395,6 +516,30 @@ def _order_visual_ref(order: dict) -> str:
     return _order_ref_value(order)
 
 
+def _main_item_index_total(order: dict, work_item: dict) -> tuple:
+    """Return (1-based index, total) of work_item among main (non-extra/non-gift) items.
+
+    DG-228 Phase 3 / FR-3: used to merge the sub-item index into the work ticket ref
+    line. Extras and gifts are excluded from the numbering so production staff see
+    only the count of main production items. Returns (None, None) when the work_item
+    is not found among main items (e.g., it is itself an extra/gift) so the caller
+    omits the suffix.
+    """
+    work_items = order.get("workItems", []) or []
+    main_items = [
+        wi for wi in work_items
+        if not (wi.get("isExtra") or wi.get("is_extra")
+                or wi.get("isGift") or wi.get("is_gift"))
+    ]
+    if len(main_items) <= 1:
+        return None, None
+    target_id = work_item.get("id")
+    for idx, wi in enumerate(main_items, start=1):
+        if str(wi.get("id")) == str(target_id):
+            return idx, len(main_items)
+    return None, None
+
+
 def _customer_name_value(order: dict) -> str:
     """Return trimmed customer name or empty string."""
     raw_name = order.get("customerName", "") or order.get("customer_name", "") or ""
@@ -498,11 +643,16 @@ def _header(draw, y, cfg):
 
 # --- Receipt renderers ---
 
-def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="label") -> Image.Image:
+def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="label",
+                        item_index: Optional[int] = None,
+                        item_total: Optional[int] = None) -> Image.Image:
     """Internal receipt (Phiếu Nội Bộ) for production staff — single item per receipt.
 
     New layout: delivery on top, product info BIG, notes prominent, bottom boxes for
     customer name/source and due date/time. NO photo, NO table format.
+
+    When item_index and item_total are provided (multi-item order), the order ref
+    line merges the sub-item index per FR-3: "Mã: <ref> (n/m)".
     """
     img = Image.new("RGB", (RECEIPT_WIDTH, 2000), "white")
     draw = ImageDraw.Draw(img)
@@ -525,7 +675,10 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
 
     ref = _order_visual_ref(order)
     created = order.get("createdAt", "") or order.get("created_at", "")
+    # DG-228 Phase 3 / FR-3: merge sub-item index into the ref line for multi-item orders.
     header_line = f"Mã: {ref}"
+    if item_index is not None and item_total is not None and item_total > 1:
+        header_line += f" ({item_index}/{item_total})"
     if created:
         header_line += f"  •  {created[:10]}"
     y = _center(draw, y, header_line, fs)
@@ -785,10 +938,10 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
     # Tear indicator for roll mode (DG-184 Phase 2)
     y = _add_tear_indicator(img, draw, y, paper_mode)
 
-    # Height cap per 76×130mm label paper (DG-228 Phase 1).
-    # Phase 3 will replace this with page splitting when content exceeds the cap;
-    # for now the cap is a documented ceiling — current content fits within it.
-    crop_h = min(y, RECEIPT_MAX_HEIGHT)
+    # DG-228 Phase 3: page splitting handled by _split_pages() at the API layer.
+    # Crop to content bottom (no max-height cap here) so the splitter can divide
+    # the full content at natural section boundaries when it exceeds the cap.
+    crop_h = max(y, 1)
     return img.crop((0, 0, RECEIPT_WIDTH, crop_h))
 
 
@@ -1510,10 +1663,10 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
 
     y += MARGIN
     y = _add_tear_indicator(img, draw, y, paper_mode)
-    # Height cap per 76×130mm label paper (DG-228 Phase 1).
-    # Phase 3 will replace this with page splitting when content exceeds the cap;
-    # for now the cap is a documented ceiling — current content fits within it.
-    crop_h = min(y, RECEIPT_MAX_HEIGHT)
+    # DG-228 Phase 3: page splitting handled by _split_pages() at the API layer.
+    # Crop to content bottom (no max-height cap here) so the splitter can divide
+    # the full content at natural section boundaries when it exceeds the cap.
+    crop_h = max(y, 1)
     return img.crop((0, 0, RECEIPT_WIDTH, crop_h))
 
 
@@ -1605,7 +1758,10 @@ def get_receipt(
                 ).fetchone()
                 if cat_row and cat_row["category"] in ("cake", "banh_kem"):
                     photo = _get_photo(conn, row["id"], item_id)
-            img = _render_work_ticket(detail, work_item, cfg, photo, conn, paper_mode=paper_mode)
+            # DG-228 Phase 3 / FR-3: merge sub-item index for multi-item orders.
+            item_index, item_total = _main_item_index_total(detail, work_item)
+            img = _render_work_ticket(detail, work_item, cfg, photo, conn, paper_mode=paper_mode,
+                                      item_index=item_index, item_total=item_total)
         elif type == "customer":
             img = _render_customer_receipt(detail, cfg, conn, show_photos=photos, paper_mode=paper_mode)
         elif type == "bus_label":
@@ -1617,8 +1773,15 @@ def get_receipt(
         else:
             raise HTTPException(status_code=400, detail="Invalid type: work_ticket, customer, bus_label, shop, or delivery")
 
+        # DG-228 Phase 3 / FR-2: split into pages when content exceeds the cap.
+        # The GET receipt endpoint returns the first page as a single PNG for
+        # backward compatibility with the Flutter preview (multi-page print flow
+        # is handled by printing.py in Phase 4).
+        pages = _split_pages(img)
+        first_page = pages[0]
+
         buf = io.BytesIO()
-        img.save(buf, format="PNG", quality=95)
+        first_page.save(buf, format="PNG", quality=95)
         buf.seek(0)
 
         return StreamingResponse(

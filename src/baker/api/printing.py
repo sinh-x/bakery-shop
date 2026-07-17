@@ -23,6 +23,8 @@ from baker.api.receipts import (
     _render_shop_receipt,
     _render_work_ticket,
     _shop_config,
+    _split_pages,
+    _main_item_index_total,
 )
 from baker.config import PRINT_IPP_URL
 from baker.db.connection import get_db
@@ -152,8 +154,11 @@ def print_receipt(
             if not work_item:
                 raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
+            # DG-228 Phase 3 / FR-3: merge sub-item index for multi-item orders.
+            item_index, item_total = _main_item_index_total(detail, work_item)
             img = _render_work_ticket(detail, work_item, cfg, None, conn,
-                                      paper_mode=paper_mode)
+                                      paper_mode=paper_mode,
+                                      item_index=item_index, item_total=item_total)
 
         elif type == "customer":
             img = _render_customer_receipt(detail, cfg, conn,
@@ -171,58 +176,61 @@ def print_receipt(
                 detail="Invalid type: must be 'work_ticket', 'customer', 'bus_label', 'shop', or 'delivery'",
             )
 
-        png_bytes = _render_to_png(img)
+        # DG-228 Phase 3 / FR-2: split into pages when content exceeds the cap.
+        pages = _split_pages(img)
 
-    # Convert PNG to TSPL once — shared by both transport paths
-    tspl_data = usb_printer.png_to_tspl(png_bytes, paper_mode=paper_mode, trail_mm=trail_mm)
+    # Convert each page to TSPL and send all pages through the transport.
+    for page_img in pages:
+        page_png = _render_to_png(page_img)
+        tspl_data = usb_printer.png_to_tspl(page_png, paper_mode=paper_mode, trail_mm=trail_mm)
 
-    if PRINT_IPP_URL:
-        # IPP transport: send pre-rendered TSPL to CUPS endpoint
-        try:
-            with usb_printer.print_lock:
-                ipp_client.send_tspl_to_ipp(tspl_data, PRINT_IPP_URL)
-        except ipp_client.IppConnectionError as e:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Cannot connect to IPP printer: {e}",
-            )
-        except ipp_client.IppHttpError as e:
-            raise HTTPException(
-                status_code=503,
-                detail=f"IPP printer HTTP error {e.http_status}",
-            )
-        except ipp_client.IppError as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"IPP printer error: {e}",
-            )
-    else:
-        # USB transport: write TSPL directly to /dev/usb/lp0 (backward compatible)
-        try:
-            with usb_printer.print_lock:
-                fd = None
-                try:
-                    fd = usb_printer.open_printer(USB_PRINTER_DEVICE)
-                    os.write(fd, tspl_data)
-                finally:
-                    if fd is not None:
-                        os.close(fd)
-        except FileNotFoundError:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Printer not found at {USB_PRINTER_DEVICE}. Is the USB cable connected?",
-            )
-        except PermissionError:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Permission denied accessing {USB_PRINTER_DEVICE}. "
-                "Check printer permissions or add user to 'lp' group.",
-            )
-        except OSError as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Print failed: {e}",
-            )
+        if PRINT_IPP_URL:
+            # IPP transport: send pre-rendered TSPL to CUPS endpoint
+            try:
+                with usb_printer.print_lock:
+                    ipp_client.send_tspl_to_ipp(tspl_data, PRINT_IPP_URL)
+            except ipp_client.IppConnectionError as e:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Cannot connect to IPP printer: {e}",
+                )
+            except ipp_client.IppHttpError as e:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"IPP printer HTTP error {e.http_status}",
+                )
+            except ipp_client.IppError as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"IPP printer error: {e}",
+                )
+        else:
+            # USB transport: write TSPL directly to /dev/usb/lp0 (backward compatible)
+            try:
+                with usb_printer.print_lock:
+                    fd = None
+                    try:
+                        fd = usb_printer.open_printer(USB_PRINTER_DEVICE)
+                        os.write(fd, tspl_data)
+                    finally:
+                        if fd is not None:
+                            os.close(fd)
+            except FileNotFoundError:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Printer not found at {USB_PRINTER_DEVICE}. Is the USB cable connected?",
+                )
+            except PermissionError:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Permission denied accessing {USB_PRINTER_DEVICE}. "
+                    "Check printer permissions or add user to 'lp' group.",
+                )
+            except OSError as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Print failed: {e}",
+                )
 
     printed_at: Optional[str] = None
     if type == "work_ticket" and order_id is not None:

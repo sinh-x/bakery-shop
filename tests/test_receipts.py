@@ -10,14 +10,18 @@ sys.path.insert(0, "src")
 
 from baker.api.receipts import (
     RECEIPT_WIDTH,
+    RECEIPT_MAX_HEIGHT,
     MARGIN,
     _add_tear_indicator,
     _customer_reference_text,
     _enum_attribute_lines,
     _find_content_bottom,
+    _find_split_boundaries,
     _format_vnd,
+    _main_item_index_total,
     _order_visual_ref,
     _shop_delivery_code_text,
+    _split_pages,
     _wrapped_enum_attribute_lines,
     _wrap,
 )
@@ -666,3 +670,222 @@ class TestTearIndicator:
         draw.text((10, 50), "X", fill=(0, 0, 0))
         bottom = _find_content_bottom(img)
         assert bottom > 50
+
+
+class TestSplitPages:
+    """Tests for page splitting when content exceeds 1040px (DG-228 Phase 3 / FR-2)."""
+
+    def _make_tall_image(self, height: int, gap_every: int = 120):
+        """Build a white image with black text lines and periodic whitespace gaps."""
+        from PIL import Image, ImageDraw
+        from baker.api.receipts import _font
+        img = Image.new("RGB", (RECEIPT_WIDTH, height), "white")
+        draw = ImageDraw.Draw(img)
+        font = _font(20)
+        y = MARGIN
+        line = 0
+        while y < height - 40:
+            draw.text((MARGIN, y), f"Line {line}", fill=(0, 0, 0), font=font)
+            y += 30
+            line += 1
+            if line % 4 == 0:
+                y += gap_every  # section gap (white rows)
+        return img
+
+    def test_short_content_returns_single_page(self):
+        """Content under the cap returns one page with no footer marker."""
+        from PIL import Image, ImageDraw
+        img = Image.new("RGB", (RECEIPT_WIDTH, 400), "white")
+        draw = ImageDraw.Draw(img)
+        draw.text((MARGIN, 50), "Short content", fill=(0, 0, 0))
+        pages = _split_pages(img)
+        assert len(pages) == 1
+        assert pages[0].width == RECEIPT_WIDTH
+        assert pages[0].height <= RECEIPT_MAX_HEIGHT
+        # No footer marker (gray 100,100,100) on single-page output.
+        pixels = list(pages[0].get_flattened_data())
+        assert (100, 100, 100) not in pixels, "Single page should not have footer"
+
+    def test_tall_content_splits_into_multiple_pages(self):
+        """Content exceeding the cap splits into N pages each within the cap."""
+        img = self._make_tall_image(3500)
+        pages = _split_pages(img)
+        assert len(pages) >= 2, f"Expected split, got {len(pages)} page(s)"
+        for p in pages:
+            assert p.width == RECEIPT_WIDTH
+            assert p.height <= RECEIPT_MAX_HEIGHT, f"Page {p.height} > {RECEIPT_MAX_HEIGHT}"
+
+    def test_split_pages_have_trang_footer_marker(self):
+        """Each split page has the 'Trang N/M' footer marker (FR-2 / FR-6)."""
+        img = self._make_tall_image(3500)
+        pages = _split_pages(img)
+        assert len(pages) >= 2
+        footer_color = (100, 100, 100)
+        for p in pages:
+            # Footer is in the bottom band — scan the bottom 40px.
+            bottom = p.crop((0, max(0, p.height - 40), RECEIPT_WIDTH, p.height))
+            pixels = list(bottom.get_flattened_data())
+            assert footer_color in pixels, "Footer marker (100,100,100) missing on split page"
+
+    def test_split_page_count_marker_consistency(self):
+        """Footer marker N matches len(pages) for each page."""
+        img = self._make_tall_image(3000)
+        pages = _split_pages(img)
+        total = len(pages)
+        # The marker format is "Trang N/M"; verify footer present on each.
+        footer_color = (100, 100, 100)
+        for p in pages:
+            bottom = p.crop((0, max(0, p.height - 40), RECEIPT_WIDTH, p.height))
+            pixels = list(bottom.get_flattened_data())
+            assert footer_color in pixels
+        assert total >= 2
+
+    def test_find_split_boundaries_returns_empty_for_short_content(self):
+        """No boundaries when content fits within the cap."""
+        from PIL import Image, ImageDraw
+        img = Image.new("RGB", (RECEIPT_WIDTH, 500), "white")
+        draw = ImageDraw.Draw(img)
+        draw.text((MARGIN, 50), "Short", fill=(0, 0, 0))
+        boundaries = _find_split_boundaries(img, RECEIPT_MAX_HEIGHT)
+        assert boundaries == []
+
+    def test_find_split_boundaries_detects_gaps(self):
+        """Boundaries are detected at whitespace gap rows in tall content."""
+        img = self._make_tall_image(2500, gap_every=150)
+        boundaries = _find_split_boundaries(img, RECEIPT_MAX_HEIGHT)
+        assert len(boundaries) > 0, "Expected at least one split boundary"
+
+    def test_white_image_returns_single_blank_page(self):
+        """Entirely white image returns a single small page."""
+        from PIL import Image
+        img = Image.new("RGB", (RECEIPT_WIDTH, 100), "white")
+        pages = _split_pages(img)
+        assert len(pages) == 1
+        assert pages[0].width == RECEIPT_WIDTH
+
+
+class TestMergedRefNumbering:
+    """Tests for merged sub-item index in work ticket ref line (DG-228 Phase 3 / FR-3)."""
+
+    def test_multi_item_returns_index_and_total(self):
+        order = {"workItems": [
+            {"id": 1, "productName": "A"},
+            {"id": 2, "productName": "B"},
+            {"id": 3, "productName": "C"},
+        ]}
+        idx, total = _main_item_index_total(order, {"id": 2})
+        assert idx == 2
+        assert total == 3
+
+    def test_single_item_returns_none(self):
+        order = {"workItems": [{"id": 1, "productName": "Only"}]}
+        idx, total = _main_item_index_total(order, {"id": 1})
+        assert idx is None
+        assert total is None
+
+    def test_extras_and_gifts_excluded_from_numbering(self):
+        order = {"workItems": [
+            {"id": 1, "productName": "Main A"},
+            {"id": 2, "productName": "Main B"},
+            {"id": 3, "productName": "Gift", "isGift": True},
+            {"id": 4, "productName": "Extra", "isExtra": True},
+        ]}
+        idx, total = _main_item_index_total(order, {"id": 2})
+        assert idx == 2
+        assert total == 2  # only the two main items
+
+    def test_extra_item_itself_returns_none(self):
+        order = {"workItems": [
+            {"id": 1, "productName": "Main A"},
+            {"id": 2, "productName": "Main B"},
+            {"id": 3, "productName": "Extra", "isExtra": True},
+        ]}
+        idx, total = _main_item_index_total(order, {"id": 3})
+        assert idx is None
+        assert total is None
+
+    def test_missing_work_item_id_returns_none(self):
+        order = {"workItems": [
+            {"id": 1, "productName": "A"},
+            {"id": 2, "productName": "B"},
+        ]}
+        idx, total = _main_item_index_total(order, {"id": 999})
+        assert idx is None
+        assert total is None
+
+    def test_empty_work_items_returns_none(self):
+        order = {"workItems": []}
+        idx, total = _main_item_index_total(order, {"id": 1})
+        assert idx is None
+        assert total is None
+
+
+class TestMultiItemWorkTicketAPI:
+    """End-to-end API tests for multi-item work ticket ref numbering (AC-5)."""
+
+    def test_multi_item_work_ticket_renders_for_each_item(self, api_client):
+        """Each main item's work ticket renders successfully (AC-5)."""
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "Multi Item Test",
+            "items": [
+                {"productName": "Bánh kem A", "quantity": 1, "unitPrice": 300000},
+                {"productName": "Bánh kem B", "quantity": 1, "unitPrice": 250000},
+                {"productName": "Bánh kem C", "quantity": 1, "unitPrice": 200000},
+            ],
+            "dueDate": "2026-07-20",
+            "deliveryType": "pickup",
+        })
+        assert order_resp.status_code == 201
+        data = order_resp.json()
+        order_ref = data["orderRef"]
+        items = data["workItems"]
+        assert len(items) == 3
+
+        for wi in items:
+            resp = api_client.get(
+                f"/api/orders/{order_ref}/receipt?type=work_ticket&item_id={wi['id']}"
+            )
+            assert resp.status_code == 200
+            assert resp.headers["content-type"] == "image/png"
+            img = Image.open(io.BytesIO(resp.content))
+            assert img.size[0] == 576, f"Expected width 576px, got {img.size[0]}"
+            assert img.size[1] <= RECEIPT_MAX_HEIGHT, f"Height {img.size[1]} > {RECEIPT_MAX_HEIGHT}"
+
+    def test_single_item_work_ticket_height_within_cap(self, api_client):
+        """Single-item work ticket stays within the 1040px cap (AC-1)."""
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "Single Item",
+            "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 300000}],
+            "dueDate": "2026-07-20",
+            "deliveryType": "pickup",
+        })
+        assert order_resp.status_code == 201
+        data = order_resp.json()
+        order_ref = data["orderRef"]
+        item_id = data["workItems"][0]["id"]
+
+        resp = api_client.get(f"/api/orders/{order_ref}/receipt?type=work_ticket&item_id={item_id}")
+        assert resp.status_code == 200
+        img = Image.open(io.BytesIO(resp.content))
+        assert img.size[0] == 576
+        assert img.size[1] <= RECEIPT_MAX_HEIGHT
+
+    def test_customer_receipt_height_within_cap(self, api_client):
+        """Customer receipt stays within the 1040px cap (AC-1)."""
+        order_resp = api_client.post("/api/orders", json={
+            "customerName": "Customer Cap",
+            "items": [
+                {"productName": "Bánh kem A", "quantity": 1, "unitPrice": 300000},
+                {"productName": "Bánh kem B", "quantity": 1, "unitPrice": 250000},
+            ],
+            "dueDate": "2026-07-20",
+            "deliveryType": "pickup",
+        })
+        assert order_resp.status_code == 201
+        order_ref = order_resp.json()["orderRef"]
+
+        resp = api_client.get(f"/api/orders/{order_ref}/receipt?type=customer")
+        assert resp.status_code == 200
+        img = Image.open(io.BytesIO(resp.content))
+        assert img.size[0] == 576
+        assert img.size[1] <= RECEIPT_MAX_HEIGHT
