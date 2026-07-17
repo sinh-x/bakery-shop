@@ -25,6 +25,14 @@ from baker.models.order import Order
 router = APIRouter(prefix="/api/customers", tags=["customers"])
 
 
+# DG-252 Phase 2 / FR10 / AC7 — centralized VN message for the delete guard.
+# Kept close to the route that emits it; reused by tests to avoid string drift.
+CUSTOMER_DELETE_LINKED_ORDERS_MSG = (
+    "Không thể xóa khách hàng đang có đơn hàng liên kết. "
+    "Vui lòng gộp khách hoặc huỷ liên kết đơn trước khi xóa."
+)
+
+
 class PhoneInput(BaseModel):
     phone: str
     isPrimary: bool = False
@@ -221,8 +229,12 @@ def update_customer(customer_id: int, body: CustomerUpdate):
 
 @router.delete("/{customer_id}")
 def delete_customer(customer_id: int):
-    """Xóa khách hàng (hard-delete). Đơn hàng liên kết giữ customer_id nhưng
-    không còn tham chiếu hợp lệ — staff có thể reassign sau (FR5, FR9)."""
+    """Xóa khách hàng (hard-delete).
+
+    FR10/AC7: nếu khách hàng đang liên kết với ≥1 đơn hàng, trả về 409 và
+    KHÔNG thay đổi dữ liệu. Khách hàng không liên kết đơn nào vẫn xóa được.
+    Gợi ý thay thế: gộp khách (merge) thay vì xóa khi còn đơn liên kết.
+    """
     with get_db() as conn:
         row = conn.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
         if not row:
@@ -232,12 +244,12 @@ def delete_customer(customer_id: int):
             "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (customer_id,)
         ).fetchone()[0]
 
-        # Clear customer_id on linked orders before delete (avoid FK violation;
-        # orders retain customer_name/customer_phone for display via NFR3 fallback)
-        conn.execute(
-            "UPDATE orders SET customer_id = NULL WHERE customer_id = ?",
-            (customer_id,),
-        )
+        if linked_orders > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=CUSTOMER_DELETE_LINKED_ORDERS_MSG,
+            )
+
         # FR9: cascade-delete customer_phones rows (also handled by ON DELETE CASCADE,
         # but explicit DELETE ensures correctness even if FK enforcement is off)
         conn.execute("DELETE FROM customer_phones WHERE customer_id = ?", (customer_id,))
@@ -245,7 +257,7 @@ def delete_customer(customer_id: int):
         return {
             "ok": True,
             "id": customer_id,
-            "linkedOrdersCleared": linked_orders,
+            "linkedOrdersCleared": 0,
         }
 
 

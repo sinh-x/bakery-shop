@@ -428,17 +428,70 @@ def test_phone_is_not_unique_multiple_customers_same_phone(api_client):
     assert r1.json()["id"] != r2.json()["id"]
 
 
-# --- Delete clears order links ---
+# --- Delete guard (FR10 / AC7) ---
 
 
-def test_delete_customer_clears_order_links(api_client):
-    customer = _create_customer(api_client, name="Sẽ xóa", phone="0900")
-    _create_order_with_customer(
+from baker.api.customers import CUSTOMER_DELETE_LINKED_ORDERS_MSG
+
+
+def test_delete_customer_with_linked_orders_returns_409(api_client):
+    """FR10/AC7 — a customer linked to ≥1 order cannot be deleted (409 + VN message),
+    and no data changes (customer, orders, and customer_phones all intact)."""
+    customer = _create_customer(
+        api_client, name="Còn đơn", phone="0900"
+    )
+    order = _create_order_with_customer(
         api_client, customer_id=customer["id"], customer_name=customer["name"]
     )
+
     resp = api_client.delete(f"/api/customers/{customer['id']}")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == CUSTOMER_DELETE_LINKED_ORDERS_MSG
+
+    # No data changes: customer still exists, order still linked.
+    get_resp = api_client.get(f"/api/customers/{customer['id']}")
+    assert get_resp.status_code == 200
+    orders_resp = api_client.get(f"/api/customers/{customer['id']}/orders")
+    assert orders_resp.status_code == 200
+    assert any(o["id"] == order["id"] for o in orders_resp.json())
+
+
+def test_delete_customer_with_zero_linked_orders_succeeds(api_client):
+    """FR10/AC7 — a customer with 0 linked orders remains deletable."""
+    created = _create_customer(api_client, name="Không còn đơn", phone="0911")
+    resp = api_client.delete(f"/api/customers/{created['id']}")
     assert resp.status_code == 200
-    assert resp.json()["linkedOrdersCleared"] == 1
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["linkedOrdersCleared"] == 0
+    assert api_client.get(f"/api/customers/{created['id']}").status_code == 404
+
+
+def test_delete_customer_after_orders_relinked_elsewhere_succeeds(api_client):
+    """FR10 — once linked orders are moved to another customer (e.g. via merge or
+    reassignment), the original customer has 0 links and becomes deletable again."""
+    cust_a = _create_customer(api_client, name="A sẽ rỗng", phone="0901")
+    cust_b = _create_customer(api_client, name="B nhận đơn", phone="0902")
+    _create_order_with_customer(
+        api_client, customer_id=cust_a["id"], customer_name=cust_a["name"]
+    )
+
+    # 409 while A still has the linked order
+    resp_blocked = api_client.delete(f"/api/customers/{cust_a['id']}")
+    assert resp_blocked.status_code == 409
+
+    # Move the order to B (direct DB edit simulates merge/reassign)
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE orders SET customer_id = ? WHERE customer_id = ?",
+            (cust_b["id"], cust_a["id"]),
+        )
+        conn.commit()
+
+    # Now A is deletable
+    resp = api_client.delete(f"/api/customers/{cust_a['id']}")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
 
 
 # --- Multi-phone support (DG-205 Phase 2) ---
