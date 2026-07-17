@@ -1,8 +1,8 @@
-"""Customer management API routes (DG-182 Phase 1, DG-205 Phase 2)."""
+"""Customer management API routes (DG-182 Phase 1, DG-205 Phase 2, DG-252 Phase 3)."""
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 _BS = "\\"
 
@@ -11,8 +11,12 @@ def _escape_like(value: str) -> str:
     return value.replace("%", _BS + "%").replace("_", _BS + "_")
 from pydantic import BaseModel, field_validator, model_validator
 
+from baker.api.auth import RequireRole, record_audit_log
 from baker.db.connection import get_db
-from baker.db.schema import _strip_diacritics
+from baker.db.schema import (
+    _recompute_customer_year_summary,
+    _strip_diacritics,
+)
 from baker.models.customer import (
     Customer,
     _load_customer_phones_for_many,
@@ -31,6 +35,12 @@ CUSTOMER_DELETE_LINKED_ORDERS_MSG = (
     "Không thể xóa khách hàng đang có đơn hàng liên kết. "
     "Vui lòng gộp khách hoặc huỷ liên kết đơn trước khi xóa."
 )
+
+# DG-252 Phase 3 / FR5 / AC3 — centralized VN messages for the merge endpoint.
+# Reused by tests to avoid string drift.
+CUSTOMER_MERGE_SELF_MSG = "Không thể gộp một khách hàng vào chính nó."
+CUSTOMER_MERGE_NOT_FOUND_MSG = "Không tìm thấy khách hàng"
+CUSTOMER_MERGE_SOURCE_NOT_FOUND_MSG = "Không tìm thấy khách hàng nguồn cần gộp"
 
 
 class PhoneInput(BaseModel):
@@ -164,6 +174,89 @@ def list_customers(search: Optional[str] = Query(None, description="Tìm theo t�
         return [c.to_api_dict() for c in customers]
 
 
+@router.get("/duplicates")
+def list_duplicate_customers(actor: str = Depends(RequireRole("admin"))):
+    """Tìm khách hàng trùng lặp (FR6).
+
+    Admin-only. Returns duplicate candidate groups keyed by either:
+      - normalized phone (``customer_phones.phone`` after ``_normalize_phone``)
+      - diacritic-stripped ``customers.search_name``
+
+    Each group lists the customers sharing that key with their current order
+    count. Groups with fewer than 2 customers are omitted. Powers the admin
+    duplicate-finder UI; the per-customer order count drives the confirmation
+    dialog shown before a merge is confirmed.
+
+    Registered before ``/{customer_id}`` so the static ``/duplicates`` path
+    is not shadowed by the int path parameter.
+    """
+    with get_db() as conn:
+        # --- Phone-keyed groups: any normalized phone shared by ≥2 customers.
+        phone_groups_raw = conn.execute(
+            "SELECT cp.phone AS key, c.id AS customer_id, c.name, c.phone, "
+            "       c.search_name "
+            "FROM customer_phones cp "
+            "JOIN customers c ON c.id = cp.customer_id "
+            "WHERE cp.phone != '' "
+            "ORDER BY cp.phone, c.id"
+        ).fetchall()
+        phone_groups: dict[str, list[dict]] = {}
+        for r in phone_groups_raw:
+            phone_groups.setdefault(r["key"], []).append(
+                _duplicate_customer_row(conn, r["customer_id"], r["name"], r["phone"])
+            )
+
+        # --- Name-keyed groups: diacritic-stripped search_name shared by ≥2.
+        name_groups_raw = conn.execute(
+            "SELECT id, name, phone, search_name FROM customers "
+            "WHERE search_name != '' ORDER BY id"
+        ).fetchall()
+        name_groups: dict[str, list[dict]] = {}
+        for r in name_groups_raw:
+            name_groups.setdefault(r["search_name"], []).append(
+                _duplicate_customer_row(conn, r["id"], r["name"], r["phone"])
+            )
+
+        groups: list[dict] = []
+        seen_customer_sets: set[tuple[str, tuple[int, ...]]] = set()
+
+        def _emit_group(key: str, kind: str, members: list[dict]) -> None:
+            if len(members) < 2:
+                return
+            # Dedupe customers within a group (a customer could appear twice
+            # if it has the same phone twice — defensive).
+            unique: list[dict] = []
+            ids_seen: set[int] = set()
+            for m in members:
+                cid = m["id"]
+                if cid in ids_seen:
+                    continue
+                ids_seen.add(cid)
+                unique.append(m)
+            if len(unique) < 2:
+                return
+            # Dedupe across group kinds: avoid emitting the same customer set
+            # twice when a phone group and a name group cover the same ids.
+            set_key = (kind, tuple(sorted(ids_seen)))
+            if set_key in seen_customer_sets:
+                return
+            seen_customer_sets.add(set_key)
+            groups.append(
+                {
+                    "key": key,
+                    "kind": kind,
+                    "customers": unique,
+                }
+            )
+
+        for key, members in phone_groups.items():
+            _emit_group(key, "phone", members)
+        for key, members in name_groups.items():
+            _emit_group(key, "name", members)
+
+        return {"groups": groups}
+
+
 @router.post("", status_code=201)
 def create_customer(body: CustomerCreate):
     """Tạo khách hàng mới. Trả về danh sách khách hàng khác cùng SĐT (FR2, FR2a, FR4)."""
@@ -274,3 +367,248 @@ def get_customer_orders(customer_id: int):
             (customer_id,),
         ).fetchall()
         return [Order.from_row(r, conn).to_api_dict() for r in order_rows]
+
+
+# ---------------------------------------------------------------------------
+# DG-252 Phase 3 — Merge + duplicates APIs (FR5, FR6, NFR3, AC3)
+#
+# Both endpoints are admin-only via ``RequireRole("admin")``. The merge
+# endpoint reuses v59 merge semantics (relink orders → dedupe phones →
+# recompute year summary → hard-delete source) but as a runtime service
+# function executing inside a single ``get_db()`` transaction so any failure
+# rolls back completely (NFR3). The duplicates endpoint groups customers by
+# normalized phone or diacritic-stripped ``search_name`` and includes
+# per-customer order counts to power the finder UI's confirmation dialog.
+# ---------------------------------------------------------------------------
+
+
+class MergeRequest(BaseModel):
+    """Body for ``POST /api/customers/{id}/merge`` (FR5).
+
+    ``sourceCustomerId`` is the customer to merge *into* the target (the
+    ``{id}`` path param). The source is hard-deleted after relink.
+    """
+
+    sourceCustomerId: int
+
+    @field_validator("sourceCustomerId")
+    @classmethod
+    def positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("sourceCustomerId phải là số nguyên dương")
+        return v
+
+
+def _merge_customer_into_target(
+    conn,
+    target_id: int,
+    source_id: int,
+) -> dict:
+    """Runtime merge of ``source_id`` into ``target_id`` (v59 semantics).
+
+    Executes inside the caller's open transaction so the whole merge commits
+    atomically (NFR3). Steps (mirroring ``_migrate_v59_deduplicate_customers``
+    at ``schema.py:3196`` but for a single explicit pair):
+
+    1. Relink all ``orders.customer_id = source_id`` → ``target_id``.
+    2. Dedupe phones: copy source's phones to target, skipping phones the
+       target already has (normalized form). Drop the source's phone rows.
+    3. Recompute ``customer_year_summary`` for every year the target now has
+       orders (existing target years + any years the source contributed).
+    4. Hard-delete the source customer row.
+    5. Update the target's denormalized ``customers.phone`` to its primary
+       phone (after dedupe) so legacy fallback queries stay consistent.
+
+    Returns a summary dict with counts used by the API response and audit log.
+    """
+    # 1. Relink orders.
+    moved_orders = conn.execute(
+        "UPDATE orders SET customer_id = ? WHERE customer_id = ?",
+        (target_id, source_id),
+    ).rowcount
+
+    # 2. Dedupe phones. Load target's existing normalized phones, then copy
+    #    source phones that the target does not already have. Source phone
+    #    rows are removed by the subsequent DELETE FROM customer_phones.
+    target_phones = {
+        r["phone"]
+        for r in conn.execute(
+            "SELECT phone FROM customer_phones WHERE customer_id = ?",
+            (target_id,),
+        ).fetchall()
+    }
+    source_phone_rows = conn.execute(
+        "SELECT phone, is_primary FROM customer_phones WHERE customer_id = ? "
+        "ORDER BY is_primary DESC, id ASC",
+        (source_id,),
+    ).fetchall()
+    added_phones = 0
+    for r in source_phone_rows:
+        nphone = r["phone"]
+        if not nphone or nphone in target_phones:
+            continue
+        conn.execute(
+            "INSERT INTO customer_phones (customer_id, phone, is_primary) "
+            "VALUES (?, ?, ?)",
+            (target_id, nphone, 0),
+        )
+        target_phones.add(nphone)
+        added_phones += 1
+
+    # 3. Recompute year summary for every year the target now has orders.
+    years = [
+        int(r["year"])
+        for r in conn.execute(
+            "SELECT DISTINCT CAST(strftime('%Y', created_at) AS INTEGER) AS year "
+            "FROM orders WHERE customer_id = ? AND created_at IS NOT NULL "
+            "  AND created_at != '' ORDER BY year",
+            (target_id,),
+        ).fetchall()
+    ]
+    for year in years:
+        _recompute_customer_year_summary(conn, target_id, year)
+
+    # Wipe any stale year-summary rows the source still owns (defensive — the
+    # source is about to be hard-deleted, but FK CASCADE on
+    # customer_year_summary.customer_id handles this once the customer row is
+    # gone; we still clear first so a mid-transaction read sees consistent data).
+    conn.execute(
+        "DELETE FROM customer_year_summary WHERE customer_id = ?", (source_id,)
+    )
+
+    # 4. Hard-delete source: phones first (FK CASCADE also covers this, but
+    #    explicit DELETE keeps correctness when FK enforcement is off), then
+    #    the customer row itself.
+    conn.execute("DELETE FROM customer_phones WHERE customer_id = ?", (source_id,))
+    conn.execute("DELETE FROM customers WHERE id = ?", (source_id,))
+
+    # 5. Sync the target's denormalized ``customers.phone`` to its current
+    #    primary phone so legacy fallback queries stay consistent with the
+    #    merged phone set.
+    primary_row = conn.execute(
+        "SELECT phone FROM customer_phones WHERE customer_id = ? "
+        "ORDER BY is_primary DESC, id ASC LIMIT 1",
+        (target_id,),
+    ).fetchone()
+    new_primary = primary_row["phone"] if primary_row is not None else ""
+    conn.execute(
+        "UPDATE customers SET phone = ?, updated_at = ? WHERE id = ?",
+        (new_primary, _now_utc(), target_id),
+    )
+
+    return {
+        "movedOrders": moved_orders,
+        "addedPhones": added_phones,
+        "recomputedYears": years,
+    }
+
+
+def _now_utc() -> str:
+    from baker.utils.time import now_utc
+
+    return now_utc()
+
+
+@router.post("/{customer_id}/merge")
+def merge_customer(
+    customer_id: int,
+    body: MergeRequest,
+    actor: str = Depends(RequireRole("admin")),
+):
+    """Gộp khách hàng nguồn vào khách hàng đích (FR5/AC3).
+
+    Admin-only. Relinks source's orders and phones to the target, dedupes
+    phones, recomputes the target's ``customer_year_summary``, hard-deletes
+    the source, and writes an audit-log entry — all in one SQLite
+    transaction (NFR3: any failure rolls back completely).
+
+    Status codes:
+      - 200: merge succeeded
+      - 400: self-merge (source == target)
+      - 403: non-admin caller
+      - 404: target or source customer id not found
+    """
+    target_id = customer_id
+    source_id = body.sourceCustomerId
+
+    if source_id == target_id:
+        raise HTTPException(status_code=400, detail=CUSTOMER_MERGE_SELF_MSG)
+
+    with get_db() as conn:
+        target_row = conn.execute(
+            "SELECT * FROM customers WHERE id = ?", (target_id,)
+        ).fetchone()
+        if not target_row:
+            raise HTTPException(
+                status_code=404, detail=CUSTOMER_MERGE_NOT_FOUND_MSG
+            )
+        source_row = conn.execute(
+            "SELECT * FROM customers WHERE id = ?", (source_id,)
+        ).fetchone()
+        if not source_row:
+            raise HTTPException(
+                status_code=404, detail=CUSTOMER_MERGE_SOURCE_NOT_FOUND_MSG
+            )
+
+        # Snapshot for audit-log old_value (pre-merge state of source + target).
+        old_value = {
+            "target": _row_to_customer_dict(target_row),
+            "source": _row_to_customer_dict(source_row),
+        }
+
+        result = _merge_customer_into_target(conn, target_id, source_id)
+
+        # Reload target after merge for the new_value snapshot + response.
+        merged_row = conn.execute(
+            "SELECT * FROM customers WHERE id = ?", (target_id,)
+        ).fetchone()
+        new_value = {
+            "target": _row_to_customer_dict(merged_row),
+            "sourceDeletedId": source_id,
+            **result,
+        }
+
+        record_audit_log(
+            conn,
+            actor,
+            "merge",
+            "customer",
+            target_id,
+            old_value=old_value,
+            new_value=new_value,
+        )
+
+        loaded = Customer.from_row(merged_row, conn)
+        return {
+            "ok": True,
+            "targetId": target_id,
+            "sourceId": source_id,
+            "customer": _customer_response(conn, loaded),
+            **result,
+        }
+
+
+def _row_to_customer_dict(row) -> dict:
+    """Minimal snapshot of a customers row for audit-log JSON serialization."""
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "phone": row["phone"] or "",
+    }
+
+
+def _duplicate_customer_row(conn, customer_id: int, name: str, phone: str) -> dict:
+    """Build one customer entry for a duplicates-group payload (FR6).
+
+    Includes the per-customer order count used by the finder UI's
+    confirmation dialog.
+    """
+    order_count = conn.execute(
+        "SELECT COUNT(*) FROM orders WHERE customer_id = ?", (customer_id,)
+    ).fetchone()[0]
+    return {
+        "id": customer_id,
+        "name": name,
+        "phone": phone or "",
+        "orderCount": int(order_count),
+    }
