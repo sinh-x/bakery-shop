@@ -28,7 +28,7 @@ RECEIPT_MAX_HEIGHT = 1040  # 130mm at 203 DPI — height cap for work_ticket/cus
 MARGIN = 20
 CONTENT_WIDTH = RECEIPT_WIDTH - 2 * MARGIN
 THUMBNAIL_SIZE = 128
-LINE_GAP = 6
+LINE_GAP = 4  # DG-228 Phase 2: reduced from 6 for vertical compaction
 
 # Font sizes (optimized for 203 DPI thermal print)
 _SZ_TITLE = 32
@@ -143,9 +143,9 @@ def _row(draw, y, label, value, font_l, font_v=None, color_v=(0, 0, 0)):
 
 def _sep(draw, y):
     """Thin separator line."""
-    y += 12  # padding above line
+    y += 8  # DG-228 Phase 2: reduced pre-separator padding (was 12)
     draw.line([(MARGIN, y), (RECEIPT_WIDTH - MARGIN, y)], fill=(160, 160, 160), width=1)
-    return y + 14  # padding below line
+    return y + 10  # DG-228 Phase 2: reduced post-separator padding (was 14)
 
 
 def _double(draw, y):
@@ -1286,16 +1286,36 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
     for i, item in enumerate(work_items):
         is_gift = item.get("isGift") or item.get("is_gift") or False
         item_name = item.get("productName", "") or item.get("product_name", "")
-        if is_gift:
-            item_name = f"{item_name} (Tặng)"
         qty = item.get("quantity", 1)
         unit_price = float(item.get("unitPrice", 0) or item.get("unit_price", 0))
         total = 0 if is_gift else qty * unit_price
 
+        if is_gift:
+            # DG-228 Phase 2 / FR-10: single-line gift rendering
+            # "Tặng: <name> xN" — no price columns, no attribute/note/photo sub-rows.
+            gift_label = "Tặng:"
+            gift_body = f"{item_name} x{qty}"
+            label_w = _tw(gift_label, fbb)
+            body_w = _tw(gift_body, fb)
+            # Wrap body within remaining width (after label + space)
+            body_max_w = CONTENT_WIDTH - label_w - _tw(" ", fbb)
+            gift_lines = _wrap(gift_body, fb, body_max_w) or [gift_body]
+            # First line: "Tặng: <first body line>"
+            draw.text((MARGIN, y), gift_label, font=fbb, fill=(0, 128, 0))
+            draw.text((MARGIN + label_w + _tw(" ", fbb), y), gift_lines[0], font=fb, fill=(0, 0, 0))
+            y += max(_th(gift_label, fbb), _th(gift_lines[0], fb)) + LINE_GAP
+            # Continuation lines (long gift names only)
+            for gl in gift_lines[1:]:
+                draw.text((MARGIN + label_w + _tw(" ", fbb), y), gl, font=fb, fill=(0, 0, 0))
+                y += _th(gl, fb) + LINE_GAP
+            # DG-228 Phase 2 / FR-11: no item-to-item separators.
+            continue
+
         # Item row: name | SL | Giá | Thành tiền
         # Wrap product name within column width
+        item_name_disp = item_name
         name_max_w = col_sl - MARGIN - 10
-        name_lines = _wrap(item_name, fb, name_max_w) or [item_name]
+        name_lines = _wrap(item_name_disp, fb, name_max_w) or [item_name_disp]
 
         # First line: product name ....... SL ....... Giá ....... T.Tiền
         draw.text((MARGIN, y), name_lines[0], font=fb, fill=(0, 0, 0))
@@ -1381,14 +1401,14 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
             cash_str = _format_vnd_full(float(item_cash))
             y = _icon_text(draw, y, "\U0001F4B0", f" Số tiền rút: {cash_str}", fbb, (0, 128, 0), x=MARGIN + 10)
 
-        # Separator between items
-        if i < len(work_items) - 1:
-            y = _sep(draw, y)
+        # DG-228 Phase 2 / FR-11: item-to-item separators removed for vertical compaction.
+        # Section already bounded by the double sep below; no inter-item thin sep needed.
 
     y += 4
     y = _double(draw, y)
 
     # --- Financial Summary ---
+    # DG-228 Phase 2 / FR-7,8,9: conditional financial lines.
     # Calculate subtotal (non-gift items only)
     subtotal = sum(
         item.get("quantity", 1) * float(item.get("unitPrice", 0) or item.get("unit_price", 0))
@@ -1398,7 +1418,15 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
     shipping_fee = float(order.get("shippingFee", 0) or order.get("shipping_fee", 0))
     total_price = float(order.get("totalPrice", 0) or order.get("total_price", 0))
 
-    y = _row(draw, y, "Tạm tính:", _format_vnd_full(subtotal), fbb)
+    # FR-7: hide "Tạm tính" when it equals "Tổng cộng" (no shipping/cash fees).
+    has_fee_additions = shipping_fee > 0 or any(
+        (item.get("attributes") or {}).get("rut_tien") == "true"
+        and (item.get("attributes") or {}).get("cash_fee")
+        and int(float((item.get("attributes") or {}).get("cash_fee"))) > 0
+        for item in work_items
+    )
+    if has_fee_additions or abs(subtotal - total_price) > 0.01:
+        y = _row(draw, y, "Tạm tính:", _format_vnd_full(subtotal), fbb)
     if shipping_fee > 0:
         y = _row(draw, y, "Phí giao hàng:", _format_vnd_full(shipping_fee), fb)
     # Cash-in-cake fee in summary (like shipping fee, black text, not bold)
@@ -1420,47 +1448,60 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
     total_paid = PaymentTransaction.total_paid_excl_outflows(conn, order_id) if order_id else 0.0
     remaining = total_price - total_paid
 
-    y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
-    if remaining > 0:
-        y = _row(draw, y, "Còn lại:", _format_vnd_full(remaining), fbb, color_v=(180, 0, 0))
+    # FR-8/FR-9: conditional payment status lines.
+    if total_paid <= 0:
+        # FR-8: nothing paid — show only "Còn lại" (red, bold).
+        y = _row(draw, y, "Còn lại:", _format_vnd_full(total_price), fbb, color_v=(180, 0, 0))
+    elif remaining <= 0.01:
+        # FR-9: fully paid — single "Đã thanh toán đủ" line (green).
+        y = _row(draw, y, "Đã thanh toán đủ:", _format_vnd_full(total_paid), fbb, color_v=(0, 100, 0))
     else:
-        y = _row(draw, y, "Còn lại:", "0đ", fb, color_v=(0, 100, 0))
+        # Partial payment — keep both lines (existing convention).
+        y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
+        y = _row(draw, y, "Còn lại:", _format_vnd_full(remaining), fbb, color_v=(180, 0, 0))
     y += 4
     y = _double(draw, y)
 
     # --- Section 3: Delivery ---
-    y = _left(draw, y, "GIAO HÀNG", _font(_SZ_SUBTITLE, True))
-    y = _sep(draw, y)
-
+    # DG-228 Phase 2 / FR-11, AC-13: skip the delivery section entirely when it
+    # would have no meaningful content (pickup order with no due date, phone,
+    # address, or notes). Avoids rendering an empty "GIAO HÀNG" block.
     due = order.get("dueDate", "") or order.get("due_date", "")
     due_time = order.get("dueTime", "") or order.get("due_time", "") or ""
-    if due:
-        due_str = f"Ngày nhận: {due}"
-        if due_time:
-            due_str += f" {due_time}"
-        y = _left(draw, y, due_str, fbb)
-
     dtype = order.get("deliveryType", "") or order.get("delivery_type", "pickup")
-    _DTYPE_VN = {"pickup": "Nhận tại tiệm", "bus": "Gửi xe buýt", "door": "Giao tận nơi"}
-    dtype_vn = _DTYPE_VN.get(dtype, dtype)
-    y = _left(draw, y, f"Hình thức: {dtype_vn}", fb)
-
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
-    if phone:
-        y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
-
     daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
-    if dtype != "pickup" and daddr:
-        y = _left(draw, y, f"Địa chỉ:", fbb)
-        for ln in _wrap(daddr, fs, CONTENT_WIDTH - 20):
-            y = _left(draw, y, f"  {ln}", fs)
-
-    # Order-level notes
     order_notes = order.get("notes", "") or ""
-    if order_notes:
-        y = _left(draw, y, "Ghi chú:", fbb)
-        for ln in _wrap(order_notes, fb, CONTENT_WIDTH):
-            y = _left_mixed(draw, y, ln, fb, (80, 80, 80))
+
+    has_delivery_content = bool(due or phone or order_notes or (dtype != "pickup" and daddr))
+
+    if has_delivery_content:
+        y = _left(draw, y, "GIAO HÀNG", _font(_SZ_SUBTITLE, True))
+        y = _sep(draw, y)
+
+        if due:
+            due_str = f"Ngày nhận: {due}"
+            if due_time:
+                due_str += f" {due_time}"
+            y = _left(draw, y, due_str, fbb)
+
+        _DTYPE_VN = {"pickup": "Nhận tại tiệm", "bus": "Gửi xe buýt", "door": "Giao tận nơi"}
+        dtype_vn = _DTYPE_VN.get(dtype, dtype)
+        y = _left(draw, y, f"Hình thức: {dtype_vn}", fb)
+
+        if phone:
+            y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
+
+        if dtype != "pickup" and daddr:
+            y = _left(draw, y, f"Địa chỉ:", fbb)
+            for ln in _wrap(daddr, fs, CONTENT_WIDTH - 20):
+                y = _left(draw, y, f"  {ln}", fs)
+
+        # Order-level notes
+        if order_notes:
+            y = _left(draw, y, "Ghi chú:", fbb)
+            for ln in _wrap(order_notes, fb, CONTENT_WIDTH):
+                y = _left_mixed(draw, y, ln, fb, (80, 80, 80))
 
     # Footer
     y += 4
