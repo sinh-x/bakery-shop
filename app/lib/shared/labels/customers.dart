@@ -21,4 +21,16 @@ class CustomersLabels {
   /// (the order still saves with free-text name/phone, but no link is made).
   static const autoCreateFailedNotice =
       'Không tạo được khách hàng — đơn đã lưu nhưng chưa liên kết khách';
+
+  // Inline order-form customer suggestions (DG-252 Phase 5 — FR4/NFR4/AC2).
+  // Surfaced below the name/phone fields in OrderCustomerSection; debounced
+  // 350 ms, capped at 10 rows, diacritic-insensitive via the backend search
+  // endpoint (`GET /api/customers?search=`).
+  static const orderSuggestionsHint = 'Gợi ý khách hàng';
+  static const orderSuggestionsNoMatch = 'Không tìm thấy khách';
+  static const orderSuggestionsRefineHint = 'Nhập thêm để thu hẹp kết quả';
+  static const orderSuggestionsLoading = 'Đang tìm...';
+  static const orderSuggestionsError = 'Lỗi tìm kiếm khách hàng';
+  static const orderSuggestionsRetry = 'Thử lại';
+  static const int orderSuggestionsCap = 10;
 }
