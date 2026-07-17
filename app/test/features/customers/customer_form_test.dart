@@ -8,12 +8,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _RecordingCustomerService extends CustomerService {
-  _RecordingCustomerService() : super(Dio());
+  _RecordingCustomerService({this.searchResults = const {}})
+      : super(Dio());
+
+  /// Map of search query -> list of customers returned by `listCustomers`.
+  /// Used by the duplicate-warning tests to simulate matches. An empty map
+  /// (the default) means every search returns an empty list.
+  final Map<String, List<Customer>> searchResults;
 
   Customer? lastCreated;
   List<CustomerPhone>? lastCreatedPhones;
   int? lastUpdatedId;
   List<CustomerPhone>? lastUpdatedPhones;
+  Customer? usedExisting;
+  int createCallCount = 0;
+
+  @override
+  Future<List<Customer>> listCustomers({String? search}) async {
+    final q = (search ?? '').trim();
+    return searchResults[q] ?? const <Customer>[];
+  }
 
   @override
   Future<CustomerMutationResult> createCustomer({
@@ -21,6 +35,7 @@ class _RecordingCustomerService extends CustomerService {
     String phone = '',
     List<CustomerPhone>? phones,
   }) async {
+    createCallCount += 1;
     lastCreated = Customer(id: 1, name: name, phones: phones ?? const []);
     lastCreatedPhones = phones;
     return (
@@ -47,6 +62,7 @@ Future<void> _pumpForm(
   WidgetTester tester,
   CustomerService service, {
   Customer? customer,
+  ValueChanged<Customer>? onUseExisting,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -57,7 +73,11 @@ Future<void> _pumpForm(
           body: Builder(
             builder: (ctx) => Center(
               child: ElevatedButton(
-                onPressed: () => showCustomerForm(ctx, customer: customer),
+                onPressed: () => showCustomerForm(
+                  ctx,
+                  customer: customer,
+                  onUseExisting: onUseExisting,
+                ),
                 child: const Text('open'),
               ),
             ),
@@ -280,5 +300,204 @@ void main() {
     // Raw unformatted values must NOT be shown.
     expect(find.text('0901234567'), findsNothing);
     expect(find.text('0987654321'), findsNothing);
+  });
+
+  // ---------------------------------------------------------------------------
+  // DG-252 Phase 6 — Duplicate warning at manual customer create (FR8/AC6).
+  // ---------------------------------------------------------------------------
+
+  testWidgets(
+      'no duplicate warning when name and phone do not match any customer '
+      '(FR8/AC6)', (tester) async {
+    final service = _RecordingCustomerService();
+    await _pumpForm(tester, service);
+
+    await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
+    await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
+    await tester.tap(find.text(VN.save));
+    await tester.pumpAndSettle();
+
+    // No dialog shown, create proceeds.
+    expect(service.createCallCount, 1);
+    expect(service.lastCreated, isNotNull);
+    expect(service.lastCreated!.name, 'Sinh');
+    expect(find.text(CustomersLabels.duplicateWarningTitle), findsNothing);
+  });
+
+  testWidgets(
+      'duplicate warning shown when name matches existing customer; '
+      'create-anyway proceeds with create (FR8/AC6)', (tester) async {
+    const existing = Customer(
+      id: 42,
+      name: 'Sinh',
+      phone: '0901-234-567',
+    );
+    final service = _RecordingCustomerService(searchResults: {
+      'Sinh': [existing],
+      '0901234567': [existing],
+    });
+    await _pumpForm(tester, service);
+
+    await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
+    await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
+    await tester.tap(find.text(VN.save));
+    await tester.pumpAndSettle();
+
+    // Warning dialog shown with the existing customer.
+    expect(find.text(CustomersLabels.duplicateWarningTitle), findsOneWidget);
+    expect(find.text('Sinh'), findsWidgets);
+    expect(find.text(CustomersLabels.duplicateWarningCreateAnyway),
+        findsOneWidget);
+    // Create has NOT happened yet.
+    expect(service.createCallCount, 0);
+
+    // Choose "create anyway".
+    await tester.tap(find.text(CustomersLabels.duplicateWarningCreateAnyway));
+    await tester.pumpAndSettle();
+
+    // Create proceeds.
+    expect(service.createCallCount, 1);
+    expect(service.lastCreated!.name, 'Sinh');
+  });
+
+  testWidgets(
+      'duplicate warning: "use existing" invokes onUseExisting and skips '
+      'create (FR8/AC6)', (tester) async {
+    const existing = Customer(
+      id: 42,
+      name: 'Sinh',
+      phone: '0901-234-567',
+    );
+    final service = _RecordingCustomerService(searchResults: {
+      'Sinh': [existing],
+    });
+    Customer? picked;
+    await _pumpForm(
+      tester,
+      service,
+      onUseExisting: (c) => picked = c,
+    );
+
+    await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
+    await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
+    await tester.tap(find.text(VN.save));
+    await tester.pumpAndSettle();
+
+    expect(find.text(CustomersLabels.duplicateWarningTitle), findsOneWidget);
+
+    // Tap the existing customer's list tile (scoped to the dialog) to
+    // "use existing".
+    final tile = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.text('Sinh'),
+    );
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+
+    // onUseExisting fired with the chosen customer.
+    expect(picked, isNotNull);
+    expect(picked!.id, 42);
+    // No create call was made.
+    expect(service.createCallCount, 0);
+  });
+
+  testWidgets(
+      'duplicate warning: cancel does not create and keeps the form open '
+      '(FR8/AC6)', (tester) async {
+    const existing = Customer(
+      id: 42,
+      name: 'Sinh',
+      phone: '0901-234-567',
+    );
+    final service = _RecordingCustomerService(searchResults: {
+      'Sinh': [existing],
+    });
+    await _pumpForm(tester, service);
+
+    await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
+    await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
+    await tester.tap(find.text(VN.save));
+    await tester.pumpAndSettle();
+
+    expect(find.text(CustomersLabels.duplicateWarningTitle), findsOneWidget);
+
+    // Tap "Hủy" (cancel) — scoped to the dialog so it does not match the
+    // bottom-sheet's own VN.cancel button.
+    final dialogCancel = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.text(CustomersLabels.duplicateWarningCancel),
+    );
+    await tester.tap(dialogCancel);
+    await tester.pumpAndSettle();
+
+    // No create, form still visible.
+    expect(service.createCallCount, 0);
+    expect(find.text(VN.save), findsOneWidget);
+    expect(find.text(VN.addCustomer), findsOneWidget);
+  });
+
+  testWidgets(
+      'duplicate warning aggregates matches from name and phone queries, '
+      'deduped by id (FR8/AC6)', (tester) async {
+    const byName = Customer(id: 1, name: 'Sinh', phone: '');
+    const byPhone = Customer(
+      id: 2,
+      name: 'An',
+      phone: '0901-234-567',
+    );
+    // Same customer returned by both queries must be deduped.
+    const shared = Customer(
+      id: 3,
+      name: 'Hoa',
+      phone: '0901-234-567',
+    );
+    final service = _RecordingCustomerService(searchResults: {
+      'Sinh': [byName, shared],
+      '0901234567': [byPhone, shared],
+    });
+    await _pumpForm(tester, service);
+
+    await tester.enterText(find.byType(TextFormField).at(0), 'Sinh');
+    await tester.enterText(find.byType(TextFormField).at(1), '0901234567');
+    await tester.tap(find.text(VN.save));
+    await tester.pumpAndSettle();
+
+    // Dialog shown with three unique customers (1, 2, 3) — shared appears
+    // only once even though both queries returned it. Scoped to the dialog
+    // so the form's name field value does not double-count.
+    expect(find.text(CustomersLabels.duplicateWarningTitle), findsOneWidget);
+    final dialog = find.byType(AlertDialog);
+    expect(find.descendant(of: dialog, matching: find.text('Sinh')),
+        findsOneWidget);
+    expect(find.descendant(of: dialog, matching: find.text('An')),
+        findsOneWidget);
+    expect(find.descendant(of: dialog, matching: find.text('Hoa')),
+        findsOneWidget);
+  });
+
+  testWidgets(
+      'edit mode does not show duplicate warning (FR8 only applies to create)',
+      (tester) async {
+    const existing = Customer(
+      id: 42,
+      name: 'Sinh',
+      phone: '0901-234-567',
+    );
+    final service = _RecordingCustomerService(searchResults: {
+      'Sinh': [existing],
+    });
+    const editing = Customer(
+      id: 7,
+      name: 'Sinh',
+      phones: [CustomerPhone(phone: '0901234567', isPrimary: true)],
+    );
+    await _pumpForm(tester, service, customer: editing);
+
+    await tester.tap(find.text(VN.save));
+    await tester.pumpAndSettle();
+
+    // Edit goes straight through; no duplicate dialog.
+    expect(find.text(CustomersLabels.duplicateWarningTitle), findsNothing);
+    expect(service.lastUpdatedId, 7);
   });
 }

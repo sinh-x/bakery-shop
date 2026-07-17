@@ -33,4 +33,16 @@ class CustomersLabels {
   static const orderSuggestionsError = 'Lỗi tìm kiếm khách hàng';
   static const orderSuggestionsRetry = 'Thử lại';
   static const int orderSuggestionsCap = 10;
+
+  // Duplicate warning at manual customer create (DG-252 Phase 6 — FR8/AC6).
+  // Shown as a pre-create dialog when the typed name (diacritic-insensitive)
+  // or any typed phone digits match an existing customer. The user can pick
+  // an existing customer ("use existing") or proceed with the new create
+  // ("create anyway").
+  static const duplicateWarningTitle = 'Khách hàng đã tồn tại';
+  static const duplicateWarningHint =
+      'Có khách hàng trùng tên hoặc số điện thoại. Bạn muốn dùng khách sẵn có hay vẫn tạo mới?';
+  static const duplicateWarningUseExisting = 'Dùng khách sẵn có';
+  static const duplicateWarningCreateAnyway = 'Vẫn tạo mới';
+  static const duplicateWarningCancel = 'Hủy';
 }
