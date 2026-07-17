@@ -5,6 +5,7 @@ import '../../data/api/customer_service.dart';
 import '../../data/models/customer.dart';
 import '../../providers/customers_provider.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/utils/phone_formatter.dart';
 import 'widgets/phone_entry_row.dart';
 
 /// Show the add/edit customer bottom sheet.
@@ -54,7 +55,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       for (final p in phones) {
         _phones.add(
           PhoneEntry(
-            controller: TextEditingController(text: p.phone),
+            controller: TextEditingController(text: formatPhone(p.phone)),
             isPrimary: p.isPrimary,
           ),
         );
@@ -63,7 +64,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       final legacy = c?.phone ?? '';
       _phones.add(
         PhoneEntry(
-          controller: TextEditingController(text: legacy),
+          controller: TextEditingController(text: formatPhone(legacy)),
           isPrimary: legacy.isNotEmpty,
         ),
       );
@@ -126,11 +127,15 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       _duplicateError = null;
       return null;
     }
-    // Detect duplicate non-empty phone numbers.
+    // Detect duplicate non-empty phone numbers. Compare on digit-only key so
+    // that a prefilled raw value (e.g. 11 digits shown unformatted) and the
+    // same digits typed (dash-formatted by PhoneInputFormatter) are still
+    // flagged as duplicates.
     final seen = <String>{};
     for (final phone in trimmed) {
       if (phone.isEmpty) continue;
-      if (!seen.add(phone)) {
+      final key = phone.replaceAll(RegExp(r'\D'), '');
+      if (!seen.add(key)) {
         _duplicateError = VN.customerPhoneDuplicate;
         return null;
       }

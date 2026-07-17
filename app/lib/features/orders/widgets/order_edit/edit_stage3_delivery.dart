@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/models/order_draft.dart';
 import '../../../../shared/utils/date_formatting.dart';
-import '../../../../shared/utils/phone_formatter.dart';
 import '../hour_picker.dart';
 import '../order_delivery_section.dart';
 import '../order_wizard.dart';
@@ -74,7 +73,6 @@ class EditStage3Delivery extends ConsumerWidget {
               shippingFee: shippingFee,
               addressCtrl: addressCtrl,
               phoneCtrl: deliveryPhoneCtrl,
-              phoneInputFormatters: [PhoneInputFormatter()],
               notesCtrl: notesCtrl,
               shippingBusDefault: shippingBusDefault,
               shippingDoorDefault: shippingDoorDefault,

@@ -392,20 +392,22 @@ void main() {
     await tester.pumpAndSettle();
 
     // The delivery phone field should be prefilled from the customer phone.
+    // FR5/AC4: prefilled phone values are dash-formatted via formatPhone on
+    // load (10 digits -> xxxx-xxx-xxx).
     final deliveryPhoneField = tester.widget<TextField>(
       find.ancestor(
         of: find.text('SĐT nhận hàng'),
         matching: find.byType(TextField),
       ),
     );
-    expect(deliveryPhoneField.controller?.text ?? '', '0912000111',
-        reason: 'AC7: delivery phone should be prefilled from customer phone on init for bus');
+    expect(deliveryPhoneField.controller?.text ?? '', '0912-000-111',
+        reason: 'AC7: delivery phone should be prefilled (formatted) from customer phone on init for bus');
 
     // Select door delivery — should keep the prefilled value (not overwrite
     // since the field is no longer empty).
     await tester.tap(find.text('Giao tận nơi'));
     await tester.pumpAndSettle();
-    expect(deliveryPhoneField.controller?.text ?? '', '0912000111',
+    expect(deliveryPhoneField.controller?.text ?? '', '0912-000-111',
         reason: 'AC7: switching to door must not overwrite an already-prefilled value');
   });
 
