@@ -41,7 +41,10 @@ class _CustomerListScreenState extends ConsumerState<CustomerListScreen> {
   }
 
   Future<void> _openCreateForm() async {
-    await showCustomerForm(context);
+    await showCustomerForm(
+      context,
+      onUseExisting: (c) => context.push('/customers/${c.id}'),
+    );
     if (mounted) {
       await ref.read(customerListProvider.notifier).refresh();
     }

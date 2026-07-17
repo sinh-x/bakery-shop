@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,8 +6,10 @@ import 'package:go_router/go_router.dart';
 import '../../data/api/customer_service.dart';
 import '../../data/models/customer.dart';
 import '../../data/models/order.dart';
+import '../../features/auth/auth_provider.dart';
 import '../../providers/customers_provider.dart';
 import '../../shared/theme/bakery_theme.dart';
+import '../../shared/utils/api_error.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
@@ -48,8 +51,17 @@ class CustomerDetailScreen extends ConsumerWidget {
         showTopSnackBar(context, VN.customerDeleted);
         Navigator.of(context).pop();
       }
-    } catch (e) {
-      if (context.mounted) showTopSnackBar(context, e.toString());
+    } on DioException catch (e) {
+      // Surface the backend's centralized VN guidance (409 linked-orders
+      // message, 403 admin-only) when present; fall back to a generic VN
+      // error label so the user never sees a raw DioException string.
+      if (!context.mounted) return;
+      final detail = extractBackendDetail(e.response?.data);
+      showTopSnackBar(context, detail ?? CustomersLabels.customerDeleteFailed);
+    } catch (_) {
+      if (context.mounted) {
+        showTopSnackBar(context, CustomersLabels.customerDeleteFailed);
+      }
     }
   }
 
@@ -68,21 +80,26 @@ class CustomerDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final customerAsync = ref.watch(customerProvider(customerId));
     final ordersAsync = ref.watch(customerOrdersProvider(customerId));
+    // FR10/AC7: DELETE /api/customers/{id} is admin-only (remediation Mn5).
+    // Hide the delete menu item for non-admin roles so staff never see a
+    // dead action that always 403s.
+    final isAdmin = ref.watch(authProvider).isAdmin;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text(VN.customerListTitle),
         actions: [
           AppBarOverflowMenu(
-            items: const [
-              PopupMenuItem<String>(
+            items: [
+              const PopupMenuItem<String>(
                 value: 'edit_customer',
                 child: Text(VN.editCustomer),
               ),
-              PopupMenuItem<String>(
-                value: 'delete_customer',
-                child: Text(VN.deleteCustomer),
-              ),
+              if (isAdmin)
+                const PopupMenuItem<String>(
+                  value: 'delete_customer',
+                  child: Text(VN.deleteCustomer),
+                ),
             ],
             onSelected: (value) {
               switch (value) {

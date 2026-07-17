@@ -199,11 +199,8 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       if (matches.isNotEmpty) {
         setState(() => _saving = false);
         final choice = await _showDuplicateWarningDialog(matches);
-        if (!mounted || choice == null) {
-          // User cancelled the dialog.
-          setState(() => _saving = false);
-          return;
-        }
+        if (!mounted) return;
+        if (choice == null) return;
         if (choice.useExisting != null) {
           final existing = choice.useExisting!;
           widget.onUseExisting?.call(existing);

@@ -46,6 +46,15 @@ class CustomersLabels {
   static const duplicateWarningCreateAnyway = 'Vẫn tạo mới';
   static const duplicateWarningCancel = 'Hủy';
 
+  // Customer delete flow (DG-252 review r2 [M2] — FR10/AC7).
+  // The DELETE /api/customers/{id} endpoint is admin-only (403 for staff,
+  // remediation Mn5) and returns a 409 with a VN guidance message when the
+  // customer still has linked orders (phase 2). These labels surface the
+  // backend `detail` in the app's delete confirmation flow and gate the
+  // delete menu item by role.
+  static const customerDeleteFailed = 'Xóa khách hàng thất bại';
+  static const customerDeleteAdminOnly = 'Chỉ quản trị viên mới được xóa';
+
   // Admin duplicate-finder + merge UI (DG-252 Phase 7 — FR7/AC4).
   // Admin-only screen listing duplicate candidate groups (phone-keyed or
   // diacritic-stripped name-keyed) returned by `GET /api/customers/duplicates`.
