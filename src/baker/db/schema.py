@@ -3578,7 +3578,17 @@ def _repair_null_customer_links(conn) -> dict:
             # Create a new customer — use the most common name for the group.
             names = [o["name"] for o in orders if o["name"]]
             resolved_name = _pick_most_common_name(names) if names else "Khách"
-            cust = Customer(name=resolved_name, phone=nphone)
+            # DG-252 r3 [MAJOR]: materialize a `customer_phones` row so the
+            # auto-created customer is visible to `/duplicates` and survives
+            # a later merge (mirrors the runtime fix at orders.py:
+            # _resolve_or_create_customer_id). Without this row the phone
+            # only lives in the legacy `customers.phone` column, which the
+            # dedup finder and merge copy loop never consult.
+            cust = Customer(
+                name=resolved_name,
+                phone=nphone,
+                phones=[{"phone": nphone, "isPrimary": True}],
+            )
             cust_id = cust.save(conn)
             existing_phones[nphone] = cust_id
             search_name = _strip_diacritics(resolved_name)

@@ -136,12 +136,20 @@ def test_merge_admin_succeeds_relinks_orders_phones_recomputes_summary_deletes_s
         assert target_orders == 3
         # Source phone rows gone; target has 3 phones (1 original + 2 merged).
         target_phones = conn.execute(
-            "SELECT phone FROM customer_phones WHERE customer_id = ? "
+            "SELECT phone, is_primary FROM customer_phones WHERE customer_id = ? "
             "ORDER BY is_primary DESC, id ASC",
             (target["id"],),
         ).fetchall()
         target_phone_set = {r["phone"] for r in target_phones}
         assert target_phone_set == {"0901111222", "0902222333", "0903333444"}
+        # DG-252 r3 [MINOR] invariant: a merged customer with phone rows
+        # must have exactly one primary (mirrors CustomerCreate/CustomerUpdate
+        # validators at customers.py:81,108).
+        primaries = [r for r in target_phones if r["is_primary"] == 1]
+        assert len(primaries) == 1, (
+            f"merged customer must have exactly one primary phone, got "
+            f"{len(primaries)}: {[(r['phone'], r['is_primary']) for r in target_phones]}"
+        )
         # Year summary recomputed for the current year (3 orders × 10000).
         ys = load_year_summary(conn, target["id"], _current_year())
         assert ys["orderCount"] == 3
@@ -568,3 +576,225 @@ def test_delete_customer_grace_period_anon_allowed(anon_client):
     resp = anon_client.delete(f"/api/customers/{created['id']}")
     assert resp.status_code == 200
     assert anon_client.get(f"/api/customers/{created['id']}").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# DG-252 r3 [MAJOR] regression — auto-created customers must materialize
+# `customer_phones` rows so the dedup finder sees them and a later merge
+# preserves their phone.
+# ---------------------------------------------------------------------------
+
+
+def test_order_auto_created_customer_visible_to_duplicates_finder(api_client):
+    """r3 [MAJOR] regression (a) — an order auto-created customer with a
+    phone must appear as a `/duplicates` phone group when a manually
+    created customer shares the same phone. Before the r3 fix the
+    auto-created customer had no `customer_phones` row, so the join in
+    `/duplicates` missed it entirely.
+    """
+    headers, _ = _admin_setup(api_client)
+
+    # Order with an unknown phone+name → auto-create path at
+    # orders.py:_resolve_or_create_customer_id. Before r3 this wrote no
+    # `customer_phones` row.
+    order = api_client.post(
+        "/api/orders",
+        json={
+            "customerName": "Khách tự phát sinh",
+            "customerPhone": "0905111222",
+            "items": [
+                {"productName": "Bánh mì", "quantity": 1, "unitPrice": 10000, "productId": "BMI-01"}
+            ],
+            "dueDate": "2026-07-01",
+        },
+    ).json()
+    auto_id = order["customerId"]
+    assert auto_id is not None
+
+    # Manually created customer with the same phone (populates
+    # customer_phones). Placed AFTER the order so the order's resolution
+    # cannot match it and must auto-create.
+    manual = _create_customer(
+        api_client, name="Khách tự thêm", phone="0905111222", headers=headers
+    )
+    assert manual["id"] != auto_id
+
+    # The auto-created customer must now have a `customer_phones` row.
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT phone, is_primary FROM customer_phones WHERE customer_id = ?",
+            (auto_id,),
+        ).fetchall()
+    assert len(rows) == 1, (
+        f"auto-created customer must materialize a customer_phones row, "
+        f"got {len(rows)} rows"
+    )
+    assert rows[0]["phone"] == "0905111222"
+    assert rows[0]["is_primary"] == 1
+
+    # `/duplicates` must surface the shared phone as one group covering both.
+    resp = api_client.get("/api/customers/duplicates", headers=headers)
+    assert resp.status_code == 200, resp.text
+    phone_groups = [
+        g for g in resp.json()["groups"]
+        if g["kind"] == "phone" and g["key"] == "0905111222"
+    ]
+    assert len(phone_groups) == 1, (
+        f"expected one phone group for 0905111222, got {len(phone_groups)}"
+    )
+    members = {m["id"] for m in phone_groups[0]["customers"]}
+    assert members == {manual["id"], auto_id}
+
+
+def test_merge_preserves_auto_created_source_phone_via_customer_phones(api_client):
+    """r3 [MAJOR] regression (b) — merging an order-auto-created source
+    into a target with a different phone must report `addedPhones == 1`
+    and the source phone must survive on the target. Before the r3 fix the
+    source's phone lived only in legacy `customers.phone` and was dropped
+    on merge, so the next order with that phone would auto-create a fresh
+    duplicate — un-doing the merge.
+    """
+    headers, _ = _admin_setup(api_client)
+
+    # Order auto-creates a source customer with phone A.
+    order = api_client.post(
+        "/api/orders",
+        json={
+            "customerName": "Khách tự phát sinh",
+            "customerPhone": "0906111333",
+            "items": [
+                {"productName": "Bánh mì", "quantity": 1, "unitPrice": 10000, "productId": "BMI-01"}
+            ],
+            "dueDate": "2026-07-01",
+        },
+    ).json()
+    source_id = order["customerId"]
+    assert source_id is not None
+
+    # Target with a different phone (created via API so it has a phone row).
+    target = _create_customer(
+        api_client, name="Khách đích", phone="0908999888", headers=headers
+    )
+
+    resp = api_client.post(
+        f"/api/customers/{target['id']}/merge",
+        json={"sourceCustomerId": source_id},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["addedPhones"] == 1, (
+        f"merge must copy the auto-created source's phone, got "
+        f"addedPhones={body['addedPhones']}"
+    )
+
+    # Source phone must survive on the target (in customer_phones).
+    with get_db() as conn:
+        target_phones = {
+            r["phone"]: r["is_primary"]
+            for r in conn.execute(
+                "SELECT phone, is_primary FROM customer_phones WHERE customer_id = ?",
+                (target["id"],),
+            ).fetchall()
+        }
+    assert "0906111333" in target_phones, (
+        f"source phone 0906111333 missing from target phones {target_phones}"
+    )
+    # The target's own primary phone is preserved as primary.
+    assert target_phones["0908999888"] == 1
+
+
+def test_merge_preserves_auto_created_source_phone_legacy_fallback(api_client):
+    """r3 [MAJOR] defense-in-depth — even when the source has NO
+    `customer_phones` rows (simulating a pre-r3 or pre-v58 customer), the
+    merge must copy the legacy `customers.phone` value to the target so
+    the phone is not lost. This is the legacy-fallback branch added to
+    `_merge_customer_into_target`.
+    """
+    headers, _ = _admin_setup(api_client)
+
+    # Create a source directly with a legacy phone column and no
+    # customer_phones rows (simulating a pre-r3 auto-created customer).
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO customers (name, phone, search_name, created_at, updated_at) "
+            "VALUES (?, ?, ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            ("Khách cũ", "0907111444", "khach cu"),
+        )
+        source_id = cur.lastrowid
+    target = _create_customer(
+        api_client, name="Đích legacy", phone="0908999777", headers=headers
+    )
+
+    resp = api_client.post(
+        f"/api/customers/{target['id']}/merge",
+        json={"sourceCustomerId": source_id},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["addedPhones"] == 1
+
+    with get_db() as conn:
+        target_phones = {
+            r["phone"] for r in conn.execute(
+                "SELECT phone FROM customer_phones WHERE customer_id = ?",
+                (target["id"],),
+            ).fetchall()
+        }
+    assert "0907111444" in target_phones
+
+
+# ---------------------------------------------------------------------------
+# DG-252 r3 [MINOR] — invariant: a merged customer with phone rows must
+# have exactly one primary phone (mirrors CustomerCreate/CustomerUpdate
+# validators).
+# ---------------------------------------------------------------------------
+
+
+def test_merge_into_target_with_no_phones_promotes_first_to_primary(api_client):
+    """r3 [MINOR] — merging a phone-having source into a target with no
+    phone rows must promote the first copied phone to primary so the
+    merged customer satisfies the "exactly one primary when non-empty"
+    invariant. Before the r3 fix the copied rows all landed with
+    is_primary=0.
+    """
+    headers, _ = _admin_setup(api_client)
+
+    # Target with no phone rows: create via API, then wipe its phones.
+    target = _create_customer(
+        api_client, name="Đích không SĐT", phone="0900000000", headers=headers
+    )
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM customer_phones WHERE customer_id = ?", (target["id"],)
+        )
+        conn.execute(
+            "UPDATE customers SET phone = '' WHERE id = ?", (target["id"],)
+        )
+
+    # Source with one phone.
+    source = _create_customer(
+        api_client, name="Nguồn có SĐT", phone="0912333444", headers=headers
+    )
+    _create_order(api_client, source["id"], source["name"], headers=headers)
+
+    resp = api_client.post(
+        f"/api/customers/{target['id']}/merge",
+        json={"sourceCustomerId": source["id"]},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT phone, is_primary FROM customer_phones WHERE customer_id = ? "
+            "ORDER BY id ASC",
+            (target["id"],),
+        ).fetchall()
+    assert len(rows) >= 1
+    primaries = [r for r in rows if r["is_primary"] == 1]
+    assert len(primaries) == 1, (
+        f"merged customer must have exactly one primary phone, got "
+        f"{len(primaries)} out of {len(rows)} rows: {[(r['phone'], r['is_primary']) for r in rows]}"
+    )
+    assert primaries[0]["phone"] == "0912333444"

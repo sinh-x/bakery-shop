@@ -471,30 +471,49 @@ def _merge_customer_into_target(
     # 2. Dedupe phones. Load target's existing normalized phones, then copy
     #    source phones that the target does not already have. Source phone
     #    rows are removed by the subsequent DELETE FROM customer_phones.
-    target_phones = {
-        r["phone"]
-        for r in conn.execute(
-            "SELECT phone FROM customer_phones WHERE customer_id = ?",
-            (target_id,),
-        ).fetchall()
-    }
+    target_phone_rows = conn.execute(
+        "SELECT phone FROM customer_phones WHERE customer_id = ?",
+        (target_id,),
+    ).fetchall()
+    target_phones = {r["phone"] for r in target_phone_rows}
+    target_had_no_phones = len(target_phone_rows) == 0
     source_phone_rows = conn.execute(
         "SELECT phone, is_primary FROM customer_phones WHERE customer_id = ? "
         "ORDER BY is_primary DESC, id ASC",
         (source_id,),
     ).fetchall()
+    # DG-252 r3 [MAJOR] defense-in-depth: if the source has no
+    # `customer_phones` rows (e.g. customers created before the r3 fix or
+    # pre-v58 rows), fall back to the legacy `customers.phone` column so the
+    # source's phone is not silently dropped on merge — the next order with
+    # that phone would otherwise auto-create a fresh duplicate, undoing the
+    # merge. The legacy column is already normalized at write time.
+    if not source_phone_rows:
+        legacy_row = conn.execute(
+            "SELECT phone FROM customers WHERE id = ?", (source_id,)
+        ).fetchone()
+        legacy_phone = (legacy_row["phone"] or "") if legacy_row else ""
+        if legacy_phone:
+            source_phone_rows = [{"phone": legacy_phone, "is_primary": 1}]
     added_phones = 0
+    first_copied = True
     for r in source_phone_rows:
         nphone = r["phone"]
         if not nphone or nphone in target_phones:
             continue
+        # DG-252 r3 [MINOR]: when the target had no phone rows, promote the
+        # first copied phone to primary so the merged customer satisfies the
+        # "exactly one primary when non-empty" invariant enforced by
+        # CustomerCreate/CustomerUpdate everywhere else.
+        is_primary = 1 if (target_had_no_phones and first_copied) else 0
         conn.execute(
             "INSERT INTO customer_phones (customer_id, phone, is_primary) "
             "VALUES (?, ?, ?)",
-            (target_id, nphone, 0),
+            (target_id, nphone, is_primary),
         )
         target_phones.add(nphone)
         added_phones += 1
+        first_copied = False
 
     # 3. Recompute year summary for every year the target now has orders.
     years = [

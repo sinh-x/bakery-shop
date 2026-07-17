@@ -182,11 +182,17 @@ class CustomerService {
     return _parseMutationResult(response.data as Map<String, dynamic>);
   }
 
-  /// Delete a customer (hard-delete). Linked orders have their customer_id
-  /// cleared by the backend (FR5). Returns the count of orders cleared.
-  Future<int> deleteCustomer(int id) async {
-    final response = await _dio.delete('/api/customers/$id');
-    return (response.data['linkedOrdersCleared'] as num?)?.toInt() ?? 0;
+  /// Delete a customer (hard-delete). Admin-only on the backend.
+  ///
+  /// FR10/AC7: linked orders are NEVER unlinked. If the customer has ≥1
+  /// linked order, the backend returns 409 with VN guidance directing the
+  /// caller to merge instead; no data is mutated. On success the customer
+  /// row and its `customer_phones` rows are removed.
+  ///
+  /// Throws a `DioException` on 403 (non-admin) or 409 (linked orders); the
+  /// caller surfaces the backend's VN `detail` message.
+  Future<void> deleteCustomer(int id) async {
+    await _dio.delete('/api/customers/$id');
   }
 
   /// Get a customer's order history (FR6). Orders are returned as raw JSON

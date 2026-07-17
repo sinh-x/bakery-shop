@@ -168,7 +168,15 @@ def _resolve_or_create_customer_id(
         from baker.models.customer import Customer
 
         name = customer_name.strip() if has_name else "Khách"
-        cust = Customer(name=name, phone=phone or "")
+        # DG-252 r3 [MAJOR]: materialize a `customer_phones` row so the new
+        # customer is visible to `/duplicates` (which joins on customer_phones)
+        # and so a later merge preserves its phone. Without this row the
+        # phone-only lives in the legacy `customers.phone` column, which the
+        # dedup finder and merge copy loop never consult.
+        phones = (
+            [{"phone": phone, "isPrimary": True}] if has_phone else []
+        )
+        cust = Customer(name=name, phone=phone or "", phones=phones)
         return cust.save(conn)
 
     return _get_or_create_walk_in_customer_id(conn)

@@ -29,10 +29,9 @@ class _FakeCustomerService extends CustomerService {
       _orders;
 
   @override
-  Future<int> deleteCustomer(int id) async {
+  Future<void> deleteCustomer(int id) async {
     final error = deleteError;
     if (error != null) throw error;
-    return 0;
   }
 }
 
