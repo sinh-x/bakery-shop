@@ -1631,19 +1631,10 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
         for line in _wrapped_enum_attribute_lines(item, enum_labels, fb, CONTENT_WIDTH - 10):
             y = _left(draw, y, line, fb, x=MARGIN + 10)
 
-        # Photo — only for cake-category products, larger + centered, display only
+        # Photo — first attached photo for any item, larger + centered, display only
         item_id = item.get("id")
-        product_id = item.get("productId", "") or item.get("product_id", "")
-        is_cake = False
-        if product_id:
-            cat_row = conn.execute(
-                "SELECT category FROM products WHERE id = ? OR product_code = ?",
-                (product_id, product_id),
-            ).fetchone()
-            if cat_row and cat_row["category"] in ("cake", "banh_kem"):
-                is_cake = True
         photo_size = 192  # larger than default 128
-        if show_photos and is_cake and order_id and item_id:
+        if show_photos and order_id and item_id:
             photo_bytes = _get_photo(conn, order_id, item_id)
             if photo_bytes:
                 try:
