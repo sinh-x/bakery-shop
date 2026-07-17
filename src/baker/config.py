@@ -110,13 +110,16 @@ def reload(config_path: Path | str | None = None) -> None:
     # Early critical window (minutes) for delivery/bus/door orders so they are
     # highlighted as critical before the due time (prep/transit buffer).
     # Override via BAKER_DELIVERY_CRITICAL_THRESHOLD_MINUTES; default 60.
-    # Validates >= 1 on read; invalid values fall back to default 60.
+    # Validates >= 1 and <= 10080 (7 days) on read; out-of-range or invalid
+    # values fall back to default 60 (DG-253 review-auto r2 MAJOR — without an
+    # upper bound, large values overflow ``timedelta`` in compute_urgency and
+    # break all order endpoints with 500s).
     _raw_threshold = os.environ.get("BAKER_DELIVERY_CRITICAL_THRESHOLD_MINUTES", "60").strip()
     try:
         _threshold = int(_raw_threshold)
     except ValueError:
         _threshold = 60
-    if _threshold < 1:
+    if _threshold < 1 or _threshold > 10080:
         _threshold = 60
     DELIVERY_CRITICAL_THRESHOLD_MINUTES = _threshold
 
@@ -143,19 +146,20 @@ def get_delivery_critical_threshold(conn) -> int:
         conn: SQLite connection (from get_db() context manager).
 
     Returns:
-        Effective threshold in minutes (>= 1). Falls back to
+        Effective threshold in minutes (1..10080). Falls back to
         DELIVERY_CRITICAL_THRESHOLD_MINUTES (env var default) when the DB
-        value is missing, inactive, or invalid.
+        value is missing, inactive, or invalid (out of range / non-int).
     """
     row = conn.execute(
-        "SELECT config_value FROM app_config WHERE config_key = ? AND active = 1",
+        "SELECT config_value FROM app_config WHERE config_key = ? AND active = 1"
+        " ORDER BY id DESC LIMIT 1",
         (DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY,),
     ).fetchone()
     if row is not None:
         raw = (row["config_value"] or "").strip()
         try:
             value = int(raw)
-            if value >= 1:
+            if 1 <= value <= 10080:
                 return value
         except ValueError:
             pass

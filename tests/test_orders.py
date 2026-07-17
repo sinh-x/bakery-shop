@@ -973,3 +973,38 @@ def test_set_delivery_critical_threshold_rejects_below_one(api_client):
         json={"minutes": 0},
     )
     assert resp.status_code == 422
+
+
+def test_set_delivery_critical_threshold_rejects_above_max(api_client):
+    """PUT with minutes > 10080 (7 days) -> 422.
+
+    Without an upper bound, large values overflow timedelta in
+    compute_urgency and break all order endpoints with 500s
+    (DG-253 review-auto r2 MAJOR).
+    """
+    resp = api_client.put(
+        "/api/config/delivery_critical_threshold_minutes",
+        json={"minutes": 10081},
+    )
+    assert resp.status_code == 422
+
+
+def test_get_delivery_critical_threshold_db_oversized_falls_back():
+    """DB row with value > 10080 -> falls back to env-var default.
+
+    Guards the upper-bound validation on the DB read path so a stale
+    oversized row can never overflow timedelta (DG-253 review-auto r2 MAJOR).
+    """
+    from baker.config import DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, get_delivery_critical_threshold
+    from baker.db.connection import get_db
+    from baker.db.schema import ensure_schema
+    from baker.utils.time import now_utc
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO app_config (config_key, config_value, sort_order, active, created_at)"
+            " VALUES (?, ?, 0, 1, ?)",
+            (DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, "99999999", now_utc()),
+        )
+        assert get_delivery_critical_threshold(conn) == 60

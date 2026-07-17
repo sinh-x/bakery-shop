@@ -167,6 +167,13 @@ def compute_urgency(
                 if threshold_minutes is not None
                 else config.DELIVERY_CRITICAL_THRESHOLD_MINUTES
             )
+            # Defensive cap (DG-253 review-auto r2 MAJOR): clamp to 10080 min
+            # (7 days) so an out-of-range value can never reach timedelta and
+            # raise OverflowError, which would 500 all order list/detail reads.
+            if effective_threshold > 10080:
+                effective_threshold = 10080
+            if effective_threshold < 1:
+                effective_threshold = 1
             if due_dt - now <= timedelta(minutes=effective_threshold):
                 return UrgencyTier.CRITICAL.value
         if due_dt - now <= timedelta(hours=2):
