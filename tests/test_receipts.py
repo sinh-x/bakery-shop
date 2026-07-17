@@ -1159,12 +1159,12 @@ class TestPageSplitMarkerText:
 
 
 class TestMergedRefNumberingRendered:
-    """AC-5 / FR-3: the work ticket header renders 'Mã: <ref> (n/m)' for multi-item orders.
+    """AC-5 / FR-3: the work ticket renders the (n/m) sub-item index for multi-item orders.
 
-    The header line is built in ``_render_work_ticket`` (receipts.py:679-684).
-    We verify the rendered PNG contains the merged numbering by checking that
-    the ``_main_item_index_total`` helper returns the expected (n, m) and that
-    the API renders a valid PNG whose width/height match a single-item ticket.
+    DG-228 review cycle 3 moved the index from the header line to the bottom
+    ref line "Mã nhận bánh: <code> (n/m)". We verify the rendered PNG renders
+    successfully and stays within the height cap, and that the index helper
+    still reports the expected (n, m) per item.
     """
 
     def test_multi_item_each_ticket_has_merged_index(self, api_client):
@@ -1345,6 +1345,36 @@ class TestGiftSingleLineRendering:
         # regular item with a note sub-row.
         assert gift_delta < reg_delta, (
             f"Gift delta ({gift_delta}) should be < regular+note delta ({reg_delta})"
+        )
+
+    def test_multiple_gifts_render_as_single_bundle_line(self, api_client):
+        """DG-228 review cycle 3: multiple gift items are bundled into one
+        "Tặng: <name1> xQty1, <name2> xQty2, ..." line — a single green label
+        row, not one "Tặng:" line per gift.
+        """
+        _seed_shop_config(api_client)
+        # Single gift → one "Tặng:" label.
+        ref_one, _ = _create_order(api_client, [
+            ("Bánh Base", 1, 300000), ("Quà A", 1, 0, True),
+        ])
+        img_one = _get_receipt(api_client, ref_one, "type=customer")
+        green_one = _count_color(img_one, _GREEN_GIFT)
+
+        # Three gifts → bundled: still one "Tặng:" label row.
+        ref_many, _ = _create_order(api_client, [
+            ("Bánh Base", 1, 300000),
+            ("Quà A", 1, 0, True),
+            ("Quà B", 2, 0, True),
+            ("Quà C", 3, 0, True),
+        ])
+        img_many = _get_receipt(api_client, ref_many, "type=customer")
+        green_many = _count_color(img_many, _GREEN_GIFT)
+
+        # The bundled rendering uses exactly one green "Tặng:" label,
+        # so green pixel count stays close to the single-gift case (small
+        # variance due to label text bounding box) rather than tripling.
+        assert green_many <= green_one * 2, (
+            f"Bundled gifts should use one label row: many={green_many}, one={green_one}"
         )
 
 

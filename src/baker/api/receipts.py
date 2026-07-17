@@ -782,10 +782,8 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
 
     ref = _order_visual_ref(order)
     created = order.get("createdAt", "") or order.get("created_at", "")
-    # DG-228 Phase 3 / FR-3: merge sub-item index into the ref line for multi-item orders.
+    # DG-228 review cycle 3: sub-item index moved from header to bottom ref line.
     header_line = f"Mã: {ref}"
-    if item_index is not None and item_total is not None and item_total > 1:
-        header_line += f" ({item_index}/{item_total})"
     if created:
         header_line += f"  •  {created[:10]}"
     y = _center(draw, y, header_line, fs)
@@ -880,10 +878,22 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
         y += max(_th(icon, ef), _th(" PHỤ LIỆU", tf)) + LINE_GAP
 
     # Enum attribute lines — each on its own row (Q3 / R3)
+    # DG-228 review cycle 3: draw a rectangle border around the group of enum
+    # attribute lines to visually highlight them.
     enum_labels = _enum_attribute_labels(conn)
     enum_font = _font(_SZ_MEDIUM, True)
-    for line in _wrapped_enum_attribute_lines(work_item, enum_labels, enum_font, CONTENT_WIDTH):
-        y = _left(draw, y, line, enum_font)
+    enum_lines = list(_wrapped_enum_attribute_lines(work_item, enum_labels, enum_font, CONTENT_WIDTH))
+    if enum_lines:
+        ENUM_PAD = 6
+        box_start_y = y
+        for line in enum_lines:
+            y = _left(draw, y, line, enum_font)
+        draw.rectangle(
+            [MARGIN - ENUM_PAD, box_start_y - ENUM_PAD,
+             RECEIPT_WIDTH - MARGIN + ENUM_PAD, y + ENUM_PAD - LINE_GAP],
+            outline=(100, 100, 100), width=2,
+        )
+        y += ENUM_PAD  # extra spacing after the box
 
     # Spacer between badge(s) and next section
     y += 10
@@ -1035,6 +1045,10 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
 
     bottom_ref = _order_public_code(order) or _order_ref_value(order)
     if bottom_ref:
+        # DG-228 review cycle 3: append sub-item index (n/m) to bottom ref
+        # for multi-item orders (moved from header line).
+        if item_index is not None and item_total is not None and item_total > 1:
+            bottom_ref = f"{bottom_ref} ({item_index}/{item_total})"
         y = _left(draw, y, bottom_ref, fbig)
 
     y += MARGIN
@@ -1538,6 +1552,33 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
     y += _th("SL", fbb) + LINE_GAP + 4
     y = _sep(draw, y)
 
+    # DG-228 review cycle 3: bundle all gift items into a single "Tặng:" line.
+    gift_items = [
+        it for it in work_items
+        if it.get("isGift") or it.get("is_gift") or False
+    ]
+    if gift_items:
+        gift_label = "Tặng:"
+        gift_body_parts = []
+        for it in gift_items:
+            g_name = it.get("productName", "") or it.get("product_name", "")
+            g_qty = it.get("quantity", 1)
+            gift_body_parts.append(f"{g_name} x{g_qty}")
+        gift_body = ", ".join(gift_body_parts)
+        label_w = _tw(gift_label, fbb)
+        space_w = _tw(" ", fbb)
+        body_max_w = CONTENT_WIDTH - label_w - space_w
+        gift_lines = _wrap(gift_body, fb, body_max_w) or [gift_body]
+        # First line: "Tặng: <first body line>" — green label, black body
+        draw.text((MARGIN, y), gift_label, font=fbb, fill=(0, 128, 0))
+        draw.text((MARGIN + label_w + space_w, y), gift_lines[0], font=fb, fill=(0, 0, 0))
+        y += max(_th(gift_label, fbb), _th(gift_lines[0], fb)) + LINE_GAP
+        # Continuation lines (wrap)
+        for gl in gift_lines[1:]:
+            draw.text((MARGIN + label_w + space_w, y), gl, font=fb, fill=(0, 0, 0))
+            y += _th(gl, fb) + LINE_GAP
+        # No price columns, no attribute/note/photo sub-rows for gifts.
+
     for i, item in enumerate(work_items):
         is_gift = item.get("isGift") or item.get("is_gift") or False
         item_name = item.get("productName", "") or item.get("product_name", "")
@@ -1546,24 +1587,7 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
         total = 0 if is_gift else qty * unit_price
 
         if is_gift:
-            # DG-228 Phase 2 / FR-10: single-line gift rendering
-            # "Tặng: <name> xN" — no price columns, no attribute/note/photo sub-rows.
-            gift_label = "Tặng:"
-            gift_body = f"{item_name} x{qty}"
-            label_w = _tw(gift_label, fbb)
-            body_w = _tw(gift_body, fb)
-            # Wrap body within remaining width (after label + space)
-            body_max_w = CONTENT_WIDTH - label_w - _tw(" ", fbb)
-            gift_lines = _wrap(gift_body, fb, body_max_w) or [gift_body]
-            # First line: "Tặng: <first body line>"
-            draw.text((MARGIN, y), gift_label, font=fbb, fill=(0, 128, 0))
-            draw.text((MARGIN + label_w + _tw(" ", fbb), y), gift_lines[0], font=fb, fill=(0, 0, 0))
-            y += max(_th(gift_label, fbb), _th(gift_lines[0], fb)) + LINE_GAP
-            # Continuation lines (long gift names only)
-            for gl in gift_lines[1:]:
-                draw.text((MARGIN + label_w + _tw(" ", fbb), y), gl, font=fb, fill=(0, 0, 0))
-                y += _th(gl, fb) + LINE_GAP
-            # DG-228 Phase 2 / FR-11: no item-to-item separators.
+            # Gift items already rendered as a single bundled line above.
             continue
 
         # Item row: name | SL | Giá | Thành tiền
