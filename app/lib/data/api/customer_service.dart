@@ -4,6 +4,116 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/customer.dart';
 import 'api_client.dart';
 
+/// One customer entry inside a duplicate-group payload (FR6).
+///
+/// Mirrors the backend `_duplicate_customer_row` shape returned by
+/// `GET /api/customers/duplicates`. Plain Dart class (no freezed) because it
+/// is a transient API response envelope, not a persisted model — matches the
+/// `CustomerMutationResult` typedef convention.
+class DuplicateCustomerEntry {
+  const DuplicateCustomerEntry({
+    required this.id,
+    required this.name,
+    required this.phone,
+    required this.orderCount,
+  });
+
+  final int id;
+  final String name;
+  final String phone;
+  final int orderCount;
+
+  factory DuplicateCustomerEntry.fromJson(Map<String, dynamic> json) {
+    return DuplicateCustomerEntry(
+      id: (json['id'] as num).toInt(),
+      name: (json['name'] as String?) ?? '',
+      phone: (json['phone'] as String?) ?? '',
+      orderCount: (json['orderCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// One duplicate candidate group (FR6).
+///
+/// `kind` is `"phone"` (shared normalized phone) or `"name"` (shared
+/// diacritic-stripped `search_name`). `customers` always has ≥2 entries.
+class DuplicateGroup {
+  const DuplicateGroup({
+    required this.key,
+    required this.kind,
+    required this.customers,
+  });
+
+  final String key;
+  final String kind;
+  final List<DuplicateCustomerEntry> customers;
+
+  factory DuplicateGroup.fromJson(Map<String, dynamic> json) {
+    final raw = json['customers'] as List? ?? const [];
+    return DuplicateGroup(
+      key: (json['key'] as String?) ?? '',
+      kind: (json['kind'] as String?) ?? '',
+      customers: raw
+          .map((e) => DuplicateCustomerEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+/// Response envelope for `GET /api/customers/duplicates` (FR6).
+class DuplicateGroupsResult {
+  const DuplicateGroupsResult({required this.groups});
+
+  final List<DuplicateGroup> groups;
+
+  factory DuplicateGroupsResult.fromJson(Map<String, dynamic> json) {
+    final raw = json['groups'] as List? ?? const [];
+    return DuplicateGroupsResult(
+      groups: raw
+          .map((g) => DuplicateGroup.fromJson(g as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+/// Response envelope for `POST /api/customers/{id}/merge` (FR5/AC3).
+///
+/// Carries the merged target customer plus the merge effect counts
+/// (`movedOrders`, `addedPhones`, `recomputedYears`) returned by the backend.
+class MergeResult {
+  const MergeResult({
+    required this.ok,
+    required this.targetId,
+    required this.sourceId,
+    required this.customer,
+    required this.movedOrders,
+    required this.addedPhones,
+    required this.recomputedYears,
+  });
+
+  final bool ok;
+  final int targetId;
+  final int sourceId;
+  final Customer customer;
+  final int movedOrders;
+  final int addedPhones;
+  final int recomputedYears;
+
+  factory MergeResult.fromJson(Map<String, dynamic> json) {
+    return MergeResult(
+      ok: (json['ok'] as bool?) ?? false,
+      targetId: (json['targetId'] as num?)?.toInt() ?? 0,
+      sourceId: (json['sourceId'] as num?)?.toInt() ?? 0,
+      customer: Customer.fromJson(
+        (json['customer'] as Map<String, dynamic>?) ?? const {},
+      ),
+      movedOrders: (json['movedOrders'] as num?)?.toInt() ?? 0,
+      addedPhones: (json['addedPhones'] as num?)?.toInt() ?? 0,
+      recomputedYears: (json['recomputedYears'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 class CustomerService {
   final Dio _dio;
 
@@ -78,11 +188,41 @@ class CustomerService {
   }
 
   /// Get a customer's order history (FR6). Orders are returned as raw JSON
-  /// maps (full Order shape) so callers can decode them via [Order.fromJson].
+  /// maps (full Order shape) so callers can decode them via `Order.fromJson`.
   Future<List<Map<String, dynamic>>> getCustomerOrders(int id) async {
     final response = await _dio.get('/api/customers/$id/orders');
     final list = response.data as List;
     return list.cast<Map<String, dynamic>>();
+  }
+
+  /// List duplicate customer candidate groups (FR6/AC4). Admin-only on the
+  /// backend (`RequireRole("admin")`). Groups are keyed by normalized phone
+  /// or diacritic-stripped `search_name`; each member carries its order
+  /// count for the merge confirmation dialog.
+  Future<DuplicateGroupsResult> listDuplicates() async {
+    final response = await _dio.get('/api/customers/duplicates');
+    return DuplicateGroupsResult.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  /// Merge a source customer into a target customer (FR5/AC3). Admin-only on
+  /// the backend. Relinks the source's orders and phones to the target,
+  /// recomputes the target's year summary, hard-deletes the source, and
+  /// writes an audit-log entry — all in one SQLite transaction.
+  ///
+  /// [targetId] is the customer to keep (path param); [sourceId] is the
+  /// customer to merge into the target and then delete (body
+  /// `sourceCustomerId`).
+  Future<MergeResult> mergeCustomers({
+    required int targetId,
+    required int sourceId,
+  }) async {
+    final response = await _dio.post(
+      '/api/customers/$targetId/merge',
+      data: {'sourceCustomerId': sourceId},
+    );
+    return MergeResult.fromJson(response.data as Map<String, dynamic>);
   }
 
   CustomerMutationResult _parseMutationResult(Map<String, dynamic> json) {

@@ -9,7 +9,7 @@ import '../../data/api/api_client.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/staff_provider.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/customers.dart';
 import 'widgets/settings_sections.dart';
 import 'catalog_tags_settings_tab.dart';
 
@@ -349,6 +349,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   title: const Text(VN.openAuditLog),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push('/audit-log'),
+                ),
+                // Duplicate finder (admin-only — DG-252 Phase 7 — FR7/AC4).
+                ListTile(
+                  leading: const Icon(Icons.merge_type),
+                  title: const Text(CustomersLabels.duplicateFinderTitle),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/customers/duplicates'),
                 ),
               ],
             ),

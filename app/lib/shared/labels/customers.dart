@@ -45,4 +45,28 @@ class CustomersLabels {
   static const duplicateWarningUseExisting = 'Dùng khách sẵn có';
   static const duplicateWarningCreateAnyway = 'Vẫn tạo mới';
   static const duplicateWarningCancel = 'Hủy';
+
+  // Admin duplicate-finder + merge UI (DG-252 Phase 7 — FR7/AC4).
+  // Admin-only screen listing duplicate candidate groups (phone-keyed or
+  // diacritic-stripped name-keyed) returned by `GET /api/customers/duplicates`.
+  // Each group offers a merge action that opens a confirmation dialog showing
+  // both records' order counts before calling `POST /api/customers/{id}/merge`.
+  static const duplicateFinderTitle = 'Tìm khách trùng lặp';
+  static const duplicateFinderRefresh = 'Làm mới';
+  static const duplicateFinderEmpty = 'Không có khách trùng lặp';
+  static const duplicateFinderGroupPhoneLabel = 'Số điện thoại trùng';
+  static const duplicateFinderGroupNameLabel = 'Tên trùng';
+  static const duplicateFinderOrderCountSuffix = 'đơn';
+  static const duplicateFinderMergeButton = 'Gộp';
+  static const duplicateFinderMergeIntoLabel = 'Giữ';
+  static const duplicateFinderMergeFromLabel = 'Gộp vào';
+  static const duplicateFinderMergeDialogTitle = 'Xác nhận gộp khách';
+  static const duplicateFinderMergeDialogBody =
+      'Tất cả đơn hàng và số điện thoại của khách "gộp vào" sẽ được chuyển sang khách "giữ". Khách "gộp vào" sẽ bị xóa. Hành động này không thể hoàn tác.';
+  static const duplicateFinderMergeConfirm = 'Xác nhận gộp';
+  static const duplicateFinderMergeCancel = 'Hủy';
+  static const duplicateFinderMergeSuccess = 'Đã gộp khách hàng';
+  static const duplicateFinderMergeFailed = 'Gộp khách thất bại';
+  static const duplicateFinderLoadingGroups = 'Đang tải...';
+  static const duplicateFinderRetry = 'Thử lại';
 }
