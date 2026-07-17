@@ -1550,3 +1550,58 @@ class TestCashFeeMalformedHandling:
         # Rendering must not raise HTTP 500.
         img = _get_receipt(api_client, ref, "type=customer")
         assert img.size[0] == 576
+
+
+class TestCashAmountMalformedHandling:
+    """CQ-8 regression: a malformed ``cash_amount`` must not raise HTTP 500.
+
+    Mirrors the CQ-6 ``_cash_fee_amount`` guard. ``cash_amount`` was previously
+    coerced via ``int(float(cash_amount))`` directly at the two render call
+    sites, so a non-numeric value (e.g. ``"abc"``) with ``rut_tien: "true"``
+    would raise ValueError and break receipt rendering. The shared
+    ``_cash_amount_value`` helper now tolerates missing/malformed values and
+    returns 0.0.
+    """
+
+    def test_cash_amount_value_helper_malformed_returns_zero(self):
+        from baker.api.receipts import _cash_amount_value
+        assert _cash_amount_value({"attributes": {"rut_tien": "true", "cash_amount": "abc"}}) == 0.0
+        assert _cash_amount_value({"attributes": {"rut_tien": "true", "cash_amount": None}}) == 0.0
+        assert _cash_amount_value({"attributes": {"rut_tien": "true"}}) == 0.0
+        assert _cash_amount_value({"attributes": {"rut_tien": "false", "cash_amount": "1000"}}) == 0.0
+        assert _cash_amount_value({"attributes": {"rut_tien": "true", "cash_amount": "5000"}}) == 5000.0
+        assert _cash_amount_value({"attributes": {"rut_tien": "true", "cash_amount": 5000}}) == 5000.0
+
+    def test_work_ticket_with_malformed_cash_amount_renders(self, api_client):
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)], dtype="pickup")
+        item_id = data["workItems"][0]["id"]
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE order_items SET attributes = ? WHERE id = ?",
+                (
+                    '{"rut_tien": "true", "cash_fee": "1000", "cash_amount": "abc"}',
+                    item_id,
+                ),
+            )
+        # Work-ticket render must not raise HTTP 500.
+        img = _get_receipt(api_client, ref, f"type=work_ticket&item_id={item_id}")
+        assert img.size[0] == 576
+
+    def test_customer_receipt_with_malformed_cash_amount_renders(self, api_client):
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)], dtype="pickup")
+        item_id = data["workItems"][0]["id"]
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE order_items SET attributes = ? WHERE id = ?",
+                (
+                    '{"rut_tien": "true", "cash_fee": "1000", "cash_amount": "abc"}',
+                    item_id,
+                ),
+            )
+        # Customer-receipt render must not raise HTTP 500.
+        img = _get_receipt(api_client, ref, "type=customer")
+        assert img.size[0] == 576

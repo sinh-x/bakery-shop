@@ -76,15 +76,13 @@ def _tien_rut_received(conn, order_id: int) -> float:
 
 
 def _tien_rut_target(work_items: list) -> float:
-    """Sum of cash_amount across all tien_rut items in an order."""
-    total = 0.0
-    for item in work_items:
-        attrs = item.get("attributes") or {}
-        if attrs.get("rut_tien") == "true":
-            cash_amount = attrs.get("cash_amount")
-            if cash_amount:
-                total += float(cash_amount)
-    return total
+    """Sum of cash_amount across all tien_rut items in an order.
+
+    CQ-8: uses the guarded ``_cash_amount_value`` helper so a malformed
+    ``cash_amount`` (e.g. ``"abc"``) on one item cannot raise ValueError
+    and break the whole receipt render.
+    """
+    return sum(_cash_amount_value(item) for item in work_items)
 
 
 def _format_vnd(amount) -> str:
@@ -510,6 +508,27 @@ def _cash_fee_amount(item: dict) -> float:
         return 0.0
 
 
+def _cash_amount_value(item: dict) -> float:
+    """Return the ``cash_amount`` for an item, or 0.0 when missing/malformed.
+
+    CQ-8: mirrors the ``_cash_fee_amount`` guard so a malformed
+    ``cash_amount`` (e.g. non-numeric string, None, list) cannot raise
+    ValueError/TypeError during receipt rendering and cause an HTTP 500.
+    Only returns a non-zero amount when the item has ``rut_tien == "true"``
+    and a parseable numeric amount.
+    """
+    attrs = item.get("attributes") or {}
+    if attrs.get("rut_tien") != "true":
+        return 0.0
+    raw = attrs.get("cash_amount")
+    if not raw:
+        return 0.0
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _ensure_canvas_capacity(img: Image.Image, draw: ImageDraw.ImageDraw,
                             y: int, headroom: int = 200) -> tuple:
     """Grow ``img`` vertically if ``y + headroom`` would exceed the canvas.
@@ -828,21 +847,20 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
         y += max(_th(icon, ef), _th(age_text, tf)) + LINE_GAP
 
     # Cash-in-cake badge (rut tien) — amount on work ticket (fee is in summary)
-    attrs = work_item.get("attributes") or {}
-    cash_amount = attrs.get("cash_amount")
-    if attrs.get("rut_tien") == "true" and cash_amount and int(float(cash_amount)) > 0:
+    cash_amount = _cash_amount_value(work_item)
+    if cash_amount > 0:
         ef = _emoji_font(_SZ_MEDIUM)
         tf = _font(_SZ_MEDIUM, True)
         icon = "\U0001F4B0"
         icon_w = _tw(icon, ef)
-        amount_str = _format_vnd_full(float(cash_amount))
+        amount_str = _format_vnd_full(cash_amount)
         draw.text((MARGIN, y), icon, font=ef, fill=(0, 128, 0))
         draw.text((MARGIN + icon_w + 4, y), f" Số tiền rút: {amount_str}", font=tf, fill=(0, 128, 0))
         y += max(_th(icon, ef), _th(f" Số tiền rút: {amount_str}", tf)) + LINE_GAP
         # Rut tien transaction summary (received vs target)
         order_id = order.get("id")
         rut_received = _tien_rut_received(conn, order_id) if order_id else 0.0
-        if rut_received >= float(cash_amount):
+        if rut_received >= cash_amount:
             status_text = f"    Đã nhận: {_format_vnd_full(rut_received)}"
             status_color = (0, 128, 0)
         else:
@@ -1632,10 +1650,9 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
                     y = _left_mixed(draw, y, f"    {ln}", fb, (80, 80, 80))
 
         # Cash-in-cake amount (sub-row within item)
-        item_attrs = item.get("attributes") or {}
-        item_cash = item_attrs.get("cash_amount")
-        if item_attrs.get("rut_tien") == "true" and item_cash and int(float(item_cash)) > 0:
-            cash_str = _format_vnd_full(float(item_cash))
+        item_cash = _cash_amount_value(item)
+        if item_cash > 0:
+            cash_str = _format_vnd_full(item_cash)
             y = _icon_text(draw, y, "\U0001F4B0", f" Số tiền rút: {cash_str}", fbb, (0, 128, 0), x=MARGIN + 10)
 
         # DG-228 Phase 2 / FR-11: item-to-item separators removed for vertical compaction.
