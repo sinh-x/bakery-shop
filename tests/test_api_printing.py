@@ -180,6 +180,48 @@ def test_print_log_returns_404_when_order_missing(api_client):
     assert resp.status_code == 404
 
 
+@patch("baker.api.printing.os.close")
+@patch("baker.api.printing.os.write")
+@patch("baker.api.printing.usb_printer.open_printer")
+@patch("baker.api.printing.usb_printer.png_to_tspl")
+@patch("baker.api.printing._split_pages")
+def test_print_receipt_iterates_all_pages_through_tspl(
+    mock_split, mock_tspl, mock_open, mock_write, mock_close, api_client
+):
+    """DG-228 Phase 4 / AC-7: multi-page receipt iterates each page through
+    png_to_tspl so every page is converted to a TSPL bitmap and written to
+    the printer transport."""
+    from PIL import Image
+
+    page_one = Image.new("RGB", (576, 1040), "white")
+    page_two = Image.new("RGB", (576, 800), "white")
+    mock_split.return_value = [page_one, page_two]
+    mock_tspl.return_value = b"FAKE_TSPL_DATA"
+    mock_open.return_value = 3
+    mock_write.return_value = len(b"FAKE_TSPL_DATA")
+
+    order = _create_order(api_client)
+    order_ref = order["orderRef"]
+    item_id = _first_work_item_id(api_client, order_ref)
+
+    resp = _print_work_ticket(api_client, order_ref, item_id, printed_by="An")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+
+    # Each split page must be converted to TSPL and written exactly once.
+    assert mock_tspl.call_count == 2, (
+        f"Expected png_to_tspl called once per page (2), got {mock_tspl.call_count}"
+    )
+    assert mock_write.call_count == 2, (
+        f"Expected os.write called once per page (2), got {mock_write.call_count}"
+    )
+    # Confirm each call received a PNG bytes payload (first positional arg).
+    for call_args in mock_tspl.call_args_list:
+        png_arg = call_args.args[0]
+        assert isinstance(png_arg, bytes)
+        assert png_arg[:8] == b"\x89PNG\r\n\x1a\n", "First arg must be PNG bytes"
+
+
 class TestPrintStatusPaperMode:
     """Test GET /api/orders/print/status includes paperMode (FR3, AC4)."""
 
