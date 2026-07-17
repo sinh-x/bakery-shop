@@ -7,6 +7,7 @@ POST /api/orders/{ref}/print triggers server-side thermal printing:
 """
 
 import io
+import logging
 import os
 import socket
 from typing import Optional
@@ -23,16 +24,58 @@ from baker.api.receipts import (
     _render_shop_receipt,
     _render_work_ticket,
     _shop_config,
+    _split_pages,
+    _main_item_index_total,
 )
 from baker.config import PRINT_IPP_URL
 from baker.db.connection import get_db
 from baker import ipp_client, usb_printer
 from baker.utils.time import now_utc
 
+logger = logging.getLogger("baker.server")
+
 router = APIRouter(prefix="/api/orders", tags=["printing"])
 
 # USB printer device path from env (default: /dev/usb/lp0)
 USB_PRINTER_DEVICE = os.environ.get("USB_PRINTER_DEVICE", "/dev/usb/lp0")
+
+
+class _TransportAbort(Exception):
+    """Internal control-flow carrier for mid-job transport failures (CQ-4/CQ-5).
+
+    Carries the HTTP status/detail to surface plus the count of pages actually
+    sent before the failure, so a partial-print log row can be recorded.
+    """
+
+    def __init__(self, status_code: int, detail: str, pages_sent: int):
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+        self.pages_sent = pages_sent
+
+
+def _record_partial_print_log(order_id: int, item_id: Optional[int],
+                              receipt_type: str, printed_by: str, note: str) -> None:
+    """Record a print_log row + structured log for a partial multi-page print.
+
+    CQ-5: when a transport failure occurs mid-job, page 1 (etc.) has already
+    been physically printed but the success print_log insert is unreachable.
+    Insert a print_log row (so retries are visible in the audit trail) and
+    emit a structured server log noting pages sent vs total + the failure.
+    """
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """INSERT INTO print_log (order_id, item_id, receipt_type, printed_by, printed_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (order_id, item_id, receipt_type, printed_by, now_utc()),
+            )
+    except Exception:  # pragma: no cover - logging best-effort
+        logger.exception("Failed to record partial print_log row")
+    logger.warning(
+        "partial_print order_id=%s item_id=%s type=%s printed_by=%s %s",
+        order_id, item_id, receipt_type, printed_by, note,
+    )
 
 
 class PaperModeIn(BaseModel):
@@ -152,8 +195,11 @@ def print_receipt(
             if not work_item:
                 raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
+            # DG-228 Phase 3 / FR-3: merge sub-item index for multi-item orders.
+            item_index, item_total = _main_item_index_total(detail, work_item)
             img = _render_work_ticket(detail, work_item, cfg, None, conn,
-                                      paper_mode=paper_mode)
+                                      paper_mode=paper_mode,
+                                      item_index=item_index, item_total=item_total)
 
         elif type == "customer":
             img = _render_customer_receipt(detail, cfg, conn,
@@ -171,58 +217,107 @@ def print_receipt(
                 detail="Invalid type: must be 'work_ticket', 'customer', 'bus_label', 'shop', or 'delivery'",
             )
 
-        png_bytes = _render_to_png(img)
+        # DG-228 Phase 3 / FR-2: split into pages when content exceeds the cap.
+        # CQ-2: only split work_ticket/customer receipts on label paper — roll
+        # mode and shop/delivery/bus_label types keep the single-image path so
+        # long roll receipts print continuously and shop/delivery previews are
+        # not truncated to page 1.
+        if type in ("work_ticket", "customer") and paper_mode == "label":
+            pages = _split_pages(img)
+        else:
+            pages = [img]
 
-    # Convert PNG to TSPL once — shared by both transport paths
-    tspl_data = usb_printer.png_to_tspl(png_bytes, paper_mode=paper_mode, trail_mm=trail_mm)
+    # CQ-4/CQ-5: pre-convert every page to TSPL *before* touching the transport.
+    # png_to_tspl is pure CPU (no lock), so converting up front lets us fail
+    # fast on conversion errors and means the transport loop only does I/O.
+    try:
+        tspl_pages = [
+            usb_printer.png_to_tspl(_render_to_png(p), paper_mode=paper_mode, trail_mm=trail_mm)
+            for p in pages
+        ]
+    except Exception as e:  # pragma: no cover - conversion errors are unexpected
+        raise HTTPException(
+            status_code=500,
+            detail=f"Receipt TSPL conversion failed: {e}",
+        )
 
-    if PRINT_IPP_URL:
-        # IPP transport: send pre-rendered TSPL to CUPS endpoint
-        try:
-            with usb_printer.print_lock:
-                ipp_client.send_tspl_to_ipp(tspl_data, PRINT_IPP_URL)
-        except ipp_client.IppConnectionError as e:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Cannot connect to IPP printer: {e}",
+    # CQ-4: hold print_lock once for the whole job so concurrent print requests
+    # cannot interleave pages on the single physical printer. Previously the
+    # lock was acquired per-page inside the loop, allowing job A page 1, job B
+    # page 1, job A page 2 to interleave.
+    pages_sent = 0
+    total_pages = len(tspl_pages)
+    try:
+        with usb_printer.print_lock:
+            for tspl_data in tspl_pages:
+                if PRINT_IPP_URL:
+                    # IPP transport: send pre-rendered TSPL to CUPS endpoint.
+                    try:
+                        ipp_client.send_tspl_to_ipp(tspl_data, PRINT_IPP_URL)
+                    except ipp_client.IppConnectionError as e:
+                        raise _TransportAbort(
+                            status_code=503,
+                            detail=f"Cannot connect to IPP printer: {e}",
+                            pages_sent=pages_sent,
+                        )
+                    except ipp_client.IppHttpError as e:
+                        raise _TransportAbort(
+                            status_code=503,
+                            detail=f"IPP printer HTTP error {e.http_status}",
+                            pages_sent=pages_sent,
+                        )
+                    except ipp_client.IppError as e:
+                        raise _TransportAbort(
+                            status_code=500,
+                            detail=f"IPP printer error: {e}",
+                            pages_sent=pages_sent,
+                        )
+                else:
+                    # USB transport: write TSPL directly to /dev/usb/lp0.
+                    fd = None
+                    try:
+                        fd = usb_printer.open_printer(USB_PRINTER_DEVICE)
+                        os.write(fd, tspl_data)
+                    except FileNotFoundError:
+                        raise _TransportAbort(
+                            status_code=503,
+                            detail=f"Printer not found at {USB_PRINTER_DEVICE}. "
+                            "Is the USB cable connected?",
+                            pages_sent=pages_sent,
+                        )
+                    except PermissionError:
+                        raise _TransportAbort(
+                            status_code=503,
+                            detail=f"Permission denied accessing {USB_PRINTER_DEVICE}. "
+                            "Check printer permissions or add user to 'lp' group.",
+                            pages_sent=pages_sent,
+                        )
+                    except OSError as e:
+                        raise _TransportAbort(
+                            status_code=500,
+                            detail=f"Print failed: {e}",
+                            pages_sent=pages_sent,
+                        )
+                    finally:
+                        if fd is not None:
+                            os.close(fd)
+                pages_sent += 1
+    except _TransportAbort as abort:
+        # CQ-5: a mid-job transport failure leaves a partial print with no
+        # print_log record. When at least one page was physically sent, record
+        # a print_log row noting pages sent vs total so retries are
+        # diagnosable, then surface the HTTP error. When no page was sent
+        # (failure on the first page), there is no partial print to audit —
+        # keep the pre-DG-228 behavior of writing no log row.
+        if abort.pages_sent > 0 and type == "work_ticket" and order_id is not None:
+            _record_partial_print_log(
+                order_id=order_id,
+                item_id=item_id,
+                receipt_type=type,
+                printed_by=normalized_printed_by,
+                note=f"partial print: {abort.pages_sent}/{total_pages} pages sent before failure ({abort.detail})",
             )
-        except ipp_client.IppHttpError as e:
-            raise HTTPException(
-                status_code=503,
-                detail=f"IPP printer HTTP error {e.http_status}",
-            )
-        except ipp_client.IppError as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"IPP printer error: {e}",
-            )
-    else:
-        # USB transport: write TSPL directly to /dev/usb/lp0 (backward compatible)
-        try:
-            with usb_printer.print_lock:
-                fd = None
-                try:
-                    fd = usb_printer.open_printer(USB_PRINTER_DEVICE)
-                    os.write(fd, tspl_data)
-                finally:
-                    if fd is not None:
-                        os.close(fd)
-        except FileNotFoundError:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Printer not found at {USB_PRINTER_DEVICE}. Is the USB cable connected?",
-            )
-        except PermissionError:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Permission denied accessing {USB_PRINTER_DEVICE}. "
-                "Check printer permissions or add user to 'lp' group.",
-            )
-        except OSError as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Print failed: {e}",
-            )
+        raise HTTPException(status_code=abort.status_code, detail=abort.detail)
 
     printed_at: Optional[str] = None
     if type == "work_ticket" and order_id is not None:
