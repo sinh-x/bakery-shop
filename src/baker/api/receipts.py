@@ -23,7 +23,8 @@ router = APIRouter(prefix="/api/orders", tags=["receipts"])
 
 # --- Constants ---
 
-RECEIPT_WIDTH = 576  # 80mm at 203 DPI
+RECEIPT_WIDTH = 576  # 80mm at 203 DPI (76mm print area)
+RECEIPT_MAX_HEIGHT = 1040  # 130mm at 203 DPI — height cap for work_ticket/customer receipts
 MARGIN = 20
 CONTENT_WIDTH = RECEIPT_WIDTH - 2 * MARGIN
 THUMBNAIL_SIZE = 128
@@ -544,7 +545,13 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
         y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
 
     if dtype != "pickup" and daddr:
-        y = _left(draw, y, f"Địa chỉ: {daddr}", fb)
+        addr_prefix = "Địa chỉ: "
+        addr_lines = _wrap(daddr, fb, CONTENT_WIDTH - _tw(addr_prefix, fb))
+        if not addr_lines:
+            addr_lines = [daddr]
+        y = _left(draw, y, f"{addr_prefix}{addr_lines[0]}", fb)
+        for ln in addr_lines[1:]:
+            y = _left(draw, y, ln, fb)
 
     y = _double(draw, y)
 
@@ -557,10 +564,12 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
             (pid, pid),
         ).fetchone()
         if cat_name_row:
-            y = _left(draw, y, cat_name_row["name"].upper(), fbig)
+            for ln in _wrap(cat_name_row["name"].upper(), fbig, CONTENT_WIDTH) or [cat_name_row["name"].upper()]:
+                y = _left(draw, y, ln, fbig)
 
     product = work_item.get("productName", "") or work_item.get("product_name", "")
-    y = _left(draw, y, product, fproduct)
+    for ln in _wrap(product, fproduct, CONTENT_WIDTH) or [product]:
+        y = _left(draw, y, ln, fproduct)
 
     qty = work_item.get("quantity", 1)
     unit_price = float(work_item.get("unitPrice", 0) or work_item.get("unit_price", 0))
@@ -776,7 +785,11 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
     # Tear indicator for roll mode (DG-184 Phase 2)
     y = _add_tear_indicator(img, draw, y, paper_mode)
 
-    return img.crop((0, 0, RECEIPT_WIDTH, y))
+    # Height cap per 76×130mm label paper (DG-228 Phase 1).
+    # Phase 3 will replace this with page splitting when content exceeds the cap;
+    # for now the cap is a documented ceiling — current content fits within it.
+    crop_h = min(y, RECEIPT_MAX_HEIGHT)
+    return img.crop((0, 0, RECEIPT_WIDTH, crop_h))
 
 
 def _render_bus_label(order, cfg, paper_mode="label") -> Image.Image:
@@ -1234,7 +1247,9 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
     y = _sep(draw, y)
 
     # Order ref
-    y = _center(draw, y, _customer_reference_text(order), _font(_SZ_SUBTITLE, True))
+    ref_font = _font(_SZ_SUBTITLE, True)
+    for ln in _wrap(_customer_reference_text(order), ref_font, CONTENT_WIDTH) or [_customer_reference_text(order)]:
+        y = _center(draw, y, ln, ref_font)
 
     # Date
     created = order.get("createdAt", "") or order.get("created_at", "")
@@ -1242,7 +1257,10 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
         y = _left(draw, y, f"Ngày: {created[:10]}", fb)
 
     # --- Section 1: Customer Info ---
-    y = _left(draw, y, _customer_heading_text(order), _font(_SZ_SUBTITLE, True))
+    heading_font = _font(_SZ_SUBTITLE, True)
+    heading_text = _customer_heading_text(order)
+    for ln in _wrap(heading_text, heading_font, CONTENT_WIDTH) or [heading_text]:
+        y = _left(draw, y, ln, heading_font)
     y = _sep(draw, y)
 
     y += 4
@@ -1451,7 +1469,11 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
 
     y += MARGIN
     y = _add_tear_indicator(img, draw, y, paper_mode)
-    return img.crop((0, 0, RECEIPT_WIDTH, y))
+    # Height cap per 76×130mm label paper (DG-228 Phase 1).
+    # Phase 3 will replace this with page splitting when content exceeds the cap;
+    # for now the cap is a documented ceiling — current content fits within it.
+    crop_h = min(y, RECEIPT_MAX_HEIGHT)
+    return img.crop((0, 0, RECEIPT_WIDTH, crop_h))
 
 
 # --- Order detail builder ---
