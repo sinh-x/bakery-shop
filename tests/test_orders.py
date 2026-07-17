@@ -467,6 +467,81 @@ def test_urgency_normal_no_match():
     assert compute_urgency(far_future, "10:00", "confirmed", now_utc()) == "normal"
 
 
+# --- Delivery critical threshold tests (DG-253 Phase 4) ---
+
+
+def _soon_local_dt(minutes_from_now):
+    """Return a timezone-aware local datetime `minutes_from_now` from now."""
+    from baker.config import TIMEZONE
+    from datetime import datetime, timedelta
+    return datetime.now(TIMEZONE) + timedelta(minutes=minutes_from_now)
+
+
+def _format_due(dt_local):
+    return dt_local.strftime("%Y-%m-%d"), dt_local.strftime("%H:%M")
+
+
+def test_delivery_critical_within_threshold():
+    """AC1: delivery order due within default threshold (60 min) -> critical."""
+    from baker.models.order import compute_urgency
+    soon = _soon_local_dt(30)
+    due_date, due_time = _format_due(soon)
+    assert compute_urgency(due_date, due_time, "new", None, "delivery") == "critical"
+
+
+def test_delivery_critical_past_due():
+    """AC2: delivery order past due -> critical."""
+    from baker.models.order import compute_urgency
+    past = _soon_local_dt(-30)
+    due_date, due_time = _format_due(past)
+    assert compute_urgency(due_date, due_time, "new", None, "delivery") == "critical"
+
+
+def test_pickup_not_critical_within_threshold():
+    """AC3: pickup order due within threshold -> urgent (not critical)."""
+    from baker.models.order import compute_urgency
+    soon = _soon_local_dt(30)
+    due_date, due_time = _format_due(soon)
+    assert compute_urgency(due_date, due_time, "new", None, "pickup") == "urgent"
+
+
+def test_terminal_status_normal():
+    """AC4: terminal status order -> normal regardless of delivery type."""
+    from baker.models.order import compute_urgency
+    soon = _soon_local_dt(30)
+    due_date, due_time = _format_due(soon)
+    for status in ("delivered", "completed", "cancelled"):
+        for dtype in ("delivery", "bus", "door", "pickup"):
+            assert compute_urgency(due_date, due_time, status, None, dtype) == "normal"
+
+
+def test_bus_door_critical_within_threshold():
+    """AC6: bus/door orders within threshold -> critical."""
+    from baker.models.order import compute_urgency
+    soon = _soon_local_dt(30)
+    due_date, due_time = _format_due(soon)
+    assert compute_urgency(due_date, due_time, "new", None, "bus") == "critical"
+    assert compute_urgency(due_date, due_time, "new", None, "door") == "critical"
+
+
+def test_configurable_threshold_respected(monkeypatch):
+    """AC5: with threshold=30, delivery order due in 45 min -> urgent (not critical).
+
+    `compute_urgency` reads `DELIVERY_CRITICAL_THRESHOLD_MINUTES` from
+    `baker.config` on each call via local import. We monkeypatch the module
+    attribute so the smaller threshold is used for this test only.
+    """
+    from baker.models.order import compute_urgency
+    import baker.config
+    from datetime import datetime, timedelta
+    from baker.config import TIMEZONE
+
+    monkeypatch.setattr(baker.config, "DELIVERY_CRITICAL_THRESHOLD_MINUTES", 30)
+    soon_local = datetime.now(TIMEZONE) + timedelta(minutes=45)
+    due_date, due_time = _format_due(soon_local)
+    assert compute_urgency(due_date, due_time, "new", None, "delivery") == "urgent"
+
+
 def test_cli_accounting_read_only():
     """NFR1: --accounting does not modify the database (no new rows)."""
     with get_db() as conn:
