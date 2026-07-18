@@ -196,7 +196,7 @@ def login(body: LoginRequest, request: Request):
 
     with get_db() as conn:
         row = conn.execute(
-            "SELECT id, username, password_hash, role, active, locked_until "
+            "SELECT id, username, password_hash, role, active, locked_until, staff_id "
             "FROM users WHERE username = ?",
             (body.username,),
         ).fetchone()
@@ -251,6 +251,7 @@ def login(body: LoginRequest, request: Request):
 
         # DG-029 Phase 4: record the active session (FR20). IP/device metadata
         # is captured from the request so `baker session list` can display it.
+        # DG-259 FR5: carry users.staff_id into the session row at login.
         device_model = request.headers.get("x-device-model", "")
         app_version = request.headers.get("x-app-version", "")
         os_version = request.headers.get("x-os-version", "")
@@ -263,6 +264,7 @@ def login(body: LoginRequest, request: Request):
             device_model=device_model,
             app_version=app_version,
             os_version=os_version,
+            staff_id=row["staff_id"],
         )
 
         return LoginResponse(
@@ -317,19 +319,21 @@ def _record_session(
     device_model: str = "",
     app_version: str = "",
     os_version: str = "",
+    staff_id: object = None,
 ) -> None:
     """Insert an active session row on successful login (FR20).
 
     Called inside the caller's ``get_db()`` transaction so the session row
-    commits atomically with the login response.
+    commits atomically with the login response.  DG-259 FR5: stores
+    ``staff_id`` from ``users.staff_id`` for actor-traceability.
     """
     ts = now_utc()
     conn.execute(
         "INSERT INTO sessions "
         "(jti, username, role, client_ip, device_model, app_version, "
-        " os_version, logged_in_at, last_activity, revoked_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
-        (jti, username, role, client_ip, device_model, app_version, os_version, ts, ts),
+        " os_version, logged_in_at, last_activity, revoked_at, staff_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+        (jti, username, role, client_ip, device_model, app_version, os_version, ts, ts, staff_id),
     )
 
 

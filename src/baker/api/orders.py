@@ -24,6 +24,7 @@ from baker.models.order import (
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
 from baker.services.order_stock import auto_decrement_stock, restore_stock_for_order
+from baker.api.auth import resolve_actor
 from baker.utils.time import now_utc
 
 
@@ -540,14 +541,14 @@ def create_order(body: OrderCreate, request: Request):
             delivery_address=body.deliveryAddress,
             notes=body.notes,
             source=body.source,
-            created_by=body.createdBy,
+            created_by=resolve_actor(request, body.createdBy),
             shipping_fee=body.shippingFee,
             public_order_code=public_order_code,
         )
         order.calculate_total()
         order.save(conn)
 
-        _log_order_history(conn, order.id, "created", changed_by=body.createdBy)
+        _log_order_history(conn, order.id, "created", changed_by=resolve_actor(request, body.createdBy))
 
         # Create order_items rows so work item IDs are available for photo linking
         for position, item in enumerate(body.items):
@@ -591,14 +592,14 @@ def create_order(body: OrderCreate, request: Request):
                 txn.save(conn)
                 _log_order_history(conn, order.id, "payment", "amount",
                                    old_value="", new_value=str(total_price),
-                                   changed_by=body.createdBy)
+                                   changed_by=resolve_actor(request, body.createdBy))
 
         # If status='delivered', also update order status and decrement stock
         accounting_sync_warning = None
         if body.status == "delivered":
             Order.update_status(conn, order.order_ref, "delivered", "")
             _log_order_history(conn, order.id, "status_change", "status",
-                               "new", "delivered", body.createdBy)
+                               "new", "delivered", resolve_actor(request, body.createdBy))
             auto_decrement_stock(conn, order.id, order.order_ref)
 
             # Auto-generate revenue conversion + COGS journal entries (DG-175).
@@ -681,7 +682,7 @@ def acknowledge_order(ref: str):
 
 
 @router.patch("/{ref}")
-def edit_order(ref: str, body: OrderEdit):
+def edit_order(ref: str, body: OrderEdit, request: Request):
     """Cập nhật thông tin đơn hàng."""
     data = body.model_dump(exclude_unset=True)
     if not data:
@@ -886,7 +887,7 @@ def edit_order(ref: str, body: OrderEdit):
                 )
 
         # Log each changed field with old/new values
-        changed_by = data.get("changedBy", "")
+        changed_by = resolve_actor(request, data.get("changedBy", ""))
         for camel, snake in field_map.items():
             if camel in data:
                 _log_order_history(conn, row["id"], "field_edit", snake, str(row[snake]), str(data[camel]), changed_by)
@@ -941,7 +942,7 @@ def edit_order(ref: str, body: OrderEdit):
 
 
 @router.post("/{ref}/status")
-def transition_status(ref: str, body: StatusTransition):
+def transition_status(ref: str, body: StatusTransition, request: Request):
     """Chuyển trạng thái đơn hàng. Lý do bắt buộc khi lùi trạng thái."""
     with get_db() as conn:
         row = conn.execute(
@@ -1009,7 +1010,7 @@ def transition_status(ref: str, body: StatusTransition):
                 rejection_detail="Không thể chuyển trạng thái",
             )
 
-        _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, body.changedBy)
+        _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, resolve_actor(request, body.changedBy))
 
         # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
         if body.status == "delivered" and row["status"] != "delivered":
@@ -1083,7 +1084,7 @@ def update_payment_method(ref: str, body: PaymentMethodUpdate):
 
 
 @router.patch("/{ref}/payment")
-def update_payment(ref: str, body: PaymentUpdate):
+def update_payment(ref: str, body: PaymentUpdate, request: Request):
     """Ghi nhận thanh toán (tạo giao dịch mới nếu số tiền > 0)."""
     if body.amountPaid < 0:
         raise HTTPException(status_code=422, detail="Số tiền thanh toán không được âm")
@@ -1106,7 +1107,7 @@ def update_payment(ref: str, body: PaymentUpdate):
             txn.save(conn)
             _log_order_history(
                 conn, row["id"], "payment", "amount",
-                old_value="", new_value=str(body.amountPaid), changed_by=body.changedBy,
+                old_value="", new_value=str(body.amountPaid), changed_by=resolve_actor(request, body.changedBy),
             )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
