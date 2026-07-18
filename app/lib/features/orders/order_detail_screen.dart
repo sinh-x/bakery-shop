@@ -1304,6 +1304,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
             type: _type,
             method: _method,
             notes: _notesCtrl.text.trim(),
+            paymentSource: _paymentSource,
           );
       if (mounted) {
         Navigator.pop(context);
@@ -1786,6 +1787,7 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
             type: _type,
             method: _method,
             notes: _notesCtrl.text.trim(),
+            paymentSource: _paymentSource,
           );
       if (mounted) {
         Navigator.pop(context);
