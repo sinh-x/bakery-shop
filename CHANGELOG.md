@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] — 2026-07-17
+## [0.7.14+98] — 2026-07-18
 
 - feat(DG-252): Guaranteed customer linking at order creation + duplicate customer detection & merge
   - Backend: `POST /api/customers/orders` and `PATCH /api/orders/{ref}` always persist non-NULL `customer_id` via phone→name resolution, server-side auto-create, or shared "Khách lẻ" walk-in record (FR1/FR2/FR3/NFR1/AC1)
@@ -11,6 +11,86 @@
   - Flutter: duplicate warning at manual customer create with use-existing / create-anyway choice (FR8/AC6)
   - Flutter: admin-gated duplicate-finder screen + merge UI with confirmation dialog showing both records' order counts (FR7/AC4)
   - Docs: VN labels centralized per label policy; CHANGELOG entry added; all suites green (pytest 1893 passed + 1 xfailed, ruff gate clean, flutter analyze clean, dart analyze clean, flutter test --coverage 727 passed, docker compose prod config valid)
+
+## [0.7.13+97] — 2026-07-17
+
+- feat(DG-253): DB-overridable delivery critical-threshold for order urgency
+  - Backend: `delivery_critical_threshold_minutes` config (env default + DB override) and timezone-aware urgency parsing
+  - Backend: `compute_urgency` consumes `delivery_type` (early critical threshold) and wired into `to_api_dict()`
+  - Backend: tests covering AC1–AC6; review-auto r2 hardened upper-bound threshold, audited old_value, deterministic DB read
+  - Flutter: wired DB override for delivery critical threshold + 3 minor code-quality fixes
+  - Flutter: removed completeness bar from order card border (badge only)
+
+## [0.7.12+96] — 2026-07-17
+
+- feat(DG-228): 76×130 mm receipt layout with multi-page splitting
+  - Backend: `RECEIPT_MAX_HEIGHT` constant, wrapping fixes, customer receipt compaction
+  - Backend: page splitting + merged ref numbering; verified multi-page print pipeline; tests + regression check
+  - Removed cake-category restriction for customer receipt photos; guarded malformed `cash_amount` in receipt render
+  - Review cycles addressed (review-auto CQ-1..CQ-7, cycle 3 bundle gifts / n-m index / enum box)
+
+## [0.7.11+95] — 2026-07-17
+
+- feat(DG-251): Phone input consistency
+  - Flutter: shared `PhoneTextField` widget; migrated order sections and customer form rows (prefill formatting)
+  - `formatPhone` extended for 11+ digit numbers to match `PhoneInputFormatter`; review findings CQ-1,3,4,5 addressed
+
+## [0.7.10+94] — 2026-07-16
+
+- feat(DG-249): Duplicate-AR-entry repair script + JE guard (backport to release line)
+  - Added fix script for 8 duplicate AR entries
+  - (DG-249 main work — deposit-style and AR-style JE guards — released under 0.7.10+90 / 0.7.9+89; this bump rolls the post-fix changelog)
+
+## [0.7.10+90] — 2026-07-16
+
+- feat(DG-249): Repair duplicate journal-entry guard
+  - Phase 1: deposit-style JE guard on `repair-ar-entries`
+  - Phase 2: AR-style JE guard on `repair-deposit-balance` + reordered `repair-all` script
+  - Review d-a2a95c findings remediated (CQ-1..CQ-5)
+
+## [0.7.9+89] — 2026-07-16
+
+- feat(DG-250): Order card layout and top banner accuracy
+  - Phase 1: order card layout fixes (name wrap, badge row, urgency-only border)
+  - Phase 2: banner count and listing fixes (terminal exclusion, critical+urgent listing)
+  - Phase 5.6-c1: consolidated active-status list + fixed urgency empty-state label
+  - Phase 5.6-c2: parity tests exercise real production filter functions
+
+## [0.7.8+88] — 2026-07-15
+
+- feat(DG-247): Snapshot-first COGS amount-accuracy validator
+  - Phase 1: snapshot-first COGS validator logic
+  - Phase 2: snapshot-first COGS validator regression tests
+
+## [0.7.7+87] — 2026-07-15
+
+- feat(DG-245): Source-ledger reconciliation (event → journal amount identities)
+  - Phase 1: event-ledger map with per-class amount identities
+  - Phase 2: migration v73 ensures account 2500 exists
+  - Phase 3: per-vendor 2500 sub-account + debt expense credit fix
+  - Phase 4: debt settlement debits per-vendor 2500 sub-account
+  - Phase 5: `expense_payment_account_mismatch` + `source_ledger_totals` checks
+  - Phase 6: idempotent `repair-debt-expenses` CLI command
+  - Review-auto CQ-1..CQ-4 remediated; shared `_is_expense_journallable` predicate extracted (CQ-5, CQ-6)
+
+## [0.7.6+86] — 2026-07-14
+
+- feat(DG-029): Bakery auth + RBAC
+  - Phase 1: dependencies, config, users table migration v68
+  - Phase 2: login endpoint, `AuthMiddleware`, rate limiting, lockout
+  - Phase 3: role-gated API endpoints and audit-log recording
+  - Phase 4: CLI user management, session management, sessions table v70
+  - Phase 5: admin-only filterable audit-log API endpoint (`GET /api/audit-log`)
+  - Phase 6: Flutter login screen, token storage, Dio auth interceptor, auth gate
+  - Phase 7: Flutter role-based UI gating for admin-only screens
+  - Phase 8: Flutter admin-only filterable audit-log screen
+  - Hardening: lowercase usernames (seed + v72 migration), `BAKER_SEED_QUIET` plaintext leak fix (SEC-1), JWT-derived actor (AC14/FR17), staff stock-reconciliation submit, bcrypt cost tuned for test + xdist
+  - Docs: authentication workflow, security controls, enhancement backlog
+
+- feat(DG-096): Photo tag vocabulary editor
+  - Backend: catalog_tag usage endpoint + PUT rename-remap + DELETE in-use guard (phase 4.1)
+  - Flutter: 4th catalog-tag vocabulary tab (phase 4.2), Add/Edit/Delete dialogs (phase 4.3), cache invalidation + file-size remediation (phase 4.4)
+  - Widget tests added; review cycles remediated (Critical defects, cycle-3 BUG/OPS/QUAL findings, 3 remaining Minor findings)
 
 ## [0.7.9+93] — 2026-07-16
 - chore: update changelog
