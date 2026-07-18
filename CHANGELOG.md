@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.7.16+105] — 2026-07-18
+- ci(release): refresh uv.lock in version-bump workflow (DG-255 c3-Mn-1)
+
+## [Unreleased]
+
 ## [0.7.16+104] — 2026-07-18
 - docs(release): remediate v0.7.14 cycle-2 CHANGELOG hygiene (c2-Mn-1/c2-Mn-2)
 
