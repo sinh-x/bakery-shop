@@ -99,6 +99,49 @@ def test_second_print_appends_log_without_overwriting_first_print_fields(mock_ts
 @patch("baker.api.printing.os.write")
 @patch("baker.api.printing.usb_printer.open_printer")
 @patch("baker.api.printing.usb_printer.png_to_tspl")
+def test_print_grace_period_attribution(
+    mock_tspl, mock_open, mock_write, mock_close, api_client
+):
+    """AC6-a: AUTH_REQUIRED=false, no JWT → print_log.printed_by and
+    orders.work_ticket_printed_by use the client-supplied printed_by value.
+
+    api_client runs with AUTH_REQUIRED=false (grace period), so the
+    resolve_actor fallback chain returns the client-supplied name.
+    """
+    mock_tspl.return_value = b"FAKE_TSPL_DATA"
+    mock_open.return_value = 3
+    mock_write.return_value = len(b"FAKE_TSPL_DATA")
+    order = _create_order(api_client)
+    order_ref = order["orderRef"]
+    item_id = _first_work_item_id(api_client, order_ref)
+
+    resp = _print_work_ticket(api_client, order_ref, item_id, printed_by="Ngân")
+    assert resp.status_code == 200
+
+    order_detail = api_client.get(f"/api/orders/{order_ref}").json()
+    order_id = order_detail["id"]
+
+    from baker.db.connection import get_db
+    with get_db() as conn:
+        log_rows = conn.execute(
+            "SELECT printed_by FROM print_log WHERE order_id = ? ORDER BY id",
+            (order_id,),
+        ).fetchall()
+        assert len(log_rows) == 1
+        assert log_rows[0]["printed_by"] == "Ngân"
+
+        order_row = conn.execute(
+            "SELECT work_ticket_printed_by FROM orders WHERE id = ?",
+            (order_id,),
+        ).fetchone()
+        assert order_row is not None
+        assert order_row["work_ticket_printed_by"] == "Ngân"
+
+
+@patch("baker.api.printing.os.close")
+@patch("baker.api.printing.os.write")
+@patch("baker.api.printing.usb_printer.open_printer")
+@patch("baker.api.printing.usb_printer.png_to_tspl")
 def test_print_fills_missing_printed_by_when_legacy_timestamp_exists(mock_tspl, mock_open, mock_write, mock_close, api_client):
     mock_tspl.return_value = b"FAKE_TSPL_DATA"
     mock_open.return_value = 3

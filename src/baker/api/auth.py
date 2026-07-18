@@ -340,13 +340,17 @@ def _record_session(
 def fetch_active_sessions(conn) -> list:
     """Return all active (non-revoked) session rows for `baker session list` (FR20).
 
-    Rows are ordered by most recent login first.
+    Includes staff name and role via LEFT JOIN (FR9/DG-259). Rows are ordered
+    by most recent login first.
     """
     return conn.execute(
-        "SELECT id, jti, username, role, client_ip, device_model, app_version, "
-        "       os_version, logged_in_at, last_activity, revoked_at "
-        "FROM sessions WHERE revoked_at IS NULL "
-        "ORDER BY logged_in_at DESC"
+        "SELECT s.id, s.jti, s.username, s.role, s.client_ip, s.device_model, "
+        "       s.app_version, s.os_version, s.logged_in_at, s.last_activity, "
+        "       s.revoked_at, st.name AS staff_name, st.role AS staff_role "
+        "FROM sessions s "
+        "LEFT JOIN staff st ON st.id = s.staff_id "
+        "WHERE s.revoked_at IS NULL "
+        "ORDER BY s.logged_in_at DESC"
     ).fetchall()
 
 
