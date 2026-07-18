@@ -3460,10 +3460,11 @@ def _migrate_v64_delivery_phone(conn):
         conn.execute("ALTER TABLE orders ADD COLUMN delivery_phone TEXT DEFAULT ''")
 
 
-def _migrate_v66_repair_customer_links(conn):
-    """Link all NULL customer_id orders to customers on startup — DG-227 Phase 2.
+def _repair_null_customer_links(conn) -> dict:
+    """Link all ``customer_id IS NULL`` orders (DG-227 Phase 2 / DG-252 Phase 4).
 
-    Idempotent migration (v66 slot — v65 is taken by DG-226). Scans orders
+    Shared repair body used by both the v66 migration (DG-227) and the v74
+    backfill migration (DG-252 Phase 4). Idempotent: scans orders
     WHERE customer_id IS NULL, groups by phone/name, creates new customers
     for unmatched identities, and links orders. Three categories:
       (1) phone-having orders — resolve/match/create
@@ -3471,7 +3472,12 @@ def _migrate_v66_repair_customer_links(conn):
       (3) walk-in (no phone, no name) — link to "Khách lẻ"
 
     Recomputes customer_year_summary for every affected customer after linking.
-    Logs summary with counts per resolution method.
+    Logs a summary with counts per resolution method and returns the same
+    counts as a dict so callers (e.g. DG-252 backfill tests / ``baker db``
+    pre/post report) can assert on them without scraping log lines.
+
+    Returns a dict with keys: ``null_before``, ``null_after``, ``phone_match``,
+    ``name_match``, ``new_customer``, ``walk_in``, ``linked``.
     """
     import logging
     from baker.models.customer import Customer
@@ -3484,7 +3490,15 @@ def _migrate_v66_repair_customer_links(conn):
 
     if total_null_before == 0:
         logger.info("Không có đơn hàng nào thiếu customer_id — bỏ qua.")
-        return
+        return {
+            "null_before": 0,
+            "null_after": 0,
+            "phone_match": 0,
+            "name_match": 0,
+            "new_customer": 0,
+            "walk_in": 0,
+            "linked": 0,
+        }
 
     # -- Build lookup tables ------------------------------------------------
     # Existing customer phones (from customer_phones and legacy customers.phone).
@@ -3564,7 +3578,17 @@ def _migrate_v66_repair_customer_links(conn):
             # Create a new customer — use the most common name for the group.
             names = [o["name"] for o in orders if o["name"]]
             resolved_name = _pick_most_common_name(names) if names else "Khách"
-            cust = Customer(name=resolved_name, phone=nphone)
+            # DG-252 r3 [MAJOR]: materialize a `customer_phones` row so the
+            # auto-created customer is visible to `/duplicates` and survives
+            # a later merge (mirrors the runtime fix at orders.py:
+            # _resolve_or_create_customer_id). Without this row the phone
+            # only lives in the legacy `customers.phone` column, which the
+            # dedup finder and merge copy loop never consult.
+            cust = Customer(
+                name=resolved_name,
+                phone=nphone,
+                phones=[{"phone": nphone, "isPrimary": True}],
+            )
             cust_id = cust.save(conn)
             existing_phones[nphone] = cust_id
             search_name = _strip_diacritics(resolved_name)
@@ -3614,15 +3638,21 @@ def _migrate_v66_repair_customer_links(conn):
                 new_customer += 1
 
     # -- (3) Walk-in orders (no phone, no name) — FR5 ---------------------
-    if khach_le_id is not None:
-        walk_in_rows = conn.execute(
-            """
-            SELECT id FROM orders
-            WHERE customer_id IS NULL
-              AND (customer_phone IS NULL OR customer_phone = '')
-              AND (customer_name IS NULL OR customer_name = '')
-            """
-        ).fetchall()
+    walk_in_rows = conn.execute(
+        """
+        SELECT id FROM orders
+        WHERE customer_id IS NULL
+          AND (customer_phone IS NULL OR customer_phone = '')
+          AND (customer_name IS NULL OR customer_name = '')
+        """
+    ).fetchall()
+    if walk_in_rows:
+        # DG-252 Phase 4 (FR9/AC5): create the shared "Khách lẻ" record if it
+        # does not yet exist so identity-less orders always get linked (v66
+        # only linked when the row pre-existed; v74 guarantees 100% linkage).
+        if khach_le_id is None:
+            khach_le = Customer(name="Khách lẻ", phone="")
+            khach_le_id = khach_le.save(conn)
         for row in walk_in_rows:
             _link_and_track(row["id"], khach_le_id)
             walk_in += 1
@@ -3648,6 +3678,85 @@ def _migrate_v66_repair_customer_links(conn):
         "Đã sửa %d đơn hàng: %d khớp số điện thoại, %d khớp tên, "
         "%d tạo mới, %d khách lẻ. Còn lại NULL: %d.",
         total_linked, phone_match, name_match, new_customer, walk_in, total_null_after,
+    )
+    return {
+        "null_before": total_null_before,
+        "null_after": total_null_after,
+        "phone_match": phone_match,
+        "name_match": name_match,
+        "new_customer": new_customer,
+        "walk_in": walk_in,
+        "linked": total_linked,
+    }
+
+
+def _migrate_v66_repair_customer_links(conn):
+    """Link all NULL customer_id orders to customers on startup — DG-227 Phase 2.
+
+    Thin wrapper around :func:`_repair_null_customer_links` retained for the
+    v66 migration slot (DG-227). See the shared helper for the full
+    phone → name → new customer → "Khách lẻ" resolution chain.
+    """
+    _repair_null_customer_links(conn)
+
+
+def _migrate_v74_backfill_null_customer_links(conn):
+    """Backfill migration linking remaining ``customer_id IS NULL`` orders.
+
+    DG-252 Phase 4 (FR9 / NFR2 / AC5). Re-runs the shared
+    :func:`_repair_null_customer_links` body so that any historic orders
+    still lacking a ``customer_id`` after the v66 repair (e.g. orders
+    created between v66 and the Phase 1 guaranteed-link landing, or rows
+    that slipped past the guarantee due to a bug) are linked using the
+    same phone → name → new customer → shared "Khách lẻ" chain.
+
+    Idempotent (NFR2): a second run reports ``null_before = 0`` and changes
+    zero rows. Pre/post NULL counts are written to logs by
+    :func:`_repair_null_customer_links`; this wrapper does not return the
+    summary dict (Mn-10, DG-252 review). Tests that need the summary call
+    :func:`_repair_null_customer_links` directly; ``baker db`` surfaces
+    counts via log lines only.
+    """
+    _repair_null_customer_links(conn)
+
+
+def _migrate_v75_backfill_primary_customer_phones(conn):
+    """Backfill a primary ``customer_phones`` row from legacy
+    ``customers.phone`` for every customer with zero phone rows (DG-252 r4).
+
+    R4-M1 (Major) data-loss defense-in-depth: a target customer created
+    before v58/v66 (or whose phone rows were otherwise lost) carries its
+    phone only in the denormalized ``customers.phone`` column. The runtime
+    merge in :func:`baker.api.customers._merge_customer_into_target` now
+    materializes such a legacy phone on the fly before copying source
+    phones, but historic customers that are never merged would still be
+    invisible to the duplicates finder (which joins on
+    ``customer_phones``) and inconsistent with the "every customer with a
+    phone has a primary row" invariant. This migration backfills a
+    primary ``customer_phones`` row from any non-empty ``customers.phone``
+    for customers that currently have zero phone rows.
+
+    Idempotent: a second run finds zero candidates (every backfilled row
+    is now present) and inserts nothing. The INSERT is also guarded by
+    ``WHERE NOT EXISTS`` so concurrent writers cannot double-insert.
+    """
+    conn.execute(
+        """
+        INSERT INTO customer_phones (customer_id, phone, is_primary, created_at)
+        SELECT
+            c.id,
+            c.phone,
+            1,
+            strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'
+        FROM customers c
+        WHERE
+            c.phone IS NOT NULL
+            AND c.phone <> ''
+            AND NOT EXISTS (
+                SELECT 1 FROM customer_phones cp
+                WHERE cp.customer_id = c.id
+            )
+        """
     )
 
 
@@ -4261,6 +4370,16 @@ MIGRATIONS = {
         "description": "Chart of accounts: ensure account 2500 (Accounts Payable) exists — DG-245 Phase 2",
         "sql": "",
         "callable": _migrate_v73_add_account_2500,
+    },
+    74: {
+        "description": "Backfill remaining NULL customer_id orders (phone → name → new customer → 'Khách lẻ'), idempotent re-run with pre/post counts — DG-252 Phase 4",
+        "sql": "",
+        "callable": _migrate_v74_backfill_null_customer_links,
+    },
+    75: {
+        "description": "Backfill a primary customer_phones row from non-empty customers.phone for all customers with zero phone rows (DG-252 r4 [MAJOR] data-loss defense)",
+        "sql": "",
+        "callable": _migrate_v75_backfill_primary_customer_phones,
     },
 }
 

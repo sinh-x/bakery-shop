@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased] — 2026-07-17
+
+- feat(DG-252): Guaranteed customer linking at order creation + duplicate customer detection & merge
+  - Backend: `POST /api/customers/orders` and `PATCH /api/orders/{ref}` always persist non-NULL `customer_id` via phone→name resolution, server-side auto-create, or shared "Khách lẻ" walk-in record (FR1/FR2/FR3/NFR1/AC1)
+  - Backend: `DELETE /api/customers/{id}` returns 409 with VN message when the customer has ≥1 linked order; zero-linked customers remain deletable (FR10/AC7)
+  - Backend: `POST /api/customers/{id}/merge` (admin-only, audited, single transaction; relinks orders/phones, recomputes year summary, hard-deletes source) and `GET /api/customers/duplicates` (admin-only; groups by normalized phone or diacritic-stripped name with order counts) (FR5/FR6/NFR3/AC3)
+  - Backend: schema migration v74 backfills all remaining `customer_id IS NULL` orders (idempotent, pre/post counts, creates "Khách lẻ" when absent) (FR9/NFR2/AC5)
+  - Flutter: inline customer suggestions in the order form (≥2 chars, diacritic-insensitive, 350 ms debounce, 10-row cap, tap-to-link) (FR4/NFR4/AC2)
+  - Flutter: duplicate warning at manual customer create with use-existing / create-anyway choice (FR8/AC6)
+  - Flutter: admin-gated duplicate-finder screen + merge UI with confirmation dialog showing both records' order counts (FR7/AC4)
+  - Docs: VN labels centralized per label policy; CHANGELOG entry added; all suites green (pytest 1893 passed + 1 xfailed, ruff gate clean, flutter analyze clean, dart analyze clean, flutter test --coverage 727 passed, docker compose prod config valid)
+
 ## [0.7.9+93] — 2026-07-16
 - chore: update changelog
 

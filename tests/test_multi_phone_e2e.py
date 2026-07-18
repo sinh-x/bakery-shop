@@ -80,14 +80,24 @@ def test_e2e_multi_phone_full_lifecycle(api_client):
         ).fetchone()[0]
         assert count == 1
 
-    # 8. Delete cascades to customer_phones (FR9).
+    # 8. Delete is blocked while linked orders exist (DG-252 FR10/AC7).
+    #    Previously the DELETE handler unlinked orders and hard-deleted; the new
+    #    guard returns 409 instead, so customer_phones rows must remain intact.
+    from baker.api.customers import CUSTOMER_DELETE_LINKED_ORDERS_MSG
+
     del_resp = api_client.delete(f"/api/customers/{cid}")
-    assert del_resp.status_code == 200
+    assert del_resp.status_code == 409
+    assert del_resp.json()["detail"] == CUSTOMER_DELETE_LINKED_ORDERS_MSG
     with get_db() as conn:
         count = conn.execute(
             "SELECT COUNT(*) FROM customer_phones WHERE customer_id = ?", (cid,)
         ).fetchone()[0]
-        assert count == 0
+        assert count == 1  # phones row retained — no data changes on 409
+        # customer itself is still present
+        still = conn.execute(
+            "SELECT COUNT(*) FROM customers WHERE id = ?", (cid,)
+        ).fetchone()[0]
+        assert still == 1
 
 
 def test_e2e_legacy_phone_backward_compat(api_client):

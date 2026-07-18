@@ -7,6 +7,7 @@ import '../../../providers/customers_provider.dart';
 import '../../../shared/widgets/phone_text_field.dart';
 import '../../customers/widgets/customer_profile_card.dart';
 import 'customer_search_button.dart';
+import 'order_customer_suggestions.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class OrderCustomerSection extends ConsumerWidget {
@@ -118,6 +119,15 @@ class OrderCustomerSection extends ConsumerWidget {
           PhoneTextField(
             controller: phoneCtrl!,
             labelText: VN.customerPhone,
+          ),
+          const SizedBox(height: 4),
+          OrderCustomerSuggestions(
+            nameCtrl: nameCtrl!,
+            phoneCtrl: phoneCtrl!,
+            onSelected: onSelected == null
+                ? (_) {}
+                : (c) => onSelected!(c),
+            selectedCustomer: customer,
           ),
         ],
       ],

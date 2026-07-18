@@ -18,6 +18,7 @@ import '../../features/checklist/checklist_config_screen.dart';
 import '../../features/checklist/checklist_history_screen.dart';
 import '../../features/customers/customer_detail_screen.dart';
 import '../../features/customers/customer_list_screen.dart';
+import '../../features/customers/duplicate_finder_screen.dart';
 import '../../features/checklist/checklist_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/expenses/expense_screen.dart';
@@ -104,6 +105,7 @@ const Set<String> _adminOnlyRoutes = {
   '/checklist/config',
   '/categories/manage',
   '/audit-log',
+  '/customers/duplicates',
 };
 
 /// Match admin-only routes that take path parameters (e.g.
@@ -395,6 +397,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       path: '/customers',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const CustomerListScreen(),
+    ),
+    // Duplicate finder — admin-only (DG-252 Phase 7 — FR7/AC4). Registered
+    // BEFORE `/customers/:id` so the static `/duplicates` path is not
+    // shadowed by the int path parameter. Staff users are redirected by the
+    // router guard.
+    GoRoute(
+      path: '/customers/duplicates',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const DuplicateFinderScreen(),
     ),
     GoRoute(
       path: '/customers/:id',
