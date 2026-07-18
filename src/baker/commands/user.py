@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import sqlite3
 from datetime import datetime, timezone
 
 import click
@@ -156,7 +157,7 @@ def user_create(username: str, role: str, staff_name: str | None, quiet: bool):
                 "VALUES (?, ?, ?, 1, ?)",
                 (username, hashed, role, resolved_staff_id),
             )
-        except Exception:
+        except sqlite3.IntegrityError:
             console.print(
                 "  [red]Failed to create user: database integrity error. "
                 "The staff member may already be linked to another user.[/red]"
