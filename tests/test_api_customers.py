@@ -240,16 +240,25 @@ def test_order_create_accepts_customer_id(api_client):
     assert order["customerId"] == customer["id"]
 
 
-def test_order_create_without_customer_id_defaults_null(api_client):
-    """AC7 — walk-in flow: no customer record required, customerId null."""
-    order = _create_order_with_customer(api_client, customer_name="Khách lẻ")
-    assert order["customerId"] is None
+def test_order_create_without_customer_id_links_to_walk_in(api_client):
+    """DG-252 AC1 — walk-in flow: no explicit customer id links to the shared
+    "Khách lẻ" record so the order always has a non-NULL customer_id."""
+    from baker.api.orders import WALK_IN_SHARED_CUSTOMER_NAME
+
+    order = _create_order_with_customer(api_client, customer_name=WALK_IN_SHARED_CUSTOMER_NAME)
+    assert order["customerId"] is not None
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT name FROM customers WHERE id = ?", (order["customerId"],)
+        ).fetchone()
+        assert row is not None
+        assert row["name"].lower() == WALK_IN_SHARED_CUSTOMER_NAME.lower()
 
 
 def test_order_edit_updates_customer_id(api_client):
     customer = _create_customer(api_client, name="Gán sau", phone="0900")
-    order = _create_order_with_customer(api_client, customer_name="Khách lẻ")
-    assert order["customerId"] is None
+    order = _create_order_with_customer(api_client, customer_name="Khách vãng lai")
+    assert order["customerId"] is not None
 
     resp = api_client.patch(
         f"/api/orders/{order['orderRef']}", json={"customerId": customer["id"]}
@@ -258,7 +267,10 @@ def test_order_edit_updates_customer_id(api_client):
     assert resp.json()["customerId"] == customer["id"]
 
 
-def test_order_edit_unlinks_customer_id_with_null(api_client):
+def test_order_edit_null_customer_id_re_resolves_not_unlinks(api_client):
+    """DG-252 FR3 — explicit ``customerId: null`` re-resolves via the
+    resolve → auto-create → walk-in chain instead of leaving the order
+    unlinked."""
     customer = _create_customer(api_client, name="Bỏ liên kết", phone="0900")
     order = _create_order_with_customer(
         api_client, customer_id=customer["id"], customer_name=customer["name"]
@@ -269,15 +281,20 @@ def test_order_edit_unlinks_customer_id_with_null(api_client):
         f"/api/orders/{order['orderRef']}", json={"customerId": None}
     )
     assert resp.status_code == 200
-    assert resp.json()["customerId"] is None
+    # No phone/name in patch → falls back to the row's stored name "Bỏ liên kết"
+    # which has no phone, so a fresh customer is auto-created for that name.
+    new_id = resp.json()["customerId"]
+    assert new_id is not None
+    assert new_id != customer["id"]
 
 
 def test_order_to_api_dict_falls_back_to_customer_name_when_no_customer_id(api_client):
-    """NFR3 — existing orders without customer_id still display name/phone."""
+    """NFR3 — orders auto-linked to a customer still display the original
+    name/phone the staff typed (now stored on the order itself, not via NULL)."""
     order = _create_order_with_customer(
         api_client, customer_name="Khách vãng lai", phone="0900111"
     )
-    assert order["customerId"] is None
+    assert order["customerId"] is not None
     assert order["customerName"] == "Khách vãng lai"
 
 
@@ -411,17 +428,70 @@ def test_phone_is_not_unique_multiple_customers_same_phone(api_client):
     assert r1.json()["id"] != r2.json()["id"]
 
 
-# --- Delete clears order links ---
+# --- Delete guard (FR10 / AC7) ---
 
 
-def test_delete_customer_clears_order_links(api_client):
-    customer = _create_customer(api_client, name="Sẽ xóa", phone="0900")
-    _create_order_with_customer(
+from baker.api.customers import CUSTOMER_DELETE_LINKED_ORDERS_MSG
+
+
+def test_delete_customer_with_linked_orders_returns_409(api_client):
+    """FR10/AC7 — a customer linked to ≥1 order cannot be deleted (409 + VN message),
+    and no data changes (customer, orders, and customer_phones all intact)."""
+    customer = _create_customer(
+        api_client, name="Còn đơn", phone="0900"
+    )
+    order = _create_order_with_customer(
         api_client, customer_id=customer["id"], customer_name=customer["name"]
     )
+
     resp = api_client.delete(f"/api/customers/{customer['id']}")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == CUSTOMER_DELETE_LINKED_ORDERS_MSG
+
+    # No data changes: customer still exists, order still linked.
+    get_resp = api_client.get(f"/api/customers/{customer['id']}")
+    assert get_resp.status_code == 200
+    orders_resp = api_client.get(f"/api/customers/{customer['id']}/orders")
+    assert orders_resp.status_code == 200
+    assert any(o["id"] == order["id"] for o in orders_resp.json())
+
+
+def test_delete_customer_with_zero_linked_orders_succeeds(api_client):
+    """FR10/AC7 — a customer with 0 linked orders remains deletable."""
+    created = _create_customer(api_client, name="Không còn đơn", phone="0911")
+    resp = api_client.delete(f"/api/customers/{created['id']}")
     assert resp.status_code == 200
-    assert resp.json()["linkedOrdersCleared"] == 1
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["linkedOrdersCleared"] == 0
+    assert api_client.get(f"/api/customers/{created['id']}").status_code == 404
+
+
+def test_delete_customer_after_orders_relinked_elsewhere_succeeds(api_client):
+    """FR10 — once linked orders are moved to another customer (e.g. via merge or
+    reassignment), the original customer has 0 links and becomes deletable again."""
+    cust_a = _create_customer(api_client, name="A sẽ rỗng", phone="0901")
+    cust_b = _create_customer(api_client, name="B nhận đơn", phone="0902")
+    _create_order_with_customer(
+        api_client, customer_id=cust_a["id"], customer_name=cust_a["name"]
+    )
+
+    # 409 while A still has the linked order
+    resp_blocked = api_client.delete(f"/api/customers/{cust_a['id']}")
+    assert resp_blocked.status_code == 409
+
+    # Move the order to B (direct DB edit simulates merge/reassign)
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE orders SET customer_id = ? WHERE customer_id = ?",
+            (cust_b["id"], cust_a["id"]),
+        )
+        conn.commit()
+
+    # Now A is deletable
+    resp = api_client.delete(f"/api/customers/{cust_a['id']}")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
 
 
 # --- Multi-phone support (DG-205 Phase 2) ---
@@ -712,8 +782,10 @@ def test_order_edit_relinks_summary_to_new_customer(api_client):
     assert ys2["totalVolume"] == 10000
 
 
-def test_order_edit_unlinks_customer_zeroes_summary(api_client):
-    """FR6 — unlinking a customer (customerId=null) recomputes the old row."""
+def test_order_edit_reassigns_customer_zeroes_old_summary(api_client):
+    """DG-252 FR3/FR6 — setting customerId to another customer (or null, which
+    now re-resolves) recomputes the old customer's year summary to zero when
+    it had no other orders."""
     from baker.db.connection import get_db
     from baker.models.customer import load_year_summary
 
@@ -721,8 +793,9 @@ def test_order_edit_unlinks_customer_zeroes_summary(api_client):
     order = _create_order_with_customer(
         api_client, customer_id=customer["id"], customer_name=customer["name"]
     )
+    other = _create_customer(api_client, name="Khác", phone="0901")
     api_client.patch(
-        f"/api/orders/{order['orderRef']}", json={"customerId": None}
+        f"/api/orders/{order['orderRef']}", json={"customerId": other["id"]}
     )
     with get_db() as conn:
         ys = load_year_summary(conn, customer["id"], _current_year())

@@ -2173,8 +2173,9 @@ def test_create_order_phone_normalized_for_matching(api_client):
     assert order["customerId"] == cust["id"]
 
 
-def test_create_order_no_match_leaves_customer_id_null(api_client):
-    """AC7 — unknown phone does not link to any customer (customerId stays null)."""
+def test_create_order_no_match_auto_creates_customer(api_client):
+    """DG-252 FR1/AC1 — unknown phone no longer leaves customerId null; the
+    server auto-creates a customer for the order's name/phone pair."""
     _create_customer_with_phones(
         api_client,
         "Ngô Thị E",
@@ -2185,7 +2186,13 @@ def test_create_order_no_match_leaves_customer_id_null(api_client):
         customer="Walk-in",
         customerPhone="84999999999",
     )
-    assert order["customerId"] is None
+    assert order["customerId"] is not None
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT name, phone FROM customers WHERE id = ?", (order["customerId"],)
+        ).fetchone()
+        assert row is not None
+        assert row["name"] == "Walk-in"
 
 
 def test_create_order_explicit_customer_id_wins_over_phone(api_client):
@@ -2238,8 +2245,9 @@ def test_edit_order_relinks_when_phone_changes(api_client):
     assert resp.json()["customerId"] == cust_b["id"]
 
 
-def test_edit_order_explicit_null_customer_id_not_overridden_by_phone(api_client):
-    """AC7 — explicit customerId=null (unlink) is respected; phone does not re-resolve."""
+def test_edit_order_explicit_null_customer_id_re_resolves(api_client):
+    """DG-252 FR3 — explicit ``customerId=null`` with a new phone re-resolves
+    via the resolve → auto-create chain; customerId is never left null."""
     cust = _create_customer_with_phones(
         api_client,
         "C",
@@ -2251,13 +2259,15 @@ def test_edit_order_explicit_null_customer_id_not_overridden_by_phone(api_client
         customerPhone="8495555555",
     )
     assert order["customerId"] == cust["id"]
-    # Explicit null + new phone — should keep customerId null (no re-resolve).
+    # Explicit null + new phone + new name — should auto-create a customer.
     resp = api_client.patch(
         f"/api/orders/{order['orderRef']}",
-        json={"customerId": None, "customerPhone": "8496666666"},
+        json={"customerId": None, "customerPhone": "8496666666", "customerName": "Khách mới 6666"},
     )
     assert resp.status_code == 200
-    assert resp.json()["customerId"] is None
+    new_id = resp.json()["customerId"]
+    assert new_id is not None
+    assert new_id != cust["id"]
 
 
 def test_create_order_shared_phone_earliest_order_wins(api_client):

@@ -334,6 +334,36 @@ def _assert_soft_delete_columns(conn) -> None:
     assert event_columns["deleted_by"]["notnull"] == 0
 
 
+def _assert_users_role_check_constraint(conn) -> None:
+    """Mn-3 (DG-029 phase 5.6-c1): users.role has a DB-level CHECK constraint."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+    ).fetchone()
+    assert row is not None, "users table missing"
+    create_sql = (row["sql"] or "").replace("\n", " ")
+    assert "CHECK(role IN" in create_sql, (
+        f"users table missing CHECK(role IN ...) constraint; sql={create_sql!r}"
+    )
+    # Inserting an invalid role must be rejected by the DB itself.
+    import pytest as _pytest
+    try:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, active) "
+            "VALUES ('__check_probe__', 'x', 'superuser', 1)"
+        )
+    except Exception as exc:
+        # CHECK constraint violation — expected.
+        if "CHECK" not in str(exc).upper() and "constraint" not in str(exc).lower():
+            raise
+    else:
+        # Roll back the offending insert so we don't poison other tests.
+        conn.execute("DELETE FROM users WHERE username = '__check_probe__'")
+        conn.commit()
+        raise _pytest.fail(
+            "users.role CHECK constraint did not reject role='superuser'"
+        )
+
+
 def _seed_v35_stock(conn) -> tuple[int, int, int]:
     conn.execute(
         """INSERT INTO products (name, category, base_price, cost, recipe_notes)
@@ -366,7 +396,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 67
+        assert _migrated_version(conn) == 75
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -375,6 +405,7 @@ def test_schema_migration_v31_fresh_db():
         _assert_v40_v41_schema(conn)
         _assert_event_history_schema(conn)
         _assert_soft_delete_columns(conn)
+        _assert_users_role_check_constraint(conn)
 
 
 def test_schema_migration_v30_to_v31():
@@ -383,7 +414,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 67
+        assert _migrated_version(conn) == 75
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -392,15 +423,16 @@ def test_schema_migration_v30_to_v31():
         _assert_v40_v41_schema(conn)
         _assert_event_history_schema(conn)
         _assert_soft_delete_columns(conn)
+        _assert_users_role_check_constraint(conn)
 
 
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 67
+        assert _migrated_version(conn) == 75
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 67
+        assert _migrated_version(conn) == 75
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -419,6 +451,7 @@ def test_schema_migration_v31_idempotent():
         _assert_reconciliation_sale_rows_schema(conn)
         _assert_chip_aware_inventory_schema(conn)
         _assert_v40_v41_schema(conn)
+        _assert_users_role_check_constraint(conn)
 
 
 def test_schema_migration_v32_handles_preexisting_printed_by_column():
@@ -3318,3 +3351,481 @@ def test_v65_idempotent():
         _migrate_v65_journal_sync_failure_log(conn)
         assert _migrated_version(conn) == 65
         _assert_journal_sync_failure_log_schema(conn)
+
+
+# ---------------------------------------------------------------------------
+# v71 — DB-level CHECK(role IN ('admin','staff')) on users (Mn-3, DG-029 5.6-c1)
+# ---------------------------------------------------------------------------
+
+
+def test_v71_fresh_db_has_role_check():
+    """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 75
+        _assert_users_role_check_constraint(conn)
+
+
+def test_v71_rebuilds_existing_users_table_to_add_check():
+    """An existing DB where v68 ran *before* the CHECK fix gets it added by v71.
+
+    To simulate a pre-fix v68 run we migrate to v67, then create the users
+    table manually with the *old* schema (no CHECK) — exactly what an
+    existing DB would look like before this migration slot was added. Then
+    we run v68..v71 and verify v71 rebuilds the table with the CHECK.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 67)
+        assert _migrated_version(conn) == 67
+        # Manually create the users table with the pre-fix schema (no CHECK),
+        # simulating an existing DB where v68 ran before the Mn-3 fix landed.
+        conn.executescript(
+            """
+            CREATE TABLE users (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                username      TEXT UNIQUE NOT NULL,
+                password_hash  TEXT NOT NULL,
+                role          TEXT NOT NULL DEFAULT 'staff',
+                active        INTEGER NOT NULL DEFAULT 1,
+                locked_until  TEXT DEFAULT NULL,
+                created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+            );
+            CREATE INDEX idx_users_username ON users(username);
+            CREATE INDEX idx_users_active ON users(active);
+            INSERT INTO schema_version (version, description) VALUES
+                (68, 'Auth RBAC users table (pre-fix, no CHECK)'),
+                (69, 'audit_log table'),
+                (70, 'sessions table');
+            """
+        )
+        # Seed an existing user so the rebuild must preserve data.
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, active) "
+            "VALUES ('preserve_me', 'hashed', 'admin', 1)"
+        )
+        conn.commit()
+
+        # Pre-condition: no CHECK yet.
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+        ).fetchone()
+        assert "CHECK(role IN" not in (row["sql"] or "").replace("\n", " ")
+
+        _migrate_to_version(conn, 71)
+        assert _migrated_version(conn) == 71
+        _assert_users_role_check_constraint(conn)
+
+        # Data was preserved across the rebuild.
+        kept = conn.execute(
+            "SELECT username, role, active FROM users WHERE username = 'preserve_me'"
+        ).fetchone()
+        assert kept is not None
+        assert kept["role"] == "admin"
+        assert kept["active"] == 1
+
+
+def test_v71_idempotent():
+    """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 75
+        from baker.db.schema import _migrate_v71_users_role_check
+
+        _migrate_v71_users_role_check(conn)
+        _assert_users_role_check_constraint(conn)
+
+
+# ---------------------------------------------------------------------------
+# DG-029 follow-on: lowercase users.username (v72 migration + v68 seed)
+# ---------------------------------------------------------------------------
+
+
+def test_v68_seed_lowercases_usernames_on_fresh_db():
+    """v68 seeding on a fresh DB produces lowercase usernames.
+
+    The 5 seeded users must be lowercase: sinh=admin, ân/ngân/phượng/tân=staff.
+    The staff.name display names are left unchanged (uppercase Vietnamese
+    diacritics) — only users.username is lowercased.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 68)
+        assert _migrated_version(conn) == 68
+
+        usernames = [
+            row["username"] for row in
+            conn.execute("SELECT username FROM users ORDER BY username").fetchall()
+        ]
+        # Each seeded username must be lowercase.
+        for u in usernames:
+            assert u == u.lower(), f"seeded username not lowercase: {u!r}"
+        # The 5 expected seeded usernames (lowercased Vietnamese diacritics).
+        assert set(usernames) == {"sinh", "ân", "ngân", "phượng", "tân"}
+
+        # Sinh is admin; the rest are staff.
+        sinh_row = conn.execute(
+            "SELECT role FROM users WHERE username = 'sinh'"
+        ).fetchone()
+        assert sinh_row is not None
+        assert sinh_row["role"] == "admin"
+
+        for staff_username in ("ân", "ngân", "phượng", "tân"):
+            row = conn.execute(
+                "SELECT role FROM users WHERE username = ?", (staff_username,)
+            ).fetchone()
+            assert row is not None
+            assert row["role"] == "staff"
+
+        # staff.name display names are unchanged (still capitalized).
+        staff_names = [
+            row["name"] for row in
+            conn.execute("SELECT name FROM staff ORDER BY name").fetchall()
+        ]
+        assert "Sinh" in staff_names
+        assert "Ân" in staff_names
+
+
+def test_v72_lowercases_existing_mixed_case_usernames():
+    """v72 lowercases existing users.username values in an existing DB.
+
+    Simulate an existing DB where v68 ran *before* the lowercase fix landed
+    (capitalized usernames), then run v72 and verify all usernames are now
+    lowercase. Uses Python-side lowercasing (Unicode-aware) so Vietnamese
+    diacritics (Â→â, Ư→ư, Ầ→ầ) are correctly lowercased.
+    """
+    with get_db() as conn:
+        # Migrate to v71 (creates users table + CHECK), simulating a DB
+        # that ran the old v68 seeding (capitalized usernames).
+        _migrate_to_version(conn, 71)
+        assert _migrated_version(conn) == 71
+
+        # The v68 migration already ran with the old (capitalized) behavior
+        # during _migrate_to_version, OR — to be robust against future
+        # v68 changes — we explicitly insert mixed-case usernames to
+        # simulate a pre-fix DB. Clear any seeded rows first so we control
+        # the state.
+        conn.execute("DELETE FROM users")
+        # Insert mixed-case usernames (ASCII + Vietnamese diacritics).
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, active) "
+            "VALUES ('Sinh', 'h1', 'admin', 1)"
+        )
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, active) "
+            "VALUES ('Ân', 'h2', 'staff', 1)"
+        )
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, active) "
+            "VALUES ('alreadylower', 'h3', 'staff', 1)"
+        )
+        conn.commit()
+
+        # Run v72.
+        _migrate_to_version(conn, 72)
+        assert _migrated_version(conn) == 72
+
+        usernames = {
+            row["username"] for row in
+            conn.execute("SELECT username FROM users").fetchall()
+        }
+        # All usernames are now lowercase.
+        assert "sinh" in usernames
+        assert "ân" in usernames
+        assert "alreadylower" in usernames
+        # No capitalized forms remain.
+        assert "Sinh" not in usernames
+        assert "Ân" not in usernames
+        # Every username equals its lowercase form.
+        for u in usernames:
+            assert u == u.lower()
+
+
+def test_v72_idempotent():
+    """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 75
+
+        from baker.db.schema import _migrate_v72_lowercase_usernames
+
+        # Capture usernames before re-run.
+        before = {
+            row["username"] for row in
+            conn.execute("SELECT username FROM users").fetchall()
+        }
+        _migrate_v72_lowercase_usernames(conn)
+        after = {
+            row["username"] for row in
+            conn.execute("SELECT username FROM users").fetchall()
+        }
+        assert before == after
+        # All remain lowercase.
+        for u in after:
+            assert u == u.lower()
+
+
+def test_v72_skips_collision_pair_without_crashing():
+    """v72 does NOT crash when two rows would collapse to the same lowercase.
+
+    If a DB has both 'An' and 'an' (pre-fix history), v72 lowercases 'an' in
+    place (already lowercase) and skips 'An' (would collide). The migration
+    must not raise — it logs and continues.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 71)
+        conn.execute("DELETE FROM users")
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, active) "
+            "VALUES ('An', 'h1', 'staff', 1)"
+        )
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, active) "
+            "VALUES ('an', 'h2', 'staff', 1)"
+        )
+        conn.commit()
+
+        # Must not raise.
+        _migrate_to_version(conn, 72)
+        assert _migrated_version(conn) == 72
+
+        usernames = {
+            row["username"] for row in
+            conn.execute("SELECT username FROM users").fetchall()
+        }
+        # 'an' remains; 'An' is skipped (would collide with existing 'an').
+        assert "an" in usernames
+        # Either 'An' was kept as-is (skipped) OR lowercased — but not both.
+        # Per the defensive guard, 'An' is skipped so it stays capitalized.
+        assert "An" in usernames
+
+
+# ---------------------------------------------------------------------------
+# DG-029 phase 5.6-c2 (SEC-1): BAKER_SEED_QUIET must suppress plaintext
+# password output during v68 user seeding. Regression test for the
+# indentation/scoping bug where the per-user plaintext print loop ran in
+# BOTH the quiet and non-quiet branches.
+# ---------------------------------------------------------------------------
+
+
+def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
+    """SEC-1: BAKER_SEED_QUIET=1 suppresses per-user plaintext password output.
+
+    Running ensure_schema on a fresh DB with BAKER_SEED_QUIET=1 must print
+    the "passwords suppressed" summary line and MUST NOT print any per-user
+    plaintext password line (pattern ``<username> (<role>): <plain>``).
+    Mirrors the CLI ``test_user_create_quiet_suppresses_plaintext`` style.
+    """
+    monkeypatch.setenv("BAKER_SEED_QUIET", "1")
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 75
+
+    out = capsys.readouterr().out
+    # The "passwords suppressed" summary line IS present.
+    assert "passwords suppressed" in out
+    assert "BAKER_SEED_QUIET=1" in out
+    # No per-user plaintext password line leaked. The non-quiet path prints
+    # lines of the form "  <username> (<role>): <plain>".
+    import re
+
+    leaked = [
+        line for line in out.splitlines()
+        if re.match(r"^\s+\S+ \((admin|staff)\): \S+", line)
+    ]
+    assert not leaked, f"plaintext password lines leaked under BAKER_SEED_QUIET=1: {leaked!r}"
+    # The non-quiet header/separator banners must NOT appear either.
+    assert "Distribute these temporary passwords" not in out
+
+
+def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
+    """SEC-1 positive control: the default (no BAKER_SEED_QUIET) path still
+    prints per-user plaintext passwords so the admin-distribution UX is
+    preserved exactly.
+    """
+    monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) == 75
+
+    out = capsys.readouterr().out
+    # The non-quiet header banner IS present.
+    assert "Distribute these temporary passwords to each user:" in out
+    # At least one per-user plaintext password line IS present.
+    import re
+
+    user_lines = [
+        line for line in out.splitlines()
+        if re.match(r"^\s+\S+ \((admin|staff)\): \S+", line)
+    ]
+    assert user_lines, "expected per-user plaintext password lines in default path"
+    # The "passwords suppressed" summary must NOT appear in the default path.
+    assert "passwords suppressed" not in out
+
+
+# ── v73 Migration: Account 2500 (DG-245 Phase 2) ───────────────────────────
+
+
+def test_v73_registered_in_migration_chain():
+    """v73 is registered in MIGRATIONS with the expected callable."""
+    assert 73 in MIGRATIONS
+    assert (
+        MIGRATIONS[73]["callable"].__name__
+        == "_migrate_v73_add_account_2500"
+    )
+
+
+def test_v73_adds_account_2500_on_incremental_db():
+    """Applying v73 on top of a v72 DB: account 2500 already exists from v44,
+    so v73 is a no-op (INSERT OR IGNORE on all accounts)."""
+    from baker.db.schema import _migrate_v73_add_account_2500
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 72)
+        # Account 2500 already exists (seeded by v44).
+        before = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2500'"
+        ).fetchone()
+        assert before is not None
+        assert before["type"] == "liability"
+
+        # v73 on an already-correct DB is a no-op.
+        _migrate_v73_add_account_2500(conn)
+        after = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2500'"
+        ).fetchone()
+        assert after is not None
+        assert after["id"] == before["id"]
+        assert after["name"] == before["name"]
+
+
+def test_v73_applies_in_full_migration_chain():
+    """v73 executes as part of ensure_schema and account 2500 exists on fresh DB."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 73)
+        assert _migrated_version(conn) == 73
+        row = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2500'"
+        ).fetchone()
+        assert row is not None
+        assert row["type"] == "liability"
+
+
+def test_v73_idempotent_on_already_migrated_db():
+    """Re-running the v73 callable after it has already run is a no-op."""
+    from baker.db.schema import _migrate_v73_add_account_2500
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 72)
+        _migrate_v73_add_account_2500(conn)
+        count_after_first = conn.execute(
+            "SELECT COUNT(*) FROM accounts WHERE code = '2500'"
+        ).fetchone()[0]
+        assert count_after_first == 1
+
+        # Second application must not raise or duplicate.
+        _migrate_v73_add_account_2500(conn)
+        count_after_second = conn.execute(
+            "SELECT COUNT(*) FROM accounts WHERE code = '2500'"
+        ).fetchone()[0]
+        assert count_after_second == 1
+
+
+def test_v73_idempotent_on_fresh_db():
+    """v73 on a fresh DB (already at v73 via ensure_schema) is a no-op."""
+    from baker.db.schema import _migrate_v73_add_account_2500
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 73
+        row_before = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2500'"
+        ).fetchone()
+        _migrate_v73_add_account_2500(conn)
+        row_after = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2500'"
+        ).fetchone()
+        assert row_before is not None
+        assert row_before["id"] == row_after["id"]
+        assert row_before["name"] == row_after["name"]
+        assert row_before["type"] == row_after["type"]
+
+
+def test_v73_ensures_account_2500_exists_when_missing():
+    """AC1: Given a live db without account 2500, when migration v73 runs,
+    then account 2500 exists and re-running v73 makes no further change."""
+    from baker.db.schema import _migrate_v73_add_account_2500
+
+    with get_db() as conn:
+        _migrate_to_version(conn, 72)
+        # Simulate a live DB missing account 2500.
+        conn.execute("DELETE FROM accounts WHERE code = '2500'")
+        conn.commit()
+        assert conn.execute(
+            "SELECT COUNT(*) FROM accounts WHERE code = '2500'"
+        ).fetchone()[0] == 0
+
+        # Run v73 — account 2500 now exists.
+        _migrate_v73_add_account_2500(conn)
+        row = conn.execute(
+            "SELECT id, name, type FROM accounts WHERE code = '2500'"
+        ).fetchone()
+        assert row is not None
+        assert row["name"] == "Phải trả người bán (Accounts Payable)"
+        assert row["type"] == "liability"
+
+        # Re-running v73 makes no further change (idempotent).
+        id_first = row["id"]
+        _migrate_v73_add_account_2500(conn)
+        count = conn.execute(
+            "SELECT COUNT(*) FROM accounts WHERE code = '2500'"
+        ).fetchone()[0]
+        assert count == 1
+        row2 = conn.execute(
+            "SELECT id FROM accounts WHERE code = '2500'"
+        ).fetchone()
+        assert row2["id"] == id_first
+
+
+# ---------------------------------------------------------------------------
+# Review-remediation verification (d-045718, DG-245 review d-b1fbbc)
+# CQ-2: vendor sub-account code overflow at vendor >99
+# ---------------------------------------------------------------------------
+
+
+def test_ap_vendor_sub_account_overflow_above_99():
+    """CQ-2 (Major): creating 100+ vendor sub-accounts under 2500 must not
+    overflow the 25xx namespace. The first 99 vendors use 4-digit codes
+    (2501..2599); vendor #100 rolls to the 5-digit 25xxx range (25001+) so the
+    code stays under the 2500 parent and the accounts.code UNIQUE constraint
+    is not tripped."""
+    from baker.db.schema import _ensure_ap_vendor_sub_account
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        parent_id = int(conn.execute(
+            "SELECT id FROM accounts WHERE code = '2500'"
+        ).fetchone()[0])
+
+        # Create 100 vendor sub-accounts (vendors 1-100).
+        ids = []
+        for i in range(1, 101):
+            vid = _ensure_ap_vendor_sub_account(conn, f"Vendor {i}")
+            ids.append(vid)
+        conn.commit()
+
+        # All 100 sub-accounts exist, each with a unique code under 2500.
+        rows = conn.execute(
+            "SELECT code, name FROM accounts WHERE parent_id = ? ORDER BY CAST(code AS INTEGER)",
+            (parent_id,),
+        ).fetchall()
+        assert len(rows) == 100
+        codes = [r["code"] for r in rows]
+        # All codes are unique (UNIQUE constraint respected — no silent failures).
+        assert len(set(codes)) == 100
+        # First 99 codes stay in the 4-digit 25xx range (2501..2599).
+        for c in codes[:99]:
+            assert len(c) == 4 and c.startswith("25"), c
+        # Vendor #100 rolls to the 5-digit 25xxx range (does not escape to 2600).
+        assert codes[99] == "25001", codes[99]
+        # Idempotency: re-resolving an existing vendor reuses its sub-account.
+        reuse = _ensure_ap_vendor_sub_account(conn, "Vendor 1")
+        assert reuse == ids[0]

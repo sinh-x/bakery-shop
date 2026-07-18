@@ -31,6 +31,12 @@ services:
       # termination — plain HTTP over untrusted networks exposes print jobs in
       # cleartext.
       TRAIL_MM: ${TRAIL_MM:-20}
+      # Auth RBAC (DG-029). AUTH_REQUIRED=false keeps public access during the
+      # grace period; flip to true once all clients send JWT tokens. JWT_SECRET
+      # must be a stable 256-bit+ random value — generate with:
+      #   python -c "import secrets; print(secrets.token_urlsafe(32))"
+      BAKER_AUTH_REQUIRED: ${BAKER_AUTH_REQUIRED:-false}
+      BAKER_JWT_SECRET: ${BAKER_JWT_SECRET:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2108/api/health')"]
@@ -115,6 +121,9 @@ services:
       # termination — plain HTTP over untrusted networks exposes print jobs in
       # cleartext.
       TRAIL_MM: ${TRAIL_MM:-20}
+      # Auth RBAC (DG-029). See baker-prod above for secret generation guidance.
+      BAKER_AUTH_REQUIRED: ${BAKER_AUTH_REQUIRED:-false}
+      BAKER_JWT_SECRET: ${BAKER_JWT_SECRET:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2312/api/health')"]

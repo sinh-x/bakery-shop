@@ -1,6 +1,6 @@
 """Tests for accounting validation module — Phase 5 (DG-187, FR6/AC6).
 
-Covers the fifteen validation checks exposed via the service module, the
+Covers the eighteen validation checks exposed via the service module, the
 ``GET /api/accounts/validate`` endpoint, and the ``baker validate-accounts``
 CLI command:
 
@@ -19,6 +19,8 @@ CLI command:
 - orphaned lines (journal lines with non-existent account_id)
 - expense category mismatch (debited account ≠ category mapping)
 - deposit revenue integrity (2100 debit = 2400 credit + 4100 credit)
+- expense payment account mismatch (credit account ≠ event payment config)
+- source ledger totals (per-class lump-sum source vs journal reconciliation)
 - clean DB → all checks pass
 - CLI command exit code + output
 """
@@ -166,11 +168,13 @@ def test_validation_clean_db_all_pass():
         "expense_category_mismatch",
         "deposit_revenue_integrity",
         "deposit_balance_integrity",
+        "expense_payment_account_mismatch",
+        "source_ledger_totals",
     ]
     # On a clean (empty) DB all checks pass, but the test DB contains real
     # production data which may have legitimate issues (e.g. inventory negative,
     # cancelled orders with deposits).  Only assert the check count and names.
-    assert report["summary"]["total_checks"] == 16
+    assert report["summary"]["total_checks"] == 18
 
 
 # ---------------------------------------------------------------------------
@@ -380,8 +384,8 @@ def test_api_validate_endpoint_clean_db(api_client):
     assert resp.status_code == 200
     body = resp.json()
     # Test DB contains real production data — do not assert status == "pass".
-    assert body["summary"]["total_checks"] == 16
-    assert len(body["checks"]) == 16
+    assert body["summary"]["total_checks"] == 18
+    assert len(body["checks"]) == 18
 
 
 def test_api_validate_endpoint_reports_failures(api_client):
@@ -975,6 +979,366 @@ def test_deposit_revenue_integrity_end_to_end_after_journal_sync():
 
 
 # ---------------------------------------------------------------------------
+# Expense payment account mismatch (DG-245 Phase 5, FR7/AC5)
+# ---------------------------------------------------------------------------
+
+
+def _insert_expense_event_full(
+    conn,
+    *,
+    category: str,
+    amount: float = 10000,
+    payment_source: str | None = None,
+    payment_method: str = "",
+    vendor: str | None = None,
+    paid_by_name: str | None = None,
+) -> int:
+    """Insert an expense event with full payment config and return its id."""
+    import json
+
+    data: dict = {"amount_vnd": amount, "category": category}
+    if payment_source is not None:
+        data["payment_source"] = payment_source
+    if payment_method:
+        data["payment_method"] = payment_method
+    if vendor is not None:
+        data["vendor"] = vendor
+    if paid_by_name is not None:
+        data["paid_by_name"] = paid_by_name
+    payload = json.dumps(data)
+    cur = conn.execute(
+        "INSERT INTO events (type, summary, data) VALUES (?, ?, ?)",
+        ("expense", f"Expense: {category}", payload),
+    )
+    return int(cur.lastrowid)
+
+
+def _expense_je(conn, event_id: int, debit_code: str, credit_code: str,
+                amount: float = 10000, *, description: str = "Expense: test") -> int:
+    """Insert a balanced expense journal entry and return its id."""
+    debit_acct = _account_id(conn, debit_code)
+    credit_acct = _account_id(conn, credit_code)
+    return _insert_balanced_entry(
+        conn, debit_acct, credit_acct, amount=amount,
+        source_type="expense", source_id=event_id,
+    )
+
+
+def test_expense_payment_account_mismatch_passes_cash_correct():
+    """Cash expense crediting 1100 (Shop tiền mặt) passes."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        event_id = _insert_expense_event_full(
+            conn, category="Vận chuyển", payment_source="Shop tiền mặt",
+        )
+        _expense_je(conn, event_id, "5300", "1100")
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "expense_payment_account_mismatch"
+    )
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+def test_expense_payment_account_mismatch_flags_cash_wrong_credit():
+    """Cash expense crediting 1200 instead of 1100 is flagged."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        event_id = _insert_expense_event_full(
+            conn, category="Vận chuyển", payment_source="Shop tiền mặt",
+        )
+        _expense_je(conn, event_id, "5300", "1200")  # wrong credit
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "expense_payment_account_mismatch"
+    )
+    assert check["status"] == "fail"
+    assert check["issue_count"] == 1
+    f = check["details"][0]
+    assert f["expected_account_code"] == "1100"
+    assert f["actual_account_code"] == "1200"
+    assert f["mismatch_kind"] == "payment_account"
+
+
+def test_expense_payment_account_mismatch_passes_debt_vendor_sub_account():
+    """Debt expense crediting a per-vendor 2500 sub-account passes."""
+    from baker.db.schema import _ensure_ap_vendor_sub_account
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        event_id = _insert_expense_event_full(
+            conn, category="Vận chuyển", payment_method="Nợ", vendor="NCC Alpha",
+        )
+        vendor_sub = _ensure_ap_vendor_sub_account(conn, "NCC Alpha")
+        expense_acct = _account_id(conn, "5300")
+        _insert_balanced_entry(
+            conn, expense_acct, vendor_sub, amount=10000,
+            source_type="expense", source_id=event_id,
+        )
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "expense_payment_account_mismatch"
+    )
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+def test_expense_payment_account_mismatch_flags_debt_crediting_parent_2500():
+    """Debt expense crediting the 2500 parent (not a sub-account) is flagged."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        event_id = _insert_expense_event_full(
+            conn, category="Vận chuyển", payment_method="Nợ", vendor="NCC Beta",
+        )
+        ap_parent = _account_id(conn, "2500")
+        expense_acct = _account_id(conn, "5300")
+        _insert_balanced_entry(
+            conn, expense_acct, ap_parent, amount=10000,
+            source_type="expense", source_id=event_id,
+        )
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "expense_payment_account_mismatch"
+    )
+    assert check["status"] == "fail"
+    assert check["issue_count"] == 1
+    f = check["details"][0]
+    assert f["mismatch_kind"] == "parent_not_sub_account"
+
+
+def test_expense_payment_account_mismatch_flags_debt_wrong_parent():
+    """Debt expense crediting an asset account (wrong parent) is flagged."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        event_id = _insert_expense_event_full(
+            conn, category="Vận chuyển", payment_method="Nợ", vendor="NCC Gamma",
+        )
+        cash = _account_id(conn, "1100")  # wrong — asset, not 2500 sub
+        expense_acct = _account_id(conn, "5300")
+        _insert_balanced_entry(
+            conn, expense_acct, cash, amount=10000,
+            source_type="expense", source_id=event_id,
+        )
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "expense_payment_account_mismatch"
+    )
+    assert check["status"] == "fail"
+    assert check["issue_count"] == 1
+    f = check["details"][0]
+    assert f["mismatch_kind"] == "wrong_parent"
+
+
+def test_expense_payment_account_mismatch_passes_staff_advance_sub_account():
+    """Staff-advance expense crediting a per-staff 2300 sub-account passes."""
+    from baker.db.schema import _ensure_staff_payable_sub_account
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        event_id = _insert_expense_event_full(
+            conn, category="Vận chuyển",
+            payment_source="Nhân viên ứng trước", paid_by_name="Anh Tân",
+        )
+        staff_sub = _ensure_staff_payable_sub_account(conn, "Anh Tân")
+        expense_acct = _account_id(conn, "5300")
+        _insert_balanced_entry(
+            conn, expense_acct, staff_sub, amount=10000,
+            source_type="expense", source_id=event_id,
+        )
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "expense_payment_account_mismatch"
+    )
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+def test_expense_payment_account_mismatch_passes_on_clean_db():
+    with get_db() as conn:
+        ensure_schema(conn)
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "expense_payment_account_mismatch"
+    )
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Source ledger totals (DG-245 Phase 5, FR8/AC6)
+# ---------------------------------------------------------------------------
+
+
+def test_source_ledger_totals_passes_on_clean_db():
+    with get_db() as conn:
+        ensure_schema(conn)
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "source_ledger_totals"
+    )
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0
+
+
+def test_source_ledger_totals_passes_when_expense_in_sync():
+    """An expense event journalled correctly produces 0 delta for the
+    ``expense`` class."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        event_id = _insert_expense_event_full(
+            conn, category="Vận chuyển", payment_source="Shop tiền mặt",
+        )
+        _expense_je(conn, event_id, "5300", "1100", amount=10000)
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "source_ledger_totals"
+    )
+    expense_cls = next(
+        d for d in check["details"] if d["class"] == "expense"
+    ) if check["details"] else None
+    # When in sync there are no details at all.
+    assert check["status"] == "pass"
+    assert expense_cls is None
+
+
+def test_source_ledger_totals_flags_expense_gap_when_je_removed():
+    """When an expense event has data.amount_vnd but no journal entry, the
+    ``expense`` class reports a non-zero delta with the offending event id
+    (AC6 non-zero-delta case)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        event_id = _insert_expense_event_full(
+            conn, category="Vận chuyển", payment_source="Shop tiền mặt",
+            amount=15000,
+        )
+        # No journal entry created — the source SUM includes it, journal SUM
+        # does not, so the delta is non-zero.
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "source_ledger_totals"
+    )
+    assert check["status"] == "fail"
+    expense_cls = next(d for d in check["details"] if d["class"] == "expense")
+    assert expense_cls["source_total"] == 15000.0
+    assert expense_cls["journal_total"] == 0.0
+    assert expense_cls["delta"] == 15000.0
+    assert event_id in expense_cls["offending_source_ids"]
+
+
+def test_source_ledger_totals_passes_when_payment_transaction_in_sync():
+    """A correctly journalled payment transaction produces 0 delta for the
+    ``payment_transaction`` class."""
+    from baker.services.journal_sync import _sync_payment_journal
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_cur = conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, total_price, status, due_date) "
+            "VALUES (?, ?, ?, 'pending', '2026-06-10')",
+            ("ORD-SLT-1", "Tester", 500000.0),
+        )
+        order_id = int(order_cur.lastrowid)
+        txn_cur = conn.execute(
+            "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+            "VALUES (?, ?, 'deposit', 'cash', '')",
+            (order_id, 200000.0),
+        )
+        txn_id = int(txn_cur.lastrowid)
+        _sync_payment_journal(
+            conn, txn_id, 200000.0, "deposit", "cash", order_id=order_id,
+        )
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "source_ledger_totals"
+    )
+    pt_cls = next(
+        (d for d in check["details"] if d["class"] == "payment_transaction"), None,
+    )
+    assert check["status"] == "pass"
+    assert pt_cls is None
+
+
+def test_source_ledger_totals_flags_payment_transaction_gap():
+    """A payment transaction with no journal entry produces a non-zero delta
+    for the ``payment_transaction`` class (AC6)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_cur = conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, total_price, status, due_date) "
+            "VALUES (?, ?, ?, 'pending', '2026-06-10')",
+            ("ORD-SLT-2", "Tester", 500000.0),
+        )
+        order_id = int(order_cur.lastrowid)
+        txn_cur = conn.execute(
+            "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+            "VALUES (?, ?, 'deposit', 'cash', '')",
+            (order_id, 75000.0),
+        )
+        txn_id = int(txn_cur.lastrowid)
+        # No _sync_payment_journal call — journal side is 0.
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "source_ledger_totals"
+    )
+    assert check["status"] == "fail"
+    pt_cls = next(d for d in check["details"] if d["class"] == "payment_transaction")
+    assert pt_cls["source_total"] == 75000.0
+    assert pt_cls["journal_total"] == 0.0
+    assert pt_cls["delta"] == 75000.0
+    assert txn_id in pt_cls["offending_source_ids"]
+
+
+def test_source_ledger_totals_passes_when_order_cogs_in_sync():
+    """A correctly journalled order COGS entry produces 0 delta for the
+    ``order_cogs`` class."""
+    from baker.services.journal_sync import _sync_delivered_order_journal
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Seed a product with cost_history so resolve_product_cost > 0.
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) "
+            "VALUES (?, ?, ?)",
+            (1, 20000.0, "2020-01-01"),
+        )
+        order_cur = conn.execute(
+            "INSERT INTO orders (order_ref, customer_name, total_price, status, due_date) "
+            "VALUES (?, ?, ?, 'pending', '2026-06-10')",
+            ("ORD-SLT-COGS", "Tester", 100000.0),
+        )
+        order_id = int(order_cur.lastrowid)
+        # Add a deposit payment so the order is a paid revenue order.
+        dep_cur = conn.execute(
+            "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+            "VALUES (?, ?, 'deposit', 'cash', '')",
+            (order_id, 100000.0),
+        )
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(
+            conn, int(dep_cur.lastrowid), 100000.0, "deposit", "cash",
+            order_id=order_id,
+        )
+        conn.execute(
+            "INSERT INTO order_items "
+            "(order_id, product_id, product_name, quantity, unit_price, is_extra, is_gift, cost_at_sale) "
+            "VALUES (?, ?, ?, ?, ?, 0, 0, ?)",
+            (order_id, str(1), "Test", 2, 50000.0, 20000.0),
+        )
+        # Deliver the order — this syncs revenue + COGS (and shipping release).
+        conn.execute("UPDATE orders SET status = 'delivered' WHERE id = ?", (order_id,))
+        _sync_delivered_order_journal(conn, order_id, "ORD-SLT-COGS")
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "source_ledger_totals"
+    )
+    cogs_cls = next(
+        (d for d in check["details"] if d["class"] == "order_cogs"), None,
+    )
+    assert check["status"] == "pass", f"source_ledger_totals failed: {check['details']}"
+    assert cogs_cls is None
+
+
+# ---------------------------------------------------------------------------
 # Timestamp format (DG-202 TC-3, TC-4)
 # ---------------------------------------------------------------------------
 
@@ -1074,3 +1438,321 @@ def test_transaction_date_empty_when_not_set():
         ).fetchone()
     # transaction_date may be NULL or empty string.
     assert row["transaction_date"] is None or row["transaction_date"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Review-remediation verification (d-045718, DG-245 review d-b1fbbc)
+# CQ-1: source_ledger_totals expense_settlement delta = 0 for debt settlement
+# CQ-3: unmapped-category expense produces no source_ledger_totals delta
+# ---------------------------------------------------------------------------
+
+
+def test_source_ledger_totals_settlement_delta_zero_for_debt_settlement():
+    """CQ-1 (Major): a debt expense + full settlement produces a 0 delta for the
+    ``expense_settlement`` class. The journal-side SUM must match the vendor
+    25xx sub-account debit (not the 2500 parent), so the prior exact-match on
+    ``ACCOUNTS_PAYABLE_CODE`` (which always summed 0) no longer yields a
+    false-positive delta."""
+    import json
+    from baker.db.schema import EXPENSE_DEBT_PAYMENT_METHOD, _ensure_ap_vendor_sub_account
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # 1. Debt expense event — source side for `expense` class.
+        eid = _insert_expense_event_full(
+            conn, category="Vận chuyển", amount=300000,
+            payment_method=EXPENSE_DEBT_PAYMENT_METHOD, vendor="NCC CQ1",
+        )
+        vendor_acc = _ensure_ap_vendor_sub_account(conn, "NCC CQ1")
+        expense_acc = _account_id(conn, "5300")
+        _insert_balanced_entry(
+            conn, expense_acc, vendor_acc, amount=300000,
+            source_type="expense", source_id=eid,
+        )
+        # 2. Full settlement — source side for `expense_settlement` class.
+        settlement_id = 9001
+        conn.execute(
+            "UPDATE events SET data = ? WHERE id = ?",
+            (json.dumps({
+                "amount_vnd": 300000,
+                "category": "Vận chuyển",
+                "payment_method": EXPENSE_DEBT_PAYMENT_METHOD,
+                "vendor": "NCC CQ1",
+                "settlements": [{"id": settlement_id, "amount": 300000}],
+            }), eid),
+        )
+        asset_acc = _account_id(conn, "1100")
+        # Settlement JE: DR vendor 25xx sub-account, CR asset 1100.
+        _insert_balanced_entry(
+            conn, vendor_acc, asset_acc, amount=300000,
+            source_type="expense_settlement", source_id=settlement_id,
+        )
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "source_ledger_totals"
+    )
+    settlement_cls = next(
+        (d for d in check["details"] if d["class"] == "expense_settlement"), None,
+    )
+    # The settlement class must be in sync (delta 0) — no false positive.
+    assert settlement_cls is None, (
+        f"expense_settlement class reported a delta: {settlement_cls}"
+    )
+    assert check["status"] == "pass", (
+        f"source_ledger_totals failed: {check['details']}"
+    )
+
+
+def test_source_ledger_totals_skips_unmapped_category_expense():
+    """CQ-3 (Minor): an expense event with an unmapped category (not in
+    ``EXPENSE_CATEGORY_TO_ACCOUNT_CODE``) produces no JE at build time, so the
+    ``expense`` source-sum must skip it too — otherwise source_ledger_totals
+    reports a phantom delta for a by-design unjournalled event."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Unmapped category — _build_expense_journal_lines returns None.
+        eid = _insert_expense_event_full(
+            conn, category="UnmappedCategoryXYZ", payment_source="Shop tiền mặt",
+            amount=12000,
+        )
+        # No JE created (mirrors build-time skip).
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "source_ledger_totals"
+    )
+    expense_cls = next(
+        (d for d in check["details"] if d["class"] == "expense"), None,
+    )
+    assert expense_cls is None, (
+        f"expense class reported a delta for an unmapped category: {expense_cls}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# COGS amount accuracy — snapshot-first regression tests (DG-247 Phase 2)
+# AC1-AC5: regression coverage for the snapshot-first cost resolution order.
+# ---------------------------------------------------------------------------
+
+
+def _insert_order_cogs_entry(conn, *, order_id: int, cogs_debit: float) -> int:
+    """Insert a balanced ``order_cogs`` journal entry (DR COGS 5900 /
+    CR Inventory 1300) with the given COGS debit and return its id.
+
+    Mirrors the entry shape produced by ``_sync_order_cogs_entry`` so the
+    ``cogs_amount_accuracy`` validator query (which filters on
+    ``source_type = 'order_cogs'`` and sums the COGS-account debit) picks it
+    up.
+    """
+    cogs_acct = _account_id(conn, "5900")
+    inv_acct = _account_id(conn, "1300")
+    return _insert_balanced_entry(
+        conn, cogs_acct, inv_acct, amount=cogs_debit,
+        source_type="order_cogs", source_id=order_id,
+    )
+
+
+def _insert_delivered_order_with_item(
+    conn,
+    *,
+    product_id: str,
+    unit_price: float,
+    quantity: int = 1,
+    cost_at_sale: float | None = 0,
+) -> tuple[int, int]:
+    """Insert a delivered order with a single non-extra/non-gift item and
+    return ``(order_id, item_id)``. ``cost_at_sale`` defaults to 0; pass
+    ``None`` to insert a SQL NULL.
+    """
+    order_cur = conn.execute(
+        "INSERT INTO orders (order_ref, customer_name, total_price, status, due_date) "
+        "VALUES (?, ?, ?, 'delivered', '2026-06-10')",
+        ("ORD-COGS-ACC", "Tester", unit_price * quantity),
+    )
+    order_id = int(order_cur.lastrowid)
+    if cost_at_sale is None:
+        item_cur = conn.execute(
+            "INSERT INTO order_items "
+            "(order_id, product_id, product_name, quantity, unit_price, is_extra, is_gift, cost_at_sale) "
+            "VALUES (?, ?, ?, ?, ?, 0, 0, NULL)",
+            (order_id, product_id, "Test product", quantity, unit_price),
+        )
+    else:
+        item_cur = conn.execute(
+            "INSERT INTO order_items "
+            "(order_id, product_id, product_name, quantity, unit_price, is_extra, is_gift, cost_at_sale) "
+            "VALUES (?, ?, ?, ?, ?, 0, 0, ?)",
+            (order_id, product_id, "Test product", quantity, unit_price, cost_at_sale),
+        )
+    return order_id, int(item_cur.lastrowid)
+
+
+def _cogs_amount_accuracy_check(report):
+    return next(c for c in report["checks"] if c["check"] == "cogs_amount_accuracy")
+
+
+def test_snapshot_respected_after_cost_history_drift():
+    """AC1: ``cost_at_sale`` snapshot takes precedence — a cost_history row
+    added/changed after delivery must NOT produce a false-positive mismatch.
+
+    Setup: order_item with cost_at_sale=10000 and a matching journal debit of
+    10000. A later cost_history row with a higher cost is inserted AFTER
+    delivery. The validator must report no mismatch (snapshot wins over the
+    drifted cost_history).
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_id, _item_id = _insert_delivered_order_with_item(
+            conn, product_id="1", unit_price=100000, cost_at_sale=10000,
+        )
+        _insert_order_cogs_entry(conn, order_id=order_id, cogs_debit=10000)
+        # cost_history drift AFTER delivery — higher cost would have
+        # produced a mismatch under the pre-snapshot validator.
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) "
+            "VALUES (?, ?, ?)",
+            (1, 99999, "2020-01-01"),
+        )
+        report = run_validation(conn)
+    check = _cogs_amount_accuracy_check(report)
+    assert check["status"] == "pass", (
+        f"snapshot not respected — drift flagged: {check['details']}"
+    )
+    assert check["issue_count"] == 0
+
+
+def test_zero_cost_at_sale_fallback_to_resolve_product_cost():
+    """AC2: when ``cost_at_sale`` is 0/NULL the expected COGS is computed via
+    ``resolve_product_cost(conn, pid, selling_price=unit_price)``.
+
+    Setup: product 1 has a cost_history cost of 8000; order_item has
+    cost_at_sale=0 and unit_price=50000. The resolved cost should be 8000
+    (cost_history wins over the baseline 30% rule), so a journal debit of
+    8000 must report no mismatch.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) "
+            "VALUES (?, ?, ?)",
+            (1, 8000, "2020-01-01"),
+        )
+        order_id, _item_id = _insert_delivered_order_with_item(
+            conn, product_id="1", unit_price=50000, cost_at_sale=0,
+        )
+        _insert_order_cogs_entry(conn, order_id=order_id, cogs_debit=8000)
+        report = run_validation(conn)
+    check = _cogs_amount_accuracy_check(report)
+    assert check["status"] == "pass", (
+        f"resolve_product_cost fallback not honored: {check['details']}"
+    )
+    assert check["issue_count"] == 0
+
+
+def test_true_positive_real_mismatch_still_flagged():
+    """AC3: a genuine COGS debit mismatch (beyond DEBIT_CREDIT_TOLERANCE) is
+    still flagged with the correct actual/expected/difference detail.
+
+    Setup: order_item with cost_at_sale=10000, journal debit=15000 (a true
+    5000 mismatch). The validator must flag it with actual_cogs=15000,
+    expected_cogs=10000, difference=5000.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_id, _item_id = _insert_delivered_order_with_item(
+            conn, product_id="1", unit_price=100000, cost_at_sale=10000,
+        )
+        _insert_order_cogs_entry(conn, order_id=order_id, cogs_debit=15000)
+        report = run_validation(conn)
+    check = _cogs_amount_accuracy_check(report)
+    assert check["status"] == "fail"
+    assert check["issue_count"] == 1
+    finding = check["details"][0]
+    assert finding["order_id"] == order_id
+    assert finding["actual_cogs"] == 15000.0
+    assert finding["expected_cogs"] == 10000.0
+    assert finding["difference"] == 5000.0
+
+
+def test_read_only_no_writes():
+    """AC4/NFR1: a validation run performs no writes — zero rows are
+    modified in ``order_items`` or any other table.
+
+    Captures per-table row counts and a checksum of every row in
+    ``order_items`` before and after the run; both must be unchanged. The
+    test deliberately seeds an item with cost_at_sale=0 and a cost_history
+    row so the fallback path (which the write-back path would mutate under
+    the old behaviour) is exercised.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) "
+            "VALUES (?, ?, ?)",
+            (1, 7000, "2020-01-01"),
+        )
+        order_id, item_id = _insert_delivered_order_with_item(
+            conn, product_id="1", unit_price=50000, cost_at_sale=0,
+        )
+        _insert_order_cogs_entry(conn, order_id=order_id, cogs_debit=7000)
+
+        # Snapshot per-table row counts for every table that exists.
+        table_names = [
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            )
+        ]
+        pre_counts = {
+            t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            for t in table_names
+        }
+        # Snapshot the exact cost_at_sale value for the seeded item so a
+        # silent write-back (the behaviour this check forbids) is detected.
+        pre_cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()[0]
+
+        run_validation(conn)
+
+        post_counts = {
+            t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            for t in table_names
+        }
+        post_cost = conn.execute(
+            "SELECT cost_at_sale FROM order_items WHERE id = ?", (item_id,)
+        ).fetchone()[0]
+
+    assert pre_counts == post_counts, (
+        f"row counts changed during validation: "
+        f"added={ {k: v for k, v in post_counts.items() if v != pre_counts[k]} }"
+    )
+    assert pre_cost == post_cost, (
+        f"cost_at_sale was mutated: {pre_cost} -> {post_cost}"
+    )
+    assert post_cost == 0, "cost_at_sale should remain 0 (read-only)"
+
+
+def test_unresolvable_product_fallback_parity():
+    """AC5: an item whose ``product_id`` resolves to no products row and
+    ``cost_at_sale = 0`` computes its expected cost via
+    ``_baseline_cost_for_product("", 0.0, price_override=unit_price)``,
+    matching journal_sync exactly.
+
+    Setup: product_id='' (empty — unresolvable), cost_at_sale=0,
+    unit_price=20000. Expected cost = round(20000 * 0.30, 2) = 6000. A
+    journal debit of 6000 must report no mismatch — the validator's
+    fallback path matches the live delivery/journal_sync fallback.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        order_id, _item_id = _insert_delivered_order_with_item(
+            conn, product_id="", unit_price=20000, cost_at_sale=0,
+        )
+        _insert_order_cogs_entry(conn, order_id=order_id, cogs_debit=6000)
+        report = run_validation(conn)
+    check = _cogs_amount_accuracy_check(report)
+    assert check["status"] == "pass", (
+        f"unresolvable-product fallback mismatch vs journal_sync: "
+        f"{check['details']}"
+    )
+    assert check["issue_count"] == 0

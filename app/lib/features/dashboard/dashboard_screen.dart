@@ -8,18 +8,10 @@ import '../../providers/order_providers.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/date_formatting.dart';
+import '../../shared/utils/order_helpers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../providers/order/critical_alert_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-
-// Active (non-terminal) statuses shown in the summary
-const _activeStatuses = [
-  'new',
-  'confirmed',
-  'in_progress',
-  'ready',
-  'delivered',
-];
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -148,7 +140,7 @@ class _DashboardContent extends StatelessWidget {
 
     // Status counts for summary
     final statusCounts = {
-      for (final s in _activeStatuses)
+      for (final s in activeOrderStatuses)
         s: orders.where((o) => o.status == s).length,
     };
 
@@ -193,7 +185,7 @@ class _DashboardContent extends StatelessWidget {
           if (todayOrders.isNotEmpty) ...[
             const _SectionHeader(title: VN.todayOrders),
             const SizedBox(height: 8),
-            for (final s in _activeStatuses)
+            for (final s in activeOrderStatuses)
               if (todayByStatus.containsKey(s)) ...[
                 _StatusGroupHeader(status: s, count: todayByStatus[s]!.length),
                 ...todayByStatus[s]!.map(
@@ -273,7 +265,7 @@ class _SummaryCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final s in _activeStatuses)
+                for (final s in activeOrderStatuses)
                   if ((statusCounts[s] ?? 0) > 0)
                     _StatusBadge(status: s, count: statusCounts[s]!),
               ],

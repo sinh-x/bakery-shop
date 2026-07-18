@@ -3,9 +3,10 @@
 from datetime import date as date_type
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from baker.api.auth import RequireRole, record_audit_log, resolve_actor
 from baker.db.connection import get_db
 from baker.utils.time import now_utc
 
@@ -95,7 +96,7 @@ def list_templates(period: Optional[str] = None):
 
 
 @router.post("/templates", status_code=201)
-def create_template(body: TemplateCreate):
+def create_template(body: TemplateCreate, actor: str = Depends(RequireRole("admin"))):
     """Tạo mẫu checklist mới."""
     if body.period not in ("opening", "closing"):
         raise HTTPException(status_code=400, detail="period phải là 'opening' hoặc 'closing'")
@@ -104,14 +105,24 @@ def create_template(body: TemplateCreate):
             "INSERT INTO checklist_templates (name, period, sort_order, active, created_at) VALUES (?, ?, ?, ?, ?)",
             (body.name, body.period, body.sort_order, 1 if body.active else 0, now_utc()),
         )
+        new_id = cursor.lastrowid
+        record_audit_log(
+            conn,
+            actor,
+            "create",
+            "checklist_template",
+            new_id,
+            old_value=None,
+            new_value={"name": body.name, "period": body.period, "sort_order": body.sort_order, "active": body.active},
+        )
         row = conn.execute(
-            "SELECT * FROM checklist_templates WHERE id = ?", (cursor.lastrowid,)
+            "SELECT * FROM checklist_templates WHERE id = ?", (new_id,)
         ).fetchone()
         return _template_row(row)
 
 
 @router.put("/templates/{template_id}")
-def update_template(template_id: int, body: TemplateUpdate):
+def update_template(template_id: int, body: TemplateUpdate, actor: str = Depends(RequireRole("admin"))):
     """Cập nhật mẫu checklist."""
     with get_db() as conn:
         existing = conn.execute(
@@ -123,6 +134,7 @@ def update_template(template_id: int, body: TemplateUpdate):
         if body.period is not None and body.period not in ("opening", "closing"):
             raise HTTPException(status_code=400, detail="period phải là 'opening' hoặc 'closing'")
 
+        old_snapshot = _template_row(existing)
         fields = {}
         if body.name is not None:
             fields["name"] = body.name
@@ -139,6 +151,15 @@ def update_template(template_id: int, body: TemplateUpdate):
             conn.execute(
                 f"UPDATE checklist_templates SET {set_clause} WHERE id = ?", values
             )
+            record_audit_log(
+                conn,
+                actor,
+                "update",
+                "checklist_template",
+                template_id,
+                old_value=old_snapshot,
+                new_value=fields,
+            )
 
         row = conn.execute(
             "SELECT * FROM checklist_templates WHERE id = ?", (template_id,)
@@ -147,7 +168,7 @@ def update_template(template_id: int, body: TemplateUpdate):
 
 
 @router.delete("/templates/{template_id}", status_code=204)
-def delete_template(template_id: int):
+def delete_template(template_id: int, actor: str = Depends(RequireRole("admin"))):
     """Xóa mẫu checklist."""
     with get_db() as conn:
         existing = conn.execute(
@@ -156,6 +177,15 @@ def delete_template(template_id: int):
         if not existing:
             raise HTTPException(status_code=404, detail="Không tìm thấy mẫu checklist")
         conn.execute("DELETE FROM checklist_templates WHERE id = ?", (template_id,))
+        record_audit_log(
+            conn,
+            actor,
+            "delete",
+            "checklist_template",
+            template_id,
+            old_value=None,
+            new_value=None,
+        )
 
 
 # ── Daily checklist endpoints ────────────────────────────────────────────────
@@ -183,7 +213,7 @@ def get_daily_checklist(date: Optional[str] = None):
 
 
 @router.post("/daily/{entry_id}/toggle")
-def toggle_entry(entry_id: int, body: ToggleRequest):
+def toggle_entry(entry_id: int, body: ToggleRequest, request: Request):
     """Đánh dấu hoàn thành / bỏ đánh dấu một mục checklist."""
     with get_db() as conn:
         existing = conn.execute(
@@ -199,11 +229,14 @@ def toggle_entry(entry_id: int, body: ToggleRequest):
                 (entry_id,),
             )
         else:
-            # Tick
+            # Tick — AC14/FR17: derive completed_by from the authenticated JWT
+            # identity rather than trusting free-text client input. Grace
+            # period (AUTH_REQUIRED=false) falls back to body.staff_name.
+            actor = resolve_actor(request, body.staff_name)
             conn.execute(
                 "UPDATE checklist_entries SET completed = 1, completed_by = ?, "
                 "completed_at = ? WHERE id = ?",
-                (body.staff_name, now_utc(), entry_id),
+                (actor, now_utc(), entry_id),
             )
 
         row = conn.execute(

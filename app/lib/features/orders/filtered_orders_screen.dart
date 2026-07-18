@@ -9,23 +9,63 @@ import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/order_helpers.dart';
 import 'widgets/order_card.dart';
 
-const _criticalStatuses = <String>[
-  'new',
-  'confirmed',
-  'in_progress',
-  'ready',
-  'delivered',
-  'completed',
-  'cancelled',
-];
+/// Filters [orders] to those with urgency critical OR urgent AND an active
+/// (non-terminal) status. Used by the urgency filtered listing reached by
+/// tapping the urgency banner — must match the banner's count.
+List<Order> filterUrgencyActive(List<Order> orders) {
+  return orders
+      .where(
+        (o) =>
+            (o.urgency == urgencyCritical || o.urgency == urgencyUrgent) &&
+            activeOrderStatuses.contains(o.status),
+      )
+      .toList();
+}
 
-const _incompleteStatuses = <String>[
-  'new',
-  'confirmed',
-  'in_progress',
-  'ready',
-  'delivered',
-];
+/// Filters [orders] to those with completeness incomplete AND an active
+/// (non-terminal) status. Used by the incomplete filtered listing reached by
+/// tapping the incomplete banner — must match the banner's count.
+List<Order> filterIncompleteActive(List<Order> orders) {
+  return orders
+      .where(
+        (o) =>
+            o.completeness == completenessIncomplete &&
+            activeOrderStatuses.contains(o.status),
+      )
+      .toList();
+}
+
+/// Counts active (non-terminal) orders with urgency critical. Used by the
+/// urgency banner's critical chip.
+int countCriticalActive(List<Order> orders) {
+  return orders
+      .where(
+        (o) => o.urgency == urgencyCritical && activeOrderStatuses.contains(o.status),
+      )
+      .length;
+}
+
+/// Counts active (non-terminal) orders with urgency urgent. Used by the
+/// urgency banner's urgent chip.
+int countUrgentActive(List<Order> orders) {
+  return orders
+      .where(
+        (o) => o.urgency == urgencyUrgent && activeOrderStatuses.contains(o.status),
+      )
+      .length;
+}
+
+/// Counts active (non-terminal) incomplete orders. Used by the incomplete
+/// banner.
+int countIncompleteActive(List<Order> orders) {
+  return orders
+      .where(
+        (o) =>
+            o.completeness == completenessIncomplete &&
+            activeOrderStatuses.contains(o.status),
+      )
+      .length;
+}
 
 class FilteredOrdersScreen extends ConsumerStatefulWidget {
   const FilteredOrdersScreen({super.key, required this.filter});
@@ -49,14 +89,14 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
     super.dispose();
   }
 
-  List<String> get _statuses =>
-      _isIncomplete ? _incompleteStatuses : _criticalStatuses;
+  List<String> get _statuses => activeOrderStatuses;
 
   String get _title =>
-      _isIncomplete ? OrdersLabels.incompleteBannerTitle : OrdersLabels.criticalOrdersTitle;
+      _isIncomplete ? OrdersLabels.incompleteBannerTitle : OrdersLabels.combinedUrgencyTitle;
 
-  String get _emptyText =>
-      _isIncomplete ? OrdersLabels.incompleteFilterEmpty : OrdersLabels.urgencyFilterEmpty;
+  String get _emptyText => _isIncomplete
+      ? OrdersLabels.incompleteFilterEmpty
+      : OrdersLabels.combinedUrgencyFilterEmpty;
 
   List<Order> _applySearch(List<Order> orders) {
     if (_searchQuery.trim().isEmpty) return orders;
@@ -75,9 +115,9 @@ class _FilteredOrdersScreenState extends ConsumerState<FilteredOrdersScreen> {
 
     List<Order> applyFilter(List<Order> orders) {
       if (_isIncomplete) {
-        return orders.where((o) => o.completeness == completenessIncomplete).toList();
+        return filterIncompleteActive(orders);
       }
-      return orders.where((o) => o.urgency == urgencyCritical).toList();
+      return filterUrgencyActive(orders);
     }
 
     return Scaffold(

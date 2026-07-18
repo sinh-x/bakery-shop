@@ -4,6 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from baker.api.accounts import router as accounts_router
+from baker.api.audit_log import router as audit_log_router
+from baker.api.auth import router as auth_router
 from baker.api.cake_queue import router as cake_queue_router
 from baker.api.catalog import catalog_router as catalog_browse_router
 from baker.api.catalog import router as catalog_router
@@ -14,7 +16,7 @@ from baker.api.customers import router as customers_router
 from baker.api.events import expenses_router, router as events_router
 from baker.api.exception_handlers import global_exception_handler
 from baker.api.knowledge import router as knowledge_router
-from baker.api.middleware import LoggingMiddleware
+from baker.api.middleware import AuthMiddleware, LoggingMiddleware
 from baker.api.order_photos import router as order_photos_router
 from baker.api.orders import router as orders_router
 from baker.api.payment_transactions import router as payment_transactions_router
@@ -36,6 +38,25 @@ from baker.logging import setup_logging
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    # Mn-5 (DG-029 phase 5.6-c1): refuse to start when AUTH_REQUIRED=true
+    # and BAKER_JWT_SECRET is empty/ephemeral — otherwise every restart
+    # silently rotates the signing key and invalidates all issued tokens.
+    # Grace-period mode (AUTH_REQUIRED=false) keeps the existing warning
+    # behavior and is intentionally not enforced here.
+    import logging
+
+    from baker.config import AUTH_REQUIRED as _AUTH_REQUIRED
+    from baker.config import JWT_SECRET_EPHEMERAL as _JWT_EPHEMERAL
+
+    _logger = logging.getLogger("baker.config")
+    if _AUTH_REQUIRED and _JWT_EPHEMERAL:
+        raise RuntimeError(
+            "BAKER_JWT_SECRET is not set while AUTH_REQUIRED=true — refusing to "
+            "start (an ephemeral secret would invalidate all tokens on every "
+            "restart). Set BAKER_JWT_SECRET to a stable 256-bit secret, or set "
+            "AUTH_REQUIRED=false for the grace-period mode."
+        )
+
     app = FastAPI(
         title="Baker API",
         description="Bakery shop operations API",
@@ -54,6 +75,11 @@ def create_app() -> FastAPI:
 
     # Logging middleware (added before CORS so it wraps all requests)
     app.add_middleware(LoggingMiddleware)
+
+    # Auth middleware (added after logging so it is the outermost layer —
+    # auth rejection happens before request logging sees the handler response).
+    # DG-029 Phase 2: JWT validation, role extraction, denylist check (FR2/FR6).
+    app.add_middleware(AuthMiddleware)
 
     # Tailscale network is air-gapped; only lily.tail10c2c6.ts.net is trusted
     app.add_middleware(
@@ -98,6 +124,8 @@ def create_app() -> FastAPI:
             "journalSyncFailureLogRows": failure_log_rows,
         }
 
+    app.include_router(auth_router)
+    app.include_router(audit_log_router)
     app.include_router(photos_router)
     app.include_router(products_router)
     app.include_router(accounts_router)

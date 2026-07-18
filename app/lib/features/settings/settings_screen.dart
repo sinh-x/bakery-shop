@@ -2,13 +2,16 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../data/api/api_client.dart';
+import '../../features/auth/auth_provider.dart';
 import '../../providers/events_provider.dart';
 import '../../providers/staff_provider.dart';
-import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:bakery_app/shared/labels/customers.dart';
 import 'widgets/settings_sections.dart';
+import 'catalog_tags_settings_tab.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -36,11 +39,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    final auth = ref.read(authProvider);
+    _isAdmin = auth.isAuthenticated && auth.isAdmin;
+    _tabController = TabController(length: _isAdmin ? 4 : 3, vsync: this);
     _urlController = TextEditingController();
     _manualNameCtrl = TextEditingController();
     _loadAppVersion();
   }
+
+  late final bool _isAdmin;
 
   @override
   void didChangeDependencies() {
@@ -175,10 +182,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         title: const Text(VN.settings),
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(icon: Icon(Icons.person), text: VN.generalSettings),
-            Tab(icon: Icon(Icons.settings), text: VN.technicalSettings),
-            Tab(icon: Icon(Icons.card_giftcard), text: VN.extrasSettings),
+          tabs: [
+            const Tab(icon: Icon(Icons.person), text: VN.generalSettings),
+            if (_isAdmin)
+              const Tab(
+                icon: Icon(Icons.settings),
+                text: VN.technicalSettings,
+              ),
+            const Tab(icon: Icon(Icons.card_giftcard), text: VN.extrasSettings),
+            const Tab(
+              icon: Icon(Icons.label_outline),
+              text: VN.catalogTagEditor,
+            ),
           ],
         ),
       ),
@@ -220,115 +235,136 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             ],
           ),
 
-          // ── Tab 2: Kỹ thuật ──────────────────────────────────────
-          ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              // App version
-              InfoRow(
+          // ── Tab 2: Kỹ thuật (admin-only, FR16/AC10) ─────────────
+          if (_isAdmin)
+            ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // App version
+                InfoRow(
                   label: VN.appVersion,
-                  value: _appVersion.isEmpty ? '...' : _appVersion),
-              const SizedBox(height: 8),
-
-              // Server version
-              InfoRow(label: VN.serverVersion, value: _serverVersion),
-              const SizedBox(height: 16),
-
-              // Printer paper mode (DG-183 Phase 2)
-              const PaperModeSection(),
-              const SizedBox(height: 16),
-
-              // Server URL
-              Text(VN.apiUrlLabel,
-                  style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: 4),
-              Text(
-                VN.apiUrlHelp,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: Colors.grey),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _urlController,
-                decoration: const InputDecoration(
-                  hintText: VN.apiUrlHint,
-                  prefixIcon: Icon(Icons.dns),
-                  border: OutlineInputBorder(),
+                  value: _appVersion.isEmpty ? '...' : _appVersion,
                 ),
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                onChanged: (_) {
-                  if (_testResult != null) setState(() => _testResult = null);
-                },
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _testing ? null : _testConnection,
-                      icon: _testing
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.wifi_find),
-                      label: Text(_testing ? VN.testing : VN.testConnection),
-                    ),
+                const SizedBox(height: 8),
+                // Server version
+                InfoRow(label: VN.serverVersion, value: _serverVersion),
+                const SizedBox(height: 16),
+                // Printer paper mode (DG-183 Phase 2)
+                const PaperModeSection(),
+                const SizedBox(height: 16),
+                // Server URL
+                Text(
+                  VN.apiUrlLabel,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  VN.apiUrlHelp,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Colors.grey),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _urlController,
+                  decoration: const InputDecoration(
+                    hintText: VN.apiUrlHint,
+                    prefixIcon: Icon(Icons.dns),
+                    border: OutlineInputBorder(),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: _saveUrl,
-                      icon: const Icon(Icons.save),
-                      label: const Text(VN.save),
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  onChanged: (_) {
+                    if (_testResult != null) {
+                      setState(() => _testResult = null);
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _testing ? null : _testConnection,
+                        icon: _testing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.wifi_find),
+                        label: Text(_testing ? VN.testing : VN.testConnection),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _saveUrl,
+                        icon: const Icon(Icons.save),
+                        label: const Text(VN.save),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_testResult != null) ...[
+                  const SizedBox(height: 16),
+                  Card(
+                    color: _testResult!.success
+                        ? Colors.green.shade50
+                        : Colors.red.shade50,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _testResult!.success
+                                ? Icons.check_circle
+                                : Icons.error,
+                            color: _testResult!.success
+                                ? Colors.green
+                                : Colors.red,
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            _testResult!.success
+                                ? VN.connectionSuccess
+                                : VN.connectionFailed,
+                            style: TextStyle(
+                              color: _testResult!.success
+                                  ? Colors.green.shade800
+                                  : Colors.red.shade800,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
-              ),
-              if (_testResult != null) ...[
-                const SizedBox(height: 16),
-                Card(
-                  color: _testResult!.success
-                      ? Colors.green.shade50
-                      : Colors.red.shade50,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _testResult!.success
-                              ? Icons.check_circle
-                              : Icons.error,
-                          color: _testResult!.success
-                              ? Colors.green
-                              : Colors.red,
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          _testResult!.success
-                              ? VN.connectionSuccess
-                              : VN.connectionFailed,
-                          style: TextStyle(
-                            color: _testResult!.success
-                                ? Colors.green.shade800
-                                : Colors.red.shade800,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                const SizedBox(height: 24),
+                // Audit log entry (admin-only — this tab is admin-gated).
+                ListTile(
+                  leading: const Icon(Icons.history_edu),
+                  title: const Text(VN.openAuditLog),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/audit-log'),
+                ),
+                // Duplicate finder (admin-only — DG-252 Phase 7 — FR7/AC4).
+                ListTile(
+                  leading: const Icon(Icons.merge_type),
+                  title: const Text(CustomersLabels.duplicateFinderTitle),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/customers/duplicates'),
                 ),
               ],
-            ],
-          ),
+            ),
 
           // ── Tab 3: Phụ kiện đi kèm ────────────────────────────────
           const ExtrasSettingsTab(),
+
+          // ── Tab 4: Thẻ ảnh ────────────────────────────────────────
+          const CatalogTagsSettingsTab(),
         ],
       ),
     );

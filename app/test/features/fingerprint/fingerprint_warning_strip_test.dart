@@ -1,16 +1,21 @@
 import 'package:bakery_app/app.dart';
+import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/providers/fingerprint_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../auth/login_screen_test_helpers.dart';
+
 void main() {
   testWidgets('shows top warning strip when fingerprints mismatch', (
     tester,
   ) async {
+    final prefs = await seedAuthenticatedPrefs();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
           fingerprintComparisonProvider.overrideWith((ref) async {
             return const FingerprintComparison(
               state: FingerprintComparisonState.mismatch,
@@ -29,9 +34,11 @@ void main() {
   });
 
   testWidgets('hides warning strip when fingerprints match', (tester) async {
+    final prefs = await seedAuthenticatedPrefs();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
           fingerprintComparisonProvider.overrideWith((ref) async {
             return const FingerprintComparison(
               state: FingerprintComparisonState.match,
@@ -55,9 +62,11 @@ void main() {
   testWidgets('shows top warning strip when server fingerprint is unknown', (
     tester,
   ) async {
+    final prefs = await seedAuthenticatedPrefs();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
           fingerprintComparisonProvider.overrideWith((ref) async {
             return const FingerprintComparison(
               state: FingerprintComparisonState.serverUnknown,
@@ -80,9 +89,11 @@ void main() {
   testWidgets('hides warning strip when fingerprint state is unknown', (
     tester,
   ) async {
+    final prefs = await seedAuthenticatedPrefs();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
           fingerprintComparisonProvider.overrideWith((ref) async {
             return const FingerprintComparison(
               state: FingerprintComparisonState.unknown,

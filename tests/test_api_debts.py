@@ -62,8 +62,8 @@ def _create_debt_expense(client, amount=500000, vendor="Nhà cung cấp A",
 
 
 def test_debt_expense_creates_journal_entry_crediting_2500(api_client):
-    """AC2 (DG-212): expense with payment_method='Nợ', vendor='Nhà cung cấp A'
-    → debit expense account, credit 2500 (Accounts Payable)."""
+    """AC2 (DG-245 Phase 3): expense with payment_method='Nợ', vendor='Nhà cung cấp A'
+    → debit expense account, credit a per-vendor 25xx sub-account under 2500."""
     resp = api_client.post("/api/events", json={
         "summary": "Nợ bột mì",
         "type": "expense",
@@ -91,14 +91,18 @@ def test_debt_expense_creates_journal_entry_crediting_2500(api_client):
         # "Vận chuyển" is a non-inventory expense → debit 5300 (Delivery/Shipping)
         expense_acc = Account.get_by_id(conn, debit_line.account_id)
         assert expense_acc.code == "5300"
-        # Credit must hit Accounts Payable (2500)
+        # Credit must hit a per-vendor sub-account under Accounts Payable (2500),
+        # not the 2500 parent itself (DG-245 Phase 3, FR2/FR3).
         ap_acc = Account.get_by_id(conn, credit_line.account_id)
-        assert ap_acc.code == "2500"
+        assert ap_acc.code.startswith("25") and ap_acc.code != "2500"
+        assert ap_acc.name == "Nhà cung cấp A"
+        parent_acc = Account.get_by_id(conn, ap_acc.parent_id)
+        assert parent_acc.code == "2500"
 
 
 def test_debt_expense_inventory_category_debits_inventory_credits_2500(api_client):
     """Debt expense for an inventory-purchase category (Nguyên liệu) debits
-    Inventory (1300) and credits Accounts Payable (2500)."""
+    Inventory (1300) and credits a per-vendor 25xx sub-account under 2500."""
     resp = api_client.post("/api/events", json={
         "summary": "Nợ nguyên liệu",
         "type": "expense",
@@ -123,7 +127,10 @@ def test_debt_expense_inventory_category_debits_inventory_credits_2500(api_clien
         inventory_acc = Account.get_by_id(conn, debit_line.account_id)
         assert inventory_acc.code == "1300"
         ap_acc = Account.get_by_id(conn, credit_line.account_id)
-        assert ap_acc.code == "2500"
+        assert ap_acc.code.startswith("25") and ap_acc.code != "2500"
+        assert ap_acc.name == "Nhà cung cấp B"
+        parent_acc = Account.get_by_id(conn, ap_acc.parent_id)
+        assert parent_acc.code == "2500"
 
 
 def test_debt_expense_omits_payment_source(api_client):
@@ -202,8 +209,10 @@ def test_settle_debt_records_actor_in_history(api_client):
 
 
 def test_settle_debt_full_creates_journal_entry(api_client):
-    """FR4: POST /api/expenses/{id}/settle creates DR 2500 / CR Asset journal."""
-    expense = _create_debt_expense(api_client, amount=500000)
+    """FR4/FR5 (DG-245 Phase 4): POST /api/expenses/{id}/settle creates a
+    journal entry that DR the vendor's 25xx sub-account (same one the expense
+    credited) / CR Asset."""
+    expense = _create_debt_expense(api_client, amount=500000, vendor="Nhà cung cấp A")
     eid = int(expense["id"])
     resp = api_client.post(f"/api/expenses/{eid}/settle", json={
         "amount": 500000,
@@ -227,13 +236,76 @@ def test_settle_debt_full_creates_journal_entry(api_client):
         lines = _lines_for_entry(conn, entry_id)
         debit_line = next(l for l in lines if l.debit > 0)
         credit_line = next(l for l in lines if l.credit > 0)
-        # DR 2500 (Accounts Payable), CR 1100 (Cash on Hand — Shop tiền mặt)
+        # FR5: DR the vendor's 25xx sub-account under 2500 (not the 2500
+        # parent), CR 1100 (Cash on Hand — Shop tiền mặt).
         ap_acc = Account.get_by_id(conn, debit_line.account_id)
         asset_acc = Account.get_by_id(conn, credit_line.account_id)
-        assert ap_acc.code == "2500"
+        assert ap_acc.code.startswith("25") and ap_acc.code != "2500"
+        assert ap_acc.name == "Nhà cung cấp A"
+        parent_acc = Account.get_by_id(conn, ap_acc.parent_id)
+        assert parent_acc.code == "2500"
         assert asset_acc.code == "1100"
         assert debit_line.debit == 500000.0
         assert credit_line.credit == 500000.0
+
+
+def test_settle_debt_full_nets_vendor_sub_account_to_zero(api_client):
+    """AC4 (DG-245 Phase 4): after a full debt settlement, the vendor's 25xx
+    sub-account nets to zero — the expense credited it and the settlement
+    debited the same sub-account."""
+    expense = _create_debt_expense(api_client, amount=400000, vendor="NCC SettleZero")
+    eid = int(expense["id"])
+    resp = api_client.post(f"/api/expenses/{eid}/settle", json={
+        "amount": 400000,
+        "payment_method": "Tiền mặt",
+        "payment_source": "Shop tiền mặt",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "paid"
+    with get_db() as conn:
+        vendor_acc = conn.execute(
+            "SELECT id FROM accounts WHERE name = ? AND parent_id = "
+            "(SELECT id FROM accounts WHERE code = '2500')",
+            ("NCC SettleZero",),
+        ).fetchone()
+        assert vendor_acc is not None
+        vid = int(vendor_acc[0])
+        # Sum debit - credit across all journal lines touching the vendor sub-acct.
+        net = conn.execute(
+            "SELECT COALESCE(SUM(jl.debit - jl.credit), 0) FROM journal_lines jl "
+            "WHERE jl.account_id = ?",
+            (vid,),
+        ).fetchone()[0]
+        assert float(net) == 0.0
+
+
+def test_settle_debt_partial_keeps_vendor_sub_account_positive(api_client):
+    """AC4 (DG-245 Phase 4): a partial settlement leaves the vendor's 25xx
+    sub-account with the remaining credit balance (not netted to zero)."""
+    expense = _create_debt_expense(api_client, amount=500000, vendor="NCC PartialZero")
+    eid = int(expense["id"])
+    resp = api_client.post(f"/api/expenses/{eid}/settle", json={
+        "amount": 200000,
+        "payment_method": "Tiền mặt",
+        "payment_source": "Shop tiền mặt",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["remaining"] == 300000
+    with get_db() as conn:
+        vendor_acc = conn.execute(
+            "SELECT id FROM accounts WHERE name = ? AND parent_id = "
+            "(SELECT id FROM accounts WHERE code = '2500')",
+            ("NCC PartialZero",),
+        ).fetchone()
+        assert vendor_acc is not None
+        vid = int(vendor_acc[0])
+        net = conn.execute(
+            "SELECT COALESCE(SUM(jl.debit - jl.credit), 0) FROM journal_lines jl "
+            "WHERE jl.account_id = ?",
+            (vid,),
+        ).fetchone()[0]
+        # Expense credited 500000, settlement debited 200000 → net -300000.
+        assert float(net) == -300000.0
 
 
 def test_settle_debt_partial_tracks_remaining_balance(api_client):
@@ -439,3 +511,157 @@ def test_edit_debt_expense_re_syncs_journal(api_client):
         assert debit_line.debit == 450000.0
         # Same entry id (in-place update).
         assert after[0].id == orig_id
+
+
+# ---------------------------------------------------------------------------
+# DG-245 Phase 3 — per-vendor 25xx sub-account + cash↔debt edit round-trip
+# ---------------------------------------------------------------------------
+
+
+def test_per_vendor_sub_account_is_max_based_and_unique(api_client):
+    """FR2: two distinct vendors get distinct 25xx sub-accounts, MAX-based,
+    and the same vendor reuses its existing sub-account."""
+    _create_debt_expense(api_client, amount=100000, vendor="NCC Alpha",
+                         summary="Nợ Alpha 1")
+    _create_debt_expense(api_client, amount=100000, vendor="NCC Beta",
+                         summary="Nợ Beta 1")
+    _create_debt_expense(api_client, amount=100000, vendor="NCC Alpha",
+                         summary="Nợ Alpha 2")
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT code, name FROM accounts "
+            "WHERE parent_id = (SELECT id FROM accounts WHERE code = '2500') "
+            "ORDER BY code"
+        ).fetchall()
+        names = [r["name"] for r in rows]
+        codes = [r["code"] for r in rows]
+        # Two distinct vendor sub-accounts, each used twice (idempotent).
+        assert names.count("NCC Alpha") == 1
+        assert names.count("NCC Beta") == 1
+        # MAX-based: first sub-account is 2501, second is 2502.
+        assert "2501" in codes
+        assert "2502" in codes
+
+
+def test_cash_to_debt_to_cash_edit_round_trip(api_client):
+    """AC2 (DG-245 Phase 3): editing an expense cash→debt→cash produces the
+    correct credit each time and leaves no stale journal entry.
+
+    - Start as cash expense → credit asset 1100 (Shop tiền mặt).
+    - Edit to debt → credit vendor 25xx sub-account under 2500.
+    - Edit back to cash → credit 1100 again.
+    - Exactly one journal entry exists for the expense at each step (in-place
+      update, no stale entries).
+    """
+    # 1. Create a cash expense.
+    resp = api_client.post("/api/events", json={
+        "summary": "Tiền mặt ban đầu",
+        "type": "expense",
+        "data": {
+            "amount_vnd": 200000,
+            "category": "Vận chuyển",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "NCC RoundTrip",
+            "note": "",
+            "paid_by_name": "",
+        },
+    })
+    assert resp.status_code == 201
+    eid = int(resp.json()["id"])
+
+    def _credit_code(conn):
+        entries = _journal_for_source(conn, "expense", eid)
+        assert len(entries) == 1, "expected exactly one journal entry"
+        lines = _lines_for_entry(conn, entries[0].id)
+        credit_line = next(l for l in lines if l.credit > 0)
+        return Account.get_by_id(conn, credit_line.account_id).code, entries[0].id
+
+    with get_db() as conn:
+        code_cash, entry_id_1 = _credit_code(conn)
+    assert code_cash == "1100"
+
+    # 2. Edit cash → debt. The existing unlocked JE is updated in place and
+    #    its credit must now hit the vendor's 25xx sub-account (not 2500).
+    patch_debt = api_client.patch(f"/api/events/{eid}", json={
+        "data": {
+            "amount_vnd": 200000,
+            "category": "Vận chuyển",
+            "payment_method": "Nợ",
+            "payment_source": "",
+            "vendor": "NCC RoundTrip",
+            "note": "chuyển sang nợ",
+            "paid_by_name": "",
+        },
+    })
+    assert patch_debt.status_code == 200
+    with get_db() as conn:
+        code_debt, entry_id_2 = _credit_code(conn)
+        # Sub-account under 2500, not the 2500 parent.
+        assert code_debt.startswith("25") and code_debt != "2500"
+        # In-place update: same entry id, no stale JE.
+        assert entry_id_2 == entry_id_1
+
+    # 3. Edit debt → cash. The credit must return to the asset 1100 and the
+    #    entry must still be the same in-place JE (no stale entry left behind).
+    patch_cash = api_client.patch(f"/api/events/{eid}", json={
+        "data": {
+            "amount_vnd": 200000,
+            "category": "Vận chuyển",
+            "payment_method": "Tiền mặt",
+            "payment_source": "Shop tiền mặt",
+            "vendor": "NCC RoundTrip",
+            "note": "chuyển lại tiền mặt",
+            "paid_by_name": "",
+        },
+    })
+    assert patch_cash.status_code == 200
+    with get_db() as conn:
+        code_cash2, entry_id_3 = _credit_code(conn)
+    assert code_cash2 == "1100"
+    assert entry_id_3 == entry_id_1
+
+
+def test_edit_debt_expense_vendor_change_switches_sub_account(api_client):
+    """Editing a debt expense to a different vendor re-points the credit to
+    that vendor's own 25xx sub-account (single source of truth)."""
+    _create_debt_expense(api_client, amount=150000, vendor="NCC Gamma",
+                         summary="Nợ Gamma")
+    expense = _create_debt_expense(api_client, amount=150000, vendor="NCC Delta",
+                                   summary="Nợ Delta")
+    eid = int(expense["id"])
+    with get_db() as conn:
+        entries = _journal_for_source(conn, "expense", eid)
+        assert len(entries) == 1
+        lines = _lines_for_entry(conn, entries[0].id)
+        credit_line = next(l for l in lines if l.credit > 0)
+        delta_acc = Account.get_by_id(conn, credit_line.account_id)
+        assert delta_acc.name == "NCC Delta"
+
+    # Re-point to the existing Gamma sub-account (must reuse, not create new).
+    patch_resp = api_client.patch(f"/api/events/{eid}", json={
+        "data": {
+            "amount_vnd": 150000,
+            "category": "Vận chuyển",
+            "payment_method": "Nợ",
+            "payment_source": "",
+            "vendor": "NCC Gamma",
+            "note": "đổi chủ nợ",
+            "paid_by_name": "",
+        },
+    })
+    assert patch_resp.status_code == 200
+    with get_db() as conn:
+        entries = _journal_for_source(conn, "expense", eid)
+        assert len(entries) == 1
+        lines = _lines_for_entry(conn, entries[0].id)
+        credit_line = next(l for l in lines if l.credit > 0)
+        gamma_acc = Account.get_by_id(conn, credit_line.account_id)
+        assert gamma_acc.name == "NCC Gamma"
+        # Only two vendor sub-accounts should exist (Gamma + Delta).
+        rows = conn.execute(
+            "SELECT name FROM accounts "
+            "WHERE parent_id = (SELECT id FROM accounts WHERE code = '2500')"
+        ).fetchall()
+        vendor_names = {r["name"] for r in rows}
+        assert vendor_names == {"NCC Gamma", "NCC Delta"}

@@ -1,7 +1,7 @@
 name: bakery_app
 description: "Bakery management mobile app for Tiệm Bánh Ninh Diêm"
 publish_to: 'none'
-version: 0.7.5+85
+version: 0.7.14+98
 
 environment:
   sdk: ^3.12.0
@@ -82,6 +82,9 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+  # Testing
+  mockito: ^5.4.4
 
   # Linting
   flutter_lints: ^6.0.0

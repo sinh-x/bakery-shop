@@ -37,10 +37,12 @@ from baker.commands.staff import staff_cmd
 from baker.commands.serve import serve_cmd
 from baker.commands.db import db_cmd
 from baker.commands.server_log import server_log_cmd
+from baker.commands.user import user_cmd
+from baker.commands.session import session_cmd
 from baker.commands.validate import validate_accounts_cmd
 from baker.commands.report import report_cmd
 from baker.commands.pipeline import pipeline_cmd
-from baker.commands.repair import repair_order_revenue_cmd, repair_tien_rut_gap_cmd, check_revenue_gaps_cmd, repair_payment_journal_cmd, repair_ar_entries_cmd, repair_future_dates_cmd, repair_inventory_cmd, repair_deposit_balance_cmd, repair_cancelled_orders_cmd
+from baker.commands.repair import repair_order_revenue_cmd, repair_tien_rut_gap_cmd, check_revenue_gaps_cmd, repair_payment_journal_cmd, repair_ar_entries_cmd, repair_future_dates_cmd, repair_inventory_cmd, repair_deposit_balance_cmd, repair_cancelled_orders_cmd, repair_debt_expenses_cmd
 
 app.add_command(log_cmd, "log")
 app.add_command(organize_cmd, "organize")
@@ -56,6 +58,8 @@ app.add_command(staff_cmd, "staff")
 app.add_command(serve_cmd, "serve")
 app.add_command(db_cmd)
 app.add_command(server_log_cmd, "server-log")
+app.add_command(user_cmd, "user")
+app.add_command(session_cmd, "session")
 app.add_command(validate_accounts_cmd, "validate-accounts")
 app.add_command(report_cmd, "report")
 app.add_command(pipeline_cmd, "pipeline")
@@ -68,3 +72,4 @@ app.add_command(repair_future_dates_cmd, "repair-future-dates")
 app.add_command(repair_inventory_cmd, "repair-inventory")
 app.add_command(repair_deposit_balance_cmd, "repair-deposit-balance")
 app.add_command(repair_cancelled_orders_cmd, "repair-cancelled-orders")
+app.add_command(repair_debt_expenses_cmd, "repair-debt-expenses")

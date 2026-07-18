@@ -1,12 +1,13 @@
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/debt_settlement_screen.dart';
-import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../auth/login_screen_test_helpers.dart';
 
 BakeryEvent _debtEvent({
   required int id,
@@ -79,7 +80,11 @@ void main() {
       final event = _debtEvent(id: 7, amount: 500000);
       Map<String, dynamic>? captured;
 
-      SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+      SharedPreferences.setMockInitialValues({
+        'auth_token': kTestAdminToken,
+        'auth_username': 'Lan',
+        'auth_role': 'staff',
+      });
       final prefs = await SharedPreferences.getInstance();
 
       await tester.pumpWidget(

@@ -57,3 +57,34 @@ final customerOrdersProvider =
   final service = ref.read(customerServiceProvider);
   return service.getCustomerOrders(id);
 });
+
+/// Admin duplicate-finder group list (DG-252 Phase 7 — FR7/AC4).
+///
+/// AsyncNotifier wrapping `GET /api/customers/duplicates`. Screens call
+/// `refresh()` after a successful merge so the merged group disappears and
+/// any newly-revealed duplicates reload.
+class DuplicateGroupsNotifier
+    extends AsyncNotifier<List<DuplicateGroup>> {
+  @override
+  Future<List<DuplicateGroup>> build() async {
+    final service = ref.read(customerServiceProvider);
+    final result = await service.listDuplicates();
+    return result.groups;
+  }
+
+  /// Re-fetches the duplicate groups from the backend (after a merge, manual
+  /// refresh, etc.).
+  Future<void> refresh() async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final service = ref.read(customerServiceProvider);
+      final result = await service.listDuplicates();
+      return result.groups;
+    });
+  }
+}
+
+final duplicateGroupsProvider =
+    AsyncNotifierProvider<DuplicateGroupsNotifier, List<DuplicateGroup>>(
+  DuplicateGroupsNotifier.new,
+);

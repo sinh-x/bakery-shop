@@ -6,10 +6,11 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Query, Request, UploadFile
 from PIL import UnidentifiedImageError
 from pydantic import BaseModel
 
+from baker.api.auth import resolve_actor
 from baker.api.photos import read_image_upload, save_photo
 from baker.db.connection import get_db
 from baker.db.queries import fetch_debts, fetch_events, find_staff_by_name, link_event_person
@@ -66,7 +67,7 @@ def _row_to_dict(row) -> dict:
 
 
 @router.post("", status_code=201)
-def create_event(body: EventCreate):
+def create_event(body: EventCreate, request: Request):
     """Tạo sự kiện mới."""
     if not body.summary.strip():
         raise HTTPException(status_code=422, detail="summary không được để trống")
@@ -78,11 +79,16 @@ def create_event(body: EventCreate):
         if not Order.exists(body.orderId):
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 
+    # AC14/FR17: derive the logger identity from the authenticated JWT
+    # session rather than trusting free-text client input. Grace period
+    # (AUTH_REQUIRED=false) falls back to body.logged_by.
+    logged_by = resolve_actor(request, body.logged_by)
+
     event = Event(
         summary=body.summary.strip(),
         type=body.type,
         tags=body.tags,
-        logged_by=body.logged_by,
+        logged_by=logged_by,
         data=body.data,
         source=body.source,
         timestamp=timestamp,
@@ -92,12 +98,14 @@ def create_event(body: EventCreate):
     with get_db() as conn:
         event_id = event.save(conn)
 
-        actor = body.logged_by if body.logged_by else ("CLI" if body.source == "cli" else "")
+        actor = resolve_actor(
+            request, body.logged_by if body.logged_by else ("CLI" if body.source == "cli" else "")
+        )
         _log_event_history(conn, event_id, "create", actor=actor)
 
         # Link logger to event_people if they exist in staff table
-        if body.logged_by:
-            staff = find_staff_by_name(conn, body.logged_by)
+        if logged_by:
+            staff = find_staff_by_name(conn, logged_by)
             if staff:
                 link_event_person(conn, event_id, staff["id"], "logged_by")
 
@@ -283,7 +291,7 @@ def _validate_expense_data(event_type: str, data: dict[str, Any]) -> None:
 
 
 @router.patch("/{event_id}")
-def update_event(event_id: int, body: EventUpdate):
+def update_event(event_id: int, body: EventUpdate, request: Request):
     """Cập nhật sự kiện (summary, type, tags, logged_by, data)."""
     with get_db() as conn:
         row = conn.execute(
@@ -314,8 +322,11 @@ def update_event(event_id: int, body: EventUpdate):
             values.append(",".join(data["tags"]))
 
         if "logged_by" in data:
+            # AC14/FR17: when authenticated, the actor is derived from the
+            # JWT identity; ignore client-supplied free-text changes. During
+            # the grace period, honor the client value (backward compat).
             fields.append("logged_by = ?")
-            values.append(data["logged_by"])
+            values.append(resolve_actor(request, data["logged_by"]))
 
         if "timestamp" in data:
             fields.append("timestamp = ?")
@@ -335,8 +346,10 @@ def update_event(event_id: int, body: EventUpdate):
             fields.append("data = ?")
             values.append(json.dumps(data["data"]))
 
-        # Log edit entries for each changed field before executing the update
-        actor = data.get("logged_by", "")
+        # Log edit entries for each changed field before executing the update.
+        # AC14/FR17: derive the audit actor from the authenticated identity
+        # rather than trusting the client-supplied logged_by.
+        actor = resolve_actor(request, data.get("logged_by", ""))
         for field_name, new_val in data.items():
             if field_name == "data":
                 old_json = row["data"] or ""
@@ -387,7 +400,7 @@ def update_event(event_id: int, body: EventUpdate):
 
 
 @router.delete("/{event_id}", status_code=204)
-def delete_event(event_id: int, deleted_by: str = Query("", description="Người thực hiện xóa")):
+def delete_event(event_id: int, request: Request, deleted_by: str = Query("", description="Người thực hiện xóa")):
     """Xóa mềm sự kiện theo id."""
     with get_db() as conn:
         row = conn.execute(
@@ -396,12 +409,14 @@ def delete_event(event_id: int, deleted_by: str = Query("", description="Ngườ
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
 
+        # AC14/FR17: derive the delete actor from the authenticated identity.
+        actor = resolve_actor(request, deleted_by)
         now = now_utc()
         conn.execute(
             "UPDATE events SET deleted_at = ?, deleted_by = ? WHERE id = ?",
-            (now, deleted_by, event_id),
+            (now, actor, event_id),
         )
-        _log_event_history(conn, event_id, "delete", actor=deleted_by)
+        _log_event_history(conn, event_id, "delete", actor=actor)
 
         # On soft-delete of an expense event, reverse/delete its journal entry (DG-175).
         if row["type"] == "expense":

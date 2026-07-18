@@ -1,6 +1,6 @@
 [project]
 name = "baker"
-version = "0.7.5"
+version = "0.7.14"
 description = "Bakery shop operations tracker — capture first, organize later"
 requires-python = ">=3.10"
 dependencies = [
@@ -10,8 +10,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "httpx>=0.27"]
-web = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9", "Pillow>=10.0"]
+dev = ["pytest>=8.0", "httpx>=0.27", "pytest-xdist>=3.5"]
+web = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9", "Pillow>=10.0", "passlib[bcrypt]>=1.7", "bcrypt>=4.0,<4.1", "PyJWT>=2.8"]
 
 [project.scripts]
 baker = "baker.cli:app"

@@ -23,11 +23,13 @@ router = APIRouter(prefix="/api/orders", tags=["receipts"])
 
 # --- Constants ---
 
-RECEIPT_WIDTH = 576  # 80mm at 203 DPI
+RECEIPT_WIDTH = 576  # 80mm at 203 DPI (76mm print area)
+RECEIPT_MAX_HEIGHT = 1040  # 130mm at 203 DPI — height cap for work_ticket/customer receipts
 MARGIN = 20
 CONTENT_WIDTH = RECEIPT_WIDTH - 2 * MARGIN
 THUMBNAIL_SIZE = 128
-LINE_GAP = 6
+LINE_GAP = 4  # DG-228 Phase 2: reduced from 6 for vertical compaction
+_SZ_FOOTER = 14  # DG-228 Phase 3 / FR-6: "Trang N/M" footer marker font (metadata-only exception to 16pt floor)
 
 # Font sizes (optimized for 203 DPI thermal print)
 _SZ_TITLE = 32
@@ -74,15 +76,13 @@ def _tien_rut_received(conn, order_id: int) -> float:
 
 
 def _tien_rut_target(work_items: list) -> float:
-    """Sum of cash_amount across all tien_rut items in an order."""
-    total = 0.0
-    for item in work_items:
-        attrs = item.get("attributes") or {}
-        if attrs.get("rut_tien") == "true":
-            cash_amount = attrs.get("cash_amount")
-            if cash_amount:
-                total += float(cash_amount)
-    return total
+    """Sum of cash_amount across all tien_rut items in an order.
+
+    CQ-8: uses the guarded ``_cash_amount_value`` helper so a malformed
+    ``cash_amount`` (e.g. ``"abc"``) on one item cannot raise ValueError
+    and break the whole receipt render.
+    """
+    return sum(_cash_amount_value(item) for item in work_items)
 
 
 def _format_vnd(amount) -> str:
@@ -142,9 +142,9 @@ def _row(draw, y, label, value, font_l, font_v=None, color_v=(0, 0, 0)):
 
 def _sep(draw, y):
     """Thin separator line."""
-    y += 12  # padding above line
+    y += 8  # DG-228 Phase 2: reduced pre-separator padding (was 12)
     draw.line([(MARGIN, y), (RECEIPT_WIDTH - MARGIN, y)], fill=(160, 160, 160), width=1)
-    return y + 14  # padding below line
+    return y + 10  # DG-228 Phase 2: reduced post-separator padding (was 14)
 
 
 def _double(draw, y):
@@ -203,6 +203,133 @@ def _find_content_bottom(img):
     inverted = img.point(lambda p: 255 - p)
     bbox = inverted.getbbox()
     return bbox[3] + 1 if bbox else 0
+
+
+def _find_split_boundaries(img, max_h: int) -> list:
+    """Find natural section-break y-coordinates suitable as page split points.
+
+    Scans the image for horizontal rows that are entirely white (content gaps)
+    and returns a list of candidate y-coordinates. These are rows where the
+    receipt has vertical whitespace, so splitting there keeps sections intact
+    on each page. Only rows in the range [MARGIN, content_bottom - MARGIN] are
+    considered; the very top and bottom are excluded to avoid degenerate splits.
+    """
+    inverted = img.point(lambda p: 255 - p)
+    bbox = inverted.getbbox()
+    if not bbox:
+        return []
+    content_bottom = bbox[3] + 1
+    if content_bottom <= max_h:
+        return []
+
+    # Scan each row; a row is a "gap" if it is entirely white across content width.
+    gap_rows = []
+    px = img.load()
+    for y in range(MARGIN, content_bottom - MARGIN):
+        is_gap = True
+        for x in range(MARGIN, RECEIPT_WIDTH - MARGIN):
+            if px[x, y] != (255, 255, 255):
+                is_gap = False
+                break
+        if is_gap:
+            gap_rows.append(y)
+
+    if not gap_rows:
+        return []
+
+    # Collapse consecutive gap rows into a single midpoint boundary.
+    boundaries = []
+    run_start = gap_rows[0]
+    prev = gap_rows[0]
+    for y in gap_rows[1:]:
+        if y == prev + 1:
+            prev = y
+        else:
+            boundaries.append((run_start + prev) // 2)
+            run_start = y
+            prev = y
+    boundaries.append((run_start + prev) // 2)
+    return boundaries
+
+
+def _split_pages(img: Image.Image) -> list:
+    """Split a receipt image into pages each no taller than RECEIPT_MAX_HEIGHT.
+
+    Divides the image at natural section boundaries (horizontal whitespace gaps)
+    when the content exceeds the cap. Each page is cropped to its content and a
+    "Trang N/M" footer marker (14pt, centered) is drawn on every page when more
+    than one page results. When the content fits within the cap, a single page is
+    returned with no footer.
+
+    The footer marker occupies a small band below the content; the content portion
+    of each page is sized so content + footer together stay within RECEIPT_MAX_HEIGHT.
+
+    Returns:
+        list[PIL.Image.Image]: one or more receipt page images (each width=RECEIPT_WIDTH).
+    """
+    content_bottom = _find_content_bottom(img)
+    if content_bottom == 0:
+        return [img.crop((0, 0, RECEIPT_WIDTH, MARGIN))]
+
+    footer_font = _font(_SZ_FOOTER)
+    footer_marker_h = _th("Trang", footer_font)
+    footer_band_h = footer_marker_h + 12  # marker + small padding above/below
+    # Content budget per page: leave room for the footer band within the cap.
+    content_budget = RECEIPT_MAX_HEIGHT - footer_band_h
+
+    # Single page — content fits within the cap (footer only added on multi-page).
+    if content_bottom <= RECEIPT_MAX_HEIGHT:
+        return [img.crop((0, 0, RECEIPT_WIDTH, content_bottom))]
+
+    # Multi-page: divide at natural section boundaries.
+    boundaries = _find_split_boundaries(img, RECEIPT_MAX_HEIGHT)
+    # CQ-1: greedy pack tracking the last boundary that fits within the budget.
+    # Previously the loop only split when boundary - page_start == budget exactly,
+    # so any boundary strictly beyond the budget caused a hard cut through text
+    # rows and any boundary before the budget was forgotten — effectively never
+    # splitting at natural section breaks. Now we remember the last in-budget
+    # boundary and split there, falling back to a hard cut only when no
+    # boundary fits in the window. The final tail is also re-checked: any
+    # oversized segment (including the tail) is hard-cut to stay within budget.
+    pages: list = []
+    page_start = 0
+    idx = 0
+    n = len(boundaries)
+    while page_start < content_bottom:
+        limit = page_start + content_budget
+        if limit >= content_bottom:
+            # Remaining content fits within one page.
+            pages.append((page_start, content_bottom))
+            break
+        # Find the last boundary within [page_start, limit].
+        last_fit = None
+        while idx < n and boundaries[idx] <= limit:
+            last_fit = boundaries[idx]
+            idx += 1
+        if last_fit is not None and last_fit > page_start:
+            pages.append((page_start, last_fit))
+            page_start = last_fit
+            # next iteration resumes from the same idx (boundaries are sorted
+            # and strictly increasing; the next boundary is beyond `limit`).
+        else:
+            # No boundary fits in the window — hard cut at the budget.
+            pages.append((page_start, limit))
+            page_start = limit
+
+    total_pages = len(pages)
+    result = []
+    for idx, (start, end) in enumerate(pages):
+        content_img = img.crop((0, start, RECEIPT_WIDTH, end))
+        marker = f"Trang {idx + 1}/{total_pages}"
+        # Append a white footer band below the content and draw the marker centered.
+        page_h = content_img.height + footer_band_h
+        page_img = Image.new("RGB", (RECEIPT_WIDTH, page_h), "white")
+        page_img.paste(content_img, (0, 0))
+        draw = ImageDraw.Draw(page_img)
+        footer_y = content_img.height + 6
+        _center(draw, footer_y, marker, footer_font, color=(100, 100, 100))
+        result.append(page_img)
+    return result
 
 
 def _dots(draw, y, x_start, x_end, font, color=(180, 180, 180)):
@@ -325,6 +452,108 @@ def _wrap(text, font, max_w):
     return lines
 
 
+def _draw_wrapped(draw, y, text, font, max_w, align="left", prefix="") -> int:
+    """Wrap ``text`` to ``max_w`` then draw each line, returning y after.
+
+    CQ-7: consolidates the wrap-then-draw idiom duplicated across five sites.
+
+    When ``prefix`` is provided, it is prepended to the first wrapped line only
+    and the first line's wrap width is reduced by the prefix width so the
+    prefix + first line fits within ``max_w`` (the address-variant behavior).
+
+    ``align`` may be "left" (drawn at MARGIN via ``_left``) or "center"
+    (drawn centered via ``_center``).
+    """
+    if not text and not prefix:
+        return y
+    if prefix:
+        first_w = max_w - _tw(prefix, font)
+        lines = _wrap(text, font, first_w) or [text]
+        if align == "center":
+            y = _center(draw, y, f"{prefix}{lines[0]}", font)
+        else:
+            y = _left(draw, y, f"{prefix}{lines[0]}", font)
+        for ln in lines[1:]:
+            if align == "center":
+                y = _center(draw, y, ln, font)
+            else:
+                y = _left(draw, y, ln, font)
+    else:
+        lines = _wrap(text, font, max_w) or [text]
+        for ln in lines:
+            if align == "center":
+                y = _center(draw, y, ln, font)
+            else:
+                y = _left(draw, y, ln, font)
+    return y
+
+
+def _cash_fee_amount(item: dict) -> float:
+    """Return the ``cash_fee`` amount for an item, or 0.0 when missing/malformed.
+
+    CQ-6: tolerates arbitrary client-supplied ``attributes`` values without
+    raising ValueError/TypeError, so a malformed ``cash_fee`` cannot cause
+    an HTTP 500 during receipt rendering. Only returns a non-zero amount
+    when the item has ``rut_tien == "true"`` and a parseable numeric fee.
+    """
+    attrs = item.get("attributes") or {}
+    if attrs.get("rut_tien") != "true":
+        return 0.0
+    raw = attrs.get("cash_fee")
+    if not raw:
+        return 0.0
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _cash_amount_value(item: dict) -> float:
+    """Return the ``cash_amount`` for an item, or 0.0 when missing/malformed.
+
+    CQ-8: mirrors the ``_cash_fee_amount`` guard so a malformed
+    ``cash_amount`` (e.g. non-numeric string, None, list) cannot raise
+    ValueError/TypeError during receipt rendering and cause an HTTP 500.
+    Only returns a non-zero amount when the item has ``rut_tien == "true"``
+    and a parseable numeric amount.
+    """
+    attrs = item.get("attributes") or {}
+    if attrs.get("rut_tien") != "true":
+        return 0.0
+    raw = attrs.get("cash_amount")
+    if not raw:
+        return 0.0
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _ensure_canvas_capacity(img: Image.Image, draw: ImageDraw.ImageDraw,
+                            y: int, headroom: int = 200) -> tuple:
+    """Grow ``img`` vertically if ``y + headroom`` would exceed the canvas.
+
+    CQ-3: the work-ticket (2000px) and customer-receipt (4000px) canvases are
+    fixed-height, but page splitting now makes tall content a supported case.
+    When a long note pushes the cursor past the canvas, PIL silently discards
+    `draw.text` beyond the canvas and the later crop fills the missing region
+    with solid black, producing solid-black printed labels. This helper grows
+    the canvas (doubling until it fits) and blits the existing content into the
+    top of the new canvas so no text is lost. Returns ``(new_img, new_draw)`` —
+    callers must rebind their local ``img``/``draw`` references.
+    """
+    needed = y + headroom
+    if needed <= img.height:
+        return img, draw
+    new_h = img.height
+    while new_h < needed:
+        new_h *= 2
+    new_img = Image.new("RGB", (RECEIPT_WIDTH, new_h), "white")
+    new_img.paste(img, (0, 0))
+    new_draw = ImageDraw.Draw(new_img)
+    return new_img, new_draw
+
+
 # --- Config ---
 
 def _shop_config(conn) -> dict:
@@ -392,6 +621,30 @@ def _order_visual_ref(order: dict) -> str:
     if public_code:
         return public_code
     return _order_ref_value(order)
+
+
+def _main_item_index_total(order: dict, work_item: dict) -> tuple:
+    """Return (1-based index, total) of work_item among main (non-extra/non-gift) items.
+
+    DG-228 Phase 3 / FR-3: used to merge the sub-item index into the work ticket ref
+    line. Extras and gifts are excluded from the numbering so production staff see
+    only the count of main production items. Returns (None, None) when the work_item
+    is not found among main items (e.g., it is itself an extra/gift) so the caller
+    omits the suffix.
+    """
+    work_items = order.get("workItems", []) or []
+    main_items = [
+        wi for wi in work_items
+        if not (wi.get("isExtra") or wi.get("is_extra")
+                or wi.get("isGift") or wi.get("is_gift"))
+    ]
+    if len(main_items) <= 1:
+        return None, None
+    target_id = work_item.get("id")
+    for idx, wi in enumerate(main_items, start=1):
+        if str(wi.get("id")) == str(target_id):
+            return idx, len(main_items)
+    return None, None
 
 
 def _customer_name_value(order: dict) -> str:
@@ -497,11 +750,16 @@ def _header(draw, y, cfg):
 
 # --- Receipt renderers ---
 
-def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="label") -> Image.Image:
+def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="label",
+                        item_index: Optional[int] = None,
+                        item_total: Optional[int] = None) -> Image.Image:
     """Internal receipt (Phiếu Nội Bộ) for production staff — single item per receipt.
 
     New layout: delivery on top, product info BIG, notes prominent, bottom boxes for
     customer name/source and due date/time. NO photo, NO table format.
+
+    When item_index and item_total are provided (multi-item order), the order ref
+    line merges the sub-item index per FR-3: "Mã: <ref> (n/m)".
     """
     img = Image.new("RGB", (RECEIPT_WIDTH, 2000), "white")
     draw = ImageDraw.Draw(img)
@@ -524,6 +782,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
 
     ref = _order_visual_ref(order)
     created = order.get("createdAt", "") or order.get("created_at", "")
+    # DG-228 review cycle 3: sub-item index moved from header to bottom ref line.
     header_line = f"Mã: {ref}"
     if created:
         header_line += f"  •  {created[:10]}"
@@ -544,7 +803,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
         y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
 
     if dtype != "pickup" and daddr:
-        y = _left(draw, y, f"Địa chỉ: {daddr}", fb)
+        y = _draw_wrapped(draw, y, daddr, fb, CONTENT_WIDTH, align="left", prefix="Địa chỉ: ")
 
     y = _double(draw, y)
 
@@ -557,10 +816,10 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
             (pid, pid),
         ).fetchone()
         if cat_name_row:
-            y = _left(draw, y, cat_name_row["name"].upper(), fbig)
+            y = _draw_wrapped(draw, y, cat_name_row["name"].upper(), fbig, CONTENT_WIDTH)
 
     product = work_item.get("productName", "") or work_item.get("product_name", "")
-    y = _left(draw, y, product, fproduct)
+    y = _draw_wrapped(draw, y, product, fproduct, CONTENT_WIDTH)
 
     qty = work_item.get("quantity", 1)
     unit_price = float(work_item.get("unitPrice", 0) or work_item.get("unit_price", 0))
@@ -586,21 +845,20 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
         y += max(_th(icon, ef), _th(age_text, tf)) + LINE_GAP
 
     # Cash-in-cake badge (rut tien) — amount on work ticket (fee is in summary)
-    attrs = work_item.get("attributes") or {}
-    cash_amount = attrs.get("cash_amount")
-    if attrs.get("rut_tien") == "true" and cash_amount and int(float(cash_amount)) > 0:
+    cash_amount = _cash_amount_value(work_item)
+    if cash_amount > 0:
         ef = _emoji_font(_SZ_MEDIUM)
         tf = _font(_SZ_MEDIUM, True)
         icon = "\U0001F4B0"
         icon_w = _tw(icon, ef)
-        amount_str = _format_vnd_full(float(cash_amount))
+        amount_str = _format_vnd_full(cash_amount)
         draw.text((MARGIN, y), icon, font=ef, fill=(0, 128, 0))
         draw.text((MARGIN + icon_w + 4, y), f" Số tiền rút: {amount_str}", font=tf, fill=(0, 128, 0))
         y += max(_th(icon, ef), _th(f" Số tiền rút: {amount_str}", tf)) + LINE_GAP
         # Rut tien transaction summary (received vs target)
         order_id = order.get("id")
         rut_received = _tien_rut_received(conn, order_id) if order_id else 0.0
-        if rut_received >= float(cash_amount):
+        if rut_received >= cash_amount:
             status_text = f"    Đã nhận: {_format_vnd_full(rut_received)}"
             status_color = (0, 128, 0)
         else:
@@ -620,10 +878,22 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
         y += max(_th(icon, ef), _th(" PHỤ LIỆU", tf)) + LINE_GAP
 
     # Enum attribute lines — each on its own row (Q3 / R3)
+    # DG-228 review cycle 3: draw a rectangle border around the group of enum
+    # attribute lines to visually highlight them.
     enum_labels = _enum_attribute_labels(conn)
     enum_font = _font(_SZ_MEDIUM, True)
-    for line in _wrapped_enum_attribute_lines(work_item, enum_labels, enum_font, CONTENT_WIDTH):
-        y = _left(draw, y, line, enum_font)
+    enum_lines = list(_wrapped_enum_attribute_lines(work_item, enum_labels, enum_font, CONTENT_WIDTH))
+    if enum_lines:
+        ENUM_PAD = 6
+        box_start_y = y
+        for line in enum_lines:
+            y = _left(draw, y, line, enum_font)
+        draw.rectangle(
+            [MARGIN - ENUM_PAD, box_start_y - ENUM_PAD,
+             RECEIPT_WIDTH - MARGIN + ENUM_PAD, y + ENUM_PAD - LINE_GAP],
+            outline=(100, 100, 100), width=2,
+        )
+        y += ENUM_PAD  # extra spacing after the box
 
     # Spacer between badge(s) and next section
     y += 10
@@ -634,6 +904,10 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
     order_notes = order.get("notes", "") or ""
 
     if notes or order_notes:
+        # CQ-3: grow the canvas before drawing long notes so the cursor never
+        # runs past the fixed 2000px canvas (which would silently discard text
+        # and append a solid-black band to the cropped output).
+        img, draw = _ensure_canvas_capacity(img, draw, y, headroom=max(len(notes), len(order_notes)) * 30)
         y = _left(draw, y, "GHI CHÚ", fnormal)
         y = _sep(draw, y)
 
@@ -641,6 +915,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
         if notes:
             for ln in _wrap(notes, note_font, CONTENT_WIDTH):
                 y = _left_mixed(draw, y, ln, note_font)
+                img, draw = _ensure_canvas_capacity(img, draw, y)
 
         if order_notes:
             if notes:
@@ -649,6 +924,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
             y = _left(draw, y, "Ghi chú đơn:", _font(_SZ_BODY, True), (100, 100, 100))
             for ln in _wrap(order_notes, note_font, CONTENT_WIDTH):
                 y = _left_mixed(draw, y, ln, note_font, (80, 80, 80))
+                img, draw = _ensure_canvas_capacity(img, draw, y)
 
     # ── Extras and Payment section (between notes and bottom boxes) ──
     work_items = order.get("workItems", [])
@@ -769,6 +1045,10 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
 
     bottom_ref = _order_public_code(order) or _order_ref_value(order)
     if bottom_ref:
+        # DG-228 review cycle 3: append sub-item index (n/m) to bottom ref
+        # for multi-item orders (moved from header line).
+        if item_index is not None and item_total is not None and item_total > 1:
+            bottom_ref = f"{bottom_ref} ({item_index}/{item_total})"
         y = _left(draw, y, bottom_ref, fbig)
 
     y += MARGIN
@@ -776,7 +1056,13 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
     # Tear indicator for roll mode (DG-184 Phase 2)
     y = _add_tear_indicator(img, draw, y, paper_mode)
 
-    return img.crop((0, 0, RECEIPT_WIDTH, y))
+    # DG-228 Phase 3: page splitting handled by _split_pages() at the API layer.
+    # Crop to content bottom (no max-height cap here) so the splitter can divide
+    # the full content at natural section boundaries when it exceeds the cap.
+    # CQ-3: clamp crop to the canvas height so a cursor that somehow exceeds
+    # the canvas cannot append a solid-black band to the cropped output.
+    crop_h = min(max(y, 1), img.height)
+    return img.crop((0, 0, RECEIPT_WIDTH, crop_h))
 
 
 def _render_bus_label(order, cfg, paper_mode="label") -> Image.Image:
@@ -1016,10 +1302,8 @@ def _render_financial_summary(draw, y, order, conn, fbb, fb) -> int:
         y = _row(draw, y, "Phí giao hàng:", _format_vnd_full(shipping_fee), fb)
     # Cash-in-cake fee (non-bold, like shipping fee)
     for item in work_items:
-        attrs = item.get("attributes") or {}
-        cash_fee = attrs.get("cash_fee")
-        if attrs.get("rut_tien") == "true" and cash_fee and int(float(cash_fee)) > 0:
-            fee_str = _format_vnd_full(float(cash_fee))
+        if _cash_fee_amount(item) > 0:
+            fee_str = _format_vnd_full(_cash_fee_amount(item))
             y = _row(draw, y, "Phí rút tiền:", fee_str, fb)
     y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
 
@@ -1234,7 +1518,8 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
     y = _sep(draw, y)
 
     # Order ref
-    y = _center(draw, y, _customer_reference_text(order), _font(_SZ_SUBTITLE, True))
+    ref_font = _font(_SZ_SUBTITLE, True)
+    y = _draw_wrapped(draw, y, _customer_reference_text(order), ref_font, CONTENT_WIDTH, align="center")
 
     # Date
     created = order.get("createdAt", "") or order.get("created_at", "")
@@ -1242,7 +1527,9 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
         y = _left(draw, y, f"Ngày: {created[:10]}", fb)
 
     # --- Section 1: Customer Info ---
-    y = _left(draw, y, _customer_heading_text(order), _font(_SZ_SUBTITLE, True))
+    heading_font = _font(_SZ_SUBTITLE, True)
+    heading_text = _customer_heading_text(order)
+    y = _draw_wrapped(draw, y, heading_text, heading_font, CONTENT_WIDTH)
     y = _sep(draw, y)
 
     y += 4
@@ -1265,19 +1552,49 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
     y += _th("SL", fbb) + LINE_GAP + 4
     y = _sep(draw, y)
 
+    # DG-228 review cycle 3: bundle all gift items into a single "Tặng:" line.
+    gift_items = [
+        it for it in work_items
+        if it.get("isGift") or it.get("is_gift") or False
+    ]
+    if gift_items:
+        gift_label = "Tặng:"
+        gift_body_parts = []
+        for it in gift_items:
+            g_name = it.get("productName", "") or it.get("product_name", "")
+            g_qty = it.get("quantity", 1)
+            gift_body_parts.append(f"{g_name} x{g_qty}")
+        gift_body = ", ".join(gift_body_parts)
+        label_w = _tw(gift_label, fbb)
+        space_w = _tw(" ", fbb)
+        body_max_w = CONTENT_WIDTH - label_w - space_w
+        gift_lines = _wrap(gift_body, fb, body_max_w) or [gift_body]
+        # First line: "Tặng: <first body line>" — green label, black body
+        draw.text((MARGIN, y), gift_label, font=fbb, fill=(0, 128, 0))
+        draw.text((MARGIN + label_w + space_w, y), gift_lines[0], font=fb, fill=(0, 0, 0))
+        y += max(_th(gift_label, fbb), _th(gift_lines[0], fb)) + LINE_GAP
+        # Continuation lines (wrap)
+        for gl in gift_lines[1:]:
+            draw.text((MARGIN + label_w + space_w, y), gl, font=fb, fill=(0, 0, 0))
+            y += _th(gl, fb) + LINE_GAP
+        # No price columns, no attribute/note/photo sub-rows for gifts.
+
     for i, item in enumerate(work_items):
         is_gift = item.get("isGift") or item.get("is_gift") or False
         item_name = item.get("productName", "") or item.get("product_name", "")
-        if is_gift:
-            item_name = f"{item_name} (Tặng)"
         qty = item.get("quantity", 1)
         unit_price = float(item.get("unitPrice", 0) or item.get("unit_price", 0))
         total = 0 if is_gift else qty * unit_price
 
+        if is_gift:
+            # Gift items already rendered as a single bundled line above.
+            continue
+
         # Item row: name | SL | Giá | Thành tiền
         # Wrap product name within column width
+        item_name_disp = item_name
         name_max_w = col_sl - MARGIN - 10
-        name_lines = _wrap(item_name, fb, name_max_w) or [item_name]
+        name_lines = _wrap(item_name_disp, fb, name_max_w) or [item_name_disp]
 
         # First line: product name ....... SL ....... Giá ....... T.Tiền
         draw.text((MARGIN, y), name_lines[0], font=fb, fill=(0, 0, 0))
@@ -1314,19 +1631,10 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
         for line in _wrapped_enum_attribute_lines(item, enum_labels, fb, CONTENT_WIDTH - 10):
             y = _left(draw, y, line, fb, x=MARGIN + 10)
 
-        # Photo — only for cake-category products, larger + centered, display only
+        # Photo — first attached photo for any item, larger + centered, display only
         item_id = item.get("id")
-        product_id = item.get("productId", "") or item.get("product_id", "")
-        is_cake = False
-        if product_id:
-            cat_row = conn.execute(
-                "SELECT category FROM products WHERE id = ? OR product_code = ?",
-                (product_id, product_id),
-            ).fetchone()
-            if cat_row and cat_row["category"] in ("cake", "banh_kem"):
-                is_cake = True
         photo_size = 192  # larger than default 128
-        if show_photos and is_cake and order_id and item_id:
+        if show_photos and order_id and item_id:
             photo_bytes = _get_photo(conn, order_id, item_id)
             if photo_bytes:
                 try:
@@ -1357,20 +1665,19 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
                     y = _left_mixed(draw, y, f"    {ln}", fb, (80, 80, 80))
 
         # Cash-in-cake amount (sub-row within item)
-        item_attrs = item.get("attributes") or {}
-        item_cash = item_attrs.get("cash_amount")
-        if item_attrs.get("rut_tien") == "true" and item_cash and int(float(item_cash)) > 0:
-            cash_str = _format_vnd_full(float(item_cash))
+        item_cash = _cash_amount_value(item)
+        if item_cash > 0:
+            cash_str = _format_vnd_full(item_cash)
             y = _icon_text(draw, y, "\U0001F4B0", f" Số tiền rút: {cash_str}", fbb, (0, 128, 0), x=MARGIN + 10)
 
-        # Separator between items
-        if i < len(work_items) - 1:
-            y = _sep(draw, y)
+        # DG-228 Phase 2 / FR-11: item-to-item separators removed for vertical compaction.
+        # Section already bounded by the double sep below; no inter-item thin sep needed.
 
     y += 4
     y = _double(draw, y)
 
     # --- Financial Summary ---
+    # DG-228 Phase 2 / FR-7,8,9: conditional financial lines.
     # Calculate subtotal (non-gift items only)
     subtotal = sum(
         item.get("quantity", 1) * float(item.get("unitPrice", 0) or item.get("unit_price", 0))
@@ -1380,15 +1687,19 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
     shipping_fee = float(order.get("shippingFee", 0) or order.get("shipping_fee", 0))
     total_price = float(order.get("totalPrice", 0) or order.get("total_price", 0))
 
-    y = _row(draw, y, "Tạm tính:", _format_vnd_full(subtotal), fbb)
+    # FR-7: hide "Tạm tính" when it equals "Tổng cộng" (no shipping/cash fees).
+    has_fee_additions = shipping_fee > 0 or any(
+        _cash_fee_amount(item) > 0 for item in work_items
+    )
+    if has_fee_additions or abs(subtotal - total_price) > 0.01:
+        y = _row(draw, y, "Tạm tính:", _format_vnd_full(subtotal), fbb)
     if shipping_fee > 0:
         y = _row(draw, y, "Phí giao hàng:", _format_vnd_full(shipping_fee), fb)
     # Cash-in-cake fee in summary (like shipping fee, black text, not bold)
     for item in work_items:
-        attrs = item.get("attributes") or {}
-        cash_fee = attrs.get("cash_fee")
-        if attrs.get("rut_tien") == "true" and cash_fee and int(float(cash_fee)) > 0:
-            fee_str = _format_vnd_full(float(cash_fee))
+        fee_amt = _cash_fee_amount(item)
+        if fee_amt > 0:
+            fee_str = _format_vnd_full(fee_amt)
             y = _row(draw, y, "Phí rút tiền:", fee_str, fb)
     y = _row(draw, y, "Tổng cộng:", _format_vnd_full(total_price), fbb)
 
@@ -1402,47 +1713,65 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
     total_paid = PaymentTransaction.total_paid_excl_outflows(conn, order_id) if order_id else 0.0
     remaining = total_price - total_paid
 
-    y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
-    if remaining > 0:
-        y = _row(draw, y, "Còn lại:", _format_vnd_full(remaining), fbb, color_v=(180, 0, 0))
+    # FR-8/FR-9: conditional payment status lines.
+    if total_paid <= 0:
+        # FR-8: nothing paid — show only "Còn lại" (red, bold).
+        y = _row(draw, y, "Còn lại:", _format_vnd_full(total_price), fbb, color_v=(180, 0, 0))
+    elif remaining <= 0.01:
+        # FR-9: fully paid — single "Đã thanh toán đủ" line (green).
+        y = _row(draw, y, "Đã thanh toán đủ:", _format_vnd_full(total_paid), fbb, color_v=(0, 100, 0))
     else:
-        y = _row(draw, y, "Còn lại:", "0đ", fb, color_v=(0, 100, 0))
+        # Partial payment — keep both lines (existing convention).
+        y = _row(draw, y, "Đã thanh toán:", _format_vnd_full(total_paid), fb, color_v=(0, 100, 0))
+        y = _row(draw, y, "Còn lại:", _format_vnd_full(remaining), fbb, color_v=(180, 0, 0))
     y += 4
     y = _double(draw, y)
 
     # --- Section 3: Delivery ---
-    y = _left(draw, y, "GIAO HÀNG", _font(_SZ_SUBTITLE, True))
-    y = _sep(draw, y)
-
+    # DG-228 Phase 2 / FR-11, AC-13: skip the delivery section entirely when it
+    # would have no meaningful content (pickup order with no due date, phone,
+    # address, or notes). Avoids rendering an empty "GIAO HÀNG" block.
     due = order.get("dueDate", "") or order.get("due_date", "")
     due_time = order.get("dueTime", "") or order.get("due_time", "") or ""
-    if due:
-        due_str = f"Ngày nhận: {due}"
-        if due_time:
-            due_str += f" {due_time}"
-        y = _left(draw, y, due_str, fbb)
-
     dtype = order.get("deliveryType", "") or order.get("delivery_type", "pickup")
-    _DTYPE_VN = {"pickup": "Nhận tại tiệm", "bus": "Gửi xe buýt", "door": "Giao tận nơi"}
-    dtype_vn = _DTYPE_VN.get(dtype, dtype)
-    y = _left(draw, y, f"Hình thức: {dtype_vn}", fb)
-
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
-    if phone:
-        y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
-
     daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
-    if dtype != "pickup" and daddr:
-        y = _left(draw, y, f"Địa chỉ:", fbb)
-        for ln in _wrap(daddr, fs, CONTENT_WIDTH - 20):
-            y = _left(draw, y, f"  {ln}", fs)
-
-    # Order-level notes
     order_notes = order.get("notes", "") or ""
-    if order_notes:
-        y = _left(draw, y, "Ghi chú:", fbb)
-        for ln in _wrap(order_notes, fb, CONTENT_WIDTH):
-            y = _left_mixed(draw, y, ln, fb, (80, 80, 80))
+
+    has_delivery_content = bool(due or phone or order_notes or (dtype != "pickup" and daddr))
+
+    if has_delivery_content:
+        y = _left(draw, y, "GIAO HÀNG", _font(_SZ_SUBTITLE, True))
+        y = _sep(draw, y)
+
+        if due:
+            due_str = f"Ngày nhận: {due}"
+            if due_time:
+                due_str += f" {due_time}"
+            y = _left(draw, y, due_str, fbb)
+
+        _DTYPE_VN = {"pickup": "Nhận tại tiệm", "bus": "Gửi xe buýt", "door": "Giao tận nơi"}
+        dtype_vn = _DTYPE_VN.get(dtype, dtype)
+        y = _left(draw, y, f"Hình thức: {dtype_vn}", fb)
+
+        if phone:
+            y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
+
+        if dtype != "pickup" and daddr:
+            y = _left(draw, y, f"Địa chỉ:", fbb)
+            for ln in _wrap(daddr, fs, CONTENT_WIDTH - 20):
+                y = _left(draw, y, f"  {ln}", fs)
+
+        # Order-level notes
+        if order_notes:
+            # CQ-3: grow the 4000px canvas before drawing long order notes so
+            # the cursor never runs past the canvas (which would silently
+            # discard text and append a solid-black band to the crop).
+            img, draw = _ensure_canvas_capacity(img, draw, y, headroom=len(order_notes) * 30)
+            y = _left(draw, y, "Ghi chú:", fbb)
+            for ln in _wrap(order_notes, fb, CONTENT_WIDTH):
+                y = _left_mixed(draw, y, ln, fb, (80, 80, 80))
+                img, draw = _ensure_canvas_capacity(img, draw, y)
 
     # Footer
     y += 4
@@ -1451,7 +1780,13 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
 
     y += MARGIN
     y = _add_tear_indicator(img, draw, y, paper_mode)
-    return img.crop((0, 0, RECEIPT_WIDTH, y))
+    # DG-228 Phase 3: page splitting handled by _split_pages() at the API layer.
+    # Crop to content bottom (no max-height cap here) so the splitter can divide
+    # the full content at natural section boundaries when it exceeds the cap.
+    # CQ-3: clamp crop to the canvas height so a cursor that somehow exceeds
+    # the canvas cannot append a solid-black band to the cropped output.
+    crop_h = min(max(y, 1), img.height)
+    return img.crop((0, 0, RECEIPT_WIDTH, crop_h))
 
 
 # --- Order detail builder ---
@@ -1542,7 +1877,10 @@ def get_receipt(
                 ).fetchone()
                 if cat_row and cat_row["category"] in ("cake", "banh_kem"):
                     photo = _get_photo(conn, row["id"], item_id)
-            img = _render_work_ticket(detail, work_item, cfg, photo, conn, paper_mode=paper_mode)
+            # DG-228 Phase 3 / FR-3: merge sub-item index for multi-item orders.
+            item_index, item_total = _main_item_index_total(detail, work_item)
+            img = _render_work_ticket(detail, work_item, cfg, photo, conn, paper_mode=paper_mode,
+                                      item_index=item_index, item_total=item_total)
         elif type == "customer":
             img = _render_customer_receipt(detail, cfg, conn, show_photos=photos, paper_mode=paper_mode)
         elif type == "bus_label":
@@ -1554,8 +1892,22 @@ def get_receipt(
         else:
             raise HTTPException(status_code=400, detail="Invalid type: work_ticket, customer, bus_label, shop, or delivery")
 
+        # DG-228 Phase 3 / FR-2: split into pages when content exceeds the cap.
+        # The GET receipt endpoint returns the first page as a single PNG for
+        # backward compatibility with the Flutter preview (multi-page print flow
+        # is handled by printing.py in Phase 4).
+        # CQ-2: only split work_ticket/customer receipts on label paper — roll
+        # mode and shop/delivery/bus_label types keep the single-image path so
+        # long roll receipts print continuously and shop/delivery previews are
+        # not truncated to page 1.
+        if type in ("work_ticket", "customer") and paper_mode == "label":
+            pages = _split_pages(img)
+        else:
+            pages = [img]
+        first_page = pages[0]
+
         buf = io.BytesIO()
-        img.save(buf, format="PNG", quality=95)
+        first_page.save(buf, format="PNG", quality=95)
         buf.seek(0)
 
         return StreamingResponse(

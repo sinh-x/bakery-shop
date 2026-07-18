@@ -5,28 +5,42 @@ import '../../data/api/customer_service.dart';
 import '../../data/models/customer.dart';
 import '../../providers/customers_provider.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/utils/phone_formatter.dart';
 import 'widgets/phone_entry_row.dart';
 
 /// Show the add/edit customer bottom sheet.
 ///
 /// Pass [customer] for edit mode; omit for add mode. Returns `true` when the
 /// mutation succeeded so callers can refresh their list.
+///
+/// In add mode, when the typed name (diacritic-insensitive) or any typed
+/// phone digits match an existing customer, a duplicate-warning dialog is
+/// shown before the create call (FR8/AC6). The user can pick an existing
+/// customer (reported via [onUseExisting]), proceed with the create
+/// ("create anyway"), or cancel. Pass [onUseExisting] to be notified when
+/// the user chooses an existing customer; the bottom sheet closes itself in
+/// that case.
 Future<bool?> showCustomerForm(
   BuildContext context, {
   Customer? customer,
+  ValueChanged<Customer>? onUseExisting,
 }) async {
   return showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (ctx) => _CustomerForm(customer: customer),
+    builder: (ctx) => _CustomerForm(
+      customer: customer,
+      onUseExisting: onUseExisting,
+    ),
   );
 }
 
 class _CustomerForm extends ConsumerStatefulWidget {
-  const _CustomerForm({this.customer});
+  const _CustomerForm({this.customer, this.onUseExisting});
 
   final Customer? customer;
+  final ValueChanged<Customer>? onUseExisting;
 
   @override
   ConsumerState<_CustomerForm> createState() => _CustomerFormState();
@@ -54,7 +68,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       for (final p in phones) {
         _phones.add(
           PhoneEntry(
-            controller: TextEditingController(text: p.phone),
+            controller: TextEditingController(text: formatPhone(p.phone)),
             isPrimary: p.isPrimary,
           ),
         );
@@ -63,7 +77,7 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       final legacy = c?.phone ?? '';
       _phones.add(
         PhoneEntry(
-          controller: TextEditingController(text: legacy),
+          controller: TextEditingController(text: formatPhone(legacy)),
           isPrimary: legacy.isNotEmpty,
         ),
       );
@@ -126,11 +140,15 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       _duplicateError = null;
       return null;
     }
-    // Detect duplicate non-empty phone numbers.
+    // Detect duplicate non-empty phone numbers. Compare on digit-only key so
+    // that a prefilled raw value (e.g. 11 digits shown unformatted) and the
+    // same digits typed (dash-formatted by PhoneInputFormatter) are still
+    // flagged as duplicates.
     final seen = <String>{};
     for (final phone in trimmed) {
       if (phone.isEmpty) continue;
-      if (!seen.add(phone)) {
+      final key = phone.replaceAll(RegExp(r'\D'), '');
+      if (!seen.add(key)) {
         _duplicateError = VN.customerPhoneDuplicate;
         return null;
       }
@@ -169,13 +187,39 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       showTopSnackBar(context, VN.customerPhonePrimaryRequired);
       return;
     }
+    final name = _nameCtrl.text.trim();
+    // FR8/AC6: in add mode, warn when name or any phone matches an existing
+    // customer before hitting the create endpoint. The user can pick an
+    // existing customer ("use existing"), proceed ("create anyway"), or
+    // cancel. Edit mode skips this check — the customer is already linked.
+    if (!_isEditing) {
+      setState(() => _saving = true);
+      final matches = await _findDuplicateCandidates(name, phones);
+      if (!mounted) return;
+      if (matches.isNotEmpty) {
+        setState(() => _saving = false);
+        final choice = await _showDuplicateWarningDialog(matches);
+        if (!mounted) return;
+        if (choice == null) return;
+        if (choice.useExisting != null) {
+          final existing = choice.useExisting!;
+          widget.onUseExisting?.call(existing);
+          // The parent now owns the existing-customer handoff (e.g. navigate
+          // to the detail screen). Close the form without creating.
+          if (mounted) Navigator.of(context).pop(false);
+          return;
+        }
+        // choice.createAnyway == true → fall through to the create call.
+      } else {
+        setState(() => _saving = false);
+      }
+    }
     setState(() {
       _saving = true;
       _sharedPhone = const [];
     });
     final service = ref.read(customerServiceProvider);
     try {
-      final name = _nameCtrl.text.trim();
       final CustomerMutationResult result;
       if (_isEditing) {
         result = await service.updateCustomer(
@@ -203,6 +247,53 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
       setState(() => _saving = false);
       showTopSnackBar(context, e.toString());
     }
+  }
+
+  /// Find existing customers whose name (diacritic-insensitive contains) or
+  /// any phone digits match the typed [name] or any of [phones]. Backend
+  /// `GET /api/customers?search=` already does diacritic-insensitive partial
+  /// matching on `search_name` and phone digits, so we issue one query per
+  /// distinct query term (name + each non-empty phone) and dedupe by id.
+  /// Returns the merged candidate list, excluding any in-progress edits.
+  Future<List<Customer>> _findDuplicateCandidates(
+    String name,
+    List<CustomerPhone> phones,
+  ) async {
+    final service = ref.read(customerServiceProvider);
+    final queries = <String>{};
+    if (name.isNotEmpty) queries.add(name);
+    for (final p in phones) {
+      final digits = p.phone.replaceAll(RegExp(r'\D'), '');
+      if (digits.length >= 2) queries.add(digits);
+    }
+    if (queries.isEmpty) return const [];
+    final byId = <int, Customer>{};
+    for (final q in queries) {
+      try {
+        final results = await service.listCustomers(search: q);
+        for (final c in results) {
+          byId[c.id] = c;
+        }
+      } catch (_) {
+        // Search failures are non-fatal: skip this query and continue. The
+        // create call below will still surface its own backend errors.
+      }
+    }
+    return byId.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+  }
+
+  /// Show the duplicate-warning dialog (FR8/AC6) and wait for the user's
+  /// choice. Returns `null` when cancelled, otherwise a record indicating
+  /// either a chosen existing customer (`useExisting`) or a request to
+  /// proceed with the create (`createAnyway`).
+  Future<_DuplicateChoice?> _showDuplicateWarningDialog(
+    List<Customer> matches,
+  ) {
+    return showDialog<_DuplicateChoice>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _DuplicateWarningDialog(matches: matches),
+    );
   }
 
   @override
@@ -286,6 +377,72 @@ class _CustomerFormState extends ConsumerState<_CustomerForm> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Choice returned by the duplicate-warning dialog (FR8/AC6).
+///
+/// Either [useExisting] is set (the user picked an existing customer) or
+/// [createAnyway] is true (the user chose to proceed with the new create).
+typedef _DuplicateChoice =
+    ({Customer? useExisting, bool createAnyway});
+
+/// Duplicate-warning dialog shown before a manual customer create when the
+/// typed name or any phone matches an existing customer (DG-252 Phase 6 —
+/// FR8/AC6). Lists each match with name + primary phone and offers three
+/// actions: "use existing" (selects a match), "create anyway" (proceeds
+/// with the create), or cancel.
+class _DuplicateWarningDialog extends StatelessWidget {
+  const _DuplicateWarningDialog({required this.matches});
+
+  final List<Customer> matches;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text(CustomersLabels.duplicateWarningTitle),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(CustomersLabels.duplicateWarningHint),
+            const SizedBox(height: 12),
+            for (final c in matches)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.person_outline),
+                title: Text(c.name),
+                subtitle: c.phone.isNotEmpty ? Text(c.phone) : null,
+                onTap: () => Navigator.of(context).pop<_DuplicateChoice>(
+                  (useExisting: c, createAnyway: false),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text(CustomersLabels.duplicateWarningCancel),
+        ),
+        FilledButton.tonal(
+          onPressed: matches.isEmpty
+              ? null
+              : () => Navigator.of(context).pop<_DuplicateChoice>(
+                    (useExisting: matches.first, createAnyway: false),
+                  ),
+          child: const Text(CustomersLabels.duplicateWarningUseExisting),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop<_DuplicateChoice>(
+            const (useExisting: null, createAnyway: true),
+          ),
+          child: const Text(CustomersLabels.duplicateWarningCreateAnyway),
+        ),
+      ],
     );
   }
 }

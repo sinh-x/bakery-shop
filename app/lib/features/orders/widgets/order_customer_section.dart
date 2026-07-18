@@ -4,9 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../../data/models/customer.dart';
 import '../../../providers/customers_provider.dart';
-import '../../../shared/utils/phone_formatter.dart';
+import '../../../shared/widgets/phone_text_field.dart';
 import '../../customers/widgets/customer_profile_card.dart';
 import 'customer_search_button.dart';
+import 'order_customer_suggestions.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class OrderCustomerSection extends ConsumerWidget {
@@ -115,14 +116,18 @@ class OrderCustomerSection extends ConsumerWidget {
             textCapitalization: TextCapitalization.words,
           ),
           const SizedBox(height: 12),
-          TextFormField(
-            controller: phoneCtrl,
-            decoration: const InputDecoration(
-              labelText: VN.customerPhone,
-              border: OutlineInputBorder(),
-            ),
-            keyboardType: TextInputType.phone,
-            inputFormatters: [PhoneInputFormatter()],
+          PhoneTextField(
+            controller: phoneCtrl!,
+            labelText: VN.customerPhone,
+          ),
+          const SizedBox(height: 4),
+          OrderCustomerSuggestions(
+            nameCtrl: nameCtrl!,
+            phoneCtrl: phoneCtrl!,
+            onSelected: onSelected == null
+                ? (_) {}
+                : (c) => onSelected!(c),
+            selectedCustomer: customer,
           ),
         ],
       ],

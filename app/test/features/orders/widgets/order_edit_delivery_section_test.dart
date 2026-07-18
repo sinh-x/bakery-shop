@@ -4,13 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bakery_app/features/orders/widgets/hour_picker.dart';
 import 'package:bakery_app/features/orders/widgets/order_delivery_section.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'package:bakery_app/shared/utils/phone_formatter.dart';
 
-// DG-216 Phase 3: the order edit screen's Stage 3 delivery UI now renders the
-// canonical shared [OrderDeliverySection] in editable mode, preserving the
-// edit-specific due date/time controls (HourPresetChips) via the composable
-// `dueDateTimeSlot` and the delivery-phone [PhoneInputFormatter] via
-// `phoneInputFormatters`. These tests exercise that exact configuration.
+// DG-216 Phase 3 / DG-251 Phase 2: the order edit screen's Stage 3 delivery UI
+// renders the canonical shared [OrderDeliverySection] in editable mode, which
+// now uses the shared [PhoneTextField] for the delivery phone (formatter is
+// built into the widget, so no `phoneInputFormatters` passthrough is needed).
+// These tests exercise that exact configuration.
 
 Widget _editStage3Delivery({
   required String deliveryType,
@@ -29,7 +28,6 @@ Widget _editStage3Delivery({
           shippingFee: 20000,
           addressCtrl: addressCtrl,
           phoneCtrl: phoneCtrl,
-          phoneInputFormatters: [PhoneInputFormatter()],
           notesCtrl: notesCtrl,
           onDeliveryTypeChanged: (_) {},
           onShippingFeeChanged: (_) {},

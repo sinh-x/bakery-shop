@@ -4,13 +4,14 @@ import 'package:bakery_app/data/models/event.dart';
 import 'package:bakery_app/features/expenses/expense_form_screen.dart';
 import 'package:bakery_app/features/expenses/expense_screen.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_history_card.dart';
-import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../auth/login_screen_test_helpers.dart';
 
 BakeryEvent _expenseEvent({
   required int id,
@@ -101,7 +102,11 @@ void main() {
   });
 
   testWidgets('plus button opens dedicated add route', (tester) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'Lan',
+      'auth_role': 'staff',
+    });
     final prefs = await SharedPreferences.getInstance();
 
     final router = GoRouter(
@@ -826,7 +831,11 @@ void main() {
   });
 
   testWidgets('form screen shows payment source dropdown', (tester) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'Lan',
+      'auth_role': 'staff',
+    });
     final prefs = await SharedPreferences.getInstance();
 
     await tester.pumpWidget(
@@ -936,7 +945,11 @@ void main() {
   testWidgets('form screen hides nhan vien label and shows payer dropdown', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'Lan',
+      'auth_role': 'staff',
+    });
     final prefs = await SharedPreferences.getInstance();
 
     await tester.pumpWidget(
@@ -954,7 +967,11 @@ void main() {
   testWidgets(
     'form screen edit mode preserves loggedBy from event',
     (tester) async {
-      SharedPreferences.setMockInitialValues({kLoggedByKey: 'SomeoneElse'});
+      SharedPreferences.setMockInitialValues({
+        'auth_token': kTestAdminToken,
+        'auth_username': 'SomeoneElse',
+        'auth_role': 'staff',
+      });
       final prefs = await SharedPreferences.getInstance();
 
       final event = _expenseEvent(
@@ -990,7 +1007,11 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1080, 1920));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'Lan',
+      'auth_role': 'staff',
+    });
     final prefs = await SharedPreferences.getInstance();
 
     await tester.pumpWidget(
@@ -1022,7 +1043,11 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1080, 1920));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+      SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'Lan',
+      'auth_role': 'staff',
+    });
       final prefs = await SharedPreferences.getInstance();
 
       await tester.pumpWidget(
@@ -1301,7 +1326,11 @@ void main() {
   testWidgets(
     'form screen hides payment source dropdown when Nợ selected',
     (tester) async {
-      SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+      SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'Lan',
+      'auth_role': 'staff',
+    });
       final prefs = await SharedPreferences.getInstance();
 
       await tester.pumpWidget(
@@ -1330,7 +1359,11 @@ void main() {
   testWidgets(
     'form screen shows vendor required validation when Nợ selected and vendor empty',
     (tester) async {
-      SharedPreferences.setMockInitialValues({kLoggedByKey: 'Lan'});
+      SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'Lan',
+      'auth_role': 'staff',
+    });
       final prefs = await SharedPreferences.getInstance();
 
       await tester.pumpWidget(

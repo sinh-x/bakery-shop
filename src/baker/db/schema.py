@@ -1,3 +1,5 @@
+import os
+import sqlite3
 from typing import Optional
 
 from baker.utils.time import now_utc
@@ -1641,13 +1643,15 @@ def _seed_chart_of_accounts(conn) -> None:
             "VALUES (?, ?, ?, ?)",
             (code, name, acc_type, parent_id),
         )
-        if cursor.lastrowid:
-            code_to_id[code] = int(cursor.lastrowid)
-        else:
-            row = conn.execute(
-                "SELECT id FROM accounts WHERE code = ?", (code,)
-            ).fetchone()
-            code_to_id[code] = int(row[0])
+        # NOTE: ``cursor.lastrowid`` is NOT a reliable "did we insert?" flag.
+        # On an ignored INSERT OR IGNORE, sqlite3 returns the lastrowid of the
+        # most recent successful INSERT on this connection (stale), not 0. So
+        # always resolve the actual row id by code — this is correct whether
+        # the row was just inserted or already existed (DG-245 Phase 2).
+        row = conn.execute(
+            "SELECT id FROM accounts WHERE code = ?", (code,)
+        ).fetchone()
+        code_to_id[code] = int(row[0])
 
 
 def _ensure_staff_payable_sub_account(conn, staff_name: str) -> int:
@@ -1683,6 +1687,83 @@ def _ensure_staff_payable_sub_account(conn, staff_name: str) -> int:
         (code, staff_name, parent_id),
     )
     return int(cursor.lastrowid)
+
+
+def _ensure_ap_vendor_sub_account(conn, vendor_name: str) -> int:
+    """Create (or return) a per-vendor sub-account under Accounts Payable (2500).
+
+    Mirrors :func:`_ensure_staff_payable_sub_account` but uses a MAX-based
+    25XX code derivation instead of COUNT-based indexing. MAX-based avoids
+    collision risk when sub-accounts are deleted and re-created: a COUNT-based
+    counter would reuse the freed index and could clash with stale references,
+    whereas MAX-based only ever moves forward (DG-245 Phase 3, FR2).
+
+    The parent is the 2500 Accounts Payable account seeded by the v73
+    migration (Phase 2). The sub-account name is the vendor's name, so the
+    vendor → sub-account resolution is a single source of truth.
+    """
+    parent_row = conn.execute(
+        "SELECT id FROM accounts WHERE code = ?", (ACCOUNTS_PAYABLE_CODE,)
+    ).fetchone()
+    if parent_row is None:
+        raise RuntimeError(
+            "Accounts Payable parent account (2500) missing; "
+            "run v73 migration or seed COA first"
+        )
+    parent_id = int(parent_row[0])
+
+    existing = conn.execute(
+        "SELECT id FROM accounts WHERE parent_id = ? AND name = ?",
+        (parent_id, vendor_name),
+    ).fetchone()
+    if existing:
+        return int(existing[0])
+
+    # MAX-based code derivation: scan existing vendor sub-account codes under
+    # the 2500 parent and pick MAX+1. The GLOB patterns match both the legacy
+    # 4-digit ``25[0-9][0-9]`` range (2501..2599, vendors 1-99) and the expanded
+    # 5-digit ``25[0-9][0-9][0-9]`` range (25001..25999, vendors 100-999), so the
+    # prior overflow at vendor #99 (2599 → 2600, escaping the 25xx namespace and
+    # tripping the accounts.code UNIQUE constraint) is avoided without
+    # disturbing existing 4-digit sub-accounts (CQ-2). Start at 2501 so the
+    # first vendor sub-account does not collide with the parent 2500 code.
+    max_row = conn.execute(
+        "SELECT code FROM accounts "
+        "WHERE parent_id = ? "
+        "  AND (code GLOB '25[0-9][0-9]' OR code GLOB '25[0-9][0-9][0-9]') "
+        "ORDER BY CAST(code AS INTEGER) DESC LIMIT 1",
+        (parent_id,),
+    ).fetchone()
+    if max_row is None:
+        next_num = 2501
+    else:
+        next_num = int(max_row[0]) + 1
+    # Guard against the 4-digit overflow (CQ-2): when the max code is a 4-digit
+    # 25xx value (2501..2599) and incrementing it would leave the 25-prefixed
+    # namespace (2600+), roll to the 5-digit range so the new code stays under
+    # the 2500 parent's 25xxx namespace (25001..25999). This preserves existing
+    # 4-digit sub-accounts while accommodating up to 999 vendors total.
+    if next_num >= 2600 and next_num < 25001:
+        next_num = 25001
+    code = f"{next_num}"
+    try:
+        cursor = conn.execute(
+            "INSERT INTO accounts (code, name, type, parent_id) "
+            "VALUES (?, ?, 'liability', ?)",
+            (code, vendor_name, parent_id),
+        )
+        return int(cursor.lastrowid)
+    except sqlite3.IntegrityError:
+        # A concurrent insert may have created the same-name sub-account
+        # between our existence check and the INSERT. Re-fetch rather than
+        # swallow the error — silently losing the JE is the CQ-2 failure mode.
+        existing = conn.execute(
+            "SELECT id FROM accounts WHERE parent_id = ? AND name = ?",
+            (parent_id, vendor_name),
+        ).fetchone()
+        if existing:
+            return int(existing[0])
+        raise
 
 
 def _account_id_by_code(conn, code: str) -> int:
@@ -3379,10 +3460,11 @@ def _migrate_v64_delivery_phone(conn):
         conn.execute("ALTER TABLE orders ADD COLUMN delivery_phone TEXT DEFAULT ''")
 
 
-def _migrate_v66_repair_customer_links(conn):
-    """Link all NULL customer_id orders to customers on startup — DG-227 Phase 2.
+def _repair_null_customer_links(conn) -> dict:
+    """Link all ``customer_id IS NULL`` orders (DG-227 Phase 2 / DG-252 Phase 4).
 
-    Idempotent migration (v66 slot — v65 is taken by DG-226). Scans orders
+    Shared repair body used by both the v66 migration (DG-227) and the v74
+    backfill migration (DG-252 Phase 4). Idempotent: scans orders
     WHERE customer_id IS NULL, groups by phone/name, creates new customers
     for unmatched identities, and links orders. Three categories:
       (1) phone-having orders — resolve/match/create
@@ -3390,7 +3472,12 @@ def _migrate_v66_repair_customer_links(conn):
       (3) walk-in (no phone, no name) — link to "Khách lẻ"
 
     Recomputes customer_year_summary for every affected customer after linking.
-    Logs summary with counts per resolution method.
+    Logs a summary with counts per resolution method and returns the same
+    counts as a dict so callers (e.g. DG-252 backfill tests / ``baker db``
+    pre/post report) can assert on them without scraping log lines.
+
+    Returns a dict with keys: ``null_before``, ``null_after``, ``phone_match``,
+    ``name_match``, ``new_customer``, ``walk_in``, ``linked``.
     """
     import logging
     from baker.models.customer import Customer
@@ -3403,7 +3490,15 @@ def _migrate_v66_repair_customer_links(conn):
 
     if total_null_before == 0:
         logger.info("Không có đơn hàng nào thiếu customer_id — bỏ qua.")
-        return
+        return {
+            "null_before": 0,
+            "null_after": 0,
+            "phone_match": 0,
+            "name_match": 0,
+            "new_customer": 0,
+            "walk_in": 0,
+            "linked": 0,
+        }
 
     # -- Build lookup tables ------------------------------------------------
     # Existing customer phones (from customer_phones and legacy customers.phone).
@@ -3483,7 +3578,17 @@ def _migrate_v66_repair_customer_links(conn):
             # Create a new customer — use the most common name for the group.
             names = [o["name"] for o in orders if o["name"]]
             resolved_name = _pick_most_common_name(names) if names else "Khách"
-            cust = Customer(name=resolved_name, phone=nphone)
+            # DG-252 r3 [MAJOR]: materialize a `customer_phones` row so the
+            # auto-created customer is visible to `/duplicates` and survives
+            # a later merge (mirrors the runtime fix at orders.py:
+            # _resolve_or_create_customer_id). Without this row the phone
+            # only lives in the legacy `customers.phone` column, which the
+            # dedup finder and merge copy loop never consult.
+            cust = Customer(
+                name=resolved_name,
+                phone=nphone,
+                phones=[{"phone": nphone, "isPrimary": True}],
+            )
             cust_id = cust.save(conn)
             existing_phones[nphone] = cust_id
             search_name = _strip_diacritics(resolved_name)
@@ -3533,15 +3638,21 @@ def _migrate_v66_repair_customer_links(conn):
                 new_customer += 1
 
     # -- (3) Walk-in orders (no phone, no name) — FR5 ---------------------
-    if khach_le_id is not None:
-        walk_in_rows = conn.execute(
-            """
-            SELECT id FROM orders
-            WHERE customer_id IS NULL
-              AND (customer_phone IS NULL OR customer_phone = '')
-              AND (customer_name IS NULL OR customer_name = '')
-            """
-        ).fetchall()
+    walk_in_rows = conn.execute(
+        """
+        SELECT id FROM orders
+        WHERE customer_id IS NULL
+          AND (customer_phone IS NULL OR customer_phone = '')
+          AND (customer_name IS NULL OR customer_name = '')
+        """
+    ).fetchall()
+    if walk_in_rows:
+        # DG-252 Phase 4 (FR9/AC5): create the shared "Khách lẻ" record if it
+        # does not yet exist so identity-less orders always get linked (v66
+        # only linked when the row pre-existed; v74 guarantees 100% linkage).
+        if khach_le_id is None:
+            khach_le = Customer(name="Khách lẻ", phone="")
+            khach_le_id = khach_le.save(conn)
         for row in walk_in_rows:
             _link_and_track(row["id"], khach_le_id)
             walk_in += 1
@@ -3568,6 +3679,345 @@ def _migrate_v66_repair_customer_links(conn):
         "%d tạo mới, %d khách lẻ. Còn lại NULL: %d.",
         total_linked, phone_match, name_match, new_customer, walk_in, total_null_after,
     )
+    return {
+        "null_before": total_null_before,
+        "null_after": total_null_after,
+        "phone_match": phone_match,
+        "name_match": name_match,
+        "new_customer": new_customer,
+        "walk_in": walk_in,
+        "linked": total_linked,
+    }
+
+
+def _migrate_v66_repair_customer_links(conn):
+    """Link all NULL customer_id orders to customers on startup — DG-227 Phase 2.
+
+    Thin wrapper around :func:`_repair_null_customer_links` retained for the
+    v66 migration slot (DG-227). See the shared helper for the full
+    phone → name → new customer → "Khách lẻ" resolution chain.
+    """
+    _repair_null_customer_links(conn)
+
+
+def _migrate_v74_backfill_null_customer_links(conn):
+    """Backfill migration linking remaining ``customer_id IS NULL`` orders.
+
+    DG-252 Phase 4 (FR9 / NFR2 / AC5). Re-runs the shared
+    :func:`_repair_null_customer_links` body so that any historic orders
+    still lacking a ``customer_id`` after the v66 repair (e.g. orders
+    created between v66 and the Phase 1 guaranteed-link landing, or rows
+    that slipped past the guarantee due to a bug) are linked using the
+    same phone → name → new customer → shared "Khách lẻ" chain.
+
+    Idempotent (NFR2): a second run reports ``null_before = 0`` and changes
+    zero rows. Pre/post NULL counts are written to logs by
+    :func:`_repair_null_customer_links`; this wrapper does not return the
+    summary dict (Mn-10, DG-252 review). Tests that need the summary call
+    :func:`_repair_null_customer_links` directly; ``baker db`` surfaces
+    counts via log lines only.
+    """
+    _repair_null_customer_links(conn)
+
+
+def _migrate_v75_backfill_primary_customer_phones(conn):
+    """Backfill a primary ``customer_phones`` row from legacy
+    ``customers.phone`` for every customer with zero phone rows (DG-252 r4).
+
+    R4-M1 (Major) data-loss defense-in-depth: a target customer created
+    before v58/v66 (or whose phone rows were otherwise lost) carries its
+    phone only in the denormalized ``customers.phone`` column. The runtime
+    merge in :func:`baker.api.customers._merge_customer_into_target` now
+    materializes such a legacy phone on the fly before copying source
+    phones, but historic customers that are never merged would still be
+    invisible to the duplicates finder (which joins on
+    ``customer_phones``) and inconsistent with the "every customer with a
+    phone has a primary row" invariant. This migration backfills a
+    primary ``customer_phones`` row from any non-empty ``customers.phone``
+    for customers that currently have zero phone rows.
+
+    Idempotent: a second run finds zero candidates (every backfilled row
+    is now present) and inserts nothing. The INSERT is also guarded by
+    ``WHERE NOT EXISTS`` so concurrent writers cannot double-insert.
+    """
+    conn.execute(
+        """
+        INSERT INTO customer_phones (customer_id, phone, is_primary, created_at)
+        SELECT
+            c.id,
+            c.phone,
+            1,
+            strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'
+        FROM customers c
+        WHERE
+            c.phone IS NOT NULL
+            AND c.phone <> ''
+            AND NOT EXISTS (
+                SELECT 1 FROM customer_phones cp
+                WHERE cp.customer_id = c.id
+            )
+        """
+    )
+
+
+USERS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT UNIQUE NOT NULL,
+    password_hash  TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'staff' CHECK(role IN ('admin', 'staff')),
+    active        INTEGER NOT NULL DEFAULT 1,
+    locked_until  TEXT DEFAULT NULL,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_active ON users(active);
+"""
+
+
+# Map SEED_STAFF roles to system-user roles. "owner" → "admin" for full system
+# access; all other roles → "staff" for daily operational access only.
+_SEED_STAFF_ROLE_TO_USER_ROLE = {
+    "owner": "admin",
+}
+
+
+def _migrate_v68_users_table(conn):
+    """Create the ``users`` table and seed existing staff as users with random
+    bcrypt-hashed passwords (DG-029 Phase 1, FR12/FR13).
+
+    Each staff member in :data:`SEED_STAFF` is inserted as a user. Sinh (role
+    "owner") becomes ``admin``; all others become ``staff``. A random password
+    is generated for each user, bcrypt-hashed (cost factor 12), and the plain
+    password is printed to stdout so the admin can distribute credentials.
+
+    Idempotent: re-running on a DB where users already exist skips seeding
+    (INSERT OR IGNORE on the unique ``username``); printed passwords are only
+    emitted on the first run when a row is actually inserted.
+    """
+    import secrets as _secrets
+
+    from passlib.context import CryptContext
+
+    from baker.config import BCRYPT_ROUNDS
+
+    _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=BCRYPT_ROUNDS)
+
+    inserted: list[tuple[str, str, str]] = []  # (username, role, plain_password)
+
+    for name, staff_role in SEED_STAFF:
+        user_role = _SEED_STAFF_ROLE_TO_USER_ROLE.get(staff_role, "staff")
+        # DG-029 follow-on: lowercase the system username (staff.name display
+        # name is left unchanged — users.username is the login account name).
+        # Python str.lower() is Unicode-aware and correct for Vietnamese
+        # diacritics (Â→â, Ư→ư, Ầ→ầ, etc.).
+        username = name.lower()
+        existing = conn.execute(
+            "SELECT id FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        if existing:
+            continue
+        plain = _secrets.token_urlsafe(12)
+        hashed = _pwd_ctx.hash(plain)
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role, active) "
+            "VALUES (?, ?, ?, 1)",
+            (username, hashed, user_role),
+        )
+        inserted.append((username, user_role, plain))
+
+    if inserted:
+        import sys
+
+        # MJ-2 (DG-029 phase 5.6-c1): gate plaintext password printing behind
+        # BAKER_SEED_QUIET so CI logs don't capture plaintext credentials.
+        # When unset/empty the admin-distribution UX is preserved.
+        seed_quiet = os.environ.get("BAKER_SEED_QUIET", "").strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+        if seed_quiet:
+            print(
+                "DG-029 users migration: seeded initial user accounts "
+                f"({len(inserted)} users) — passwords suppressed (BAKER_SEED_QUIET=1)",
+                file=sys.stdout,
+            )
+        else:
+            print("=" * 60, file=sys.stdout)
+            print("DG-029 users migration: seeded initial user accounts", file=sys.stdout)
+            print("Distribute these temporary passwords to each user:", file=sys.stdout)
+            print("-" * 60, file=sys.stdout)
+            for username, role, plain in inserted:
+                print(f"  {username} ({role}): {plain}", file=sys.stdout)
+            print("=" * 60, file=sys.stdout)
+
+
+def _migrate_v71_users_role_check(conn):
+    """Add a DB-level CHECK(role IN ('admin','staff')) to the ``users`` table.
+
+    Mn-3 (DG-029 phase 5.6-c1): v68 created the users table without a
+    DB-level CHECK on ``role``, so application bugs could persist invalid
+    role values. Fresh DBs created on or after this migration get the
+    constraint directly in ``USERS_SCHEMA``. Existing DBs where v68 has
+    already run need a forward rebuild: SQLite has no ``ALTER TABLE ...
+    ADD CONSTRAINT`` so we recreate the table with the CHECK, copy data,
+    and recreate indexes. Idempotent: if the constraint is already
+    present (fresh DB created post-fix, or this migration already ran),
+    the rebuild is skipped.
+    """
+    # Detect whether the CHECK constraint is already in place. SQLite
+    # exposes table-level CHECK constraints via the `sql` column of
+    # sqlite_master. A fresh USERS_SCHEMA create includes the CHECK, so
+    # re-running this migration on a fresh DB is a no-op.
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+    ).fetchone()
+    if row is None:
+        # users table does not exist yet — nothing to migrate. The
+        # USERS_SCHEMA block in this same migration slot will create it
+        # with the CHECK already in place.
+        return
+    create_sql = row["sql"] or ""
+    if "CHECK(role IN" in create_sql.replace("\n", " "):
+        return
+
+    # Rebuild users with the CHECK constraint (table-rebuild pattern,
+    # same approach used by _migrate_v28_cascade_and_reseed).
+    conn.executescript(
+        """
+        CREATE TABLE users_new (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            username      TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role          TEXT NOT NULL DEFAULT 'staff' CHECK(role IN ('admin', 'staff')),
+            active        INTEGER NOT NULL DEFAULT 1,
+            locked_until  TEXT DEFAULT NULL,
+            created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+        );
+
+        INSERT INTO users_new (id, username, password_hash, role, active, locked_until, created_at)
+        SELECT id, username, password_hash, role, active, locked_until, created_at
+        FROM users;
+
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+
+        CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+        CREATE INDEX IF NOT EXISTS idx_users_active ON users(active);
+        """
+    )
+
+
+AUDIT_LOG_SCHEMA = """
+CREATE TABLE IF NOT EXISTS audit_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    username    TEXT NOT NULL DEFAULT '',
+    action      TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id   TEXT,
+    old_value   TEXT,
+    new_value   TEXT,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_username ON audit_log(username);
+CREATE INDEX IF NOT EXISTS idx_audit_log_entity_type ON audit_log(entity_type);
+"""
+
+
+# DG-029 Phase 4: sessions table for active session tracking (FR20/FR21).
+#
+# One row per active login session. Created on successful login (auth.py) and
+# consulted by `baker session list` to show active sessions with IP/device
+# metadata. The ``jti`` column links the session row to the JWT issued at
+# login; force-logout adds that jti to the in-memory denylist checked by
+# AuthMiddleware (FR21). ``revoked_at`` is set when a session is force-logged
+# out so `session list` can omit revoked sessions.
+SESSIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS sessions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    jti             TEXT NOT NULL UNIQUE,
+    username        TEXT NOT NULL,
+    role            TEXT NOT NULL,
+    client_ip       TEXT NOT NULL DEFAULT '',
+    device_model    TEXT NOT NULL DEFAULT '',
+    app_version     TEXT NOT NULL DEFAULT '',
+    os_version      TEXT NOT NULL DEFAULT '',
+    logged_in_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    last_activity   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    revoked_at      TEXT DEFAULT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_username ON sessions(username);
+CREATE INDEX IF NOT EXISTS idx_sessions_jti ON sessions(jti);
+CREATE INDEX IF NOT EXISTS idx_sessions_revoked_at ON sessions(revoked_at);
+"""
+
+
+def _migrate_v72_lowercase_usernames(conn):
+    """Lowercase all existing ``users.username`` values (DG-029 follow-on).
+
+    SQLite ``lower()`` only lowercases ASCII by default, so a pure-SQL
+    ``UPDATE`` would leave Vietnamese diacritics (Â, Ư, Ầ, ...) untouched.
+    Instead this migration reads each row, lowercases the username in Python
+    (str.lower() is Unicode-aware), and per-row UPDATEs the value.
+
+    Defensive collision guard: if two rows would collapse to the same
+    lowercased username (e.g. "An" and "an"), the conflicting pair is
+    skipped + logged. There should be none for the seeded set, but existing
+    DBs may have arbitrary history. We never raise — a migration must not
+    crash the server.
+
+    Idempotent: re-running on a DB where all usernames are already lowercase
+    is a no-op (the UPDATE matches no rows).
+
+    Scope: only ``users.username``. Does NOT touch ``audit_log``,
+    ``sessions``, ``staff``, or any ``logged_by`` / ``completed_by``
+    historical data (per DG-029 follow-on requirements).
+    """
+    import sys
+
+    rows = conn.execute("SELECT id, username FROM users ORDER BY id").fetchall()
+    if not rows:
+        return
+
+    # Pre-collect existing lowercase usernames (already-correct rows) so we
+    # can detect collisions before any UPDATE.
+    existing_lower = {row["username"] for row in rows if row["username"] == row["username"].lower()}
+
+    skipped: list[tuple[str, str]] = []  # (original, would_be)
+    for row in rows:
+        original = row["username"]
+        lowered = original.lower()
+        if lowered == original:
+            continue  # already lowercase
+        if lowered in existing_lower:
+            skipped.append((original, lowered))
+            continue
+        conn.execute(
+            "UPDATE users SET username = ? WHERE id = ?",
+            (lowered, row["id"]),
+        )
+        existing_lower.add(lowered)
+
+    if skipped:
+        print(
+            "DG-029 v72 migration: skipped lowercase-colliding usernames "
+            f"({len(skipped)} pairs): {skipped}",
+            file=sys.stdout,
+        )
+
+
+def _migrate_v73_add_account_2500(conn):
+    """Ensure account 2500 (Phải trả người bán / Accounts Payable) exists in chart of accounts.
+
+    DG-245 Phase 2 (migration v73). This mirrors ``_migrate_v54_add_account_2400``:
+    it calls the existing ``_seed_chart_of_accounts()`` which uses
+    ``INSERT OR IGNORE`` for every account, so re-running v73 on an
+    already-migrated DB is a no-op (idempotent by design).
+    """
+    _seed_chart_of_accounts(conn)
 
 
 MIGRATIONS = {
@@ -3888,6 +4338,48 @@ MIGRATIONS = {
     67: {
         "description": "Add acknowledged_at column to orders for order acknowledgment tracking — DG-221 Phase 1",
         "sql": "ALTER TABLE orders ADD COLUMN acknowledged_at TEXT DEFAULT NULL;",
+    },
+    68: {
+        "description": "Auth RBAC: users table for JWT authentication + seed existing staff as users — DG-029 Phase 1",
+        "sql": USERS_SCHEMA,
+        "callable": _migrate_v68_users_table,
+    },
+    69: {
+        "description": "Auth RBAC: audit_log table for recording admin write operations — DG-029 Phase 3",
+        "sql": AUDIT_LOG_SCHEMA,
+    },
+    70: {
+        "description": "Auth RBAC: sessions table for active session tracking — DG-029 Phase 4",
+        "sql": SESSIONS_SCHEMA,
+    },
+    71: {
+        "description": "Auth RBAC: DB-level CHECK(role IN ('admin','staff')) on users table — DG-029 phase 5.6-c1 (Mn-3)",
+        # No-op SQL block; the callable does the conditional rebuild. On
+        # fresh DBs USERS_SCHEMA (with the CHECK) is applied by v68's
+        # `CREATE TABLE IF NOT EXISTS`, which is a no-op if the table
+        # already exists, so this migration's callable is the authority.
+        "sql": "",
+        "callable": _migrate_v71_users_role_check,
+    },
+    72: {
+        "description": "Auth RBAC: lowercase existing users.username values — DG-029 follow-on",
+        "sql": "",
+        "callable": _migrate_v72_lowercase_usernames,
+    },
+    73: {
+        "description": "Chart of accounts: ensure account 2500 (Accounts Payable) exists — DG-245 Phase 2",
+        "sql": "",
+        "callable": _migrate_v73_add_account_2500,
+    },
+    74: {
+        "description": "Backfill remaining NULL customer_id orders (phone → name → new customer → 'Khách lẻ'), idempotent re-run with pre/post counts — DG-252 Phase 4",
+        "sql": "",
+        "callable": _migrate_v74_backfill_null_customer_links,
+    },
+    75: {
+        "description": "Backfill a primary customer_phones row from non-empty customers.phone for all customers with zero phone rows (DG-252 r4 [MAJOR] data-loss defense)",
+        "sql": "",
+        "callable": _migrate_v75_backfill_primary_customer_phones,
     },
 }
 

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from baker.db.connection import get_db
 from baker.db.schema import _order_year, _recompute_customer_year_summary, _strip_diacritics
 from baker.logging import log_context, logger
+from baker.config import get_delivery_critical_threshold
 from baker.models.order import (
     PUBLIC_ORDER_CODE_MAX_REFERENCE_LEN,
     Order,
@@ -115,6 +116,72 @@ def _resolve_customer_id_by_phone(conn, phone: str, customer_name: Optional[str]
     return None
 
 
+# DG-252 Phase 1 (FR1/FR2/FR3) — the canonical shared walk-in customer name.
+# Reuses the v66 convention (``schema.py:_migrate_v66_repair_customer_links``)
+# so there is exactly one shared "Khách lẻ" record for all identity-less orders.
+WALK_IN_SHARED_CUSTOMER_NAME = "Khách lẻ"
+
+
+def _get_or_create_walk_in_customer_id(conn) -> int:
+    """Return the id of the single shared "Khách lẻ" walk-in customer.
+
+    DG-252 Phase 1 (FR2). Matches the v66 semantics at
+    ``schema.py:_migrate_v66_repair_customer_links``: exactly one shared record
+    (LOWERCASE comparison on ``customers.name``), never one-per-order. Creates
+    the row if it does not yet exist so the first identity-less order
+    materialises it.
+    """
+    existing = conn.execute(
+        "SELECT id FROM customers WHERE LOWER(name) = ? ORDER BY id ASC LIMIT 1",
+        (WALK_IN_SHARED_CUSTOMER_NAME.lower(),),
+    ).fetchone()
+    if existing is not None:
+        return existing["id"]
+    from baker.models.customer import Customer
+
+    cust = Customer(name=WALK_IN_SHARED_CUSTOMER_NAME, phone="")
+    return cust.save(conn)
+
+
+def _resolve_or_create_customer_id(
+    conn, phone: Optional[str], customer_name: Optional[str]
+) -> int:
+    """Guarantee a non-NULL ``customer_id`` for an order (DG-252 Phase 1).
+
+    Resolution chain (matches FR1/FR2/AC1):
+      1. ``phone``→``name`` resolution via ``_resolve_customer_id_by_phone``
+         (existing phone-then-name lookup with earliest-order-wins tiebreak).
+      2. Auto-create a server-side customer when step 1 returns ``None`` AND
+         the order carries a name and/or a phone (FR1).
+      3. Otherwise (no name AND no phone) link to the shared "Khách lẻ"
+         walk-in record via ``_get_or_create_walk_in_customer_id`` (FR2).
+
+    Always returns a positive integer customer id.
+    """
+    resolved = _resolve_customer_id_by_phone(conn, phone, customer_name=customer_name)
+    if resolved is not None:
+        return resolved
+
+    has_name = bool(customer_name and customer_name.strip())
+    has_phone = bool(phone and phone.strip())
+    if has_name or has_phone:
+        from baker.models.customer import Customer
+
+        name = customer_name.strip() if has_name else "Khách"
+        # DG-252 r3 [MAJOR]: materialize a `customer_phones` row so the new
+        # customer is visible to `/duplicates` (which joins on customer_phones)
+        # and so a later merge preserves its phone. Without this row the
+        # phone-only lives in the legacy `customers.phone` column, which the
+        # dedup finder and merge copy loop never consult.
+        phones = (
+            [{"phone": phone, "isPrimary": True}] if has_phone else []
+        )
+        cust = Customer(name=name, phone=phone or "", phones=phones)
+        return cust.save(conn)
+
+    return _get_or_create_walk_in_customer_id(conn)
+
+
 class OrderItemIn(BaseModel):
     productId: str = ""
     productName: str
@@ -216,10 +283,15 @@ def _item_in_to_model(item: OrderItemIn) -> OrderItem:
     )
 
 
-def _order_detail(conn, row) -> dict:
-    """Build full order detail dict including work items and payment transactions."""
+def _order_detail(conn, row, threshold_minutes: Optional[int] = None) -> dict:
+    """Build full order detail dict including work items and payment transactions.
+
+    ``threshold_minutes`` is forwarded to ``Order.to_api_dict`` so the DB
+    override from ``get_delivery_critical_threshold(conn)`` (NFR1) is applied
+    to the urgency tier. Resolved once per request by the caller.
+    """
     order = Order.from_row(row, conn)
-    result = order.to_api_dict()
+    result = order.to_api_dict(threshold_minutes=threshold_minutes)
 
     item_rows = conn.execute(
         "SELECT * FROM order_items WHERE order_id = ? ORDER BY position, id",
@@ -392,6 +464,11 @@ def list_orders(
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
+        # NFR1 (DG-253 Phase 5.6-c1): resolve DB override once per request so
+        # Settings-screen changes take effect on the next call without a
+        # server restart.
+        threshold_minutes = get_delivery_critical_threshold(conn)
+
         if active_only:
             rows = conn.execute(
                 f"SELECT * FROM orders {where} ORDER BY id DESC",
@@ -402,7 +479,7 @@ def list_orders(
                 order = Order.from_row(r, conn)
                 if order.status == "delivered" and order.amount_paid >= order.total_price:
                     continue
-                result.append(order.to_api_dict())
+                result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
         active_statuses = {"new", "confirmed", "in_progress", "ready", "delivered"}
@@ -416,7 +493,7 @@ def list_orders(
                 order = Order.from_row(r, conn)
                 if order.status == "delivered" and order.amount_paid >= order.total_price:
                     continue
-                result.append(order.to_api_dict())
+                result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
         rows = conn.execute(
@@ -424,7 +501,10 @@ def list_orders(
             params + [limit, offset],
         ).fetchall()
 
-        return [Order.from_row(r, conn).to_api_dict() for r in rows]
+        return [
+            Order.from_row(r, conn).to_api_dict(threshold_minutes=threshold_minutes)
+            for r in rows
+        ]
 
 
 @router.post("", status_code=201)
@@ -442,9 +522,11 @@ def create_order(body: OrderCreate, request: Request):
             # DG-205 Phase 3 (FR8): resolve customer_id from customerPhone via
             # customer_phones when the caller did not pass an explicit customerId.
             # DG-227 Phase 1: pass customerName for name-based fallback.
-            resolved = _resolve_customer_id_by_phone(conn, body.customerPhone, customer_name=body.customerName)
-            if resolved is not None:
-                body.customerId = resolved
+            # DG-252 Phase 1 (FR1/FR2/AC1): guarantee a non-NULL customer_id —
+            # resolve → auto-create → shared "Khách lẻ" walk-in record.
+            body.customerId = _resolve_or_create_customer_id(
+                conn, body.customerPhone, body.customerName
+            )
         public_order_code = _generate_unique_public_order_code(conn, body.dueDate, body.deliveryType)
         order = Order(
             customer_name=body.customerName,
@@ -538,7 +620,7 @@ def create_order(body: OrderCreate, request: Request):
                 conn, body.customerId, _order_year(order.created_at or now_utc())
             )
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order.id,)).fetchone()
-        response = _order_detail(conn, row)
+        response = _order_detail(conn, row, threshold_minutes=get_delivery_critical_threshold(conn))
         if accounting_sync_warning is not None:
             response["accountingSyncWarning"] = accounting_sync_warning
         return response
@@ -574,7 +656,7 @@ def get_order(ref: str):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
-        return _order_detail(conn, row)
+        return _order_detail(conn, row, threshold_minutes=get_delivery_critical_threshold(conn))
 
 
 @router.post("/{ref}/acknowledge")
@@ -595,7 +677,7 @@ def acknowledge_order(ref: str):
             )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return _order_detail(conn, updated)
+        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
 
 
 @router.patch("/{ref}")
@@ -617,18 +699,34 @@ def edit_order(ref: str, body: OrderEdit):
             exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (data["customerId"],)).fetchone()
             if not exists:
                 raise HTTPException(status_code=422, detail="Khách hàng không tồn tại")
-        elif "customerPhone" in data and data["customerPhone"] is not None:
-            # DG-227 Phase 1 (FR8): When customerId is explicitly null (the
-            # ``if`` above only matches non-None values) but customerPhone is
-            # provided, we deliberately fall through to re-resolve the customer
-            # link from phone + name. This is the intended FR8 flow — not a bug.
-            # Pass customer_name so the name-based fallback can match when the
-            # phone fails to resolve.
-            resolved = _resolve_customer_id_by_phone(
-                conn, data["customerPhone"], customer_name=data.get("customerName")
+        elif "customerId" in data and data["customerId"] is None:
+            # DG-252 Phase 1 (FR3): explicit ``customerId: null`` no longer
+            # leaves the order unlinked. Re-resolve from the (possibly new)
+            # phone/name in the patch body via the resolve → auto-create →
+            # "Khách lẻ" walk-in chain. Falls back to the row's existing
+            # phone/name when the patch does not supply them.
+            phone_for_resolve = data.get("customerPhone")
+            if phone_for_resolve is None:
+                phone_for_resolve = row["customer_phone"] or ""
+            name_for_resolve = data.get("customerName")
+            if name_for_resolve is None:
+                name_for_resolve = row["customer_name"] or ""
+            data["customerId"] = _resolve_or_create_customer_id(
+                conn, phone_for_resolve, name_for_resolve
             )
-            if resolved is not None:
-                data["customerId"] = resolved
+        elif "customerPhone" in data and data["customerPhone"] is not None:
+            # DG-227 Phase 1 (FR8): customerId was not touched in the patch
+            # but customerPhone changed — re-resolve the customer link from
+            # phone + name. Pass customer_name so the name-based fallback can
+            # match when the phone fails to resolve.
+            # DG-252 Phase 1 (FR3): the re-resolution chain now guarantees a
+            # non-NULL customer_id (resolve → auto-create → "Khách lẻ").
+            name_for_resolve = data.get("customerName")
+            if name_for_resolve is None:
+                name_for_resolve = row["customer_name"] or ""
+            data["customerId"] = _resolve_or_create_customer_id(
+                conn, data["customerPhone"], name_for_resolve
+            )
 
         updates = []
         params: list = []
@@ -832,7 +930,7 @@ def edit_order(ref: str, body: OrderEdit):
                 _recompute_customer_year_summary(conn, new_customer_id, old_year)
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        response = _order_detail(conn, updated)
+        response = _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
         response["publicOrderCodeUpdate"] = public_code_update or {
             "action": "unchanged",
             "reason": "none",
@@ -937,7 +1035,7 @@ def transition_status(ref: str, body: StatusTransition):
         sync_extras_to_order_status(conn, row["id"], body.status)
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        response = _order_detail(conn, updated)
+        response = _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
         if accounting_sync_warning is not None:
             response["accountingSyncWarning"] = accounting_sync_warning
         return response
@@ -981,7 +1079,7 @@ def update_payment_method(ref: str, body: PaymentMethodUpdate):
         )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return _order_detail(conn, updated)
+        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
 
 
 @router.patch("/{ref}/payment")
@@ -1012,4 +1110,4 @@ def update_payment(ref: str, body: PaymentUpdate):
             )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
-        return _order_detail(conn, updated)
+        return _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))

@@ -112,6 +112,10 @@ class OrdersLabels {
 
   // Critical orders screen
   static const criticalOrdersTitle = 'Đơn hàng khẩn cấp';
+  // Combined urgency listing title (critical + urgent) — DG-250 Phase 2
+  static const combinedUrgencyTitle = 'Đơn hàng khẩn cấp & gấp';
+  // Combined urgency listing empty state (critical + urgent) — DG-250 5.6-c1
+  static const combinedUrgencyFilterEmpty = 'Không có đơn hàng khẩn cấp hoặc gấp';
 
   // Completeness labels (DG-241 Phase 2 — FR-3, FR-4)
   static const completenessIncompleteBadge = 'THIẾU THÔNG TIN';

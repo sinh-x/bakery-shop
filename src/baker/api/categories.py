@@ -2,9 +2,10 @@
 
 import re
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 
+from baker.api.auth import RequireRole, record_audit_log
 from baker.db.connection import get_db
 
 
@@ -77,7 +78,7 @@ def list_categories(include_inactive: int = Query(0)):
 
 
 @router.post("", status_code=201)
-def create_category(category: CategoryCreate):
+def create_category(category: CategoryCreate, actor: str = Depends(RequireRole("admin"))):
     """Tạo category mới."""
     with get_db() as conn:
         existing = conn.execute(
@@ -99,6 +100,20 @@ def create_category(category: CategoryCreate):
             (category.slug, category.name, category.code_prefix, category.icon, max_pos + 1),
         )
         new_id = cursor.lastrowid
+        record_audit_log(
+            conn,
+            actor,
+            "create",
+            "category",
+            new_id,
+            old_value=None,
+            new_value={
+                "slug": category.slug,
+                "name": category.name,
+                "code_prefix": category.code_prefix,
+                "icon": category.icon,
+            },
+        )
         row = conn.execute(
             "SELECT * FROM categories WHERE id = ?", (new_id,)
         ).fetchone()
@@ -106,7 +121,7 @@ def create_category(category: CategoryCreate):
 
 
 @router.patch("/reorder")
-def reorder_categories(items: list[CategoryReorderItem]):
+def reorder_categories(items: list[CategoryReorderItem], actor: str = Depends(RequireRole("admin"))):
     """Cập nhật thứ tự categories. items là danh sách {id} theo thứ tự mới."""
     with get_db() as conn:
         for idx, item in enumerate(items):
@@ -114,11 +129,20 @@ def reorder_categories(items: list[CategoryReorderItem]):
                 "UPDATE categories SET position = ? WHERE id = ?",
                 (idx, item.id),
             )
+        record_audit_log(
+            conn,
+            actor,
+            "update",
+            "category",
+            "reorder",
+            old_value=None,
+            new_value={"ordered_ids": [i.id for i in items]},
+        )
     return {"ok": True, "count": len(items)}
 
 
 @router.patch("/{category_id}")
-def update_category(category_id: int, update: CategoryUpdate):
+def update_category(category_id: int, update: CategoryUpdate, actor: str = Depends(RequireRole("admin"))):
     """Cập nhật category (name, code_prefix, active)."""
     with get_db() as conn:
         existing = conn.execute(
@@ -127,6 +151,7 @@ def update_category(category_id: int, update: CategoryUpdate):
         if not existing:
             raise HTTPException(status_code=404, detail="Category không tồn tại")
 
+        old_snapshot = _row_to_dict(existing)
         fields: list[str] = []
         values: list = []
 
@@ -175,6 +200,17 @@ def update_category(category_id: int, update: CategoryUpdate):
                 "WHERE category = ? AND product_code LIKE ?",
                 (update.code_prefix, old_prefix, existing["slug"], f"{old_prefix}-%"),
             )
+
+        new_snapshot = update.model_dump(exclude_unset=True)
+        record_audit_log(
+            conn,
+            actor,
+            "update",
+            "category",
+            category_id,
+            old_value=old_snapshot,
+            new_value=new_snapshot,
+        )
 
         row = conn.execute(
             "SELECT * FROM categories WHERE id = ?", (category_id,)

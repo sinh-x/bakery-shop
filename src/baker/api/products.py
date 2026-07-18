@@ -1,12 +1,13 @@
 """Product CRUD API routes."""
 
 import json
-from fastapi import APIRouter, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from PIL import UnidentifiedImageError
 from pydantic import BaseModel
 
 import baker.config
+from baker.api.auth import RequireRole, record_audit_log
 from baker.code_gen import generate_code, get_category_prefix
 from baker.utils.time import InvalidEffectiveFrom, format_effective_from
 
@@ -260,7 +261,7 @@ def get_product(product_id: int):
 
 
 @router.post("", status_code=201)
-def create_product(product: ProductCreate):
+def create_product(product: ProductCreate, actor: str = Depends(RequireRole("admin"))):
     """Tạo sản phẩm mới."""
     with get_db() as conn:
         # Check duplicate name
@@ -311,6 +312,22 @@ def create_product(product: ProductCreate):
         )
         new_id = cursor.lastrowid
 
+        record_audit_log(
+            conn,
+            actor,
+            "create",
+            "product",
+            new_id,
+            old_value=None,
+            new_value={
+                "name": product.name,
+                "category": product.category,
+                "base_price": product.base_price,
+                "cost": product.cost,
+                "product_code": code,
+            },
+        )
+
         row = conn.execute(
             "SELECT * FROM products WHERE id = ?", (new_id,)
         ).fetchone()
@@ -318,7 +335,7 @@ def create_product(product: ProductCreate):
 
 
 @router.patch("/{product_id}")
-def update_product(product_id: int, product: ProductUpdate):
+def update_product(product_id: int, product: ProductUpdate, actor: str = Depends(RequireRole("admin"))):
     """Cập nhật sản phẩm."""
     with get_db() as conn:
         row = conn.execute(
@@ -327,6 +344,7 @@ def update_product(product_id: int, product: ProductUpdate):
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
 
+        old_snapshot = dict(row)
         updates = []
         params: list = []
         data = product.model_dump(exclude_unset=True)
@@ -389,6 +407,16 @@ def update_product(product_id: int, product: ProductUpdate):
             params,
         )
 
+        record_audit_log(
+            conn,
+            actor,
+            "update",
+            "product",
+            product_id,
+            old_value=old_snapshot,
+            new_value=data,
+        )
+
         row = conn.execute(
             "SELECT * FROM products WHERE id = ?", (product_id,)
         ).fetchone()
@@ -396,7 +424,7 @@ def update_product(product_id: int, product: ProductUpdate):
 
 
 @router.delete("/{product_id}")
-def delete_product(product_id: int):
+def delete_product(product_id: int, actor: str = Depends(RequireRole("admin"))):
     """Xoá mềm sản phẩm (active=0)."""
     with get_db() as conn:
         row = conn.execute(
@@ -407,6 +435,15 @@ def delete_product(product_id: int):
 
         conn.execute(
             "UPDATE products SET active = 0 WHERE id = ?", (product_id,)
+        )
+        record_audit_log(
+            conn,
+            actor,
+            "delete",
+            "product",
+            product_id,
+            old_value=dict(row),
+            new_value={"active": 0},
         )
         return {"message": f"Đã ngừng bán sản phẩm '{row['name']}'"}
 

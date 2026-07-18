@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../features/auth/auth_provider.dart';
+
 const kDefaultApiUrl = 'http://localhost:8000';
 const kApiUrlKey = 'api_base_url';
 
@@ -91,6 +93,43 @@ class DeviceHeadersInterceptor extends Interceptor {
   }
 }
 
+/// Dio interceptor that attaches the JWT bearer token to every request and
+/// routes 401 responses back to the login screen (FR15).
+///
+/// On each request it reads the current auth token via [readToken]. On a 401
+/// response it invokes [onUnauthorized] which clears the stored token and
+/// flips the auth state to `unauthenticated`; the router guard then
+/// redirects to `/login`.
+class AuthInterceptor extends Interceptor {
+  AuthInterceptor({required this.readToken, required this.onUnauthorized});
+
+  /// Returns the current JWT token, or `null`/empty if unauthenticated.
+  final String? Function() readToken;
+
+  /// Called once when a 401 response is received. Implementations should
+  /// clear the stored token and transition the auth state.
+  final Future<void> Function() onUnauthorized;
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    final token = readToken();
+    if (token != null && token.isNotEmpty) {
+      options.headers['Authorization'] = 'Bearer $token';
+    }
+    handler.next(options);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) {
+    if (err.response?.statusCode == 401) {
+      // Fire-and-forget: clear the token so the router guard redirects to
+      // /login on the next rebuild. Do not await here — onError must not block.
+      onUnauthorized();
+    }
+    handler.next(err);
+  }
+}
+
 final dioProvider = Provider<Dio>((ref) {
   final baseUrl = ref.watch(apiBaseUrlProvider);
   final dio = Dio(BaseOptions(
@@ -99,6 +138,10 @@ final dioProvider = Provider<Dio>((ref) {
     receiveTimeout: const Duration(seconds: 10),
   ));
   dio.interceptors.add(DeviceHeadersInterceptor());
+  dio.interceptors.add(AuthInterceptor(
+    readToken: () => ref.read(authProvider).token,
+    onUnauthorized: () => ref.read(authProvider.notifier).handle401(),
+  ));
   // Load device info in background (headers will be empty until loaded)
   _loadDeviceInfo();
   return dio;
