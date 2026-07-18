@@ -58,9 +58,7 @@ class PaymentTransactionService {
     if (type != null) data['type'] = type;
     if (method != null) data['method'] = method;
     if (notes != null) data['note'] = notes;
-    if (paymentSource != null && paymentSource.isNotEmpty) {
-      data['payment_source'] = paymentSource;
-    }
+    data['payment_source'] = paymentSource ?? '';
     final response = await _dio.patch(
       '/api/orders/$orderRef/transactions/$txnId',
       data: data,

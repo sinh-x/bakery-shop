@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/vnd_units.dart';
+import '../../../shared/widgets/target_account_dropdown.dart';
 
 /// Dedicated POS payment step shown AFTER the Stage 4 review (DG-218 Phase 4,
 /// FR-5). Presents the cash/transfer method selection, an editable amount field
@@ -272,27 +273,9 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
                 ),
                 if (widget.selectedPaymentMethod == 'transfer') ...[
                   const SizedBox(height: 16),
-                  DropdownButtonFormField<String?>(
-                    initialValue: widget.selectedTargetAccount,
-                    decoration: const InputDecoration(
-                      labelText: VN.paymentTargetAccountLabel,
-                      border: OutlineInputBorder(),
-                    ),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text(VN.paymentNoAccount),
-                      ),
-                      for (final account in paymentTargetAccounts)
-                        DropdownMenuItem<String?>(
-                          value: account,
-                          child: Text(account),
-                        ),
-                    ],
-                    onChanged: widget.onTargetAccountChanged == null
-                        ? null
-                        : (value) =>
-                            widget.onTargetAccountChanged!(value),
+                  TargetAccountDropdown(
+                    value: widget.selectedTargetAccount,
+                    onChanged: widget.onTargetAccountChanged,
                   ),
                 ],
               ],

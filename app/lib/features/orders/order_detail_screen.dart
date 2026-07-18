@@ -23,6 +23,7 @@ import '../../shared/utils/date_formatting.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import '../../shared/widgets/target_account_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/enum_attribute_display.dart';
 import 'widgets/order_customer_section.dart';
@@ -1372,7 +1373,10 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                     (m) => ChoiceChip(
                       label: Text(m.$2),
                       selected: _method == m.$1,
-                      onSelected: (_) => setState(() => _method = m.$1),
+                      onSelected: (_) => setState(() {
+                        _method = m.$1;
+                        if (m.$1 != 'transfer') _paymentSource = null;
+                      }),
                     ),
                   )
                   .toList(),
@@ -1403,27 +1407,14 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String?>(
-              initialValue: _paymentSource,
-              decoration: const InputDecoration(
-                labelText: VN.paymentTargetAccountLabel,
-                border: OutlineInputBorder(),
+            if (_method == 'transfer') ...[
+              const SizedBox(height: 12),
+              TargetAccountDropdown(
+                value: _paymentSource,
+                onChanged: (value) =>
+                    setState(() => _paymentSource = value),
               ),
-              items: [
-                const DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text(VN.paymentNoAccount),
-                ),
-                for (final account in paymentTargetAccounts)
-                  DropdownMenuItem<String?>(
-                    value: account,
-                    child: Text(account),
-                  ),
-              ],
-              onChanged: (value) =>
-                  setState(() => _paymentSource = value),
-            ),
+            ],
             const SizedBox(height: 16),
             FilledButton(
               onPressed: _submitting ? null : _submit,
@@ -1854,7 +1845,10 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
                     (m) => ChoiceChip(
                       label: Text(m.$2),
                       selected: _method == m.$1,
-                      onSelected: (_) => setState(() => _method = m.$1),
+                      onSelected: (_) => setState(() {
+                    _method = m.$1;
+                    if (m.$1 != 'transfer') _paymentSource = null;
+                  }),
                     ),
                   )
                   .toList(),
@@ -1885,27 +1879,14 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String?>(
-              initialValue: _paymentSource,
-              decoration: const InputDecoration(
-                labelText: VN.paymentTargetAccountLabel,
-                border: OutlineInputBorder(),
+            if (_method == 'transfer') ...[
+              const SizedBox(height: 12),
+              TargetAccountDropdown(
+                value: _paymentSource,
+                onChanged: (value) =>
+                    setState(() => _paymentSource = value),
               ),
-              items: [
-                const DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text(VN.paymentNoAccount),
-                ),
-                for (final account in paymentTargetAccounts)
-                  DropdownMenuItem<String?>(
-                    value: account,
-                    child: Text(account),
-                  ),
-              ],
-              onChanged: (value) =>
-                  setState(() => _paymentSource = value),
-            ),
+            ],
             const SizedBox(height: 16),
             FilledButton(
               onPressed: _submitting ? null : _submit,
