@@ -3795,9 +3795,11 @@ CREATE TABLE IF NOT EXISTS users (
     role          TEXT NOT NULL DEFAULT 'staff' CHECK(role IN ('admin', 'staff')),
     active        INTEGER NOT NULL DEFAULT 1,
     locked_until  TEXT DEFAULT NULL,
+    staff_id      INTEGER REFERENCES staff(id) ON DELETE SET NULL,
     created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_staff_id ON users(staff_id) WHERE staff_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_active ON users(active);
 """
@@ -3819,6 +3821,11 @@ def _migrate_v68_users_table(conn):
     is generated for each user, bcrypt-hashed (cost factor 12), and the plain
     password is printed to stdout so the admin can distribute credentials.
 
+    Starting DG-259 Phase 1, ``staff_id`` is set during user creation using
+    case+diacritic-insensitive name matching against the ``staff`` table.
+    Role overrides are applied per the approved seed mapping: Ân→admin,
+    Ngân→staff, Phượng→admin, Sinh→admin, Tân→admin.
+
     Idempotent: re-running on a DB where users already exist skips seeding
     (INSERT OR IGNORE on the unique ``username``); printed passwords are only
     emitted on the first run when a row is actually inserted.
@@ -3831,10 +3838,17 @@ def _migrate_v68_users_table(conn):
 
     _pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=BCRYPT_ROUNDS)
 
+    _USER_ROLE_OVERRIDE = {
+        "Ân": "admin",
+        "Ngân": "staff",
+        "Phượng": "admin",
+        "Tân": "admin",
+    }
+
     inserted: list[tuple[str, str, str]] = []  # (username, role, plain_password)
 
     for name, staff_role in SEED_STAFF:
-        user_role = _SEED_STAFF_ROLE_TO_USER_ROLE.get(staff_role, "staff")
+        user_role = _USER_ROLE_OVERRIDE.get(name, _SEED_STAFF_ROLE_TO_USER_ROLE.get(staff_role, "staff"))
         # DG-029 follow-on: lowercase the system username (staff.name display
         # name is left unchanged — users.username is the login account name).
         # Python str.lower() is Unicode-aware and correct for Vietnamese
@@ -3847,11 +3861,21 @@ def _migrate_v68_users_table(conn):
             continue
         plain = _secrets.token_urlsafe(12)
         hashed = _pwd_ctx.hash(plain)
-        conn.execute(
+        cursor = conn.execute(
             "INSERT INTO users (username, password_hash, role, active) "
             "VALUES (?, ?, ?, 1)",
             (username, hashed, user_role),
         )
+        # Look up staff_id by case+diacritic-insensitive name matching
+        user_id = cursor.lastrowid
+        staff_row = conn.execute(
+            "SELECT id FROM staff WHERE name = ?", (name,)
+        ).fetchone()
+        if staff_row:
+            conn.execute(
+                "UPDATE users SET staff_id = ? WHERE id = ?",
+                (int(staff_row[0]), user_id),
+            )
         inserted.append((username, user_role, plain))
 
     if inserted:
@@ -3908,6 +3932,15 @@ def _migrate_v71_users_role_check(conn):
     if "CHECK(role IN" in create_sql.replace("\n", " "):
         return
 
+    # DG-259 Phase 1: ensure staff_id column exists before rebuild (legacy
+    # DBs where v68 ran before the DG-259 USERS_SCHEMA update won't have it).
+    existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "staff_id" not in existing_cols:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN "
+            "staff_id INTEGER REFERENCES staff(id) ON DELETE SET NULL"
+        )
+
     # Rebuild users with the CHECK constraint (table-rebuild pattern,
     # same approach used by _migrate_v28_cascade_and_reseed).
     conn.executescript(
@@ -3919,11 +3952,12 @@ def _migrate_v71_users_role_check(conn):
             role          TEXT NOT NULL DEFAULT 'staff' CHECK(role IN ('admin', 'staff')),
             active        INTEGER NOT NULL DEFAULT 1,
             locked_until  TEXT DEFAULT NULL,
+            staff_id      INTEGER REFERENCES staff(id) ON DELETE SET NULL,
             created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
         );
 
-        INSERT INTO users_new (id, username, password_hash, role, active, locked_until, created_at)
-        SELECT id, username, password_hash, role, active, locked_until, created_at
+        INSERT INTO users_new (id, username, password_hash, role, active, locked_until, staff_id, created_at)
+        SELECT id, username, password_hash, role, active, locked_until, staff_id, created_at
         FROM users;
 
         DROP TABLE users;
@@ -3973,7 +4007,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     os_version      TEXT NOT NULL DEFAULT '',
     logged_in_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
     last_activity   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
-    revoked_at      TEXT DEFAULT NULL
+    revoked_at      TEXT DEFAULT NULL,
+    staff_id        INTEGER DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_username ON sessions(username);
@@ -4068,6 +4103,77 @@ def _migrate_v76_add_transaction_bank_sub_accounts(conn):
     _guard_add_column(
         conn, "payment_transactions", "payment_source", "payment_source TEXT DEFAULT ''"
     )
+
+
+def _migrate_v77_staff_id_columns(conn):
+    """Add ``staff_id`` columns to ``users`` and ``sessions`` tables, create
+    UNIQUE index on ``users.staff_id``, and back-link existing users to staff
+    using case+diacritic-insensitive name matching (DG-259 Phase 1, FR4/FR5/FR7).
+
+    ``users.staff_id`` is an FK to ``staff(id) ON DELETE SET NULL`` with a
+    UNIQUE partial index so each staff member can be linked to at most one
+    user account. ``sessions.staff_id`` is a plain nullable integer (login-time
+    population lands in Phase 2, FR5).
+
+    The backfill matches existing usernames to staff names by stripping
+    Vietnamese diacritics and lowercasing both sides. First match wins —
+    administrators can override via Settings (Phase 4).
+
+    Idempotent: re-running on an already-migrated DB is a no-op because each
+    column and index is PRAGMA-guarded.
+    """
+    import unicodedata
+
+    def _normalize(s):
+        return ''.join(
+            c for c in unicodedata.normalize('NFKD', s) if not unicodedata.combining(c)
+        ).lower().strip()
+
+    # Add users.staff_id (PRAGMA guard)
+    existing_users_cols = {
+        r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()
+    }
+    if "staff_id" not in existing_users_cols:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN "
+            "staff_id INTEGER REFERENCES staff(id) ON DELETE SET NULL"
+        )
+
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_staff_id "
+        "ON users(staff_id) WHERE staff_id IS NOT NULL"
+    )
+
+    # Add sessions.staff_id (PRAGMA guard)
+    existing_sessions_cols = {
+        r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()
+    }
+    if "staff_id" not in existing_sessions_cols:
+        conn.execute(
+            "ALTER TABLE sessions ADD COLUMN staff_id INTEGER DEFAULT NULL"
+        )
+
+    # Back-link existing users to staff by case+diacritic-insensitive name matching
+    users = conn.execute(
+        "SELECT id, username FROM users WHERE staff_id IS NULL ORDER BY id"
+    ).fetchall()
+    if users:
+        staff_rows = conn.execute("SELECT id, name FROM staff ORDER BY id").fetchall()
+        if staff_rows:
+            staff_by_normalized: dict[str, int] = {}
+            for srow in staff_rows:
+                key = _normalize(srow["name"])
+                if key and key not in staff_by_normalized:
+                    staff_by_normalized[key] = int(srow["id"])
+
+            for urow in users:
+                key = _normalize(urow["username"])
+                staff_id = staff_by_normalized.get(key)
+                if staff_id is not None:
+                    conn.execute(
+                        "UPDATE users SET staff_id = ? WHERE id = ?",
+                        (staff_id, int(urow["id"])),
+                    )
 
 
 MIGRATIONS = {
@@ -4435,6 +4541,11 @@ MIGRATIONS = {
         "description": "Chart of accounts: ensure bank sub-accounts 1210 (Phượng VCB), 1220 (Ân VCB), 1290 (un-allocated) exist — DG-244 Phase 4",
         "sql": "",
         "callable": _migrate_v76_add_transaction_bank_sub_accounts,
+    },
+    77: {
+        "description": "Add staff_id columns to users and sessions tables, create UNIQUE index, back-link existing users to staff — DG-259 Phase 1",
+        "sql": "",
+        "callable": _migrate_v77_staff_id_columns,
     },
 }
 
