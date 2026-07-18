@@ -1525,6 +1525,15 @@ SEED_CHART_OF_ACCOUNTS = [
     ("1000", "Tài sản", "asset", None),
     ("1100", "Tiền mặt (Cash on Hand)", "asset", "1000"),
     ("1200", "Tài khoản ngân hàng (Bank Account)", "asset", "1000"),
+    # DG-244 Phase 4: distinct bank sub-accounts under 1200 for payment
+    # transaction routing. The expense flow still maps both VCB labels to
+    # 1200 via EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE — these sub-accounts
+    # are used only by the payment_transaction journal routing
+    # (TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE) so per-account balances are
+    # visible without disturbing expense journal behavior.
+    ("1210", "TK Phượng VCB (Bank — Phượng)", "asset", "1200"),
+    ("1220", "TK Ân VCB (Bank — Ân)", "asset", "1200"),
+    ("1290", "TK ngân hàng chưa phân bổ (Un-allocated Bank)", "asset", "1200"),
     ("1300", "Hàng tồn kho (Inventory)", "asset", "1000"),
     ("1500", "Phải thu khách hàng (Accounts Receivable)", "asset", "1000"),
     # Liabilities
@@ -1588,6 +1597,24 @@ PAYMENT_METHOD_TO_ASSET_CODE = {
     "card": "1100",
     "transfer": "1200",
 }
+
+# DG-244 Phase 4: Map payment_transactions.payment_source → bank asset
+# account code. Used ONLY by the payment_transaction journal routing path
+# (_build_payment_journal_lines). Distinct from EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
+# which the expense flow depends on (both VCB labels collapse to 1200 there).
+# An empty/unknown payment_source falls back to UNALLOCATED_BANK_CODE via
+# _resolve_transaction_asset_code (see journal_sync.py).
+TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE = {
+    "TK Phượng VCB": "1210",
+    "TK Ân VCB": "1220",
+}
+
+# DG-244 Phase 4: Dedicated un-allocated bank account for transfer
+# transactions with no payment_source selected. Sub-account of 1200 so the
+# chart-of-accounts hierarchy keeps all bank balances under "Tài khoản ngân
+# hàng". Phase 5 historical backfill will reassign existing transfer journal
+# entries (currently routed to 1200) to this code.
+UNALLOCATED_BANK_CODE = "1290"
 
 # Expense debt payment method — records an expense as unpaid debt (FR1, DG-212).
 # When ``events.data.payment_method`` equals this value, the expense's vendor
@@ -4020,6 +4047,29 @@ def _migrate_v73_add_account_2500(conn):
     _seed_chart_of_accounts(conn)
 
 
+def _migrate_v76_add_transaction_bank_sub_accounts(conn):
+    """Ensure bank sub-accounts 1210/1220/1290 exist (DG-244 Phase 4).
+
+    Adds three sub-accounts under 1200 (Tài khoản ngân hàng) so payment
+    transactions can be routed to distinct bank accounts:
+
+      * 1210 — TK Phượng VCB (Bank — Phượng)
+      * 1220 — TK Ân VCB (Bank — Ân)
+      * 1290 — TK ngân hàng chưa phân bổ (Un-allocated Bank)
+
+    Idempotent via ``_seed_chart_of_accounts()`` which uses ``INSERT OR IGNORE``
+    for every account. Re-running on an already-migrated DB is a no-op.
+
+    The historical backfill (Phase 5) will reassign existing transfer journal
+    entries from 1200 to 1290 in a separate migration; this migration only
+    ensures the accounts exist so live routing can target them.
+    """
+    _seed_chart_of_accounts(conn)
+    _guard_add_column(
+        conn, "payment_transactions", "payment_source", "payment_source TEXT DEFAULT ''"
+    )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -4380,6 +4430,11 @@ MIGRATIONS = {
         "description": "Backfill a primary customer_phones row from non-empty customers.phone for all customers with zero phone rows (DG-252 r4 [MAJOR] data-loss defense)",
         "sql": "",
         "callable": _migrate_v75_backfill_primary_customer_phones,
+    },
+    76: {
+        "description": "Chart of accounts: ensure bank sub-accounts 1210 (Phượng VCB), 1220 (Ân VCB), 1290 (un-allocated) exist — DG-244 Phase 4",
+        "sql": "",
+        "callable": _migrate_v76_add_transaction_bank_sub_accounts,
     },
 }
 

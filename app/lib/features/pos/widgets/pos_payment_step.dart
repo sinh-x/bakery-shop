@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/vnd_units.dart';
+import '../../../shared/widgets/target_account_dropdown.dart';
 
 /// Dedicated POS payment step shown AFTER the Stage 4 review (DG-218 Phase 4,
 /// FR-5). Presents the cash/transfer method selection, an editable amount field
@@ -29,6 +30,8 @@ class PosPaymentStep extends ConsumerStatefulWidget {
     required this.onTienRutAmountChanged,
     required this.onBack,
     required this.onSubmit,
+    this.selectedTargetAccount,
+    this.onTargetAccountChanged,
   });
 
   final double orderTotal;
@@ -42,6 +45,12 @@ class PosPaymentStep extends ConsumerStatefulWidget {
   final ValueChanged<double> onTienRutAmountChanged;
   final VoidCallback onBack;
   final VoidCallback onSubmit;
+
+  /// Optional target bank account for transfer payments (DG-244 Phase 2,
+  /// FR7). `null` means no selection. Only shown when the method is
+  /// `transfer`.
+  final String? selectedTargetAccount;
+  final ValueChanged<String?>? onTargetAccountChanged;
 
   @override
   ConsumerState<PosPaymentStep> createState() => _PosPaymentStepState();
@@ -262,6 +271,13 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
                   showSelectedIcon: false,
                   multiSelectionEnabled: false,
                 ),
+                if (widget.selectedPaymentMethod == 'transfer') ...[
+                  const SizedBox(height: 16),
+                  TargetAccountDropdown(
+                    value: widget.selectedTargetAccount,
+                    onChanged: widget.onTargetAccountChanged,
+                  ),
+                ],
               ],
             ),
           ),

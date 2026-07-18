@@ -23,6 +23,7 @@ import '../../shared/utils/date_formatting.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import '../../shared/widgets/target_account_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/enum_attribute_display.dart';
 import 'widgets/order_customer_section.dart';
@@ -1264,6 +1265,7 @@ class _RecordPaymentSheet extends ConsumerStatefulWidget {
 class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   late String _type;
   String _method = 'cash';
+  String? _paymentSource;
   final _amountCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
@@ -1303,6 +1305,7 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
             type: _type,
             method: _method,
             notes: _notesCtrl.text.trim(),
+            paymentSource: _paymentSource,
           );
       if (mounted) {
         Navigator.pop(context);
@@ -1370,7 +1373,10 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                     (m) => ChoiceChip(
                       label: Text(m.$2),
                       selected: _method == m.$1,
-                      onSelected: (_) => setState(() => _method = m.$1),
+                      onSelected: (_) => setState(() {
+                        _method = m.$1;
+                        if (m.$1 != 'transfer') _paymentSource = null;
+                      }),
                     ),
                   )
                   .toList(),
@@ -1401,6 +1407,14 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                 border: OutlineInputBorder(),
               ),
             ),
+            if (_method == 'transfer') ...[
+              const SizedBox(height: 12),
+              TargetAccountDropdown(
+                value: _paymentSource,
+                onChanged: (value) =>
+                    setState(() => _paymentSource = value),
+              ),
+            ],
             const SizedBox(height: 16),
             FilledButton(
               onPressed: _submitting ? null : _submit,
@@ -1512,6 +1526,11 @@ class _TransactionDetailSheetState
           ),
           const SizedBox(height: 20),
           _DetailRow(label: VN.paymentMethod, value: methodLabel),
+          if (txn.paymentSource != null && txn.paymentSource!.isNotEmpty)
+            _DetailRow(
+              label: VN.paymentTargetAccountLabel,
+              value: txn.paymentSource!,
+            ),
           if (dateStr.isNotEmpty) _DetailRow(label: VN.txnType, value: dateStr),
           if (txn.notes.isNotEmpty)
             _DetailRow(label: VN.txnNoteLabel, value: txn.notes),
@@ -1720,6 +1739,7 @@ class _EditPaymentSheet extends ConsumerStatefulWidget {
 class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
   late String _type;
   late String _method;
+  String? _paymentSource;
   late final TextEditingController _amountCtrl;
   late final TextEditingController _notesCtrl;
   final _formKey = GlobalKey<FormState>();
@@ -1730,6 +1750,7 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
     super.initState();
     _type = widget.txn.type;
     _method = widget.txn.method;
+    _paymentSource = widget.txn.paymentSource;
     // Convert back from actual amount to thousands for display
     _amountCtrl = TextEditingController(
       text: vndThousandsTextFromAmount(widget.txn.amount),
@@ -1757,6 +1778,7 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
             type: _type,
             method: _method,
             notes: _notesCtrl.text.trim(),
+            paymentSource: _paymentSource,
           );
       if (mounted) {
         Navigator.pop(context);
@@ -1823,7 +1845,10 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
                     (m) => ChoiceChip(
                       label: Text(m.$2),
                       selected: _method == m.$1,
-                      onSelected: (_) => setState(() => _method = m.$1),
+                      onSelected: (_) => setState(() {
+                    _method = m.$1;
+                    if (m.$1 != 'transfer') _paymentSource = null;
+                  }),
                     ),
                   )
                   .toList(),
@@ -1854,6 +1879,14 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
                 border: OutlineInputBorder(),
               ),
             ),
+            if (_method == 'transfer') ...[
+              const SizedBox(height: 12),
+              TargetAccountDropdown(
+                value: _paymentSource,
+                onChanged: (value) =>
+                    setState(() => _paymentSource = value),
+              ),
+            ],
             const SizedBox(height: 16),
             FilledButton(
               onPressed: _submitting ? null : _submit,

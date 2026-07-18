@@ -347,7 +347,14 @@ def test_payment_deposit_creates_journal_entry(api_client):
 
 
 def test_payment_transfer_method_hits_bank_account(api_client):
-    """method='transfer' debits Bank Account (1200), not Cash on Hand."""
+    """method='transfer' with no payment_source debits the un-allocated bank
+    account (1290) per DG-244 Phase 4 FR5 — replaces the old 1200 default.
+
+    A transfer with an explicit payment_source routes to that bank sub-account
+    (covered by tests/test_api_payment_transactions_payment_source.py). The
+    pre-Phase-4 behavior (transfer → 1200) is intentionally replaced because
+    1200 is now the parent bank-account header shared by 1210/1220/1290.
+    """
     order = _create_order(api_client)
     ref = order["orderRef"]
     txn = _create_txn(api_client, ref, amount=150000, type="payment", method="transfer")
@@ -357,7 +364,7 @@ def test_payment_transfer_method_hits_bank_account(api_client):
         lines = _lines_for_entry(conn, entries[0].id)
         debit_line = next(l for l in lines if l.debit > 0)
         asset_acc = Account.get_by_id(conn, debit_line.account_id)
-        assert asset_acc.code == "1200"
+        assert asset_acc.code == "1290"
 
 
 def test_payment_refund_reverses_direction(api_client):

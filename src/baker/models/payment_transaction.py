@@ -77,6 +77,7 @@ class PaymentTransaction:
     type: str = "deposit"
     method: str = "cash"
     note: str = ""
+    payment_source: str = ""
     id: Optional[int] = None
     created_at: Optional[str] = None
     invalidated_at: Optional[str] = None
@@ -88,9 +89,10 @@ class PaymentTransaction:
         if self.method not in [m.value for m in PaymentMethod]:
             raise ValueError(f"Invalid payment method: {self.method}")
         cursor = conn.execute(
-            """INSERT INTO payment_transactions (order_id, amount, type, method, note, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (self.order_id, self.amount, self.type, self.method, self.note, now_utc()),
+            """INSERT INTO payment_transactions (order_id, amount, type, method, note, payment_source, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (self.order_id, self.amount, self.type, self.method, self.note,
+             self.payment_source or "", now_utc()),
         )
         self.id = cursor.lastrowid
         return self.id
@@ -104,6 +106,7 @@ class PaymentTransaction:
             type=row["type"],
             method=row["method"],
             note=row["note"] or "",
+            payment_source=row["payment_source"] if "payment_source" in row.keys() else "",
             created_at=row["created_at"],
             invalidated_at=row["invalidated_at"] if "invalidated_at" in row.keys() else None,
             invalidated_by=row["invalidated_by"] if "invalidated_by" in row.keys() else "",
@@ -117,6 +120,7 @@ class PaymentTransaction:
             "type": self.type,
             "method": self.method,
             "note": self.note,
+            "paymentSource": self.payment_source or "",
             "createdAt": self.created_at,
             "invalidatedAt": self.invalidated_at,
             "invalidatedBy": self.invalidated_by,
