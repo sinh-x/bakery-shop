@@ -319,7 +319,7 @@ def _record_session(
     device_model: str = "",
     app_version: str = "",
     os_version: str = "",
-    staff_id: object = None,
+    staff_id: int | None = None,
 ) -> None:
     """Insert an active session row on successful login (FR20).
 

@@ -11,8 +11,7 @@ class StaffBindingNotifier extends AsyncNotifier<StaffBinding> {
 
   Future<void> updateBinding(int? staffId) async {
     final service = ref.read(userServiceProvider);
-    final binding = await service.updateStaffBinding(staffId);
-    state = AsyncData(binding);
+    state = await AsyncValue.guard(() => service.updateStaffBinding(staffId));
   }
 }
 

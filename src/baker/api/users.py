@@ -1,6 +1,9 @@
 """User settings API routes — staff-user binding for admin users."""
 
+import sqlite3
+
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, StrictInt
 
 from baker.api.auth import RequireRole, record_audit_log
 from baker.db.connection import get_db
@@ -8,10 +11,8 @@ from baker.db.connection import get_db
 router = APIRouter(prefix="/api/users", tags=["users"])
 
 
-class StaffBindingResponse:
-    def __init__(self, staff_id: int | None, staff_name: str | None):
-        self.staff_id = staff_id
-        self.staff_name = staff_name
+class StaffBindingUpdate(BaseModel):
+    staff_id: StrictInt | None = None
 
 
 @router.get("/me/staff-binding")
@@ -39,14 +40,11 @@ def get_staff_binding(request: Request):
 @router.put("/me/staff-binding")
 def update_staff_binding(
     request: Request,
-    body: dict,
+    body: StaffBindingUpdate,
     _admin: str = Depends(RequireRole("admin")),
 ):
     """Link or unlink a staff record to the current user account."""
-    staff_id = body.get("staff_id")
-
-    if staff_id is not None and not isinstance(staff_id, int):
-        raise HTTPException(status_code=400, detail="staff_id must be an integer or null")
+    staff_id = body.staff_id
 
     username = getattr(request.state, "auth_username", "")
     with get_db() as conn:
@@ -73,14 +71,36 @@ def update_staff_binding(
                     status_code=404,
                     detail=f"Staff with id={staff_id} not found or inactive",
                 )
+
+            # Pre-check: if this staff member is already bound to another user, return 409
+            conflict = conn.execute(
+                "SELECT username FROM users "
+                "WHERE staff_id = ? AND username != ?",
+                (staff_id, username),
+            ).fetchone()
+            if conflict:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Nhân viên này đã được gắn với tài khoản "
+                        f"'{conflict['username']}'"
+                    ),
+                )
+
             new_name = staff_row["name"]
         else:
             new_name = None
 
-        conn.execute(
-            "UPDATE users SET staff_id = ? WHERE username = ?",
-            (staff_id, username),
-        )
+        try:
+            conn.execute(
+                "UPDATE users SET staff_id = ? WHERE username = ?",
+                (staff_id, username),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(
+                status_code=409,
+                detail="Nhân viên này đã được gắn với tài khoản khác",
+            )
 
         record_audit_log(
             conn,

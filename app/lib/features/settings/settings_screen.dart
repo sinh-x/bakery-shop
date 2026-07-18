@@ -164,8 +164,52 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   Future<void> _selectBinding(int? staffId) async {
-    await ref.read(staffBindingProvider.notifier).updateBinding(staffId);
-    if (mounted) showTopSnackBar(context, VN.staffBindingSaved);
+    final notifier = ref.read(staffBindingProvider.notifier);
+    await notifier.updateBinding(staffId);
+    if (mounted) {
+      final newState = ref.read(staffBindingProvider);
+      if (newState.hasError) {
+        showTopSnackBar(
+          context,
+          VN.staffBindingSaveFailed,
+          backgroundColor: Colors.red.shade800,
+        );
+        ref.invalidate(staffBindingProvider);
+      } else {
+        showTopSnackBar(context, VN.staffBindingSaved);
+      }
+    }
+  }
+
+  Widget _buildIdentityRow(AuthState auth) {
+    final staffName = ref.watch(loggedByProvider);
+    final bindingAsync = ref.watch(staffBindingProvider);
+    final staffDisplay = bindingAsync.when(
+      data: (b) => b.staffName ?? staffName,
+      loading: () => staffName,
+      error: (_, _) => staffName,
+    );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            const Icon(Icons.person, size: 32),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(auth.username ?? '',
+                    style: Theme.of(context).textTheme.titleMedium),
+                if (staffDisplay.isNotEmpty)
+                  Text(staffDisplay,
+                      style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   List<Widget> _buildStaffBindingSection() {
@@ -215,9 +259,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               child: CircularProgressIndicator(),
             ),
           ),
-          error: (_, _) => Text(
-            VN.staffBindingNone,
-            style: Theme.of(context).textTheme.bodyMedium,
+          error: (_, _) => InkWell(
+            onTap: () => ref.invalidate(staffBindingProvider),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                VN.staffBindingLoadError,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: Colors.red),
+              ),
+            ),
           ),
         ),
         loading: () => const Center(
@@ -226,9 +279,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             child: CircularProgressIndicator(),
           ),
         ),
-        error: (_, _) => Text(
-          VN.staffBindingNone,
-          style: Theme.of(context).textTheme.bodyMedium,
+        error: (_, _) => InkWell(
+          onTap: () => ref.invalidate(staffBindingProvider),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              VN.staffBindingLoadError,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: Colors.red),
+            ),
+          ),
         ),
       ),
     ];
@@ -308,6 +370,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              if (auth.isAuthenticated) ...[
+                _buildIdentityRow(auth),
+                const SizedBox(height: 16),
+              ],
               if (auth.isAuthenticated && auth.isAdmin)
                 ..._buildStaffBindingSection(),
               if (!auth.isAuthenticated) ..._buildGraceStaffPicker(),

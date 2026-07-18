@@ -113,8 +113,8 @@ def user_create(username: str, role: str, staff_name: str | None, quiet: bool):
     username = _normalize_username(username)
 
     resolved_staff_id: int | None = None
-    if staff_name:
-        with get_db() as conn:
+    with get_db() as conn:
+        if staff_name:
             staff_rows = conn.execute(
                 "SELECT id, name FROM staff ORDER BY id"
             ).fetchall()
@@ -140,7 +140,7 @@ def user_create(username: str, role: str, staff_name: str | None, quiet: bool):
                     f"  [red]No staff member found matching '{staff_name}'.[/red]"
                 )
                 return
-    with get_db() as conn:
+
         existing = conn.execute(
             "SELECT id FROM users WHERE username = ?", (username,)
         ).fetchone()
@@ -150,14 +150,21 @@ def user_create(username: str, role: str, staff_name: str | None, quiet: bool):
 
         plain = _generate_password()
         hashed = _hash(plain)
-        conn.execute(
-            "INSERT INTO users (username, password_hash, role, active, staff_id) "
-            "VALUES (?, ?, ?, 1, ?)",
-            (username, hashed, role, resolved_staff_id),
-        )
+        try:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, role, active, staff_id) "
+                "VALUES (?, ?, ?, 1, ?)",
+                (username, hashed, role, resolved_staff_id),
+            )
+        except Exception:
+            console.print(
+                "  [red]Failed to create user: database integrity error. "
+                "The staff member may already be linked to another user.[/red]"
+            )
+            return
         console.print(f"  [green]Created[/green] user '{username}' (role={role})")
         if staff_name:
-            console.print(f"  [green]Linked[/green] to staff member.")
+            console.print("  [green]Linked[/green] to staff member.")
         if not quiet:
             console.print(f"  [bold]Password:[/bold] {plain}")
             console.print("[dim]Distribute this password to the user.[/dim]")

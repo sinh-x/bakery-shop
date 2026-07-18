@@ -306,6 +306,8 @@ class VN {
   static const staffBindingHelp = 'Chọn nhân viên cho tài khoản này';
   static const staffBindingNone = 'Chưa gắn kết';
   static const staffBindingSaved = 'Đã cập nhật nhân viên';
+  static const staffBindingSaveFailed = 'Không thể cập nhật nhân viên';
+  static const staffBindingLoadError = 'Không tải được gắn kết nhân viên';
 
   // Printer paper mode (DG-183 Phase 2)
   static const paperModeLabel = 'Loại giấy in';

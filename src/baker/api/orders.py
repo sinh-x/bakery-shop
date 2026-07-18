@@ -515,6 +515,8 @@ def create_order(body: OrderCreate, request: Request):
         raise HTTPException(status_code=422, detail="Vui lòng chọn ngày nhận/giao bánh")
 
     with get_db() as conn:
+        actor = resolve_actor(request, body.createdBy)
+
         if body.customerId is not None:
             exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (body.customerId,)).fetchone()
             if not exists:
@@ -541,14 +543,14 @@ def create_order(body: OrderCreate, request: Request):
             delivery_address=body.deliveryAddress,
             notes=body.notes,
             source=body.source,
-            created_by=resolve_actor(request, body.createdBy),
+            created_by=actor,
             shipping_fee=body.shippingFee,
             public_order_code=public_order_code,
         )
         order.calculate_total()
         order.save(conn)
 
-        _log_order_history(conn, order.id, "created", changed_by=resolve_actor(request, body.createdBy))
+        _log_order_history(conn, order.id, "created", changed_by=actor)
 
         # Create order_items rows so work item IDs are available for photo linking
         for position, item in enumerate(body.items):
@@ -592,14 +594,14 @@ def create_order(body: OrderCreate, request: Request):
                 txn.save(conn)
                 _log_order_history(conn, order.id, "payment", "amount",
                                    old_value="", new_value=str(total_price),
-                                   changed_by=resolve_actor(request, body.createdBy))
+                                   changed_by=actor)
 
         # If status='delivered', also update order status and decrement stock
         accounting_sync_warning = None
         if body.status == "delivered":
             Order.update_status(conn, order.order_ref, "delivered", "")
             _log_order_history(conn, order.id, "status_change", "status",
-                               "new", "delivered", resolve_actor(request, body.createdBy))
+                               "new", "delivered", actor)
             auto_decrement_stock(conn, order.id, order.order_ref)
 
             # Auto-generate revenue conversion + COGS journal entries (DG-175).

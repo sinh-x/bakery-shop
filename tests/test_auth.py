@@ -183,7 +183,7 @@ def _make_expired_token(username: str, role: str, jti: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
 
-def _create_session(conn, jti: str, username: str, role: str = "admin", staff_id: object = None) -> None:
+def _create_session(conn, jti: str, username: str, role: str = "admin", staff_id: int | None = None) -> None:
     """Insert an active session row (bypasses login)."""
     from baker.utils.time import now_utc
     ts = now_utc()
@@ -654,3 +654,36 @@ def test_create_app_starts_in_grace_period_without_jwt(monkeypatch):
             from baker.api.app import create_app
             app = create_app()
             assert app is not None
+
+
+def test_login_populates_session_staff_id(api_client):
+    """AC3: login populates sessions.staff_id from users.staff_id."""
+    with get_db() as conn:
+        from tests.auth_helpers import _create_test_user
+        _create_test_user(conn, "staffloginuser", "pass123", role="admin")
+        staff_id = int(conn.execute(
+            "INSERT INTO staff (name, role) VALUES ('LoginStaff', 'baker') "
+            "RETURNING id"
+        ).fetchone()[0])
+        conn.execute(
+            "UPDATE users SET staff_id = ? WHERE username = 'staffloginuser'",
+            (staff_id,),
+        )
+        conn.commit()
+
+    resp = api_client.post(
+        "/api/auth/login",
+        json={"username": "staffloginuser", "password": "pass123"},
+    )
+    assert resp.status_code == 200
+    from jwt import decode as jwt_decode
+    from baker.config import JWT_SECRET
+    payload = jwt_decode(resp.json()["token"], JWT_SECRET, algorithms=["HS256"])
+
+    with get_db() as conn:
+        session = conn.execute(
+            "SELECT staff_id FROM sessions WHERE jti = ?",
+            (payload["jti"],),
+        ).fetchone()
+        assert session is not None
+        assert session["staff_id"] == staff_id
