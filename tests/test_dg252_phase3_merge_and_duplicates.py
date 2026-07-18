@@ -798,3 +798,169 @@ def test_merge_into_target_with_no_phones_promotes_first_to_primary(api_client):
         f"{len(primaries)} out of {len(rows)} rows: {[(r['phone'], r['is_primary']) for r in rows]}"
     )
     assert primaries[0]["phone"] == "0912333444"
+
+
+# ---------------------------------------------------------------------------
+# DG-252 r4 [MAJOR] regression — merge must not drop the target's legacy
+# `customers.phone` when the target has zero `customer_phones` rows. Before
+# the r4 fix the step-5 overwrite set `customers.phone` to the first source
+# phone and the target's original legacy phone was silently lost.
+# ---------------------------------------------------------------------------
+
+
+def test_merge_preserves_target_legacy_phone_when_target_has_no_phone_rows(api_client):
+    """r4 [MAJOR] regression — a v66-style target with a legacy
+    `customers.phone` and zero `customer_phones` rows, merged with an
+    API-created source that has a different phone, must end up with BOTH
+    phones present as `customer_phones` rows on the target, and
+    `customers.phone` must keep the target's original primary phone
+    (not be overwritten by the source's phone).
+    """
+    headers, _ = _admin_setup(api_client)
+
+    # Target: v66-style row with a legacy phone column and no
+    # customer_phones rows (simulating a pre-v58/v66 customer whose phone
+    # was never materialized into a row).
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO customers (name, phone, search_name, created_at, updated_at) "
+            "VALUES (?, ?, ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            ("Khách đích cũ", "0907777000", "khach dich cu"),
+        )
+        target_id = cur.lastrowid
+
+    # Source: API-created with a different phone (has a customer_phones row).
+    source = _create_customer(
+        api_client, name="Khách nguồn mới", phone="0912888999", headers=headers
+    )
+    _create_order(api_client, source["id"], source["name"], headers=headers)
+
+    resp = api_client.post(
+        f"/api/customers/{target_id}/merge",
+        json={"sourceCustomerId": source["id"]},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # The source's phone is added (target had no rows; target's legacy
+    # phone is materialized as part of the merge, not counted in
+    # addedPhones since addedPhones counts only source-copy inserts).
+    assert body["addedPhones"] == 1, (
+        f"merge must copy the source's phone, got addedPhones={body['addedPhones']}"
+    )
+
+    with get_db() as conn:
+        # Both phones must exist as customer_phones rows on the target.
+        target_phones = {
+            r["phone"]: r["is_primary"]
+            for r in conn.execute(
+                "SELECT phone, is_primary FROM customer_phones WHERE customer_id = ? "
+                "ORDER BY id ASC",
+                (target_id,),
+            ).fetchall()
+        }
+        assert set(target_phones) == {"0907777000", "0912888999"}, (
+            f"both target legacy and source phones must survive, got {target_phones}"
+        )
+        # Exactly one primary (invariant).
+        primaries = [p for p, ip in target_phones.items() if ip == 1]
+        assert len(primaries) == 1, (
+            f"merged customer must have exactly one primary, got {target_phones}"
+        )
+        # The target's original legacy phone stays primary.
+        assert target_phones["0907777000"] == 1, (
+            f"target's original legacy phone must remain primary, got {target_phones}"
+        )
+        # customers.phone keeps the target's original primary.
+        cust_row = conn.execute(
+            "SELECT phone FROM customers WHERE id = ?", (target_id,)
+        ).fetchone()
+        assert cust_row["phone"] == "0907777000", (
+            f"customers.phone must keep the target's original primary, "
+            f"got {cust_row['phone']}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# DG-252 r4 [MAJOR] migration — v75 backfills a primary customer_phones
+# row from non-empty customers.phone for any customer with zero phone rows.
+# ---------------------------------------------------------------------------
+
+
+def test_v75_migration_backfills_primary_phone_from_legacy_column(use_memory_db):
+    """r4 [MAJOR] — v75 backfills a primary `customer_phones` row from
+    `customers.phone` for every customer with zero phone rows and a
+    non-empty legacy phone. Customers with an empty legacy phone or with
+    existing phone rows are left untouched.
+    """
+    from baker.db.connection import get_db
+    from baker.db.schema import _migrate_v75_backfill_primary_customer_phones, ensure_schema
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Three customers: one with a legacy phone and no rows (should be
+        # backfilled), one with an empty phone and no rows (should NOT be
+        # backfilled), one with a phone that already has a row (should NOT
+        # be double-backfilled).
+        cur1 = conn.execute(
+            "INSERT INTO customers (name, phone, search_name, created_at, updated_at) "
+            "VALUES ('Có legacy', '0910000001', 'co legacy', "
+            "'2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
+        )
+        backfill_id = cur1.lastrowid
+        cur2 = conn.execute(
+            "INSERT INTO customers (name, phone, search_name, created_at, updated_at) "
+            "VALUES ('Trống SĐT', '', 'trong sdt', "
+            "'2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
+        )
+        empty_id = cur2.lastrowid
+        cur3 = conn.execute(
+            "INSERT INTO customers (name, phone, search_name, created_at, updated_at) "
+            "VALUES ('Đã có row', '0910000003', 'da co row', "
+            "'2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
+        )
+        already_id = cur3.lastrowid
+        conn.execute(
+            "INSERT INTO customer_phones (customer_id, phone, is_primary, created_at) "
+            "VALUES (?, ?, 0, '2026-01-01T00:00:00Z')",
+            (already_id, "0910000003"),
+        )
+
+        _migrate_v75_backfill_primary_customer_phones(conn)
+
+        # Backfilled customer: one primary row matching the legacy phone.
+        bf_rows = conn.execute(
+            "SELECT phone, is_primary FROM customer_phones WHERE customer_id = ?",
+            (backfill_id,),
+        ).fetchall()
+        assert len(bf_rows) == 1, f"expected 1 backfilled row, got {bf_rows}"
+        assert bf_rows[0]["phone"] == "0910000001"
+        assert bf_rows[0]["is_primary"] == 1
+
+        # Empty-phone customer: still no rows.
+        empty_rows = conn.execute(
+            "SELECT COUNT(*) FROM customer_phones WHERE customer_id = ?",
+            (empty_id,),
+        ).fetchone()[0]
+        assert empty_rows == 0, (
+            f"empty-phone customer must not be backfilled, got {empty_rows} rows"
+        )
+
+        # Already-has-row customer: still exactly one row, unchanged.
+        already_rows = conn.execute(
+            "SELECT phone, is_primary FROM customer_phones WHERE customer_id = ?",
+            (already_id,),
+        ).fetchall()
+        assert len(already_rows) == 1, (
+            f"customer with existing row must not be double-backfilled, "
+            f"got {already_rows}"
+        )
+        assert already_rows[0]["phone"] == "0910000003"
+
+        # Idempotency: a second run inserts nothing.
+        before = conn.execute("SELECT COUNT(*) FROM customer_phones").fetchone()[0]
+        _migrate_v75_backfill_primary_customer_phones(conn)
+        after = conn.execute("SELECT COUNT(*) FROM customer_phones").fetchone()[0]
+        assert after == before, (
+            f"v75 must be idempotent: before={before}, after={after}"
+        )

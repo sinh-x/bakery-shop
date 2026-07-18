@@ -53,11 +53,17 @@ class CustomerDetailScreen extends ConsumerWidget {
       }
     } on DioException catch (e) {
       // Surface the backend's centralized VN guidance (409 linked-orders
-      // message, 403 admin-only) when present; fall back to a generic VN
+      // message, 403 admin-only) when present; fall back to a specific VN
+      // label for a 403 without a detail body (keeps VN Label Policy
+      // preferred over a generic failure string), then to a generic VN
       // error label so the user never sees a raw DioException string.
       if (!context.mounted) return;
       final detail = extractBackendDetail(e.response?.data);
-      showTopSnackBar(context, detail ?? CustomersLabels.customerDeleteFailed);
+      final statusCode = e.response?.statusCode;
+      final fallback = (statusCode == 403 && detail == null)
+          ? CustomersLabels.customerDeleteAdminOnly
+          : CustomersLabels.customerDeleteFailed;
+      showTopSnackBar(context, detail ?? fallback);
     } catch (_) {
       if (context.mounted) {
         showTopSnackBar(context, CustomersLabels.customerDeleteFailed);

@@ -477,6 +477,36 @@ def _merge_customer_into_target(
     ).fetchall()
     target_phones = {r["phone"] for r in target_phone_rows}
     target_had_no_phones = len(target_phone_rows) == 0
+    # DG-252 r4 [MAJOR] defense-in-depth (mirror of the source fallback
+    # below): if the target has zero `customer_phones` rows but a non-empty
+    # legacy `customers.phone` (e.g. a pre-v58/v66 customer whose phone was
+    # never materialized into a row), materialize that legacy phone as the
+    # target's primary `customer_phones` row BEFORE copying source phones.
+    # Without this, the step-5 overwrite at the bottom would set
+    # `customers.phone` to the first source phone and the target's original
+    # legacy phone would be silently dropped — a data-loss bug symmetric to
+    # the source-side r3 fix. The legacy column is already normalized at
+    # write time.
+    if target_had_no_phones:
+        target_legacy_row = conn.execute(
+            "SELECT phone FROM customers WHERE id = ?", (target_id,)
+        ).fetchone()
+        target_legacy_phone = (
+            target_legacy_row["phone"] if target_legacy_row is not None else ""
+        ) or ""
+        if target_legacy_phone:
+            conn.execute(
+                "INSERT INTO customer_phones (customer_id, phone, is_primary) "
+                "VALUES (?, ?, ?)",
+                (target_id, target_legacy_phone, 1),
+            )
+            target_phones.add(target_legacy_phone)
+            # The target now owns a primary phone row, so the source-copy
+            # loop below must NOT promote any of its copied phones to
+            # primary (the target's original legacy phone stays primary,
+            # mirroring CustomerUpdate semantics where the existing primary
+            # is preserved unless explicitly changed).
+            target_had_no_phones = False
     source_phone_rows = conn.execute(
         "SELECT phone, is_primary FROM customer_phones WHERE customer_id = ? "
         "ORDER BY is_primary DESC, id ASC",

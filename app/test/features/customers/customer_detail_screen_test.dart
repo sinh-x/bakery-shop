@@ -71,6 +71,23 @@ Future<void> _pumpScreen(
   await tester.pumpAndSettle();
 }
 
+/// Builds a DioException simulating a backend 403 with NO `detail` body
+/// (e.g. a reverse-proxy/auth-gateway 403 that did not originate from the
+/// app's centralized exception handler). Used by the r4 [Mn1] fallback
+/// label test.
+DioException _dioError403WithoutDetail() {
+  final response = Response<Map<String, dynamic>>(
+    requestOptions: RequestOptions(path: '/api/customers/1'),
+    statusCode: 403,
+    data: null,
+  );
+  return DioException(
+    requestOptions: response.requestOptions,
+    response: response,
+    type: DioExceptionType.badResponse,
+  );
+}
+
 void main() {
   testWidgets(
       'detail card shows all phones with primary highlighted (AC9)',
@@ -230,6 +247,38 @@ void main() {
 
     // The generic VN fallback label is shown, not raw exception text.
     expect(find.text(CustomersLabels.customerDeleteFailed), findsOneWidget);
+    expect(find.textContaining('DioException'), findsNothing);
+  });
+
+  testWidgets(
+      'delete 403 with no backend detail falls back to the admin-only VN '
+      'label instead of the generic failure (r4 Mn1)', (tester) async {
+    const customer = Customer(id: 1, name: 'Sinh', phone: '0901234567');
+    // A 403 with no `detail` body — the r4 [Mn1] path must surface the
+    // dedicated admin-only VN label (VN Label Policy preferred over the
+    // generic deletion-failed string) so the user understands the cause
+    // is permissions, not a generic failure.
+    final service = _FakeCustomerService(
+      customer,
+      const [],
+      deleteError: _dioError403WithoutDetail(),
+    );
+    await _pumpScreen(tester, service);
+
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.deleteCustomer));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.deleteCustomer));
+    await tester.pumpAndSettle();
+
+    // The admin-only VN fallback label is shown, not the generic failure
+    // label and not a raw DioException string.
+    expect(
+      find.text(CustomersLabels.customerDeleteAdminOnly),
+      findsOneWidget,
+    );
+    expect(find.text(CustomersLabels.customerDeleteFailed), findsNothing);
     expect(find.textContaining('DioException'), findsNothing);
   });
 }
