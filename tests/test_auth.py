@@ -168,6 +168,181 @@ def test_grace_period_protected_endpoint_no_token(anon_client):
 
 
 # ---------------------------------------------------------------------------
+# DG-259 Phase 3 — Grace period actor resolution (FR8 / AC6 / AC6-a / AC6-b / AC6-c)
+# ---------------------------------------------------------------------------
+
+
+def _make_expired_token(username: str, role: str, jti: str) -> str:
+    """Mint an expired JWT with the given jti (bypasses login)."""
+    payload = {
+        "sub": username,
+        "role": role,
+        "exp": int(time.time()) - 3600,  # expired 1 hour ago
+        "jti": jti,
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+
+def _create_session(conn, jti: str, username: str, role: str = "admin", staff_id: object = None) -> None:
+    """Insert an active session row (bypasses login)."""
+    from baker.utils.time import now_utc
+    ts = now_utc()
+    conn.execute(
+        "INSERT INTO sessions "
+        "(jti, username, role, client_ip, device_model, app_version, "
+        " os_version, logged_in_at, last_activity, revoked_at, staff_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+        (jti, username, role, '', '', '', '', ts, ts, staff_id),
+    )
+
+
+def test_grace_period_order_create_uses_fallback_when_no_session(api_client):
+    """AC6-b: AUTH_REQUIRED=false, no JWT, no session → created_by uses client-supplied value."""
+    resp = api_client.post(
+        "/api/orders",
+        json={
+            "customerName": "Test AC6-b",
+            "dueDate": "2026-07-20",
+            "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 120000, "productId": "BKS-16"}],
+            "createdBy": "Ngân",
+        },
+    )
+    assert resp.status_code == 201
+    assert resp.json()["createdBy"] == "Ngân"
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT created_by FROM orders WHERE order_ref = ?",
+            (resp.json()["orderRef"],),
+        ).fetchone()
+    assert row["created_by"] == "Ngân"
+
+
+def test_grace_period_order_create_preserves_empty_created_by(api_client):
+    """AC6-b variant: no createdBy sent → created_by is empty (legacy contract)."""
+    resp = api_client.post(
+        "/api/orders",
+        json={
+            "customerName": "Test AC6-b-empty",
+            "dueDate": "2026-07-20",
+            "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 120000, "productId": "BKS-16"}],
+        },
+    )
+    assert resp.status_code == 201
+    assert resp.json()["createdBy"] == ""
+
+
+def test_grace_period_order_create_uses_session_staff_name(api_client):
+    """AC6-c: expired JWT + session with staff_id → created_by = staff name."""
+    staff_name = "TestStaffGia"
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO staff (name, role) VALUES (?, ?)",
+            (staff_name, "staff"),
+        )
+        staff_id = int(conn.execute(
+            "SELECT id FROM staff WHERE name = ?", (staff_name,)
+        ).fetchone()["id"])
+
+        user = "teststaffgia"
+        _create_test_user(conn, user, "pass123", role="staff")
+        conn.execute("UPDATE users SET staff_id = ? WHERE username = ?", (staff_id, user))
+
+        jti = str(uuid.uuid4())
+        _create_session(conn, jti, user, role="staff", staff_id=staff_id)
+
+    expired_token = _make_expired_token(user, "staff", jti)
+
+    resp = api_client.post(
+        "/api/orders",
+        json={
+            "customerName": "Test AC6-c",
+            "dueDate": "2026-07-20",
+            "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 120000, "productId": "BKS-16"}],
+        },
+        headers={"Authorization": f"Bearer {expired_token}"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["createdBy"] == staff_name
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT created_by FROM orders WHERE order_ref = ?",
+            (resp.json()["orderRef"],),
+        ).fetchone()
+    assert row["created_by"] == staff_name
+
+
+def test_grace_period_order_create_with_expired_jwt_no_session_fallback(api_client):
+    """Expired JWT but no session row → falls through to client-supplied fallback."""
+    user = "expirednosesh"
+    jti = str(uuid.uuid4())
+    with get_db() as conn:
+        _create_test_user(conn, user, "pass123", role="staff")
+
+    expired_token = _make_expired_token(user, "staff", jti)
+
+    resp = api_client.post(
+        "/api/orders",
+        json={
+            "customerName": "Test no-session",
+            "dueDate": "2026-07-20",
+            "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 120000, "productId": "BKS-16"}],
+            "createdBy": "Phượng",
+        },
+        headers={"Authorization": f"Bearer {expired_token}"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["createdBy"] == "Phượng"
+
+
+def test_grace_period_order_create_expired_jwt_session_no_staff_fallback(api_client):
+    """Expired JWT + session but staff_id is NULL → falls through to fallback."""
+    user = "expirednostaff"
+    jti = str(uuid.uuid4())
+    with get_db() as conn:
+        _create_test_user(conn, user, "pass123", role="staff")
+        _create_session(conn, jti, user, role="staff", staff_id=None)
+
+    expired_token = _make_expired_token(user, "staff", jti)
+
+    resp = api_client.post(
+        "/api/orders",
+        json={
+            "customerName": "Test no-staff-id",
+            "dueDate": "2026-07-20",
+            "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 120000, "productId": "BKS-16"}],
+            "createdBy": "Tân",
+        },
+        headers={"Authorization": f"Bearer {expired_token}"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["createdBy"] == "Tân"
+
+
+def test_grace_period_order_create_valid_jwt_still_wins(api_client):
+    """Valid JWT (even with session) → JWT sub claim always wins (AC1)."""
+    from tests.auth_helpers import _seed_user, _auth_headers
+
+    user = "validuser"
+    with get_db() as conn:
+        token = _seed_user(conn, user, "admin")
+
+    resp = api_client.post(
+        "/api/orders",
+        json={
+            "customerName": "Test JWT wins",
+            "dueDate": "2026-07-20",
+            "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 120000, "productId": "BKS-16"}],
+            "createdBy": "Imposter",
+        },
+        headers=_auth_headers(token),
+    )
+    assert resp.status_code == 201
+    assert resp.json()["createdBy"] == user
+
+
+# ---------------------------------------------------------------------------
 # AC3: AUTH_REQUIRED=true, no Authorization header → HTTP 401
 # ---------------------------------------------------------------------------
 

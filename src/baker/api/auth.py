@@ -470,10 +470,42 @@ def resolve_actor(request: Request, fallback: str = "") -> str:
     does *not* substitute ``"anonymous"`` for an empty fallback — that
     sentinel is reserved for admin-gated audit rows via ``RequireRole``
     (Mn-4); these actor fields preserve the legacy empty-string contract.
+
+    DG-259 Phase 3 (FR8): when no valid JWT is present and
+    ``AUTH_REQUIRED=false``, the resolution chain extends to the request's
+    session. If the Bearer token carries a ``jti`` (even expired) that
+    resolves to an active session row with a linked ``staff_id``, the
+    staff member's display name is returned. This lets unauthenticated
+    users (grace period) who previously logged in have their actions
+    attributed to their staff identity rather than a free-text fallback.
     """
     auth_username = getattr(request.state, "auth_username", None)
     if auth_username:
         return auth_username
+
+    if not AUTH_REQUIRED:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[len("Bearer "):].strip()
+            try:
+                payload = jwt.decode(
+                    token, JWT_SECRET, algorithms=["HS256"],
+                    options={"verify_exp": False},
+                )
+                jti = payload.get("jti")
+                if jti:
+                    with get_db() as conn:
+                        row = conn.execute(
+                            "SELECT st.name FROM sessions s "
+                            "LEFT JOIN staff st ON st.id = s.staff_id "
+                            "WHERE s.jti = ? AND s.revoked_at IS NULL",
+                            (jti,),
+                        ).fetchone()
+                        if row and row["name"]:
+                            return row["name"]
+            except jwt.InvalidTokenError:
+                pass
+
     return fallback
 
 
