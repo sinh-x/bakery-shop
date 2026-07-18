@@ -57,26 +57,32 @@ Verify all expected accounts exist in the chart of accounts, including the newly
 
 **Check:**
 
+> **Note:** The `baker-prod` image (`python:3.12-slim`) does not ship `sqlite3` or `curl`. The DB is bind-mounted to the host at `./prod/data/baker.db` (`docker-compose.yml:12-13`), so run all SQL host-side from the bakery-shop project root. Stop the stack first for any WRITE operation.
+
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
-  "SELECT code, name_vn FROM accounts ORDER BY CAST(code AS INTEGER);"
+sqlite3 ./prod/data/baker.db \
+  "SELECT code, name FROM accounts ORDER BY CAST(code AS INTEGER);"
 ```
 
 - [ ] **2.1** Account **2500** (Phải trả người bán / Accounts Payable) is present — exactly 1 row with `code = '2500'` (added by v73, release v0.7.14)
 - [ ] **2.1a** Account **2400** (Tiền Rút Held) is present — exactly 1 row with `code = '2400'` (added by v54, prior release)
-- [ ] **2.2** All standard accounts are present: 1100 (Tiền mặt), 1200 (Tiền gửi NH), 1300 (Phải thu KH), 1400 (Hàng tồn kho), 1500 (TSCĐ), 2100 (Phải trả NB), 2200 (Phải trả NV), 2300 (Vay NH), 2400 (Tiền Rút Held), 2500 (Phải trả người bán), 3000 (Vốn CSH), 4000 (Doanh thu), 4100 (Doanh thu đặt cọc), 4200 (Doanh thu SP tặng), 5000 (Giá vốn), 5100 (Giá vốn SP tặng), 6000 (Chi phí bán hàng), 6100 (Chi phí QLDN), 6200 (Chi phí vận chuyển), 6300 (Chi phí lương), 6400 (Chi phí khác), 7000 (Xác định KQKD)
+- [ ] **2.2** All seeded accounts are present (25 rows from `SEED_CHART_OF_ACCOUNTS`, `src/baker/db/schema.py:1524-1556`):
+  - Assets (1000): 1000 (Tài sản), 1100 (Tiền mặt / Cash on Hand), 1200 (Tài khoản ngân hàng / Bank Account), 1300 (Hàng tồn kho / Inventory), 1500 (Phải thu khách hàng / Accounts Receivable)
+  - Liabilities (2000): 2000 (Nợ phải trả), 2100 (Tiền khách đặt cọc / Customer Deposits), 2200 (Tiền ship bus giữ hộ / Bus Shipping Held), 2300 (Phải trả nhân viên / Staff Payables), 2400 (Tiền rút tạm giữ / Tien Rut Held), 2500 (Phải trả người bán / Accounts Payable)
+  - Equity: 3000 (Vốn chủ sở hữu), 3100 (Vốn chủ sở hữu / Owner's Equity)
+  - Income: 4000 (Doanh thu), 4100 (Doanh thu bán hàng / Order Revenue)
+  - Expenses (5000): 5000 (Chi phí), 5100 (Nguyên liệu / Ingredients), 5200 (Bao bì / Packaging), 5300 (Vận chuyển / Delivery-Shipping), 5400 (Điện-nước / Utilities), 5500 (Dụng cụ / Tools), 5600 (Sửa chữa / Equipment Maintenance), 5700 (Lương-phụ cấp / Staff Salary), 5800 (Khác / Other Expenses), 5900 (Giá vốn hàng bán / COGS)
+  - Note: runtime-created sub-accounts (23xx staff, 25xxx vendor per `_ensure_vendor_payable_sub_account`, `schema.py:1693-1747`) may add additional rows beyond the 24 seeded.
 - [ ] **2.3** No duplicate account codes exist
 
 **Direct account 2500 check:**
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
-  "SELECT code, name_vn FROM accounts WHERE code IN ('2400', '2500');"
+sqlite3 ./prod/data/baker.db \
+  "SELECT code, name FROM accounts WHERE code IN ('2400', '2500');"
 ```
 
-Expected: 2 rows — `2400|Tiền Rút Held` and `2500|Phải trả người bán (Accounts Payable)`
+Expected: 2 rows — `2400|Tiền rút tạm giữ (Tien Rut Held)` and `2500|Phải trả người bán (Accounts Payable)`
 
 ---
 
@@ -87,8 +93,7 @@ Verify no orphaned journal lines and that all journal entries are internally con
 ### 3.1 Orphaned Lines
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
+sqlite3 ./prod/data/baker.db \
   "SELECT COUNT(*) FROM journal_lines WHERE journal_entry_id NOT IN (SELECT id FROM journal_entries);"
 ```
 
@@ -99,9 +104,8 @@ docker compose --profile prod exec baker-prod \
 Verify every journal entry balances (total debits = total credits):
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
-  "SELECT journal_entry_id, ROUND(SUM(CASE WHEN side = 'debit' THEN amount ELSE -amount END), 2) AS balance
+sqlite3 ./prod/data/baker.db \
+  "SELECT journal_entry_id, ROUND(SUM(debit) - SUM(credit), 2) AS balance
    FROM journal_lines
    GROUP BY journal_entry_id
    HAVING balance != 0;"
@@ -112,8 +116,7 @@ docker compose --profile prod exec baker-prod \
 ### 3.3 Entry Count Sanity
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
+sqlite3 ./prod/data/baker.db \
   "SELECT COUNT(*) AS journal_entries, (SELECT COUNT(*) FROM journal_lines) AS journal_lines FROM journal_entries;"
 ```
 
@@ -129,15 +132,12 @@ Spot-check key account balances for reasonableness.
 ### 4.1 Account 2400 and 2500 Balance
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
-  "SELECT account_code,
-      COALESCE(SUM(CASE WHEN side = 'debit' THEN amount ELSE 0 END), 0) -
-      COALESCE(SUM(CASE WHEN side = 'credit' THEN amount ELSE 0 END), 0) AS balance
-    FROM journal_lines
-    WHERE account_code IN ('2400', '2500')
-    GROUP BY account_code
-    ORDER BY CAST(account_code AS INTEGER);"
+sqlite3 ./prod/data/baker.db \
+  "SELECT a.code, ROUND(SUM(l.debit) - SUM(l.credit), 2) AS balance
+   FROM journal_lines l JOIN accounts a ON a.id = l.account_id
+   WHERE a.code IN ('2400', '2500')
+   GROUP BY a.code
+   ORDER BY CAST(a.code AS INTEGER);"
 ```
 
 - [ ] **4.1** Account **2400** balance is **non-negative** (held amounts cannot go negative)
@@ -146,31 +146,27 @@ docker compose --profile prod exec baker-prod \
 ### 4.2 Key Account Balances
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
-  "SELECT account_code,
-     COALESCE(SUM(CASE WHEN side = 'debit' THEN amount ELSE 0 END), 0) -
-     COALESCE(SUM(CASE WHEN side = 'credit' THEN amount ELSE 0 END), 0) AS balance
-   FROM journal_lines
-   WHERE account_code IN ('1100', '4000', '5000')
-   GROUP BY account_code
-   ORDER BY CAST(account_code AS INTEGER);"
+sqlite3 ./prod/data/baker.db \
+  "SELECT a.code, ROUND(SUM(l.debit) - SUM(l.credit), 2) AS balance
+   FROM journal_lines l JOIN accounts a ON a.id = l.account_id
+   WHERE a.code IN ('1100', '4000', '5000')
+   GROUP BY a.code
+   ORDER BY CAST(a.code AS INTEGER);"
 ```
 
 - [ ] **4.2** Account 1100 (Tiền mặt) balance is non-negative
 - [ ] **4.2** Account 4000 (Doanh thu) balance is non-negative
-- [ ] **4.2** Account 5000 (Giá vốn) balance is non-negative
+- [ ] **4.2** Account 5000 (Chi phí) balance is non-negative
 
 ### 4.3 Material Balance Equation
 
 Verify total debits equal total credits across the entire journal:
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
+sqlite3 ./prod/data/baker.db \
   "SELECT
-     (SELECT COALESCE(SUM(amount), 0) FROM journal_lines WHERE side = 'debit') -
-     (SELECT COALESCE(SUM(amount), 0) FROM journal_lines WHERE side = 'credit') AS total_difference;"
+     (SELECT COALESCE(SUM(debit), 0) FROM journal_lines) -
+     (SELECT COALESCE(SUM(credit), 0) FROM journal_lines) AS total_difference;"
 ```
 
 - [ ] **4.3** Total debits minus total credits equals **0** (or rounding tolerance ≤ 1)
@@ -184,8 +180,7 @@ Verify the running application is healthy and API endpoints respond.
 ### 5.1 Database Integrity
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db "PRAGMA integrity_check;"
+sqlite3 ./prod/data/baker.db "PRAGMA integrity_check;"
 ```
 
 - [ ] **5.1** Result is **`ok`**
@@ -258,7 +253,7 @@ Run a quick end-to-end smoke test to verify core functionality.
 | §1 Schema version = 75 | pass / fail | |
 | §2 Chart of accounts (2500 present) | pass / fail | |
 | §2 Chart of accounts (2400 present) | pass / fail | |
-| §2 All 22+ accounts present | pass / fail | |
+| §2 All 25 seeded accounts present | pass / fail | |
 | §3 Journal orphaned lines = 0 | pass / fail | |
 | §3 Journal entries balance | pass / fail | |
 | §4 Account 2400 balance ≥ 0 | pass / fail | |

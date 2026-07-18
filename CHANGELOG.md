@@ -1,5 +1,7 @@
 # Changelog
 
+## [Unreleased]
+
 ## [0.7.14+98] — 2026-07-18
 
 - feat(DG-252): Guaranteed customer linking at order creation + duplicate customer detection & merge
@@ -39,7 +41,9 @@
 
 - feat(DG-249): Duplicate-AR-entry repair script + JE guard (backport to release line)
   - Added fix script for 8 duplicate AR entries
-  - (DG-249 main work — deposit-style and AR-style JE guards — released under 0.7.10+90 / 0.7.9+89; this bump rolls the post-fix changelog)
+  - (DG-249 main work — deposit-style and AR-style JE guards — released under 0.7.10+90 / 0.7.9+89)
+- docs: add accounting health monitoring doc
+- fix: pubspec.lock mockito dep fix
 
 ## [0.7.10+90] — 2026-07-16
 
@@ -91,18 +95,6 @@
   - Backend: catalog_tag usage endpoint + PUT rename-remap + DELETE in-use guard (phase 4.1)
   - Flutter: 4th catalog-tag vocabulary tab (phase 4.2), Add/Edit/Delete dialogs (phase 4.3), cache invalidation + file-size remediation (phase 4.4)
   - Widget tests added; review cycles remediated (Critical defects, cycle-3 BUG/OPS/QUAL findings, 3 remaining Minor findings)
-
-## [0.7.9+93] — 2026-07-16
-- chore: update changelog
-
-## [0.7.9+92] — 2026-07-16
-- chore: update changelog for version bump
-
-## [0.7.9+91] — 2026-07-16
-- chore: add accounting health monitoring doc, fix pubspec.lock mockito dep
-
-## [0.7.9+90] — 2026-07-16
-- feat(DG-249): add fix script for 8 duplicate AR entries
 
 ## [0.7.5+85] — 2026-07-13
 
