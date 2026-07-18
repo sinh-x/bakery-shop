@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.7.15+101] — 2026-07-18
+- docs(release): remediate v0.7.14 review findings (M-1/M-2/M-3/Mn-2/Mn-4)
+
 ## [Unreleased]
 
 ## [0.7.14+98] — 2026-07-18
