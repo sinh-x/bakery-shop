@@ -1,9 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+## [0.7.16+104] — 2026-07-18
+- docs(release): remediate v0.7.14 cycle-2 CHANGELOG hygiene (c2-Mn-1/c2-Mn-2)
+
+## [0.7.16+103] — 2026-07-18
+- chore(release): bump patch version to 0.7.16+103 [skip ci]
+
+## [0.7.15+102] — 2026-07-18
+- chore(release): refresh uv.lock to sync baker 0.5.5 -> 0.7.15 (Mn-3)
+
 ## [0.7.15+101] — 2026-07-18
 - docs(release): remediate v0.7.14 review findings (M-1/M-2/M-3/Mn-2/Mn-4)
-
-## [Unreleased]
 
 ## [0.7.14+98] — 2026-07-18
 
