@@ -77,6 +77,12 @@ class _FakeOrderService extends OrderService {
 
 class _FakePaymentTransactionService extends PaymentTransactionService {
   _FakePaymentTransactionService() : super(Dio());
+  final List<String?> paymentSources = <String?>[];
+  final List<String> orderRefs = <String>[];
+  final List<double> amounts = <double>[];
+  final List<String> types = <String>[];
+  final List<String> methods = <String>[];
+
   @override
   Future<PaymentTransaction> createTransaction(
     String orderRef, {
@@ -86,6 +92,11 @@ class _FakePaymentTransactionService extends PaymentTransactionService {
     String notes = '',
     String? paymentSource,
   }) async {
+    orderRefs.add(orderRef);
+    amounts.add(amount);
+    types.add(type);
+    methods.add(method);
+    paymentSources.add(paymentSource);
     return PaymentTransaction(
       id: 'txn-1',
       orderId: orderRef,
@@ -111,6 +122,7 @@ Product _product() {
 Widget _buildCheckoutApp({
   required List<PosCartItem> items,
   OrderService? orderService,
+  _FakePaymentTransactionService? txnSvc,
 }) {
   final router = GoRouter(
     routes: [
@@ -121,13 +133,13 @@ Widget _buildCheckoutApp({
     initialLocation: '/pos/checkout',
   );
 
-  final txnSvc = _FakePaymentTransactionService();
+  final service = txnSvc ?? _FakePaymentTransactionService();
   return ProviderScope(
     overrides: [
       posCartProvider.overrideWith(() => _SeededPosCartNotifier(items)),
       if (orderService != null) orderServiceProvider.overrideWithValue(orderService),
       customerServiceProvider.overrideWithValue(_FakeCustomerService()),
-      paymentTransactionServiceProvider.overrideWithValue(txnSvc),
+      paymentTransactionServiceProvider.overrideWithValue(service),
     ],
     child: MaterialApp.router(routerConfig: router),
   );
@@ -687,6 +699,128 @@ void main() {
       // FR-9: the walk-in customer and POS source defaults are applied.
       expect(fakeOrderService.createOrderCallCount, 1);
       expect(find.text('Receipt ORD-001'), findsOneWidget);
+    });
+  });
+
+  group('Target bank account selector (DG-244 Phase 2, FR7/AC7)', () {
+    testWidgets('AC1: cash method does not show the TK đích dropdown', (tester) async {
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
+      await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
+      await _navigateToPayment(tester);
+
+      // Default method is cash; the target account dropdown must not appear.
+      expect(find.text(VN.paymentTargetAccountLabel), findsNothing);
+      expect(find.text(VN.paymentNoAccount), findsNothing);
+      expect(find.text(VN.paymentSourcePhuongVCB), findsNothing);
+      expect(find.text(VN.paymentSourceAnVCB), findsNothing);
+    });
+
+    testWidgets('AC1: transfer method shows the TK đích dropdown with empty default and both VCB options',
+        (tester) async {
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem]));
+      await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
+      await _navigateToPayment(tester);
+
+      await tester.tap(find.text(VN.chuyenKhoan));
+      await tester.pumpAndSettle();
+
+      expect(find.text(VN.paymentTargetAccountLabel), findsOneWidget);
+      expect(find.text(VN.paymentNoAccount), findsOneWidget);
+
+      // The closed dropdown only renders the selected item's child; verify
+      // the full option set via the inner DropdownButton's items list.
+      final dropdown = tester.widget<DropdownButton<String?>>(
+        find.descendant(
+          of: find.byType(DropdownButtonFormField<String?>),
+          matching: find.byType(DropdownButton<String?>),
+        ),
+      );
+      final itemValues = dropdown.items!.map((i) => i.value).toList();
+      expect(itemValues, [null, VN.paymentSourcePhuongVCB, VN.paymentSourceAnVCB]);
+    });
+
+    testWidgets('AC7: selecting TK Ân VCB threads paymentSource into the created transaction',
+        (tester) async {
+      final fakeOrderService = _FakeOrderService();
+      final fakeTxnSvc = _FakePaymentTransactionService();
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(
+        _buildCheckoutApp(
+          items: <PosCartItem>[cartItem],
+          orderService: fakeOrderService,
+          txnSvc: fakeTxnSvc,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
+      await _navigateToPayment(tester);
+
+      // Switch to transfer to reveal the target account selector.
+      await tester.tap(find.text(VN.chuyenKhoan));
+      await tester.pumpAndSettle();
+
+      // Select TK Ân VCB from the dropdown.
+      await tester.tap(find.byType(DropdownButtonFormField<String?>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(VN.paymentSourceAnVCB).last);
+      await tester.pumpAndSettle();
+
+      // Submit (skip the transfer proof photo).
+      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      await tester.ensureVisible(createButton);
+      await tester.pumpAndSettle();
+      await tester.tap(createButton);
+      await _dismissDeliverNowDialog(tester);
+      await tester.tap(find.text(VN.skip));
+      await tester.pumpAndSettle();
+
+      // AC7: the created transaction carries the selected account.
+      expect(fakeTxnSvc.paymentSources, isNotEmpty);
+      expect(fakeTxnSvc.paymentSources.first, VN.paymentSourceAnVCB);
+    });
+
+    testWidgets('AC8: transfer with no account selected submits with null paymentSource', (tester) async {
+      final fakeOrderService = _FakeOrderService();
+      final fakeTxnSvc = _FakePaymentTransactionService();
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(
+        _buildCheckoutApp(
+          items: <PosCartItem>[cartItem],
+          orderService: fakeOrderService,
+          txnSvc: fakeTxnSvc,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
+      await _navigateToPayment(tester);
+
+      await tester.tap(find.text(VN.chuyenKhoan));
+      await tester.pumpAndSettle();
+
+      // Do NOT select an account — leave the dropdown at its empty default.
+      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      await tester.ensureVisible(createButton);
+      await tester.pumpAndSettle();
+      await tester.tap(createButton);
+      await _dismissDeliverNowDialog(tester);
+      await tester.tap(find.text(VN.skip));
+      await tester.pumpAndSettle();
+
+      // NFR3/AC8: null/empty account is accepted and submitted as null.
+      expect(fakeTxnSvc.paymentSources, isNotEmpty);
+      expect(fakeTxnSvc.paymentSources.first, isNull);
     });
   });
 

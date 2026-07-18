@@ -29,6 +29,8 @@ class PosPaymentStep extends ConsumerStatefulWidget {
     required this.onTienRutAmountChanged,
     required this.onBack,
     required this.onSubmit,
+    this.selectedTargetAccount,
+    this.onTargetAccountChanged,
   });
 
   final double orderTotal;
@@ -42,6 +44,12 @@ class PosPaymentStep extends ConsumerStatefulWidget {
   final ValueChanged<double> onTienRutAmountChanged;
   final VoidCallback onBack;
   final VoidCallback onSubmit;
+
+  /// Optional target bank account for transfer payments (DG-244 Phase 2,
+  /// FR7). `null` means no selection. Only shown when the method is
+  /// `transfer`.
+  final String? selectedTargetAccount;
+  final ValueChanged<String?>? onTargetAccountChanged;
 
   @override
   ConsumerState<PosPaymentStep> createState() => _PosPaymentStepState();
@@ -262,6 +270,31 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
                   showSelectedIcon: false,
                   multiSelectionEnabled: false,
                 ),
+                if (widget.selectedPaymentMethod == 'transfer') ...[
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String?>(
+                    initialValue: widget.selectedTargetAccount,
+                    decoration: const InputDecoration(
+                      labelText: VN.paymentTargetAccountLabel,
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text(VN.paymentNoAccount),
+                      ),
+                      for (final account in paymentTargetAccounts)
+                        DropdownMenuItem<String?>(
+                          value: account,
+                          child: Text(account),
+                        ),
+                    ],
+                    onChanged: widget.onTargetAccountChanged == null
+                        ? null
+                        : (value) =>
+                            widget.onTargetAccountChanged!(value),
+                  ),
+                ],
               ],
             ),
           ),

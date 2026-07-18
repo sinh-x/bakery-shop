@@ -1264,6 +1264,7 @@ class _RecordPaymentSheet extends ConsumerStatefulWidget {
 class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   late String _type;
   String _method = 'cash';
+  String? _paymentSource;
   final _amountCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
@@ -1401,6 +1402,27 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
                 border: OutlineInputBorder(),
               ),
             ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String?>(
+              initialValue: _paymentSource,
+              decoration: const InputDecoration(
+                labelText: VN.paymentTargetAccountLabel,
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                const DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text(VN.paymentNoAccount),
+                ),
+                for (final account in paymentTargetAccounts)
+                  DropdownMenuItem<String?>(
+                    value: account,
+                    child: Text(account),
+                  ),
+              ],
+              onChanged: (value) =>
+                  setState(() => _paymentSource = value),
+            ),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: _submitting ? null : _submit,
@@ -1512,6 +1534,11 @@ class _TransactionDetailSheetState
           ),
           const SizedBox(height: 20),
           _DetailRow(label: VN.paymentMethod, value: methodLabel),
+          if (txn.paymentSource != null && txn.paymentSource!.isNotEmpty)
+            _DetailRow(
+              label: VN.paymentTargetAccountLabel,
+              value: txn.paymentSource!,
+            ),
           if (dateStr.isNotEmpty) _DetailRow(label: VN.txnType, value: dateStr),
           if (txn.notes.isNotEmpty)
             _DetailRow(label: VN.txnNoteLabel, value: txn.notes),
@@ -1720,6 +1747,7 @@ class _EditPaymentSheet extends ConsumerStatefulWidget {
 class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
   late String _type;
   late String _method;
+  String? _paymentSource;
   late final TextEditingController _amountCtrl;
   late final TextEditingController _notesCtrl;
   final _formKey = GlobalKey<FormState>();
@@ -1730,6 +1758,7 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
     super.initState();
     _type = widget.txn.type;
     _method = widget.txn.method;
+    _paymentSource = widget.txn.paymentSource;
     // Convert back from actual amount to thousands for display
     _amountCtrl = TextEditingController(
       text: vndThousandsTextFromAmount(widget.txn.amount),
@@ -1853,6 +1882,27 @@ class _EditPaymentSheetState extends ConsumerState<_EditPaymentSheet> {
                 labelText: VN.paymentNotes,
                 border: OutlineInputBorder(),
               ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String?>(
+              initialValue: _paymentSource,
+              decoration: const InputDecoration(
+                labelText: VN.paymentTargetAccountLabel,
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                const DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text(VN.paymentNoAccount),
+                ),
+                for (final account in paymentTargetAccounts)
+                  DropdownMenuItem<String?>(
+                    value: account,
+                    child: Text(account),
+                  ),
+              ],
+              onChanged: (value) =>
+                  setState(() => _paymentSource = value),
             ),
             const SizedBox(height: 16),
             FilledButton(

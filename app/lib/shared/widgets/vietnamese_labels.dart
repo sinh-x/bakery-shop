@@ -657,6 +657,10 @@ class VN {
   static const paymentSourceAnVCB = 'TK Ân VCB';
   static const paymentSourceStaffAdvance = 'Nhân viên ứng trước';
 
+  // Target bank account selector for payment transactions (DG-244 Phase 2)
+  static const paymentTargetAccountLabel = 'TK đích';
+  static const paymentNoAccount = 'Chưa chọn';
+
   // Reimbursed
   static const reimbursedYes = 'Đã hoàn lại';
   static const reimbursedNo = 'Chưa hoàn lại';
@@ -1112,6 +1116,14 @@ String paymentMethodLabel(String method) {
       return method;
   }
 }
+
+/// Optional target bank account options for payment transactions (DG-244).
+/// Empty default is represented by `null`/empty string at the call boundary;
+/// this list holds only the selectable VCB accounts (FR2).
+const paymentTargetAccounts = <String>[
+  VN.paymentSourcePhuongVCB,
+  VN.paymentSourceAnVCB,
+];
 
 // Work item status mapping
 const workItemStatusMap = {

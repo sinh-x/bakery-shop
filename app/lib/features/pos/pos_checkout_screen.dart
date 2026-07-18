@@ -53,6 +53,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   bool _isProcessing = false;
   bool _navigatingAfterCheckout = false;
   String _selectedPaymentMethod = 'cash';
+  String? _selectedTargetAccount;
   double _paidAmount = 0;
   double _cartTotal = 0;
   bool _hasTienRut = false;
@@ -146,7 +147,14 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
   void _onPaymentMethodChanged(String paymentMethod) {
     if (_selectedPaymentMethod == paymentMethod) return;
-    setState(() => _selectedPaymentMethod = paymentMethod);
+    setState(() {
+      _selectedPaymentMethod = paymentMethod;
+      // Clear target account when leaving the transfer method (FR7 — the
+      // selector is only meaningful for transfer).
+      if (paymentMethod != 'transfer') {
+        _selectedTargetAccount = null;
+      }
+    });
   }
 
   void _onAmountChanged(double amount) {
@@ -155,6 +163,10 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
   void _onTienRutAmountChanged(double amount) {
     setState(() => _tienRutAmount = amount);
+  }
+
+  void _onTargetAccountChanged(String? account) {
+    setState(() => _selectedTargetAccount = account);
   }
 
   Future<void> _showExcessWarning() {
@@ -372,6 +384,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         amount: _paidAmount,
         type: txnType,
         method: paymentMethod,
+        paymentSource: _selectedTargetAccount,
       );
 
       if (_hasTienRut && _tienRutAmount > 0) {
@@ -380,6 +393,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
           amount: _tienRutAmount,
           type: 'tien_rut',
           method: paymentMethod,
+          paymentSource: _selectedTargetAccount,
         );
       }
 
@@ -494,10 +508,12 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
                 hasTienRut: _hasTienRut,
                 tienRutAmount: _tienRutAmount,
                 selectedPaymentMethod: _selectedPaymentMethod,
+                selectedTargetAccount: _selectedTargetAccount,
                 isProcessing: _isProcessing,
                 onPaymentMethodChanged: _onPaymentMethodChanged,
                 onAmountChanged: _onAmountChanged,
                 onTienRutAmountChanged: _onTienRutAmountChanged,
+                onTargetAccountChanged: _onTargetAccountChanged,
                 onBack: _backFromPaymentStep,
                 onSubmit: _handleFinalizeOrder,
               )
