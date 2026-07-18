@@ -84,6 +84,7 @@ class _FakePaymentTransactionService extends PaymentTransactionService {
     String type = 'deposit',
     String method = 'cash',
     String notes = '',
+    String? paymentSource,
   }) async {
     return PaymentTransaction(
       id: 'txn-1',

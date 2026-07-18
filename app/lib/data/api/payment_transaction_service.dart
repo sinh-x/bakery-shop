@@ -26,15 +26,20 @@ class PaymentTransactionService {
     String type = 'deposit',
     String method = 'cash',
     String notes = '',
+    String? paymentSource,
   }) async {
+    final data = <String, dynamic>{
+      'amount': amount,
+      'type': type,
+      'method': method,
+      'note': notes,
+    };
+    if (paymentSource != null && paymentSource.isNotEmpty) {
+      data['payment_source'] = paymentSource;
+    }
     final response = await _dio.post(
       '/api/orders/$orderRef/transactions',
-      data: {
-        'amount': amount,
-        'type': type,
-        'method': method,
-        'note': notes,
-      },
+      data: data,
     );
     return PaymentTransaction.fromJson(response.data as Map<String, dynamic>);
   }
@@ -46,12 +51,16 @@ class PaymentTransactionService {
     String? type,
     String? method,
     String? notes,
+    String? paymentSource,
   }) async {
     final data = <String, dynamic>{};
     if (amount != null) data['amount'] = amount;
     if (type != null) data['type'] = type;
     if (method != null) data['method'] = method;
     if (notes != null) data['note'] = notes;
+    if (paymentSource != null && paymentSource.isNotEmpty) {
+      data['payment_source'] = paymentSource;
+    }
     final response = await _dio.patch(
       '/api/orders/$orderRef/transactions/$txnId',
       data: data,
