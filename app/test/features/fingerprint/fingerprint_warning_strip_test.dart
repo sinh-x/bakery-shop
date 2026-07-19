@@ -2,6 +2,7 @@ import 'package:bakery_app/app.dart';
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/providers/fingerprint_provider.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -83,6 +84,89 @@ void main() {
     expect(
       find.textContaining(VN.serverFingerprintUnavailableWarning),
       findsOneWidget,
+    );
+  });
+
+  testWidgets('shows dismiss button on warning strip when mismatch', (tester) async {
+    final prefs = await seedAuthenticatedPrefs();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          fingerprintComparisonProvider.overrideWith((ref) async {
+            return const FingerprintComparison(
+              state: FingerprintComparisonState.mismatch,
+              clientFingerprint: 'abc1234',
+              serverFingerprint: 'def5678',
+            );
+          }),
+        ],
+        child: const BakeryApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.close), findsOneWidget);
+  });
+
+  testWidgets('dismisses warning strip on X tap and stays hidden for session', (
+    tester,
+  ) async {
+    final prefs = await seedAuthenticatedPrefs();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          fingerprintComparisonProvider.overrideWith((ref) async {
+            return const FingerprintComparison(
+              state: FingerprintComparisonState.mismatch,
+              clientFingerprint: 'abc1234',
+              serverFingerprint: 'def5678',
+            );
+          }),
+        ],
+        child: const BakeryApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining(VN.fingerprintMismatchWarning), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining(VN.fingerprintMismatchWarning), findsNothing);
+  });
+
+  testWidgets('dismisses warning strip on X tap for serverUnknown state', (
+    tester,
+  ) async {
+    final prefs = await seedAuthenticatedPrefs();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          fingerprintComparisonProvider.overrideWith((ref) async {
+            return const FingerprintComparison(
+              state: FingerprintComparisonState.serverUnknown,
+              clientFingerprint: 'abc1234',
+              serverFingerprint: 'unknown',
+            );
+          }),
+        ],
+        child: const BakeryApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.close), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining(VN.serverFingerprintUnavailableWarning),
+      findsNothing,
     );
   });
 
