@@ -89,11 +89,14 @@ class _FingerprintWarningStrip extends ConsumerWidget {
                     ),
                   ),
                 ),
-                GestureDetector(
-                  onTap: () => ref.read(fingerprintWarningDismissedProvider.notifier).dismiss(),
-                  child: Padding(
+                Semantics(
+                  label: VN.dismissFingerprintWarning,
+                  button: true,
+                  child: IconButton(
+                    icon: Icon(Icons.close, size: 18, color: colorScheme.onErrorContainer),
+                    onPressed: () => ref.read(fingerprintWarningDismissedProvider.notifier).dismiss(),
                     padding: const EdgeInsets.all(11),
-                    child: Icon(Icons.close, size: 18, color: colorScheme.onErrorContainer),
+                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                   ),
                 ),
               ],

@@ -5,6 +5,7 @@ import '../../../providers/order/banner_collapse_provider.dart';
 import '../../../shared/labels/orders.dart';
 import '../../../shared/theme/bakery_theme.dart';
 import '../../../shared/utils/order_helpers.dart';
+import 'collapse_chevron.dart';
 
 class UrgencyBanner extends ConsumerWidget {
   const UrgencyBanner({
@@ -94,7 +95,7 @@ class UrgencyBanner extends ConsumerWidget {
               ),
             ],
             const SizedBox(width: 4),
-            _CollapseChevron(
+            CollapseChevron(
               collapsed: false,
               onTap: () =>
                   ref.read(urgencyBannerCollapsedProvider.notifier).toggle(),
@@ -148,7 +149,7 @@ class UrgencyBanner extends ConsumerWidget {
                 ),
               ],
               const SizedBox(width: 4),
-              _CollapseChevron(
+              CollapseChevron(
                 collapsed: true,
                 onTap: () =>
                     ref.read(urgencyBannerCollapsedProvider.notifier).toggle(),
@@ -162,33 +163,6 @@ class UrgencyBanner extends ConsumerWidget {
 
   String _buildSummary() {
     return OrdersLabels.urgencyBannerText(criticalCount, urgentCount);
-  }
-}
-
-class _CollapseChevron extends StatelessWidget {
-  const _CollapseChevron({
-    required this.collapsed,
-    required this.onTap,
-  });
-
-  final bool collapsed;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 48,
-      height: 48,
-      child: IconButton(
-        padding: EdgeInsets.zero,
-        iconSize: 20,
-        icon: Icon(collapsed ? Icons.expand_more : Icons.expand_less),
-        onPressed: onTap,
-        tooltip: collapsed
-            ? OrdersLabels.bannerExpandTooltip
-            : OrdersLabels.bannerCollapseTooltip,
-      ),
-    );
   }
 }
 
