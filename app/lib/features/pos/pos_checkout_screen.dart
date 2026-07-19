@@ -122,6 +122,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   }
 
   void _enterPaymentStep() {
+    syncWizardItemsToCart(ref);
     final cart = ref.read(posCartProvider);
     final cartTotal = cart.items
         .where((i) => !i.isGift)
