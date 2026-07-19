@@ -884,6 +884,9 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
     enum_font = _font(_SZ_MEDIUM, True)
     enum_lines = list(_wrapped_enum_attribute_lines(work_item, enum_labels, enum_font, CONTENT_WIDTH))
     if enum_lines:
+        y += 12
+        y = _sep(draw, y)
+        y += 8
         ENUM_PAD = 6
         box_start_y = y
         for line in enum_lines:
@@ -893,7 +896,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
              RECEIPT_WIDTH - MARGIN + ENUM_PAD, y + ENUM_PAD - LINE_GAP],
             outline=(100, 100, 100), width=2,
         )
-        y += ENUM_PAD  # extra spacing after the box
+        y += 10
 
     # Spacer between badge(s) and next section
     y += 10
