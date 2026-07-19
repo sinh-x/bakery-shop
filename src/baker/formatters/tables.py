@@ -34,7 +34,8 @@ def print_event(row):
         "inventory": "cyan", "expense": "red", "delivery": "blue", "order": "magenta",
     }.get(row["type"], "white")
 
-    by_str = f"  by {row['logged_by']}" if _row_get(row, "logged_by") else ""
+    by_val = _row_get(row, "staff_name") or _row_get(row, "logged_by")
+    by_str = f"  by {by_val}" if by_val else ""
 
     console.print(
         f"  [dim]{row['id']:>4}[/dim]  [dim]{ts}[/dim]  "
@@ -76,7 +77,8 @@ def print_events_table(rows, title="Events"):
             row["summary"],
         ]
         if has_logged_by:
-            cells.append(_row_get(row, "logged_by"))
+            by = _row_get(row, "staff_name") or _row_get(row, "logged_by")
+            cells.append(by)
         cells.append(tags)
         table.add_row(*cells)
     console.print(table)

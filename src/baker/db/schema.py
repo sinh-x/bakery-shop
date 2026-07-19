@@ -4180,6 +4180,14 @@ def _migrate_v77_staff_id_columns(conn):
                     )
 
 
+def _migrate_v78_add_staff_name_to_events(conn):
+    """Add staff_name column to events table (DG-259 Cycle 4).
+
+    Idempotent via PRAGMA-guarded ALTER TABLE (events is in ALLOWED_TABLES).
+    """
+    _guard_add_column(conn, "events", "staff_name", "staff_name TEXT DEFAULT ''")
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -4546,10 +4554,15 @@ MIGRATIONS = {
         "sql": "",
         "callable": _migrate_v76_add_transaction_bank_sub_accounts,
     },
-    77: {
+     77: {
         "description": "Add staff_id columns to users and sessions tables, create UNIQUE index, back-link existing users to staff — DG-259 Phase 1",
         "sql": "",
         "callable": _migrate_v77_staff_id_columns,
+    },
+    78: {
+        "description": "Add staff_name column to events table for display-name attribution — DG-259 Cycle 4",
+        "sql": "",
+        "callable": _migrate_v78_add_staff_name_to_events,
     },
 }
 

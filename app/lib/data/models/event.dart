@@ -15,6 +15,7 @@ sealed class BakeryEvent with _$BakeryEvent {
     required String summary,
     @Default(<String>[]) List<String> tags,
     @JsonKey(name: 'logged_by') @Default('') String loggedBy,
+    @JsonKey(name: 'staff_name') @Default('') String staffName,
     @Default('app') String source,
     @Default(<String, dynamic>{}) Map<String, dynamic> data,
     @JsonKey(name: 'order_id') int? orderId,

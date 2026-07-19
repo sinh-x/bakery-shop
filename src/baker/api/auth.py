@@ -513,6 +513,32 @@ def resolve_actor(request: Request, fallback: str = "") -> str:
     return fallback
 
 
+def resolve_staff_name(request: Request) -> str:
+    """Resolve the staff display name from the JWT-identified user.
+
+    Looks up ``users.staff_id → staff.name`` via the authenticated username
+    in ``request.state.auth_username``. Returns the staff display name when a
+    valid JWT user is linked to a staff member, or empty string when no JWT
+    identity is present or no staff link exists (grace period).
+
+    Used by event create/edit to populate ``staff_name``.
+    """
+    auth_username = getattr(request.state, "auth_username", None)
+    if not auth_username:
+        return ""
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT st.name FROM users u "
+            "LEFT JOIN staff st ON st.id = u.staff_id "
+            "WHERE u.username = ? AND u.active = 1",
+            (auth_username,),
+        ).fetchone()
+        if row and row["name"]:
+            return row["name"]
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # Audit log recording (DG-029 Phase 3, FR22)
 #

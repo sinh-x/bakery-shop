@@ -172,7 +172,7 @@ class EventDetailScreen extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  '${VN.loggedBy}: ${event.loggedBy}',
+                  '${VN.loggedBy}: ${event.staffName.isNotEmpty ? event.staffName : event.loggedBy}',
                   style: theme.textTheme.bodyMedium,
                 ),
               ],
