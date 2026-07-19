@@ -11,12 +11,14 @@ import '../../providers/order_providers.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/date_formatting.dart';
+import '../../shared/utils/delivery_helpers.dart';
 import '../../shared/utils/order_helpers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../providers/order/critical_alert_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
 import 'filtered_orders_screen.dart' show countCriticalActive, countUrgentActive, countIncompleteActive;
+import 'widgets/delivery_content.dart';
 import 'widgets/order_card.dart';
 
 // Status filter chips for list view (mirrors Kanban column statuses + extras)
@@ -339,10 +341,17 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         ],
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: VN.orderListTab),
-            Tab(text: VN.cakeQueue),
-            Tab(text: VN.deliveryTab),
+          tabs: [
+            const Tab(text: VN.orderListTab),
+            const Tab(text: VN.cakeQueue),
+            Tab(
+              text: () {
+                final orders = ordersAsync.asData?.value ?? [];
+                final todayCount =
+                    filterDeliveryOrders(orders, todayOnly: true).length;
+                return todayCount > 0 ? 'Giao hàng ($todayCount)' : VN.deliveryTab;
+              }(),
+            ),
           ],
         ),
       ),
