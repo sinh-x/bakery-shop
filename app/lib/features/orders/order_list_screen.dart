@@ -349,7 +349,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                 final orders = ordersAsync.asData?.value ?? [];
                 final todayCount =
                     filterDeliveryOrders(orders, todayOnly: true).length;
-                return todayCount > 0 ? 'Giao hàng ($todayCount)' : VN.deliveryTab;
+                return todayCount > 0 ? OrdersLabels.deliveryTabWithCount(todayCount) : VN.deliveryTab;
               }(),
             ),
           ],

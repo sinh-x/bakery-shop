@@ -7,7 +7,7 @@
   - Flutter: delivery_content.dart widget (framed, scrollable, grouped, badge-count) + delivery_order_card.dart
   - Flutter: centralized VN labels (PHỤC VỤ / CHỜ GIAO / ĐANG GIAO / ĐÃ GIAO / additional statuses)
   - Flutter: removed stale `deliveryViewModelProvider` dead code, relocated `remainingPercent` to delivery_helpers.dart
-  - Flutter: unit + widget tests (delivery_helpers_test, delivery_grouping_test, delivery_content_test)
+  - Flutter: unit + widget tests (delivery_grouping_test, delivery_content_test)
   - Quality gates: flutter analyze clean (3 info deferred per DG-138), dart analyze clean, 792/792 tests passed, file-size compliance verified
 
 ## [0.7.16+105] — 2026-07-18

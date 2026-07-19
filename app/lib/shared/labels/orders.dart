@@ -157,4 +157,7 @@ class OrdersLabels {
   static const deliveryNoDueDate = 'Chưa có ngày';
   static const deliveryEmptyToday = 'Không có đơn giao hàng hôm nay';
   static const deliveryEmptyAll = 'Không có đơn giao hàng';
+
+  // Delivery tab with count (DG-261 review CQ-2)
+  static String deliveryTabWithCount(int count) => 'Giao hàng ($count)';
 }
