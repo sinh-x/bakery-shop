@@ -60,7 +60,6 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   void invalidateProviders() {
     ref.invalidate(orderListProvider);
     ref.invalidate(cakeQueueProvider);
-    ref.invalidate(deliveryQueueProvider);
   }
 
   @override
