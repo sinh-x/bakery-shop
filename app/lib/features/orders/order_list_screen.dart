@@ -239,12 +239,10 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
             final incomplete = countIncompleteActive(orders);
             final urgencyTotal = critical + urgent;
             return Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(VN.tabOrders),
                 if (urgencyTotal > 0)
                   Padding(
-                    padding: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.only(right: 4),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(8),
                       onTap: () => context.push('/orders/critical'),
@@ -257,7 +255,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.warning_rounded, size: 18, color: Colors.orange),
+                            const Icon(Icons.error_outline, size: 18, color: Colors.orange),
                             const SizedBox(width: 4),
                             Text(
                               '$urgencyTotal',
@@ -274,7 +272,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                   ),
                 if (incomplete > 0)
                   Padding(
-                    padding: const EdgeInsets.only(left: 4),
+                    padding: const EdgeInsets.only(right: 4),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(8),
                       onTap: () => context.push('/orders/incomplete'),
@@ -287,7 +285,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.error_outline, size: 18, color: Colors.red),
+                            const Icon(Icons.warning_rounded, size: 18, color: Colors.red),
                             const SizedBox(width: 4),
                             Text(
                               '$incomplete',
@@ -302,6 +300,11 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                       ),
                     ),
                   ),
+                const Expanded(
+                  child: Center(
+                    child: Text(VN.tabOrders),
+                  ),
+                ),
               ],
             );
           },
