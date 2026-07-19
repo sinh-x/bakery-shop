@@ -523,6 +523,8 @@ class VN {
   // POS / Counter Sales
   static const banHang = 'Bán hàng';
   static const thanhToan = 'Thanh toán';
+  static const payNow = 'Thanh toán ngay';
+  static const payLater = 'Thanh toán sau';
   static const inHoaDon = 'In hóa đơn';
   static const inBienNhan = 'In biên nhận';
   static const xacNhanThanhToan = 'Xác nhận thanh tiền';

@@ -14,6 +14,8 @@ class OrdersLabels {
   static const stage3Desc = 'Hình thức, thời gian, địa chỉ';
   static const stage4Label = 'Xem lại';
   static const stage4Desc = 'Kiểm tra và tạo đơn';
+  static const stage5Label = 'Thanh toán';
+  static const stage5Desc = 'Thanh toán hoặc để sau';
 
   // Navigation
   static const continueLabel = 'Tiếp tục';
