@@ -255,14 +255,14 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.error_outline, size: 18, color: Colors.orange),
+                            const Icon(Icons.error_outline, size: 18, color: Colors.red),
                             const SizedBox(width: 4),
                             Text(
                               '$urgencyTotal',
                               style: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.orange,
+                                color: Colors.red,
                               ),
                             ),
                           ],
@@ -285,14 +285,14 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.warning_rounded, size: 18, color: Colors.red),
+                            const Icon(Icons.warning_rounded, size: 18, color: Colors.amber),
                             const SizedBox(width: 4),
                             Text(
                               '$incomplete',
                               style: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.red,
+                                color: Colors.amber,
                               ),
                             ),
                           ],
