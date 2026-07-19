@@ -17,9 +17,7 @@ import '../../providers/order/critical_alert_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
 import 'filtered_orders_screen.dart' show countCriticalActive, countUrgentActive, countIncompleteActive;
-import 'widgets/incomplete_banner.dart';
 import 'widgets/order_card.dart';
-import 'widgets/urgency_banner.dart';
 
 // Status filter chips for list view (mirrors Kanban column statuses + extras)
 // List view filters mirror Kanban columns (one column at a time)
@@ -233,7 +231,81 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.tabOrders),
+        title: Consumer(
+          builder: (context, ref, _) {
+            final orders = ref.watch(orderListProvider).asData?.value ?? [];
+            final critical = countCriticalActive(orders);
+            final urgent = countUrgentActive(orders);
+            final incomplete = countIncompleteActive(orders);
+            final urgencyTotal = critical + urgent;
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(VN.tabOrders),
+                if (urgencyTotal > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => context.push('/orders/critical'),
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 48,
+                          minHeight: 48,
+                        ),
+                        alignment: Alignment.center,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.warning_rounded, size: 18, color: Colors.orange),
+                            const SizedBox(width: 4),
+                            Text(
+                              '$urgencyTotal',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                if (incomplete > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => context.push('/orders/incomplete'),
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 48,
+                          minHeight: 48,
+                        ),
+                        alignment: Alignment.center,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.error_outline, size: 18, color: Colors.red),
+                            const SizedBox(width: 4),
+                            Text(
+                              '$incomplete',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -285,32 +357,6 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
           // ── Tab 0: Order list ──────────────────────────────────────
           Column(
             children: [
-              // Urgency attention banner
-              Consumer(
-                builder: (context, ref, _) {
-                  final orders = ref.watch(orderListProvider).asData?.value ?? [];
-                  final critical = countCriticalActive(orders);
-                  final urgent = countUrgentActive(orders);
-                  return UrgencyBanner(
-                    criticalCount: critical,
-                    urgentCount: urgent,
-                    onTap: () => context.push('/orders/critical'),
-                  );
-                },
-              ),
-
-              // Incomplete-order banner (DG-241 Phase 3 — FR-5)
-              Consumer(
-                builder: (context, ref, _) {
-                  final orders = ref.watch(orderListProvider).asData?.value ?? [];
-                  final count = countIncompleteActive(orders);
-                  return IncompleteBanner(
-                    count: count,
-                    onTap: () => context.push('/orders/incomplete'),
-                  );
-                },
-              ),
-
               // Search bar
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
