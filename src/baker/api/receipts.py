@@ -939,11 +939,11 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
 
     # List extras if any
     if extras:
-        y = _left(draw, y, "Phụ liệu kèm theo:", fnormal)
+        y = _left(draw, y, "Phụ kiện:", _font(28, bold=True))
         for ex in extras:
             ex_name = ex.get("productName", "") or ex.get("product_name", "") or "N/A"
             ex_qty = ex.get("quantity", 1)
-            y = _left(draw, y, f"  {ex_name} x{ex_qty}", fb)
+            y = _left(draw, y, f"  {ex_name} x{ex_qty}", _font(24, bold=True))
 
     # Payment section — only when exactly 1 main item
     if main_count == 1:
