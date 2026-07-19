@@ -697,11 +697,11 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           notes: order.notes,
           mode: OrderDeliverySectionMode.readOnly,
         ),
-        if (order.createdBy.isNotEmpty)
+        if (order.createdBy.isNotEmpty || order.createdStaffName.isNotEmpty)
           _InfoRow(
             icon: Icons.person_outline,
             label: 'Người tạo',
-            value: order.createdBy,
+            value: order.createdStaffName.isNotEmpty ? order.createdStaffName : order.createdBy,
           ),
         const SizedBox(height: 16),
 

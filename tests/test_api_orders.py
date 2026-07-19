@@ -713,6 +713,175 @@ def test_edit_order_second_mark_does_not_overwrite_first_printed_by(api_client):
     assert detail["workTicketPrintedBy"] == "Sinh"
 
 
+# --- DG-259: Staff name columns ---
+
+
+def test_create_order_with_jwt_sets_created_staff_name(api_client):
+    """JWT + staff link → created_staff_name = staff.name."""
+    from tests.auth_helpers import _auth_headers, _seed_user
+    from baker.db.connection import get_db
+    from unittest.mock import patch
+
+    with get_db() as conn:
+        conn.execute("INSERT INTO staff (name, role) VALUES (?, ?)", ("Nguyễn Văn A", "staff"))
+        staff_id = conn.execute("SELECT id FROM staff WHERE name = ?", ("Nguyễn Văn A",)).fetchone()["id"]
+        token = _seed_user(conn, "staffuser", "staff")
+        conn.execute("UPDATE users SET staff_id = ? WHERE username = ?", (staff_id, "staffuser"))
+
+    with patch("baker.api.middleware.AUTH_REQUIRED", True), patch("baker.api.auth.AUTH_REQUIRED", True):
+        resp = api_client.post(
+            "/api/orders",
+            json={"customerName": "Test", "dueDate": "2026-07-19"},
+            headers=_auth_headers(token),
+        )
+    assert resp.status_code == 201
+    assert resp.json()["createdStaffName"] == "Nguyễn Văn A"
+
+
+def test_create_order_with_jwt_no_staff_link_creates_empty_staff_name(api_client):
+    """JWT + no staff link → created_staff_name = \"\"."""
+    from tests.auth_helpers import _auth_headers, _seed_user
+    from baker.db.connection import get_db
+    from unittest.mock import patch
+
+    with get_db() as conn:
+        token = _seed_user(conn, "nolinkuser", "staff")
+
+    with patch("baker.api.middleware.AUTH_REQUIRED", True), patch("baker.api.auth.AUTH_REQUIRED", True):
+        resp = api_client.post(
+            "/api/orders",
+            json={"customerName": "Test", "dueDate": "2026-07-19"},
+            headers=_auth_headers(token),
+        )
+    assert resp.status_code == 201
+    assert resp.json()["createdStaffName"] == ""
+
+
+def test_create_order_grace_fallback_creates_empty_staff_name(api_client):
+    """Grace (no JWT): created_staff_name stays empty."""
+    resp = api_client.post(
+        "/api/orders",
+        json={"customerName": "Test", "dueDate": "2026-07-19", "createdBy": ""},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["createdStaffName"] == ""
+
+
+def test_create_order_includes_created_staff_name_in_response(api_client):
+    """Order response contains createdStaffName field."""
+    resp = api_client.post(
+        "/api/orders",
+        json={"customerName": "Test", "dueDate": "2026-07-19"},
+    )
+    assert resp.status_code == 201
+    assert "createdStaffName" in resp.json()
+
+
+def test_edit_order_mark_printed_jwt_sets_printed_staff_name(api_client):
+    """Mark-as-printed PATCH + JWT → work_ticket_printed_staff_name set via JWT→staff."""
+    from tests.auth_helpers import _auth_headers, _seed_user
+    from baker.db.connection import get_db
+    from unittest.mock import patch
+
+    with get_db() as conn:
+        conn.execute("INSERT INTO staff (name, role) VALUES (?, ?)", ("In Viên", "staff"))
+        staff_id = conn.execute("SELECT id FROM staff WHERE name = ?", ("In Viên",)).fetchone()["id"]
+        token = _seed_user(conn, "printstaff", "staff")
+        conn.execute("UPDATE users SET staff_id = ? WHERE username = ?", (staff_id, "printstaff"))
+
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+
+    with patch("baker.api.middleware.AUTH_REQUIRED", True), patch("baker.api.auth.AUTH_REQUIRED", True):
+        resp = api_client.patch(
+            f"/api/orders/{ref}",
+            json={"workTicketPrintedAt": "2026-07-19T10:00:00Z", "changedBy": "ignored"},
+            headers=_auth_headers(token),
+        )
+    assert resp.status_code == 200
+    detail = api_client.get(f"/api/orders/{ref}").json()
+    assert detail["workTicketPrintedStaffName"] == "In Viên"
+
+
+def test_edit_order_mark_printed_grace_fallback_staff_name_empty(api_client):
+    """Grace (no JWT): work_ticket_printed_staff_name stays empty, Flutter falls back."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={"workTicketPrintedAt": "2026-07-19T10:00:00Z", "changedBy": "Ngân"},
+    )
+    assert resp.status_code == 200
+    detail = api_client.get(f"/api/orders/{ref}").json()
+    assert detail["workTicketPrintedStaffName"] == ""
+    assert detail["workTicketPrintedBy"] == "Ngân"
+
+
+def test_edit_order_unmark_clears_printed_by_and_staff_name(api_client):
+    """Unmark → both printed_by and staff_name cleared."""
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+    api_client.patch(
+        f"/api/orders/{ref}",
+        json={"workTicketPrintedAt": "2026-07-19T10:00:00Z", "changedBy": "Sinh"},
+    )
+    detail = api_client.get(f"/api/orders/{ref}").json()
+    assert detail["workTicketPrintedBy"] == "Sinh"
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}",
+        json={"workTicketPrintedAt": ""},
+    )
+    assert resp.status_code == 200
+    detail = api_client.get(f"/api/orders/{ref}").json()
+    assert detail["workTicketPrintedAt"] is None or detail["workTicketPrintedAt"] == ""
+    assert detail["workTicketPrintedBy"] == ""
+    assert detail["workTicketPrintedStaffName"] == ""
+
+
+def test_edit_order_second_mark_does_not_overwrite_first_printed_staff_name(api_client):
+    """First-attribution-wins: second mark does not overwrite work_ticket_printed_staff_name."""
+    from tests.auth_helpers import _auth_headers, _seed_user
+    from baker.db.connection import get_db
+    from unittest.mock import patch
+
+    with get_db() as conn:
+        conn.execute("INSERT INTO staff (name, role) VALUES (?, ?)", ("Người In Đầu", "staff"))
+        staff_id = conn.execute("SELECT id FROM staff WHERE name = ?", ("Người In Đầu",)).fetchone()["id"]
+        token = _seed_user(conn, "firstprinter", "staff")
+        conn.execute("UPDATE users SET staff_id = ? WHERE username = ?", (staff_id, "firstprinter"))
+
+    created = _create_order(api_client)
+    ref = created["orderRef"]
+
+    with patch("baker.api.middleware.AUTH_REQUIRED", True), patch("baker.api.auth.AUTH_REQUIRED", True):
+        resp = api_client.patch(
+            f"/api/orders/{ref}",
+            json={"workTicketPrintedAt": "2026-07-19T10:00:00Z", "changedBy": "first"},
+            headers=_auth_headers(token),
+        )
+    assert resp.status_code == 200
+
+    # Second mark with a different JWT user
+    with get_db() as conn:
+        conn.execute("INSERT INTO staff (name, role) VALUES (?, ?)", ("Người In Sau", "staff"))
+        staff2_id = conn.execute("SELECT id FROM staff WHERE name = ?", ("Người In Sau",)).fetchone()["id"]
+        token2 = _seed_user(conn, "secondprinter", "staff")
+        conn.execute("UPDATE users SET staff_id = ? WHERE username = ?", (staff2_id, "secondprinter"))
+
+    with patch("baker.api.middleware.AUTH_REQUIRED", True), patch("baker.api.auth.AUTH_REQUIRED", True):
+        resp = api_client.patch(
+            f"/api/orders/{ref}",
+            json={"workTicketPrintedAt": "2026-07-19T12:00:00Z", "changedBy": "second"},
+            headers=_auth_headers(token2),
+        )
+    assert resp.status_code == 200
+    detail = api_client.get(f"/api/orders/{ref}").json()
+    # First-attribution wins
+    assert detail["workTicketPrintedStaffName"] == "Người In Đầu"
+    assert detail["workTicketPrintedBy"] != "second"
+
+
 # --- Status transition ---
 
 

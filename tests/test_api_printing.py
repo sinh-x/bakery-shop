@@ -20,14 +20,14 @@ def _first_work_item_id(client, order_ref: str):
     return detail.json()["workItems"][0]["id"]
 
 
-def _print_work_ticket(client, order_ref: str, item_id: int, printed_by=None):
+def _print_work_ticket(client, order_ref: str, item_id: int, printed_by=None, headers=None):
     params = {
         "type": "work_ticket",
         "item_id": item_id,
     }
     if printed_by is not None:
         params["printed_by"] = printed_by
-    return client.post(f"/api/orders/{order_ref}/print", params=params)
+    return client.post(f"/api/orders/{order_ref}/print", params=params, headers=headers or {})
 
 
 @patch("baker.api.printing.os.close")
@@ -402,3 +402,57 @@ class TestPaperModeBackwardCompat:
             assert resp.status_code == 200
             assert resp.json()["status"] == "ok"
             mock_tspl.assert_called_once()
+
+
+@patch("baker.api.printing.os.close")
+@patch("baker.api.printing.os.write")
+@patch("baker.api.printing.usb_printer.open_printer")
+@patch("baker.api.printing.usb_printer.png_to_tspl")
+def test_print_sets_printed_staff_name_with_jwt(mock_tspl, mock_open, mock_write, mock_close, api_client):
+    """USB print + JWT → work_ticket_printed_staff_name set via JWT→staff chain."""
+    from unittest.mock import patch as u_patch
+    from tests.auth_helpers import _auth_headers, _seed_user
+    from baker.db.connection import get_db
+
+    mock_tspl.return_value = b"FAKE_TSPL_DATA"
+    mock_open.return_value = 3
+    mock_write.return_value = len(b"FAKE_TSPL_DATA")
+
+    with get_db() as conn:
+        conn.execute("INSERT INTO staff (name, role) VALUES (?, ?)", ("Thợ In", "staff"))
+        staff_id = conn.execute("SELECT id FROM staff WHERE name = ?", ("Thợ In",)).fetchone()["id"]
+        token = _seed_user(conn, "printstaff2", "staff")
+        conn.execute("UPDATE users SET staff_id = ? WHERE username = ?", (staff_id, "printstaff2"))
+
+    order = _create_order(api_client)
+    order_ref = order["orderRef"]
+    item_id = _first_work_item_id(api_client, order_ref)
+
+    with u_patch("baker.api.middleware.AUTH_REQUIRED", True), u_patch("baker.api.auth.AUTH_REQUIRED", True):
+        resp = _print_work_ticket(api_client, order_ref, item_id, printed_by="ignored", headers=_auth_headers(token))
+    assert resp.status_code == 200
+
+    order_detail = api_client.get(f"/api/orders/{order_ref}").json()
+    assert order_detail["workTicketPrintedStaffName"] == "Thợ In"
+
+
+@patch("baker.api.printing.os.close")
+@patch("baker.api.printing.os.write")
+@patch("baker.api.printing.usb_printer.open_printer")
+@patch("baker.api.printing.usb_printer.png_to_tspl")
+def test_print_grace_fallback_staff_name_empty(mock_tspl, mock_open, mock_write, mock_close, api_client):
+    """Grace (no JWT): work_ticket_printed_staff_name stays empty on USB print."""
+    mock_tspl.return_value = b"FAKE_TSPL_DATA"
+    mock_open.return_value = 3
+    mock_write.return_value = len(b"FAKE_TSPL_DATA")
+
+    order = _create_order(api_client)
+    order_ref = order["orderRef"]
+    item_id = _first_work_item_id(api_client, order_ref)
+
+    resp = _print_work_ticket(api_client, order_ref, item_id, printed_by="Ân")
+    assert resp.status_code == 200
+
+    order_detail = api_client.get(f"/api/orders/{order_ref}").json()
+    assert order_detail["workTicketPrintedStaffName"] == ""
+    assert order_detail["workTicketPrintedBy"] == "Ân"

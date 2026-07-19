@@ -33,6 +33,8 @@ sealed class Order with _$Order {
     @Default([]) List<PackingItem> packingChecklist,
     String? workTicketPrintedAt,
     String? workTicketPrintedBy,
+    @JsonKey(name: 'createdStaffName') @Default('') String createdStaffName,
+    @JsonKey(name: 'workTicketPrintedStaffName') @Default('') String workTicketPrintedStaffName,
     @Default('normal') String urgency,
     String? acknowledgedAt,
     @Default([]) List<String> missingFields,

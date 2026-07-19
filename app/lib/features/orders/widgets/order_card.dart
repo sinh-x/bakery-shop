@@ -171,7 +171,10 @@ class _OrderCardState extends ConsumerState<OrderCard>
     final paymentLabel = _paymentBadge().$2;
     final isTerminal =
         ['completed', 'cancelled', 'delivered'].contains(order.status);
-    final printedBy = (order.workTicketPrintedBy ?? '').trim();
+    final staffName = order.workTicketPrintedStaffName.trim();
+    final printedBy = staffName.isNotEmpty
+        ? staffName
+        : (order.workTicketPrintedBy ?? '').trim();
     final printedLabel = printedBy.isNotEmpty
         ? '${VN.printStatusPrintedShort}: $printedBy'
         : VN.printStatusPrintedShort;

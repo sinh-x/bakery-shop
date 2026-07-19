@@ -24,7 +24,7 @@ from baker.models.order import (
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
 from baker.services.order_stock import auto_decrement_stock, restore_stock_for_order
-from baker.api.auth import resolve_actor
+from baker.api.auth import resolve_actor, resolve_staff_name
 from baker.utils.time import now_utc
 
 
@@ -516,6 +516,7 @@ def create_order(body: OrderCreate, request: Request):
 
     with get_db() as conn:
         actor = resolve_actor(request, body.createdBy)
+        created_staff_name = resolve_staff_name(request)
 
         if body.customerId is not None:
             exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (body.customerId,)).fetchone()
@@ -544,6 +545,7 @@ def create_order(body: OrderCreate, request: Request):
             notes=body.notes,
             source=body.source,
             created_by=actor,
+            created_staff_name=created_staff_name,
             shipping_fee=body.shippingFee,
             public_order_code=public_order_code,
         )
@@ -868,26 +870,39 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
             params,
         )
 
-        # DG-259: when workTicketPrintedAt is patched, also manage work_ticket_printed_by
+        # DG-259: when workTicketPrintedAt is patched, also manage work_ticket_printed_by and work_ticket_printed_staff_name
         if "workTicketPrintedAt" in data:
             printed_val = data["workTicketPrintedAt"]
             if printed_val is not None and printed_val != "":
                 mark_actor = resolve_actor(request, data.get("changedBy", ""))
+                print_staff_name = resolve_staff_name(request)
                 old_printed_at = row["work_ticket_printed_at"]
                 old_printed_by = row["work_ticket_printed_by"] or ""
+                old_printed_staff_name = row["work_ticket_printed_staff_name"] or ""
                 if old_printed_at is None or (not old_printed_by and mark_actor):
                     conn.execute(
                         "UPDATE orders SET work_ticket_printed_by = ? WHERE id = ?",
                         (mark_actor, row["id"]),
                     )
                     _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_by", old_printed_by, mark_actor, mark_actor)
+                if not old_printed_staff_name:
+                    conn.execute(
+                        "UPDATE orders SET work_ticket_printed_staff_name = ? WHERE id = ?",
+                        (print_staff_name, row["id"]),
+                    )
+                    if old_printed_staff_name != print_staff_name:
+                        _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_staff_name", old_printed_staff_name, print_staff_name, mark_actor)
             else:
                 old_printed_by = row["work_ticket_printed_by"] or ""
+                old_printed_staff_name = row["work_ticket_printed_staff_name"] or ""
                 conn.execute(
-                    "UPDATE orders SET work_ticket_printed_by = ? WHERE id = ?",
-                    ("", row["id"]),
+                    "UPDATE orders SET work_ticket_printed_by = ?, work_ticket_printed_staff_name = ? WHERE id = ?",
+                    ("", "", row["id"]),
                 )
-                _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_by", old_printed_by, "", resolve_actor(request, data.get("changedBy", "")))
+                changed_by = resolve_actor(request, data.get("changedBy", ""))
+                _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_by", old_printed_by, "", changed_by)
+                if old_printed_staff_name:
+                    _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_staff_name", old_printed_staff_name, "", changed_by)
 
         # Re-sync payment journal entries when shipping_fee changes on a bus order (DG-191 Phase 4).
         if (shipping_fee_changed or delivery_type_changed) and row["delivery_type"] == "bus":

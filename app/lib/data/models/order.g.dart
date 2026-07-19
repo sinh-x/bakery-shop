@@ -36,6 +36,9 @@ _Order _$OrderFromJson(Map<String, dynamic> json) => _Order(
       const [],
   workTicketPrintedAt: json['workTicketPrintedAt'] as String?,
   workTicketPrintedBy: json['workTicketPrintedBy'] as String?,
+  createdStaffName: json['createdStaffName'] as String? ?? '',
+  workTicketPrintedStaffName:
+      json['workTicketPrintedStaffName'] as String? ?? '',
   urgency: json['urgency'] as String? ?? 'normal',
   acknowledgedAt: json['acknowledgedAt'] as String?,
   missingFields:
@@ -72,6 +75,8 @@ Map<String, dynamic> _$OrderToJson(_Order instance) => <String, dynamic>{
   'packingChecklist': instance.packingChecklist,
   'workTicketPrintedAt': instance.workTicketPrintedAt,
   'workTicketPrintedBy': instance.workTicketPrintedBy,
+  'createdStaffName': instance.createdStaffName,
+  'workTicketPrintedStaffName': instance.workTicketPrintedStaffName,
   'urgency': instance.urgency,
   'acknowledgedAt': instance.acknowledgedAt,
   'missingFields': instance.missingFields,
