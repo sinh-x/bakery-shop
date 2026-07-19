@@ -4554,7 +4554,7 @@ MIGRATIONS = {
         "sql": "",
         "callable": _migrate_v76_add_transaction_bank_sub_accounts,
     },
-     77: {
+    77: {
         "description": "Add staff_id columns to users and sessions tables, create UNIQUE index, back-link existing users to staff — DG-259 Phase 1",
         "sql": "",
         "callable": _migrate_v77_staff_id_columns,
