@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/orders", tags=["receipts"])
 
 RECEIPT_WIDTH = 576  # 80mm at 203 DPI (76mm print area)
 RECEIPT_MAX_HEIGHT = 1040  # 130mm at 203 DPI — height cap for work_ticket/customer receipts
-MARGIN = 20
+MARGIN = 28
 CONTENT_WIDTH = RECEIPT_WIDTH - 2 * MARGIN
 THUMBNAIL_SIZE = 128
 LINE_GAP = 4  # DG-228 Phase 2: reduced from 6 for vertical compaction
@@ -833,6 +833,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
 
     # Birthday badge
     if work_item.get("isBirthday") or work_item.get("is_birthday"):
+        y += 10
         age = work_item.get("age")
         age_text = f" SINH NHẬT"
         if age and age != 999:
@@ -885,7 +886,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
     enum_font = _font(_SZ_MEDIUM, True)
     enum_lines = list(_wrapped_enum_attribute_lines(work_item, enum_labels, enum_font, CONTENT_WIDTH))
     if enum_lines:
-        y += 16
+        y += 12
         y = _sep(draw, y)
         y += 8
         ENUM_PAD = 6
