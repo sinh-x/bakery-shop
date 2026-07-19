@@ -24,6 +24,7 @@ from baker.models.order import (
 from baker.models.payment_transaction import PaymentTransaction
 from baker.models.work_item import WorkItem
 from baker.services.order_stock import auto_decrement_stock, restore_stock_for_order
+from baker.api.auth import resolve_actor, resolve_staff_name
 from baker.utils.time import now_utc
 
 
@@ -514,6 +515,9 @@ def create_order(body: OrderCreate, request: Request):
         raise HTTPException(status_code=422, detail="Vui lòng chọn ngày nhận/giao bánh")
 
     with get_db() as conn:
+        actor = resolve_actor(request, body.createdBy)
+        created_staff_name = resolve_staff_name(request)
+
         if body.customerId is not None:
             exists = conn.execute("SELECT 1 FROM customers WHERE id = ?", (body.customerId,)).fetchone()
             if not exists:
@@ -540,14 +544,15 @@ def create_order(body: OrderCreate, request: Request):
             delivery_address=body.deliveryAddress,
             notes=body.notes,
             source=body.source,
-            created_by=body.createdBy,
+            created_by=actor,
+            created_staff_name=created_staff_name,
             shipping_fee=body.shippingFee,
             public_order_code=public_order_code,
         )
         order.calculate_total()
         order.save(conn)
 
-        _log_order_history(conn, order.id, "created", changed_by=body.createdBy)
+        _log_order_history(conn, order.id, "created", changed_by=actor)
 
         # Create order_items rows so work item IDs are available for photo linking
         for position, item in enumerate(body.items):
@@ -591,14 +596,14 @@ def create_order(body: OrderCreate, request: Request):
                 txn.save(conn)
                 _log_order_history(conn, order.id, "payment", "amount",
                                    old_value="", new_value=str(total_price),
-                                   changed_by=body.createdBy)
+                                   changed_by=actor)
 
         # If status='delivered', also update order status and decrement stock
         accounting_sync_warning = None
         if body.status == "delivered":
             Order.update_status(conn, order.order_ref, "delivered", "")
             _log_order_history(conn, order.id, "status_change", "status",
-                               "new", "delivered", body.createdBy)
+                               "new", "delivered", actor)
             auto_decrement_stock(conn, order.id, order.order_ref)
 
             # Auto-generate revenue conversion + COGS journal entries (DG-175).
@@ -681,7 +686,7 @@ def acknowledge_order(ref: str):
 
 
 @router.patch("/{ref}")
-def edit_order(ref: str, body: OrderEdit):
+def edit_order(ref: str, body: OrderEdit, request: Request):
     """Cập nhật thông tin đơn hàng."""
     data = body.model_dump(exclude_unset=True)
     if not data:
@@ -865,6 +870,40 @@ def edit_order(ref: str, body: OrderEdit):
             params,
         )
 
+        # DG-259: when workTicketPrintedAt is patched, also manage work_ticket_printed_by and work_ticket_printed_staff_name
+        if "workTicketPrintedAt" in data:
+            printed_val = data["workTicketPrintedAt"]
+            if printed_val is not None and printed_val != "":
+                mark_actor = resolve_actor(request, data.get("changedBy", ""))
+                print_staff_name = resolve_staff_name(request)
+                old_printed_at = row["work_ticket_printed_at"]
+                old_printed_by = row["work_ticket_printed_by"] or ""
+                old_printed_staff_name = row["work_ticket_printed_staff_name"] or ""
+                if old_printed_at is None or (not old_printed_by and mark_actor):
+                    conn.execute(
+                        "UPDATE orders SET work_ticket_printed_by = ? WHERE id = ?",
+                        (mark_actor, row["id"]),
+                    )
+                    _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_by", old_printed_by, mark_actor, mark_actor)
+                if not old_printed_staff_name:
+                    conn.execute(
+                        "UPDATE orders SET work_ticket_printed_staff_name = ? WHERE id = ?",
+                        (print_staff_name, row["id"]),
+                    )
+                    if old_printed_staff_name != print_staff_name:
+                        _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_staff_name", old_printed_staff_name, print_staff_name, mark_actor)
+            else:
+                old_printed_by = row["work_ticket_printed_by"] or ""
+                old_printed_staff_name = row["work_ticket_printed_staff_name"] or ""
+                conn.execute(
+                    "UPDATE orders SET work_ticket_printed_by = ?, work_ticket_printed_staff_name = ? WHERE id = ?",
+                    ("", "", row["id"]),
+                )
+                changed_by = resolve_actor(request, data.get("changedBy", ""))
+                _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_by", old_printed_by, "", changed_by)
+                if old_printed_staff_name:
+                    _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_staff_name", old_printed_staff_name, "", changed_by)
+
         # Re-sync payment journal entries when shipping_fee changes on a bus order (DG-191 Phase 4).
         if (shipping_fee_changed or delivery_type_changed) and row["delivery_type"] == "bus":
             from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
@@ -886,7 +925,7 @@ def edit_order(ref: str, body: OrderEdit):
                 )
 
         # Log each changed field with old/new values
-        changed_by = data.get("changedBy", "")
+        changed_by = resolve_actor(request, data.get("changedBy", ""))
         for camel, snake in field_map.items():
             if camel in data:
                 _log_order_history(conn, row["id"], "field_edit", snake, str(row[snake]), str(data[camel]), changed_by)
@@ -941,7 +980,7 @@ def edit_order(ref: str, body: OrderEdit):
 
 
 @router.post("/{ref}/status")
-def transition_status(ref: str, body: StatusTransition):
+def transition_status(ref: str, body: StatusTransition, request: Request):
     """Chuyển trạng thái đơn hàng. Lý do bắt buộc khi lùi trạng thái."""
     with get_db() as conn:
         row = conn.execute(
@@ -1009,7 +1048,7 @@ def transition_status(ref: str, body: StatusTransition):
                 rejection_detail="Không thể chuyển trạng thái",
             )
 
-        _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, body.changedBy)
+        _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, resolve_actor(request, body.changedBy))
 
         # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
         if body.status == "delivered" and row["status"] != "delivered":
@@ -1083,7 +1122,7 @@ def update_payment_method(ref: str, body: PaymentMethodUpdate):
 
 
 @router.patch("/{ref}/payment")
-def update_payment(ref: str, body: PaymentUpdate):
+def update_payment(ref: str, body: PaymentUpdate, request: Request):
     """Ghi nhận thanh toán (tạo giao dịch mới nếu số tiền > 0)."""
     if body.amountPaid < 0:
         raise HTTPException(status_code=422, detail="Số tiền thanh toán không được âm")
@@ -1106,7 +1145,7 @@ def update_payment(ref: str, body: PaymentUpdate):
             txn.save(conn)
             _log_order_history(
                 conn, row["id"], "payment", "amount",
-                old_value="", new_value=str(body.amountPaid), changed_by=body.changedBy,
+                old_value="", new_value=str(body.amountPaid), changed_by=resolve_actor(request, body.changedBy),
             )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()

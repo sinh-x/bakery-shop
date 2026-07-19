@@ -435,10 +435,12 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
   Future<void> _onMarkAsPrinted() async {
     try {
       final service = ref.read(orderServiceProvider);
+      final changedBy = ref.read(loggedByProvider);
       await service.updateWorkTicketPrintedAt(
         order.orderRef,
         timestampToJson(DateTime.now()) ??
             DateTime.now().toUtc().toIso8601String(),
+        changedBy: changedBy,
       );
       ref.invalidate(orderDetailProvider(order.orderRef));
       ref.invalidate(orderListProvider);
@@ -455,7 +457,8 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
   Future<void> _onUnmarkPrinted() async {
     try {
       final service = ref.read(orderServiceProvider);
-      await service.updateWorkTicketPrintedAt(order.orderRef, '');
+      final changedBy = ref.read(loggedByProvider);
+      await service.updateWorkTicketPrintedAt(order.orderRef, '', changedBy: changedBy);
       ref.invalidate(orderDetailProvider(order.orderRef));
       ref.invalidate(orderListProvider);
       if (mounted) {
@@ -694,11 +697,11 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           notes: order.notes,
           mode: OrderDeliverySectionMode.readOnly,
         ),
-        if (order.createdBy.isNotEmpty)
+        if (order.createdBy.isNotEmpty || order.createdStaffName.isNotEmpty)
           _InfoRow(
             icon: Icons.person_outline,
             label: 'Người tạo',
-            value: order.createdBy,
+            value: order.displayCreatedBy,
           ),
         const SizedBox(height: 16),
 

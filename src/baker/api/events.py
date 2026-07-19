@@ -10,7 +10,7 @@ from fastapi import APIRouter, Form, HTTPException, Query, Request, UploadFile
 from PIL import UnidentifiedImageError
 from pydantic import BaseModel
 
-from baker.api.auth import resolve_actor
+from baker.api.auth import resolve_actor, resolve_staff_name
 from baker.api.photos import read_image_upload, save_photo
 from baker.db.connection import get_db
 from baker.db.queries import fetch_debts, fetch_events, find_staff_by_name, link_event_person
@@ -83,12 +83,14 @@ def create_event(body: EventCreate, request: Request):
     # session rather than trusting free-text client input. Grace period
     # (AUTH_REQUIRED=false) falls back to body.logged_by.
     logged_by = resolve_actor(request, body.logged_by)
+    staff_name = resolve_staff_name(request)
 
     event = Event(
         summary=body.summary.strip(),
         type=body.type,
         tags=body.tags,
         logged_by=logged_by,
+        staff_name=staff_name,
         data=body.data,
         source=body.source,
         timestamp=timestamp,
@@ -327,6 +329,9 @@ def update_event(event_id: int, body: EventUpdate, request: Request):
             # the grace period, honor the client value (backward compat).
             fields.append("logged_by = ?")
             values.append(resolve_actor(request, data["logged_by"]))
+            # DG-259 Cycle 4: re-resolve staff_name when logger changes
+            fields.append("staff_name = ?")
+            values.append(resolve_staff_name(request))
 
         if "timestamp" in data:
             fields.append("timestamp = ?")

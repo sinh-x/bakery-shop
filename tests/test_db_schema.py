@@ -396,7 +396,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 76
+        assert _migrated_version(conn) == 79
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -414,7 +414,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 76
+        assert _migrated_version(conn) == 79
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -429,10 +429,10 @@ def test_schema_migration_v30_to_v31():
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 76
+        assert _migrated_version(conn) == 79
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 76
+        assert _migrated_version(conn) == 79
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3362,7 +3362,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 76
+        assert _migrated_version(conn) == 79
         _assert_users_role_check_constraint(conn)
 
 
@@ -3428,7 +3428,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 76
+        assert _migrated_version(conn) == 79
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3443,7 +3443,8 @@ def test_v71_idempotent():
 def test_v68_seed_lowercases_usernames_on_fresh_db():
     """v68 seeding on a fresh DB produces lowercase usernames.
 
-    The 5 seeded users must be lowercase: sinh=admin, ân/ngân/phượng/tân=staff.
+    The 5 seeded users must be lowercase: sinh=admin, ân=admin, ngân=staff,
+    phượng=admin, tân=admin (DG-259 Phase 1 role overrides).
     The staff.name display names are left unchanged (uppercase Vietnamese
     diacritics) — only users.username is lowercased.
     """
@@ -3461,19 +3462,26 @@ def test_v68_seed_lowercases_usernames_on_fresh_db():
         # The 5 expected seeded usernames (lowercased Vietnamese diacritics).
         assert set(usernames) == {"sinh", "ân", "ngân", "phượng", "tân"}
 
-        # Sinh is admin; the rest are staff.
+        # DG-259 Phase 1 role overrides: sinh=admin, ân=admin, ngân=staff,
+        # phượng=admin, tân=admin.
         sinh_row = conn.execute(
             "SELECT role FROM users WHERE username = 'sinh'"
         ).fetchone()
         assert sinh_row is not None
         assert sinh_row["role"] == "admin"
 
-        for staff_username in ("ân", "ngân", "phượng", "tân"):
-            row = conn.execute(
-                "SELECT role FROM users WHERE username = ?", (staff_username,)
-            ).fetchone()
-            assert row is not None
-            assert row["role"] == "staff"
+        assert conn.execute(
+            "SELECT role FROM users WHERE username = 'ân'"
+        ).fetchone()["role"] == "admin"
+        assert conn.execute(
+            "SELECT role FROM users WHERE username = 'ngân'"
+        ).fetchone()["role"] == "staff"
+        assert conn.execute(
+            "SELECT role FROM users WHERE username = 'phượng'"
+        ).fetchone()["role"] == "admin"
+        assert conn.execute(
+            "SELECT role FROM users WHERE username = 'tân'"
+        ).fetchone()["role"] == "admin"
 
         # staff.name display names are unchanged (still capitalized).
         staff_names = [
@@ -3543,7 +3551,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 76
+        assert _migrated_version(conn) == 79
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3617,7 +3625,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 76
+        assert _migrated_version(conn) == 79
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3644,7 +3652,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 76
+        assert _migrated_version(conn) == 79
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
@@ -3829,3 +3837,113 @@ def test_ap_vendor_sub_account_overflow_above_99():
         # Idempotency: re-resolving an existing vendor reuses its sub-account.
         reuse = _ensure_ap_vendor_sub_account(conn, "Vendor 1")
         assert reuse == ids[0]
+
+
+# ---------------------------------------------------------------------------
+# v77 — staff_id columns on users + sessions, UNIQUE index, backfill (DG-259 Phase 1)
+# ---------------------------------------------------------------------------
+
+
+def _seed_staff_for_v77(conn) -> None:
+    """Seed staff rows so v77 backfill has targets to match against."""
+    conn.executescript(
+        "INSERT OR IGNORE INTO staff (name, role) VALUES ('Ân', 'baker');"
+        "INSERT OR IGNORE INTO staff (name, role) VALUES ('Ngân', 'cashier');"
+        "INSERT OR IGNORE INTO staff (name, role) VALUES ('Phượng', 'manager');"
+        "INSERT OR IGNORE INTO staff (name, role) VALUES ('Sinh', 'owner');"
+        "INSERT OR IGNORE INTO staff (name, role) VALUES ('Tân', 'baker');"
+    )
+    conn.commit()
+
+
+def test_v77_registered_in_migration_chain():
+    """v77 is registered in MIGRATIONS with the expected callable."""
+    from baker.db.schema import _migrate_v77_staff_id_columns
+
+    assert "callable" in MIGRATIONS[77]
+    assert MIGRATIONS[77]["callable"] == _migrate_v77_staff_id_columns
+
+
+def test_v77_adds_staff_id_columns_and_index():
+    """v77 ensures users.staff_id, sessions.staff_id, and idx_users_staff_id.
+
+    Note: v68 (part of the chain before v77) already creates users.staff_id
+    via USERS_SCHEMA, so the column may already exist. v77 is idempotent.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 76)
+
+        _migrate_to_version(conn, 77)
+        assert _migrated_version(conn) >= 77
+        users_cols = _schema_columns(conn, "users")
+        assert "staff_id" in users_cols
+
+        sessions_cols = _schema_columns(conn, "sessions")
+        assert "staff_id" in sessions_cols
+
+        index_rows = conn.execute("PRAGMA index_list(users)").fetchall()
+        index_names = [r["name"] for r in index_rows]
+        assert "idx_users_staff_id" in index_names
+
+
+def test_v77_backfills_staff_id():
+    """v77 backfills users.staff_id by case-insensitive name matching."""
+    with get_db() as conn:
+        _migrate_to_version(conn, 76)
+        _seed_staff_for_v77(conn)
+        _migrate_to_version(conn, 77)
+
+        rows = conn.execute(
+            "SELECT u.username, u.staff_id, s.name AS staff_name "
+            "FROM users u "
+            "LEFT JOIN staff s ON s.id = u.staff_id "
+            "WHERE u.staff_id IS NOT NULL"
+        ).fetchall()
+        assert len(rows) > 0
+        matched = {r["username"]: r["staff_name"] for r in rows}
+        assert matched.get("sinh") == "Sinh"
+        assert matched.get("ân") == "Ân"
+
+
+def test_v77_idempotent():
+    """Re-running v77 is a no-op."""
+    from baker.db.schema import _migrate_v77_staff_id_columns
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _migrated_version(conn) >= 77
+        before = conn.execute(
+            "SELECT staff_id FROM users WHERE username = 'sinh'"
+        ).fetchone()
+        _migrate_v77_staff_id_columns(conn)
+        after = conn.execute(
+            "SELECT staff_id FROM users WHERE username = 'sinh'"
+        ).fetchone()
+        assert before["staff_id"] == after["staff_id"]
+
+
+def test_v77_skips_collision_on_duplicate_normalized_key():
+    """v77 does not crash when two usernames normalize to the same staff key.
+
+    First-match-wins: the first user with a matching normalized name gets
+    the staff_id; subsequent matching users are skipped (m7).
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 76)
+        _seed_staff_for_v77(conn)
+        # Insert a second user whose username normalizes to the same key
+        # as an existing user (e.g., "an" and "ân" both → "an").
+        conn.execute(
+            "INSERT OR IGNORE INTO users (username, password_hash, role, active) "
+            "VALUES ('an', 'x', 'staff', 1)"
+        )
+        conn.commit()
+        _migrate_to_version(conn, 77)
+
+        # Both 'ân' and 'an' may exist; at minimum no IntegrityError was raised.
+        rows = conn.execute(
+            "SELECT staff_id FROM users WHERE username IN ('ân', 'an')"
+        ).fetchall()
+        non_null = [r["staff_id"] for r in rows if r["staff_id"] is not None]
+        # At most one user gets the staff_id (first-match-wins).
+        assert len(non_null) <= 1

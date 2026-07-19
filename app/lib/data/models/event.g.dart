@@ -15,6 +15,7 @@ _BakeryEvent _$BakeryEventFromJson(Map<String, dynamic> json) => _BakeryEvent(
       (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ??
       const <String>[],
   loggedBy: json['logged_by'] as String? ?? '',
+  staffName: json['staff_name'] as String? ?? '',
   source: json['source'] as String? ?? 'app',
   data: json['data'] as Map<String, dynamic>? ?? const <String, dynamic>{},
   orderId: (json['order_id'] as num?)?.toInt(),
@@ -28,6 +29,7 @@ Map<String, dynamic> _$BakeryEventToJson(_BakeryEvent instance) =>
       'summary': instance.summary,
       'tags': instance.tags,
       'logged_by': instance.loggedBy,
+      'staff_name': instance.staffName,
       'source': instance.source,
       'data': instance.data,
       'order_id': instance.orderId,

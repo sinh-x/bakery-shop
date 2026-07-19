@@ -21,6 +21,7 @@ class Event:
     tags: list[str] = field(default_factory=list)
     source: str = "cli"
     logged_by: str = ""
+    staff_name: str = ""
     id: Optional[int] = None
     timestamp: Optional[str] = None
     order_id: Optional[int] = None
@@ -33,16 +34,16 @@ class Event:
     def save(self, conn) -> int:
         if self.timestamp:
             cursor = conn.execute(
-                "INSERT INTO events (type, summary, data, tags, source, logged_by, timestamp, order_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO events (type, summary, data, tags, source, logged_by, staff_name, timestamp, order_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (self.type, self.summary, json.dumps(self.data),
-                 ",".join(self.tags), self.source, self.logged_by, self.timestamp, self.order_id),
+                 ",".join(self.tags), self.source, self.logged_by, self.staff_name, self.timestamp, self.order_id),
             )
         else:
             self.timestamp = now_utc()
             cursor = conn.execute(
-                "INSERT INTO events (type, summary, data, tags, source, logged_by, timestamp, order_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO events (type, summary, data, tags, source, logged_by, staff_name, timestamp, order_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (self.type, self.summary, json.dumps(self.data),
-                 ",".join(self.tags), self.source, self.logged_by, self.timestamp, self.order_id),
+                 ",".join(self.tags), self.source, self.logged_by, self.staff_name, self.timestamp, self.order_id),
             )
         self.id = cursor.lastrowid
         return self.id
@@ -59,6 +60,7 @@ class Event:
             tags=[t for t in tags_str.split(",") if t],
             source=row["source"],
             logged_by=row["logged_by"] if "logged_by" in row.keys() else "",
+            staff_name=row["staff_name"] if "staff_name" in row.keys() else "",
             order_id=row["order_id"] if "order_id" in row.keys() else None,
             deleted_at=row["deleted_at"] if "deleted_at" in row.keys() else None,
             deleted_by=row["deleted_by"] if "deleted_by" in row.keys() else "",

@@ -153,8 +153,9 @@ class OrderService {
     return Order.fromJson(response.data as Map<String, dynamic>);
   }
 
-  Future<Order> updateWorkTicketPrintedAt(String ref, String printedAt) async {
+  Future<Order> updateWorkTicketPrintedAt(String ref, String printedAt, {String changedBy = ''}) async {
     final body = <String, dynamic>{'workTicketPrintedAt': printedAt};
+    if (changedBy.isNotEmpty) body['changedBy'] = changedBy;
     final response = await _dio.patch('/api/orders/$ref', data: body);
     return Order.fromJson(response.data as Map<String, dynamic>);
   }

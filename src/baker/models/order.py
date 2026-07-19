@@ -326,6 +326,8 @@ class Order:
     work_ticket_printed_at: Optional[str] = None
     work_ticket_printed_by: str = ""
     acknowledged_at: Optional[str] = None
+    created_staff_name: str = ""
+    work_ticket_printed_staff_name: str = ""
 
     @staticmethod
     def exists(order_id: int, conn=None) -> bool:
@@ -359,13 +361,13 @@ class Order:
             """INSERT INTO orders (order_ref, customer_name, customer_phone, delivery_phone, items,
                total_price, status, due_date, due_time, delivery_type,
                delivery_address, notes, amount_paid, source, created_by, shipping_fee, public_order_code,
-               customer_id, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               customer_id, created_at, updated_at, created_staff_name)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (self.order_ref, self.customer_name, self.customer_phone, self.delivery_phone,
               items_json, self.total_price, self.status, self.due_date,
               self.due_time, self.delivery_type, self.delivery_address, self.notes,
               self.amount_paid, self.source, self.created_by, self.shipping_fee, self.public_order_code,
-              self.customer_id, now_utc(), now_utc()),
+              self.customer_id, now_utc(), now_utc(), self.created_staff_name),
         )
         self.id = cursor.lastrowid
 
@@ -443,6 +445,8 @@ class Order:
             work_ticket_printed_at=row["work_ticket_printed_at"] if "work_ticket_printed_at" in row.keys() else None,
             work_ticket_printed_by=row["work_ticket_printed_by"] if "work_ticket_printed_by" in row.keys() else "",
             acknowledged_at=row["acknowledged_at"] if "acknowledged_at" in row.keys() else None,
+            created_staff_name=row["created_staff_name"] if "created_staff_name" in row.keys() else "",
+            work_ticket_printed_staff_name=row["work_ticket_printed_staff_name"] if "work_ticket_printed_staff_name" in row.keys() else "",
         )
 
     def compute_completeness(self) -> tuple[list[str], str]:
@@ -518,7 +522,9 @@ class Order:
             "updatedAt": self.updated_at,
             "workTicketPrintedAt": self.work_ticket_printed_at,
             "workTicketPrintedBy": self.work_ticket_printed_by,
+            "workTicketPrintedStaffName": self.work_ticket_printed_staff_name,
             "acknowledgedAt": self.acknowledged_at,
+            "createdStaffName": self.created_staff_name,
             "urgency": compute_urgency(
                 self.due_date,
                 self.due_time,

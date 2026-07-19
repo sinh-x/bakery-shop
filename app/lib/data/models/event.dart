@@ -15,6 +15,7 @@ sealed class BakeryEvent with _$BakeryEvent {
     required String summary,
     @Default(<String>[]) List<String> tags,
     @JsonKey(name: 'logged_by') @Default('') String loggedBy,
+    @JsonKey(name: 'staff_name') @Default('') String staffName,
     @Default('app') String source,
     @Default(<String, dynamic>{}) Map<String, dynamic> data,
     @JsonKey(name: 'order_id') int? orderId,
@@ -22,4 +23,8 @@ sealed class BakeryEvent with _$BakeryEvent {
 
   factory BakeryEvent.fromJson(Map<String, dynamic> json) =>
       _$BakeryEventFromJson(json);
+}
+
+extension BakeryEventDisplay on BakeryEvent {
+  String get displayLoggedBy => staffName.isNotEmpty ? staffName : loggedBy;
 }

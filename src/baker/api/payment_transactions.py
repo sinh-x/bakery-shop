@@ -3,9 +3,10 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from baker.api.auth import resolve_actor
 from baker.db.connection import get_db
 from baker.models.payment_transaction import PaymentMethod, PaymentTransaction, TransactionType
 from baker.utils.time import now_utc
@@ -232,7 +233,7 @@ def _now_iso() -> str:
 
 
 @router.post("/{ref}/transactions/{txn_id}/invalidate")
-def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest):
+def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest, request: Request):
     """Đánh dấu giao dịch là không hợp lệ (soft-delete) + đảo bút toán journal.
 
     FR1/FR3: Sets ``invalidated_at``/``invalidated_by`` and reverses (locked)
@@ -258,7 +259,7 @@ def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest):
             )
 
         invalidated_at = _now_iso()
-        invalidated_by = body.invalidatedBy or ""
+        invalidated_by = resolve_actor(request, body.invalidatedBy)
         conn.execute(
             "UPDATE payment_transactions "
             "SET invalidated_at = ?, invalidated_by = ? WHERE id = ?",

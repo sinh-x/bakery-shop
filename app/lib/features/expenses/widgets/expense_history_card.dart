@@ -40,7 +40,7 @@ class ExpenseHistoryCard extends StatelessWidget {
                   : '${data.category} • ${data.paymentMethod} • ${data.paymentSource}',
             ),
             Text(
-              '${VN.expenseLoggedByLabel}: ${event.loggedBy.isNotEmpty ? event.loggedBy : '—'} • ${VN.expensePaidByNameLabel}: ${data.paidByName.isNotEmpty ? data.paidByName : '—'}',
+              '${VN.expenseLoggedByLabel}: ${event.loggedBy.isNotEmpty ? event.displayLoggedBy : '—'} • ${VN.expensePaidByNameLabel}: ${data.paidByName.isNotEmpty ? data.paidByName : '—'}',
             ),
             Text(formattedTimestamp),
             if (data.isDebt)

@@ -445,6 +445,70 @@ def test_user_unlock_nonexistent_user():
 
 
 # ---------------------------------------------------------------------------
+# FR10/DG-259: baker user create --staff
+# ---------------------------------------------------------------------------
+
+
+def _add_staff(name: str) -> None:
+    """Add a staff member via CLI."""
+    result = runner.invoke(app, ["staff", "add", name])
+    assert result.exit_code == 0, result.output
+
+
+def test_user_create_with_staff_match():
+    """FR10: `baker user create --staff <name>` links matching staff."""
+    _add_staff("Linh")
+    result = runner.invoke(
+        app, ["user", "create", "LinhUser", "--staff", "Linh"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Linked" in result.output
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT u.staff_id, s.name FROM users u "
+            "LEFT JOIN staff s ON s.id = u.staff_id "
+            "WHERE u.username = 'linhuser'"
+        ).fetchone()
+        assert row is not None
+        assert row["staff_id"] is not None
+        assert row["name"] == "Linh"
+
+
+def test_user_create_with_staff_no_match():
+    """FR10: `baker user create --staff <name>` with no match reports error."""
+    result = runner.invoke(
+        app, ["user", "create", "GhostUser", "--staff", "NonExistent"]
+    )
+    assert result.exit_code == 0
+    assert "No staff member found" in result.output
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT staff_id FROM users WHERE username = 'ghostuser'"
+        ).fetchone()
+        # User was not created because the staff check runs before insert
+        assert row is None
+
+
+def test_user_create_with_staff_already_linked():
+    """FR10: `baker user create --staff` with already-linked staff reports error."""
+    _add_staff("Duc")
+    # Create first user linking to Duc
+    runner.invoke(app, ["user", "create", "FirstUser", "--staff", "Duc"])
+    with get_db() as conn:
+        conn.execute("DELETE FROM users WHERE username = 'firstuser'")
+        conn.commit()
+
+    # Now create a user that explicitly links to Duc (simulating already-linked)
+    runner.invoke(app, ["staff", "add", "Duc2"])
+    runner.invoke(app, ["user", "create", "DucOwner", "--staff", "Duc2"])
+    # Try creating another user linking to the same staff
+    result = runner.invoke(
+        app, ["user", "create", "DucPoacher", "--staff", "Duc2"]
+    )
+    assert "already linked" in result.output.lower() or "already" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
 # FR20: baker session list
 # ---------------------------------------------------------------------------
 

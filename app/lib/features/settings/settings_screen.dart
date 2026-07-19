@@ -1,4 +1,4 @@
-// DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines until technical tab extraction can be isolated from connection side effects; review in Phase 5 (2026-05-29).
+// DG-150 Phase 4 temporary exemption: screen coordinator remains above 300 lines until technical tab extraction can be isolated from connection side effects. DG-259 c6-fix (2026-07-19): staff binding section extracted, file now 333 lines.
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,9 +8,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../data/api/api_client.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../providers/events_provider.dart';
-import '../../providers/staff_provider.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'widgets/settings_sections.dart';
+import 'widgets/staff_binding_section.dart';
 import 'catalog_tags_settings_tab.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -150,23 +150,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
   }
 
-  Future<void> _selectStaff(String name) async {
-    await ref.read(loggedByProvider.notifier).setName(name);
-    if (mounted) showTopSnackBar(context, VN.staffSaved);
-  }
-
-  Future<void> _saveManualName() async {
-    final name = _manualNameCtrl.text.trim();
-    if (name.isEmpty) return;
-    await ref.read(loggedByProvider.notifier).setName(name);
-    if (mounted) showTopSnackBar(context, VN.staffSaved);
-  }
-
   @override
   Widget build(BuildContext context) {
     final currentUrl = ref.watch(apiBaseUrlProvider);
-    final currentStaff = ref.watch(loggedByProvider);
-    final staffAsync = ref.watch(staffListProvider);
+    final auth = ref.watch(authProvider);
 
     // Sync URL controller on first build
     if (_urlController.text.isEmpty && currentUrl.isNotEmpty) {
@@ -204,34 +191,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              Text(VN.staffPicker,
-                  style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: 8),
-
-              // Staff picker: dropdown if loaded, fallback text field on error
-              staffAsync.when(
-                data: (staffList) => staffList.isEmpty
-                    ? ManualNameField(
-                        controller: _manualNameCtrl,
-                        onSave: _saveManualName,
-                      )
-                    : StaffDropdown(
-                        staffList: staffList.map((s) => s.name).toList(),
-                        selected:
-                            currentStaff.isNotEmpty ? currentStaff : null,
-                        onSelected: _selectStaff,
-                      ),
-                loading: () => const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: CircularProgressIndicator(),
-                  ),
-                ),
-                error: (_, _) => ManualNameField(
-                  controller: _manualNameCtrl,
-                  onSave: _saveManualName,
-                ),
-              ),
+              if (auth.isAuthenticated)
+                StaffBindingSection(auth: auth, manualNameCtrl: _manualNameCtrl),
             ],
           ),
 
