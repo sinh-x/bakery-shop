@@ -390,6 +390,182 @@ def test_income_statement_cogs_ratio_reflects_selling_price_fix():
     assert "(30.0%)" in result.output
 
 
+def test_income_statement_date_basis_transaction_byte_identical_to_default():
+    """--date-basis transaction output is byte-identical to default (no flag)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_known_dataset(conn)
+    default_result = _invoke([
+        "report", "income-statement", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    explicit_result = _invoke([
+        "report", "income-statement", "--since", "2026-06-01", "--until", "2026-06-30",
+        "--date-basis", "transaction",
+    ])
+    assert default_result.exit_code == 0, default_result.output
+    assert explicit_result.exit_code == 0, explicit_result.output
+    assert default_result.output == explicit_result.output
+
+
+def _seed_due_date_dataset(conn):
+    """Seed dataset for due-date basis tests.
+
+    Layout:
+      - Order #1 (due_date='2026-06-20'): revenue 200000, COGS 80000
+        transaction_date = 2026-06-15T10:00:00Z
+      - Order #2 (due_date=NULL): revenue 150000, COGS 50000
+        transaction_date = 2026-06-18T10:00:00Z
+      - Operating expense (source_type='expense'): 10000
+        transaction_date = 2026-06-15T10:00:00Z
+
+    Expected:
+      - Transaction basis (--since 2026-06-16 → 2026-06-30):
+        Only Order #2 revenue/COGS included (transaction_date 06-18 in range).
+        Operating expense excluded (transaction_date 06-15).
+        revenue=150000, COGS=50000, opex=0, net=100000
+      - Due-date basis (--since 2026-06-16 → 2026-06-30):
+        Order #1 included (due_date 06-20), Order #2 included (due_date NULL,
+          fallback DATE(transaction_date)=06-18).
+        Operating expense excluded (transaction_date 06-15).
+        revenue=350000, COGS=130000, opex=0, net=220000
+    """
+    cash = _account_id(conn, "1100")
+    revenue_acc = _account_id(conn, "4100")
+    cogs = _account_id(conn, "5900")
+    inventory = _account_id(conn, "1300")
+
+    conn.execute(
+        "INSERT INTO orders (id, order_ref, customer_name, items, total_price, status, due_date, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (1, "ORD-1", "Customer 1", "[]", 200000, "delivered", "2026-06-20", "2026-06-15T10:00:00Z"),
+    )
+    conn.execute(
+        "INSERT INTO orders (id, order_ref, customer_name, items, total_price, status, due_date, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (2, "ORD-2", "Customer 2", "[]", 150000, "delivered", None, "2026-06-18T10:00:00Z"),
+    )
+
+    _insert_entry(
+        conn, debit_account_id=cash, credit_account_id=revenue_acc,
+        amount=200000.0, source_type="order", source_id=1,
+        description="Order #1 revenue", created_at="2026-06-15T10:00:00Z",
+    )
+    _insert_entry(
+        conn, debit_account_id=cogs, credit_account_id=inventory,
+        amount=80000.0, source_type="order_cogs", source_id=1,
+        description="Order #1 COGS", created_at="2026-06-15T10:00:00Z",
+    )
+    _insert_entry(
+        conn, debit_account_id=cash, credit_account_id=revenue_acc,
+        amount=150000.0, source_type="order", source_id=2,
+        description="Order #2 revenue", created_at="2026-06-18T10:00:00Z",
+    )
+    _insert_entry(
+        conn, debit_account_id=cogs, credit_account_id=inventory,
+        amount=50000.0, source_type="order_cogs", source_id=2,
+        description="Order #2 COGS", created_at="2026-06-18T10:00:00Z",
+    )
+
+
+def test_income_statement_date_basis_due_date_different_bucketing():
+    """Due-date basis buckets order revenue/COGS by COALESCE(due_date, DATE(transaction_date))."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_due_date_dataset(conn)
+
+    # Transaction basis: only Order #2 (transaction_date=06-18) falls in 06-16→06-30
+    tx_result = _invoke([
+        "report", "income-statement",
+        "--since", "2026-06-16", "--until", "2026-06-30",
+        "--date-basis", "transaction",
+    ])
+    assert tx_result.exit_code == 0, tx_result.output
+    assert "150,000.00" in tx_result.output  # revenue
+    assert "50,000.00" in tx_result.output   # COGS
+    assert "100,000.00" in tx_result.output  # net income
+    assert "200,000.00" not in tx_result.output  # Order #1 revenue excluded
+    assert "80,000.00" not in tx_result.output   # Order #1 COGS excluded
+
+    # Due-date basis: both orders fall in 06-16→06-30 (Order #1 due_date=06-20,
+    # Order #2 due_date=NULL → DATE(transaction_date)=06-18)
+    dd_result = _invoke([
+        "report", "income-statement",
+        "--since", "2026-06-16", "--until", "2026-06-30",
+        "--date-basis", "due-date",
+    ])
+    assert dd_result.exit_code == 0, dd_result.output
+    assert "350,000.00" in dd_result.output  # revenue 200000+150000
+    assert "130,000.00" in dd_result.output  # COGS 80000+50000
+    assert "220,000.00" in dd_result.output  # net income
+    assert "(due-date basis)" in dd_result.output
+
+
+def test_income_statement_date_basis_due_date_operating_expenses_on_transaction_date():
+    """Operating expenses stay on transaction_date under due-date basis."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_due_date_dataset(conn)
+        transport = _account_id(conn, "5300")
+        cash = _account_id(conn, "1100")
+        event_id = _insert_expense_event(
+            conn, category="Vận chuyển", amount=10000,
+            created_at="2026-06-15T10:00:00Z",
+        )
+        _insert_entry(
+            conn, debit_account_id=transport, credit_account_id=cash,
+            amount=10000.0, source_type="expense", source_id=event_id,
+            description="Expense", created_at="2026-06-15T10:00:00Z",
+        )
+
+    # Due-date basis with --since 06-16 excludes the 06-15 expense
+    result = _invoke([
+        "report", "income-statement",
+        "--since", "2026-06-16", "--until", "2026-06-30",
+        "--date-basis", "due-date",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "350,000.00" in result.output  # revenue
+    assert "10,000.00" not in result.output  # opex excluded (transaction_date 06-15)
+    assert "220,000.00" in result.output  # net income (no opex)
+
+
+def test_income_statement_date_basis_due_date_include_expense_in_range():
+    """Operating expenses inside the date range show up in due-date basis."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_due_date_dataset(conn)
+        transport = _account_id(conn, "5300")
+        cash = _account_id(conn, "1100")
+        event_id = _insert_expense_event(
+            conn, category="Vận chuyển", amount=10000,
+            created_at="2026-06-20T10:00:00Z",
+        )
+        _insert_entry(
+            conn, debit_account_id=transport, credit_account_id=cash,
+            amount=10000.0, source_type="expense", source_id=event_id,
+            description="Expense", created_at="2026-06-20T10:00:00Z",
+        )
+
+    result = _invoke([
+        "report", "income-statement",
+        "--since", "2026-06-16", "--until", "2026-06-30",
+        "--date-basis", "due-date",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "350,000.00" in result.output  # revenue
+    assert "10,000.00" in result.output   # opex included (transaction_date 06-20)
+    assert "210,000.00" in result.output  # net income (350000 - 130000 - 10000)
+
+
+def test_income_statement_date_basis_default_help_shows_option():
+    """--help for income-statement shows the --date-basis option."""
+    result = _invoke(["report", "income-statement", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--date-basis" in result.output
+    assert "transaction" in result.output
+    assert "due-date" in result.output
+
+
 # ---------------------------------------------------------------------------
 # balance-sheet
 # ---------------------------------------------------------------------------
