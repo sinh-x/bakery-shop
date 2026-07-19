@@ -701,7 +701,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           _InfoRow(
             icon: Icons.person_outline,
             label: 'Người tạo',
-            value: order.createdStaffName.isNotEmpty ? order.createdStaffName : order.createdBy,
+            value: order.displayCreatedBy,
           ),
         const SizedBox(height: 16),
 

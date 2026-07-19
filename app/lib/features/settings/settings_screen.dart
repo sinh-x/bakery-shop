@@ -8,10 +8,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../data/api/api_client.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../providers/events_provider.dart';
-import '../../providers/staff_provider.dart';
-import '../../providers/user_binding_provider.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
 import 'widgets/settings_sections.dart';
+import 'widgets/staff_binding_section.dart';
 import 'catalog_tags_settings_tab.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -151,184 +150,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
   }
 
-  Future<void> _selectStaff(String name) async {
-    await ref.read(loggedByProvider.notifier).setName(name);
-    if (mounted) showTopSnackBar(context, VN.staffSaved);
-  }
-
-  Future<void> _saveManualName() async {
-    final name = _manualNameCtrl.text.trim();
-    if (name.isEmpty) return;
-    await ref.read(loggedByProvider.notifier).setName(name);
-    if (mounted) showTopSnackBar(context, VN.staffSaved);
-  }
-
-  Future<void> _selectBinding(int? staffId) async {
-    final notifier = ref.read(staffBindingProvider.notifier);
-    await notifier.updateBinding(staffId);
-    if (mounted) {
-      final newState = ref.read(staffBindingProvider);
-      if (newState.hasError) {
-        showTopSnackBar(
-          context,
-          VN.staffBindingSaveFailed,
-          backgroundColor: Colors.red.shade800,
-        );
-        ref.invalidate(staffBindingProvider);
-      } else {
-        showTopSnackBar(context, VN.staffBindingSaved);
-      }
-    }
-  }
-
-  Widget _buildIdentityRow(AuthState auth) {
-    final staffName = ref.watch(loggedByProvider);
-    final bindingAsync = ref.watch(staffBindingProvider);
-    final staffDisplay = bindingAsync.when(
-      data: (b) => b.staffName ?? staffName,
-      loading: () => staffName,
-      error: (_, _) => staffName,
-    );
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            const Icon(Icons.person, size: 32),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(auth.username ?? '',
-                    style: Theme.of(context).textTheme.titleMedium),
-                if (staffDisplay.isNotEmpty)
-                  Text(staffDisplay,
-                      style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _buildStaffBindingSection() {
-    final bindingAsync = ref.watch(staffBindingProvider);
-    final staffAsync = ref.watch(staffListProvider);
-
-    return [
-      Text(VN.staffBindingTitle,
-          style: Theme.of(context).textTheme.titleSmall),
-      const SizedBox(height: 4),
-      Text(
-        VN.staffBindingHelp,
-        style: Theme.of(context)
-            .textTheme
-            .bodySmall
-            ?.copyWith(color: Colors.grey),
-      ),
-      const SizedBox(height: 8),
-      bindingAsync.when(
-        data: (binding) => staffAsync.when(
-          data: (staffList) => DropdownButtonFormField<int?>(
-            initialValue: binding.staffId,
-            hint: const Text(VN.staffBindingNone),
-            items: [
-              const DropdownMenuItem<int?>(
-                value: null,
-                child: Text(VN.staffBindingNone),
-              ),
-              ...staffList.map(
-                (s) => DropdownMenuItem<int?>(
-                  value: s.id,
-                  child: Text(s.name),
-                ),
-              ),
-            ],
-            onChanged: (id) {
-              if (id != binding.staffId) _selectBinding(id);
-            },
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.person),
-            ),
-          ),
-          loading: () => const Center(
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: CircularProgressIndicator(),
-            ),
-          ),
-          error: (_, _) => InkWell(
-            onTap: () => ref.invalidate(staffBindingProvider),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                VN.staffBindingLoadError,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: Colors.red),
-              ),
-            ),
-          ),
-        ),
-        loading: () => const Center(
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: CircularProgressIndicator(),
-          ),
-        ),
-        error: (_, _) => InkWell(
-          onTap: () => ref.invalidate(staffBindingProvider),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              VN.staffBindingLoadError,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: Colors.red),
-            ),
-          ),
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _buildGraceStaffPicker() {
-    final staffAsync = ref.watch(staffListProvider);
-    final currentStaff = ref.watch(loggedByProvider);
-
-    return [
-      Text(VN.staffPicker,
-          style: Theme.of(context).textTheme.titleSmall),
-      const SizedBox(height: 8),
-      staffAsync.when(
-        data: (staffList) => staffList.isEmpty
-            ? ManualNameField(
-                controller: _manualNameCtrl,
-                onSave: _saveManualName,
-              )
-            : StaffDropdown(
-                staffList: staffList.map((s) => s.name).toList(),
-                selected: currentStaff.isNotEmpty ? currentStaff : null,
-                onSelected: _selectStaff,
-              ),
-        loading: () => const Center(
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: CircularProgressIndicator(),
-          ),
-        ),
-        error: (_, _) => ManualNameField(
-          controller: _manualNameCtrl,
-          onSave: _saveManualName,
-        ),
-      ),
-    ];
-  }
-
   @override
   Widget build(BuildContext context) {
     final currentUrl = ref.watch(apiBaseUrlProvider);
@@ -370,13 +191,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              if (auth.isAuthenticated) ...[
-                _buildIdentityRow(auth),
-                const SizedBox(height: 16),
-              ],
-              if (auth.isAuthenticated && auth.isAdmin)
-                ..._buildStaffBindingSection(),
-              if (!auth.isAuthenticated) ..._buildGraceStaffPicker(),
+              if (auth.isAuthenticated)
+                StaffBindingSection(auth: auth, manualNameCtrl: _manualNameCtrl),
             ],
           ),
 

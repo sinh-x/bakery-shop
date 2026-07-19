@@ -24,3 +24,7 @@ sealed class BakeryEvent with _$BakeryEvent {
   factory BakeryEvent.fromJson(Map<String, dynamic> json) =>
       _$BakeryEventFromJson(json);
 }
+
+extension BakeryEventDisplay on BakeryEvent {
+  String get displayLoggedBy => staffName.isNotEmpty ? staffName : loggedBy;
+}
