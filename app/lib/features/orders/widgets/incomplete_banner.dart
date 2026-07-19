@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../providers/order/banner_collapse_provider.dart';
 import '../../../shared/labels/orders.dart';
 import '../../../shared/theme/bakery_theme.dart';
 
-/// Pinned banner at top of the orders list summarizing incomplete order count.
-///
-/// Hidden when count is 0. When tapped, invokes [onTap] so the parent screen
-/// can filter to incomplete orders.
-class IncompleteBanner extends StatelessWidget {
+class IncompleteBanner extends ConsumerWidget {
   const IncompleteBanner({
     super.key,
     required this.count,
@@ -18,59 +16,139 @@ class IncompleteBanner extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (count == 0) {
       return const SizedBox.shrink();
     }
 
-    final color = BakeryTheme.completenessTierColors['incomplete'] ?? Colors.amber;
+    final collapsed = ref.watch(incompleteBannerCollapsedProvider);
+    final color =
+        BakeryTheme.completenessTierColors['incomplete'] ?? Colors.amber;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: EdgeInsets.fromLTRB(16, collapsed ? 0 : 8, 16, 0),
       child: Material(
         color: color.withAlpha(15),
         borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Icon(Icons.warning_amber_rounded, color: color, size: 24),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        OrdersLabels.incompleteBannerTitle,
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        OrdersLabels.incompleteBannerText(count),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
+        child: collapsed
+            ? _buildCollapsed(context, ref, color)
+            : _buildExpanded(context, ref, color),
+      ),
+    );
+  }
+
+  Widget _buildExpanded(
+    BuildContext context,
+    WidgetRef ref,
+    Color color,
+  ) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: color, size: 24),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    OrdersLabels.incompleteBannerTitle,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                _CountChip(count: count, color: color),
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.arrow_forward_ios,
-                  size: 14,
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    OrdersLabels.incompleteBannerText(count),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
+            _CountChip(count: count, color: color),
+            const SizedBox(width: 4),
+            _CollapseChevron(
+              collapsed: false,
+              onTap: () =>
+                  ref.read(incompleteBannerCollapsedProvider.notifier).toggle(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCollapsed(
+    BuildContext context,
+    WidgetRef ref,
+    Color color,
+  ) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: SizedBox(
+        height: 48,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: color, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  OrdersLabels.incompleteBannerTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style:
+                      Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+              _CountChip(count: count, color: color),
+              const SizedBox(width: 4),
+              _CollapseChevron(
+                collapsed: true,
+                onTap: () =>
+                    ref.read(incompleteBannerCollapsedProvider.notifier).toggle(),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _CollapseChevron extends StatelessWidget {
+  const _CollapseChevron({
+    required this.collapsed,
+    required this.onTap,
+  });
+
+  final bool collapsed;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        iconSize: 20,
+        icon: Icon(collapsed ? Icons.expand_more : Icons.expand_less),
+        onPressed: onTap,
+        tooltip: collapsed
+            ? OrdersLabels.bannerExpandTooltip
+            : OrdersLabels.bannerCollapseTooltip,
       ),
     );
   }

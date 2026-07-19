@@ -146,4 +146,8 @@ class OrdersLabels {
   static const missingFieldCustomerPhone = 'SĐT';
   static const missingFieldDeliveryPhone = 'SĐT nhận';
   static const missingFieldSource = 'nguồn';
+
+  // Banner collapse/expand tooltips (DG-262 Phase 2)
+  static const bannerCollapseTooltip = 'Thu gọn';
+  static const bannerExpandTooltip = 'Mở rộng';
 }
