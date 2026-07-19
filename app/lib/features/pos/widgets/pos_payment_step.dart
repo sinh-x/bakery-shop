@@ -11,7 +11,7 @@ import '../../../shared/widgets/target_account_dropdown.dart';
 /// (B3), and the submit action that finalizes the order.
 ///
 /// The transfer-photo path (`showTransferSourceDialog` + `uploadOrderPhoto`) is
-/// preserved by the caller's [onSubmit] handler — this widget only captures the
+/// preserved by the caller's [onPayNow] handler — this widget only captures the
 /// selected method and amount.
 ///
 /// This widget is intentionally review-only with respect to order data: it
@@ -29,7 +29,8 @@ class PosPaymentStep extends ConsumerStatefulWidget {
     required this.onAmountChanged,
     required this.onTienRutAmountChanged,
     required this.onBack,
-    required this.onSubmit,
+    required this.onPayNow,
+    required this.onPayLater,
     this.selectedTargetAccount,
     this.onTargetAccountChanged,
   });
@@ -44,7 +45,8 @@ class PosPaymentStep extends ConsumerStatefulWidget {
   final ValueChanged<double> onAmountChanged;
   final ValueChanged<double> onTienRutAmountChanged;
   final VoidCallback onBack;
-  final VoidCallback onSubmit;
+  final VoidCallback onPayNow;
+  final VoidCallback onPayLater;
 
   /// Optional target bank account for transfer payments (DG-244 Phase 2,
   /// FR7). `null` means no selection. Only shown when the method is
@@ -297,15 +299,20 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
             child: const Text(OrdersLabels.backLabel),
           ),
           const Spacer(),
+          OutlinedButton(
+            onPressed: widget.isProcessing ? null : widget.onPayLater,
+            child: const Text(VN.payLater),
+          ),
+          const SizedBox(width: 8),
           FilledButton(
-            onPressed: widget.isProcessing ? null : widget.onSubmit,
+            onPressed: widget.isProcessing ? null : widget.onPayNow,
             child: widget.isProcessing
                 ? const SizedBox(
                     height: 20,
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(VN.submitOrder),
+                : const Text(VN.payNow),
           ),
         ],
       ),

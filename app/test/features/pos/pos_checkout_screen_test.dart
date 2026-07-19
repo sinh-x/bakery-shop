@@ -149,19 +149,12 @@ Future<void> _navigateToReview(WidgetTester tester) async {
   // Stage 1 (product selection) → Stage 2 (customer info)
   await tester.tap(find.text('Tiếp tục'));
   await tester.pumpAndSettle();
-  // Stage 2 (customer info) → Stage 4 (review)
+  // Stage 2 (customer info) → Stage 3 (delivery)
   await tester.tap(find.text('Tiếp tục'));
   await tester.pumpAndSettle();
-}
-
-/// Dismisses the "Giao ngay?" (B5) dialog by tapping "Để sau" (confirmed).
-Future<void> _dismissDeliverNowDialog(WidgetTester tester) async {
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 500));
-  await tester.tap(find.text(VN.deliverNowNo));
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 500));
-  await tester.pump();
+  // Stage 3 (pickup simplified) → Stage 4 (review) via "Giao ngay"
+  await tester.tap(find.text(OrdersLabels.pickupNow));
+  await tester.pumpAndSettle();
 }
 
 /// From the Stage 4 review sub-step, advance to the dedicated payment step
@@ -262,11 +255,12 @@ void main() {
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 
-      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      final createButton = find.widgetWithText(FilledButton, VN.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await _dismissDeliverNowDialog(tester);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
       await tester.tap(find.text(VN.skip));
       await tester.pumpAndSettle();
 
@@ -315,11 +309,11 @@ void main() {
       // (DG-218 Phase 4).
       await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      final createButton = find.widgetWithText(FilledButton, VN.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await _dismissDeliverNowDialog(tester);
+
 
       expect(fakeOrderService.createdItems.single.single['attributes'], {'useInventory': 'false'});
     });
@@ -340,11 +334,11 @@ void main() {
       // Advance to the dedicated payment step before submit (DG-218 Phase 4).
       await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      final createButton = find.widgetWithText(FilledButton, VN.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await _dismissDeliverNowDialog(tester);
+
 
       final giftPayload = fakeOrderService.createdItems.single.firstWhere((item) => item['isGift'] == true);
       expect(giftPayload['productId'], '42');
@@ -424,11 +418,12 @@ void main() {
       // Re-enter the payment step; the transfer selection persists.
       await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      final createButton = find.widgetWithText(FilledButton, VN.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await _dismissDeliverNowDialog(tester);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
       await tester.tap(find.text(VN.skip));
       await tester.pumpAndSettle();
 
@@ -458,7 +453,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(btn);
       // B5 dialog appears; dismiss it to continue submit flow.
-      await _dismissDeliverNowDialog(tester);
+
 
       // While the first call is still processing (completer not yet resolved),
       // tap again — should be a no-op because _isProcessing is true.
@@ -500,11 +495,11 @@ void main() {
       await _navigateToReview(tester);
       await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      final createButton = find.widgetWithText(FilledButton, VN.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await _dismissDeliverNowDialog(tester);
+
 
       final submitted = fakeOrderService.createdItems.single;
       final regularItem = submitted.firstWhere((i) => i['isGift'] != true);
@@ -552,18 +547,21 @@ void main() {
       await tester.tap(find.text(OrdersLabels.continueLabel));
       await tester.pumpAndSettle();
 
-      // Proceed to the review panel (Stage 2 pickup skips Stage 3).
+      // Stage 2 → Stage 3 (delivery)
       await tester.tap(find.text('Tiếp tục'));
       await tester.pumpAndSettle();
-      // Advance to the dedicated payment step before submit (DG-218 Phase 4).
+      // Stage 3 (pickup simplified) → Stage 4 (review) via "Giao ngay"
+      await tester.tap(find.text(OrdersLabels.pickupNow));
+      await tester.pumpAndSettle();
+      // Advance to Stage 5 (dedicated payment step).
       await _navigateToPayment(tester);
 
       // Submit (cash) and assert the created order reflects the edited qty.
-      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      final createButton = find.widgetWithText(FilledButton, VN.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await _dismissDeliverNowDialog(tester);
+
 
       expect(fakeOrderService.createOrderCallCount, 1);
       final submittedItems = fakeOrderService.createdItems.single;
@@ -622,14 +620,14 @@ void main() {
       expect(find.byType(SegmentedButton<String>), findsNothing);
       expect(find.text(VN.tienMat), findsNothing);
       expect(find.text(VN.chuyenKhoan), findsNothing);
-      expect(find.text(VN.submitOrder), findsNothing);
+      expect(find.text(VN.payNow), findsNothing);
 
       // Advancing opens the dedicated payment step with the selector.
       await _navigateToPayment(tester);
       expect(find.byType(SegmentedButton<String>), findsOneWidget);
       expect(find.text(VN.tienMat), findsOneWidget);
       expect(find.text(VN.chuyenKhoan), findsOneWidget);
-      expect(find.text(VN.submitOrder), findsOneWidget);
+      expect(find.text(VN.payNow), findsOneWidget);
     });
 
     testWidgets('AC4/AC8: cash path submits, shows receipt, and clears the cart', (tester) async {
@@ -643,11 +641,11 @@ void main() {
       await _navigateToPayment(tester);
 
       // Default selection is cash; submit directly.
-      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      final createButton = find.widgetWithText(FilledButton, VN.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await _dismissDeliverNowDialog(tester);
+      await tester.pumpAndSettle();
 
       expect(fakeOrderService.paymentMethods, <String?>['cash']);
       // Receipt screen is shown.
@@ -667,11 +665,12 @@ void main() {
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 
-      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      final createButton = find.widgetWithText(FilledButton, VN.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await _dismissDeliverNowDialog(tester);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
       // Skip the transfer proof photo.
       await tester.tap(find.text(VN.skip));
       await tester.pumpAndSettle();
@@ -690,11 +689,11 @@ void main() {
       await _navigateToReview(tester);
       await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      final createButton = find.widgetWithText(FilledButton, VN.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await _dismissDeliverNowDialog(tester);
+      await tester.pumpAndSettle();
 
       // FR-9: the walk-in customer and POS source defaults are applied.
       expect(fakeOrderService.createOrderCallCount, 1);
@@ -776,11 +775,12 @@ void main() {
       await tester.pumpAndSettle();
 
       // Submit (skip the transfer proof photo).
-      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      final createButton = find.widgetWithText(FilledButton, VN.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await _dismissDeliverNowDialog(tester);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
       await tester.tap(find.text(VN.skip));
       await tester.pumpAndSettle();
 
@@ -810,11 +810,12 @@ void main() {
       await tester.pumpAndSettle();
 
       // Do NOT select an account — leave the dropdown at its empty default.
-      final createButton = find.widgetWithText(FilledButton, 'TẠO ĐƠN HÀNG');
+      final createButton = find.widgetWithText(FilledButton, VN.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
-      await _dismissDeliverNowDialog(tester);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
       await tester.tap(find.text(VN.skip));
       await tester.pumpAndSettle();
 

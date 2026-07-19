@@ -26,7 +26,8 @@ void main() {
             onTienRutAmountChanged: (_) {},
             onTargetAccountChanged: onTargetAccountChanged,
             onBack: () {},
-            onSubmit: () {},
+            onPayNow: () {},
+            onPayLater: () {},
           ),
         ),
       );

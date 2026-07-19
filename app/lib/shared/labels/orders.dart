@@ -153,6 +153,10 @@ class OrdersLabels {
   static const bannerCollapseTooltip = 'Thu gọn';
   static const bannerExpandTooltip = 'Mở rộng';
 
+  // Stage 3 pickup options (DG-267 Phase 3)
+  static const pickupNow = 'Giao ngay';
+  static const pickupLater = 'Giao hàng sau';
+
   // Delivery filter labels (DG-261 Phase 1)
   static const deliveryFilterToday = 'Hôm nay';
   static const deliveryFilterAll = 'Tất cả';
