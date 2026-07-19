@@ -150,4 +150,14 @@ class OrdersLabels {
   // Banner collapse/expand tooltips (DG-262 Phase 2)
   static const bannerCollapseTooltip = 'Thu gọn';
   static const bannerExpandTooltip = 'Mở rộng';
+
+  // Delivery filter labels (DG-261 Phase 1)
+  static const deliveryFilterToday = 'Hôm nay';
+  static const deliveryFilterAll = 'Tất cả';
+  static const deliveryNoDueDate = 'Chưa có ngày';
+  static const deliveryEmptyToday = 'Không có đơn giao hàng hôm nay';
+  static const deliveryEmptyAll = 'Không có đơn giao hàng';
+
+  // Delivery tab with count (DG-261 review CQ-2)
+  static String deliveryTabWithCount(int count) => 'Giao hàng ($count)';
 }
