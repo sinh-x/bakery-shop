@@ -163,12 +163,30 @@ def trial_balance_cmd(since, until):
 @report_cmd.command("income-statement")
 @click.option("--since", help="From date (YYYY-MM-DD)")
 @click.option("--until", help="To date (YYYY-MM-DD, inclusive)")
-def income_statement_cmd(since, until):
+@click.option(
+    "--date-basis",
+    type=click.Choice(["transaction", "due-date"]),
+    default="transaction",
+    help="Date basis for order revenue/COGS (default: transaction). "
+         "Use 'due-date' to bucket by COALESCE(order.due_date, delivered local date).",
+)
+def income_statement_cmd(since, until, date_basis):
     """Revenue − COGS − Expenses = Net Income for a date range."""
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
-    _echo_header("Income Statement", since, until)
+    if date_basis == "due-date":
+        _echo_header("Income Statement (due-date basis)", since, until)
+    else:
+        _echo_header("Income Statement", since, until)
 
+    if date_basis == "due-date":
+        _income_statement_due_date(since_b, until_b)
+    else:
+        _income_statement_transaction(since_b, until_b)
+
+
+def _income_statement_transaction(since_b: str | None, until_b: str | None) -> None:
+    """Income statement using transaction_date basis (current behavior)."""
     with get_db() as conn:
         params: list = []
         where_clauses = []
@@ -202,8 +220,6 @@ def income_statement_cmd(since, until):
 
     revenue = net("income")
 
-    # COGS is account code COGS_CODE (an expense sub-account). Report it
-    # separately from operating expenses for clarity.
     cogs_params: list = [COGS_CODE]
     cogs_where = ["a.code = ?"]
     if since_b:
@@ -226,9 +242,108 @@ def income_statement_cmd(since, until):
         ).fetchone()
     cogs_amount = float(cogs_row["cogs"]) if cogs_row else 0.0
 
-    total_expense = net("expense")  # includes COGS (debit - credit for expense accounts)
+    total_expense = net("expense")
     operating_expenses = total_expense - cogs_amount
 
+    _echo_income_statement_body(revenue, cogs_amount, operating_expenses)
+
+
+def _income_statement_due_date(since_b: str | None, until_b: str | None) -> None:
+    """Income statement using due-date basis for order-sourced entries.
+
+    Order revenue/COGS bucket by COALESCE(order.due_date, DATE(transaction_date)).
+    Operating expenses remain on transaction_date (FR5).
+    """
+    with get_db() as conn:
+        params: list = []
+        filter_parts = []
+
+        def _add_date_filter(
+            date_expr: str, params: list, filter_parts: list,
+        ) -> None:
+            if since_b:
+                filter_parts.append(f"{date_expr} >= ?")
+                params.append(since_b)
+            if until_b:
+                filter_parts.append(f"{date_expr} <= ?")
+                params.append(until_b)
+
+        order_conditions: list = ["je.source_type IN ('order', 'order_cogs')"]
+        order_date = "COALESCE(o.due_date, DATE(je.transaction_date))"
+        _add_date_filter(order_date, params, order_conditions)
+
+        other_conditions: list = ["je.source_type NOT IN ('order', 'order_cogs')"]
+        _add_date_filter("je.transaction_date", params, other_conditions)
+
+        date_filter = (
+            "WHERE (" + " AND ".join(order_conditions) + ") OR (" + " AND ".join(other_conditions) + ")"
+        ) if (order_conditions[1:] or other_conditions[1:]) else ""
+
+        rows = conn.execute(
+            f"""
+            SELECT a.type AS type,
+                   COALESCE(SUM(jl.debit), 0)  AS total_debit,
+                   COALESCE(SUM(jl.credit), 0) AS total_credit
+            FROM accounts a
+            JOIN journal_lines jl ON jl.account_id = a.id
+            JOIN journal_entries je ON je.id = jl.journal_entry_id
+            LEFT JOIN orders o ON je.source_type IN ('order', 'order_cogs') AND je.source_id = o.id
+            {date_filter}
+            GROUP BY a.type
+            """,
+            params,
+        ).fetchall()
+
+    by_type = {r["type"]: (float(r["total_debit"]), float(r["total_credit"])) for r in rows}
+
+    def net(acc_type: str) -> float:
+        d, c = by_type.get(acc_type, (0.0, 0.0))
+        return _balance_for_type(acc_type, d, c)
+
+    revenue = net("income")
+
+    cogs_params: list = [COGS_CODE]
+    cogs_filter_parts = ["a.code = ?"]
+    cogs_order_conditions: list = ["je.source_type IN ('order', 'order_cogs')"]
+    cogs_other_conditions: list = ["je.source_type NOT IN ('order', 'order_cogs')"]
+    cogs_order_date = "COALESCE(o.due_date, DATE(je.transaction_date))"
+    if since_b:
+        cogs_order_conditions.append(f"{cogs_order_date} >= ?")
+        cogs_other_conditions.append("je.transaction_date >= ?")
+        cogs_params.extend([since_b, since_b])
+    if until_b:
+        cogs_order_conditions.append(f"{cogs_order_date} <= ?")
+        cogs_other_conditions.append("je.transaction_date <= ?")
+        cogs_params.extend([until_b, until_b])
+    cogs_filter_parts.append(
+        "(( " + " AND ".join(cogs_order_conditions) + ") OR ("
+        + " AND ".join(cogs_other_conditions) + "))"
+    )
+
+    with get_db() as conn:
+        cogs_row = conn.execute(
+            f"""
+            SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS cogs
+            FROM journal_lines jl
+            JOIN journal_entries je ON je.id = jl.journal_entry_id
+            JOIN accounts a ON a.id = jl.account_id
+            LEFT JOIN orders o ON je.source_type IN ('order', 'order_cogs') AND je.source_id = o.id
+            WHERE {" AND ".join(cogs_filter_parts)}
+            """,
+            cogs_params,
+        ).fetchone()
+    cogs_amount = float(cogs_row["cogs"]) if cogs_row else 0.0
+
+    total_expense = net("expense")
+    operating_expenses = total_expense - cogs_amount
+
+    _echo_income_statement_body(revenue, cogs_amount, operating_expenses)
+
+
+def _echo_income_statement_body(
+    revenue: float, cogs_amount: float, operating_expenses: float,
+) -> None:
+    """Print the income statement body lines (shared between bases)."""
     click.echo(f"{'Revenue':<40}{revenue:>20,.2f}")
     cogs_ratio = (cogs_amount / revenue * 100.0) if revenue > 0 else 0.0
     click.echo(

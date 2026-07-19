@@ -962,7 +962,7 @@ def _reconcile_order_revenue_entry(
     # Tien rut held in 2400 (credits at payment time minus debits at return).
     tien_rut_held = _held_tien_rut_for_order(conn, order_id)
 
-    order_transaction_date = now_utc()
+    order_transaction_date = _resolve_delivered_timestamp(conn, order_id, order_ref) or now_utc()
 
     # --- Revenue entry (deposits → 4100) -----------------------------------
     _reconcile_revenue_entry_lines(
@@ -1052,6 +1052,39 @@ def _sync_cancelled_order_journal(conn, order_id: int) -> None:
     entry_id = _find_journal_entry(conn, 'order_shipping_release', order_id)
     if entry_id is not None:
         _replace_order_entry(conn, entry_id, respect_locks=True)
+
+
+def _resolve_delivered_timestamp(conn, order_id: int, order_ref: str) -> str | None:
+    """Return the first delivered/completed event timestamp for an order.
+
+    Preference order (FR6):
+      1. events.order_id when populated
+      2. exact ``"order_ref": "<ref>"`` JSON match in data column
+      3. Returns None when no event exists → caller falls back to ``now_utc()``
+    """
+    row = conn.execute(
+        """
+        SELECT MIN(timestamp) AS ts FROM events
+        WHERE order_id = ?
+          AND type = 'order'
+          AND json_extract(data, '$.to_status') IN ('delivered', 'completed')
+        """,
+        (order_id,),
+    ).fetchone()
+    if row and row["ts"]:
+        return row["ts"]
+    row = conn.execute(
+        """
+        SELECT MIN(timestamp) AS ts FROM events
+        WHERE json_extract(data, '$.order_ref') = ?
+          AND type = 'order'
+          AND json_extract(data, '$.to_status') IN ('delivered', 'completed')
+        """,
+        (order_ref,),
+    ).fetchone()
+    if row and row["ts"]:
+        return row["ts"]
+    return None
 
 
 def _reconcile_revenue_entry_lines(
@@ -1315,7 +1348,7 @@ def _sync_bus_shipping_release_entry(
     asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get("cash", "1100")
     asset_account_id = _account_id_by_code(conn, asset_code)
     description = f"Shipping release: {order_ref}"
-    order_transaction_date = now_utc()
+    order_transaction_date = _resolve_delivered_timestamp(conn, order_id, order_ref) or now_utc()
 
     existing_id = _find_journal_entry(
         conn, "order_shipping_release", order_id
@@ -1516,7 +1549,7 @@ def _sync_order_cogs_entry(
 
     cogs_account_id = _account_id_by_code(conn, COGS_CODE)
     inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
-    order_transaction_date = now_utc()
+    order_transaction_date = _resolve_delivered_timestamp(conn, order_id, order_ref) or now_utc()
     _insert_journal_entry(
         conn,
         description=f"Order COGS: {order_ref}",
