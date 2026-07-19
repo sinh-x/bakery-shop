@@ -868,6 +868,27 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
             params,
         )
 
+        # DG-259: when workTicketPrintedAt is patched, also manage work_ticket_printed_by
+        if "workTicketPrintedAt" in data:
+            printed_val = data["workTicketPrintedAt"]
+            if printed_val is not None and printed_val != "":
+                mark_actor = resolve_actor(request, data.get("changedBy", ""))
+                old_printed_at = row["work_ticket_printed_at"]
+                old_printed_by = row["work_ticket_printed_by"] or ""
+                if old_printed_at is None or (not old_printed_by and mark_actor):
+                    conn.execute(
+                        "UPDATE orders SET work_ticket_printed_by = ? WHERE id = ?",
+                        (mark_actor, row["id"]),
+                    )
+                    _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_by", old_printed_by, mark_actor, mark_actor)
+            else:
+                old_printed_by = row["work_ticket_printed_by"] or ""
+                conn.execute(
+                    "UPDATE orders SET work_ticket_printed_by = ? WHERE id = ?",
+                    ("", row["id"]),
+                )
+                _log_order_history(conn, row["id"], "field_edit", "work_ticket_printed_by", old_printed_by, "", resolve_actor(request, data.get("changedBy", "")))
+
         # Re-sync payment journal entries when shipping_fee changes on a bus order (DG-191 Phase 4).
         if (shipping_fee_changed or delivery_type_changed) and row["delivery_type"] == "bus":
             from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
