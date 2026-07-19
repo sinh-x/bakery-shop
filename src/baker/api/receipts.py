@@ -42,6 +42,7 @@ _SZ_HUGE = 40       # due date at bottom (unused — 36pt used instead)
 _SZ_BIG = 36        # customer name, category, price, due date
 _SZ_MEDIUM = 28     # notes text, birthday
 _SZ_NORMAL = 24     # product name, section headers, title
+ENUM_BOX_BOTTOM_PAD = 10  # bottom padding after enum attribute box
 
 # Shop defaults (matching the physical biên nhận form, without ĐC 2)
 _SHOP_DEFAULTS = {
@@ -884,7 +885,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
     enum_font = _font(_SZ_MEDIUM, True)
     enum_lines = list(_wrapped_enum_attribute_lines(work_item, enum_labels, enum_font, CONTENT_WIDTH))
     if enum_lines:
-        y += 12
+        y += 16
         y = _sep(draw, y)
         y += 8
         ENUM_PAD = 6
@@ -896,7 +897,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
              RECEIPT_WIDTH - MARGIN + ENUM_PAD, y + ENUM_PAD - LINE_GAP],
             outline=(100, 100, 100), width=2,
         )
-        y += 10
+        y += ENUM_BOX_BOTTOM_PAD
 
     # Spacer between badge(s) and next section
     y += 10
