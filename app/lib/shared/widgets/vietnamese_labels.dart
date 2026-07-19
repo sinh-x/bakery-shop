@@ -299,6 +299,7 @@ class VN {
       'Cảnh báo: mã ứng dụng khác mã máy chủ';
   static const serverFingerprintUnavailableWarning =
       'Cảnh báo: máy chủ chưa cung cấp mã phiên bản, có thể đang chạy bản cũ';
+  static const dismissFingerprintWarning = 'Đóng cảnh báo phiên bản';
   static const createdBy = 'Người tạo';
 
   // Settings — staff-user binding (DG-259 Phase 4)
