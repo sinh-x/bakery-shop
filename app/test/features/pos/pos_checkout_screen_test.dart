@@ -509,6 +509,62 @@ void main() {
       expect(regularItem['attributes']['cash_fee'], '5000');
       expect(regularItem['attributes']['cash_amount'], '20000');
     });
+
+    testWidgets('Pay Later: submits order with skipPayment and empty payment method', (tester) async {
+      final fakeOrderService = _FakeOrderService();
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
+      await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
+      await _navigateToPayment(tester);
+
+      await tester.ensureVisible(find.text(VN.payLater));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(VN.payLater));
+      await tester.pumpAndSettle();
+
+      expect(fakeOrderService.createOrderCallCount, 1);
+      expect(fakeOrderService.paymentMethods, <String?>['']);
+      expect(find.text('Receipt ORD-001'), findsOneWidget);
+    });
+
+    testWidgets('Pay Later: disables Pay Later button while processing', (tester) async {
+      final createCompleter = Completer<Order>();
+      final fakeOrderService = _FakeOrderService(createOrderCompleter: createCompleter);
+      final cartItem = PosCartItem(product: _product(), quantity: 1);
+
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
+      await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
+      await _navigateToPayment(tester);
+
+      final payLaterButton = find.widgetWithText(OutlinedButton, VN.payLater);
+      await tester.ensureVisible(payLaterButton);
+      await tester.pumpAndSettle();
+
+      // Tap Pay Later — order creation is in-flight (completer not resolved).
+      await tester.tap(payLaterButton);
+      await tester.pump();
+
+      // Button should be disabled while processing.
+      final btn = tester.widget<OutlinedButton>(payLaterButton);
+      expect(btn.onPressed, isNull);
+
+      createCompleter.complete(Order(
+        id: '2',
+        orderRef: 'ORD-PL',
+        customerName: VN.khachLe,
+        items: const [],
+        totalPrice: 0,
+        createdAt: DateTime(2026, 5, 20),
+        updatedAt: DateTime(2026, 5, 20),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('Receipt ORD-PL'), findsOneWidget);
+    });
   });
 
   group('Stage 1 reachability and cart sync (DG-218 Phase 3)', () {

@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/order_service.dart';
 import '../../data/api/payment_transaction_service.dart';
+import '../../data/models/order.dart';
 import '../../features/orders/widgets/order_stage_indicator.dart';
 import '../../features/orders/widgets/order_wizard.dart';
 import '../../features/orders/widgets/stage1_product_selection_screen.dart';
@@ -330,57 +331,8 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       if (!mounted) return;
 
       if (!skipPayment) {
-        if (transferPhoto != null) {
-          await orderService.uploadOrderPhoto(
-            order.orderRef,
-            transferPhoto,
-            tags: 'chuyen-khoan',
-          );
-        }
-
-        // B2: upload per-item cake photos
-        final hasPerItemPhotos =
-            state.items.any((i) => i.pendingPhotos.isNotEmpty);
-        if (hasPerItemPhotos) {
-          for (final draftItem in state.items) {
-            if (draftItem.pendingPhotos.isEmpty) continue;
-            for (final xfile in draftItem.pendingPhotos) {
-              try {
-                await orderService.uploadOrderPhoto(
-                  order.orderRef,
-                  xfile,
-                );
-              } catch (e) {
-                if (kDebugMode) {
-                  debugPrint('Photo upload failed (${xfile.path}): $e');
-                }
-              }
-            }
-          }
-        }
-
-        // B3: create a payment transaction
-        final txnSvc = ref.read(paymentTransactionServiceProvider);
-        final txnType = _paidAmount >= order.totalPrice
-            ? 'full_payment'
-            : 'deposit';
-        await txnSvc.createTransaction(
-          order.orderRef,
-          amount: _paidAmount,
-          type: txnType,
-          method: paymentMethod,
-          paymentSource: _selectedTargetAccount,
-        );
-
-        if (_hasTienRut && _tienRutAmount > 0) {
-          await txnSvc.createTransaction(
-            order.orderRef,
-            amount: _tienRutAmount,
-            type: 'tien_rut',
-            method: paymentMethod,
-            paymentSource: _selectedTargetAccount,
-          );
-        }
+        await _uploadOrderPhotos(order, state, transferPhoto: transferPhoto);
+        await _createPaymentTransactions(order, paymentMethod);
       }
 
       if (!mounted) return;
@@ -397,6 +349,62 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       showTopSnackBar(context, resolvePosCheckoutErrorMessage(e));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _uploadOrderPhotos(Order order, OrderCreateState state, {XFile? transferPhoto}) async {
+    final orderService = ref.read(orderServiceProvider);
+
+    if (transferPhoto != null) {
+      await orderService.uploadOrderPhoto(
+        order.orderRef,
+        transferPhoto,
+        tags: 'chuyen-khoan',
+      );
+    }
+
+    final hasPerItemPhotos =
+        state.items.any((i) => i.pendingPhotos.isNotEmpty);
+    if (hasPerItemPhotos) {
+      for (final draftItem in state.items) {
+        if (draftItem.pendingPhotos.isEmpty) continue;
+        for (final xfile in draftItem.pendingPhotos) {
+          try {
+            await orderService.uploadOrderPhoto(
+              order.orderRef,
+              xfile,
+            );
+          } catch (e) {
+            if (kDebugMode) {
+              debugPrint('Photo upload failed (${xfile.path}): $e');
+            }
+          }
+        }
+      }
+    }
+  }
+
+  Future<void> _createPaymentTransactions(Order order, String paymentMethod) async {
+    final txnSvc = ref.read(paymentTransactionServiceProvider);
+    final txnType = _paidAmount >= order.totalPrice
+        ? 'full_payment'
+        : 'deposit';
+    await txnSvc.createTransaction(
+      order.orderRef,
+      amount: _paidAmount,
+      type: txnType,
+      method: paymentMethod,
+      paymentSource: _selectedTargetAccount,
+    );
+
+    if (_hasTienRut && _tienRutAmount > 0) {
+      await txnSvc.createTransaction(
+        order.orderRef,
+        amount: _tienRutAmount,
+        type: 'tien_rut',
+        method: paymentMethod,
+        paymentSource: _selectedTargetAccount,
+      );
     }
   }
 

@@ -156,6 +156,8 @@ class OrdersLabels {
   // Stage 3 pickup options (DG-267 Phase 3)
   static const pickupNow = 'Giao ngay';
   static const pickupLater = 'Giao hàng sau';
+  static const pickupTitle = 'Nhận bánh';
+  static const pickupSubtitle = 'Vui lòng chọn hình thức nhận bánh';
 
   // Delivery filter labels (DG-261 Phase 1)
   static const deliveryFilterToday = 'Hôm nay';

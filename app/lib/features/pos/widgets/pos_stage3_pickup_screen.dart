@@ -23,14 +23,14 @@ class PosStage3PickupScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              OrdersLabels.stage3Label,
+              OrdersLabels.pickupTitle,
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Vui lòng chọn hình thức nhận bánh',
+              OrdersLabels.pickupSubtitle,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.outline,
               ),
