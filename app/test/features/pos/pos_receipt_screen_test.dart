@@ -186,6 +186,20 @@ void main() {
       expect(fakeReceiptService.printedType, ReceiptType.customer);
     });
 
+    testWidgets('share button is tappable without crashing', (
+      tester,
+    ) async {
+      final fakeReceiptService = _FakeReceiptService();
+      await _pumpReceiptApp(tester, receiptService: fakeReceiptService);
+
+      await tester.tap(find.widgetWithText(OutlinedButton, VN.share));
+      await tester.pumpAndSettle();
+
+      // Smoke test: no crash, receipt fetch still happened, print was not called
+      expect(fakeReceiptService.fetchedOrderRef, 'ORD-001');
+      expect(fakeReceiptService.printedOrderRef, isNull);
+    });
+
     testWidgets('skip returns to POS home', (tester) async {
       final fakeReceiptService = _FakeReceiptService();
       await _pumpReceiptApp(tester, receiptService: fakeReceiptService);

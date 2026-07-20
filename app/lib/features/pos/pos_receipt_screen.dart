@@ -9,10 +9,6 @@ import '../../data/api/receipt_service.dart';
 import '../../providers/events_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
-import '../orders/receipt_preview_print_stub.dart'
-    if (dart.library.io) '../orders/receipt_preview_print_native.dart'
-    if (dart.library.js_interop) '../orders/receipt_preview_print_web.dart'
-    as platform;
 
 /// POS receipt screen shown after order creation.
 /// Displays receipt image with print and skip actions only.
@@ -91,9 +87,6 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
     if (_imageBytes == null) return;
     try {
       const fileName = 'receipt_customer.png';
-
-      // Save to temp file then share (mirrors ReceiptPreviewScreen flow)
-      await platform.saveToFile(_imageBytes!, fileName);
 
       await SharePlus.instance.share(
         ShareParams(
