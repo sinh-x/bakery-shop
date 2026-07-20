@@ -1386,6 +1386,41 @@ def _sync_bus_shipping_release_entry(
     )
 
 
+def _sync_completed_order_journal(conn, order_id: int, order_ref: str) -> None:
+    """Reconcile revenue journal entries when an order transitions to "completed".
+
+    DG-269 Phase 2. Mirrors the revenue portion of
+    :func:`_sync_delivered_order_journal` but is triggered on the
+    delivered→completed (or bypassed-delivery→completed) transition. Delegates
+    to :func:`_reconcile_order_revenue_entry`, which already:
+
+      - Queries **all** non-invalidated payment transactions for the order
+        (full deposit context, not just delivery-time deposits) — so deposits
+        recorded between delivery and completion are reflected.
+      - Detects pre-existing ``source_type='order'`` revenue / AR entries via
+        their description prefix and reconciles them **within the 0.005 VND
+        tolerance** (FR2/NFR4 idempotency):
+          * matching amounts → no-op (AC3a),
+          * stale amounts → update-in-place / reverse-and-recreate (AC3b),
+          * no prior entries (bypassed delivery) → create fresh (AC3c).
+      - Handles all payment scenarios (paid deposits, partial paid, AR,
+        multi-payment, bus/shipping fee split, tien rut) — same code path as
+        delivery sync (FR6).
+      - Respects lock semantics (``respect_locks=True``): locked stale entries
+        are reversed, not deleted.
+
+    COGS and bus-shipping release entries are deliberately NOT touched here:
+    they are delivery-time entries created by :func:`_sync_delivered_order_journal`
+    and remain correct on the delivered→completed path. Orders that bypassed
+    "delivered" are handled by the existing repair commands (Phase 1) and are
+    out of scope for the live completion sync (see plan §14 open question).
+
+    Fire-and-forget error handling is provided by the caller wrapping this in
+    :func:`run_journal_sync` with ``source_type="order"`` (FR5).
+    """
+    _reconcile_order_revenue_entry(conn, order_id, order_ref, respect_locks=True)
+
+
 def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
     """Create/update revenue conversion + COGS journal entries for a delivered/completed order.
 
