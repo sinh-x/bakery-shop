@@ -64,7 +64,7 @@ Widget buildTestWidget(List<Order> orders) {
         () => _FakeApiBaseUrlNotifier('http://test.local'),
       ),
     ],
-    child: MaterialApp(
+    child: const MaterialApp(
       home: Scaffold(
         body: DeliveryContent(),
       ),

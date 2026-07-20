@@ -1,6 +1,6 @@
-// EXEMPT: 300-line screen threshold — orchestrates 4 wizard stages + 2 payment
-// paths (cash/transfer+photo) + editable amount + photo upload + status
-// confirmation. Reviewed 2026-07-09 DG-218.
+// EXEMPT: 300-line screen threshold — orchestrates 5 wizard stages
+// (Stage 5 = payment) + editable amount + photo upload + status
+// confirmation. Reviewed 2026-07-09 DG-218; updated DG-267.
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../data/api/order_service.dart';
 import '../../data/api/payment_transaction_service.dart';
+import '../../data/models/order.dart';
 import '../../features/orders/widgets/order_stage_indicator.dart';
 import '../../features/orders/widgets/order_wizard.dart';
 import '../../features/orders/widgets/stage1_product_selection_screen.dart';
@@ -17,6 +18,7 @@ import '../../features/orders/widgets/stage3_delivery_options_screen.dart';
 import '../../features/pos/widgets/pos_checkout_dialogs.dart';
 import '../../features/pos/widgets/pos_payment_step.dart';
 import '../../features/pos/widgets/pos_review_panel.dart';
+import '../../features/pos/widgets/pos_stage3_pickup_screen.dart';
 import '../../features/stock/stock_screen.dart';
 import '../../providers/order/order_create_state_provider.dart';
 import '../../providers/pos_provider.dart';
@@ -59,8 +61,9 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   bool _hasTienRut = false;
   double _tienRutAmount = 0;
 
-  bool _paymentStepActive = false;
   bool _posStateInitialized = false;
+  bool _posDeliverImmediately = false;
+  bool _stage3ShowFullOptions = false;
 
   @override
   void initState() {
@@ -95,10 +98,11 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   }
 
   void _goToStage(int stage) {
-    ref.read(posOrderStateProvider.notifier).goToStage(stage);
-    if (stage == 4) {
-      setState(() => _paymentStepActive = false);
+    if (stage == 3) {
+      _posDeliverImmediately = false;
+      _stage3ShowFullOptions = false;
     }
+    ref.read(posOrderStateProvider.notifier).goToStage(stage);
   }
 
   void _writeBackToCart() {
@@ -113,12 +117,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   }
 
   void _onStage2Continue() {
-    final state = ref.read(posOrderStateProvider);
-    if (state.wizardData.deliveryType == 'pickup') {
-      _goToStage(4);
-    } else {
-      _goToStage(3);
-    }
+    _goToStage(3);
   }
 
   void _enterPaymentStep() {
@@ -134,16 +133,16 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       (sum, i) => sum + (i.cashAmount ?? 0),
     );
     setState(() {
-      _paymentStepActive = true;
       _cartTotal = cartTotal;
       _paidAmount = cartTotal;
       _hasTienRut = hasTienRut;
       _tienRutAmount = tienRutDefault;
     });
+    _goToStage(5);
   }
 
   void _backFromPaymentStep() {
-    setState(() => _paymentStepActive = false);
+    _goToStage(4);
   }
 
   void _onPaymentMethodChanged(String paymentMethod) {
@@ -210,7 +209,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     }).toList();
   }
 
-  Future<void> _handleFinalizeOrder() async {
+  Future<void> _handlePayNow() async {
     if (_isProcessing) return;
     if (_paidAmount > _cartTotal) {
       await _showExcessWarning();
@@ -218,44 +217,28 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     }
     setState(() => _isProcessing = true);
     try {
-      // B5: pickup → "Giao ngay?" confirmation dialog
-      final state = ref.read(posOrderStateProvider);
-      final isDelivery = state.wizardData.deliveryType == 'bus' ||
-          state.wizardData.deliveryType == 'door';
-      bool deliverImmediately = false;
-      if (!isDelivery) {
-        deliverImmediately = await _confirmDeliverNow() ?? false;
-        if (!mounted) return;
-      }
-
       if (_selectedPaymentMethod == 'transfer') {
-        await _handleTransfer(deliverImmediately: deliverImmediately);
+        await _handleTransfer(deliverImmediately: _posDeliverImmediately);
       } else {
-        await _createOrder('cash', deliverImmediately: deliverImmediately);
+        await _createOrder('cash', deliverImmediately: _posDeliverImmediately);
       }
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
   }
 
-  Future<bool?> _confirmDeliverNow() {
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text(VN.deliverNow),
-        content: const Text(VN.deliverNowPrompt),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text(VN.deliverNowNo),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text(VN.deliverNowYes),
-          ),
-        ],
-      ),
-    );
+  Future<void> _handlePayLater() async {
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
+    try {
+      await _createOrderInternal(
+        paymentMethod: '',
+        deliverImmediately: false,
+        skipPayment: true,
+      );
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
   }
 
   Future<void> _createOrder(
@@ -302,6 +285,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
     required bool deliverImmediately,
     XFile? transferPhoto,
     bool showSuccessSnackbar = false,
+    bool skipPayment = false,
   }) async {
     setState(() => _isProcessing = true);
 
@@ -346,56 +330,9 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
 
       if (!mounted) return;
 
-      if (transferPhoto != null) {
-        await orderService.uploadOrderPhoto(
-          order.orderRef,
-          transferPhoto,
-          tags: 'chuyen-khoan',
-        );
-      }
-
-      // B2: upload per-item cake photos
-      final hasPerItemPhotos =
-          state.items.any((i) => i.pendingPhotos.isNotEmpty);
-      if (hasPerItemPhotos) {
-        for (final draftItem in state.items) {
-          if (draftItem.pendingPhotos.isEmpty) continue;
-          for (final xfile in draftItem.pendingPhotos) {
-            try {
-              await orderService.uploadOrderPhoto(
-                order.orderRef,
-                xfile,
-              );
-            } catch (e) {
-              if (kDebugMode) {
-                debugPrint('Photo upload failed (${xfile.path}): $e');
-              }
-            }
-          }
-        }
-      }
-
-      // B3: always create a payment transaction
-      final txnSvc = ref.read(paymentTransactionServiceProvider);
-      final txnType = _paidAmount >= order.totalPrice
-          ? 'full_payment'
-          : 'deposit';
-      await txnSvc.createTransaction(
-        order.orderRef,
-        amount: _paidAmount,
-        type: txnType,
-        method: paymentMethod,
-        paymentSource: _selectedTargetAccount,
-      );
-
-      if (_hasTienRut && _tienRutAmount > 0) {
-        await txnSvc.createTransaction(
-          order.orderRef,
-          amount: _tienRutAmount,
-          type: 'tien_rut',
-          method: paymentMethod,
-          paymentSource: _selectedTargetAccount,
-        );
+      if (!skipPayment) {
+        await _uploadOrderPhotos(order, state, transferPhoto: transferPhoto);
+        await _createPaymentTransactions(order, paymentMethod);
       }
 
       if (!mounted) return;
@@ -412,6 +349,62 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
       showTopSnackBar(context, resolvePosCheckoutErrorMessage(e));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _uploadOrderPhotos(Order order, OrderCreateState state, {XFile? transferPhoto}) async {
+    final orderService = ref.read(orderServiceProvider);
+
+    if (transferPhoto != null) {
+      await orderService.uploadOrderPhoto(
+        order.orderRef,
+        transferPhoto,
+        tags: 'chuyen-khoan',
+      );
+    }
+
+    final hasPerItemPhotos =
+        state.items.any((i) => i.pendingPhotos.isNotEmpty);
+    if (hasPerItemPhotos) {
+      for (final draftItem in state.items) {
+        if (draftItem.pendingPhotos.isEmpty) continue;
+        for (final xfile in draftItem.pendingPhotos) {
+          try {
+            await orderService.uploadOrderPhoto(
+              order.orderRef,
+              xfile,
+            );
+          } catch (e) {
+            if (kDebugMode) {
+              debugPrint('Photo upload failed (${xfile.path}): $e');
+            }
+          }
+        }
+      }
+    }
+  }
+
+  Future<void> _createPaymentTransactions(Order order, String paymentMethod) async {
+    final txnSvc = ref.read(paymentTransactionServiceProvider);
+    final txnType = _paidAmount >= order.totalPrice
+        ? 'full_payment'
+        : 'deposit';
+    await txnSvc.createTransaction(
+      order.orderRef,
+      amount: _paidAmount,
+      type: txnType,
+      method: paymentMethod,
+      paymentSource: _selectedTargetAccount,
+    );
+
+    if (_hasTienRut && _tienRutAmount > 0) {
+      await txnSvc.createTransaction(
+        order.orderRef,
+        amount: _tienRutAmount,
+        type: 'tien_rut',
+        method: paymentMethod,
+        paymentSource: _selectedTargetAccount,
+      );
     }
   }
 
@@ -463,6 +456,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: OrderStageIndicator(
               currentStage: state.currentStage,
+              posMode: true,
               onStageTap: (s) {
                 if (state.canNavigateToStage(s)) _goToStage(s);
               },
@@ -477,6 +471,8 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
   }
 
   Widget _buildCurrentStage(OrderCreateState state) {
+    final isPickup = state.wizardData.deliveryType == 'pickup';
+
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 300),
       child: switch (state.currentStage) {
@@ -495,40 +491,54 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
             onContinue: _onStage2Continue,
             orderStateProvider: posOrderStateProvider,
           ),
-        3 => Stage3DeliveryOptionsScreen(
-            key: const ValueKey('stage3'),
-            onBack: () => _goToStage(2),
-            onContinue: () => _goToStage(4),
-            orderStateProvider: posOrderStateProvider,
-          ),
-        4 => _paymentStepActive
-            ? PosPaymentStep(
-                key: const ValueKey('pos-payment'),
-                orderTotal: _cartTotal,
-                initialAmount: _paidAmount,
-                hasTienRut: _hasTienRut,
-                tienRutAmount: _tienRutAmount,
-                selectedPaymentMethod: _selectedPaymentMethod,
-                selectedTargetAccount: _selectedTargetAccount,
-                isProcessing: _isProcessing,
-                onPaymentMethodChanged: _onPaymentMethodChanged,
-                onAmountChanged: _onAmountChanged,
-                onTienRutAmountChanged: _onTienRutAmountChanged,
-                onTargetAccountChanged: _onTargetAccountChanged,
-                onBack: _backFromPaymentStep,
-                onSubmit: _handleFinalizeOrder,
-              )
-            : PosReviewPanel(
-                key: const ValueKey('stage4'),
-                onBack: () {
-                  final data =
-                      ref.read(posOrderStateProvider).wizardData;
-                  _goToStage(
-                      data.deliveryType == 'pickup' ? 2 : 3);
+        3 => isPickup && !_stage3ShowFullOptions
+            ? PosStage3PickupScreen(
+                key: const ValueKey('stage3-pickup'),
+                onDeliverNow: () {
+                  _posDeliverImmediately = true;
+                  _goToStage(4);
                 },
-                onContinue: _enterPaymentStep,
+                onDeliverLater: () {
+                  _posDeliverImmediately = false;
+                  _stage3ShowFullOptions = true;
+                  setState(() {});
+                },
+              )
+            : Stage3DeliveryOptionsScreen(
+                key: const ValueKey('stage3'),
+                onBack: isPickup && _stage3ShowFullOptions
+                    ? () {
+                        _posDeliverImmediately = false;
+                        _stage3ShowFullOptions = false;
+                        setState(() {});
+                      }
+                    : () => _goToStage(2),
+                onContinue: () => _goToStage(4),
                 orderStateProvider: posOrderStateProvider,
               ),
+        4 => PosReviewPanel(
+            key: const ValueKey('stage4'),
+            onBack: () => _goToStage(3),
+            onContinue: _enterPaymentStep,
+            orderStateProvider: posOrderStateProvider,
+          ),
+        5 => PosPaymentStep(
+            key: const ValueKey('pos-payment'),
+            orderTotal: _cartTotal,
+            initialAmount: _paidAmount,
+            hasTienRut: _hasTienRut,
+            tienRutAmount: _tienRutAmount,
+            selectedPaymentMethod: _selectedPaymentMethod,
+            selectedTargetAccount: _selectedTargetAccount,
+            isProcessing: _isProcessing,
+            onPaymentMethodChanged: _onPaymentMethodChanged,
+            onAmountChanged: _onAmountChanged,
+            onTienRutAmountChanged: _onTienRutAmountChanged,
+            onTargetAccountChanged: _onTargetAccountChanged,
+            onBack: _backFromPaymentStep,
+            onPayNow: _handlePayNow,
+            onPayLater: _handlePayLater,
+          ),
         _ => const SizedBox.shrink(),
       },
     );

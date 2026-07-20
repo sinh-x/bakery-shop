@@ -35,7 +35,7 @@ class OrderCreateState {
     if (stage >= 4 && wizardData.needsAddress && wizardData.deliveryAddress.trim().isEmpty) {
       return false;
     }
-    return true;
+    return stage <= 5;
   }
 
   OrderCreateState copyWith({

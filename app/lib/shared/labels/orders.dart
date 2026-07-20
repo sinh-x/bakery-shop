@@ -14,6 +14,8 @@ class OrdersLabels {
   static const stage3Desc = 'Hình thức, thời gian, địa chỉ';
   static const stage4Label = 'Xem lại';
   static const stage4Desc = 'Kiểm tra và tạo đơn';
+  static const stage5Label = 'Thanh toán';
+  static const stage5Desc = 'Thanh toán hoặc để sau';
 
   // Navigation
   static const continueLabel = 'Tiếp tục';
@@ -150,6 +152,16 @@ class OrdersLabels {
   // Banner collapse/expand tooltips (DG-262 Phase 2)
   static const bannerCollapseTooltip = 'Thu gọn';
   static const bannerExpandTooltip = 'Mở rộng';
+
+  // Stage 5 payment (DG-267 Phase 3)
+  static const payNow = 'Thanh toán ngay';
+  static const payLater = 'Thanh toán sau';
+
+  // Stage 3 pickup options (DG-267 Phase 3)
+  static const pickupNow = 'Giao ngay';
+  static const pickupLater = 'Giao hàng sau';
+  static const pickupTitle = 'Nhận bánh';
+  static const pickupSubtitle = 'Vui lòng chọn hình thức nhận bánh';
 
   // Delivery filter labels (DG-261 Phase 1)
   static const deliveryFilterToday = 'Hôm nay';

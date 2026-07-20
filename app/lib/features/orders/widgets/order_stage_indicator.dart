@@ -8,11 +8,19 @@ class _StageInfo {
   const _StageInfo(this.label, this.desc);
 }
 
-const _stages = [
+const _baseStages = [
   _StageInfo(OrdersLabels.stage1Label, OrdersLabels.stage1Desc),
   _StageInfo(OrdersLabels.stage2Label, OrdersLabels.stage2Desc),
   _StageInfo(OrdersLabels.stage3Label, OrdersLabels.stage3Desc),
   _StageInfo(OrdersLabels.stage4Label, OrdersLabels.stage4Desc),
+];
+
+const _posStages = [
+  _StageInfo(OrdersLabels.stage1Label, OrdersLabels.stage1Desc),
+  _StageInfo(OrdersLabels.stage2Label, OrdersLabels.stage2Desc),
+  _StageInfo(OrdersLabels.stage3Label, OrdersLabels.stage3Desc),
+  _StageInfo(OrdersLabels.stage4Label, OrdersLabels.stage4Desc),
+  _StageInfo(OrdersLabels.stage5Label, OrdersLabels.stage5Desc),
 ];
 
 class OrderStageIndicator extends StatelessWidget {
@@ -20,23 +28,28 @@ class OrderStageIndicator extends StatelessWidget {
     super.key,
     required this.currentStage,
     this.onStageTap,
+    this.posMode = false,
   });
 
   final int currentStage;
+  final bool posMode;
 
   /// Called when the user taps a stage circle. Receives the 1-based stage
   /// number. When null, the indicator is non-interactive. The caller decides
   /// whether navigation is allowed (e.g. only after a product is selected).
   final void Function(int stage)? onStageTap;
 
+  List<_StageInfo> get _stages => posMode ? _posStages : _baseStages;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final stages = _stages;
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (int i = 0; i < _stages.length; i++) ...[
+          for (int i = 0; i < stages.length; i++) ...[
             if (i > 0)
               Expanded(
                 child: Container(
@@ -47,14 +60,14 @@ class OrderStageIndicator extends StatelessWidget {
                       : Colors.grey.shade300,
                 ),
               ),
-            _buildStageItem(i, theme),
+            _buildStageItem(i, theme, stages),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildStageItem(int index, ThemeData theme) {
+  Widget _buildStageItem(int index, ThemeData theme, List<_StageInfo> stages) {
     final stage = index + 1;
     final canTap = onStageTap != null;
     final isCompleted = index < currentStage - 1;
@@ -99,7 +112,7 @@ class OrderStageIndicator extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              _stages[index].label,
+              stages[index].label,
               style: theme.textTheme.labelSmall?.copyWith(
                 fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
                 color: isCurrent || isCompleted ? color : Colors.grey.shade500,
@@ -109,7 +122,7 @@ class OrderStageIndicator extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
             Text(
-              _stages[index].desc,
+              stages[index].desc,
               style: theme.textTheme.labelSmall?.copyWith(
                 fontSize: 8,
                 color: Colors.grey.shade400,
