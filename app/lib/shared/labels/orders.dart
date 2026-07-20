@@ -153,6 +153,10 @@ class OrdersLabels {
   static const bannerCollapseTooltip = 'Thu gọn';
   static const bannerExpandTooltip = 'Mở rộng';
 
+  // Stage 5 payment (DG-267 Phase 3)
+  static const payNow = 'Thanh toán ngay';
+  static const payLater = 'Thanh toán sau';
+
   // Stage 3 pickup options (DG-267 Phase 3)
   static const pickupNow = 'Giao ngay';
   static const pickupLater = 'Giao hàng sau';

@@ -301,7 +301,7 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
           const Spacer(),
           OutlinedButton(
             onPressed: widget.isProcessing ? null : widget.onPayLater,
-            child: const Text(VN.payLater),
+            child: const Text(OrdersLabels.payLater),
           ),
           const SizedBox(width: 8),
           FilledButton(
@@ -312,7 +312,7 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(VN.payNow),
+                : const Text(OrdersLabels.payNow),
           ),
         ],
       ),

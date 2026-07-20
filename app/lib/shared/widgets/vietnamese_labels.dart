@@ -523,8 +523,6 @@ class VN {
   // POS / Counter Sales
   static const banHang = 'Bán hàng';
   static const thanhToan = 'Thanh toán';
-  static const payNow = 'Thanh toán ngay';
-  static const payLater = 'Thanh toán sau';
   static const inHoaDon = 'In hóa đơn';
   static const inBienNhan = 'In biên nhận';
   static const xacNhanThanhToan = 'Xác nhận thanh tiền';
@@ -557,10 +555,6 @@ class VN {
   static const excessPaymentWarningTitle = 'Số tiền không hợp lệ';
   static const excessPaymentWarningMessage =
       'Số tiền thanh toán vượt quá tổng tiền sản phẩm. Vui lòng điều chỉnh lại.';
-  static const deliverNow = 'Giao ngay?';
-  static const deliverNowPrompt = 'Giao bánh cho khách ngay?';
-  static const deliverNowYes = 'Giao ngay';
-  static const deliverNowNo = 'Để sau';
   static const confirmCounterPayment = 'Xác nhận thanh toán đơn tại quầy';
   static const removeFromCartTitle = 'Xóa sản phẩm khỏi giỏ?';
   static const decreaseQuantity = 'Giảm số lượng';

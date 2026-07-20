@@ -255,7 +255,7 @@ void main() {
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 
-      final createButton = find.widgetWithText(FilledButton, VN.payNow);
+      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
@@ -309,7 +309,7 @@ void main() {
       // (DG-218 Phase 4).
       await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, VN.payNow);
+      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
@@ -334,7 +334,7 @@ void main() {
       // Advance to the dedicated payment step before submit (DG-218 Phase 4).
       await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, VN.payNow);
+      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
@@ -418,7 +418,7 @@ void main() {
       // Re-enter the payment step; the transfer selection persists.
       await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, VN.payNow);
+      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
@@ -495,7 +495,7 @@ void main() {
       await _navigateToReview(tester);
       await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, VN.payNow);
+      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
@@ -520,9 +520,9 @@ void main() {
       await _navigateToReview(tester);
       await _navigateToPayment(tester);
 
-      await tester.ensureVisible(find.text(VN.payLater));
+      await tester.ensureVisible(find.text(OrdersLabels.payLater));
       await tester.pumpAndSettle();
-      await tester.tap(find.text(VN.payLater));
+      await tester.tap(find.text(OrdersLabels.payLater));
       await tester.pumpAndSettle();
 
       expect(fakeOrderService.createOrderCallCount, 1);
@@ -541,7 +541,7 @@ void main() {
       await _navigateToReview(tester);
       await _navigateToPayment(tester);
 
-      final payLaterButton = find.widgetWithText(OutlinedButton, VN.payLater);
+      final payLaterButton = find.widgetWithText(OutlinedButton, OrdersLabels.payLater);
       await tester.ensureVisible(payLaterButton);
       await tester.pumpAndSettle();
 
@@ -613,7 +613,7 @@ void main() {
       await _navigateToPayment(tester);
 
       // Submit (cash) and assert the created order reflects the edited qty.
-      final createButton = find.widgetWithText(FilledButton, VN.payNow);
+      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
@@ -676,14 +676,14 @@ void main() {
       expect(find.byType(SegmentedButton<String>), findsNothing);
       expect(find.text(VN.tienMat), findsNothing);
       expect(find.text(VN.chuyenKhoan), findsNothing);
-      expect(find.text(VN.payNow), findsNothing);
+      expect(find.text(OrdersLabels.payNow), findsNothing);
 
       // Advancing opens the dedicated payment step with the selector.
       await _navigateToPayment(tester);
       expect(find.byType(SegmentedButton<String>), findsOneWidget);
       expect(find.text(VN.tienMat), findsOneWidget);
       expect(find.text(VN.chuyenKhoan), findsOneWidget);
-      expect(find.text(VN.payNow), findsOneWidget);
+      expect(find.text(OrdersLabels.payNow), findsOneWidget);
     });
 
     testWidgets('AC4/AC8: cash path submits, shows receipt, and clears the cart', (tester) async {
@@ -697,7 +697,7 @@ void main() {
       await _navigateToPayment(tester);
 
       // Default selection is cash; submit directly.
-      final createButton = find.widgetWithText(FilledButton, VN.payNow);
+      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
@@ -721,7 +721,7 @@ void main() {
       await tester.tap(find.text(VN.chuyenKhoan));
       await tester.pumpAndSettle();
 
-      final createButton = find.widgetWithText(FilledButton, VN.payNow);
+      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
@@ -745,7 +745,7 @@ void main() {
       await _navigateToReview(tester);
       await _navigateToPayment(tester);
 
-      final createButton = find.widgetWithText(FilledButton, VN.payNow);
+      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
@@ -831,7 +831,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Submit (skip the transfer proof photo).
-      final createButton = find.widgetWithText(FilledButton, VN.payNow);
+      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
@@ -866,7 +866,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Do NOT select an account — leave the dropdown at its empty default.
-      final createButton = find.widgetWithText(FilledButton, VN.payNow);
+      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
       await tester.ensureVisible(createButton);
       await tester.pumpAndSettle();
       await tester.tap(createButton);
