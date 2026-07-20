@@ -1630,11 +1630,11 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
         if item.get("isBirthday") or item.get("is_birthday"):
             age = item.get("age")
             age_suffix = f" SINH NHẬT{(' - ' + str(age) + ' tuổi') if age else ''}"
-            y = _icon_text(draw, y, "\U0001F382", age_suffix, fbb, (180, 0, 0), x=MARGIN + 10)
+            y = _icon_text(draw, y, "\U0001F382", age_suffix, fbb, (180, 0, 0), x=MARGIN)
 
         # Enum attribute lines — each on its own row (Q3 / R3), indented
         for line in _wrapped_enum_attribute_lines(item, enum_labels, fb, CONTENT_WIDTH - 10):
-            y = _left(draw, y, line, fb, x=MARGIN + 10)
+            y = _left(draw, y, line, fb, x=MARGIN)
 
         # Photo — first attached photo for any item, larger + centered, display only
         item_id = item.get("id")
@@ -1673,7 +1673,7 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
         item_cash = _cash_amount_value(item)
         if item_cash > 0:
             cash_str = _format_vnd_full(item_cash)
-            y = _icon_text(draw, y, "\U0001F4B0", f" Số tiền rút: {cash_str}", fbb, (0, 128, 0), x=MARGIN + 10)
+            y = _icon_text(draw, y, "\U0001F4B0", f" Số tiền rút: {cash_str}", fbb, (0, 128, 0), x=MARGIN)
 
         # DG-228 Phase 2 / FR-11: item-to-item separators removed for vertical compaction.
         # Section already bounded by the double sep below; no inter-item thin sep needed.
@@ -1901,11 +1901,15 @@ def get_receipt(
         # The GET receipt endpoint returns the first page as a single PNG for
         # backward compatibility with the Flutter preview (multi-page print flow
         # is handled by printing.py in Phase 4).
-        # CQ-2: only split work_ticket/customer receipts on label paper — roll
-        # mode and shop/delivery/bus_label types keep the single-image path so
-        # long roll receipts print continuously and shop/delivery previews are
-        # not truncated to page 1.
-        if type in ("work_ticket", "customer") and paper_mode == "label":
+        # CQ-2: only split work_ticket receipts on label paper — roll mode and
+        # shop/delivery/bus_label types keep the single-image path so long roll
+        # receipts print continuously and shop/delivery previews are not
+        # truncated to page 1.
+        # DG-271 Phase 1 / FR-1: customer receipts are no longer split on the
+        # GET path — the full continuous image is returned so the Flutter screen
+        # and share flow receive one complete receipt. Thermal print output is
+        # unaffected (printing.py performs its own _split_pages independently).
+        if type == "work_ticket" and paper_mode == "label":
             pages = _split_pages(img)
         else:
             pages = [img]
