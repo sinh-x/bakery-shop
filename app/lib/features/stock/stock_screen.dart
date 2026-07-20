@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/api/stock_service.dart';
-import '../../features/auth/auth_provider.dart';
 import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
@@ -123,7 +122,6 @@ class _StockScreenState extends ConsumerState<StockScreen>
     final categories = ref.watch(categoriesProvider).asData?.value ?? const [];
     final baseUrl = ref.watch(apiBaseUrlProvider);
     final photoRefreshTick = ref.watch(productPhotoRefreshTickProvider);
-    final isAdmin = ref.watch(authProvider).isAdmin;
 
     return Scaffold(
       appBar: AppBar(
@@ -136,17 +134,15 @@ class _StockScreenState extends ConsumerState<StockScreen>
           ),
           AppBarOverflowMenu(
             onSelected: _onAppBarMenuSelected,
-            items: [
-              if (isAdmin)
-                const PopupMenuItem<String>(
-                  value: 'stock_reconciliation',
-                  child: Text(VN.openStockReconciliation),
-                ),
-              if (isAdmin)
-                const PopupMenuItem<String>(
-                  value: 'stock_reconciliation_history',
-                  child: Text(VN.openStockReconciliationHistory),
-                ),
+            items: const [
+              PopupMenuItem<String>(
+                value: 'stock_reconciliation',
+                child: Text(VN.openStockReconciliation),
+              ),
+              PopupMenuItem<String>(
+                value: 'stock_reconciliation_history',
+                child: Text(VN.openStockReconciliationHistory),
+              ),
             ],
           ),
         ],
