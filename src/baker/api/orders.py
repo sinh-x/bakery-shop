@@ -1062,6 +1062,19 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
             )
             accounting_sync_warning = sync_status_to_warning(sync_status)
 
+        # When transitioning TO completed, reconcile 2100 deposits into revenue
+        # and clear 1500 AR (DG-269 Phase 3).
+        if body.status == "completed" and row["status"] != "completed":
+            from baker.services.journal_sync import _sync_completed_order_journal, run_journal_sync, sync_status_to_warning
+            sync_status = run_journal_sync(
+                _sync_completed_order_journal,
+                conn, row["id"], row["order_ref"],
+                log_label=f"completed order journal sync for order {row['id']}",
+                source_type="order",
+                source_id=row["id"],
+            )
+            accounting_sync_warning = sync_status_to_warning(sync_status)
+
         # Auto-cascade confirmed order status to main items (non-extra, non-gift) at pending (F5)
         if body.status == "confirmed":
             conn.execute(
