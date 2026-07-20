@@ -153,7 +153,7 @@ Future<void> _pumpReceiptApp(
 
 void main() {
   group('POS receipt flow after checkout finalization', () {
-    testWidgets('shows print and skip actions without edit action', (
+    testWidgets('shows print, share, and skip actions without edit action', (
       tester,
     ) async {
       final fakeReceiptService = _FakeReceiptService();
@@ -164,6 +164,10 @@ void main() {
       expect(find.widgetWithText(FilledButton, 'In'), findsOneWidget);
       expect(
         find.widgetWithText(OutlinedButton, OrdersLabels.done),
+        findsOneWidget,
+      );
+      expect(
+        find.widgetWithText(OutlinedButton, VN.share),
         findsOneWidget,
       );
       expect(find.text(VN.editOrder), findsNothing);
