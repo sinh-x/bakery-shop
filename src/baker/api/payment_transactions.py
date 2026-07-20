@@ -57,6 +57,15 @@ def _recompute_amount_paid(conn, order_id: int) -> None:
     transaction amounts for the order. Mirrors the Phase 1 backfill query
     (includes ALL non-invalidated rows regardless of inflow/outflow type,
     matching the historical backfill semantics for consistency).
+
+    Note (DG-269 Phase 5.6-c1 / CQ-5): This stored column intentionally sums
+    ALL non-invalidated transactions (inflows + outflows), which diverges from
+    ``Order.from_row``'s live ``total_paid_excl_outflows`` (excludes outflow
+    types). The divergence is deliberate to keep the Phase 1 backfill results
+    consistent with subsequent mutations through this API; the live read path
+    uses ``total_paid_excl_outflows``. Future maintainers should resolve this
+    semantic mismatch only as a coordinated migration, not a unilateral
+    change here.
     """
     row = conn.execute(
         "SELECT COALESCE(SUM(amount), 0) AS total "
@@ -188,6 +197,10 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
             (txn.amount, txn.type, txn.method, txn.note, txn.payment_source, txn.id),
         )
 
+        # FR3/DG-269 Phase 4: refresh stored amount_paid after update. Amount
+        # or type changes affect the live sum, so resync the cached column.
+        _recompute_amount_paid(conn, order_id)
+
         # Re-sync double-entry journal entry (DG-175). Pass order_id so the
         # bus-shipping split is recomputed from the current delivery_type /
         # shipping_fee (DG-191 Phase 2). DG-244 Phase 4: payment_source
@@ -226,6 +239,9 @@ def delete_transaction(ref: str, txn_id: int):
             raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch")
         payment_source = row["payment_source"] if "payment_source" in row.keys() else ""
         conn.execute("DELETE FROM payment_transactions WHERE id = ?", (txn_id,))
+
+        # FR3/DG-269 Phase 4: refresh stored amount_paid after delete.
+        _recompute_amount_paid(conn, order_id)
 
         # Reverse/delete the journal entry for the deleted transaction (DG-175).
         # Pass order_id so any bus-shipping held balance is consistent on

@@ -22,6 +22,7 @@ from baker.models.order import (
     validate_transition,
 )
 from baker.models.payment_transaction import PaymentTransaction
+from baker.api.payment_transactions import _recompute_amount_paid
 from baker.models.work_item import WorkItem
 from baker.services.order_stock import auto_decrement_stock, restore_stock_for_order
 from baker.api.auth import resolve_actor, resolve_staff_name
@@ -581,6 +582,8 @@ def create_order(body: OrderCreate, request: Request):
                 method=body.deposit.method,
             )
             txn.save(conn)
+            # FR3/DG-269 Phase 4: refresh stored amount_paid after deposit.
+            _recompute_amount_paid(conn, order.id)
 
         # POS quick-sale: record payment if paymentMethod is provided, but skip
         # for POS source (Flutter creates the transaction client-side).
@@ -594,6 +597,8 @@ def create_order(body: OrderCreate, request: Request):
                     method=body.paymentMethod,
                 )
                 txn.save(conn)
+                # FR3/DG-269 Phase 4: refresh stored amount_paid after POS payment.
+                _recompute_amount_paid(conn, order.id)
                 _log_order_history(conn, order.id, "payment", "amount",
                                    old_value="", new_value=str(total_price),
                                    changed_by=actor)
@@ -982,6 +987,11 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
 @router.post("/{ref}/status")
 def transition_status(ref: str, body: StatusTransition, request: Request):
     """Chuyển trạng thái đơn hàng. Lý do bắt buộc khi lùi trạng thái."""
+    # Shared journal-sync helpers used by multiple branches below (DG-269
+    # Phase 5.6-c1 / CQ-4): import once to avoid duplicate imports in each
+    # conditional branch.
+    from baker.services.journal_sync import run_journal_sync, sync_status_to_warning
+
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
@@ -1028,7 +1038,7 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
 
         if body.status == "cancelled":
             restore_stock_for_order(conn, row["id"], row["order_ref"])
-            from baker.services.journal_sync import _sync_cancelled_order_journal, run_journal_sync, sync_status_to_warning
+            from baker.services.journal_sync import _sync_cancelled_order_journal
             sync_status = run_journal_sync(
                 _sync_cancelled_order_journal,
                 conn, row["id"],
@@ -1052,7 +1062,7 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
 
         # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
         if body.status == "delivered" and row["status"] != "delivered":
-            from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync, sync_status_to_warning
+            from baker.services.journal_sync import _sync_delivered_order_journal
             sync_status = run_journal_sync(
                 _sync_delivered_order_journal,
                 conn, row["id"], row["order_ref"],
@@ -1065,7 +1075,7 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
         # When transitioning TO completed, reconcile 2100 deposits into revenue
         # and clear 1500 AR (DG-269 Phase 3).
         if body.status == "completed" and row["status"] != "completed":
-            from baker.services.journal_sync import _sync_completed_order_journal, run_journal_sync, sync_status_to_warning
+            from baker.services.journal_sync import _sync_completed_order_journal
             sync_status = run_journal_sync(
                 _sync_completed_order_journal,
                 conn, row["id"], row["order_ref"],
