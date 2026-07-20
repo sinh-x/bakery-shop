@@ -1158,6 +1158,14 @@ def _reconcile_revenue_entry_lines(
         )
         return
 
+    # Clean up any stale AR entry left over from a prior delivery sync when
+    # the order was unpaid but is now paid (e.g. payment arrived between
+    # delivery and completion). Without this the AR entry persists alongside
+    # the revenue entry, doubling 4100 credit and inflating AR debit.
+    stale_ar_id = _find_order_entry_by_prefix(conn, order_id, _AR_ENTRY_PREFIX)
+    if stale_ar_id is not None:
+        _replace_order_entry(conn, stale_ar_id, respect_locks=respect_locks)
+
     # Paid: clear the full 2100 deposit balance to revenue (DR 2100, CR 4100).
     # Deposits only — tien_rut is returned separately. Lines with a zero amount
     # are omitted so double-entry integrity holds (DG-198 reversal, FR3).

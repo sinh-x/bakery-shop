@@ -62,12 +62,15 @@ from baker.utils.time import now_utc
 from baker.models.payment_transaction import PaymentTransaction
 from baker.services.journal_sync import (
     STAFF_ADVANCE_PAYMENT_SOURCE,
+    _AR_ENTRY_PREFIX,
     _compute_order_cogs_total,
     _delete_journal_entry_cascade,
+    _find_order_entry_by_prefix,
     _is_expense_journallable,
     _is_locked,
     _order_cogs_entry,
     _reconcile_order_revenue_entry,
+    _replace_order_entry,
     _resolve_delivered_timestamp,
     _reverse_journal_entry,
     _sync_cancelled_order_journal,
@@ -171,6 +174,13 @@ def _process_order(conn, order_id: int, *, dry_run: bool) -> dict:
 
     mismatch = abs(old_debit - net)
     if mismatch <= MISMATCH_TOLERANCE:
+        # Revenue entry is correct, but check for and clean up any orphaned
+        # AR entry (DG-269: stale AR entries from prior delivery sync when
+        # the order was unpaid but is now fully paid and processed).
+        if not dry_run:
+            stale_ar_id = _find_order_entry_by_prefix(conn, order_id, _AR_ENTRY_PREFIX)
+            if stale_ar_id is not None:
+                _replace_order_entry(conn, stale_ar_id, respect_locks=False)
         return {
             "order_id": order_id,
             "order_ref": order_ref,
