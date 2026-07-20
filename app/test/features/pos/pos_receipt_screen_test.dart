@@ -153,7 +153,7 @@ Future<void> _pumpReceiptApp(
 
 void main() {
   group('POS receipt flow after checkout finalization', () {
-    testWidgets('shows print and skip actions without edit action', (
+    testWidgets('shows print, share, and skip actions without edit action', (
       tester,
     ) async {
       final fakeReceiptService = _FakeReceiptService();
@@ -164,6 +164,10 @@ void main() {
       expect(find.widgetWithText(FilledButton, 'In'), findsOneWidget);
       expect(
         find.widgetWithText(OutlinedButton, OrdersLabels.done),
+        findsOneWidget,
+      );
+      expect(
+        find.widgetWithText(OutlinedButton, VN.share),
         findsOneWidget,
       );
       expect(find.text(VN.editOrder), findsNothing);
@@ -180,6 +184,20 @@ void main() {
 
       expect(fakeReceiptService.printedOrderRef, 'ORD-001');
       expect(fakeReceiptService.printedType, ReceiptType.customer);
+    });
+
+    testWidgets('share button is tappable without crashing', (
+      tester,
+    ) async {
+      final fakeReceiptService = _FakeReceiptService();
+      await _pumpReceiptApp(tester, receiptService: fakeReceiptService);
+
+      await tester.tap(find.widgetWithText(OutlinedButton, VN.share));
+      await tester.pumpAndSettle();
+
+      // Smoke test: no crash, receipt fetch still happened, print was not called
+      expect(fakeReceiptService.fetchedOrderRef, 'ORD-001');
+      expect(fakeReceiptService.printedOrderRef, isNull);
     });
 
     testWidgets('skip returns to POS home', (tester) async {

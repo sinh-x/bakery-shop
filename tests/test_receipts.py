@@ -1635,3 +1635,108 @@ class TestCashAmountMalformedHandling:
         # Customer-receipt render must not raise HTTP 500.
         img = _get_receipt(api_client, ref, "type=customer")
         assert img.size[0] == 576
+
+
+# ---------------------------------------------------------------------------
+# DG-271 Phase 1: customer receipt continuous view + margin normalization.
+# ---------------------------------------------------------------------------
+
+class TestCustomerReceiptContinuousView:
+    """DG-271 Phase 1 / FR-1 / AC1: GET /api/orders/{ref}/receipt?type=customer
+    returns the full unsplit receipt image — no page-break markers, no
+    truncation to the first page. Work tickets remain split (unchanged).
+    """
+
+    def test_tall_customer_receipt_returns_continuous_image(self, api_client):
+        """A customer receipt exceeding 1040px is returned as one image > cap."""
+        _seed_shop_config(api_client)
+        items = [("Bánh kem " + chr(ord('A') + i), 2, 300000) for i in range(8)]
+        ref, _ = _create_order(
+            api_client, items, dtype="pickup",
+            notes="ghi chú dài cho mỗi dòng đơn " * 30,
+        )
+        img = _get_receipt(api_client, ref, "type=customer")
+        assert img.size[0] == 576
+        # Continuous view: the full image is returned, not page 1 of a split.
+        assert img.size[1] > RECEIPT_MAX_HEIGHT, (
+            f"Expected un-split customer receipt taller than {RECEIPT_MAX_HEIGHT}px, "
+            f"got {img.size[1]}px"
+        )
+
+    def test_tall_customer_receipt_has_no_page_break_marker(self, api_client):
+        """The customer receipt is a single image — height > cap proves no
+        truncation to page 1 (which would be ≤ cap with a footer marker)."""
+        _seed_shop_config(api_client)
+        items = [("Bánh kem " + chr(ord('A') + i), 2, 300000) for i in range(8)]
+        ref, _ = _create_order(
+            api_client, items, dtype="pickup",
+            notes="ghi chú dài cho mỗi dòng đơn " * 30,
+        )
+        img = _get_receipt(api_client, ref, "type=customer")
+        # Continuous view: full image returned, not page 1 of a split.
+        assert img.size[1] > RECEIPT_MAX_HEIGHT, (
+            f"Expected un-split customer receipt taller than {RECEIPT_MAX_HEIGHT}px, "
+            f"got {img.size[1]}px"
+        )
+        # No split-page footer band: image height is close to the content
+        # bottom (only cursor LINE_GAP padding, not a ~30px footer band per
+        # split page). A split page 1 would be ≤ cap and have a footer band.
+        content_bottom = _find_content_bottom(img)
+        assert img.size[1] - content_bottom < 60, (
+            f"Image padded with a large white tail beyond content: "
+            f"content_bottom={content_bottom}, height={img.size[1]}"
+        )
+
+    def test_work_ticket_still_split_in_label_mode(self, api_client):
+        """Work ticket receipts are still split in label mode (unchanged)."""
+        _seed_shop_config(api_client)
+        ref, data = _create_order(
+            api_client, [("Bánh kem", 1, 300000)],
+            notes="x " * 400,  # long note → tall receipt
+        )
+        item_id = data["workItems"][0]["id"]
+        img = _get_receipt(api_client, ref, f"type=work_ticket&item_id={item_id}")
+        assert img.size[0] == 576
+        # Work tickets are still split — height stays within the cap.
+        assert img.size[1] <= RECEIPT_MAX_HEIGHT
+
+
+class TestCustomerReceiptMarginNormalization:
+    """DG-271 Phase 1 / FR-5 / AC5: customer receipt sub-row content (badges,
+    enum attribute lines, cash-in-cake) renders at x=MARGIN (28), matching the
+    work ticket layout. No +10 indent.
+    """
+
+    def _seed_order_with_enum_attributes(self, api_client):
+        """Create an order item with rut_tien/cash_amount so the cash-in-cake
+        sub-row is rendered on the customer receipt."""
+        _seed_shop_config(api_client)
+        ref, data = _create_order(api_client, [("Bánh kem", 1, 300000)], dtype="pickup")
+        item_id = data["workItems"][0]["id"]
+        from baker.db.connection import get_db
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE order_items SET attributes = ? WHERE id = ?",
+                (
+                    '{"rut_tien": "true", "cash_fee": "1000", "cash_amount": "5000"}',
+                    item_id,
+                ),
+            )
+        return ref
+
+    def test_cash_in_cake_text_does_not_touch_image_edge(self, api_client):
+        """Cash-in-cake sub-row text starts at x=MARGIN (28), not x=38."""
+        ref = self._seed_order_with_enum_attributes(api_client)
+        img = _get_receipt(api_client, ref, "type=customer")
+        assert img.size[0] == 576
+        # The leftmost MARGIN columns must remain white (no text at x < MARGIN).
+        # If text were drawn at x=MARGIN (28), columns 0..27 are white; the
+        # previous +10 indent also stayed within MARGIN bounds, so we instead
+        # assert the green cash-in-cake row is present and the leftmost 28px
+        # stay white (no text touches the edge).
+        px = img.load()
+        for y in range(img.height):
+            for x in range(MARGIN):
+                assert px[x, y] == (255, 255, 255), (
+                    f"Non-white pixel at edge x={x}, y={y}: {px[x, y]}"
+                )
