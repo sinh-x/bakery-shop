@@ -22,7 +22,6 @@ from baker.models.order import (
     validate_transition,
 )
 from baker.models.payment_transaction import PaymentTransaction
-from baker.api.payment_transactions import _recompute_amount_paid
 from baker.models.work_item import WorkItem
 from baker.services.order_stock import auto_decrement_stock, restore_stock_for_order
 from baker.api.auth import resolve_actor, resolve_staff_name
@@ -582,8 +581,6 @@ def create_order(body: OrderCreate, request: Request):
                 method=body.deposit.method,
             )
             txn.save(conn)
-            # FR3/DG-269 Phase 4: refresh stored amount_paid after deposit.
-            _recompute_amount_paid(conn, order.id)
 
         # POS quick-sale: record payment if paymentMethod is provided, but skip
         # for POS source (Flutter creates the transaction client-side).
@@ -597,8 +594,6 @@ def create_order(body: OrderCreate, request: Request):
                     method=body.paymentMethod,
                 )
                 txn.save(conn)
-                # FR3/DG-269 Phase 4: refresh stored amount_paid after POS payment.
-                _recompute_amount_paid(conn, order.id)
                 _log_order_history(conn, order.id, "payment", "amount",
                                    old_value="", new_value=str(total_price),
                                    changed_by=actor)
