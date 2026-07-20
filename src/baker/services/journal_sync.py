@@ -33,6 +33,8 @@ from baker.db.schema import (
     PAYMENT_OUTFLOW_TYPES,
     REVENUE_UPDATE_TOLERANCE,
     TIEN_RUT_HELD_CODE,
+    TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE,
+    UNALLOCATED_BANK_CODE,
     _account_id_by_code,
     _baseline_cost_for_product,
     _ensure_ap_vendor_sub_account,
@@ -622,6 +624,42 @@ def _held_tien_rut_for_order(
     return float(row["net_held"] or 0)
 
 
+def _resolve_transaction_asset_code(
+    method: str,
+    payment_source: str,
+) -> str:
+    """Resolve the asset account code for a payment_transaction journal line.
+
+    DG-244 Phase 4 routing rules (FR4/FR5/FR8):
+
+      * ``payment_source`` in ``TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE``
+        → that bank sub-account (1210 Phượng VCB / 1220 Ân VCB). The
+        ``method`` is ignored — when an account is explicitly selected, the
+        journal entry references that bank account regardless of method.
+      * ``payment_source`` empty/None/unrecognized AND ``method == 'transfer'``
+        → ``UNALLOCATED_BANK_CODE`` (1290). This replaces the old
+        ``PAYMENT_METHOD_TO_ASSET_CODE['transfer']`` (1200) default so
+        unallocated transfer deposits land in a distinct account. Phase 5
+        historical backfill will move existing 1200 transfer entries to 1290.
+      * ``payment_source`` empty/None/unrecognized AND method is ``cash``/``card``
+        → ``PAYMENT_METHOD_TO_ASSET_CODE[method]`` (1100). Non-transfer
+        methods keep their existing behavior (FR5 only mandates the
+        un-allocated fallback for transfer-type payments routed to a bank).
+
+    Unknown ``payment_source`` values (not in the map) are treated as
+    un-allocated rather than rejected, so a stale label never breaks
+    journal sync — the entry still balances and is reassignable via Edit
+    Payment.
+    """
+    ps = (payment_source or "").strip()
+    if ps and ps in TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE:
+        return TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE[ps]
+    method_norm = method or "cash"
+    if method_norm == "transfer":
+        return UNALLOCATED_BANK_CODE
+    return PAYMENT_METHOD_TO_ASSET_CODE.get(method_norm, "1100")
+
+
 def _build_payment_journal_lines(
     conn,
     amount: float,
@@ -632,6 +670,7 @@ def _build_payment_journal_lines(
     delivery_type: str = "pickup",
     shipping_fee: float = 0.0,
     exclude_txn_id: Optional[int] = None,
+    payment_source: str = "",
 ) -> tuple[str, list[tuple[int, float, float, str]]]:
     """Build (description, lines) for a payment_transaction's journal entry.
 
@@ -655,8 +694,12 @@ def _build_payment_journal_lines(
     entry (see :func:`_reconcile_order_revenue_entry`).
 
     Non-bus orders and bus orders with no shipping_fee behave exactly as before.
+
+    DG-244 Phase 4: ``payment_source`` routes the asset (debit) side to a
+    distinct bank sub-account when set, or to the un-allocated bank account
+    (1290) when empty on a transfer. See :func:`_resolve_transaction_asset_code`.
     """
-    asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get(method or "cash", "1100")
+    asset_code = _resolve_transaction_asset_code(method, payment_source)
     asset_account_id = _account_id_by_code(conn, asset_code)
     deposits_account_id = _account_id_by_code(conn, CUSTOMER_DEPOSITS_CODE)
     tien_rut_account_id = _account_id_by_code(conn, TIEN_RUT_HELD_CODE)
@@ -726,6 +769,7 @@ def _sync_payment_journal(
     delivery_type: str = "pickup",
     shipping_fee: float = 0.0,
     deleted: bool = False,
+    payment_source: str = "",
 ) -> None:
     """Create/update/delete the journal entry for a payment_transaction.
 
@@ -734,6 +778,13 @@ def _sync_payment_journal(
     overridden by the ``delivery_type`` / ``shipping_fee`` keyword arguments.
     Bus orders with shipping split the credit between 2100 and 2200 (see
     :func:`_build_payment_journal_lines`).
+
+    DG-244 Phase 4: ``payment_source`` is forwarded to
+    :func:`_build_payment_journal_lines` so the asset (debit) side routes to
+    the selected bank sub-account (1210/1220) or the un-allocated fallback
+    (1290) on transfers with no source. On the ``deleted=True`` path the
+    existing entry is reversed/deleted directly (no asset re-resolution), so
+    ``payment_source`` is informational there.
     """
     # Resolve order context from the orders table when only order_id is given.
     if order_id is not None and (not delivery_type or delivery_type == "pickup") and shipping_fee == 0.0:
@@ -758,10 +809,34 @@ def _sync_payment_journal(
         return
 
     # FR4: the payment transaction's `created_at` is the business event date.
-    txn_row = conn.execute(
-        "SELECT created_at FROM payment_transactions WHERE id = ?", (txn_id,)
-    ).fetchone()
+    # DG-244 Phase 4: also read the persisted payment_source so callers that
+    # don't thread payment_source (e.g. orders.py shipping-fee re-sync) still
+    # route to the correct bank sub-account. The column is optional on legacy
+    # schemas (added by v76); fall back to '' when absent so historical
+    # migration callables don't raise.
+    has_payment_source_col = bool(conn.execute(
+        "SELECT 1 FROM pragma_table_info('payment_transactions') "
+        "WHERE name = 'payment_source'"
+    ).fetchone())
+    if has_payment_source_col:
+        txn_row = conn.execute(
+            "SELECT created_at, payment_source FROM payment_transactions WHERE id = ?",
+            (txn_id,),
+        ).fetchone()
+    else:
+        txn_row = conn.execute(
+            "SELECT created_at, '' AS payment_source FROM payment_transactions WHERE id = ?",
+            (txn_id,),
+        ).fetchone()
     transaction_date = txn_row["created_at"] if txn_row else None
+    # If the caller did not pass payment_source, fall back to the persisted
+    # value (e.g. orders.py shipping-fee re-sync path reads rows directly
+    # without threading payment_source through). When the caller DOES pass
+    # a non-empty value, that wins — it reflects the latest update payload.
+    persisted_source = (
+        txn_row["payment_source"] if txn_row and "payment_source" in txn_row.keys() else ""
+    ) or ""
+    effective_source = payment_source if payment_source else persisted_source
 
     description, lines = _build_payment_journal_lines(
         conn,
@@ -772,6 +847,7 @@ def _sync_payment_journal(
         delivery_type=delivery_type,
         shipping_fee=shipping_fee,
         exclude_txn_id=txn_id if existing_id is not None else None,
+        payment_source=effective_source,
     )
 
     if existing_id is None:
@@ -886,7 +962,7 @@ def _reconcile_order_revenue_entry(
     # Tien rut held in 2400 (credits at payment time minus debits at return).
     tien_rut_held = _held_tien_rut_for_order(conn, order_id)
 
-    order_transaction_date = now_utc()
+    order_transaction_date = _resolve_delivered_timestamp(conn, order_id, order_ref) or now_utc()
 
     # --- Revenue entry (deposits → 4100) -----------------------------------
     _reconcile_revenue_entry_lines(
@@ -976,6 +1052,39 @@ def _sync_cancelled_order_journal(conn, order_id: int) -> None:
     entry_id = _find_journal_entry(conn, 'order_shipping_release', order_id)
     if entry_id is not None:
         _replace_order_entry(conn, entry_id, respect_locks=True)
+
+
+def _resolve_delivered_timestamp(conn, order_id: int, order_ref: str) -> str | None:
+    """Return the first delivered/completed event timestamp for an order.
+
+    Preference order (FR6):
+      1. events.order_id when populated
+      2. exact ``"order_ref": "<ref>"`` JSON match in data column
+      3. Returns None when no event exists → caller falls back to ``now_utc()``
+    """
+    row = conn.execute(
+        """
+        SELECT MIN(timestamp) AS ts FROM events
+        WHERE order_id = ?
+          AND type = 'order'
+          AND json_extract(data, '$.to_status') IN ('delivered', 'completed')
+        """,
+        (order_id,),
+    ).fetchone()
+    if row and row["ts"]:
+        return row["ts"]
+    row = conn.execute(
+        """
+        SELECT MIN(timestamp) AS ts FROM events
+        WHERE json_extract(data, '$.order_ref') = ?
+          AND type = 'order'
+          AND json_extract(data, '$.to_status') IN ('delivered', 'completed')
+        """,
+        (order_ref,),
+    ).fetchone()
+    if row and row["ts"]:
+        return row["ts"]
+    return None
 
 
 def _reconcile_revenue_entry_lines(
@@ -1102,13 +1211,30 @@ def _resolve_tien_rut_return_asset_account(conn, order_id: int) -> int:
     the order has multiple tien_rut transactions with different methods, the
     first one's method is used. Defaults to 1100 (Cash on Hand) when no
     tien_rut payment exists or the method is unknown.
+
+    DG-244 Phase 4: when the first tien_rut transaction carries a
+    ``payment_source``, the return credits the same bank sub-account the
+    original deposit debited (so the held balance and its return net to zero
+    on the same account).
+
+    The ``payment_source`` column is optional on legacy schemas (added by
+    migration v76). When absent we fall back to the pre-Phase-4 method-based
+    resolution so historical migration callables (v44 backfill) still work on
+    pre-v76 databases.
     """
     from baker.models.payment_transaction import _invalidation_filter
 
     invalidation = _invalidation_filter(conn)
+    # Detect the payment_source column once; v44 backfill runs before v76 has
+    # added it, so a bare SELECT pt.payment_source would raise OperationalError.
+    has_payment_source_col = bool(conn.execute(
+        "SELECT 1 FROM pragma_table_info('payment_transactions') "
+        "WHERE name = 'payment_source'"
+    ).fetchone())
+    source_expr = "pt.payment_source" if has_payment_source_col else "''"
     row = conn.execute(
         f"""
-        SELECT pt.method AS method
+        SELECT pt.method AS method, {source_expr} AS payment_source
         FROM payment_transactions pt
         WHERE pt.order_id = ? AND pt.type = 'tien_rut'
           {invalidation}
@@ -1117,7 +1243,8 @@ def _resolve_tien_rut_return_asset_account(conn, order_id: int) -> int:
         (order_id,),
     ).fetchone()
     method = row["method"] if row else "cash"
-    asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get(method or "cash", "1100")
+    payment_source = (row["payment_source"] if row else "") or ""
+    asset_code = _resolve_transaction_asset_code(method, payment_source)
     return _account_id_by_code(conn, asset_code)
 
 
@@ -1155,7 +1282,7 @@ def _reconcile_tien_rut_return_entry(
             """
             SELECT
               COALESCE(SUM(CASE WHEN a.code = ? THEN jl.debit ELSE 0 END), 0) AS debit_2400,
-              COALESCE(SUM(CASE WHEN a.code IN ('1100','1200') THEN jl.credit ELSE 0 END), 0) AS credit_asset
+              COALESCE(SUM(CASE WHEN a.code IN ('1100','1200','1210','1220','1290') THEN jl.credit ELSE 0 END), 0) AS credit_asset
             FROM journal_lines jl
             JOIN accounts a ON a.id = jl.account_id
             WHERE jl.journal_entry_id = ?
@@ -1221,7 +1348,7 @@ def _sync_bus_shipping_release_entry(
     asset_code = PAYMENT_METHOD_TO_ASSET_CODE.get("cash", "1100")
     asset_account_id = _account_id_by_code(conn, asset_code)
     description = f"Shipping release: {order_ref}"
-    order_transaction_date = now_utc()
+    order_transaction_date = _resolve_delivered_timestamp(conn, order_id, order_ref) or now_utc()
 
     existing_id = _find_journal_entry(
         conn, "order_shipping_release", order_id
@@ -1422,7 +1549,7 @@ def _sync_order_cogs_entry(
 
     cogs_account_id = _account_id_by_code(conn, COGS_CODE)
     inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
-    order_transaction_date = now_utc()
+    order_transaction_date = _resolve_delivered_timestamp(conn, order_id, order_ref) or now_utc()
     _insert_journal_entry(
         conn,
         description=f"Order COGS: {order_ref}",

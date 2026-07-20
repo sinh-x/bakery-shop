@@ -332,7 +332,7 @@ class _EventCard extends StatelessWidget {
                     if (event.loggedBy.isNotEmpty) ...[
                       const SizedBox(width: 6),
                       Text(
-                        '— ${event.loggedBy}',
+                        '— ${event.displayLoggedBy}',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),

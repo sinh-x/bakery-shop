@@ -21,7 +21,11 @@ class ProductSummaryCard extends StatelessWidget {
     final theme = Theme.of(context);
     final regularItems = items.where((i) => !i.isExtra).toList();
     final extraItems = items.where((i) => i.isExtra).toList();
+    final paidExtras = items.where((i) => i.isExtra && !i.isGift);
     final total = regularItems.fold<double>(
+      0,
+      (sum, i) => sum + i.unitPrice * i.quantity,
+    ) + paidExtras.fold<double>(
       0,
       (sum, i) => sum + i.unitPrice * i.quantity,
     );
@@ -56,7 +60,9 @@ class ProductSummaryCard extends StatelessWidget {
                 (item) => Padding(
                   padding: const EdgeInsets.only(left: 16, bottom: 2),
                   child: Text(
-                    '${item.product.name} x${item.quantity}${item.isGift ? ' (${VN.tangKem})' : ''}',
+                    item.isGift
+                        ? '${item.product.name} x${item.quantity} (${VN.tangKem})'
+                        : '${item.product.name} (${formatVND(item.unitPrice)}) x${item.quantity}',
                     style: theme.textTheme.bodySmall,
                   ),
                 ),

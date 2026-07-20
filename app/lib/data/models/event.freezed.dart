@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$BakeryEvent {
 
- int get id;@JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson) DateTime get timestamp; String get type; String get summary; List<String> get tags;@JsonKey(name: 'logged_by') String get loggedBy; String get source; Map<String, dynamic> get data;@JsonKey(name: 'order_id') int? get orderId;
+ int get id;@JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson) DateTime get timestamp; String get type; String get summary; List<String> get tags;@JsonKey(name: 'logged_by') String get loggedBy;@JsonKey(name: 'staff_name') String get staffName; String get source; Map<String, dynamic> get data;@JsonKey(name: 'order_id') int? get orderId;
 /// Create a copy of BakeryEvent
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $BakeryEventCopyWith<BakeryEvent> get copyWith => _$BakeryEventCopyWithImpl<Bake
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is BakeryEvent&&(identical(other.id, id) || other.id == id)&&(identical(other.timestamp, timestamp) || other.timestamp == timestamp)&&(identical(other.type, type) || other.type == type)&&(identical(other.summary, summary) || other.summary == summary)&&const DeepCollectionEquality().equals(other.tags, tags)&&(identical(other.loggedBy, loggedBy) || other.loggedBy == loggedBy)&&(identical(other.source, source) || other.source == source)&&const DeepCollectionEquality().equals(other.data, data)&&(identical(other.orderId, orderId) || other.orderId == orderId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BakeryEvent&&(identical(other.id, id) || other.id == id)&&(identical(other.timestamp, timestamp) || other.timestamp == timestamp)&&(identical(other.type, type) || other.type == type)&&(identical(other.summary, summary) || other.summary == summary)&&const DeepCollectionEquality().equals(other.tags, tags)&&(identical(other.loggedBy, loggedBy) || other.loggedBy == loggedBy)&&(identical(other.staffName, staffName) || other.staffName == staffName)&&(identical(other.source, source) || other.source == source)&&const DeepCollectionEquality().equals(other.data, data)&&(identical(other.orderId, orderId) || other.orderId == orderId));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,timestamp,type,summary,const DeepCollectionEquality().hash(tags),loggedBy,source,const DeepCollectionEquality().hash(data),orderId);
+int get hashCode => Object.hash(runtimeType,id,timestamp,type,summary,const DeepCollectionEquality().hash(tags),loggedBy,staffName,source,const DeepCollectionEquality().hash(data),orderId);
 
 @override
 String toString() {
-  return 'BakeryEvent(id: $id, timestamp: $timestamp, type: $type, summary: $summary, tags: $tags, loggedBy: $loggedBy, source: $source, data: $data, orderId: $orderId)';
+  return 'BakeryEvent(id: $id, timestamp: $timestamp, type: $type, summary: $summary, tags: $tags, loggedBy: $loggedBy, staffName: $staffName, source: $source, data: $data, orderId: $orderId)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $BakeryEventCopyWith<$Res>  {
   factory $BakeryEventCopyWith(BakeryEvent value, $Res Function(BakeryEvent) _then) = _$BakeryEventCopyWithImpl;
 @useResult
 $Res call({
- int id,@JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson) DateTime timestamp, String type, String summary, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source, Map<String, dynamic> data,@JsonKey(name: 'order_id') int? orderId
+ int id,@JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson) DateTime timestamp, String type, String summary, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy,@JsonKey(name: 'staff_name') String staffName, String source, Map<String, dynamic> data,@JsonKey(name: 'order_id') int? orderId
 });
 
 
@@ -65,7 +65,7 @@ class _$BakeryEventCopyWithImpl<$Res>
 
 /// Create a copy of BakeryEvent
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? timestamp = null,Object? type = null,Object? summary = null,Object? tags = null,Object? loggedBy = null,Object? source = null,Object? data = null,Object? orderId = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? timestamp = null,Object? type = null,Object? summary = null,Object? tags = null,Object? loggedBy = null,Object? staffName = null,Object? source = null,Object? data = null,Object? orderId = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int,timestamp: null == timestamp ? _self.timestamp : timestamp // ignore: cast_nullable_to_non_nullable
@@ -73,6 +73,7 @@ as DateTime,type: null == type ? _self.type : type // ignore: cast_nullable_to_n
 as String,summary: null == summary ? _self.summary : summary // ignore: cast_nullable_to_non_nullable
 as String,tags: null == tags ? _self.tags : tags // ignore: cast_nullable_to_non_nullable
 as List<String>,loggedBy: null == loggedBy ? _self.loggedBy : loggedBy // ignore: cast_nullable_to_non_nullable
+as String,staffName: null == staffName ? _self.staffName : staffName // ignore: cast_nullable_to_non_nullable
 as String,source: null == source ? _self.source : source // ignore: cast_nullable_to_non_nullable
 as String,data: null == data ? _self.data : data // ignore: cast_nullable_to_non_nullable
 as Map<String, dynamic>,orderId: freezed == orderId ? _self.orderId : orderId // ignore: cast_nullable_to_non_nullable
@@ -158,10 +159,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id, @JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson)  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  Map<String, dynamic> data, @JsonKey(name: 'order_id')  int? orderId)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( int id, @JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson)  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy, @JsonKey(name: 'staff_name')  String staffName,  String source,  Map<String, dynamic> data, @JsonKey(name: 'order_id')  int? orderId)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _BakeryEvent() when $default != null:
-return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_that.loggedBy,_that.source,_that.data,_that.orderId);case _:
+return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_that.loggedBy,_that.staffName,_that.source,_that.data,_that.orderId);case _:
   return orElse();
 
 }
@@ -179,10 +180,10 @@ return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_th
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id, @JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson)  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  Map<String, dynamic> data, @JsonKey(name: 'order_id')  int? orderId)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( int id, @JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson)  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy, @JsonKey(name: 'staff_name')  String staffName,  String source,  Map<String, dynamic> data, @JsonKey(name: 'order_id')  int? orderId)  $default,) {final _that = this;
 switch (_that) {
 case _BakeryEvent():
-return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_that.loggedBy,_that.source,_that.data,_that.orderId);}
+return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_that.loggedBy,_that.staffName,_that.source,_that.data,_that.orderId);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -196,10 +197,10 @@ return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_th
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id, @JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson)  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy,  String source,  Map<String, dynamic> data, @JsonKey(name: 'order_id')  int? orderId)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( int id, @JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson)  DateTime timestamp,  String type,  String summary,  List<String> tags, @JsonKey(name: 'logged_by')  String loggedBy, @JsonKey(name: 'staff_name')  String staffName,  String source,  Map<String, dynamic> data, @JsonKey(name: 'order_id')  int? orderId)?  $default,) {final _that = this;
 switch (_that) {
 case _BakeryEvent() when $default != null:
-return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_that.loggedBy,_that.source,_that.data,_that.orderId);case _:
+return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_that.loggedBy,_that.staffName,_that.source,_that.data,_that.orderId);case _:
   return null;
 
 }
@@ -211,7 +212,7 @@ return $default(_that.id,_that.timestamp,_that.type,_that.summary,_that.tags,_th
 @JsonSerializable()
 
 class _BakeryEvent implements BakeryEvent {
-  const _BakeryEvent({required this.id, @JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson) required this.timestamp, this.type = 'note', required this.summary, final  List<String> tags = const <String>[], @JsonKey(name: 'logged_by') this.loggedBy = '', this.source = 'app', final  Map<String, dynamic> data = const <String, dynamic>{}, @JsonKey(name: 'order_id') this.orderId}): _tags = tags,_data = data;
+  const _BakeryEvent({required this.id, @JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson) required this.timestamp, this.type = 'note', required this.summary, final  List<String> tags = const <String>[], @JsonKey(name: 'logged_by') this.loggedBy = '', @JsonKey(name: 'staff_name') this.staffName = '', this.source = 'app', final  Map<String, dynamic> data = const <String, dynamic>{}, @JsonKey(name: 'order_id') this.orderId}): _tags = tags,_data = data;
   factory _BakeryEvent.fromJson(Map<String, dynamic> json) => _$BakeryEventFromJson(json);
 
 @override final  int id;
@@ -226,6 +227,7 @@ class _BakeryEvent implements BakeryEvent {
 }
 
 @override@JsonKey(name: 'logged_by') final  String loggedBy;
+@override@JsonKey(name: 'staff_name') final  String staffName;
 @override@JsonKey() final  String source;
  final  Map<String, dynamic> _data;
 @override@JsonKey() Map<String, dynamic> get data {
@@ -249,16 +251,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BakeryEvent&&(identical(other.id, id) || other.id == id)&&(identical(other.timestamp, timestamp) || other.timestamp == timestamp)&&(identical(other.type, type) || other.type == type)&&(identical(other.summary, summary) || other.summary == summary)&&const DeepCollectionEquality().equals(other._tags, _tags)&&(identical(other.loggedBy, loggedBy) || other.loggedBy == loggedBy)&&(identical(other.source, source) || other.source == source)&&const DeepCollectionEquality().equals(other._data, _data)&&(identical(other.orderId, orderId) || other.orderId == orderId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BakeryEvent&&(identical(other.id, id) || other.id == id)&&(identical(other.timestamp, timestamp) || other.timestamp == timestamp)&&(identical(other.type, type) || other.type == type)&&(identical(other.summary, summary) || other.summary == summary)&&const DeepCollectionEquality().equals(other._tags, _tags)&&(identical(other.loggedBy, loggedBy) || other.loggedBy == loggedBy)&&(identical(other.staffName, staffName) || other.staffName == staffName)&&(identical(other.source, source) || other.source == source)&&const DeepCollectionEquality().equals(other._data, _data)&&(identical(other.orderId, orderId) || other.orderId == orderId));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,timestamp,type,summary,const DeepCollectionEquality().hash(_tags),loggedBy,source,const DeepCollectionEquality().hash(_data),orderId);
+int get hashCode => Object.hash(runtimeType,id,timestamp,type,summary,const DeepCollectionEquality().hash(_tags),loggedBy,staffName,source,const DeepCollectionEquality().hash(_data),orderId);
 
 @override
 String toString() {
-  return 'BakeryEvent(id: $id, timestamp: $timestamp, type: $type, summary: $summary, tags: $tags, loggedBy: $loggedBy, source: $source, data: $data, orderId: $orderId)';
+  return 'BakeryEvent(id: $id, timestamp: $timestamp, type: $type, summary: $summary, tags: $tags, loggedBy: $loggedBy, staffName: $staffName, source: $source, data: $data, orderId: $orderId)';
 }
 
 
@@ -269,7 +271,7 @@ abstract mixin class _$BakeryEventCopyWith<$Res> implements $BakeryEventCopyWith
   factory _$BakeryEventCopyWith(_BakeryEvent value, $Res Function(_BakeryEvent) _then) = __$BakeryEventCopyWithImpl;
 @override @useResult
 $Res call({
- int id,@JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson) DateTime timestamp, String type, String summary, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy, String source, Map<String, dynamic> data,@JsonKey(name: 'order_id') int? orderId
+ int id,@JsonKey(fromJson: parseApiDateTimeRequired, toJson: timestampToJson) DateTime timestamp, String type, String summary, List<String> tags,@JsonKey(name: 'logged_by') String loggedBy,@JsonKey(name: 'staff_name') String staffName, String source, Map<String, dynamic> data,@JsonKey(name: 'order_id') int? orderId
 });
 
 
@@ -286,7 +288,7 @@ class __$BakeryEventCopyWithImpl<$Res>
 
 /// Create a copy of BakeryEvent
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? timestamp = null,Object? type = null,Object? summary = null,Object? tags = null,Object? loggedBy = null,Object? source = null,Object? data = null,Object? orderId = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? timestamp = null,Object? type = null,Object? summary = null,Object? tags = null,Object? loggedBy = null,Object? staffName = null,Object? source = null,Object? data = null,Object? orderId = freezed,}) {
   return _then(_BakeryEvent(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as int,timestamp: null == timestamp ? _self.timestamp : timestamp // ignore: cast_nullable_to_non_nullable
@@ -294,6 +296,7 @@ as DateTime,type: null == type ? _self.type : type // ignore: cast_nullable_to_n
 as String,summary: null == summary ? _self.summary : summary // ignore: cast_nullable_to_non_nullable
 as String,tags: null == tags ? _self._tags : tags // ignore: cast_nullable_to_non_nullable
 as List<String>,loggedBy: null == loggedBy ? _self.loggedBy : loggedBy // ignore: cast_nullable_to_non_nullable
+as String,staffName: null == staffName ? _self.staffName : staffName // ignore: cast_nullable_to_non_nullable
 as String,source: null == source ? _self.source : source // ignore: cast_nullable_to_non_nullable
 as String,data: null == data ? _self._data : data // ignore: cast_nullable_to_non_nullable
 as Map<String, dynamic>,orderId: freezed == orderId ? _self.orderId : orderId // ignore: cast_nullable_to_non_nullable

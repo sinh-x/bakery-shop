@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/orders", tags=["receipts"])
 
 RECEIPT_WIDTH = 576  # 80mm at 203 DPI (76mm print area)
 RECEIPT_MAX_HEIGHT = 1040  # 130mm at 203 DPI — height cap for work_ticket/customer receipts
-MARGIN = 20
+MARGIN = 28
 CONTENT_WIDTH = RECEIPT_WIDTH - 2 * MARGIN
 THUMBNAIL_SIZE = 128
 LINE_GAP = 4  # DG-228 Phase 2: reduced from 6 for vertical compaction
@@ -42,6 +42,7 @@ _SZ_HUGE = 40       # due date at bottom (unused — 36pt used instead)
 _SZ_BIG = 36        # customer name, category, price, due date
 _SZ_MEDIUM = 28     # notes text, birthday
 _SZ_NORMAL = 24     # product name, section headers, title
+ENUM_BOX_BOTTOM_PAD = 10  # bottom padding after enum attribute box
 
 # Shop defaults (matching the physical biên nhận form, without ĐC 2)
 _SHOP_DEFAULTS = {
@@ -832,6 +833,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
 
     # Birthday badge
     if work_item.get("isBirthday") or work_item.get("is_birthday"):
+        y += 10
         age = work_item.get("age")
         age_text = f" SINH NHẬT"
         if age and age != 999:
@@ -884,6 +886,9 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
     enum_font = _font(_SZ_MEDIUM, True)
     enum_lines = list(_wrapped_enum_attribute_lines(work_item, enum_labels, enum_font, CONTENT_WIDTH))
     if enum_lines:
+        y += 12
+        y = _sep(draw, y)
+        y += 8
         ENUM_PAD = 6
         box_start_y = y
         for line in enum_lines:
@@ -893,7 +898,7 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
              RECEIPT_WIDTH - MARGIN + ENUM_PAD, y + ENUM_PAD - LINE_GAP],
             outline=(100, 100, 100), width=2,
         )
-        y += ENUM_PAD  # extra spacing after the box
+        y += ENUM_BOX_BOTTOM_PAD
 
     # Spacer between badge(s) and next section
     y += 10
@@ -936,11 +941,11 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
 
     # List extras if any
     if extras:
-        y = _left(draw, y, "Phụ liệu kèm theo:", fnormal)
+        y = _left(draw, y, "Phụ kiện:", _font(_SZ_MEDIUM, bold=True))
         for ex in extras:
             ex_name = ex.get("productName", "") or ex.get("product_name", "") or "N/A"
             ex_qty = ex.get("quantity", 1)
-            y = _left(draw, y, f"  {ex_name} x{ex_qty}", fb)
+            y = _left(draw, y, f"  {ex_name} x{ex_qty}", _font(_SZ_NORMAL, bold=True))
 
     # Payment section — only when exactly 1 main item
     if main_count == 1:

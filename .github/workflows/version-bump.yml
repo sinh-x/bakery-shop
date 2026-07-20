@@ -25,6 +25,13 @@ jobs:
           ref: develop
           fetch-depth: 0
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv
+
       - name: Wait for CI success
         env:
           GH_TOKEN: ${{ github.token }}
@@ -102,15 +109,18 @@ jobs:
           print(f"flutter={next_flutter}")
           PY
 
+      - name: Refresh uv.lock
+        run: uv lock
+
       - name: Commit version bump
         run: |
-          if git diff --quiet -- app/pubspec.yaml pyproject.toml; then
+          if git diff --quiet -- app/pubspec.yaml pyproject.toml uv.lock; then
             echo "No version changes to commit."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/pubspec.yaml pyproject.toml
+          git add app/pubspec.yaml pyproject.toml uv.lock
           git commit -m "chore(release): bump patch version to ${{ steps.bump.outputs.flutter }} [skip ci]"
           git push origin HEAD:develop

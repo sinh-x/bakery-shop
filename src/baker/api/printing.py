@@ -12,10 +12,11 @@ import os
 import socket
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 from PIL import Image
 
+from baker.api.auth import resolve_actor, resolve_staff_name
 from baker.api.receipts import (
     _order_detail,
     _render_bus_label,
@@ -141,6 +142,7 @@ def _render_to_png(img: Image.Image) -> bytes:
 @router.post("/{ref}/print")
 def print_receipt(
     ref: str,
+    request: Request,
     type: str = Query(..., description="Receipt type: work_ticket or customer"),
     item_id: Optional[int] = Query(None, description="Work item ID (required for work_ticket)"),
     printed_by: Optional[str] = Query(None, description="Tên nhân viên in phiếu"),
@@ -165,7 +167,8 @@ def print_receipt(
             detail="item_id is required for work_ticket type",
         )
 
-    normalized_printed_by = printed_by or ""
+    normalized_printed_by = resolve_actor(request, printed_by or "")
+    print_staff_name = resolve_staff_name(request)
     order_id: Optional[int] = None
 
     with get_db() as conn:
@@ -344,6 +347,11 @@ def print_receipt(
                            WHEN work_ticket_printed_at IS NULL THEN ?
                            WHEN COALESCE(work_ticket_printed_by, '') = '' AND ? <> '' THEN ?
                            ELSE work_ticket_printed_by
+                       END,
+                       work_ticket_printed_staff_name = CASE
+                           WHEN work_ticket_printed_at IS NULL THEN ?
+                           WHEN COALESCE(work_ticket_printed_staff_name, '') = '' AND ? <> '' THEN ?
+                           ELSE work_ticket_printed_staff_name
                        END
                    WHERE id = ?""",
                 (
@@ -351,6 +359,9 @@ def print_receipt(
                     normalized_printed_by,
                     normalized_printed_by,
                     normalized_printed_by,
+                    print_staff_name,
+                    print_staff_name,
+                    print_staff_name,
                     order_id,
                 ),
             )

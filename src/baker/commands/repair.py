@@ -52,6 +52,8 @@ from baker.db.schema import (
     INVENTORY_PURCHASE_CATEGORIES,
     REVENUE_UPDATE_TOLERANCE,
     TIEN_RUT_HELD_CODE,
+    TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE,
+    UNALLOCATED_BANK_CODE,
     _account_id_by_code,
     _ensure_ap_vendor_sub_account,
 )
@@ -66,6 +68,7 @@ from baker.services.journal_sync import (
     _is_locked,
     _order_cogs_entry,
     _reconcile_order_revenue_entry,
+    _resolve_delivered_timestamp,
     _reverse_journal_entry,
     _sync_cancelled_order_journal,
     _sync_delivered_order_journal,
@@ -2208,3 +2211,399 @@ def repair_debt_expenses_cmd(event_id, repair_all, dry_run):
         return
 
     _print_debt_expenses_report(results, dry_run=dry_run)
+
+
+# ---------------------------------------------------------------------------
+# ``baker repair-delivered-dates`` — DG-260 Phase 2 repair subcommand
+# (FR4, NFR1, NFR2, NFR3, NFR4, AC2, AC5)
+# ---------------------------------------------------------------------------
+
+
+def _entries_needing_date_repair(conn):
+    """Return entries whose transaction_date differs from delivered timestamp.
+
+    Scans ``source_type IN ('order', 'order_cogs', 'order_shipping_release')``
+    and compares each entry's ``transaction_date`` against the order's
+    delivered-event timestamp (via :func:`_resolve_delivered_timestamp`).
+    Entries whose transaction_date already matches are excluded (idempotent).
+    Entries for orders without a delivered event are skipped.
+    """
+    rows = conn.execute(
+        """
+        SELECT je.id          AS entry_id,
+               je.source_type AS source_type,
+               je.source_id   AS source_id,
+               je.transaction_date AS transaction_date,
+               je.locked_at   AS locked_at
+        FROM journal_entries je
+        WHERE je.source_type IN ('order', 'order_cogs', 'order_shipping_release')
+          AND je.description NOT LIKE 'Reversal:%'
+        ORDER BY je.id
+        """
+    ).fetchall()
+
+    results = []
+    seen_order_refs = {}
+    for r in rows:
+        entry_id = int(r["entry_id"])
+        source_type = r["source_type"]
+        source_id = int(r["source_id"])
+        current_td = r["transaction_date"]
+        locked = bool(r["locked_at"])
+
+        if source_id not in seen_order_refs:
+            seen_order_refs[source_id] = _order_ref(conn, source_id)
+        order_ref = seen_order_refs[source_id]
+
+        delivered_ts = _resolve_delivered_timestamp(conn, source_id, order_ref)
+        if delivered_ts is None:
+            continue
+
+        if current_td == delivered_ts:
+            continue
+
+        results.append({
+            "entry_id": entry_id,
+            "source_type": source_type,
+            "source_id": source_id,
+            "order_ref": order_ref,
+            "current_transaction_date": current_td,
+            "expected_transaction_date": delivered_ts,
+            "locked": locked,
+        })
+    return results
+
+
+def _process_date_repair_entry(conn, entry, *, dry_run):
+    """Repair one entry's transaction_date.
+
+    Locked entries are reported as ``locked`` and skipped.
+    Dry-run returns ``will-repair`` without mutating.
+    """
+    if entry["locked"]:
+        return {
+            "entry_id": entry["entry_id"],
+            "source_type": entry["source_type"],
+            "source_id": entry["source_id"],
+            "order_ref": entry["order_ref"],
+            "current_transaction_date": entry["current_transaction_date"],
+            "expected_transaction_date": entry["expected_transaction_date"],
+            "action": "locked",
+        }
+
+    if dry_run:
+        return {
+            "entry_id": entry["entry_id"],
+            "source_type": entry["source_type"],
+            "source_id": entry["source_id"],
+            "order_ref": entry["order_ref"],
+            "current_transaction_date": entry["current_transaction_date"],
+            "expected_transaction_date": entry["expected_transaction_date"],
+            "action": "will-repair",
+        }
+
+    conn.execute(
+        "UPDATE journal_entries SET transaction_date = ? WHERE id = ?",
+        (entry["expected_transaction_date"], entry["entry_id"]),
+    )
+    return {
+        "entry_id": entry["entry_id"],
+        "source_type": entry["source_type"],
+        "source_id": entry["source_id"],
+        "order_ref": entry["order_ref"],
+        "current_transaction_date": entry["current_transaction_date"],
+        "expected_transaction_date": entry["expected_transaction_date"],
+        "action": "repaired",
+    }
+
+
+_SOURCE_TYPE_LABELS = {
+    "order": "Doanh thu",
+    "order_cogs": "Giá vốn (COGS)",
+    "order_shipping_release": "Giải phóng ship",
+}
+
+
+def _print_date_repair_report(results, *, dry_run):
+    """Print the date repair report table and per-type summary."""
+    click.echo("Sửa ngày giao dịch (transaction_date) bút toán đơn hàng")
+    click.echo("=" * 50)
+    click.echo("")
+    click.echo(
+        f"{'Mã đơn':<16}{'Loại':<24}{'Ngày cũ':<22}{'Ngày mới':<22}{'Hành động':<16}"
+    )
+    click.echo("-" * 100)
+    for r in results:
+        st_label = _SOURCE_TYPE_LABELS.get(r["source_type"], r["source_type"])
+        click.echo(
+            f"{r['order_ref'][:15]:<16}"
+            f"{st_label:<24}"
+            f"{(r['current_transaction_date'] or ''):<22}"
+            f"{r['expected_transaction_date']:<22}"
+            f"{_ACTION_LABELS.get(r['action'], r['action']):<16}"
+        )
+    click.echo("-" * 100)
+
+    repaired = sum(1 for r in results if r["action"] == "repaired")
+    locked = sum(1 for r in results if r["action"] == "locked")
+    will_repair = sum(1 for r in results if r["action"] == "will-repair")
+
+    parts = []
+    if dry_run:
+        parts.append(f"sẽ sửa: {will_repair}")
+    else:
+        if repaired:
+            parts.append(f"đã sửa: {repaired}")
+        if locked:
+            parts.append(f"khoá: {locked}")
+    click.echo(f"Tổng: {len(results)} bút toán  |  " + ", ".join(parts))
+
+
+@click.command("repair-delivered-dates")
+@click.option("--dry-run", is_flag=True, default=False, help="Xem trước thay đổi, không ghi vào CSDL.")
+def repair_delivered_dates_cmd(dry_run):
+    """Sửa ngày giao dịch (transaction_date) của bút toán đơn hàng.
+
+    Tìm các bút toán ``source_type`` là ``order``, ``order_cogs``,
+    ``order_shipping_release`` có ``transaction_date`` khác với thời điểm
+    giao hàng (delivered event timestamp). Đặt lại ``transaction_date``
+    về thời điểm giao hàng thực tế. Bút toán đã khoá được bỏ qua.
+
+    Lệnh idempotent: chạy lần hai sẽ không tìm thấy bút toán nào cần sửa.
+    """
+    try:
+        with get_db() as conn:
+            entries = _entries_needing_date_repair(conn)
+            results = [
+                _process_date_repair_entry(conn, e, dry_run=dry_run)
+                for e in entries
+            ]
+            if not dry_run:
+                conn.commit()
+    except Exception:  # noqa: BLE001 — top-level CLI guard
+        logger.exception("Repair delivered-dates CLI error")
+        click.echo(
+            "Lỗi khi sửa ngày giao dịch. Xem log máy chủ để biết chi tiết.",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    if not results:
+        click.echo("(không có bút toán nào cần sửa ngày giao dịch)")
+        return
+
+    _print_date_repair_report(results, dry_run=dry_run)
+
+
+# ---------------------------------------------------------------------------
+# ``baker repair-unallocated-transfers`` — DG-244 Phase 5 historical backfill
+# (FR5 backfill aspect, NFR1, NFR3, AC6)
+# ---------------------------------------------------------------------------
+
+# Legacy default asset code that pre-Phase-4 transfer journal entries were
+# routed to. Phase 4 moved the live routing to UNALLOCATED_BANK_CODE (1290);
+# this backfill re-points historical journal entries that still reference the
+# legacy default. We only move the asset (debit) side of transfer payment
+# transactions whose ``payment_source`` is empty — expense journals and
+# transactions with an explicit payment_source are untouched.
+_LEGACY_TRANSFER_ASSET_CODE = "1200"
+
+
+def _transfer_txns_with_legacy_asset_line(conn, order_id=None):
+    """Return non-invalidated transfer payment transactions whose journal
+    entry asset line still points to the legacy default account (1200).
+
+    Scope (FR5 backfill aspect + NFR3):
+      - ``payment_transactions.method == 'transfer'`` (only transfers were
+        routed to 1200 by ``PAYMENT_METHOD_TO_ASSET_CODE``; cash/card always
+        used 1100 and are NOT in scope).
+      - ``payment_source`` empty/NULL — transactions with an explicit
+        payment_source (1210/1220) are already on the correct sub-account and
+        MUST NOT be touched (NFR3).
+      - Journal entry's asset (debit) line references account 1200. After
+        Phase 4 re-routes the entry to 1290, this condition is false and the
+        row drops out — idempotent.
+
+    Invalidated transactions are excluded (their journal entry is reversed or
+    absent). Orders with no journal entry are excluded — they have no asset
+    line to reassign (handled separately by ``repair-payment-journal``).
+    """
+    from baker.models.payment_transaction import _invalidation_filter
+
+    invalidation = _invalidation_filter(conn)
+    sql = f"""
+        SELECT DISTINCT pt.id AS txn_id, pt.amount, pt.type, pt.order_id,
+               je.id AS entry_id
+        FROM payment_transactions pt
+        JOIN journal_entries je
+          ON je.source_type = 'payment_transaction' AND je.source_id = pt.id
+        JOIN journal_lines jl
+          ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE pt.method = 'transfer'
+          AND (pt.payment_source IS NULL OR pt.payment_source = '')
+          {invalidation}
+          AND a.code = ?
+          AND jl.debit > 0
+          AND je.description NOT LIKE 'Reversal:%'
+    """
+    params = [_LEGACY_TRANSFER_ASSET_CODE]
+    if order_id is not None:
+        sql += " AND pt.order_id = ?"
+        params.append(order_id)
+    sql += " ORDER BY pt.id ASC"
+    rows = conn.execute(sql, params).fetchall()
+    return [
+        {
+            "txn_id": int(r["txn_id"]),
+            "amount": float(r["amount"] or 0),
+            "type": r["type"] or "deposit",
+            "order_id": int(r["order_id"]) if r["order_id"] is not None else None,
+            "entry_id": int(r["entry_id"]),
+        }
+        for r in rows
+    ]
+
+
+def _process_unallocated_transfer(conn, txn, *, dry_run: bool) -> dict:
+    """Re-point one transaction's asset line from 1200 to 1290 (FR5 backfill).
+
+    Re-runs :func:`_sync_payment_journal` for the transaction so the entry is
+    rebuilt via :func:`_build_payment_journal_lines` (the single source of
+    truth for line construction). Because the persisted ``payment_source`` is
+    empty and ``method == 'transfer'``, :func:`_resolve_transaction_asset_code`
+    routes the asset side to ``UNALLOCATED_BANK_CODE`` (1290). The credit side
+    (2100 / 2200 / 2400 split) is rebuilt identically — no double-entry, no
+    duplicate journal entries, the existing entry is updated in place when
+    unlocked, or reversed + recreated when locked.
+
+    Idempotent (NFR1): once the asset line is on 1290, the transaction drops
+    out of :func:`_transfer_txns_with_legacy_asset_line` so a second run is a
+    no-op. Expense journals are never touched (NFR1) — only the
+    ``payment_transaction`` source-type entry is re-synced.
+    """
+    txn_id = txn["txn_id"]
+    order_ref = _order_ref(conn, txn["order_id"]) if txn["order_id"] else "-"
+    if dry_run:
+        return {
+            "txn_id": txn_id,
+            "amount": txn["amount"],
+            "order_ref": order_ref,
+            "from_code": _LEGACY_TRANSFER_ASSET_CODE,
+            "to_code": UNALLOCATED_BANK_CODE,
+            "action": "will-backfill",
+        }
+    _sync_payment_journal(
+        conn,
+        txn_id,
+        txn["amount"],
+        txn["type"],
+        "transfer",
+        order_id=txn["order_id"],
+        payment_source="",
+    )
+    return {
+        "txn_id": txn_id,
+        "amount": txn["amount"],
+        "order_ref": order_ref,
+        "from_code": _LEGACY_TRANSFER_ASSET_CODE,
+        "to_code": UNALLOCATED_BANK_CODE,
+        "action": "backfilled",
+    }
+
+
+def _print_unallocated_transfers_report(results, *, dry_run):
+    """Print the unallocated-transfer backfill report table and summary."""
+    click.echo("Chuyển bút toán chuyển khoản cũ sang TK chưa phân bổ (1290)")
+    click.echo("=" * 66)
+    click.echo("")
+    click.echo(
+        f"{'Mã GD':<10}{'Số tiền':>16}{'Đơn hàng':<16}{'Hành động':<16}"
+    )
+    click.echo("-" * 58)
+    for r in results:
+        click.echo(
+            f"#{r['txn_id']:<9}"
+            f"{_vn_amount(r['amount']):>16}"
+            f"{r['order_ref'][:15]:<16}"
+            f"{_ACTION_LABELS.get(r['action'], r['action']):<16}"
+        )
+    click.echo("-" * 58)
+
+    backfilled = sum(1 for r in results if r["action"] == "backfilled")
+    will_backfill = sum(1 for r in results if r["action"] == "will-backfill")
+
+    parts = []
+    if dry_run:
+        parts.append(f"sẽ sửa: {will_backfill}")
+    else:
+        parts.append(f"đã sửa: {backfilled}")
+    click.echo(f"Tổng: {len(results)} giao dịch  |  " + ", ".join(parts))
+
+
+@click.command("repair-unallocated-transfers")
+@click.option("--order-id", "order_id", type=int, default=None,
+              help="ID đơn hàng cần chuyển bút toán chuyển khoản.")
+@click.option("--all", "repair_all", is_flag=True, default=False,
+              help="Chuyển tất cả giao dịch chuyển khoản cũ sang TK 1290.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Xem trước thay đổi, không ghi vào CSDL.")
+def repair_unallocated_transfers_cmd(order_id, repair_all, dry_run):
+    """Chuyển bút toán chuyển khoản cũ (1200) sang TK chưa phân bổ (1290).
+
+    DG-244 Phase 5 — historical backfill (FR5 backfill aspect, AC6):
+
+      Tìm các giao dịch thanh toán (``payment_transactions``) có
+      ``method = 'transfer'`` và ``payment_source`` rỗng, mà bút toán nhật ký
+      hiện tại ghi Nợ tài khoản 1200 (default cũ trước Phase 4). Lệnh tạo lại
+      bút toán qua ``_sync_payment_journal`` để tài sản (Nợ) chuyển sang TK
+      1290 (Un-allocated Bank). Bên Có (2100/2200/2400) giữ nguyên — không tạo
+      double-entry.
+
+      * Giao dịch có ``payment_source`` (1210/1220) KHÔNG bị ảnh hưởng (NFR3).
+      * Bút toán chi phí KHÔNG bị ảnh hưởng (NFR1).
+      * Giao dịch tiền mặt/thẻ KHÔNG bị ảnh hưởng (chỉ ``method='transfer'`` mới
+        từng được route tới 1200).
+      * Lệnh idempotent: chạy lần hai sẽ không tìm thấy giao dịch nào cần sửa.
+
+    Scope: backend only. Mọi chạy trên production database là bước UAT/ops
+    dành cho Sinh — lệnh này chỉ triển khai và kiểm thử.
+
+    Rollback stance: lệnh chỉ cập nhật tài khoản Nợ của bút toán
+    payment_transaction. Để rollback, chạy lại ``_sync_payment_journal`` thủ
+    công với asset code 1200 (không tự động rollback — mục đích là migration
+    một chiều sang 1290 theo FR5).
+    """
+    if order_id is None and not repair_all:
+        click.echo("Cần chỉ định --order-id <id> hoặc --all.", err=True)
+        raise SystemExit(1)
+    if order_id is not None and repair_all:
+        click.echo("Không thể dùng --order-id và --all cùng lúc.", err=True)
+        raise SystemExit(1)
+
+    try:
+        with get_db() as conn:
+            txns = _transfer_txns_with_legacy_asset_line(
+                conn, order_id=order_id
+            )
+            results = [
+                _process_unallocated_transfer(conn, t, dry_run=dry_run)
+                for t in txns
+            ]
+            if not dry_run:
+                conn.commit()
+    except Exception:  # noqa: BLE001 — top-level CLI guard
+        logger.exception("Repair unallocated-transfers CLI error")
+        click.echo(
+            "Lỗi khi chuyển bút toán chuyển khoản. Xem log máy chủ để biết chi tiết.",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    if not results:
+        click.echo(
+            "(không có giao dịch chuyển khoản nào cần chuyển sang TK 1290)"
+        )
+        return
+
+    _print_unallocated_transfers_report(results, dry_run=dry_run)

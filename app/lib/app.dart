@@ -31,8 +31,10 @@ class BakeryApp extends ConsumerWidget {
       builder: (context, child) {
         final comparison = comparisonAsync.asData?.value;
         final warningState = comparison?.state;
-        final showWarning = warningState == FingerprintComparisonState.mismatch ||
-            warningState == FingerprintComparisonState.serverUnknown;
+        final dismissed = ref.watch(fingerprintWarningDismissedProvider);
+        final showWarning = !dismissed && (
+            warningState == FingerprintComparisonState.mismatch ||
+            warningState == FingerprintComparisonState.serverUnknown);
 
         if (!showWarning) {
           return child ?? const SizedBox.shrink();
@@ -49,13 +51,13 @@ class BakeryApp extends ConsumerWidget {
   }
 }
 
-class _FingerprintWarningStrip extends StatelessWidget {
+class _FingerprintWarningStrip extends ConsumerWidget {
   const _FingerprintWarningStrip({required this.comparison});
 
   final FingerprintComparison comparison;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -85,6 +87,16 @@ class _FingerprintWarningStrip extends StatelessWidget {
                       color: colorScheme.onErrorContainer,
                       fontWeight: FontWeight.w600,
                     ),
+                  ),
+                ),
+                Semantics(
+                  label: VN.dismissFingerprintWarning,
+                  button: true,
+                  child: IconButton(
+                    icon: Icon(Icons.close, size: 18, color: colorScheme.onErrorContainer),
+                    onPressed: () => ref.read(fingerprintWarningDismissedProvider.notifier).dismiss(),
+                    padding: const EdgeInsets.all(11),
+                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                   ),
                 ),
               ],

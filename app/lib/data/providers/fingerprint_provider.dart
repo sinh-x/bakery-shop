@@ -3,6 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/fingerprint_service.dart';
 import '../../shared/build_fingerprint.dart';
 
+final fingerprintWarningDismissedProvider = NotifierProvider<
+  _FingerprintWarningDismissedNotifier, bool>(
+  _FingerprintWarningDismissedNotifier.new,
+);
+
 enum FingerprintComparisonState { match, mismatch, serverUnknown, unknown }
 
 class FingerprintComparison {
@@ -37,6 +42,15 @@ class FingerprintComparison {
     return 'FingerprintComparison(state: $state, '
         'clientFingerprint: $clientFingerprint, '
         'serverFingerprint: $serverFingerprint)';
+  }
+}
+
+class _FingerprintWarningDismissedNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void dismiss() {
+    state = true;
   }
 }
 

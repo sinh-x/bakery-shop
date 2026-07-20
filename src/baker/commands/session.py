@@ -56,6 +56,8 @@ def session_list():
     table = Table(title=f"Active Sessions ({len(rows)})", show_lines=False, padding=(0, 1))
     table.add_column("Username", style="bold", no_wrap=False, overflow="fold")
     table.add_column("Role", width=8)
+    table.add_column("Staff Name", width=16)
+    table.add_column("Staff Role", width=12)
     table.add_column("IP", width=15)
     table.add_column("Device", width=18)
     table.add_column("App Ver", width=10)
@@ -69,9 +71,13 @@ def session_list():
         app_ver = row["app_version"] or ""
         if len(app_ver) > 10:
             app_ver = app_ver[:10]
+        staff_name = row["staff_name"] or "-"
+        staff_role = row["staff_role"] or "-"
         table.add_row(
             row["username"],
             row["role"],
+            staff_name,
+            staff_role,
             row["client_ip"] or "",
             device,
             app_ver,

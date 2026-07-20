@@ -1,10 +1,12 @@
 """Payment transaction API routes."""
 
 import logging
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from baker.api.auth import resolve_actor
 from baker.db.connection import get_db
 from baker.models.payment_transaction import PaymentMethod, PaymentTransaction, TransactionType
 from baker.utils.time import now_utc
@@ -14,11 +16,15 @@ logger = logging.getLogger("baker.server")
 router = APIRouter(prefix="/api/orders", tags=["payment-transactions"])
 
 
+# NFR3: ``payment_source`` accepts absent, null, or empty string. Using
+# ``Optional[str]`` (default ``""``) lets the API tolerate ``null`` payloads
+# from clients that distinguish "unset" from "empty"; both normalize to "".
 class TransactionCreate(BaseModel):
     amount: float
     type: str = "deposit"
     method: str = "cash"
     note: str = ""
+    payment_source: Optional[str] = ""
 
 
 class TransactionUpdate(BaseModel):
@@ -26,6 +32,7 @@ class TransactionUpdate(BaseModel):
     type: str | None = None
     method: str | None = None
     note: str | None = None
+    payment_source: Optional[str] = None
 
 
 class InvalidationRequest(BaseModel):
@@ -84,6 +91,7 @@ def create_transaction(ref: str, body: TransactionCreate):
             type=body.type,
             method=body.method,
             note=body.note,
+            payment_source=body.payment_source or "",
         )
         txn.save(conn)
 
@@ -91,11 +99,14 @@ def create_transaction(ref: str, body: TransactionCreate):
         # Bus orders split the credit between Customer Deposits (2100) and
         # Bus Shipping Held (2200) — pass order_id so the journal sync reads
         # delivery_type/shipping_fee from the orders table (DG-191 Phase 2).
+        # DG-244 Phase 4: payment_source routes the asset side to a distinct
+        # bank sub-account (1210/1220) or the un-allocated fallback (1290).
         from baker.services.journal_sync import _sync_payment_journal, run_journal_sync, sync_status_to_warning
         sync_status = run_journal_sync(
             _sync_payment_journal,
             conn, txn.id, body.amount, body.type, body.method,
             order_id=order_id,
+            payment_source=body.payment_source or "",
             log_label=f"payment journal sync for txn {txn.id}",
             source_type="payment_transaction",
             source_id=txn.id,
@@ -146,20 +157,25 @@ def update_transaction(ref: str, txn_id: int, body: TransactionUpdate):
             txn.method = body.method
         if body.note is not None:
             txn.note = body.note
+        if body.payment_source is not None:
+            txn.payment_source = body.payment_source or ""
 
         conn.execute(
-            "UPDATE payment_transactions SET amount = ?, type = ?, method = ?, note = ? WHERE id = ?",
-            (txn.amount, txn.type, txn.method, txn.note, txn.id),
+            "UPDATE payment_transactions SET amount = ?, type = ?, method = ?, note = ?, payment_source = ? WHERE id = ?",
+            (txn.amount, txn.type, txn.method, txn.note, txn.payment_source, txn.id),
         )
 
         # Re-sync double-entry journal entry (DG-175). Pass order_id so the
         # bus-shipping split is recomputed from the current delivery_type /
-        # shipping_fee (DG-191 Phase 2).
+        # shipping_fee (DG-191 Phase 2). DG-244 Phase 4: payment_source
+        # re-routes the asset side; an update on payment_source re-syncs the
+        # journal entry to the correct bank sub-account.
         from baker.services.journal_sync import _sync_payment_journal, run_journal_sync, sync_status_to_warning
         sync_status = run_journal_sync(
             _sync_payment_journal,
             conn, txn.id, txn.amount, txn.type, txn.method,
             order_id=order_id,
+            payment_source=txn.payment_source or "",
             log_label=f"payment journal re-sync for txn {txn.id}",
             source_type="payment_transaction",
             source_id=txn.id,
@@ -180,22 +196,27 @@ def delete_transaction(ref: str, txn_id: int):
     with get_db() as conn:
         order_id = _resolve_order_id(conn, ref)
         row = conn.execute(
-            "SELECT id, amount, type, method FROM payment_transactions WHERE id = ? AND order_id = ?",
+            "SELECT id, amount, type, method, payment_source FROM payment_transactions WHERE id = ? AND order_id = ?",
             (txn_id, order_id),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Không tìm thấy giao dịch")
+        payment_source = row["payment_source"] if "payment_source" in row.keys() else ""
         conn.execute("DELETE FROM payment_transactions WHERE id = ?", (txn_id,))
 
         # Reverse/delete the journal entry for the deleted transaction (DG-175).
         # Pass order_id so any bus-shipping held balance is consistent on
         # subsequent re-syncs (DG-191 Phase 2). No response body (204) — the
         # failure counter is surfaced via /api/health (OPS-1).
+        # DG-244 Phase 4: payment_source is passed for API symmetry; the
+        # deleted=True path reverses/deletes the existing entry directly
+        # without re-resolving asset codes, so it is informational here.
         from baker.services.journal_sync import _sync_payment_journal, run_journal_sync
         run_journal_sync(
             _sync_payment_journal,
             conn, txn_id, float(row["amount"]), row["type"], row["method"],
             order_id=order_id, deleted=True,
+            payment_source=payment_source or "",
             log_label=f"payment journal delete-sync for txn {txn_id}",
             source_type="payment_transaction",
             source_id=txn_id,
@@ -212,7 +233,7 @@ def _now_iso() -> str:
 
 
 @router.post("/{ref}/transactions/{txn_id}/invalidate")
-def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest):
+def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest, request: Request):
     """Đánh dấu giao dịch là không hợp lệ (soft-delete) + đảo bút toán journal.
 
     FR1/FR3: Sets ``invalidated_at``/``invalidated_by`` and reverses (locked)
@@ -238,7 +259,7 @@ def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest):
             )
 
         invalidated_at = _now_iso()
-        invalidated_by = body.invalidatedBy or ""
+        invalidated_by = resolve_actor(request, body.invalidatedBy)
         conn.execute(
             "UPDATE payment_transactions "
             "SET invalidated_at = ?, invalidated_by = ? WHERE id = ?",
@@ -248,11 +269,15 @@ def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest):
         # FR3/NFR2: journal sync is fire-and-forget. _sync_payment_journal
         # (deleted=True) reverses locked entries (preserving the original
         # transaction_date) and deletes unlocked ones.
+        # DG-244 Phase 4: payment_source passed for symmetry (informational
+        # on the deleted=True path which reverses/deletes the existing entry).
+        payment_source = row["payment_source"] if "payment_source" in row.keys() else ""
         from baker.services.journal_sync import _sync_payment_journal, run_journal_sync, sync_status_to_warning
         sync_status = run_journal_sync(
             _sync_payment_journal,
             conn, txn_id, float(row["amount"]), row["type"], row["method"],
             order_id=order_id, deleted=True,
+            payment_source=payment_source or "",
             log_label=f"payment journal invalidate-sync for txn {txn_id}",
             source_type="payment_transaction",
             source_id=txn_id,
@@ -311,11 +336,14 @@ def restore_transaction(ref: str, txn_id: int):
         # transaction's created_at for transaction_date. If a prior reversal
         # entry exists (locked case), a new entry is created alongside it; the
         # reversal is left intact so the locked period's books are preserved.
+        # DG-244 Phase 4: payment_source routes the asset side on restore.
+        payment_source = row["payment_source"] if "payment_source" in row.keys() else ""
         from baker.services.journal_sync import _sync_payment_journal, run_journal_sync, sync_status_to_warning
         sync_status = run_journal_sync(
             _sync_payment_journal,
             conn, txn_id, float(row["amount"]), row["type"], row["method"],
             order_id=order_id,
+            payment_source=payment_source or "",
             log_label=f"payment journal restore-sync for txn {txn_id}",
             source_type="payment_transaction",
             source_id=txn_id,

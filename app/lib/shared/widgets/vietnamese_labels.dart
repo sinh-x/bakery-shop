@@ -299,7 +299,16 @@ class VN {
       'Cảnh báo: mã ứng dụng khác mã máy chủ';
   static const serverFingerprintUnavailableWarning =
       'Cảnh báo: máy chủ chưa cung cấp mã phiên bản, có thể đang chạy bản cũ';
+  static const dismissFingerprintWarning = 'Đóng cảnh báo phiên bản';
   static const createdBy = 'Người tạo';
+
+  // Settings — staff-user binding (DG-259 Phase 4)
+  static const staffBindingTitle = 'Gắn nhân viên';
+  static const staffBindingHelp = 'Chọn nhân viên cho tài khoản này';
+  static const staffBindingNone = 'Chưa gắn kết';
+  static const staffBindingSaved = 'Đã cập nhật nhân viên';
+  static const staffBindingSaveFailed = 'Không thể cập nhật nhân viên';
+  static const staffBindingLoadError = 'Không tải được gắn kết nhân viên';
 
   // Printer paper mode (DG-183 Phase 2)
   static const paperModeLabel = 'Loại giấy in';
@@ -546,10 +555,6 @@ class VN {
   static const excessPaymentWarningTitle = 'Số tiền không hợp lệ';
   static const excessPaymentWarningMessage =
       'Số tiền thanh toán vượt quá tổng tiền sản phẩm. Vui lòng điều chỉnh lại.';
-  static const deliverNow = 'Giao ngay?';
-  static const deliverNowPrompt = 'Giao bánh cho khách ngay?';
-  static const deliverNowYes = 'Giao ngay';
-  static const deliverNowNo = 'Để sau';
   static const confirmCounterPayment = 'Xác nhận thanh toán đơn tại quầy';
   static const removeFromCartTitle = 'Xóa sản phẩm khỏi giỏ?';
   static const decreaseQuantity = 'Giảm số lượng';
@@ -656,6 +661,10 @@ class VN {
   static const paymentSourcePhuongVCB = 'TK Phượng VCB';
   static const paymentSourceAnVCB = 'TK Ân VCB';
   static const paymentSourceStaffAdvance = 'Nhân viên ứng trước';
+
+  // Target bank account selector for payment transactions (DG-244 Phase 2)
+  static const paymentTargetAccountLabel = 'TK đích';
+  static const paymentNoAccount = 'Chưa chọn';
 
   // Reimbursed
   static const reimbursedYes = 'Đã hoàn lại';
@@ -1112,6 +1121,14 @@ String paymentMethodLabel(String method) {
       return method;
   }
 }
+
+/// Optional target bank account options for payment transactions (DG-244).
+/// Empty default is represented by `null`/empty string at the call boundary;
+/// this list holds only the selectable VCB accounts (FR2).
+const paymentTargetAccounts = <String>[
+  VN.paymentSourcePhuongVCB,
+  VN.paymentSourceAnVCB,
+];
 
 // Work item status mapping
 const workItemStatusMap = {

@@ -579,21 +579,27 @@ def _check_cash_flow_integrity(conn) -> dict[str, Any]:
     """Verify net change in cash/asset accounts equals sum of cash inflows
     minus outflows across all journal entries.
 
-    Cash accounts are asset accounts with code 1100 (Cash on Hand) and
-    1200 (Bank Account). The net debit minus credit on these accounts
-    should equal the sum of all cash-affecting journal line movements.
+    Cash accounts are asset accounts with code 1100 (Cash on Hand), 1200
+    (Bank Account parent), and the DG-244 Phase 4 bank sub-accounts 1210
+    (Phượng VCB), 1220 (Ân VCB), 1290 (un-allocated). The net debit minus
+    credit on these accounts should equal the sum of all cash-affecting
+    journal line movements.
     """
-    cash_codes = ("1100", "1200")
+    # DG-244 Phase 4: include bank sub-accounts so cash held in 1210/1220/1290
+    # is counted. 1200 itself is kept for owner-capital transfers and the
+    # expense flow (which still maps both VCB labels to 1200).
+    cash_codes = ("1100", "1200", "1210", "1220", "1290")
 
     # Net change in cash accounts
+    placeholders = ",".join("?" * len(cash_codes))
     cash_rows = conn.execute(
-        """
+        f"""
         SELECT a.code, a.name,
                COALESCE(SUM(jl.debit), 0)  AS total_debit,
                COALESCE(SUM(jl.credit), 0) AS total_credit
         FROM accounts a
         LEFT JOIN journal_lines jl ON jl.account_id = a.id
-        WHERE a.code IN (?, ?)
+        WHERE a.code IN ({placeholders})
         GROUP BY a.id
         ORDER BY a.code
         """,
@@ -617,12 +623,12 @@ def _check_cash_flow_integrity(conn) -> dict[str, Any]:
     # Sum of all cash-affecting journal lines (debit to cash = inflow,
     # credit from cash = outflow)
     flow_rows = conn.execute(
-        """
+        f"""
         SELECT SUM(jl.debit)  AS total_inflow,
                SUM(jl.credit) AS total_outflow
         FROM journal_lines jl
         JOIN accounts a ON a.id = jl.account_id
-        WHERE a.code IN (?, ?)
+        WHERE a.code IN ({placeholders})
         """,
         cash_codes,
     ).fetchone()

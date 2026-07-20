@@ -3,7 +3,8 @@
 > **Purpose:** Verify production database health after merging `feature/DG-175-double-entry-accounting` and deploying to production.
 > **Audience:** Sinh (app owner/developer)
 > **Created:** 2026-06-28
-> **Related:** [DG-175 Branch Rollout Plan](../agent-teams/requirements/artifacts/2026-06-28-dg175-branch-rollout-migration-plan.md), [UAT TS-5](../agent-teams/requirements/artifacts/2026-06-28-dg175-branch-rollout-migration-plan-uat.md)
+> **Updated:** 2026-07-18 (refreshed for release v0.7.14 — schema v75 and account 2500; supersedes stale v54 / account-2400-only checks)
+> **Related:** [DG-175 Branch Rollout Plan](../agent-teams/requirements/artifacts/2026-06-28-dg175-branch-rollout-migration-plan.md), [UAT TS-5](../agent-teams/requirements/artifacts/2026-06-28-dg175-branch-rollout-migration-plan-uat.md), [Release v0.7.14 Rollback Plan](../agent-teams/builder/artifacts/2026-07-18-release-v0.7.14-rollback-plan.md)
 
 ---
 
@@ -36,43 +37,52 @@ Verify the database is at the expected maximum schema version.
 docker compose --profile prod exec baker-prod baker db status
 ```
 
-- [ ] **1.1** Current schema version is **54**
+- [ ] **1.1** Current schema version is **75**
 - [ ] **1.2** Status shows **"up to date"** (no pending migrations)
 - [ ] **1.3** No errors or tracebacks in the output
 
 **Expected output example:**
 ```
-Current schema version: 54
+Current schema version: 75
 Status: up to date
 ```
+
+> **v0.7.14 note:** Migrations v68–v75 cover auth RBAC (v68–v72), chart-of-accounts account 2500 (v73), NULL `customer_id` backfill (v74), and primary `customer_phones` backfill (v75). All are additive or idempotent. If `baker db status` reports a version less than 75, run `baker db migrate` and re-check.
 
 ---
 
 ## §2 Chart of Accounts Completeness
 
-Verify all expected accounts exist in the chart of accounts, including the newly added account 2400 (Tiền Rút Held).
+Verify all expected accounts exist in the chart of accounts, including the newly added account 2500 (Phải trả người bán / Accounts Payable) for release v0.7.14, alongside the previously added account 2400 (Tiền Rút Held).
 
 **Check:**
 
+> **Note:** The `baker-prod` image (`python:3.12-slim`) does not ship `sqlite3` or `curl`. The DB is bind-mounted to the host at `./prod/data/baker.db` (`docker-compose.yml:12-13`), so run all SQL host-side from the bakery-shop project root. Stop the stack first for any WRITE operation.
+
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
-  "SELECT code, name_vn FROM accounts ORDER BY CAST(code AS INTEGER);"
+sqlite3 ./prod/data/baker.db \
+  "SELECT code, name FROM accounts ORDER BY CAST(code AS INTEGER);"
 ```
 
-- [ ] **2.1** Account **2400** (Tiền Rút Held) is present — exactly 1 row with `code = '2400'`
-- [ ] **2.2** All standard accounts are present: 1100 (Tiền mặt), 1200 (Tiền gửi NH), 1300 (Phải thu KH), 1400 (Hàng tồn kho), 1500 (TSCĐ), 2100 (Phải trả NB), 2200 (Phải trả NV), 2300 (Vay NH), 3000 (Vốn CSH), 4000 (Doanh thu), 4100 (Doanh thu đặt cọc), 4200 (Doanh thu SP tặng), 5000 (Giá vốn), 5100 (Giá vốn SP tặng), 6000 (Chi phí bán hàng), 6100 (Chi phí QLDN), 6200 (Chi phí vận chuyển), 6300 (Chi phí lương), 6400 (Chi phí khác), 7000 (Xác định KQKD)
+- [ ] **2.1** Account **2500** (Phải trả người bán / Accounts Payable) is present — exactly 1 row with `code = '2500'` (added by v73, release v0.7.14)
+- [ ] **2.1a** Account **2400** (Tiền Rút Held) is present — exactly 1 row with `code = '2400'` (added by v54, prior release)
+- [ ] **2.2** All seeded accounts are present (25 rows from `SEED_CHART_OF_ACCOUNTS`, `src/baker/db/schema.py:1524-1556`):
+  - Assets (1000): 1000 (Tài sản), 1100 (Tiền mặt / Cash on Hand), 1200 (Tài khoản ngân hàng / Bank Account), 1300 (Hàng tồn kho / Inventory), 1500 (Phải thu khách hàng / Accounts Receivable)
+  - Liabilities (2000): 2000 (Nợ phải trả), 2100 (Tiền khách đặt cọc / Customer Deposits), 2200 (Tiền ship bus giữ hộ / Bus Shipping Held), 2300 (Phải trả nhân viên / Staff Payables), 2400 (Tiền rút tạm giữ / Tien Rut Held), 2500 (Phải trả người bán / Accounts Payable)
+  - Equity: 3000 (Vốn chủ sở hữu), 3100 (Vốn chủ sở hữu / Owner's Equity)
+  - Income: 4000 (Doanh thu), 4100 (Doanh thu bán hàng / Order Revenue)
+  - Expenses (5000): 5000 (Chi phí), 5100 (Nguyên liệu / Ingredients), 5200 (Bao bì / Packaging), 5300 (Vận chuyển / Delivery-Shipping), 5400 (Điện-nước / Utilities), 5500 (Dụng cụ / Tools), 5600 (Sửa chữa / Equipment Maintenance), 5700 (Lương-phụ cấp / Staff Salary), 5800 (Khác / Other Expenses), 5900 (Giá vốn hàng bán / COGS)
+  - Note: runtime-created sub-accounts (23xx staff, 25xxx vendor per `_ensure_vendor_payable_sub_account`, `schema.py:1693-1747`) may add additional rows beyond the 24 seeded.
 - [ ] **2.3** No duplicate account codes exist
 
-**Direct account 2400 check:**
+**Direct account 2500 check:**
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
-  "SELECT code, name_vn FROM accounts WHERE code = '2400';"
+sqlite3 ./prod/data/baker.db \
+  "SELECT code, name FROM accounts WHERE code IN ('2400', '2500');"
 ```
 
-Expected: exactly 1 row — `2400|Tiền Rút Held`
+Expected: 2 rows — `2400|Tiền rút tạm giữ (Tien Rut Held)` and `2500|Phải trả người bán (Accounts Payable)`
 
 ---
 
@@ -83,8 +93,7 @@ Verify no orphaned journal lines and that all journal entries are internally con
 ### 3.1 Orphaned Lines
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
+sqlite3 ./prod/data/baker.db \
   "SELECT COUNT(*) FROM journal_lines WHERE journal_entry_id NOT IN (SELECT id FROM journal_entries);"
 ```
 
@@ -95,9 +104,8 @@ docker compose --profile prod exec baker-prod \
 Verify every journal entry balances (total debits = total credits):
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
-  "SELECT journal_entry_id, ROUND(SUM(CASE WHEN side = 'debit' THEN amount ELSE -amount END), 2) AS balance
+sqlite3 ./prod/data/baker.db \
+  "SELECT journal_entry_id, ROUND(SUM(debit) - SUM(credit), 2) AS balance
    FROM journal_lines
    GROUP BY journal_entry_id
    HAVING balance != 0;"
@@ -108,8 +116,7 @@ docker compose --profile prod exec baker-prod \
 ### 3.3 Entry Count Sanity
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
+sqlite3 ./prod/data/baker.db \
   "SELECT COUNT(*) AS journal_entries, (SELECT COUNT(*) FROM journal_lines) AS journal_lines FROM journal_entries;"
 ```
 
@@ -122,48 +129,44 @@ docker compose --profile prod exec baker-prod \
 
 Spot-check key account balances for reasonableness.
 
-### 4.1 Account 2400 Balance
+### 4.1 Account 2400 and 2500 Balance
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
-  "SELECT
-     COALESCE(SUM(CASE WHEN side = 'debit' THEN amount ELSE 0 END), 0) -
-     COALESCE(SUM(CASE WHEN side = 'credit' THEN amount ELSE 0 END), 0) AS balance
-   FROM journal_lines
-   WHERE account_code = '2400';"
+sqlite3 ./prod/data/baker.db \
+  "SELECT a.code, ROUND(SUM(l.debit) - SUM(l.credit), 2) AS balance
+   FROM journal_lines l JOIN accounts a ON a.id = l.account_id
+   WHERE a.code IN ('2400', '2500')
+   GROUP BY a.code
+   ORDER BY CAST(a.code AS INTEGER);"
 ```
 
-- [ ] **4.1** Account 2400 balance is **non-negative** (held amounts cannot go negative)
+- [ ] **4.1** Account **2400** balance is **non-negative** (held amounts cannot go negative)
+- [ ] **4.1a** Account **2500** (Phải trả người bán) balance is present and reconciles against outstanding vendor payable entries (added by v73 in release v0.7.14)
 
 ### 4.2 Key Account Balances
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
-  "SELECT account_code,
-     COALESCE(SUM(CASE WHEN side = 'debit' THEN amount ELSE 0 END), 0) -
-     COALESCE(SUM(CASE WHEN side = 'credit' THEN amount ELSE 0 END), 0) AS balance
-   FROM journal_lines
-   WHERE account_code IN ('1100', '4000', '5000')
-   GROUP BY account_code
-   ORDER BY CAST(account_code AS INTEGER);"
+sqlite3 ./prod/data/baker.db \
+  "SELECT a.code, ROUND(SUM(l.debit) - SUM(l.credit), 2) AS balance
+   FROM journal_lines l JOIN accounts a ON a.id = l.account_id
+   WHERE a.code IN ('1100', '4000', '5000')
+   GROUP BY a.code
+   ORDER BY CAST(a.code AS INTEGER);"
 ```
 
 - [ ] **4.2** Account 1100 (Tiền mặt) balance is non-negative
 - [ ] **4.2** Account 4000 (Doanh thu) balance is non-negative
-- [ ] **4.2** Account 5000 (Giá vốn) balance is non-negative
+- [ ] **4.2** Account 5000 (Chi phí) balance is non-negative
 
 ### 4.3 Material Balance Equation
 
 Verify total debits equal total credits across the entire journal:
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db \
+sqlite3 ./prod/data/baker.db \
   "SELECT
-     (SELECT COALESCE(SUM(amount), 0) FROM journal_lines WHERE side = 'debit') -
-     (SELECT COALESCE(SUM(amount), 0) FROM journal_lines WHERE side = 'credit') AS total_difference;"
+     (SELECT COALESCE(SUM(debit), 0) FROM journal_lines) -
+     (SELECT COALESCE(SUM(credit), 0) FROM journal_lines) AS total_difference;"
 ```
 
 - [ ] **4.3** Total debits minus total credits equals **0** (or rounding tolerance ≤ 1)
@@ -177,8 +180,7 @@ Verify the running application is healthy and API endpoints respond.
 ### 5.1 Database Integrity
 
 ```bash
-docker compose --profile prod exec baker-prod \
-  sqlite3 /var/lib/baker/baker.db "PRAGMA integrity_check;"
+sqlite3 ./prod/data/baker.db "PRAGMA integrity_check;"
 ```
 
 - [ ] **5.1** Result is **`ok`**
@@ -202,7 +204,7 @@ docker compose --profile prod exec baker-prod \
 
 ### 5.4 Chart of Accounts API
 
-Verify the API returns the chart of accounts including account 2400:
+Verify the API returns the chart of accounts including account 2400 and account 2500:
 
 ```bash
 docker compose --profile prod exec baker-prod \
@@ -212,11 +214,13 @@ resp = urllib.request.urlopen('http://localhost:2108/api/accounts')
 data = json.loads(resp.read())
 codes = [a['code'] for a in data]
 print('Account 2400 present:', '2400' in codes)
+print('Account 2500 present:', '2500' in codes)
 print('Total accounts:', len(codes))
 "
 ```
 
 - [ ] **5.4** Response includes account **2400**
+- [ ] **5.4** Response includes account **2500** (release v0.7.14)
 - [ ] **5.4** Total account count is reasonable (20+ accounts)
 
 ### 5.5 Container Logs
@@ -246,16 +250,18 @@ Run a quick end-to-end smoke test to verify core functionality.
 
 | Check | Result | Notes |
 |-------|--------|-------|
-| §1 Schema version = 54 | pass / fail | |
+| §1 Schema version = 75 | pass / fail | |
+| §2 Chart of accounts (2500 present) | pass / fail | |
 | §2 Chart of accounts (2400 present) | pass / fail | |
-| §2 All 21+ accounts present | pass / fail | |
+| §2 All 25 seeded accounts present | pass / fail | |
 | §3 Journal orphaned lines = 0 | pass / fail | |
 | §3 Journal entries balance | pass / fail | |
 | §4 Account 2400 balance ≥ 0 | pass / fail | |
+| §4 Account 2500 balance present | pass / fail | |
 | §4 Total debits = total credits | pass / fail | |
 | §5 PRAGMA integrity_check ok | pass / fail | |
 | §5 API health endpoint 200 | pass / fail | |
-| §5 Accounts API includes 2400 | pass / fail | |
+| §5 Accounts API includes 2400 + 2500 | pass / fail | |
 | §6 End-to-end smoke test | pass / fail | |
 
 ### Reviewer
@@ -269,13 +275,14 @@ Run a quick end-to-end smoke test to verify core functionality.
 
 ## Troubleshooting
 
-### Schema version is not 54
+### Schema version is not 75
 - Run `baker db migrate` from inside the container: `docker compose --profile prod exec baker-prod baker db migrate`
 - Check container logs for migration errors: `docker compose --profile prod logs baker-prod --tail 100`
+- If a migration crashed and you need to revert the deploy, follow the [Release v0.7.14 Rollback Plan](../agent-teams/builder/artifacts/2026-07-18-release-v0.7.14-rollback-plan.md).
 
-### Account 2400 is missing
-- The v54 migration may not have run. Execute it manually: ensure `baker db migrate` ran and re-check.
-- If migration ran but 2400 still missing, review `src/baker/db/schema.py` for the `_migrate_v54_add_account_2400()` function.
+### Account 2400 or 2500 is missing
+- The v54 (2400) or v73 (2500) migration may not have run. Execute it manually: ensure `baker db migrate` ran and re-check.
+- If migration ran but the account is still missing, review `src/baker/db/schema.py` for `_migrate_v54_add_account_2400()` / `_migrate_v73_add_account_2500()` (both call `_seed_chart_of_accounts` with `INSERT OR IGNORE`).
 
 ### Orphaned journal lines found
 - This indicates a data integrity issue from a prior bug. Document the count and affected entry IDs.

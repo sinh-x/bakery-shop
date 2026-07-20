@@ -33,6 +33,8 @@ sealed class Order with _$Order {
     @Default([]) List<PackingItem> packingChecklist,
     String? workTicketPrintedAt,
     String? workTicketPrintedBy,
+    @JsonKey(name: 'createdStaffName') @Default('') String createdStaffName,
+    @JsonKey(name: 'workTicketPrintedStaffName') @Default('') String workTicketPrintedStaffName,
     @Default('normal') String urgency,
     String? acknowledgedAt,
     @Default([]) List<String> missingFields,
@@ -44,4 +46,13 @@ sealed class Order with _$Order {
   }) = _Order;
 
   factory Order.fromJson(Map<String, dynamic> json) => _$OrderFromJson(json);
+}
+
+extension OrderDisplay on Order {
+  String get displayCreatedBy => createdStaffName.isNotEmpty ? createdStaffName : createdBy;
+
+  String get displayPrintedBy {
+    final staffName = workTicketPrintedStaffName.trim();
+    return staffName.isNotEmpty ? staffName : (workTicketPrintedBy ?? '').trim();
+  }
 }

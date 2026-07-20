@@ -30,6 +30,7 @@ from baker.api.photos import router as photos_router
 from baker.api.products import router as products_router
 from baker.api.staff import router as staff_router
 from baker.api.stock import router as stock_router
+from baker.api.users import router as users_router
 from baker.api.work_items import router as work_items_router
 from baker.config import BUILD_FINGERPRINT, VERSION
 from baker.db.connection import checkpoint_wal
@@ -150,6 +151,7 @@ def create_app() -> FastAPI:
     app.include_router(receipts_router)
     app.include_router(printing_router)
     app.include_router(stock_router)
+    app.include_router(users_router)
     app.include_router(reconciliations_router)
 
     return app

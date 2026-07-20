@@ -104,7 +104,7 @@ void main() {
     },
   );
 
-  test('loggedByProvider is empty when unauthenticated (grace period)', () async {
+  test('loggedByProvider is empty when unauthenticated (grace period, falls back to local name)', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final prefs = await SharedPreferences.getInstance();
     final container = ProviderContainer(
@@ -114,5 +114,38 @@ void main() {
     );
     addTearDown(container.dispose);
     expect(container.read(loggedByProvider), '');
+  });
+
+  test('LoggedByNotifier.setName persists and restores from SharedPreferences', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final prefs = await SharedPreferences.getInstance();
+    final container = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    // Initially empty
+    expect(container.read(loggedByProvider), '');
+
+    // Set a name
+    await container.read(loggedByProvider.notifier).setName('TestStaff');
+
+    // State updated immediately
+    expect(container.read(loggedByProvider), 'TestStaff');
+
+    // Verify persisted in SharedPreferences
+    expect(prefs.getString('logged_by_name'), 'TestStaff');
+
+    // Create a new container (simulating app restart) and verify restoration
+    final prefs2 = await SharedPreferences.getInstance();
+    final container2 = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs2),
+      ],
+    );
+    addTearDown(container2.dispose);
+    expect(container2.read(loggedByProvider), 'TestStaff');
   });
 }

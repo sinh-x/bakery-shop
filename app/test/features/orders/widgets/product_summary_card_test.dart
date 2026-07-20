@@ -133,6 +133,86 @@ void main() {
     });
   });
 
+  group('ProductSummaryCard extras in total (AC3, AC4, AC5, AC6)', () {
+    testWidgets('total includes paid extras (AC3)', (tester) async {
+      final cake = DraftOrderItem(
+        product: _product(),
+        quantity: 1,
+      );
+      final extras = [createExtraItem('Nến', 5000)];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProductSummaryCard(items: [cake, ...extras]),
+          ),
+        ),
+      );
+
+      expect(find.text(formatVND(205000)), findsOneWidget);
+    });
+
+    testWidgets('extra prices displayed with name and unit price (AC4)',
+        (tester) async {
+      final cake = DraftOrderItem(
+        product: _product(),
+        quantity: 1,
+      );
+      final extras = [createExtraItem('Nến', 5000)];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProductSummaryCard(items: [cake, ...extras]),
+          ),
+        ),
+      );
+
+      expect(find.textContaining('Nến'), findsWidgets);
+      expect(find.textContaining(formatVND(5000)), findsWidgets);
+    });
+
+    testWidgets('gift extras excluded from total (AC5)', (tester) async {
+      final cake = DraftOrderItem(
+        product: _product(),
+        quantity: 1,
+      );
+      final paidExtra = createExtraItem('Nến', 5000);
+      final giftExtra = createExtraItem('Nón', 3000, isGift: true);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProductSummaryCard(items: [cake, paidExtra, giftExtra]),
+          ),
+        ),
+      );
+
+      expect(find.text(formatVND(205000)), findsOneWidget);
+      expect(find.textContaining(VN.tangKem), findsOneWidget);
+    });
+
+    testWidgets('order without extras shows no extras section (AC6)',
+        (tester) async {
+      final cake = DraftOrderItem(
+        product: _product(),
+        quantity: 1,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProductSummaryCard(items: [cake]),
+          ),
+        ),
+      );
+
+      expect(find.text(formatVND(200000)), findsOneWidget);
+      expect(find.text(VN.extras), findsNothing);
+      expect(find.text(OrdersLabels.productCount(1)), findsOneWidget);
+    });
+  });
+
   group('ProductSummaryCard product count (S1 — exclude extras)', () {
     testWidgets(
         'product count is 1 for 1 cake + N extras (excludes phụ kiện)',

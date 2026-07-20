@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import sqlite3
 from datetime import datetime, timezone
 
 import click
@@ -31,6 +32,7 @@ from rich.table import Table
 
 from baker.config import BCRYPT_ROUNDS
 from baker.db.connection import get_db
+from baker.db.schema import _strip_diacritics
 
 console = Console()
 
@@ -89,19 +91,57 @@ def user_cmd():
     help="System role: admin or staff (default: staff).",
 )
 @click.option(
+    "--staff",
+    "staff_name",
+    default=None,
+    help="Link to a staff member by name (case+diacritic-insensitive).",
+)
+@click.option(
     "--quiet",
     is_flag=True,
     help="Suppress plaintext password output (for CI/scripted use).",
 )
-def user_create(username: str, role: str, quiet: bool):
+def user_create(username: str, role: str, staff_name: str | None, quiet: bool):
     """Create a new user account with a random password (FR7).
 
     The generated password is printed to stdout so it can be distributed to
     the user. The password is bcrypt-hashed before storage (NFR4). Pass
     ``--quiet`` to suppress the plaintext password output (CI/scripted use).
+
+    Pass ``--staff <name>`` to link the new user to an existing staff member
+    by case+diacritic-insensitive name matching (FR10/DG-259).
     """
     username = _normalize_username(username)
+
+    resolved_staff_id: int | None = None
     with get_db() as conn:
+        if staff_name:
+            staff_rows = conn.execute(
+                "SELECT id, name FROM staff ORDER BY id"
+            ).fetchall()
+            target_norm = _strip_diacritics(staff_name.strip())
+            for srow in staff_rows:
+                if _strip_diacritics(srow["name"]) == target_norm:
+                    # Check if this staff member is already linked to another user
+                    linked = conn.execute(
+                        "SELECT id, username FROM users "
+                        "WHERE staff_id = ? AND staff_id IS NOT NULL",
+                        (int(srow["id"]),),
+                    ).fetchone()
+                    if linked:
+                        console.print(
+                            f"  [red]Staff '{srow['name']}' is already linked to "
+                            f"user '{linked['username']}'.[/red]"
+                        )
+                        return
+                    resolved_staff_id = int(srow["id"])
+                    break
+            if resolved_staff_id is None:
+                console.print(
+                    f"  [red]No staff member found matching '{staff_name}'.[/red]"
+                )
+                return
+
         existing = conn.execute(
             "SELECT id FROM users WHERE username = ?", (username,)
         ).fetchone()
@@ -111,12 +151,21 @@ def user_create(username: str, role: str, quiet: bool):
 
         plain = _generate_password()
         hashed = _hash(plain)
-        conn.execute(
-            "INSERT INTO users (username, password_hash, role, active) "
-            "VALUES (?, ?, ?, 1)",
-            (username, hashed, role),
-        )
+        try:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, role, active, staff_id) "
+                "VALUES (?, ?, ?, 1, ?)",
+                (username, hashed, role, resolved_staff_id),
+            )
+        except sqlite3.IntegrityError:
+            console.print(
+                "  [red]Failed to create user: database integrity error. "
+                "The staff member may already be linked to another user.[/red]"
+            )
+            return
         console.print(f"  [green]Created[/green] user '{username}' (role={role})")
+        if staff_name:
+            console.print("  [green]Linked[/green] to staff member.")
         if not quiet:
             console.print(f"  [bold]Password:[/bold] {plain}")
             console.print("[dim]Distribute this password to the user.[/dim]")

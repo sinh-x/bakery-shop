@@ -4,13 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/vnd_units.dart';
+import '../../../shared/widgets/target_account_dropdown.dart';
 
 /// Dedicated POS payment step shown AFTER the Stage 4 review (DG-218 Phase 4,
 /// FR-5). Presents the cash/transfer method selection, an editable amount field
 /// (B3), and the submit action that finalizes the order.
 ///
 /// The transfer-photo path (`showTransferSourceDialog` + `uploadOrderPhoto`) is
-/// preserved by the caller's [onSubmit] handler — this widget only captures the
+/// preserved by the caller's [onPayNow] handler — this widget only captures the
 /// selected method and amount.
 ///
 /// This widget is intentionally review-only with respect to order data: it
@@ -28,7 +29,10 @@ class PosPaymentStep extends ConsumerStatefulWidget {
     required this.onAmountChanged,
     required this.onTienRutAmountChanged,
     required this.onBack,
-    required this.onSubmit,
+    required this.onPayNow,
+    required this.onPayLater,
+    this.selectedTargetAccount,
+    this.onTargetAccountChanged,
   });
 
   final double orderTotal;
@@ -41,7 +45,14 @@ class PosPaymentStep extends ConsumerStatefulWidget {
   final ValueChanged<double> onAmountChanged;
   final ValueChanged<double> onTienRutAmountChanged;
   final VoidCallback onBack;
-  final VoidCallback onSubmit;
+  final VoidCallback onPayNow;
+  final VoidCallback onPayLater;
+
+  /// Optional target bank account for transfer payments (DG-244 Phase 2,
+  /// FR7). `null` means no selection. Only shown when the method is
+  /// `transfer`.
+  final String? selectedTargetAccount;
+  final ValueChanged<String?>? onTargetAccountChanged;
 
   @override
   ConsumerState<PosPaymentStep> createState() => _PosPaymentStepState();
@@ -262,6 +273,13 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
                   showSelectedIcon: false,
                   multiSelectionEnabled: false,
                 ),
+                if (widget.selectedPaymentMethod == 'transfer') ...[
+                  const SizedBox(height: 16),
+                  TargetAccountDropdown(
+                    value: widget.selectedTargetAccount,
+                    onChanged: widget.onTargetAccountChanged,
+                  ),
+                ],
               ],
             ),
           ),
@@ -281,15 +299,20 @@ class _PosPaymentStepState extends ConsumerState<PosPaymentStep> {
             child: const Text(OrdersLabels.backLabel),
           ),
           const Spacer(),
+          OutlinedButton(
+            onPressed: widget.isProcessing ? null : widget.onPayLater,
+            child: const Text(OrdersLabels.payLater),
+          ),
+          const SizedBox(width: 8),
           FilledButton(
-            onPressed: widget.isProcessing ? null : widget.onSubmit,
+            onPressed: widget.isProcessing ? null : widget.onPayNow,
             child: widget.isProcessing
                 ? const SizedBox(
                     height: 20,
                     width: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(VN.submitOrder),
+                : const Text(OrdersLabels.payNow),
           ),
         ],
       ),

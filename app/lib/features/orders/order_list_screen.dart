@@ -11,15 +11,15 @@ import '../../providers/order_providers.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/date_formatting.dart';
+import '../../shared/utils/delivery_helpers.dart';
 import '../../shared/utils/order_helpers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../providers/order/critical_alert_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
 import 'filtered_orders_screen.dart' show countCriticalActive, countUrgentActive, countIncompleteActive;
-import 'widgets/incomplete_banner.dart';
+import 'widgets/delivery_content.dart';
 import 'widgets/order_card.dart';
-import 'widgets/urgency_banner.dart';
 
 // Status filter chips for list view (mirrors Kanban column statuses + extras)
 // List view filters mirror Kanban columns (one column at a time)
@@ -62,7 +62,6 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   void invalidateProviders() {
     ref.invalidate(orderListProvider);
     ref.invalidate(cakeQueueProvider);
-    ref.invalidate(deliveryQueueProvider);
   }
 
   @override
@@ -233,7 +232,84 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(VN.tabOrders),
+        title: Consumer(
+          builder: (context, ref, _) {
+            final orders = ref.watch(orderListProvider).asData?.value ?? [];
+            final critical = countCriticalActive(orders);
+            final urgent = countUrgentActive(orders);
+            final incomplete = countIncompleteActive(orders);
+            final urgencyTotal = critical + urgent;
+            return Row(
+              children: [
+                if (urgencyTotal > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => context.push('/orders/critical'),
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 48,
+                          minHeight: 48,
+                        ),
+                        alignment: Alignment.center,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.error_outline, size: 18, color: Colors.red),
+                            const SizedBox(width: 4),
+                            Text(
+                              '$urgencyTotal',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                if (incomplete > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => context.push('/orders/incomplete'),
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 48,
+                          minHeight: 48,
+                        ),
+                        alignment: Alignment.center,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.warning_rounded, size: 18, color: Colors.amber),
+                            const SizedBox(width: 4),
+                            Text(
+                              '$incomplete',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.amber,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                const Expanded(
+                  child: Center(
+                    child: Text(VN.tabOrders),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -265,10 +341,17 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         ],
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: VN.orderListTab),
-            Tab(text: VN.cakeQueue),
-            Tab(text: VN.deliveryTab),
+          tabs: [
+            const Tab(text: VN.orderListTab),
+            const Tab(text: VN.cakeQueue),
+            Tab(
+              text: () {
+                final orders = ordersAsync.asData?.value ?? [];
+                final todayCount =
+                    filterDeliveryOrders(orders, todayOnly: true).length;
+                return todayCount > 0 ? OrdersLabels.deliveryTabWithCount(todayCount) : VN.deliveryTab;
+              }(),
+            ),
           ],
         ),
       ),
@@ -285,32 +368,6 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
           // ── Tab 0: Order list ──────────────────────────────────────
           Column(
             children: [
-              // Urgency attention banner
-              Consumer(
-                builder: (context, ref, _) {
-                  final orders = ref.watch(orderListProvider).asData?.value ?? [];
-                  final critical = countCriticalActive(orders);
-                  final urgent = countUrgentActive(orders);
-                  return UrgencyBanner(
-                    criticalCount: critical,
-                    urgentCount: urgent,
-                    onTap: () => context.push('/orders/critical'),
-                  );
-                },
-              ),
-
-              // Incomplete-order banner (DG-241 Phase 3 — FR-5)
-              Consumer(
-                builder: (context, ref, _) {
-                  final orders = ref.watch(orderListProvider).asData?.value ?? [];
-                  final count = countIncompleteActive(orders);
-                  return IncompleteBanner(
-                    count: count,
-                    onTap: () => context.push('/orders/incomplete'),
-                  );
-                },
-              ),
-
               // Search bar
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
