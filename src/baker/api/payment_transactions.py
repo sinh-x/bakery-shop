@@ -50,6 +50,26 @@ def _resolve_order_id(conn, ref: str) -> int:
     return row["id"]
 
 
+def _recompute_amount_paid(conn, order_id: int) -> None:
+    """Recompute and persist ``orders.amount_paid`` for ``order_id``.
+
+    FR3/DG-269 Phase 4: ``amount_paid`` is the sum of non-invalidated payment
+    transaction amounts for the order. Mirrors the Phase 1 backfill query
+    (includes ALL non-invalidated rows regardless of inflow/outflow type,
+    matching the historical backfill semantics for consistency).
+    """
+    row = conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) AS total "
+        "FROM payment_transactions WHERE order_id = ? AND invalidated_at IS NULL",
+        (order_id,),
+    ).fetchone()
+    total = float(row["total"]) if row else 0.0
+    conn.execute(
+        "UPDATE orders SET amount_paid = ? WHERE id = ?",
+        (total, order_id),
+    )
+
+
 @router.get("/{ref}/transactions")
 def list_transactions(ref: str):
     """Danh sách giao dịch thanh toán của đơn hàng."""
@@ -94,6 +114,9 @@ def create_transaction(ref: str, body: TransactionCreate):
             payment_source=body.payment_source or "",
         )
         txn.save(conn)
+
+        # FR3/DG-269 Phase 4: refresh stored amount_paid after insert.
+        _recompute_amount_paid(conn, order_id)
 
         # Auto-generate double-entry journal entry (DG-175).
         # Bus orders split the credit between Customer Deposits (2100) and
@@ -266,6 +289,9 @@ def invalidate_transaction(ref: str, txn_id: int, body: InvalidationRequest, req
             (invalidated_at, invalidated_by, txn_id),
         )
 
+        # FR3/DG-269 Phase 4: refresh stored amount_paid after invalidation.
+        _recompute_amount_paid(conn, order_id)
+
         # FR3/NFR2: journal sync is fire-and-forget. _sync_payment_journal
         # (deleted=True) reverses locked entries (preserving the original
         # transaction_date) and deletes unlocked ones.
@@ -331,6 +357,9 @@ def restore_transaction(ref: str, txn_id: int):
             "SET invalidated_at = NULL, invalidated_by = '' WHERE id = ?",
             (txn_id,),
         )
+
+        # FR3/DG-269 Phase 4: refresh stored amount_paid after restore.
+        _recompute_amount_paid(conn, order_id)
 
         # FR4/NFR2: journal sync is fire-and-forget. The create path reads the
         # transaction's created_at for transaction_date. If a prior reversal
