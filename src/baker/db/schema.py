@@ -1218,6 +1218,14 @@ def _guard_add_column(conn, table: str, column: str, col_def: str):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
 
 
+def _guard_drop_column(conn, table: str, column: str):
+    """Drop a column only if it still exists (idempotent forward-only migration)."""
+    assert table in ALLOWED_TABLES, f"table {table!r} not in ALLOWED_TABLES"
+    existing = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    if column in existing:
+        conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+
+
 def _migrate_v29_add_pin_support(conn):
     """Add pin columns to knowledge_entries (idempotent via PRAGMA guard)."""
     existing = [r[1] for r in conn.execute("PRAGMA table_info(knowledge_entries)").fetchall()]
@@ -4197,6 +4205,19 @@ def _migrate_v79_add_staff_name_to_orders(conn):
     _guard_add_column(conn, "orders", "work_ticket_printed_staff_name", "work_ticket_printed_staff_name TEXT DEFAULT ''")
 
 
+def _migrate_v80_drop_amount_paid_from_orders(conn):
+    """Drop the redundant ``amount_paid`` column from ``orders`` (DG-274).
+
+    The column is now live-computed from ``payment_transactions`` via
+    ``PaymentTransaction.total_paid_excl_outflows``; the stored value was lossy
+    (included outflows) and is no longer written by ``Order.save``. The v12
+    migration still reads ``amount_paid`` for pre-v12 rows, but v12 runs before
+    v80 so the column exists at v12 time and is dropped here. Idempotent via
+    PRAGMA-guarded ALTER TABLE (orders is in ALLOWED_TABLES).
+    """
+    _guard_drop_column(conn, "orders", "amount_paid")
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -4577,6 +4598,11 @@ MIGRATIONS = {
         "description": "Add created_staff_name and work_ticket_printed_staff_name to orders table for display-name attribution — DG-259 Cycle 5",
         "sql": "",
         "callable": _migrate_v79_add_staff_name_to_orders,
+    },
+    80: {
+        "description": "Drop redundant amount_paid column from orders table — live-computed from payment_transactions (DG-274)",
+        "sql": "",
+        "callable": _migrate_v80_drop_amount_paid_from_orders,
     },
 }
 
