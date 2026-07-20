@@ -314,7 +314,6 @@ class Order:
     customer_phone: str = ""
     delivery_phone: str = ""
     notes: str = ""
-    amount_paid: float = 0.0
     source: str = ""
     created_by: str = ""
     shipping_fee: float = 0.0
@@ -328,6 +327,8 @@ class Order:
     acknowledged_at: Optional[str] = None
     created_staff_name: str = ""
     work_ticket_printed_staff_name: str = ""
+
+    amount_paid = 0.0
 
     @staticmethod
     def exists(order_id: int, conn=None) -> bool:
@@ -360,13 +361,13 @@ class Order:
         cursor = conn.execute(
             """INSERT INTO orders (order_ref, customer_name, customer_phone, delivery_phone, items,
                total_price, status, due_date, due_time, delivery_type,
-               delivery_address, notes, amount_paid, source, created_by, shipping_fee, public_order_code,
+               delivery_address, notes, source, created_by, shipping_fee, public_order_code,
                customer_id, created_at, updated_at, created_staff_name)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (self.order_ref, self.customer_name, self.customer_phone, self.delivery_phone,
               items_json, self.total_price, self.status, self.due_date,
               self.due_time, self.delivery_type, self.delivery_address, self.notes,
-              self.amount_paid, self.source, self.created_by, self.shipping_fee, self.public_order_code,
+              self.source, self.created_by, self.shipping_fee, self.public_order_code,
               self.customer_id, now_utc(), now_utc(), self.created_staff_name),
         )
         self.id = cursor.lastrowid
@@ -422,20 +423,17 @@ class Order:
         items_data = json.loads(row["items"]) if row["items"] else []
         items = [OrderItem(**i) for i in items_data]
 
-        if conn is not None:
-            from baker.models.payment_transaction import PaymentTransaction
-            amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, row["id"])
-        else:
-            amount_paid = row["amount_paid"] or 0.0
+        from baker.models.payment_transaction import PaymentTransaction
+        amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, row["id"])
 
-        return Order(
+        order = Order(
             id=row["id"], order_ref=row["order_ref"],
             customer_name=row["customer_name"], customer_phone=row["customer_phone"],
             delivery_phone=(row["delivery_phone"] if "delivery_phone" in row.keys() and row["delivery_phone"] is not None else ""),
             items=items, total_price=row["total_price"], status=row["status"],
             due_date=row["due_date"], due_time=row["due_time"],
             delivery_type=row["delivery_type"], delivery_address=row["delivery_address"],
-            notes=row["notes"], amount_paid=amount_paid,
+            notes=row["notes"],
             source=row["source"] or "",
             created_by=row["created_by"] if "created_by" in row.keys() else "",
             shipping_fee=row["shipping_fee"] if "shipping_fee" in row.keys() else 0.0,
@@ -448,6 +446,8 @@ class Order:
             created_staff_name=row["created_staff_name"] if "created_staff_name" in row.keys() else "",
             work_ticket_printed_staff_name=row["work_ticket_printed_staff_name"] if "work_ticket_printed_staff_name" in row.keys() else "",
         )
+        order.amount_paid = amount_paid
+        return order
 
     def compute_completeness(self) -> tuple[list[str], str]:
         """Check required fields and return (missing_fields, completeness_tier).
