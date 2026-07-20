@@ -477,9 +477,15 @@ def list_orders(
             ).fetchall()
             result = []
             for r in rows:
+                # DG-274 Phase 3 (FR3): filter on live-computed amount_paid from
+                # PaymentTransaction.total_paid_excl_outflows instead of the
+                # stored column. Reads total_price from the row so we can skip
+                # the from_row call for filtered-out delivered+paid orders.
+                if r["status"] == "delivered":
+                    amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, r["id"])
+                    if amount_paid >= float(r["total_price"]):
+                        continue
                 order = Order.from_row(r, conn)
-                if order.status == "delivered" and order.amount_paid >= order.total_price:
-                    continue
                 result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
@@ -491,9 +497,12 @@ def list_orders(
             ).fetchall()
             result = []
             for r in rows:
+                # DG-274 Phase 3 (FR3): same live-computed filter as active_only.
+                if r["status"] == "delivered":
+                    amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, r["id"])
+                    if amount_paid >= float(r["total_price"]):
+                        continue
                 order = Order.from_row(r, conn)
-                if order.status == "delivered" and order.amount_paid >= order.total_price:
-                    continue
                 result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
