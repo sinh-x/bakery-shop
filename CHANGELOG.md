@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-07-20
+
+- feat(DG-244): Target bank account selector on payment transactions
+  - Backend: optional `paymentSource` on PaymentTransaction model + API service (Phase 1)
+  - Flutter: target account dropdown in payment sheets + POS (Phase 2); `paymentSource` threaded through `order_crud_providers` record()/edit() (Phase 3)
+  - Backend: `payment_source` journal routing to distinct bank sub-accounts (Phase 4) + historical transfer backfill to un-allocated bank account 1290 (Phase 5)
+  - Review cycle 1 findings remediated (Phase 5.1)
+
+- feat(DG-259): Session-based actor attribution + formal user-staff linkage
+  - Schema: `users.staff_id` FK + `sessions.staff_id` column (Phase 1); migration v79 with `created_staff_name` and `work_ticket_printed_staff_name`
+  - Auth: backend actor resolution on all write paths + login `staff_id` (Phase 2); grace-period fallback session staff → actor on no-JWT path (Phase 3)
+  - Flutter: grace fallback, staff picker restore, admin binding UI (Phase 4)
+  - CLI: staff columns, `--staff` flag, AC6-a test (Phase 5); DG-259 Steps 2-9 staff name attribution
+  - Events: `staff_name` column + frontend display (Cycle 4); review cycles 1, c6-fix remediated
+
+- feat(DG-260): Journal dating by delivered timestamp + due-date income-statement basis
+  - Live sync: `_resolve_delivered_timestamp` helper stamps revenue/COGS/shipping-release entries by first delivered/completed event timestamp (Phase 1)
+  - Repair: `baker repair-delivered-dates` idempotent subcommand with `--dry-run` re-dates ~450 revenue + ~459 COGS drifted entries (Phase 2)
+  - Report: `income-statement --date-basis {transaction|due-date}` flag with `COALESCE(due_date, local delivered date)` (Phase 3)
+
 - feat(DG-261): Delivery pipeline tab — filter chips, status grouping, order cards, quality gates
   - Flutter: filter predicate (Hôm nay / Tất cả via bool param) + status grouping function with sort order
   - Flutter: delivery_content.dart widget (framed, scrollable, grouped, badge-count) + delivery_order_card.dart
@@ -9,6 +29,29 @@
   - Flutter: removed stale `deliveryViewModelProvider` dead code, relocated `remainingPercent` to delivery_helpers.dart
   - Flutter: unit + widget tests (delivery_grouping_test, delivery_content_test)
   - Quality gates: flutter analyze clean (3 info deferred per DG-138), dart analyze clean, 792/792 tests passed, file-size compliance verified
+
+- feat(DG-262): Session-dismissible version warning + collapsible order banners
+  - Flutter: `fingerprintWarningDismissedProvider` (in-memory Notifier<bool>) with dismiss (X) button on version-diff strip (session-scoped; web reload / android restart resets)
+  - Flutter: replaced collapsible urgency + incomplete banners with icon+count badge chips (counts stay visible, independent, session-scoped)
+  - Flutter: badge icons swapped (urgency red, incomplete yellow), badges moved to left of title
+  - Review findings CQ-1, CQ-3, UI-UAT-1 remediated
+
+- feat(DG-263): Work ticket receipt layout — attribute box overlap and Phụ kiện section fix
+  - Flutter: 12px spacer + separator line + 8px spacer before enum attribute box; post-box spacing 6px → 10px (Phase 4.1)
+  - Flutter: renamed "Phụ liệu kèm theo:" → "Phụ kiện:"; Phụ kiện header 28pt bold, items 24pt bold (Phase 4.2)
+  - Flutter: replaced font-size literals with named constants (CQ-1); replaced magic number 10 with `ENUM_BOX_BOTTOM_PAD` + 4px breathing room (CQ-2)
+  - Flutter: increased left margin, birthday badge spacing, reduced pre-attribute spacer
+
+- feat(DG-265): Fix POS checkout extras payment desync
+  - Flutter: `_writeBackToCart()` syncs wizard items to cart before entering payment step so phụ kiện added in Stage 1 are included in the payment cart total (Phase 1)
+  - Flutter: ProductSummaryCard total now includes non-gift extras; non-gift extras show unit price in name label (Phase 2); updated product_summary_card_test.dart (Phase 3)
+  - Replaced `syncWizardItemsToCart(ref)` with `_writeBackToCart()` reading from `posOrderStateProvider` (CQ-1)
+
+- feat(DG-267): POS checkout stages — Stage 3 delivery + Stage 5 payment + pay now/pay later
+  - Flutter: Stage 3 (delivery) included for all order types — pickup orders pass through with default "deliver immediately" option (Phase 1 label/stage indicator changes)
+  - Flutter: Stage 5 (payment) for POS only with clear stage progress bar indicator (Phase 3 simplified Stage 3 pickup)
+  - Flutter: explicit pay now / pay later options on payment screen; `payNow`/`payLater` centralized in OrdersLabels
+  - Review-auto findings CQ-1..CQ-4 remediated (Pay Later widget tests, pickupSubtitle constant, `_uploadOrderPhotos`/`_createPaymentTransactions` extraction, pickupTitle)
 
 ## [0.7.16+105] — 2026-07-18
 - ci(release): refresh uv.lock in version-bump workflow (DG-255 c3-Mn-1)
