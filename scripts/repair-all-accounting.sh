@@ -25,12 +25,14 @@ elif [[ $# -gt 0 ]]; then
   exit 2
 fi
 
+DC="${DC:-docker compose --profile prod exec -T baker-prod}"
+
 run_repair() {
   local label="$1"
   shift
   echo
   echo "--- $label ---"
-  baker "$@" $DRY_RUN
+  $DC baker "$@" $DRY_RUN
 }
 
 # 1. Inventory backfill: fix negative 1300 balance by creating missing stock-in JEs
