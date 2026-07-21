@@ -37,6 +37,24 @@ def _day_bounds(date_str: str) -> tuple[str, str]:
     return f"{date_str}T00:00:00", next_day.strftime("%Y-%m-%dT00:00:00")
 
 
+def _is_delivered_and_fully_paid(conn, row) -> tuple[bool, float]:
+    """Return (is_fully_paid, amount_paid) for a delivered order row.
+
+    DG-274 review-auto c1 (CQ-1): deduplicates the delivered+paid filter used
+    in both ``active_only`` and ``status`` branches of ``list_orders``.
+    Computes ``amount_paid`` once via ``PaymentTransaction.total_paid_excl_outflows``
+    and returns it so the caller can forward it to ``Order.from_row`` via
+    ``amount_paid=`` and avoid a duplicate query for partially-paid delivered
+    orders. Non-delivered rows return ``(False, <lazy>)`` — the amount_paid
+    is not precomputed because the filter never skips these rows, and
+    ``Order.from_row`` will compute it lazily when needed.
+    """
+    if row["status"] != "delivered":
+        return (False, 0.0)
+    amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, row["id"])
+    return (amount_paid >= float(row["total_price"]), amount_paid)
+
+
 def _resolve_customer_id_by_phone(conn, phone: str, customer_name: Optional[str] = None) -> Optional[int]:
     """Resolve a customer_id from a phone number via the ``customer_phones`` table.
 
@@ -477,15 +495,15 @@ def list_orders(
             ).fetchall()
             result = []
             for r in rows:
-                # DG-274 Phase 3 (FR3): filter on live-computed amount_paid from
-                # PaymentTransaction.total_paid_excl_outflows instead of the
-                # stored column. Reads total_price from the row so we can skip
-                # the from_row call for filtered-out delivered+paid orders.
-                if r["status"] == "delivered":
-                    amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, r["id"])
-                    if amount_paid >= float(r["total_price"]):
-                        continue
-                order = Order.from_row(r, conn)
+                # DG-274 Phase 3 (FR3) / review-auto c1 (CQ-1): filter
+                # delivered+fully-paid orders out of the active view using
+                # the live-computed amount_paid (stored column was dropped in
+                # v80). The cached amount_paid is forwarded to from_row so we
+                # don't re-query total_paid_excl_outflows for the rows we keep.
+                fully_paid, amount_paid = _is_delivered_and_fully_paid(conn, r)
+                if fully_paid:
+                    continue
+                order = Order.from_row(r, conn, amount_paid=amount_paid)
                 result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
@@ -497,12 +515,12 @@ def list_orders(
             ).fetchall()
             result = []
             for r in rows:
-                # DG-274 Phase 3 (FR3): same live-computed filter as active_only.
-                if r["status"] == "delivered":
-                    amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, r["id"])
-                    if amount_paid >= float(r["total_price"]):
-                        continue
-                order = Order.from_row(r, conn)
+                # DG-274 Phase 3 (FR3) / review-auto c1 (CQ-1): same
+                # delivered+paid filter as the active_only branch above.
+                fully_paid, amount_paid = _is_delivered_and_fully_paid(conn, r)
+                if fully_paid:
+                    continue
+                order = Order.from_row(r, conn, amount_paid=amount_paid)
                 result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 

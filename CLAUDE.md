@@ -39,3 +39,7 @@ Future Flutter work must follow [docs/flutter-coding-standards.md](docs/flutter-
 - For Flutter CI changes, verify `flutter analyze`, `dart analyze`, and `flutter test --coverage`.
 - Document exact blockers when a required command cannot run locally.
 - Preserve DG-119 prior-phase baselines (upload-size limits and sanitized exception persistence).
+
+## Runtime Requirements
+
+- **SQLite ≥ 3.35.0**: The schema migrations in `src/baker/db/schema.py` use `ALTER TABLE ... DROP COLUMN` (e.g. the v80 drop of the stored `amount_paid` column), which is only supported by SQLite 3.35.0 and later. Any environment running the backend (local dev, CI, Docker image, production host) must provide SQLite ≥ 3.35.0 or migration execution will fail with `near "DROP": syntax error`. Verify with `python -c "import sqlite3; print(sqlite3.sqlite_version)"` (must report ≥ `3.35.0`).

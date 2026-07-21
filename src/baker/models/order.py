@@ -419,12 +419,22 @@ class Order:
         return True
 
     @staticmethod
-    def from_row(row, conn=None) -> "Order":
+    def from_row(row, conn, *, amount_paid: Optional[float] = None) -> "Order":
+        """Build an ``Order`` from a DB row.
+
+        ``conn`` is required (v80+ dropped the stored ``amount_paid`` column
+        fallback, so the value must always be recomputed via
+        ``PaymentTransaction.total_paid_excl_outflows``). Callers that have
+        already computed ``amount_paid`` (e.g. ``list_orders`` filter checks
+        in ``api/orders.py``) may pass it via ``amount_paid=`` to avoid a
+        duplicate query (DG-274 review-auto c1 / CQ-1).
+        """
         items_data = json.loads(row["items"]) if row["items"] else []
         items = [OrderItem(**i) for i in items_data]
 
         from baker.models.payment_transaction import PaymentTransaction
-        amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, row["id"])
+        if amount_paid is None:
+            amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, row["id"])
 
         order = Order(
             id=row["id"], order_ref=row["order_ref"],
