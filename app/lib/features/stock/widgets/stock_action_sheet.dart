@@ -123,6 +123,7 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
       }
       widget.onDone();
     } catch (e) {
+      debugPrint('Stock action failed: $e');
       setState(() => _isLoading = false);
       if (mounted) {
         showTopSnackBar(context, VN.loiHeThong, backgroundColor: Colors.red);

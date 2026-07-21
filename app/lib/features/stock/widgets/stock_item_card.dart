@@ -139,7 +139,6 @@ class StockItemCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: item.perChip.map((option) {
-                final canTap = onChipTap != null;
                 final chipContent = Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
@@ -160,19 +159,9 @@ class StockItemCard extends StatelessWidget {
                     ],
                   ),
                 );
-                if (!canTap) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: chipContent,
-                  );
-                }
                 // Tappable chip with InkWell ripple. Material ancestor is
                 // required so the InkWell ripple paints above the chip's
-                // background tint. Minimum touch target padding ensures the
+                // background tint. Minimum touch target constraints ensure the
                 // 48x48dp Material target per NFR1.
                 return Material(
                   color: Colors.grey.shade100,
@@ -182,7 +171,8 @@ class StockItemCard extends StatelessWidget {
                     onTap: () => onChipTap!(option.normalizedPrice),
                     child: Container(
                       constraints: const BoxConstraints(
-                        minHeight: 36,
+                        minHeight: 48,
+                        minWidth: 48,
                       ),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 6,
