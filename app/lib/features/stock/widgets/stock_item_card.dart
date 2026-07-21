@@ -21,6 +21,7 @@ class StockItemCard extends StatelessWidget {
     required this.onRestock,
     required this.onWaste,
     required this.onAdjust,
+    this.onChipTap,
   });
 
   final StockOverviewItem item;
@@ -30,6 +31,11 @@ class StockItemCard extends StatelessWidget {
   final VoidCallback onRestock;
   final VoidCallback onWaste;
   final VoidCallback onAdjust;
+
+  /// Called when a per-chip price tag is tapped with the chip's
+  /// [PriceChipOption.normalizedPrice]. When null, chips are not tappable
+  /// (the restock button remains the only entry point). Per DG-266 Phase 3.
+  final void Function(int normalizedPrice)? onChipTap;
 
   @override
   Widget build(BuildContext context) {
@@ -132,24 +138,65 @@ class StockItemCard extends StatelessWidget {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: item.perChip
-                  .map(
-                    (option) => Container(
+              children: item.perChip.map((option) {
+                final canTap = onChipTap != null;
+                final chipContent = Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${option.displayLabel} (${option.normalizedPrice}): ${option.quantity}',
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.add_circle_outline,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ],
+                  ),
+                );
+                if (!canTap) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: chipContent,
+                  );
+                }
+                // Tappable chip with InkWell ripple. Material ancestor is
+                // required so the InkWell ripple paints above the chip's
+                // background tint. Minimum touch target padding ensures the
+                // 48x48dp Material target per NFR1.
+                return Material(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(16),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => onChipTap!(option.normalizedPrice),
+                    child: Container(
+                      constraints: const BoxConstraints(
+                        minHeight: 36,
+                      ),
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
+                        horizontal: 6,
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: Colors.grey.shade300),
                       ),
-                      child: Text(
-                        '${option.displayLabel} (${option.normalizedPrice}): ${option.quantity}',
-                      ),
+                      child: chipContent,
                     ),
-                  )
-                  .toList(),
+                  ),
+                );
+              }).toList(),
             ),
             const SizedBox(height: 10),
             Row(

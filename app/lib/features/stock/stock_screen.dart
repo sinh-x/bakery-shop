@@ -213,6 +213,15 @@ class _StockScreenState extends ConsumerState<StockScreen>
                       _showActionSheet(context, ref, item, ActionType.waste),
                   onAdjust: () =>
                       _showActionSheet(context, ref, item, ActionType.adjust),
+                  onChipTap: item.perChip.isEmpty
+                      ? null
+                      : (normalizedPrice) => _showActionSheet(
+                            context,
+                            ref,
+                            item,
+                            ActionType.restock,
+                            normalizedPrice: normalizedPrice,
+                          ),
                 );
               },
             ),
@@ -226,14 +235,16 @@ class _StockScreenState extends ConsumerState<StockScreen>
     BuildContext context,
     WidgetRef ref,
     StockOverviewItem item,
-    ActionType type,
-  ) {
+    ActionType type, {
+    int? normalizedPrice,
+  }) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (context) => StockActionSheet(
         item: item,
         actionType: type,
+        initialPrice: normalizedPrice,
         onDone: () {
           ref.read(stockOverviewProvider.notifier).refresh();
           Navigator.pop(context);
