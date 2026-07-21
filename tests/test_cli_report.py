@@ -898,3 +898,230 @@ def test_normalize_date_partial_invalid_raises_bad_parameter():
     for bad in ("20260630", "2026-13-01", "2026-02-31", "abc"):
         with pytest.raises(click.BadParameter):
             _normalize_date(bad)
+
+
+# ---------------------------------------------------------------------------
+# order-status (DG-254 Phase 2, FR1-FR6 / AC1-AC7)
+# ---------------------------------------------------------------------------
+
+
+def _insert_order(
+    conn,
+    *,
+    order_id: int,
+    status: str = "new",
+    delivery_type: str | None = "pickup",
+    total_price: float = 0.0,
+    due_date: str | None = "2026-06-15",
+    created_at: str = "2026-06-15T10:00:00Z",
+) -> None:
+    """Insert a single order row exercising the order-status report inputs."""
+    conn.execute(
+        "INSERT INTO orders "
+        "(id, order_ref, customer_name, items, total_price, status, "
+        " due_date, delivery_type, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            order_id, f"ORD-{order_id}", f"Customer {order_id}", "[]",
+            total_price, status, due_date, delivery_type, created_at,
+        ),
+    )
+
+
+def _seed_order_status_dataset(conn):
+    """Seed a dataset spanning multiple statuses and delivery types.
+
+    Layout (all dated 2026-06-15 unless noted):
+
+      - #1 new,        pickup,    total 100000
+      - #2 confirmed,   delivery,  total 200000
+      - #3 in_progress, pickup,    total 150000
+      - #4 ready,       bus,       total 300000
+      - #5 delivered,   pickup,    total 250000
+      - #6 completed,   delivery,  total 400000
+      - #7 cancelled,   pickup,    total 50000
+      - #8 delivered,   (NULL)     total 120000   — tests NULL delivery_type
+      - #9 new,        pickup,    total 80000, due_date=NULL, created_at 2026-06-15
+    """
+    _insert_order(conn, order_id=1, status="new", delivery_type="pickup",
+                  total_price=100000)
+    _insert_order(conn, order_id=2, status="confirmed", delivery_type="delivery",
+                  total_price=200000)
+    _insert_order(conn, order_id=3, status="in_progress", delivery_type="pickup",
+                  total_price=150000)
+    _insert_order(conn, order_id=4, status="ready", delivery_type="bus",
+                  total_price=300000)
+    _insert_order(conn, order_id=5, status="delivered", delivery_type="pickup",
+                  total_price=250000)
+    _insert_order(conn, order_id=6, status="completed", delivery_type="delivery",
+                  total_price=400000)
+    _insert_order(conn, order_id=7, status="cancelled", delivery_type="pickup",
+                  total_price=50000)
+    _insert_order(conn, order_id=8, status="delivered", delivery_type=None,
+                  total_price=120000)
+    _insert_order(conn, order_id=9, status="new", delivery_type="pickup",
+                  total_price=80000, due_date=None)
+
+
+def test_order_status_exits_zero_with_header():
+    """AC1/FR1: ``baker report order-status`` exits 0 and prints a header."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_order_status_dataset(conn)
+    result = _invoke(["report", "order-status"])
+    assert result.exit_code == 0, result.output
+    assert "Order Status Report" in result.output
+    # Header columns are recognizable.
+    assert "Status" in result.output
+    assert "Delivery Type" in result.output
+    assert "Count" in result.output
+    assert "Value" in result.output
+
+
+def test_order_status_groups_by_status_with_count_and_value():
+    """AC2/FR2: each status group shows COUNT and SUM(total_price)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_order_status_dataset(conn)
+    result = _invoke(["report", "order-status"])
+    assert result.exit_code == 0, result.output
+    # delivered group: orders #5 (250000) + #8 (120000) = 2 orders, 370000.
+    assert "delivered" in result.output
+    # completed group: 1 order, 400000.
+    assert "400,000.00" in result.output
+    # cancelled group: 1 order, 50000.
+    assert "50,000.00" in result.output
+
+
+def test_order_status_subgroups_by_delivery_type():
+    """AC3/FR3: within each status, delivery_type sub-rows show count/value."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_order_status_dataset(conn)
+    result = _invoke(["report", "order-status"])
+    assert result.exit_code == 0, result.output
+    # delivered status has pickup (1, 250000), delivery (0), bus (0),
+    # and NULL delivery_type (1, 120000 → shown as "(none)").
+    assert "(none)" in result.output
+    assert "120,000.00" in result.output
+    assert "250,000.00" in result.output
+    # confirmed status only has delivery → 200000.
+    assert "200,000.00" in result.output
+    # ready status only has bus → 300000.
+    assert "300,000.00" in result.output
+
+
+def test_order_status_date_filter_excludes_out_of_range():
+    """AC4/FR4: --since/--until filter by COALESCE(due_date, created_at)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_order_status_dataset(conn)
+    # July range excludes all June-dated seed orders.
+    result = _invoke([
+        "report", "order-status", "--since", "2026-07-01", "--until", "2026-07-31",
+    ])
+    assert result.exit_code == 0, result.output
+    # Grand total must be zero (no orders in range) but statuses still listed.
+    assert "GRAND TOTAL" in result.output
+    # No individual seed value should appear as a positive data row.
+    assert "400,000.00" not in result.output
+    assert "300,000.00" not in result.output
+
+
+def test_order_status_date_filter_falls_back_to_created_at():
+    """AC4/FR4: orders with NULL due_date use created_at for date filtering."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_order_status_dataset(conn)
+    # Order #9 has due_date=NULL but created_at=2026-06-15 → included in June.
+    result = _invoke([
+        "report", "order-status", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    # Order #9's value (80000) must appear in the new status group.
+    assert "80,000.00" in result.output
+
+
+def test_order_status_grand_total_row():
+    """AC5/FR5: a grand total row shows overall count and total value."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_order_status_dataset(conn)
+    result = _invoke([
+        "report", "order-status", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "GRAND TOTAL" in result.output
+    # All 9 seed orders fall in June.
+    # Total value = 100000+200000+150000+300000+250000+400000+50000+120000+80000
+    #             = 1,650,000
+    assert "1,650,000.00" in result.output
+
+
+def test_order_status_all_seven_statuses_appear_even_when_zero():
+    """AC6/FR6: all 7 OrderStatus values appear even when count=0."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        # Seed only 'new' and 'delivered' orders; the other 5 statuses are 0.
+        _insert_order(conn, order_id=1, status="new", total_price=100000)
+        _insert_order(conn, order_id=2, status="delivered", total_price=200000)
+    result = _invoke(["report", "order-status"])
+    assert result.exit_code == 0, result.output
+    for status in ("new", "confirmed", "in_progress", "ready",
+                    "delivered", "completed", "cancelled"):
+        assert status in result.output
+
+
+def test_order_status_zero_count_status_shows_zero_value():
+    """AC6/FR6: a zero-count status shows count=0 and value=0.00."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        # No 'completed' orders in this seed.
+        _insert_order(conn, order_id=1, status="new", total_price=100000)
+    result = _invoke(["report", "order-status"])
+    assert result.exit_code == 0, result.output
+    assert "completed" in result.output
+    # The completed group's subtotal row must show 0 count and 0.00 value.
+    # We confirm by checking that "0.00" appears (subtotal value formatting).
+    assert "0.00" in result.output
+
+
+def test_order_status_cancelled_orders_appear():
+    """AC7: cancelled orders appear in the report output."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _insert_order(conn, order_id=1, status="cancelled",
+                      delivery_type="pickup", total_price=75000)
+    result = _invoke(["report", "order-status"])
+    assert result.exit_code == 0, result.output
+    assert "cancelled" in result.output
+    assert "75,000.00" in result.output
+
+
+def test_order_status_empty_db():
+    """Empty DB still lists all 7 statuses with zero counts and a grand total."""
+    with get_db() as conn:
+        ensure_schema(conn)
+    result = _invoke(["report", "order-status"])
+    assert result.exit_code == 0, result.output
+    assert "Order Status Report" in result.output
+    assert "GRAND TOTAL" in result.output
+    for status in ("new", "confirmed", "in_progress", "ready",
+                    "delivered", "completed", "cancelled"):
+        assert status in result.output
+
+
+def test_order_status_registered_in_report_group():
+    """The order-status subcommand is registered under ``baker report``."""
+    result = _invoke(["report", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "order-status" in result.output
+
+
+def test_order_status_rejects_invalid_since_date():
+    """Date validation applies to the order-status command."""
+    result = _invoke(
+        ["report", "order-status", "--since", "not-a-date", "--until", "2026-06-30"]
+    )
+    assert result.exit_code != 0, result.output
+    assert "YYYY-MM-DD" in result.output
