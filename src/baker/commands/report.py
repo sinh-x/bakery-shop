@@ -831,9 +831,7 @@ def order_status_cmd(since, until):
         dtype = r["delivery_type"] or ""
         count = int(r["cnt"])
         value = float(r["total_value"] or 0)
-        # Preserve unknown statuses as-is (defensive — schema enum should
-        # cover all values, but the report must not drop unknown data).
-        by_status.setdefault(status, {})[dtype] = (count, value)
+        by_status[status][dtype] = (count, value)
 
     click.echo(
         f"{'Status':<14}{'Delivery Type':<20}{'Count':>10}{'Value':>20}"
