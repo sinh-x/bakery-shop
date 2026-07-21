@@ -14,11 +14,18 @@ class StockActionSheet extends ConsumerStatefulWidget {
     required this.item,
     required this.actionType,
     required this.onDone,
+    this.initialPrice,
   });
 
   final StockOverviewItem item;
   final ActionType actionType;
   final VoidCallback onDone;
+
+  /// Optional pre-selected normalized price (e.g. from a chip tap).
+  /// When non-null and present in [StockOverviewItem.perChip], the dropdown
+  /// starts on this price. When null, falls back to the first perChip price
+  /// (existing behavior).
+  final int? initialPrice;
 
   @override
   ConsumerState<StockActionSheet> createState() => _StockActionSheetState();
@@ -66,9 +73,16 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedNormalizedPrice = widget.item.perChip.isNotEmpty
-        ? widget.item.perChip.first.normalizedPrice
-        : null;
+    final perChip = widget.item.perChip;
+    if (perChip.isNotEmpty) {
+      final provided = widget.initialPrice;
+      _selectedNormalizedPrice = (provided != null &&
+              perChip.any((c) => c.normalizedPrice == provided))
+          ? provided
+          : perChip.first.normalizedPrice;
+    } else {
+      _selectedNormalizedPrice = null;
+    }
   }
 
   Future<void> _submit() async {
@@ -218,6 +232,7 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                 // Quantity input
                 TextFormField(
                   controller: _quantityController,
+                  autofocus: true,
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: InputDecoration(
