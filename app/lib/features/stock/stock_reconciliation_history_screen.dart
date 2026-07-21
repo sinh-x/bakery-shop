@@ -3,9 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/api/reconciliation_service.dart';
+import '../../data/models/category.dart';
 import '../../data/providers/reconciliation_provider.dart';
+import '../../providers/categories_provider.dart';
+import '../../shared/utils/category_grouping.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
+import '../../shared/widgets/collapsible_category_sections.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
+import 'widgets/reconciliation_history_line_card.dart';
+import 'widgets/reconciliation_history_summary_card.dart';
 
 class StockReconciliationHistoryScreen extends ConsumerWidget {
   const StockReconciliationHistoryScreen({super.key});
@@ -120,121 +126,53 @@ class StockReconciliationHistoryDetailScreen extends ConsumerWidget {
   }
 }
 
-class _DetailView extends StatelessWidget {
+class _DetailView extends ConsumerWidget {
   const _DetailView({required this.detail});
 
   final ReconciliationHistoryDetail detail;
 
   @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(12),
-      children: [
-        Text('${VN.ngayDoiSoat}: ${detail.reconciliationDate}'),
-        Text('${VN.nhanVien}: ${detail.staffName}'),
-        Text(
-          '${VN.phuongThucThanhToan}: ${paymentMethodLabel(detail.paymentMethod)}',
-        ),
-        Text(
-          '${VN.lyDoHaoHut}: ${detail.wasteReason.isEmpty ? VN.khongCo : detail.wasteReason}',
-        ),
-        Text('${VN.thamChieuDonHang}: ${detail.linkedOrderRef ?? VN.khongCo}'),
-        Text(
-          '${VN.thamChieuThanhToan}: ${detail.linkedPaymentRef ?? VN.khongCo}',
-        ),
-        const SizedBox(height: 12),
-        const Divider(),
-        for (final line in detail.lines)
-          Card(
-            margin: const EdgeInsets.only(bottom: 10),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    line.productName,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Text(
-                    line.normalizedPrice != null
-                        ? '${VN.tuyChonGia}: ${line.normalizedPrice}'
-                        : '${VN.tuyChon}: ${line.chipLabel}',
-                  ),
-                  Text(
-                    '${VN.tuyChon}: ${line.sourceChipLabels.isNotEmpty ? line.sourceChipLabels.join(', ') : line.chipLabel}',
-                  ),
-                  const SizedBox(height: 6),
-                  Text('${VN.tonDuKien}: ${line.expectedQty}'),
-                  Text('${VN.tonDaDem}: ${line.countedQty}'),
-                  Text('${VN.soLuongBan}: ${line.saleQty}'),
-                  if (line.saleRows.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    for (var i = 0; i < line.saleRows.length; i++)
-                      _SaleRowView(row: line.saleRows[i], index: i),
-                  ],
-                  Text('${VN.soLuongHaoHut}: ${line.wasteQty}'),
-                  if (line.wasteQty > 0)
-                    Text(
-                      '${VN.lyDoHaoHut}: ${(line.wasteReason?.trim().isNotEmpty == true) ? line.wasteReason! : VN.khongCo}',
-                    ),
-                  Text(
-                    '${VN.donGiaNhapTay}: ${line.manualUnitPrice != null ? formatVND(line.manualUnitPrice!) : VN.khongCo}',
-                  ),
-                  Text(
-                    '${VN.thamChieuDongDonHang}: ${line.linkedOrderItemId?.toString() ?? VN.khongCo}',
-                  ),
-                  Text(
-                    '${VN.thamChieuXuatBan}: ${line.linkedStockMovementSaleId?.toString() ?? VN.khongCo}',
-                  ),
-                  Text(
-                    '${VN.thamChieuXuatHaoHut}: ${line.linkedStockMovementWasteId?.toString() ?? VN.khongCo}',
-                  ),
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final categories =
+        ref.watch(categoriesProvider).asData?.value ?? const <Category>[];
+    final sections = groupItemsByCategory<ReconciliationHistoryLine>(
+      items: detail.lines,
+      categories: categories,
+      categoryKeyOf: (line) => line.category ?? '',
+      itemLabelOf: (line) => line.productName,
+    ).map((section) => section.categoryName.isEmpty
+        ? GroupedCategorySection<ReconciliationHistoryLine>(
+            categoryKey: section.categoryKey,
+            categoryName: VN.khongPhanLoai,
+            items: section.items,
+            categoryPosition: section.categoryPosition,
+          )
+        : section).toList();
 
-class _SaleRowView extends StatelessWidget {
-  const _SaleRowView({required this.row, required this.index});
-
-  final ReconciliationHistorySaleRow row;
-  final int index;
-
-  @override
-  Widget build(BuildContext context) {
-    final title = row.isLegacy
-        ? '${index + 1}. Dòng bán cũ'
-        : '${index + 1}. Dòng bán';
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.black12),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    if (sections.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.all(12),
         children: [
-          Text(title, style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 4),
-          Text('${VN.soLuongBan}: ${row.quantity}'),
-          Text(
-            '${VN.donGia}: ${row.unitPrice != null ? formatVND(row.unitPrice!) : VN.khongCo}',
-          ),
-          Text(
-            '${VN.phuongThucThanhToan}: ${paymentMethodLabel(row.paymentMethod)}',
-          ),
-          Text('${VN.thamChieuDonHang}: ${row.linkedOrderRef ?? VN.khongCo}'),
-          Text(
-            '${VN.thamChieuThanhToan}: ${row.linkedPaymentRef ?? VN.khongCo}',
-          ),
+          ReconciliationHistorySummaryCard(detail: detail),
+          const SizedBox(height: 24),
+          const Center(child: Text(VN.khongCoSanPham)),
         ],
-      ),
+      );
+    }
+
+    return Column(
+      children: [
+        ReconciliationHistorySummaryCard(detail: detail),
+        const SizedBox(height: 12),
+        Expanded(
+          child: CollapsibleCategorySections<ReconciliationHistoryLine>(
+            sections: sections,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 0),
+            itemBuilder: (context, line) =>
+                ReconciliationHistoryLineCard(line: line),
+          ),
+        ),
+      ],
     );
   }
 }

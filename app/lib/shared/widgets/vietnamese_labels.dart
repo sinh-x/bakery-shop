@@ -864,6 +864,16 @@ class VN {
   static const thamChieuXuatHaoHut = 'Tham chiếu xuất hao hụt';
   static const khongCo = 'Không có';
 
+  // Reconciliation history detail summary card (DG-155 Phase 4.3)
+  static const tongTonDuKien = 'Tổng tồn dự kiến';
+  static const tongTonDaDem = 'Tổng tồn đã đếm';
+  static const tongSoLuongSanPham = 'Số sản phẩm';
+  static const tongSoDong = 'Tổng số dòng';
+  static const tongChenhLech = 'Tổng chênh lệch';
+  static const khongPhanLoai = 'Không phân loại';
+  static const soDongBan = 'Số dòng bán';
+  static const dongBanCu = 'Dòng bán cũ';
+
   // Catalog browse
   static const danhMuc = 'Danh mục';
 
