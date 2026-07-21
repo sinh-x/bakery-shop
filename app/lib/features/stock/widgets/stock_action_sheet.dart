@@ -14,11 +14,18 @@ class StockActionSheet extends ConsumerStatefulWidget {
     required this.item,
     required this.actionType,
     required this.onDone,
+    this.initialPrice,
   });
 
   final StockOverviewItem item;
   final ActionType actionType;
   final VoidCallback onDone;
+
+  /// Optional pre-selected normalized price (e.g. from a chip tap).
+  /// When non-null and present in [StockOverviewItem.perChip], the dropdown
+  /// starts on this price. When null, falls back to the first perChip price
+  /// (existing behavior).
+  final int? initialPrice;
 
   @override
   ConsumerState<StockActionSheet> createState() => _StockActionSheetState();
@@ -66,9 +73,16 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedNormalizedPrice = widget.item.perChip.isNotEmpty
-        ? widget.item.perChip.first.normalizedPrice
-        : null;
+    final perChip = widget.item.perChip;
+    if (perChip.isNotEmpty) {
+      final provided = widget.initialPrice;
+      _selectedNormalizedPrice = (provided != null &&
+              perChip.any((c) => c.normalizedPrice == provided))
+          ? provided
+          : perChip.first.normalizedPrice;
+    } else {
+      _selectedNormalizedPrice = null;
+    }
   }
 
   Future<void> _submit() async {
@@ -109,6 +123,7 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
       }
       widget.onDone();
     } catch (e) {
+      debugPrint('Stock action failed: $e');
       setState(() => _isLoading = false);
       if (mounted) {
         showTopSnackBar(context, VN.loiHeThong, backgroundColor: Colors.red);
@@ -215,29 +230,52 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                   const SizedBox(height: 12),
                 ],
 
-                // Quantity input
-                TextFormField(
-                  controller: _quantityController,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: InputDecoration(
-                    labelText: VN.soLuong,
-                    hintText: widget.actionType == ActionType.adjust
-                        ? 'Nhập số lượng mới'
-                        : 'Nhập số lượng',
-                    border: const OutlineInputBorder(),
-                    prefixIcon: const Icon(Icons.numbers),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return VN.fieldRequired;
-                    }
-                    final qty = int.tryParse(value);
-                    if (qty == null || qty <= 0) {
-                      return VN.soLuongInvalid;
-                    }
-                    return null;
-                  },
+                // Quantity input with +/- buttons
+                Row(
+                  children: [
+                    IconButton.filled(
+                      onPressed: () {
+                        final current = int.tryParse(_quantityController.text) ?? 0;
+                        if (current > 1) {
+                          _quantityController.text = '${current - 1}';
+                        }
+                      },
+                      icon: const Icon(Icons.remove),
+                    ),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _quantityController,
+                        autofocus: true,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        textAlign: TextAlign.center,
+                        decoration: InputDecoration(
+                          labelText: VN.soLuong,
+                          hintText: widget.actionType == ActionType.adjust
+                              ? 'Nhập số lượng mới'
+                              : 'Nhập số lượng',
+                          border: const OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return VN.fieldRequired;
+                          }
+                          final qty = int.tryParse(value);
+                          if (qty == null || qty <= 0) {
+                            return VN.soLuongInvalid;
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                    IconButton.filled(
+                      onPressed: () {
+                        final current = int.tryParse(_quantityController.text) ?? 0;
+                        _quantityController.text = '${current + 1}';
+                      },
+                      icon: const Icon(Icons.add),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
 
