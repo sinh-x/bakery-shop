@@ -60,9 +60,14 @@ class _FakeHistoryDetailService extends ReconciliationService {
 }
 
 void main() {
-  testWidgets('history detail renders grouped and legacy sale rows', (
+  testWidgets('history detail renders summary card and grouped legacy sale rows', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(2400, 3600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -76,6 +81,28 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
+
+    // Summary card is always visible at the top.
+    expect(find.textContaining('ORD-TOP'), findsOneWidget);
+    expect(find.textContaining('PAY-TOP'), findsOneWidget);
+
+    // Lines are grouped under a collapsible category header. With no category
+    // on the line, the fallback "Không phân loại" header is shown and starts
+    // collapsed — expand it to reveal the line card.
+    expect(find.text('Không phân loại'), findsOneWidget);
+    await tester.tap(find.text('Không phân loại'));
+    await tester.pumpAndSettle();
+
+    // Line card starts collapsed — expand it to reveal full details and the
+    // sale-rows section toggle.
+    expect(find.text('Banh mi'), findsOneWidget);
+    await tester.tap(find.text('Banh mi'));
+    await tester.pumpAndSettle();
+
+    // Sale rows section starts collapsed — expand it to reveal sale row titles.
+    final saleRowsToggle = find.textContaining('Số dòng bán');
+    await tester.tap(saleRowsToggle);
     await tester.pumpAndSettle();
 
     expect(find.text('1. Dòng bán'), findsOneWidget);
