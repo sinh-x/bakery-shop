@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/providers/reconciliation_provider.dart';
 import '../../../shared/labels/shared.dart';
+import 'reconciliation_shared_widgets.dart';
 
 /// Opens the reconciliation sell/waste modal bottom sheet for a single product
 /// option.
@@ -102,16 +103,21 @@ class _ReconciliationSellWasteModalContent extends ConsumerStatefulWidget {
 class _ReconciliationSellWasteModalContentState
     extends ConsumerState<_ReconciliationSellWasteModalContent> {
   late final TextEditingController _wasteController;
+  late final TextEditingController _wasteReasonController;
 
   @override
   void initState() {
     super.initState();
     _wasteController = TextEditingController(text: '${widget.initialWaste}');
+    _wasteReasonController = TextEditingController(
+      text: widget.initialWasteReason,
+    );
   }
 
   @override
   void dispose() {
     _wasteController.dispose();
+    _wasteReasonController.dispose();
     super.dispose();
   }
 
@@ -123,6 +129,16 @@ class _ReconciliationSellWasteModalContentState
     _wasteController.value = TextEditingValue(
       text: next,
       selection: TextSelection.collapsed(offset: next.length),
+    );
+  }
+
+  void _syncWasteReasonController(String value) {
+    if (_wasteReasonController.text == value) {
+      return;
+    }
+    _wasteReasonController.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
     );
   }
 
@@ -144,6 +160,7 @@ class _ReconciliationSellWasteModalContentState
     final variance = widget.expectedQty - counted - saleQty - waste;
 
     _syncWasteController(waste);
+    _syncWasteReasonController(wasteReason);
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
@@ -214,11 +231,14 @@ class _ReconciliationSellWasteModalContentState
       spacing: 6,
       runSpacing: 6,
       children: [
-        _SummaryChip(label: VN.tonDuKien, value: expectedQty),
-        _SummaryChip(label: VN.tonDaDem, value: counted),
-        _SummaryChip(label: VN.soLuongThieu, value: missing < 0 ? 0 : missing),
-        _SummaryChip(label: VN.soLuongBan, value: saleQty),
-        _SummaryChip(label: VN.soLuongHaoHut, value: wasteQty),
+        ReconciliationSummaryChip(label: VN.tonDuKien, value: expectedQty),
+        ReconciliationSummaryChip(label: VN.tonDaDem, value: counted),
+        ReconciliationSummaryChip(
+          label: VN.soLuongThieu,
+          value: missing < 0 ? 0 : missing,
+        ),
+        ReconciliationSummaryChip(label: VN.soLuongBan, value: saleQty),
+        ReconciliationSummaryChip(label: VN.soLuongHaoHut, value: wasteQty),
         _VarianceChip(variance: variance),
       ],
     );
@@ -259,7 +279,7 @@ class _ReconciliationSellWasteModalContentState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _QuantityStepperField(
+        ReconciliationQuantityStepperField(
           label: VN.soLuongHaoHut,
           controller: _wasteController,
           onChanged: (value) => widget.onSetWasteQty(value),
@@ -278,7 +298,7 @@ class _ReconciliationSellWasteModalContentState
               labelText: VN.lyDoHaoHut,
               border: OutlineInputBorder(),
             ),
-            controller: TextEditingController(text: wasteReason),
+            controller: _wasteReasonController,
             onChanged: (value) => widget.onSetWasteReason(value),
           ),
         ],
@@ -292,7 +312,7 @@ class _ReconciliationSellWasteModalContentState
         Expanded(
           child: TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text(VN.huy),
+            child: const Text('Đóng'),
           ),
         ),
         const SizedBox(width: 8),
@@ -303,28 +323,6 @@ class _ReconciliationSellWasteModalContentState
           ),
         ),
       ],
-    );
-  }
-}
-
-class _SummaryChip extends StatelessWidget {
-  const _SummaryChip({required this.label, required this.value});
-
-  final String label;
-  final int value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.grey.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        '$label: $value',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
     );
   }
 }
@@ -453,7 +451,7 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
             ],
           ),
           const SizedBox(height: 8),
-          _QuantityStepperField(
+          ReconciliationQuantityStepperField(
             label: VN.soLuongBan,
             controller: _qtyController,
             errorText: widget.rowError?.quantity,
@@ -518,55 +516,5 @@ class _SaleRowEditorState extends State<_SaleRowEditor> {
     return price == price.roundToDouble()
         ? price.toInt().toString()
         : price.toString();
-  }
-}
-
-class _QuantityStepperField extends StatelessWidget {
-  const _QuantityStepperField({
-    required this.label,
-    required this.controller,
-    required this.onChanged,
-    required this.onDecrement,
-    required this.onIncrement,
-    this.errorText,
-  });
-
-  final String label;
-  final TextEditingController controller;
-  final ValueChanged<int> onChanged;
-  final VoidCallback onDecrement;
-  final VoidCallback onIncrement;
-  final String? errorText;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        IconButton(
-          onPressed: onDecrement,
-          icon: const Icon(Icons.remove_circle_outline),
-          tooltip: VN.giam,
-        ),
-        Expanded(
-          child: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: InputDecoration(
-              labelText: label,
-              border: const OutlineInputBorder(),
-              errorText: errorText,
-            ),
-            onChanged: (value) => onChanged(int.tryParse(value) ?? 0),
-          ),
-        ),
-        IconButton(
-          onPressed: onIncrement,
-          icon: const Icon(Icons.add_circle_outline),
-          tooltip: VN.tang,
-        ),
-      ],
-    );
   }
 }

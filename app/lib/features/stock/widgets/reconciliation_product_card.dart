@@ -1,13 +1,13 @@
 // EXEMPT: This widget remains above local file-size thresholds while DG-138
 // tracks broader low-risk decomposition of the tightly coupled reconciliation UI.
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/reconciliation_service.dart';
 import '../../../data/providers/reconciliation_provider.dart';
 import '../../../shared/labels/shared.dart';
 import 'reconciliation_sell_waste_modal.dart';
+import 'reconciliation_shared_widgets.dart';
 import 'reconciliation_surplus_indicator.dart';
 import 'reconciliation_variance_indicator.dart';
 
@@ -24,8 +24,6 @@ class ReconciliationProductCard extends ConsumerStatefulWidget {
 class _ReconciliationProductCardState
     extends ConsumerState<ReconciliationProductCard> {
   final Map<String, TextEditingController> _countedControllers = {};
-  final Map<String, TextEditingController> _wasteControllers = {};
-  final Map<String, TextEditingController> _wasteReasonControllers = {};
   final Set<String> _expandedOptionKeys = {};
   bool _isExpanded = false;
 
@@ -39,25 +37,13 @@ class _ReconciliationProductCardState
         option.normalizedPrice,
       );
       final counted = state.countedQtyByOption[optionKey] ?? option.defaultCountedQty;
-      final waste = state.wasteQtyByOption[optionKey] ?? 0;
-      final wasteReason = state.wasteReasonByOption[optionKey] ?? '';
       _countedControllers[optionKey] = TextEditingController(text: '$counted');
-      _wasteControllers[optionKey] = TextEditingController(text: '$waste');
-      _wasteReasonControllers[optionKey] = TextEditingController(
-        text: wasteReason,
-      );
     }
   }
 
   @override
   void dispose() {
     for (final controller in _countedControllers.values) {
-      controller.dispose();
-    }
-    for (final controller in _wasteControllers.values) {
-      controller.dispose();
-    }
-    for (final controller in _wasteReasonControllers.values) {
       controller.dispose();
     }
     super.dispose();
@@ -159,13 +145,13 @@ class _ReconciliationProductCardState
               spacing: 6,
               runSpacing: 6,
               children: [
-                _SummaryChip(label: VN.tonDuKien, value: expectedTotal),
-                _SummaryChip(label: VN.tonDaDem, value: countedTotal),
-                _SummaryChip(label: VN.soLuongThieu, value: missingTotal),
+                ReconciliationSummaryChip(label: VN.tonDuKien, value: expectedTotal),
+                ReconciliationSummaryChip(label: VN.tonDaDem, value: countedTotal),
+                ReconciliationSummaryChip(label: VN.soLuongThieu, value: missingTotal),
                 if (surplusTotal > 0)
-                  _SummaryChip(label: VN.soLuongBu, value: surplusTotal),
-                _SummaryChip(label: VN.soLuongBan, value: saleTotal),
-                _SummaryChip(label: VN.soLuongHaoHut, value: wasteTotal),
+                  ReconciliationSummaryChip(label: VN.soLuongBu, value: surplusTotal),
+                ReconciliationSummaryChip(label: VN.soLuongBan, value: saleTotal),
+                ReconciliationSummaryChip(label: VN.soLuongHaoHut, value: wasteTotal),
                 _StatusChip(hasError: hasAnyError),
               ],
             ),
@@ -268,8 +254,6 @@ class _ReconciliationProductCardState
         product: widget.product,
         option: option,
         countedController: _countedControllers[optionKey]!,
-        wasteController: _wasteControllers[optionKey]!,
-        wasteReasonController: _wasteReasonControllers[optionKey]!,
         syncIntController: _syncIntController,
         notifier: notifier,
       ),
@@ -320,8 +304,6 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
     required this.product,
     required this.option,
     required this.countedController,
-    required this.wasteController,
-    required this.wasteReasonController,
     required this.syncIntController,
     required this.notifier,
   });
@@ -329,8 +311,6 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
   final ReconciliationDraftProduct product;
   final ReconciliationDraftOption option;
   final TextEditingController countedController;
-  final TextEditingController wasteController;
-  final TextEditingController wasteReasonController;
   final void Function(TextEditingController controller, int value)
   syncIntController;
   final ReconciliationNotifier notifier;
@@ -358,12 +338,11 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
     final optionError = state.optionErrors[optionKey];
 
     syncIntController(countedController, counted);
-    syncIntController(wasteController, waste);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _QuantityStepperField(
+        ReconciliationQuantityStepperField(
           label: VN.tonDaDem,
           controller: countedController,
           onChanged: (value) => notifier.setCountedQty(optionKey, value),
@@ -436,28 +415,6 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
           ),
         ],
       ],
-    );
-  }
-}
-
-class _SummaryChip extends StatelessWidget {
-  const _SummaryChip({required this.label, required this.value});
-
-  final String label;
-  final int value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.grey.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        '$label: $value',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
     );
   }
 }
@@ -643,9 +600,9 @@ class _OptionInventoryHeader extends StatelessWidget {
                 runSpacing: 6,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  _SummaryChip(label: VN.tonDaDem, value: countedQty),
-                  _SummaryChip(label: VN.soLuongBan, value: saleQty),
-                  _SummaryChip(label: VN.soLuongHaoHut, value: wasteQty),
+                  ReconciliationSummaryChip(label: VN.tonDaDem, value: countedQty),
+                  ReconciliationSummaryChip(label: VN.soLuongBan, value: saleQty),
+                  ReconciliationSummaryChip(label: VN.soLuongHaoHut, value: wasteQty),
                   ReconciliationVarianceIndicator(variance: variance),
                   if (surplus > 0)
                     ReconciliationSurplusIndicator(surplus: surplus),
@@ -656,56 +613,6 @@ class _OptionInventoryHeader extends StatelessWidget {
           ),
         ),
         if (trailing != null) ...[const SizedBox(width: 8), trailing!],
-      ],
-    );
-  }
-}
-
-class _QuantityStepperField extends StatelessWidget {
-  const _QuantityStepperField({
-    required this.label,
-    required this.controller,
-    required this.onChanged,
-    required this.onDecrement,
-    required this.onIncrement,
-    this.errorText,
-  });
-
-  final String label;
-  final TextEditingController controller;
-  final ValueChanged<int> onChanged;
-  final VoidCallback onDecrement;
-  final VoidCallback onIncrement;
-  final String? errorText;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        IconButton(
-          onPressed: onDecrement,
-          icon: const Icon(Icons.remove_circle_outline),
-          tooltip: VN.giam,
-        ),
-        Expanded(
-          child: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: InputDecoration(
-              labelText: label,
-              border: const OutlineInputBorder(),
-              errorText: errorText,
-            ),
-            onChanged: (value) => onChanged(int.tryParse(value) ?? 0),
-          ),
-        ),
-        IconButton(
-          onPressed: onIncrement,
-          icon: const Icon(Icons.add_circle_outline),
-          tooltip: VN.tang,
-        ),
       ],
     );
   }

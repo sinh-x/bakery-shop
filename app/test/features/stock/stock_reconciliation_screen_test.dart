@@ -102,7 +102,7 @@ void main() {
   Future<void> cancelSellWasteModal(WidgetTester tester) async {
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
-    final button = find.text(VN.huy);
+    final button = find.text('Đóng');
     await tester.ensureVisible(button);
     await tester.pumpAndSettle();
     await tester.tap(button, warnIfMissed: false);
@@ -1557,7 +1557,7 @@ void main() {
 
     // Modal is dismissed.
     expect(find.text(VN.xacNhan), findsNothing);
-    expect(find.text(VN.huy), findsNothing);
+    expect(find.text('Đóng'), findsNothing);
     // Mutations are applied live to the shared state; closing the sheet
     // does not revert them.
     expect(
