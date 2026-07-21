@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/reconciliation_service.dart';
 import '../../../data/providers/reconciliation_provider.dart';
 import '../../../shared/labels/shared.dart';
+import 'reconciliation_sell_waste_modal.dart';
 import 'reconciliation_surplus_indicator.dart';
 import 'reconciliation_variance_indicator.dart';
 
@@ -346,8 +347,8 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
         state.saleRowsByOption[optionKey] ??
         const <ReconciliationSaleRowInput>[];
     final waste = state.wasteQtyByOption[optionKey] ?? 0;
+    final wasteReason = state.wasteReasonByOption[optionKey] ?? '';
     final saleQty = saleRows.fold<int>(0, (sum, row) => sum + row.quantity);
-    final missing = option.expectedQty - counted;
     final variance = option.expectedQty - counted - saleQty - waste;
     final surplus = state.surplusQtyFor(
       optionKey,
@@ -355,10 +356,6 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
       grossAvailableQty: option.grossAvailableQty,
     );
     final optionError = state.optionErrors[optionKey];
-    final saleRowErrors =
-        state.saleRowErrorsByOption[optionKey] ??
-        const <ReconciliationSaleRowError>[];
-    final showSaleEditor = missing > 0 || saleRows.isNotEmpty;
 
     syncIntController(countedController, counted);
     syncIntController(wasteController, waste);
@@ -389,68 +386,45 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
             ),
           ),
         ],
-        if (showSaleEditor) ...[
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => notifier.addSaleRow(
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            OutlinedButton.icon(
+              onPressed: () => showReconciliationSellWasteModal(
+                context,
+                productId: product.productId,
+                optionKey: optionKey,
+                expectedQty: option.expectedQty,
+                normalizedPrice: option.normalizedPrice,
+                counted: counted,
+                saleRows: saleRows,
+                waste: waste,
+                wasteReason: wasteReason,
+                onAddSaleRow: () => notifier.addSaleRow(
                   optionKey,
                   defaultUnitPrice: option.normalizedPrice,
                 ),
-                icon: const Icon(Icons.add),
-                label: const Text(VN.themDongBan),
+                onRemoveSaleRow: (rowIndex) =>
+                    notifier.removeSaleRow(optionKey, rowIndex),
+                onSetSaleRowQty: (rowIndex, qty) =>
+                    notifier.setSaleRowQty(optionKey, rowIndex, qty),
+                onSetSaleRowUnitPrice: (rowIndex, price) =>
+                    notifier.setSaleRowUnitPrice(optionKey, rowIndex, price),
+                onSetSaleRowPaymentMethod: (rowIndex, method) =>
+                    notifier.setSaleRowPaymentMethod(optionKey, rowIndex, method),
+                onSetWasteQty: (qty) => notifier.setWasteQty(optionKey, qty),
+                onSetWasteReason: (reason) =>
+                    notifier.setWasteReasonForOption(optionKey, reason),
               ),
-              ReconciliationVarianceIndicator(variance: variance),
-            ],
-          ),
-          for (var rowIndex = 0; rowIndex < saleRows.length; rowIndex += 1)
-            _SaleRowEditor(
-              key: ValueKey('$optionKey-sale-row-$rowIndex'),
-              rowIndex: rowIndex,
-              row: saleRows[rowIndex],
-              rowError: rowIndex < saleRowErrors.length
-                  ? saleRowErrors[rowIndex]
-                  : null,
-              onQtyChanged: (value) =>
-                  notifier.setSaleRowQty(optionKey, rowIndex, value),
-              onPriceChanged: (value) =>
-                  notifier.setSaleRowUnitPrice(optionKey, rowIndex, value),
-              onMethodChanged: (value) =>
-                  notifier.setSaleRowPaymentMethod(optionKey, rowIndex, value),
-              onRemove: () => notifier.removeSaleRow(optionKey, rowIndex),
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('${VN.banHang} / ${VN.haoHutSheet}'),
             ),
-        ],
-        if (missing > 0 && surplus == 0) ...[
-          const SizedBox(height: 8),
-          _QuantityStepperField(
-            label: VN.soLuongHaoHut,
-            controller: wasteController,
-            onChanged: (value) => notifier.setWasteQty(optionKey, value),
-            onDecrement: () {
-              if (waste <= 0) {
-                return;
-              }
-              notifier.setWasteQty(optionKey, waste - 1);
-            },
-            onIncrement: () => notifier.setWasteQty(optionKey, waste + 1),
-          ),
-          if (waste > 0) ...[
-            const SizedBox(height: 8),
-            TextField(
-              decoration: const InputDecoration(
-                labelText: VN.lyDoHaoHut,
-                border: OutlineInputBorder(),
-              ),
-              controller: wasteReasonController,
-              onChanged: (value) =>
-                  notifier.setWasteReasonForOption(optionKey, value),
-            ),
+            ReconciliationVarianceIndicator(variance: variance),
           ],
-        ],
+        ),
         if (optionError != null) ...[
           const SizedBox(height: 8),
           Text(
@@ -684,172 +658,6 @@ class _OptionInventoryHeader extends StatelessWidget {
         if (trailing != null) ...[const SizedBox(width: 8), trailing!],
       ],
     );
-  }
-}
-
-class _SaleRowEditor extends StatefulWidget {
-  const _SaleRowEditor({
-    super.key,
-    required this.rowIndex,
-    required this.row,
-    required this.onQtyChanged,
-    required this.onPriceChanged,
-    required this.onMethodChanged,
-    required this.onRemove,
-    this.rowError,
-  });
-
-  final int rowIndex;
-  final ReconciliationSaleRowInput row;
-  final ReconciliationSaleRowError? rowError;
-  final ValueChanged<int> onQtyChanged;
-  final ValueChanged<double?> onPriceChanged;
-  final ValueChanged<String?> onMethodChanged;
-  final VoidCallback onRemove;
-
-  @override
-  State<_SaleRowEditor> createState() => _SaleRowEditorState();
-}
-
-class _SaleRowEditorState extends State<_SaleRowEditor> {
-  late TextEditingController _qtyController;
-  late TextEditingController _priceController;
-  final FocusNode _priceFocusNode = FocusNode();
-
-  @override
-  void initState() {
-    super.initState();
-    _qtyController = TextEditingController(text: '${widget.row.quantity}');
-    _priceController = TextEditingController(
-      text: _priceToText(widget.row.unitPrice),
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant _SaleRowEditor oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final nextQty = '${widget.row.quantity}';
-    if (_qtyController.text != nextQty) {
-      _qtyController.value = TextEditingValue(
-        text: nextQty,
-        selection: TextSelection.collapsed(offset: nextQty.length),
-      );
-    }
-
-    final nextPrice = _priceToText(widget.row.unitPrice);
-    if (!_priceFocusNode.hasFocus && _priceController.text != nextPrice) {
-      _priceController.value = TextEditingValue(
-        text: nextPrice,
-        selection: TextSelection.collapsed(offset: nextPrice.length),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _qtyController.dispose();
-    _priceController.dispose();
-    _priceFocusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final quantity = widget.row.quantity;
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Text(
-                  '${VN.dongBan} ${widget.rowIndex + 1}',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-                ),
-              ),
-              IconButton(
-                tooltip: VN.xoa,
-                onPressed: widget.onRemove,
-                icon: const Icon(Icons.delete_outline),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _QuantityStepperField(
-            label: VN.soLuongBan,
-            controller: _qtyController,
-            errorText: widget.rowError?.quantity,
-            onChanged: widget.onQtyChanged,
-            onDecrement: () {
-              if (quantity <= 0) {
-                return;
-              }
-              widget.onQtyChanged(quantity - 1);
-            },
-            onIncrement: () => widget.onQtyChanged(quantity + 1),
-          ),
-          const SizedBox(height: 8),
-          TextFormField(
-            key: const Key('reconciliation-unit-price-field'),
-            controller: _priceController,
-            focusNode: _priceFocusNode,
-            keyboardType: TextInputType.number,
-            onChanged: (value) {
-              final trimmed = value.trim();
-              widget.onPriceChanged(
-                trimmed.isEmpty ? null : double.tryParse(trimmed),
-              );
-            },
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-            ],
-            decoration: InputDecoration(
-              labelText: VN.donGiaNhapTay,
-              border: const OutlineInputBorder(),
-              isDense: true,
-              errorText: widget.rowError?.unitPrice,
-            ),
-          ),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            initialValue: widget.row.paymentMethod,
-            decoration: InputDecoration(
-              labelText: VN.phuongThucThanhToan,
-              border: const OutlineInputBorder(),
-              isDense: true,
-              errorText: widget.rowError?.paymentMethod,
-            ),
-            items: const [
-              DropdownMenuItem(value: 'cash', child: Text(VN.methodCash)),
-              DropdownMenuItem(
-                value: 'transfer',
-                child: Text(VN.methodTransfer),
-              ),
-            ],
-            onChanged: widget.onMethodChanged,
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _priceToText(double? price) {
-    if (price == null) {
-      return '';
-    }
-    return price == price.roundToDouble()
-        ? price.toInt().toString()
-        : price.toString();
   }
 }
 
