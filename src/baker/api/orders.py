@@ -37,7 +37,7 @@ def _day_bounds(date_str: str) -> tuple[str, str]:
     return f"{date_str}T00:00:00", next_day.strftime("%Y-%m-%dT00:00:00")
 
 
-def _is_delivered_and_fully_paid(conn, row) -> tuple[bool, float]:
+def _is_delivered_and_fully_paid(conn, row) -> tuple[bool, Optional[float]]:
     """Return (is_fully_paid, amount_paid) for a delivered order row.
 
     DG-274 review-auto c1 (CQ-1): deduplicates the delivered+paid filter used
@@ -45,12 +45,13 @@ def _is_delivered_and_fully_paid(conn, row) -> tuple[bool, float]:
     Computes ``amount_paid`` once via ``PaymentTransaction.total_paid_excl_outflows``
     and returns it so the caller can forward it to ``Order.from_row`` via
     ``amount_paid=`` and avoid a duplicate query for partially-paid delivered
-    orders. Non-delivered rows return ``(False, <lazy>)`` — the amount_paid
+    orders. Non-delivered rows return ``(False, None)`` — the amount_paid
     is not precomputed because the filter never skips these rows, and
-    ``Order.from_row`` will compute it lazily when needed.
+    ``Order.from_row`` will compute it lazily when ``amount_paid is None``
+    (CQ-2 clarifies the lazy-cache contract).
     """
     if row["status"] != "delivered":
-        return (False, 0.0)
+        return (False, None)
     amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, row["id"])
     return (amount_paid >= float(row["total_price"]), amount_paid)
 

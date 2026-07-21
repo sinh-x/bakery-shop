@@ -424,10 +424,17 @@ class Order:
 
         ``conn`` is required (v80+ dropped the stored ``amount_paid`` column
         fallback, so the value must always be recomputed via
-        ``PaymentTransaction.total_paid_excl_outflows``). Callers that have
-        already computed ``amount_paid`` (e.g. ``list_orders`` filter checks
-        in ``api/orders.py``) may pass it via ``amount_paid=`` to avoid a
-        duplicate query (DG-274 review-auto c1 / CQ-1).
+        ``PaymentTransaction.total_paid_excl_outflows``).
+
+        ``amount_paid`` (keyword-only, optional) — a precomputed
+        ``total_paid_excl_outflows`` value for this order. When ``None``
+        (default), it is lazily computed here via
+        ``PaymentTransaction.total_paid_excl_outflows(conn, row["id"])``.
+        Callers that already computed it (e.g. ``list_orders`` filter checks
+        in ``api/orders.py`` via ``_is_delivered_and_fully_paid``) may pass it
+        via ``amount_paid=`` to avoid a duplicate query (DG-274 review-auto
+        c1 / CQ-1, CQ-2). The value is cached on the returned ``Order``
+        instance as ``order.amount_paid``.
         """
         items_data = json.loads(row["items"]) if row["items"] else []
         items = [OrderItem(**i) for i in items_data]
