@@ -94,7 +94,7 @@ class _ExpandedDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final chipLabels = line.sourceChipLabels.isNotEmpty
+    final sourceChipLabels = line.sourceChipLabels.isNotEmpty
         ? line.sourceChipLabels.join(', ')
         : line.chipLabel;
     return Column(
@@ -103,9 +103,9 @@ class _ExpandedDetails extends StatelessWidget {
         Text(
           line.normalizedPrice != null
               ? '${VN.tuyChonGia}: ${line.normalizedPrice}'
-              : '${VN.tuyChon}: $chipLabels',
+              : '${VN.tuyChon}: ${line.chipLabel}',
         ),
-        Text('${VN.tuyChon}: $chipLabels'),
+        Text('${VN.tuyChon}: $sourceChipLabels'),
         if (line.wasteQty > 0)
           Text(
             '${VN.lyDoHaoHut}: ${(line.wasteReason?.trim().isNotEmpty == true) ? line.wasteReason! : VN.khongCo}',
