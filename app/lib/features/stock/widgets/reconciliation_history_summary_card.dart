@@ -63,13 +63,34 @@ class ReconciliationHistorySummaryCard extends StatelessWidget {
               spacing: 6,
               runSpacing: 6,
               children: [
-                _SummaryPill(label: VN.tongTonDuKien, value: totalExpected),
-                _SummaryPill(label: VN.tongTonDaDem, value: totalCounted),
-                _SummaryPill(label: VN.tongSoLuongBan, value: totalSale),
-                _SummaryPill(label: VN.tongSoLuongHaoHut, value: totalWaste),
-                _SummaryPill(label: VN.tongChenhLech, value: variance),
-                _SummaryPill(label: VN.tongSoLuongSanPham, value: productCount),
-                _SummaryPill(label: VN.tongSoDong, value: lineCount),
+                ReconciliationSummaryChip(
+                  label: VN.tongTonDuKien,
+                  value: totalExpected,
+                ),
+                ReconciliationSummaryChip(
+                  label: VN.tongTonDaDem,
+                  value: totalCounted,
+                ),
+                ReconciliationSummaryChip(
+                  label: VN.tongSoLuongBan,
+                  value: totalSale,
+                ),
+                ReconciliationSummaryChip(
+                  label: VN.tongSoLuongHaoHut,
+                  value: totalWaste,
+                ),
+                ReconciliationSummaryChip(
+                  label: VN.tongChenhLech,
+                  value: variance,
+                ),
+                ReconciliationSummaryChip(
+                  label: VN.tongSoLuongSanPham,
+                  value: productCount,
+                ),
+                ReconciliationSummaryChip(
+                  label: VN.tongSoDong,
+                  value: lineCount,
+                ),
               ],
             ),
           ],
@@ -91,8 +112,8 @@ class _RefRow extends StatelessWidget {
   }
 }
 
-class _SummaryPill extends StatelessWidget {
-  const _SummaryPill({required this.label, required this.value});
+class ReconciliationSummaryChip extends StatelessWidget {
+  const ReconciliationSummaryChip({required this.label, required this.value, super.key});
 
   final String label;
   final int value;

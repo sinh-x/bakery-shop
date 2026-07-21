@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../data/api/reconciliation_service.dart';
 import '../../../shared/labels/shared.dart';
 import 'reconciliation_history_sale_rows.dart';
+import 'reconciliation_history_summary_card.dart';
 
 /// Collapsible card for a single reconciliation history line.
 ///
@@ -62,10 +63,22 @@ class _ReconciliationHistoryLineCardState
               spacing: 6,
               runSpacing: 6,
               children: [
-                _SummaryChip(label: VN.tonDuKien, value: line.expectedQty),
-                _SummaryChip(label: VN.tonDaDem, value: line.countedQty),
-                _SummaryChip(label: VN.soLuongBan, value: line.saleQty),
-                _SummaryChip(label: VN.soLuongHaoHut, value: line.wasteQty),
+                ReconciliationSummaryChip(
+                  label: VN.tonDuKien,
+                  value: line.expectedQty,
+                ),
+                ReconciliationSummaryChip(
+                  label: VN.tonDaDem,
+                  value: line.countedQty,
+                ),
+                ReconciliationSummaryChip(
+                  label: VN.soLuongBan,
+                  value: line.saleQty,
+                ),
+                ReconciliationSummaryChip(
+                  label: VN.soLuongHaoHut,
+                  value: line.wasteQty,
+                ),
               ],
             ),
             if (_isExpanded) ...[
@@ -123,28 +136,6 @@ class _ExpandedDetails extends StatelessWidget {
           '${VN.thamChieuXuatHaoHut}: ${line.linkedStockMovementWasteId?.toString() ?? VN.khongCo}',
         ),
       ],
-    );
-  }
-}
-
-class _SummaryChip extends StatelessWidget {
-  const _SummaryChip({required this.label, required this.value});
-
-  final String label;
-  final int value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.grey.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        '$label: $value',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
     );
   }
 }
