@@ -25,6 +25,7 @@ import click
 
 from baker.db.connection import get_db
 from baker.db.schema import COGS_CODE, ORDER_REVENUE_CODE
+from baker.models.order import OrderStatus
 from baker.utils.time import utc_to_local
 
 
@@ -760,3 +761,107 @@ def cogs_audit_cmd(since, until):
     click.echo("")
     summary_parts = [f"{status}={totals[status]}" for status in COGS_STATUSES]
     click.echo(f"Orders: {len(rows)}  Status: {', '.join(summary_parts)}")
+
+
+# Order lifecycle statuses in canonical display order (FR2/FR6). All 7
+# OrderStatus enum values appear in the report output even when no orders
+# are present in that status.
+ORDER_REPORT_STATUSES = (
+    OrderStatus.NEW.value,
+    OrderStatus.CONFIRMED.value,
+    OrderStatus.IN_PROGRESS.value,
+    OrderStatus.READY.value,
+    OrderStatus.DELIVERED.value,
+    OrderStatus.COMPLETED.value,
+    OrderStatus.CANCELLED.value,
+)
+
+
+@report_cmd.command("order-status")
+@click.option("--since", help="From date (YYYY-MM-DD)")
+@click.option("--until", help="To date (YYYY-MM-DD, inclusive)")
+def order_status_cmd(since, until):
+    """Order counts and total value grouped by status and delivery type.
+
+    Outputs a text table to stdout. Orders are grouped by lifecycle status
+    (new, confirmed, in_progress, ready, delivered, completed, cancelled)
+    with a sub-breakdown by ``delivery_type`` inside each status group,
+    showing order count (COUNT) and total value (SUM of total_price) per
+    group. A grand total row reports the overall count and value across
+    all statuses. All 7 statuses always appear, even when count=0.
+
+    ``--since`` / ``--until`` filter orders by ``COALESCE(NULLIF(due_date,
+    ''), created_at)`` — the same business-event date used by the
+    cogs-audit report. Cancelled orders are included.
+    """
+    since_b = _normalize_date(since)
+    until_b = _normalize_date(until, end_of_day=True)
+    _echo_header("Order Status Report", since, until)
+
+    params: list = []
+    where_clauses: list = []
+    if since_b:
+        where_clauses.append("COALESCE(NULLIF(o.due_date, ''), o.created_at) >= ?")
+        params.append(since_b)
+    if until_b:
+        where_clauses.append("COALESCE(NULLIF(o.due_date, ''), o.created_at) <= ?")
+        params.append(until_b)
+    where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    with get_db() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT o.status          AS status,
+                   COALESCE(o.delivery_type, '') AS delivery_type,
+                   COUNT(*)           AS cnt,
+                   COALESCE(SUM(o.total_price), 0) AS total_value
+            FROM orders o
+            {where_sql}
+            GROUP BY o.status, COALESCE(o.delivery_type, '')
+            """,
+            params,
+        ).fetchall()
+
+    # Build a lookup: status -> {delivery_type -> (count, value)}.
+    by_status: dict[str, dict[str, tuple[int, float]]] = {
+        s: {} for s in ORDER_REPORT_STATUSES
+    }
+    for r in rows:
+        status = r["status"]
+        dtype = r["delivery_type"] or ""
+        count = int(r["cnt"])
+        value = float(r["total_value"] or 0)
+        # Preserve unknown statuses as-is (defensive — schema enum should
+        # cover all values, but the report must not drop unknown data).
+        by_status.setdefault(status, {})[dtype] = (count, value)
+
+    click.echo(
+        f"{'Status':<14}{'Delivery Type':<20}{'Count':>10}{'Value':>20}"
+    )
+    click.echo("-" * 64)
+
+    grand_count = 0
+    grand_value = 0.0
+    for status in ORDER_REPORT_STATUSES:
+        status_count = 0
+        status_value = 0.0
+        sub = by_status.get(status, {})
+        # Sort delivery types with empty-string (NULL) first for stable output.
+        for dtype in sorted(sub, key=lambda d: (d == "", d)):
+            count, value = sub[dtype]
+            status_count += count
+            status_value += value
+            display_dt = dtype if dtype else "(none)"
+            click.echo(
+                f"{status:<14}{display_dt[:19]:<20}{count:>10,}{value:>20,.2f}"
+            )
+        if not sub:
+            click.echo(f"{status:<14}{'(none)':<20}{0:>10,}{0.0:>20,.2f}")
+        click.echo(f"{'  subtotal':<14}{'':<20}{status_count:>10,}{status_value:>20,.2f}")
+        click.echo("-" * 64)
+        grand_count += status_count
+        grand_value += status_value
+
+    click.echo(
+        f"{'GRAND TOTAL':<34}{grand_count:>10,}{grand_value:>20,.2f}"
+    )
