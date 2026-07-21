@@ -37,6 +37,25 @@ def _day_bounds(date_str: str) -> tuple[str, str]:
     return f"{date_str}T00:00:00", next_day.strftime("%Y-%m-%dT00:00:00")
 
 
+def _is_delivered_and_fully_paid(conn, row) -> tuple[bool, Optional[float]]:
+    """Return (is_fully_paid, amount_paid) for a delivered order row.
+
+    DG-274 review-auto c1 (CQ-1): deduplicates the delivered+paid filter used
+    in both ``active_only`` and ``status`` branches of ``list_orders``.
+    Computes ``amount_paid`` once via ``PaymentTransaction.total_paid_excl_outflows``
+    and returns it so the caller can forward it to ``Order.from_row`` via
+    ``amount_paid=`` and avoid a duplicate query for partially-paid delivered
+    orders. Non-delivered rows return ``(False, None)`` — the amount_paid
+    is not precomputed because the filter never skips these rows, and
+    ``Order.from_row`` will compute it lazily when ``amount_paid is None``
+    (CQ-2 clarifies the lazy-cache contract).
+    """
+    if row["status"] != "delivered":
+        return (False, None)
+    amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, row["id"])
+    return (amount_paid >= float(row["total_price"]), amount_paid)
+
+
 def _resolve_customer_id_by_phone(conn, phone: str, customer_name: Optional[str] = None) -> Optional[int]:
     """Resolve a customer_id from a phone number via the ``customer_phones`` table.
 
@@ -477,9 +496,15 @@ def list_orders(
             ).fetchall()
             result = []
             for r in rows:
-                order = Order.from_row(r, conn)
-                if order.status == "delivered" and order.amount_paid >= order.total_price:
+                # DG-274 Phase 3 (FR3) / review-auto c1 (CQ-1): filter
+                # delivered+fully-paid orders out of the active view using
+                # the live-computed amount_paid (stored column was dropped in
+                # v80). The cached amount_paid is forwarded to from_row so we
+                # don't re-query total_paid_excl_outflows for the rows we keep.
+                fully_paid, amount_paid = _is_delivered_and_fully_paid(conn, r)
+                if fully_paid:
                     continue
+                order = Order.from_row(r, conn, amount_paid=amount_paid)
                 result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
@@ -491,9 +516,12 @@ def list_orders(
             ).fetchall()
             result = []
             for r in rows:
-                order = Order.from_row(r, conn)
-                if order.status == "delivered" and order.amount_paid >= order.total_price:
+                # DG-274 Phase 3 (FR3) / review-auto c1 (CQ-1): same
+                # delivered+paid filter as the active_only branch above.
+                fully_paid, amount_paid = _is_delivered_and_fully_paid(conn, r)
+                if fully_paid:
                     continue
+                order = Order.from_row(r, conn, amount_paid=amount_paid)
                 result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
@@ -982,6 +1010,11 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
 @router.post("/{ref}/status")
 def transition_status(ref: str, body: StatusTransition, request: Request):
     """Chuyển trạng thái đơn hàng. Lý do bắt buộc khi lùi trạng thái."""
+    # Shared journal-sync helpers used by multiple branches below (DG-269
+    # Phase 5.6-c1 / CQ-4): import once to avoid duplicate imports in each
+    # conditional branch.
+    from baker.services.journal_sync import run_journal_sync, sync_status_to_warning
+
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
@@ -1028,7 +1061,7 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
 
         if body.status == "cancelled":
             restore_stock_for_order(conn, row["id"], row["order_ref"])
-            from baker.services.journal_sync import _sync_cancelled_order_journal, run_journal_sync, sync_status_to_warning
+            from baker.services.journal_sync import _sync_cancelled_order_journal
             sync_status = run_journal_sync(
                 _sync_cancelled_order_journal,
                 conn, row["id"],
@@ -1052,11 +1085,24 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
 
         # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
         if body.status == "delivered" and row["status"] != "delivered":
-            from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync, sync_status_to_warning
+            from baker.services.journal_sync import _sync_delivered_order_journal
             sync_status = run_journal_sync(
                 _sync_delivered_order_journal,
                 conn, row["id"], row["order_ref"],
                 log_label=f"delivered order journal sync for order {row['id']}",
+                source_type="order",
+                source_id=row["id"],
+            )
+            accounting_sync_warning = sync_status_to_warning(sync_status)
+
+        # When transitioning TO completed, reconcile 2100 deposits into revenue
+        # and clear 1500 AR (DG-269 Phase 3).
+        if body.status == "completed" and row["status"] != "completed":
+            from baker.services.journal_sync import _sync_completed_order_journal
+            sync_status = run_journal_sync(
+                _sync_completed_order_journal,
+                conn, row["id"], row["order_ref"],
+                log_label=f"completed order journal sync for order {row['id']}",
                 source_type="order",
                 source_id=row["id"],
             )
