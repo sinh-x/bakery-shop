@@ -168,7 +168,9 @@ class StockItemCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(16),
-                    onTap: () => onChipTap!(option.normalizedPrice),
+                    onTap: onChipTap != null
+                        ? () => onChipTap!(option.normalizedPrice)
+                        : null,
                     child: Container(
                       constraints: const BoxConstraints(
                         minHeight: 48,
