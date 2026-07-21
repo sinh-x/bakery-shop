@@ -8,11 +8,11 @@ import '../../providers/categories_provider.dart';
 import '../../providers/products_provider.dart';
 import '../../shared/mixins/auto_refresh_mixin.dart';
 import '../../shared/utils/category_grouping.dart';
-import '../../shared/utils/product_photo_url.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/collapsible_category_sections.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'widgets/stock_action_sheet.dart';
+import 'widgets/stock_item_card.dart';
 
 /// Provider for stock overview list.
 final stockOverviewProvider =
@@ -202,7 +202,7 @@ class _StockScreenState extends ConsumerState<StockScreen>
               contentPadding: const EdgeInsets.symmetric(horizontal: 12),
               itemBuilder: (context, item) {
                 final emoji = categoryEmojiMap[item.category] ?? '🍰';
-                return _StockItemCard(
+                return StockItemCard(
                   item: item,
                   emoji: emoji,
                   baseUrl: baseUrl,
@@ -239,180 +239,6 @@ class _StockScreenState extends ConsumerState<StockScreen>
           Navigator.pop(context);
           showTopSnackBar(context, VN.capNhatThanhCong);
         },
-      ),
-    );
-  }
-}
-
-class _StockItemCard extends StatelessWidget {
-  const _StockItemCard({
-    required this.item,
-    required this.emoji,
-    required this.baseUrl,
-    required this.cacheBuster,
-    required this.onRestock,
-    required this.onWaste,
-    required this.onAdjust,
-  });
-
-  final StockOverviewItem item;
-  final String emoji;
-  final String baseUrl;
-  final String cacheBuster;
-  final VoidCallback onRestock;
-  final VoidCallback onWaste;
-  final VoidCallback onAdjust;
-
-  @override
-  Widget build(BuildContext context) {
-    final totalQty = item.totalQuantity;
-    final statusColor = stockStatusColor(totalQty);
-    final statusLabel = stockStatusLabel(totalQty);
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    productPhotoUrl(
-                      baseUrl,
-                      item.productId,
-                      cacheBuster: cacheBuster,
-                    ),
-                    width: 64,
-                    height: 64,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      width: 64,
-                      height: 64,
-                      color: Colors.grey[100],
-                      child: Center(
-                        child: Text(
-                          emoji,
-                          style: const TextStyle(fontSize: 32),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.productName,
-                        style: Theme.of(context).textTheme.titleMedium,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: statusColor.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              statusLabel,
-                              style: TextStyle(
-                                color: statusColor,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Column(
-                  children: [
-                    Text(
-                      '$totalQty',
-                      style: Theme.of(context).textTheme.headlineMedium
-                          ?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: statusColor,
-                          ),
-                    ),
-                    Text(
-                      VN.tonKho,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: item.perChip
-                  .map(
-                    (option) => Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                      child: Text(
-                        '${option.displayLabel} (${option.normalizedPrice}): ${option.quantity}',
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.tonalIcon(
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text(VN.nhapHang),
-                    onPressed: onRestock,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.tonalIcon(
-                    icon: const Icon(Icons.remove, size: 18),
-                    label: const Text(VN.haoHut),
-                    onPressed: onWaste,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.tonalIcon(
-                    icon: const Icon(Icons.edit, size: 18),
-                    label: const Text(VN.dieuChinh),
-                    onPressed: onAdjust,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
