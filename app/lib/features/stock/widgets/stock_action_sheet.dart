@@ -230,30 +230,52 @@ class _StockActionSheetState extends ConsumerState<StockActionSheet> {
                   const SizedBox(height: 12),
                 ],
 
-                // Quantity input
-                TextFormField(
-                  controller: _quantityController,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: InputDecoration(
-                    labelText: VN.soLuong,
-                    hintText: widget.actionType == ActionType.adjust
-                        ? 'Nhập số lượng mới'
-                        : 'Nhập số lượng',
-                    border: const OutlineInputBorder(),
-                    prefixIcon: const Icon(Icons.numbers),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return VN.fieldRequired;
-                    }
-                    final qty = int.tryParse(value);
-                    if (qty == null || qty <= 0) {
-                      return VN.soLuongInvalid;
-                    }
-                    return null;
-                  },
+                // Quantity input with +/- buttons
+                Row(
+                  children: [
+                    IconButton.filled(
+                      onPressed: () {
+                        final current = int.tryParse(_quantityController.text) ?? 0;
+                        if (current > 1) {
+                          _quantityController.text = '${current - 1}';
+                        }
+                      },
+                      icon: const Icon(Icons.remove),
+                    ),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _quantityController,
+                        autofocus: true,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        textAlign: TextAlign.center,
+                        decoration: InputDecoration(
+                          labelText: VN.soLuong,
+                          hintText: widget.actionType == ActionType.adjust
+                              ? 'Nhập số lượng mới'
+                              : 'Nhập số lượng',
+                          border: const OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return VN.fieldRequired;
+                          }
+                          final qty = int.tryParse(value);
+                          if (qty == null || qty <= 0) {
+                            return VN.soLuongInvalid;
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                    IconButton.filled(
+                      onPressed: () {
+                        final current = int.tryParse(_quantityController.text) ?? 0;
+                        _quantityController.text = '${current + 1}';
+                      },
+                      icon: const Icon(Icons.add),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
 
