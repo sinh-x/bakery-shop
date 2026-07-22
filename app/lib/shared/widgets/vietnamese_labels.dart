@@ -455,6 +455,7 @@ class VN {
   static const save = 'Lưu';
   static const cancel = 'Hủy';
   static const back = 'Quay lại';
+  static const dong = 'Đóng';
   static const currency = 'đ';
 
   // Receipts
