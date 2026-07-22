@@ -138,7 +138,7 @@ class _ReconciliationSaleModalContentState
     super.initState();
     _qtyController = TextEditingController(text: '${widget.initialQty}');
     _priceController = TextEditingController(
-      text: _priceToText(widget.initialUnitPrice),
+      text: reconciliationPriceToText(widget.initialUnitPrice),
     );
     _paymentMethod = widget.initialPaymentMethod;
   }
@@ -221,7 +221,7 @@ class _ReconciliationSaleModalContentState
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildHandle(context),
+              buildReconciliationModalHandle(context),
               const SizedBox(height: 12),
               _buildTitle(context),
               const SizedBox(height: 12),
@@ -235,28 +235,19 @@ class _ReconciliationSaleModalContentState
                 variance: variance,
               ),
               const SizedBox(height: 12),
-              _buildProductHeader(context),
+              buildReconciliationProductHeader(
+                context,
+                product: widget.product,
+                option: widget.option,
+              ),
               const SizedBox(height: 16),
               _buildExistingSaleRows(context, saleRows),
               const SizedBox(height: 16),
               _buildSaleForm(context),
               const SizedBox(height: 16),
-              _buildActions(context, onSubmit: _submit),
+              buildReconciliationModalActions(context, onSubmit: _submit),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHandle(BuildContext context) {
-    return Center(
-      child: Container(
-        width: 40,
-        height: 4,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.outline,
-          borderRadius: BorderRadius.circular(2),
         ),
       ),
     );
@@ -266,14 +257,6 @@ class _ReconciliationSaleModalContentState
     return Text(
       widget.editingRowIndex == null ? VN.banHang : '${VN.banHang} - ${VN.sua}',
       style: Theme.of(context).textTheme.titleLarge,
-      textAlign: TextAlign.center,
-    );
-  }
-
-  Widget _buildProductHeader(BuildContext context) {
-    return Text(
-      '${widget.product.name} - ${formatVND(widget.option.normalizedPrice.toDouble())}',
-      style: Theme.of(context).textTheme.titleMedium,
       textAlign: TextAlign.center,
     );
   }
@@ -366,47 +349,12 @@ class _ReconciliationSaleModalContentState
               border: OutlineInputBorder(),
               isDense: true,
             ),
-            items: const [
-              DropdownMenuItem(value: 'cash', child: Text(VN.methodCash)),
-              DropdownMenuItem(
-                value: 'transfer',
-                child: Text(VN.methodTransfer),
-              ),
-            ],
+            items: kReconciliationPaymentMethodItems,
             onChanged: (value) => setState(() => _paymentMethod = value),
           ),
         ],
       ),
     );
-  }
-
-  Widget _buildActions(BuildContext context, {required VoidCallback onSubmit}) {
-    return Row(
-      children: [
-        Expanded(
-          child: TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text(VN.dong),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: FilledButton(
-            onPressed: onSubmit,
-            child: const Text(VN.xacNhan),
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _priceToText(double? price) {
-    if (price == null) {
-      return '';
-    }
-    return price == price.roundToDouble()
-        ? price.toInt().toString()
-        : price.toString();
   }
 }
 
@@ -493,7 +441,7 @@ class _ReconciliationWasteModalContentState
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildHandle(context),
+              buildReconciliationModalHandle(context),
               const SizedBox(height: 12),
               _buildTitle(context),
               const SizedBox(height: 12),
@@ -507,28 +455,19 @@ class _ReconciliationWasteModalContentState
                 variance: variance,
               ),
               const SizedBox(height: 12),
-              _buildProductHeader(context),
+              buildReconciliationProductHeader(
+                context,
+                product: widget.product,
+                option: widget.option,
+              ),
               const SizedBox(height: 16),
               _buildExistingWaste(context, waste, wasteReason),
               const SizedBox(height: 16),
               _buildWasteForm(context, localQty),
               const SizedBox(height: 16),
-              _buildActions(context, onSubmit: _submit),
+              buildReconciliationModalActions(context, onSubmit: _submit),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHandle(BuildContext context) {
-    return Center(
-      child: Container(
-        width: 40,
-        height: 4,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.outline,
-          borderRadius: BorderRadius.circular(2),
         ),
       ),
     );
@@ -538,14 +477,6 @@ class _ReconciliationWasteModalContentState
     return Text(
       VN.haoHutSheet,
       style: Theme.of(context).textTheme.titleLarge,
-      textAlign: TextAlign.center,
-    );
-  }
-
-  Widget _buildProductHeader(BuildContext context) {
-    return Text(
-      '${widget.product.name} - ${formatVND(widget.option.normalizedPrice.toDouble())}',
-      style: Theme.of(context).textTheme.titleMedium,
       textAlign: TextAlign.center,
     );
   }
@@ -624,25 +555,6 @@ class _ReconciliationWasteModalContentState
     );
   }
 
-  Widget _buildActions(BuildContext context, {required VoidCallback onSubmit}) {
-    return Row(
-      children: [
-        Expanded(
-          child: TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text(VN.dong),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: FilledButton(
-            onPressed: onSubmit,
-            child: const Text(VN.xacNhan),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 Widget _buildSummaryChips(

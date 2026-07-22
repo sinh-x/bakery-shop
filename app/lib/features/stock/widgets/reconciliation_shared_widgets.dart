@@ -1,8 +1,91 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../data/api/reconciliation_models.dart';
 import '../../../data/providers/reconciliation_provider.dart';
 import '../../../shared/labels/shared.dart';
+
+/// Payment method option values shared across reconciliation modals and row
+/// editors. Centralized here to avoid hardcoded string literals (CQ-2).
+const kPaymentMethodCash = 'cash';
+const kPaymentMethodTransfer = 'transfer';
+
+/// Shared set of payment-method dropdown items reused by the sale modal and
+/// the sale row editor. Keeps the [DropdownMenuItem] definitions in one place
+/// so labels and values stay consistent.
+const List<DropdownMenuItem<String>> kReconciliationPaymentMethodItems = [
+  DropdownMenuItem<String>(value: kPaymentMethodCash, child: Text(VN.methodCash)),
+  DropdownMenuItem<String>(
+    value: kPaymentMethodTransfer,
+    child: Text(VN.methodTransfer),
+  ),
+];
+
+/// Renders the drag handle bar used at the top of reconciliation modal bottom
+/// sheets. Extracted so both the sale and waste modals reuse the same widget
+/// (CQ-1).
+Widget buildReconciliationModalHandle(BuildContext context) {
+  return Center(
+    child: Container(
+      width: 40,
+      height: 4,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.outline,
+        borderRadius: BorderRadius.circular(2),
+      ),
+    ),
+  );
+}
+
+/// Renders the product name + option price header used by both reconciliation
+/// modals (CQ-1).
+Widget buildReconciliationProductHeader(
+  BuildContext context, {
+  required ReconciliationDraftProduct product,
+  required ReconciliationDraftOption option,
+}) {
+  return Text(
+    '${product.name} - ${formatVND(option.normalizedPrice.toDouble())}',
+    style: Theme.of(context).textTheme.titleMedium,
+    textAlign: TextAlign.center,
+  );
+}
+
+/// Renders the modal action row (close + confirm) reused by both reconciliation
+/// modals (CQ-1).
+Widget buildReconciliationModalActions(
+  BuildContext context, {
+  required VoidCallback onSubmit,
+}) {
+  return Row(
+    children: [
+      Expanded(
+        child: TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text(VN.dong),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: FilledButton(
+          onPressed: onSubmit,
+          child: const Text(VN.xacNhan),
+        ),
+      ),
+    ],
+  );
+}
+
+/// Formats a nullable price for display in a text field: empty when null,
+/// integer form when whole, otherwise the raw double string (CQ-1).
+String reconciliationPriceToText(double? price) {
+  if (price == null) {
+    return '';
+  }
+  return price == price.roundToDouble()
+      ? price.toInt().toString()
+      : price.toString();
+}
 
 class ReconciliationSummaryChip extends StatelessWidget {
   const ReconciliationSummaryChip({
@@ -143,7 +226,7 @@ class _ReconciliationSaleRowEditorState
     super.initState();
     _qtyController = TextEditingController(text: '${widget.row.quantity}');
     _priceController = TextEditingController(
-      text: _priceToText(widget.row.unitPrice),
+      text: reconciliationPriceToText(widget.row.unitPrice),
     );
   }
 
@@ -158,7 +241,7 @@ class _ReconciliationSaleRowEditorState
       );
     }
 
-    final nextPrice = _priceToText(widget.row.unitPrice);
+    final nextPrice = reconciliationPriceToText(widget.row.unitPrice);
     if (!_priceFocusNode.hasFocus && _priceController.text != nextPrice) {
       _priceController.value = TextEditingValue(
         text: nextPrice,
@@ -251,26 +334,11 @@ class _ReconciliationSaleRowEditorState
               isDense: true,
               errorText: widget.rowError?.paymentMethod,
             ),
-            items: const [
-              DropdownMenuItem(value: 'cash', child: Text(VN.methodCash)),
-              DropdownMenuItem(
-                value: 'transfer',
-                child: Text(VN.methodTransfer),
-              ),
-            ],
+            items: kReconciliationPaymentMethodItems,
             onChanged: widget.onMethodChanged,
           ),
         ],
       ),
     );
-  }
-
-  String _priceToText(double? price) {
-    if (price == null) {
-      return '';
-    }
-    return price == price.roundToDouble()
-        ? price.toInt().toString()
-        : price.toString();
   }
 }
