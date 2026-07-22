@@ -404,6 +404,32 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
             ReconciliationVarianceIndicator(variance: variance),
           ],
         ),
+        if (saleRows.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _InlineSaleRowList(
+            product: product,
+            option: option,
+            optionKey: optionKey,
+            counted: counted,
+            saleRows: saleRows,
+            waste: waste,
+            wasteReason: wasteReason,
+            notifier: notifier,
+          ),
+        ],
+        if (waste > 0 || wasteReason.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _InlineWasteItem(
+            product: product,
+            option: option,
+            optionKey: optionKey,
+            counted: counted,
+            saleRows: saleRows,
+            waste: waste,
+            wasteReason: wasteReason,
+            notifier: notifier,
+          ),
+        ],
         if (optionError != null) ...[
           const SizedBox(height: 8),
           Text(
@@ -614,6 +640,223 @@ class _OptionInventoryHeader extends StatelessWidget {
         ),
         if (trailing != null) ...[const SizedBox(width: 8), trailing!],
       ],
+    );
+  }
+}
+
+class _InlineSaleRowList extends StatelessWidget {
+  const _InlineSaleRowList({
+    required this.product,
+    required this.option,
+    required this.optionKey,
+    required this.counted,
+    required this.saleRows,
+    required this.waste,
+    required this.wasteReason,
+    required this.notifier,
+  });
+
+  final ReconciliationDraftProduct product;
+  final ReconciliationDraftOption option;
+  final String optionKey;
+  final int counted;
+  final List<ReconciliationSaleRowInput> saleRows;
+  final int waste;
+  final String wasteReason;
+  final ReconciliationNotifier notifier;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var rowIndex = 0; rowIndex < saleRows.length; rowIndex += 1)
+          _InlineSaleRowItem(
+            key: ValueKey('$optionKey-inline-sale-row-$rowIndex'),
+            product: product,
+            option: option,
+            optionKey: optionKey,
+            counted: counted,
+            saleRows: saleRows,
+            waste: waste,
+            wasteReason: wasteReason,
+            notifier: notifier,
+            rowIndex: rowIndex,
+            row: saleRows[rowIndex],
+          ),
+      ],
+    );
+  }
+}
+
+class _InlineSaleRowItem extends StatelessWidget {
+  const _InlineSaleRowItem({
+    required this.product,
+    required this.option,
+    required this.optionKey,
+    required this.counted,
+    required this.saleRows,
+    required this.waste,
+    required this.wasteReason,
+    required this.notifier,
+    required this.rowIndex,
+    required this.row,
+    super.key,
+  });
+
+  final ReconciliationDraftProduct product;
+  final ReconciliationDraftOption option;
+  final String optionKey;
+  final int counted;
+  final List<ReconciliationSaleRowInput> saleRows;
+  final int waste;
+  final String wasteReason;
+  final ReconciliationNotifier notifier;
+  final int rowIndex;
+  final ReconciliationSaleRowInput row;
+
+  @override
+  Widget build(BuildContext context) {
+    final priceText = row.unitPrice == null
+        ? '-'
+        : formatVND(row.unitPrice!.toDouble());
+    final methodText = row.paymentMethod == null || row.paymentMethod!.isEmpty
+        ? '-'
+        : paymentMethodLabel(row.paymentMethod!);
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${VN.dongBan} ${rowIndex + 1}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${VN.soLuongBan}: ${row.quantity} - $priceText - $methodText',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: VN.sua,
+            onPressed: () => showReconciliationSaleModal(
+              context,
+              product: product,
+              option: option,
+              optionKey: optionKey,
+              counted: counted,
+              saleRows: saleRows,
+              waste: waste,
+              wasteReason: wasteReason,
+              notifier: notifier,
+              editingRowIndex: rowIndex,
+            ),
+            icon: const Icon(Icons.edit_outlined),
+          ),
+          IconButton(
+            tooltip: VN.xoa,
+            onPressed: () => notifier.removeSaleRow(optionKey, rowIndex),
+            icon: const Icon(Icons.close),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InlineWasteItem extends StatelessWidget {
+  const _InlineWasteItem({
+    required this.product,
+    required this.option,
+    required this.optionKey,
+    required this.counted,
+    required this.saleRows,
+    required this.waste,
+    required this.wasteReason,
+    required this.notifier,
+  });
+
+  final ReconciliationDraftProduct product;
+  final ReconciliationDraftOption option;
+  final String optionKey;
+  final int counted;
+  final List<ReconciliationSaleRowInput> saleRows;
+  final int waste;
+  final String wasteReason;
+  final ReconciliationNotifier notifier;
+
+  @override
+  Widget build(BuildContext context) {
+    final reasonText = wasteReason.isEmpty ? '-' : wasteReason;
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  VN.haoHutSheet,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${VN.soLuongHaoHut}: $waste - ${VN.lyDoHaoHut}: $reasonText',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: VN.sua,
+            onPressed: () => showReconciliationWasteModal(
+              context,
+              product: product,
+              option: option,
+              optionKey: optionKey,
+              counted: counted,
+              saleRows: saleRows,
+              waste: waste,
+              wasteReason: wasteReason,
+              notifier: notifier,
+            ),
+            icon: const Icon(Icons.edit_outlined),
+          ),
+          IconButton(
+            tooltip: VN.xoa,
+            onPressed: () {
+              notifier.setWasteQty(optionKey, 0);
+              notifier.setWasteReasonForOption(optionKey, '');
+            },
+            icon: const Icon(Icons.close),
+          ),
+        ],
+      ),
     );
   }
 }

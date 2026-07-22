@@ -27,7 +27,12 @@ Future<bool?> showReconciliationSaleModal(
   required int waste,
   required String wasteReason,
   required ReconciliationNotifier notifier,
+  int? editingRowIndex,
 }) {
+  final editingRow =
+      editingRowIndex == null || editingRowIndex >= saleRows.length
+          ? null
+          : saleRows[editingRowIndex];
   return showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
@@ -41,6 +46,10 @@ Future<bool?> showReconciliationSaleModal(
       initialWaste: waste,
       initialWasteReason: wasteReason,
       notifier: notifier,
+      editingRowIndex: editingRowIndex,
+      initialQty: editingRow?.quantity ?? 0,
+      initialUnitPrice: editingRow?.unitPrice ?? option.normalizedPrice.toDouble(),
+      initialPaymentMethod: editingRow?.paymentMethod,
     ),
   );
 }
@@ -93,6 +102,10 @@ class _ReconciliationSaleModalContent extends ConsumerStatefulWidget {
     required this.initialWaste,
     required this.initialWasteReason,
     required this.notifier,
+    this.editingRowIndex,
+    this.initialQty = 0,
+    this.initialUnitPrice,
+    this.initialPaymentMethod,
   });
 
   final ReconciliationDraftProduct product;
@@ -103,6 +116,10 @@ class _ReconciliationSaleModalContent extends ConsumerStatefulWidget {
   final int initialWaste;
   final String initialWasteReason;
   final ReconciliationNotifier notifier;
+  final int? editingRowIndex;
+  final int initialQty;
+  final double? initialUnitPrice;
+  final String? initialPaymentMethod;
 
   @override
   ConsumerState<_ReconciliationSaleModalContent> createState() =>
@@ -119,10 +136,11 @@ class _ReconciliationSaleModalContentState
   @override
   void initState() {
     super.initState();
-    _qtyController = TextEditingController(text: '0');
+    _qtyController = TextEditingController(text: '${widget.initialQty}');
     _priceController = TextEditingController(
-      text: _priceToText(widget.option.normalizedPrice.toDouble()),
+      text: _priceToText(widget.initialUnitPrice),
     );
+    _paymentMethod = widget.initialPaymentMethod;
   }
 
   @override
@@ -141,25 +159,40 @@ class _ReconciliationSaleModalContentState
   }
 
   void _submit() {
-    widget.notifier.addSaleRow(
-      widget.optionKey,
-      defaultUnitPrice: widget.option.normalizedPrice,
-    );
-    final rowIndex =
-        (ref.read(reconciliationProvider).saleRowsByOption[widget.optionKey] ??
-                const <ReconciliationSaleRowInput>[])
-            .length -
-        1;
-    if (rowIndex >= 0) {
-      widget.notifier.setSaleRowQty(widget.optionKey, rowIndex, _qty);
+    final editingIndex = widget.editingRowIndex;
+    if (editingIndex == null) {
+      widget.notifier.addSaleRow(
+        widget.optionKey,
+        defaultUnitPrice: widget.option.normalizedPrice,
+      );
+      final rowIndex =
+          (ref.read(reconciliationProvider).saleRowsByOption[widget.optionKey] ??
+                  const <ReconciliationSaleRowInput>[])
+              .length -
+          1;
+      if (rowIndex >= 0) {
+        widget.notifier.setSaleRowQty(widget.optionKey, rowIndex, _qty);
+        widget.notifier.setSaleRowUnitPrice(
+          widget.optionKey,
+          rowIndex,
+          _unitPrice,
+        );
+        widget.notifier.setSaleRowPaymentMethod(
+          widget.optionKey,
+          rowIndex,
+          _paymentMethod,
+        );
+      }
+    } else {
+      widget.notifier.setSaleRowQty(widget.optionKey, editingIndex, _qty);
       widget.notifier.setSaleRowUnitPrice(
         widget.optionKey,
-        rowIndex,
+        editingIndex,
         _unitPrice,
       );
       widget.notifier.setSaleRowPaymentMethod(
         widget.optionKey,
-        rowIndex,
+        editingIndex,
         _paymentMethod,
       );
     }
@@ -231,7 +264,7 @@ class _ReconciliationSaleModalContentState
 
   Widget _buildTitle(BuildContext context) {
     return Text(
-      VN.banHang,
+      widget.editingRowIndex == null ? VN.banHang : '${VN.banHang} - ${VN.sua}',
       style: Theme.of(context).textTheme.titleLarge,
       textAlign: TextAlign.center,
     );
