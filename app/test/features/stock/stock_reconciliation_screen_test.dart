@@ -76,20 +76,32 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Finder sellWasteModalButton() =>
-      find.text('${VN.banHang} / ${VN.haoHutSheet}');
+  Finder saleModalButton() => find.text(VN.banHang);
 
-  Future<void> openSellWasteModal(WidgetTester tester, {int index = 0}) async {
+  Finder wasteModalButton() => find.text(VN.haoHutSheet);
+
+  Future<void> openSaleModal(WidgetTester tester, {int index = 0}) async {
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
-    final button = sellWasteModalButton().at(index);
+    final button = saleModalButton().at(index);
     await tester.ensureVisible(button);
     await tester.pumpAndSettle();
     await tester.tap(button, warnIfMissed: false);
     await tester.pumpAndSettle();
   }
 
-  Future<void> confirmSellWasteModal(WidgetTester tester) async {
+  // ignore: unused_element
+  Future<void> openWasteModal(WidgetTester tester, {int index = 0}) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    final button = wasteModalButton().at(index);
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button, warnIfMissed: false);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> confirmModal(WidgetTester tester) async {
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
     final button = find.text(VN.xacNhan);
@@ -99,7 +111,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> cancelSellWasteModal(WidgetTester tester) async {
+  Future<void> cancelModal(WidgetTester tester) async {
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
     final button = find.text(VN.dong);
@@ -108,6 +120,15 @@ void main() {
     await tester.tap(button, warnIfMissed: false);
     await tester.pumpAndSettle();
   }
+
+  Future<void> openSellWasteModal(WidgetTester tester, {int index = 0}) =>
+      openSaleModal(tester, index: index);
+
+  Future<void> confirmSellWasteModal(WidgetTester tester) =>
+      confirmModal(tester);
+
+  Future<void> cancelSellWasteModal(WidgetTester tester) =>
+      cancelModal(tester);
 
   GoRouter buildRouter() {
     return GoRouter(

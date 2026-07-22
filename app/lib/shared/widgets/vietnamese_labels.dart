@@ -840,6 +840,7 @@ class VN {
   static const trangThaiCoLoi = 'Có lỗi';
   static const themDongBan = 'Thêm dòng bán';
   static const soLuongChenhLech = 'Số lượng chênh lệch';
+  static const sua = 'Sửa';
 
   // Reconciliation surplus / restock inflow (DG-200 Phase 6, FR-9, AC-11)
   /// Label for the surplus inflow quantity (counted - expected, when > 0).

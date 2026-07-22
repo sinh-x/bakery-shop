@@ -372,34 +372,34 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             OutlinedButton.icon(
-              onPressed: () => showReconciliationSellWasteModal(
+              onPressed: () => showReconciliationSaleModal(
                 context,
-                productId: product.productId,
+                product: product,
+                option: option,
                 optionKey: optionKey,
-                expectedQty: option.expectedQty,
-                normalizedPrice: option.normalizedPrice,
                 counted: counted,
                 saleRows: saleRows,
                 waste: waste,
                 wasteReason: wasteReason,
-                onAddSaleRow: () => notifier.addSaleRow(
-                  optionKey,
-                  defaultUnitPrice: option.normalizedPrice,
-                ),
-                onRemoveSaleRow: (rowIndex) =>
-                    notifier.removeSaleRow(optionKey, rowIndex),
-                onSetSaleRowQty: (rowIndex, qty) =>
-                    notifier.setSaleRowQty(optionKey, rowIndex, qty),
-                onSetSaleRowUnitPrice: (rowIndex, price) =>
-                    notifier.setSaleRowUnitPrice(optionKey, rowIndex, price),
-                onSetSaleRowPaymentMethod: (rowIndex, method) =>
-                    notifier.setSaleRowPaymentMethod(optionKey, rowIndex, method),
-                onSetWasteQty: (qty) => notifier.setWasteQty(optionKey, qty),
-                onSetWasteReason: (reason) =>
-                    notifier.setWasteReasonForOption(optionKey, reason),
+                notifier: notifier,
               ),
-              icon: const Icon(Icons.edit_outlined),
-              label: const Text('${VN.banHang} / ${VN.haoHutSheet}'),
+              icon: const Icon(Icons.point_of_sale_outlined),
+              label: const Text(VN.banHang),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => showReconciliationWasteModal(
+                context,
+                product: product,
+                option: option,
+                optionKey: optionKey,
+                counted: counted,
+                saleRows: saleRows,
+                waste: waste,
+                wasteReason: wasteReason,
+                notifier: notifier,
+              ),
+              icon: const Icon(Icons.delete_sweep_outlined),
+              label: const Text(VN.haoHutSheet),
             ),
             ReconciliationVarianceIndicator(variance: variance),
           ],
