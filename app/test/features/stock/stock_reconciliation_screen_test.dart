@@ -1251,7 +1251,9 @@ void main() {
         matching: find.widgetWithIcon(IconButton, Icons.close),
       );
       expect(deleteButton, findsOneWidget);
-      await tester.tap(deleteButton, warnIfMissed: true);
+      await tester.ensureVisible(deleteButton);
+      await tester.pumpAndSettle();
+      await tester.tap(deleteButton);
       await tester.pumpAndSettle();
       // Verify the row was removed.
       expect(find.text('${VN.dongBan} 1'), findsNothing);
