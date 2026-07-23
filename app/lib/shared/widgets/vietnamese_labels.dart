@@ -813,6 +813,7 @@ class VN {
   static const soLuongHaoHut = 'Số lượng hao hụt';
   static const donGiaNhapTay = 'Đơn giá nhập tay';
   static const phuongThucThanhToan = 'Phương thức thanh toán';
+  static const chonPhuongThucThanhToan = 'Vui lòng chọn phương thức thanh toán';
   static const lyDoHaoHut = 'Lý do hao hụt';
   static const guiDoiSoat = 'Gửi đối soát';
   static const dangGuiDoiSoat = 'Đang gửi đối soát...';

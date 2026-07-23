@@ -71,27 +71,11 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
 
   void setCountedQty(Object optionKeyOrProductId, int value) {
     final optionKey = normalizeReconciliationOptionKey(optionKeyOrProductId, state);
-    final option = _draftOptionsByKey[optionKey];
     final next = Map<String, int>.from(state.countedQtyByOption);
     next[optionKey] = value;
-    final nextSaleRows = Map<String, List<ReconciliationSaleRowInput>>.from(
-      state.saleRowsByOption,
-    );
-    final existingRows = List<ReconciliationSaleRowInput>.from(
-      nextSaleRows[optionKey] ?? const <ReconciliationSaleRowInput>[],
-    );
-    if (option != null) {
-      final missing = option.expectedQty - value;
-      if (missing > 0 && existingRows.isEmpty) {
-        nextSaleRows[optionKey] = <ReconciliationSaleRowInput>[
-          ReconciliationSaleRowInput(unitPrice: option.normalizedPrice.toDouble()),
-        ];
-      }
-    }
 
     state = state.copyWith(
       countedQtyByOption: next,
-      saleRowsByOption: nextSaleRows,
       clearInlineErrors: true,
       clearErrorMessage: true,
       clearSubmitSuccessMessage: true,
@@ -160,7 +144,11 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     double? value,
   ) {
     final optionKey = normalizeReconciliationOptionKey(optionKeyOrProductId, state);
-    _updateSaleRow(optionKey, rowIndex, (row) => row.copyWith(unitPrice: value));
+    _updateSaleRow(
+      optionKey,
+      rowIndex,
+      (row) => row.copyWith(unitPrice: value, clearUnitPrice: value == null),
+    );
   }
 
   void setSaleRowPaymentMethod(
@@ -172,7 +160,10 @@ class ReconciliationNotifier extends Notifier<ReconciliationState> {
     _updateSaleRow(
       optionKey,
       rowIndex,
-      (row) => row.copyWith(paymentMethod: method),
+      (row) => row.copyWith(
+        paymentMethod: method,
+        clearPaymentMethod: method == null,
+      ),
     );
   }
 

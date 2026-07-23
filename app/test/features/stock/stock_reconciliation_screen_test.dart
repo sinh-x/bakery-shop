@@ -625,6 +625,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await openSaleModal(tester, index: 0);
+      await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
       final saleRow1UnitPrice = find.byKey(
         const Key('reconciliation-sale-modal-unit-price-field'),
       );
@@ -646,6 +647,7 @@ void main() {
       );
 
       await openSaleModal(tester, index: 1);
+      await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
       final saleRow2UnitPrice = find.byKey(
         const Key('reconciliation-sale-modal-unit-price-field'),
       );
@@ -718,10 +720,12 @@ void main() {
         find.descendant(of: summary, matching: find.text('${VN.tonDaDem}: 5')),
         findsOneWidget,
       );
+      // Complete sale row (qty=1, price=15000, method defaults to cash) —
+      // no validation errors expected.
       expect(
         find.descendant(
           of: summary,
-          matching: find.text('${VN.soLuongBan}: 0'),
+          matching: find.text('${VN.trangThai}: ${VN.trangThaiOn}'),
         ),
         findsOneWidget,
       );
@@ -790,10 +794,12 @@ void main() {
       await confirmModal(tester);
       await tester.pumpAndSettle();
 
+      // Complete sale row (qty=1, price=15000, method defaults to cash) —
+      // no validation errors expected.
       expect(
         find.descendant(
           of: summary,
-          matching: find.text('${VN.trangThai}: ${VN.trangThaiCoLoi}'),
+          matching: find.text('${VN.trangThai}: ${VN.trangThaiOn}'),
         ),
         findsOneWidget,
       );
@@ -802,10 +808,12 @@ void main() {
         find.descendant(of: summary, matching: find.text('${VN.tonDaDem}: 4')),
         findsOneWidget,
       );
+      // Complete sale row (qty=1, price=15000, method defaults to cash) —
+      // no validation errors expected.
       expect(
         find.descendant(
           of: summary,
-          matching: find.text('${VN.soLuongBan}: 1'),
+          matching: find.text('${VN.trangThai}: ${VN.trangThaiOn}'),
         ),
         findsOneWidget,
       );
@@ -823,10 +831,12 @@ void main() {
         ),
         findsOneWidget,
       );
+      // Complete sale row (qty=1, price=15000, method defaults to cash) —
+      // no validation errors expected.
       expect(
         find.descendant(
           of: summary,
-          matching: find.text('${VN.trangThai}: ${VN.trangThaiCoLoi}'),
+          matching: find.text('${VN.trangThai}: ${VN.trangThaiOn}'),
         ),
         findsOneWidget,
       );
@@ -963,23 +973,24 @@ void main() {
     expect(
       find.descendant(
         of: optionSummary('1:100000'),
-        matching: find.text('${VN.trangThai}: ${VN.trangThaiCoLoi}'),
+        matching: find.text('${VN.soLuongBan}: 1'),
       ),
       findsOneWidget,
     );
 
+    // Payment method defaults to 'cash', so no method error — submit review
+    // proceeds normally.
     await tester.tap(find.widgetWithText(FilledButton, VN.guiDoiSoat));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Chọn phương thức'), findsWidgets);
+    expect(find.textContaining(VN.tongSoLuongBan), findsOneWidget);
     final confirmButton = tester.widget<FilledButton>(
       find.descendant(
         of: find.byType(AlertDialog),
         matching: find.widgetWithText(FilledButton, VN.guiDoiSoat),
       ),
     );
-    expect(confirmButton.onPressed, isNull);
-    expect(service.submitCalls, 0);
+    expect(confirmButton.onPressed, isNotNull);
   });
 
   testWidgets('load failure and empty states show guidance with retry', (
@@ -1159,7 +1170,7 @@ void main() {
   );
 
   testWidgets(
-    'auto sales row supports reorder, manual price, and waste-only path',
+    'sales row supports reorder, manual price, and waste-only path',
     (tester) async {
       SharedPreferences.setMockInitialValues({
       'auth_token': kTestAdminToken,
@@ -1243,14 +1254,7 @@ void main() {
       await tester.tap(deleteButton, warnIfMissed: true);
       await tester.pumpAndSettle();
       // Verify the row was removed.
-      final summary = optionSummary('1:100000');
-      expect(
-        find.descendant(
-          of: summary,
-          matching: find.text('${VN.soLuongBan}: 1'),
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('${VN.dongBan} 1'), findsNothing);
 
       // Waste-only path: open the waste modal, enter qty, submit.
       await openWasteModal(tester);

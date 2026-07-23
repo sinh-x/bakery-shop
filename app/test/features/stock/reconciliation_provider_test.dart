@@ -117,6 +117,7 @@ void main() {
 
     await container.read(reconciliationProvider.notifier).loadDraft();
     container.read(reconciliationProvider.notifier).setCountedQty(1, 4);
+    container.read(reconciliationProvider.notifier).addSaleRow(1);
     container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
 
     final ok = await container.read(reconciliationProvider.notifier).submit();
@@ -124,7 +125,7 @@ void main() {
     expect(ok, isFalse);
     expect(service.submitCalls, 0);
     final rowErrors = state.saleRowErrorsByOption['1:100000']!;
-    expect(rowErrors[0].unitPrice, isNull);
+    expect(rowErrors[0].unitPrice, isNotNull);
     expect(rowErrors[0].paymentMethod, isNotNull);
   });
 
@@ -149,6 +150,7 @@ void main() {
 
     await container.read(reconciliationProvider.notifier).loadDraft();
     container.read(reconciliationProvider.notifier).setCountedQty(1, 3);
+    container.read(reconciliationProvider.notifier).addSaleRow(1);
     container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
     container
         .read(reconciliationProvider.notifier)
@@ -197,7 +199,11 @@ void main() {
 
       await container.read(reconciliationProvider.notifier).loadDraft();
       container.read(reconciliationProvider.notifier).setCountedQty(1, 4);
-      container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
+    container.read(reconciliationProvider.notifier).addSaleRow(1);
+    container.read(reconciliationProvider.notifier).setSaleRowQty(1, 0, 1);
+    container
+        .read(reconciliationProvider.notifier)
+        .setSaleRowUnitPrice(1, 0, 13000);
       container
           .read(reconciliationProvider.notifier)
           .setSaleRowUnitPrice(1, 0, 15000);
@@ -252,7 +258,7 @@ void main() {
   });
 
   test(
-    'setCountedQty auto-creates one sale row with normalizedPrice',
+    'setCountedQty does not auto-create sale rows',
     () async {
       final service = _FakeReconciliationService(
         ReconciliationDraft(
@@ -289,14 +295,12 @@ void main() {
 
       final state = container.read(reconciliationProvider);
       final rows = state.saleRowsByOption['1:13000']!;
-      expect(rows.length, 1);
-      expect(rows.first.quantity, 0);
-      expect(rows.first.unitPrice, 13000);
+      expect(rows, isEmpty);
     },
   );
 
   test(
-    'setCountedQty uses each option normalizedPrice and avoids duplicates',
+    'setCountedQty does not create sale rows for any option',
     () async {
       final service = _FakeReconciliationService(
         ReconciliationDraft(
@@ -348,15 +352,13 @@ void main() {
       final state = container.read(reconciliationProvider);
       final rows12000 = state.saleRowsByOption['1:12000']!;
       final rows18000 = state.saleRowsByOption['1:18000']!;
-      expect(rows12000.length, 1);
-      expect(rows18000.length, 1);
-      expect(rows12000.first.unitPrice, 12000);
-      expect(rows18000.first.unitPrice, 18000);
+      expect(rows12000, isEmpty);
+      expect(rows18000, isEmpty);
     },
   );
 
   test(
-    'auto-created row persists when countedQty returns to expectedQty',
+    'no sale row created when countedQty returns to expectedQty',
     () async {
       final service = _FakeReconciliationService(
         ReconciliationDraft(
@@ -382,8 +384,7 @@ void main() {
 
       final state = container.read(reconciliationProvider);
       final rows = state.saleRowsByOption['1:100000']!;
-      expect(rows.length, 1);
-      expect(rows.first.unitPrice, 100000);
+      expect(rows, isEmpty);
     },
   );
 

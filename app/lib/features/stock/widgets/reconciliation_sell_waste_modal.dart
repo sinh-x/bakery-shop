@@ -132,6 +132,7 @@ class _ReconciliationSaleModalContentState
   late final TextEditingController _priceController;
   final FocusNode _priceFocusNode = FocusNode();
   String? _paymentMethod;
+  bool _paymentMethodError = false;
 
   @override
   void initState() {
@@ -140,7 +141,7 @@ class _ReconciliationSaleModalContentState
     _priceController = TextEditingController(
       text: reconciliationPriceToText(widget.initialUnitPrice),
     );
-    _paymentMethod = widget.initialPaymentMethod;
+    _paymentMethod = widget.initialPaymentMethod ?? kPaymentMethodCash;
   }
 
   @override
@@ -161,6 +162,14 @@ class _ReconciliationSaleModalContentState
   void _submit() {
     final editingIndex = widget.editingRowIndex;
     if (editingIndex == null) {
+      if (_qty <= 0) {
+        Navigator.of(context).pop(true);
+        return;
+      }
+      if (_qty > 0 && _paymentMethod == null) {
+        setState(() => _paymentMethodError = true);
+        return;
+      }
       widget.notifier.addSaleRow(
         widget.optionKey,
         defaultUnitPrice: widget.option.normalizedPrice,
@@ -380,13 +389,17 @@ class _ReconciliationSaleModalContentState
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             initialValue: _paymentMethod,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: VN.phuongThucThanhToan,
-              border: OutlineInputBorder(),
+              border: const OutlineInputBorder(),
               isDense: true,
+              errorText: _paymentMethodError ? VN.chonPhuongThucThanhToan : null,
             ),
             items: kReconciliationPaymentMethodItems,
-            onChanged: (value) => setState(() => _paymentMethod = value),
+            onChanged: (value) => setState(() {
+              _paymentMethod = value;
+              _paymentMethodError = false;
+            }),
           ),
         ],
       ),
