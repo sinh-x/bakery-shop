@@ -1594,8 +1594,8 @@ INVENTORY_PURCHASE_CATEGORIES = {"Nguyên liệu", "Bao bì"}
 # "Nhân viên ứng trước" creates a sub-account per staff name (handled in backfill).
 EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE = {
     "Shop tiền mặt": "1100",
-    "TK Phượng VCB": "1200",
-    "TK Ân VCB": "1200",
+    "TK Phượng VCB": "1210",
+    "TK Ân VCB": "1220",
     "Nhân viên ứng trước": "2300",
 }
 

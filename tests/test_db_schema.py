@@ -1067,7 +1067,7 @@ def test_v44_backfill_expenses():
         assert debit_acc == "1300"
         assert credit_acc == "1100"
 
-        # Bank expense: credit 1200 (Bank Account)
+        # Bank expense: credit 1210 (Phượng VCB sub-account) per DG-285 FR1/FR2
         bank_entry = next(e for e in entries if e["source_id"] == event_id_bank)
         lines = conn.execute(
             "SELECT * FROM journal_lines WHERE journal_entry_id = ?",
@@ -1077,7 +1077,7 @@ def test_v44_backfill_expenses():
         credit_acc = conn.execute(
             "SELECT code FROM accounts WHERE id = ?", (credit_line["account_id"],)
         ).fetchone()["code"]
-        assert credit_acc == "1200"
+        assert credit_acc == "1210"
 
         _assert_double_entry_integrity(conn)
 
