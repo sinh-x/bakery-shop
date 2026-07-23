@@ -1247,7 +1247,7 @@ void main() {
       expect(
         find.descendant(
           of: summary,
-          matching: find.text('${VN.soLuongBan}: 0'),
+          matching: find.text('${VN.soLuongBan}: 1'),
         ),
         findsOneWidget,
       );

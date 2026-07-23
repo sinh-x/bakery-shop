@@ -269,6 +269,48 @@ class _ReconciliationSaleModalContentState
     if (saleRows.isEmpty) {
       return const SizedBox.shrink();
     }
+    if (widget.editingRowIndex == null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var rowIndex = 0; rowIndex < saleRows.length; rowIndex += 1)
+            Container(
+              key: ValueKey('${widget.optionKey}-sale-row-$rowIndex'),
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.withValues(alpha: 0.35)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${VN.dongBan} ${rowIndex + 1}',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${VN.soLuongBan}: ${saleRows[rowIndex].quantity}',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  Text(
+                    '${VN.donGiaNhapTay}: ${formatVND(saleRows[rowIndex].unitPrice?.toDouble() ?? 0)}',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  Text(
+                    '${VN.phuongThucThanhToan}: ${saleRows[rowIndex].paymentMethod == null ? "" : paymentMethodLabel(saleRows[rowIndex].paymentMethod!)}',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            ),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -297,7 +339,6 @@ class _ReconciliationSaleModalContentState
   }
 
   Widget _buildSaleForm(BuildContext context) {
-    final quantity = _qty;
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -312,19 +353,13 @@ class _ReconciliationSaleModalContentState
             controller: _qtyController,
             onChanged: (value) {},
             onDecrement: () {
-              if (quantity <= 0) {
+              if (_qty <= 0) {
                 return;
               }
-              _qtyController.value = TextEditingValue(
-                text: '${quantity - 1}',
-                selection: TextSelection.collapsed(offset: '${quantity - 1}'.length),
-              );
+              _qtyController.text = '${_qty - 1}';
             },
             onIncrement: () {
-              _qtyController.value = TextEditingValue(
-                text: '${quantity + 1}',
-                selection: TextSelection.collapsed(offset: '${quantity + 1}'.length),
-              );
+              _qtyController.text = '${_qty + 1}';
             },
           ),
           const SizedBox(height: 8),
@@ -526,19 +561,13 @@ class _ReconciliationWasteModalContentState
             controller: _wasteController,
             onChanged: (value) {},
             onDecrement: () {
-              if (qty <= 0) {
+              if (_qty <= 0) {
                 return;
               }
-              _wasteController.value = TextEditingValue(
-                text: '${qty - 1}',
-                selection: TextSelection.collapsed(offset: '${qty - 1}'.length),
-              );
+              _wasteController.text = '${_qty - 1}';
             },
             onIncrement: () {
-              _wasteController.value = TextEditingValue(
-                text: '${qty + 1}',
-                selection: TextSelection.collapsed(offset: '${qty + 1}'.length),
-              );
+              _wasteController.text = '${_qty + 1}';
             },
           ),
           if (qty > 0) ...[

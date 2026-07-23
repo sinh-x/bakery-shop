@@ -260,7 +260,6 @@ class _ReconciliationSaleRowEditorState
 
   @override
   Widget build(BuildContext context) {
-    final quantity = widget.row.quantity;
     return Container(
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.all(8),
@@ -296,12 +295,12 @@ class _ReconciliationSaleRowEditorState
             errorText: widget.rowError?.quantity,
             onChanged: widget.onQtyChanged,
             onDecrement: () {
-              if (quantity <= 0) {
+              if (widget.row.quantity <= 0) {
                 return;
               }
-              widget.onQtyChanged(quantity - 1);
+              widget.onQtyChanged(widget.row.quantity - 1);
             },
-            onIncrement: () => widget.onQtyChanged(quantity + 1),
+            onIncrement: () => widget.onQtyChanged(widget.row.quantity + 1),
           ),
           const SizedBox(height: 8),
           TextFormField(
