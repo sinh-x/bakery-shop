@@ -1,6 +1,6 @@
 [project]
 name = "baker"
-version = "0.8.8"
+version = "0.8.9"
 description = "Bakery shop operations tracker — capture first, organize later"
 requires-python = ">=3.10"
 dependencies = [
