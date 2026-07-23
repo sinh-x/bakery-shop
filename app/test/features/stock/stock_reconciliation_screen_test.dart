@@ -1151,6 +1151,8 @@ void main() {
       await openWasteModal(tester);
       await tester.enterText(textFieldByLabel(VN.soLuongHaoHut).first, '1');
       await tester.pumpAndSettle();
+      await tester.enterText(textFieldByLabel(VN.lyDoHaoHut).first, 'Hết hạn');
+      await tester.pumpAndSettle();
       await confirmModal(tester);
       await tester.pumpAndSettle();
 
@@ -1258,9 +1260,11 @@ void main() {
       // Verify the row was removed.
       expect(find.text('${VN.dongBan} 1'), findsNothing);
 
-      // Waste-only path: open the waste modal, enter qty, submit.
+      // Waste-only path: open the waste modal, enter qty + reason, submit.
       await openWasteModal(tester);
       await tester.enterText(textFieldByLabel(VN.soLuongHaoHut).first, '1');
+      await tester.pumpAndSettle();
+      await tester.enterText(textFieldByLabel(VN.lyDoHaoHut).first, 'Hết hạn');
       await tester.pumpAndSettle();
       await confirmModal(tester);
       await tester.pumpAndSettle();

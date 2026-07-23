@@ -437,6 +437,7 @@ class _ReconciliationWasteModalContentState
     extends ConsumerState<_ReconciliationWasteModalContent> {
   late final TextEditingController _wasteController;
   late final TextEditingController _wasteReasonController;
+  bool _wasteReasonError = false;
 
   @override
   void initState() {
@@ -445,10 +446,18 @@ class _ReconciliationWasteModalContentState
     _wasteReasonController = TextEditingController(
       text: widget.initialWasteReason,
     );
+    _wasteController.addListener(_onWasteQtyChanged);
+  }
+
+  void _onWasteQtyChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
   void dispose() {
+    _wasteController.removeListener(_onWasteQtyChanged);
     _wasteController.dispose();
     _wasteReasonController.dispose();
     super.dispose();
@@ -457,6 +466,10 @@ class _ReconciliationWasteModalContentState
   int get _qty => int.tryParse(_wasteController.text) ?? 0;
 
   void _submit() {
+    if (_qty > 0 && _wasteReasonController.text.trim().isEmpty) {
+      setState(() => _wasteReasonError = true);
+      return;
+    }
     widget.notifier.setWasteQty(widget.optionKey, _qty);
     widget.notifier.setWasteReasonForOption(
       widget.optionKey,
@@ -586,11 +599,17 @@ class _ReconciliationWasteModalContentState
           if (qty > 0) ...[
             const SizedBox(height: 8),
             TextField(
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: VN.lyDoHaoHut,
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
+                errorText: _wasteReasonError ? VN.lyDoRequired : null,
               ),
               controller: _wasteReasonController,
+              onChanged: (_) {
+                if (_wasteReasonError) {
+                  setState(() => _wasteReasonError = false);
+                }
+              },
             ),
           ],
         ],
