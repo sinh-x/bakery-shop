@@ -1417,16 +1417,23 @@ def _sync_completed_order_journal(conn, order_id: int, order_ref: str) -> None:
       - Respects lock semantics (``respect_locks=True``): locked stale entries
         are reversed, not deleted.
 
-    COGS and bus-shipping release entries are deliberately NOT touched here:
-    they are delivery-time entries created by :func:`_sync_delivered_order_journal`
-    and remain correct on the delivered→completed path. Orders that bypassed
-    "delivered" are handled by the existing repair commands (Phase 1) and are
-    out of scope for the live completion sync (see plan §14 open question).
+    COGS is handled here via :func:`_sync_order_cogs_entry` so orders that
+    bypassed "delivered" still get the ``order_cogs`` journal entry
+    (DR 5900 / CR 1300) at completion time (DG-276). The call is idempotent —
+    an order that already has an ``order_cogs`` entry (e.g. from a prior
+    delivery sync on the delivered→completed path) is left untouched (FR2).
+
+    Bus-shipping release entries remain delivery-time entries created by
+    :func:`_sync_delivered_order_journal` and are not touched here; orders
+    that bypassed "delivered" still rely on the existing repair commands for
+    that release.
 
     Fire-and-forget error handling is provided by the caller wrapping this in
-    :func:`run_journal_sync` with ``source_type="order"`` (FR5).
+    :func:`run_journal_sync` with ``source_type="order"`` (FR5) — a COGS sync
+    failure never blocks the completion transition (FR3).
     """
     _reconcile_order_revenue_entry(conn, order_id, order_ref, respect_locks=True)
+    _sync_order_cogs_entry(conn, order_id, order_ref)
 
 
 def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
