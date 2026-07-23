@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$PaymentTransaction {
 
- String get id; String get orderId; String get type; String get method; double get amount;@JsonKey(name: 'note') String get notes;@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? get createdAt;@JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? get invalidatedAt;@JsonKey(name: 'invalidatedBy') String get invalidatedBy;@JsonKey(name: 'payment_source') String? get paymentSource;
+ String get id; String get orderId; String get type; String get method; double get amount;@JsonKey(name: 'note') String get notes;@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? get createdAt;@JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? get invalidatedAt;@JsonKey(name: 'invalidatedBy') String get invalidatedBy;@JsonKey(name: 'paymentSource') String? get paymentSource;
 /// Create a copy of PaymentTransaction
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -48,7 +48,7 @@ abstract mixin class $PaymentTransactionCopyWith<$Res>  {
   factory $PaymentTransactionCopyWith(PaymentTransaction value, $Res Function(PaymentTransaction) _then) = _$PaymentTransactionCopyWithImpl;
 @useResult
 $Res call({
- String id, String orderId, String type, String method, double amount,@JsonKey(name: 'note') String notes,@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? createdAt,@JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? invalidatedAt,@JsonKey(name: 'invalidatedBy') String invalidatedBy,@JsonKey(name: 'payment_source') String? paymentSource
+ String id, String orderId, String type, String method, double amount,@JsonKey(name: 'note') String notes,@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? createdAt,@JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? invalidatedAt,@JsonKey(name: 'invalidatedBy') String invalidatedBy,@JsonKey(name: 'paymentSource') String? paymentSource
 });
 
 
@@ -159,7 +159,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String orderId,  String type,  String method,  double amount, @JsonKey(name: 'note')  String notes, @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? invalidatedAt, @JsonKey(name: 'invalidatedBy')  String invalidatedBy, @JsonKey(name: 'payment_source')  String? paymentSource)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String orderId,  String type,  String method,  double amount, @JsonKey(name: 'note')  String notes, @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? invalidatedAt, @JsonKey(name: 'invalidatedBy')  String invalidatedBy, @JsonKey(name: 'paymentSource')  String? paymentSource)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PaymentTransaction() when $default != null:
 return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_that.notes,_that.createdAt,_that.invalidatedAt,_that.invalidatedBy,_that.paymentSource);case _:
@@ -180,7 +180,7 @@ return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_tha
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String orderId,  String type,  String method,  double amount, @JsonKey(name: 'note')  String notes, @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? invalidatedAt, @JsonKey(name: 'invalidatedBy')  String invalidatedBy, @JsonKey(name: 'payment_source')  String? paymentSource)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String orderId,  String type,  String method,  double amount, @JsonKey(name: 'note')  String notes, @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? invalidatedAt, @JsonKey(name: 'invalidatedBy')  String invalidatedBy, @JsonKey(name: 'paymentSource')  String? paymentSource)  $default,) {final _that = this;
 switch (_that) {
 case _PaymentTransaction():
 return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_that.notes,_that.createdAt,_that.invalidatedAt,_that.invalidatedBy,_that.paymentSource);}
@@ -197,7 +197,7 @@ return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_tha
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String orderId,  String type,  String method,  double amount, @JsonKey(name: 'note')  String notes, @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? invalidatedAt, @JsonKey(name: 'invalidatedBy')  String invalidatedBy, @JsonKey(name: 'payment_source')  String? paymentSource)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String orderId,  String type,  String method,  double amount, @JsonKey(name: 'note')  String notes, @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? createdAt, @JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson)  DateTime? invalidatedAt, @JsonKey(name: 'invalidatedBy')  String invalidatedBy, @JsonKey(name: 'paymentSource')  String? paymentSource)?  $default,) {final _that = this;
 switch (_that) {
 case _PaymentTransaction() when $default != null:
 return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_that.notes,_that.createdAt,_that.invalidatedAt,_that.invalidatedBy,_that.paymentSource);case _:
@@ -212,7 +212,7 @@ return $default(_that.id,_that.orderId,_that.type,_that.method,_that.amount,_tha
 @JsonSerializable()
 
 class _PaymentTransaction implements PaymentTransaction {
-  const _PaymentTransaction({required this.id, required this.orderId, this.type = 'deposit', this.method = 'cash', required this.amount, @JsonKey(name: 'note') this.notes = '', @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) this.createdAt, @JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson) this.invalidatedAt, @JsonKey(name: 'invalidatedBy') this.invalidatedBy = '', @JsonKey(name: 'payment_source') this.paymentSource});
+  const _PaymentTransaction({required this.id, required this.orderId, this.type = 'deposit', this.method = 'cash', required this.amount, @JsonKey(name: 'note') this.notes = '', @JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) this.createdAt, @JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson) this.invalidatedAt, @JsonKey(name: 'invalidatedBy') this.invalidatedBy = '', @JsonKey(name: 'paymentSource') this.paymentSource});
   factory _PaymentTransaction.fromJson(Map<String, dynamic> json) => _$PaymentTransactionFromJson(json);
 
 @override final  String id;
@@ -224,7 +224,7 @@ class _PaymentTransaction implements PaymentTransaction {
 @override@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) final  DateTime? createdAt;
 @override@JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson) final  DateTime? invalidatedAt;
 @override@JsonKey(name: 'invalidatedBy') final  String invalidatedBy;
-@override@JsonKey(name: 'payment_source') final  String? paymentSource;
+@override@JsonKey(name: 'paymentSource') final  String? paymentSource;
 
 /// Create a copy of PaymentTransaction
 /// with the given fields replaced by the non-null parameter values.
@@ -259,7 +259,7 @@ abstract mixin class _$PaymentTransactionCopyWith<$Res> implements $PaymentTrans
   factory _$PaymentTransactionCopyWith(_PaymentTransaction value, $Res Function(_PaymentTransaction) _then) = __$PaymentTransactionCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String orderId, String type, String method, double amount,@JsonKey(name: 'note') String notes,@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? createdAt,@JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? invalidatedAt,@JsonKey(name: 'invalidatedBy') String invalidatedBy,@JsonKey(name: 'payment_source') String? paymentSource
+ String id, String orderId, String type, String method, double amount,@JsonKey(name: 'note') String notes,@JsonKey(name: 'createdAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? createdAt,@JsonKey(name: 'invalidatedAt', fromJson: parseApiDateTime, toJson: timestampToJson) DateTime? invalidatedAt,@JsonKey(name: 'invalidatedBy') String invalidatedBy,@JsonKey(name: 'paymentSource') String? paymentSource
 });
 
 
