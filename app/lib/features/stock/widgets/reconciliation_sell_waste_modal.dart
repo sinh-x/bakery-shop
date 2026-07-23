@@ -241,7 +241,8 @@ class _ReconciliationSaleModalContentState
                 option: widget.option,
               ),
               const SizedBox(height: 16),
-              _buildExistingSaleRows(context, saleRows),
+              if (widget.editingRowIndex == null)
+                _buildExistingSaleRows(context, saleRows),
               const SizedBox(height: 16),
               _buildSaleForm(context),
               const SizedBox(height: 16),
