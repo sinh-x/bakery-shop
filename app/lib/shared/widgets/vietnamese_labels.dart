@@ -455,6 +455,7 @@ class VN {
   static const save = 'Lưu';
   static const cancel = 'Hủy';
   static const back = 'Quay lại';
+  static const dong = 'Đóng';
   static const currency = 'đ';
 
   // Receipts
@@ -812,6 +813,7 @@ class VN {
   static const soLuongHaoHut = 'Số lượng hao hụt';
   static const donGiaNhapTay = 'Đơn giá nhập tay';
   static const phuongThucThanhToan = 'Phương thức thanh toán';
+  static const chonPhuongThucThanhToan = 'Vui lòng chọn phương thức thanh toán';
   static const lyDoHaoHut = 'Lý do hao hụt';
   static const guiDoiSoat = 'Gửi đối soát';
   static const dangGuiDoiSoat = 'Đang gửi đối soát...';
@@ -839,6 +841,7 @@ class VN {
   static const trangThaiCoLoi = 'Có lỗi';
   static const themDongBan = 'Thêm dòng bán';
   static const soLuongChenhLech = 'Số lượng chênh lệch';
+  static const sua = 'Sửa';
 
   // Reconciliation surplus / restock inflow (DG-200 Phase 6, FR-9, AC-11)
   /// Label for the surplus inflow quantity (counted - expected, when > 0).

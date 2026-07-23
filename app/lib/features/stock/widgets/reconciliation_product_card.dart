@@ -1,12 +1,13 @@
 // EXEMPT: This widget remains above local file-size thresholds while DG-138
 // tracks broader low-risk decomposition of the tightly coupled reconciliation UI.
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/reconciliation_service.dart';
 import '../../../data/providers/reconciliation_provider.dart';
 import '../../../shared/labels/shared.dart';
+import 'reconciliation_sell_waste_modal.dart';
+import 'reconciliation_shared_widgets.dart';
 import 'reconciliation_surplus_indicator.dart';
 import 'reconciliation_variance_indicator.dart';
 
@@ -23,8 +24,6 @@ class ReconciliationProductCard extends ConsumerStatefulWidget {
 class _ReconciliationProductCardState
     extends ConsumerState<ReconciliationProductCard> {
   final Map<String, TextEditingController> _countedControllers = {};
-  final Map<String, TextEditingController> _wasteControllers = {};
-  final Map<String, TextEditingController> _wasteReasonControllers = {};
   final Set<String> _expandedOptionKeys = {};
   bool _isExpanded = false;
 
@@ -38,25 +37,13 @@ class _ReconciliationProductCardState
         option.normalizedPrice,
       );
       final counted = state.countedQtyByOption[optionKey] ?? option.defaultCountedQty;
-      final waste = state.wasteQtyByOption[optionKey] ?? 0;
-      final wasteReason = state.wasteReasonByOption[optionKey] ?? '';
       _countedControllers[optionKey] = TextEditingController(text: '$counted');
-      _wasteControllers[optionKey] = TextEditingController(text: '$waste');
-      _wasteReasonControllers[optionKey] = TextEditingController(
-        text: wasteReason,
-      );
     }
   }
 
   @override
   void dispose() {
     for (final controller in _countedControllers.values) {
-      controller.dispose();
-    }
-    for (final controller in _wasteControllers.values) {
-      controller.dispose();
-    }
-    for (final controller in _wasteReasonControllers.values) {
       controller.dispose();
     }
     super.dispose();
@@ -158,13 +145,13 @@ class _ReconciliationProductCardState
               spacing: 6,
               runSpacing: 6,
               children: [
-                _SummaryChip(label: VN.tonDuKien, value: expectedTotal),
-                _SummaryChip(label: VN.tonDaDem, value: countedTotal),
-                _SummaryChip(label: VN.soLuongThieu, value: missingTotal),
+                ReconciliationSummaryChip(label: VN.tonDuKien, value: expectedTotal),
+                ReconciliationSummaryChip(label: VN.tonDaDem, value: countedTotal),
+                ReconciliationSummaryChip(label: VN.soLuongThieu, value: missingTotal),
                 if (surplusTotal > 0)
-                  _SummaryChip(label: VN.soLuongBu, value: surplusTotal),
-                _SummaryChip(label: VN.soLuongBan, value: saleTotal),
-                _SummaryChip(label: VN.soLuongHaoHut, value: wasteTotal),
+                  ReconciliationSummaryChip(label: VN.soLuongBu, value: surplusTotal),
+                ReconciliationSummaryChip(label: VN.soLuongBan, value: saleTotal),
+                ReconciliationSummaryChip(label: VN.soLuongHaoHut, value: wasteTotal),
                 _StatusChip(hasError: hasAnyError),
               ],
             ),
@@ -267,8 +254,6 @@ class _ReconciliationProductCardState
         product: widget.product,
         option: option,
         countedController: _countedControllers[optionKey]!,
-        wasteController: _wasteControllers[optionKey]!,
-        wasteReasonController: _wasteReasonControllers[optionKey]!,
         syncIntController: _syncIntController,
         notifier: notifier,
       ),
@@ -319,8 +304,6 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
     required this.product,
     required this.option,
     required this.countedController,
-    required this.wasteController,
-    required this.wasteReasonController,
     required this.syncIntController,
     required this.notifier,
   });
@@ -328,8 +311,6 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
   final ReconciliationDraftProduct product;
   final ReconciliationDraftOption option;
   final TextEditingController countedController;
-  final TextEditingController wasteController;
-  final TextEditingController wasteReasonController;
   final void Function(TextEditingController controller, int value)
   syncIntController;
   final ReconciliationNotifier notifier;
@@ -346,8 +327,8 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
         state.saleRowsByOption[optionKey] ??
         const <ReconciliationSaleRowInput>[];
     final waste = state.wasteQtyByOption[optionKey] ?? 0;
+    final wasteReason = state.wasteReasonByOption[optionKey] ?? '';
     final saleQty = saleRows.fold<int>(0, (sum, row) => sum + row.quantity);
-    final missing = option.expectedQty - counted;
     final variance = option.expectedQty - counted - saleQty - waste;
     final surplus = state.surplusQtyFor(
       optionKey,
@@ -355,18 +336,13 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
       grossAvailableQty: option.grossAvailableQty,
     );
     final optionError = state.optionErrors[optionKey];
-    final saleRowErrors =
-        state.saleRowErrorsByOption[optionKey] ??
-        const <ReconciliationSaleRowError>[];
-    final showSaleEditor = missing > 0 || saleRows.isNotEmpty;
 
     syncIntController(countedController, counted);
-    syncIntController(wasteController, waste);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _QuantityStepperField(
+        ReconciliationQuantityStepperField(
           label: VN.tonDaDem,
           controller: countedController,
           onChanged: (value) => notifier.setCountedQty(optionKey, value),
@@ -389,67 +365,70 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
             ),
           ),
         ],
-        if (showSaleEditor) ...[
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => notifier.addSaleRow(
-                  optionKey,
-                  defaultUnitPrice: option.normalizedPrice,
-                ),
-                icon: const Icon(Icons.add),
-                label: const Text(VN.themDongBan),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            OutlinedButton.icon(
+              onPressed: () => showReconciliationSaleModal(
+                context,
+                product: product,
+                option: option,
+                optionKey: optionKey,
+                counted: counted,
+                saleRows: saleRows,
+                waste: waste,
+                wasteReason: wasteReason,
+                notifier: notifier,
               ),
-              ReconciliationVarianceIndicator(variance: variance),
-            ],
-          ),
-          for (var rowIndex = 0; rowIndex < saleRows.length; rowIndex += 1)
-            _SaleRowEditor(
-              key: ValueKey('$optionKey-sale-row-$rowIndex'),
-              rowIndex: rowIndex,
-              row: saleRows[rowIndex],
-              rowError: rowIndex < saleRowErrors.length
-                  ? saleRowErrors[rowIndex]
-                  : null,
-              onQtyChanged: (value) =>
-                  notifier.setSaleRowQty(optionKey, rowIndex, value),
-              onPriceChanged: (value) =>
-                  notifier.setSaleRowUnitPrice(optionKey, rowIndex, value),
-              onMethodChanged: (value) =>
-                  notifier.setSaleRowPaymentMethod(optionKey, rowIndex, value),
-              onRemove: () => notifier.removeSaleRow(optionKey, rowIndex),
+              icon: const Icon(Icons.point_of_sale_outlined),
+              label: const Text(VN.banHang),
             ),
-        ],
-        if (missing > 0 && surplus == 0) ...[
-          const SizedBox(height: 8),
-          _QuantityStepperField(
-            label: VN.soLuongHaoHut,
-            controller: wasteController,
-            onChanged: (value) => notifier.setWasteQty(optionKey, value),
-            onDecrement: () {
-              if (waste <= 0) {
-                return;
-              }
-              notifier.setWasteQty(optionKey, waste - 1);
-            },
-            onIncrement: () => notifier.setWasteQty(optionKey, waste + 1),
-          ),
-          if (waste > 0) ...[
-            const SizedBox(height: 8),
-            TextField(
-              decoration: const InputDecoration(
-                labelText: VN.lyDoHaoHut,
-                border: OutlineInputBorder(),
+            OutlinedButton.icon(
+              onPressed: () => showReconciliationWasteModal(
+                context,
+                product: product,
+                option: option,
+                optionKey: optionKey,
+                counted: counted,
+                saleRows: saleRows,
+                waste: waste,
+                wasteReason: wasteReason,
+                notifier: notifier,
               ),
-              controller: wasteReasonController,
-              onChanged: (value) =>
-                  notifier.setWasteReasonForOption(optionKey, value),
+              icon: const Icon(Icons.delete_sweep_outlined),
+              label: const Text(VN.haoHutSheet),
             ),
+            ReconciliationVarianceIndicator(variance: variance),
           ],
+        ),
+        if (saleRows.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _InlineSaleRowList(
+            product: product,
+            option: option,
+            optionKey: optionKey,
+            counted: counted,
+            saleRows: saleRows,
+            waste: waste,
+            wasteReason: wasteReason,
+            notifier: notifier,
+          ),
+        ],
+        if (waste > 0 || wasteReason.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _InlineWasteItem(
+            product: product,
+            option: option,
+            optionKey: optionKey,
+            counted: counted,
+            saleRows: saleRows,
+            waste: waste,
+            wasteReason: wasteReason,
+            notifier: notifier,
+          ),
         ],
         if (optionError != null) ...[
           const SizedBox(height: 8),
@@ -462,28 +441,6 @@ class _ReconciliationOptionEditor extends ConsumerWidget {
           ),
         ],
       ],
-    );
-  }
-}
-
-class _SummaryChip extends StatelessWidget {
-  const _SummaryChip({required this.label, required this.value});
-
-  final String label;
-  final int value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.grey.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        '$label: $value',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
     );
   }
 }
@@ -669,9 +626,9 @@ class _OptionInventoryHeader extends StatelessWidget {
                 runSpacing: 6,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  _SummaryChip(label: VN.tonDaDem, value: countedQty),
-                  _SummaryChip(label: VN.soLuongBan, value: saleQty),
-                  _SummaryChip(label: VN.soLuongHaoHut, value: wasteQty),
+                  ReconciliationSummaryChip(label: VN.tonDaDem, value: countedQty),
+                  ReconciliationSummaryChip(label: VN.soLuongBan, value: saleQty),
+                  ReconciliationSummaryChip(label: VN.soLuongHaoHut, value: wasteQty),
                   ReconciliationVarianceIndicator(variance: variance),
                   if (surplus > 0)
                     ReconciliationSurplusIndicator(surplus: surplus),
@@ -687,218 +644,219 @@ class _OptionInventoryHeader extends StatelessWidget {
   }
 }
 
-class _SaleRowEditor extends StatefulWidget {
-  const _SaleRowEditor({
-    super.key,
-    required this.rowIndex,
-    required this.row,
-    required this.onQtyChanged,
-    required this.onPriceChanged,
-    required this.onMethodChanged,
-    required this.onRemove,
-    this.rowError,
+class _InlineSaleRowList extends StatelessWidget {
+  const _InlineSaleRowList({
+    required this.product,
+    required this.option,
+    required this.optionKey,
+    required this.counted,
+    required this.saleRows,
+    required this.waste,
+    required this.wasteReason,
+    required this.notifier,
   });
 
-  final int rowIndex;
-  final ReconciliationSaleRowInput row;
-  final ReconciliationSaleRowError? rowError;
-  final ValueChanged<int> onQtyChanged;
-  final ValueChanged<double?> onPriceChanged;
-  final ValueChanged<String?> onMethodChanged;
-  final VoidCallback onRemove;
-
-  @override
-  State<_SaleRowEditor> createState() => _SaleRowEditorState();
-}
-
-class _SaleRowEditorState extends State<_SaleRowEditor> {
-  late TextEditingController _qtyController;
-  late TextEditingController _priceController;
-  final FocusNode _priceFocusNode = FocusNode();
-
-  @override
-  void initState() {
-    super.initState();
-    _qtyController = TextEditingController(text: '${widget.row.quantity}');
-    _priceController = TextEditingController(
-      text: _priceToText(widget.row.unitPrice),
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant _SaleRowEditor oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final nextQty = '${widget.row.quantity}';
-    if (_qtyController.text != nextQty) {
-      _qtyController.value = TextEditingValue(
-        text: nextQty,
-        selection: TextSelection.collapsed(offset: nextQty.length),
-      );
-    }
-
-    final nextPrice = _priceToText(widget.row.unitPrice);
-    if (!_priceFocusNode.hasFocus && _priceController.text != nextPrice) {
-      _priceController.value = TextEditingValue(
-        text: nextPrice,
-        selection: TextSelection.collapsed(offset: nextPrice.length),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _qtyController.dispose();
-    _priceController.dispose();
-    _priceFocusNode.dispose();
-    super.dispose();
-  }
+  final ReconciliationDraftProduct product;
+  final ReconciliationDraftOption option;
+  final String optionKey;
+  final int counted;
+  final List<ReconciliationSaleRowInput> saleRows;
+  final int waste;
+  final String wasteReason;
+  final ReconciliationNotifier notifier;
 
   @override
   Widget build(BuildContext context) {
-    final quantity = widget.row.quantity;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var rowIndex = 0; rowIndex < saleRows.length; rowIndex += 1)
+          _InlineSaleRowItem(
+            key: ValueKey('$optionKey-inline-sale-row-$rowIndex'),
+            product: product,
+            option: option,
+            optionKey: optionKey,
+            counted: counted,
+            saleRows: saleRows,
+            waste: waste,
+            wasteReason: wasteReason,
+            notifier: notifier,
+            rowIndex: rowIndex,
+            row: saleRows[rowIndex],
+          ),
+      ],
+    );
+  }
+}
+
+class _InlineSaleRowItem extends StatelessWidget {
+  const _InlineSaleRowItem({
+    required this.product,
+    required this.option,
+    required this.optionKey,
+    required this.counted,
+    required this.saleRows,
+    required this.waste,
+    required this.wasteReason,
+    required this.notifier,
+    required this.rowIndex,
+    required this.row,
+    super.key,
+  });
+
+  final ReconciliationDraftProduct product;
+  final ReconciliationDraftOption option;
+  final String optionKey;
+  final int counted;
+  final List<ReconciliationSaleRowInput> saleRows;
+  final int waste;
+  final String wasteReason;
+  final ReconciliationNotifier notifier;
+  final int rowIndex;
+  final ReconciliationSaleRowInput row;
+
+  @override
+  Widget build(BuildContext context) {
+    final priceText = row.unitPrice == null
+        ? '-'
+        : formatVND(row.unitPrice!.toDouble());
+    final methodText = row.paymentMethod == null || row.paymentMethod!.isEmpty
+        ? '-'
+        : paymentMethodLabel(row.paymentMethod!);
     return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(8),
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         border: Border.all(color: Colors.grey.withValues(alpha: 0.35)),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Text(
-                  '${VN.dongBan} ${widget.rowIndex + 1}',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${VN.dongBan} ${rowIndex + 1}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
                 ),
-              ),
-              IconButton(
-                tooltip: VN.xoa,
-                onPressed: widget.onRemove,
-                icon: const Icon(Icons.delete_outline),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _QuantityStepperField(
-            label: VN.soLuongBan,
-            controller: _qtyController,
-            errorText: widget.rowError?.quantity,
-            onChanged: widget.onQtyChanged,
-            onDecrement: () {
-              if (quantity <= 0) {
-                return;
-              }
-              widget.onQtyChanged(quantity - 1);
-            },
-            onIncrement: () => widget.onQtyChanged(quantity + 1),
-          ),
-          const SizedBox(height: 8),
-          TextFormField(
-            key: const Key('reconciliation-unit-price-field'),
-            controller: _priceController,
-            focusNode: _priceFocusNode,
-            keyboardType: TextInputType.number,
-            onChanged: (value) {
-              final trimmed = value.trim();
-              widget.onPriceChanged(
-                trimmed.isEmpty ? null : double.tryParse(trimmed),
-              );
-            },
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-            ],
-            decoration: InputDecoration(
-              labelText: VN.donGiaNhapTay,
-              border: const OutlineInputBorder(),
-              isDense: true,
-              errorText: widget.rowError?.unitPrice,
+                const SizedBox(height: 2),
+                Text(
+                  '${VN.soLuongBan}: ${row.quantity} - $priceText - $methodText',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            initialValue: widget.row.paymentMethod,
-            decoration: InputDecoration(
-              labelText: VN.phuongThucThanhToan,
-              border: const OutlineInputBorder(),
-              isDense: true,
-              errorText: widget.rowError?.paymentMethod,
+          IconButton(
+            tooltip: VN.sua,
+            onPressed: () => showReconciliationSaleModal(
+              context,
+              product: product,
+              option: option,
+              optionKey: optionKey,
+              counted: counted,
+              saleRows: saleRows,
+              waste: waste,
+              wasteReason: wasteReason,
+              notifier: notifier,
+              editingRowIndex: rowIndex,
             ),
-            items: const [
-              DropdownMenuItem(value: 'cash', child: Text(VN.methodCash)),
-              DropdownMenuItem(
-                value: 'transfer',
-                child: Text(VN.methodTransfer),
-              ),
-            ],
-            onChanged: widget.onMethodChanged,
+            icon: const Icon(Icons.edit_outlined),
+          ),
+          IconButton(
+            tooltip: VN.xoa,
+            onPressed: () => notifier.removeSaleRow(optionKey, rowIndex),
+            icon: const Icon(Icons.close),
           ),
         ],
       ),
     );
   }
-
-  String _priceToText(double? price) {
-    if (price == null) {
-      return '';
-    }
-    return price == price.roundToDouble()
-        ? price.toInt().toString()
-        : price.toString();
-  }
 }
 
-class _QuantityStepperField extends StatelessWidget {
-  const _QuantityStepperField({
-    required this.label,
-    required this.controller,
-    required this.onChanged,
-    required this.onDecrement,
-    required this.onIncrement,
-    this.errorText,
+class _InlineWasteItem extends StatelessWidget {
+  const _InlineWasteItem({
+    required this.product,
+    required this.option,
+    required this.optionKey,
+    required this.counted,
+    required this.saleRows,
+    required this.waste,
+    required this.wasteReason,
+    required this.notifier,
   });
 
-  final String label;
-  final TextEditingController controller;
-  final ValueChanged<int> onChanged;
-  final VoidCallback onDecrement;
-  final VoidCallback onIncrement;
-  final String? errorText;
+  final ReconciliationDraftProduct product;
+  final ReconciliationDraftOption option;
+  final String optionKey;
+  final int counted;
+  final List<ReconciliationSaleRowInput> saleRows;
+  final int waste;
+  final String wasteReason;
+  final ReconciliationNotifier notifier;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        IconButton(
-          onPressed: onDecrement,
-          icon: const Icon(Icons.remove_circle_outline),
-          tooltip: VN.giam,
-        ),
-        Expanded(
-          child: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: InputDecoration(
-              labelText: label,
-              border: const OutlineInputBorder(),
-              errorText: errorText,
+    final reasonText = wasteReason.isEmpty ? '-' : wasteReason;
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  VN.haoHutSheet,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${VN.soLuongHaoHut}: $waste - ${VN.lyDoHaoHut}: $reasonText',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
             ),
-            onChanged: (value) => onChanged(int.tryParse(value) ?? 0),
           ),
-        ),
-        IconButton(
-          onPressed: onIncrement,
-          icon: const Icon(Icons.add_circle_outline),
-          tooltip: VN.tang,
-        ),
-      ],
+          IconButton(
+            tooltip: VN.sua,
+            onPressed: () => showReconciliationWasteModal(
+              context,
+              product: product,
+              option: option,
+              optionKey: optionKey,
+              counted: counted,
+              saleRows: saleRows,
+              waste: waste,
+              wasteReason: wasteReason,
+              notifier: notifier,
+            ),
+            icon: const Icon(Icons.edit_outlined),
+          ),
+          IconButton(
+            tooltip: VN.xoa,
+            onPressed: () {
+              notifier.setWasteQty(optionKey, 0);
+              notifier.setWasteReasonForOption(optionKey, '');
+            },
+            icon: const Icon(Icons.close),
+          ),
+        ],
+      ),
     );
   }
 }
