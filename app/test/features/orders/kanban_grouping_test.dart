@@ -8,6 +8,7 @@ Order _order({
   required String status,
   String deliveryType = 'pickup',
   bool isPaid = false,
+  String? dueDate,
 }) {
   return Order(
     id: id.toString(),
@@ -15,6 +16,7 @@ Order _order({
     status: status,
     deliveryType: deliveryType,
     isPaid: isPaid,
+    dueDate: dueDate,
     customerName: 'Test',
     items: const [],
     totalPrice: 0,
@@ -336,6 +338,87 @@ void main() {
         expect(totalVisible, 8);
         expect(grouped['new']!.map((o) => o.orderRef), containsAll(['A1', 'A2', 'A3']));
         expect(grouped['confirmed']!.map((o) => o.orderRef), containsAll(['B1', 'B2']));
+      });
+    });
+
+    group('dueDate ascending sort (FR5/AC5/AC6)', () {
+      test('orders in a column sort by dueDate ascending', () {
+        final orders = [
+          _order(id: 1, ref: 'LATE', status: 'new', dueDate: '2026-07-30'),
+          _order(id: 2, ref: 'EARLY', status: 'new', dueDate: '2026-07-24'),
+          _order(id: 3, ref: 'MID', status: 'new', dueDate: '2026-07-27'),
+        ];
+        final grouped = groupOrdersByKanbanStatus(orders);
+
+        expect(
+          grouped['new']!.map((o) => o.orderRef).toList(),
+          ['EARLY', 'MID', 'LATE'],
+        );
+      });
+
+      test('null dueDate orders sort last within a column', () {
+        final orders = [
+          _order(id: 1, ref: 'NODATE2', status: 'new', dueDate: null),
+          _order(id: 2, ref: 'DATED', status: 'new', dueDate: '2026-07-24'),
+          _order(id: 3, ref: 'NODATE1', status: 'new', dueDate: null),
+        ];
+        final grouped = groupOrdersByKanbanStatus(orders);
+
+        expect(grouped['new']!.first.orderRef, 'DATED');
+        expect(
+          grouped['new']!.sublist(1).map((o) => o.orderRef).toSet(),
+          {'NODATE1', 'NODATE2'},
+        );
+      });
+
+      test('all null dueDate orders preserve relative order (stable)', () {
+        final orders = [
+          _order(id: 1, ref: 'A', status: 'new', dueDate: null),
+          _order(id: 2, ref: 'B', status: 'new', dueDate: null),
+          _order(id: 3, ref: 'C', status: 'new', dueDate: null),
+        ];
+        final grouped = groupOrdersByKanbanStatus(orders);
+
+        expect(grouped['new']!.map((o) => o.orderRef).toList(),
+            ['A', 'B', 'C']);
+      });
+
+      test('virtual to_deliver column sorts by dueDate ascending', () {
+        final orders = [
+          _order(
+              id: 1, ref: 'LATE', status: 'ready',
+              deliveryType: 'bus', dueDate: '2026-07-30'),
+          _order(
+              id: 2, ref: 'EARLY', status: 'ready',
+              deliveryType: 'door', dueDate: '2026-07-24'),
+          _order(
+              id: 3, ref: 'MID', status: 'ready',
+              deliveryType: 'bus', dueDate: '2026-07-27'),
+        ];
+        final grouped = groupOrdersByKanbanStatus(orders);
+
+        expect(
+          grouped['to_deliver']!.map((o) => o.orderRef).toList(),
+          ['EARLY', 'MID', 'LATE'],
+        );
+        expect(grouped['ready']!, isEmpty);
+      });
+
+      test('virtual awaiting_payment column sorts by dueDate ascending', () {
+        final orders = [
+          _order(
+              id: 1, ref: 'LATE', status: 'delivered',
+              isPaid: false, dueDate: '2026-07-30'),
+          _order(
+              id: 2, ref: 'EARLY', status: 'delivered',
+              isPaid: false, dueDate: '2026-07-24'),
+        ];
+        final grouped = groupOrdersByKanbanStatus(orders);
+
+        expect(
+          grouped['awaiting_payment']!.map((o) => o.orderRef).toList(),
+          ['EARLY', 'LATE'],
+        );
       });
     });
   });
