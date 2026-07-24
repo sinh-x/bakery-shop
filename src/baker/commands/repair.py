@@ -2938,7 +2938,7 @@ def _process_bank_account_1200_repair(conn, item, *, dry_run: bool) -> dict:
 
 def _print_bank_account_1200_report(results, *, dry_run):
     """Print the credit-side bank-account-1200 repair report."""
-    click.echo("Chuyển bút toán Có TK ngân hàng cũ (1200) sang TK chưa phân bổ (1290)")
+    click.echo("Chuyển bút toán Có TK ngân hàng cũ (1200) sang TK đúng")
     click.echo("=" * 74)
     click.echo("")
     click.echo(
@@ -2975,7 +2975,7 @@ def _print_bank_account_1200_report(results, *, dry_run):
 @click.option("--order-id", "order_id", type=int, default=None,
               help="ID đơn hàng cần chuyển bút toán Có 1200 sang 1290.")
 @click.option("--all", "repair_all", is_flag=True, default=False,
-              help="Chuyển tất cả bút toán Có TK 1200 (tiền rút trả, hoàn tiền) sang 1290.")
+              help="Chuyển tất cả bút toán Có TK 1200 (tiền rút trả, hoàn tiền, chi phí) sang TK đúng.")
 @click.option("--dry-run", is_flag=True, default=False,
               help="Xem trước thay đổi, không ghi vào CSDL.")
 def repair_bank_account_1200_cmd(order_id, repair_all, dry_run):
@@ -2983,7 +2983,7 @@ def repair_bank_account_1200_cmd(order_id, repair_all, dry_run):
 
     DG-285 Phase 2 — historical credit-side backfill (FR3, FR4, FR5, AC3, AC4):
 
-      Tìm các bút toán nhật ký có dòng Có (tài sản)vẫn ở TK 1200 và chuyển
+      Tìm các bút toán nhật ký có dòng Có (tài sản) vẫn ở TK 1200 và chuyển
       sang TK 1290 (Un-allocated Bank) qua các hàm tái tạo duy nhất
       (``_reconcile_tien_rut_return_entry`` cho tiền rút trả,
       ``_sync_payment_journal`` cho hoàn tiền). Bên Nợ (2100/2400) giữ
@@ -2993,6 +2993,10 @@ def repair_bank_account_1200_cmd(order_id, repair_all, dry_run):
         lịch sử (1896, 1947).
       * Bút toán ``refund`` (``source_type='payment_transaction'``) — FR4:
         bút toán 4474 (10K, transfer, no source).
+      * Bút toán ``expense`` (``source_type='expense'``) — DG-286: 7 bút toán
+        lịch sử (16, 18, 4979, 4980, 4981, 4982, 4997) ghi Có TK 1200.
+        Sửa qua ``_sync_expense_journal`` — tự động chuyển về TK con đúng
+        (1220 cho TK Ân VCB, 1210 cho TK Phượng VCB, ...).
       * Lệnh idempotent (FR5): chạy lần hai sẽ không tìm thấy bút toán nào
         cần sửa.
 
@@ -3029,7 +3033,7 @@ def repair_bank_account_1200_cmd(order_id, repair_all, dry_run):
 
     if not results:
         click.echo(
-            "(không có bút toán nào cần chuyển sang TK 1290)"
+            "(không có bút toán nào cần chuyển)"
         )
         return
 

@@ -553,7 +553,7 @@ def test_idempotent_second_run_is_noop():
 
     r2 = _invoke(["repair-bank-account-1200", "--all"])
     assert r2.exit_code == 0, r2.output
-    assert "không có bút toán nào cần chuyển sang TK 1290" in r2.output
+    assert "không có bút toán nào cần chuyển)" in r2.output
 
     with get_db() as conn:
         ensure_schema(conn)
@@ -689,7 +689,7 @@ def test_vn_labels_in_report():
 
     result = _invoke(["repair-bank-account-1200", "--all"])
     assert result.exit_code == 0, result.output
-    assert "Chuyển bút toán Có TK ngân hàng cũ (1200) sang TK chưa phân bổ (1290)" in result.output
+    assert "Chuyển bút toán Có TK ngân hàng cũ (1200) sang TK đúng" in result.output
     assert "Mã đơn" in result.output
     assert "Số tiền" in result.output
     assert "Loại" in result.output
@@ -1008,3 +1008,77 @@ def test_expense_repair_tien_rut_and_refund_still_work():
         # expense → 1220
         ex_entry = _latest_non_reversal_entry(conn, "expense", eid)
         assert _entry_credit_code(conn, ex_entry) == "1220"
+
+
+# ---------------------------------------------------------------------------
+# Expense report VN labels (DG-286 Phase 3 — FR4, NFR1, AC6)
+# ---------------------------------------------------------------------------
+
+
+def test_expense_report_vn_label_chi_phi():
+    """AC6: expense entries show the VN label "Chi phí" in the report output."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, payment_source="TK Ân VCB", amount_vnd=350000, summary="Chi phí AC6",
+        )
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=350000, asset_code="1200",
+        )
+        conn.commit()
+
+    result = _invoke(["repair-bank-account-1200", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "Chi phí" in result.output
+    assert "đã sửa" in result.output
+
+
+def test_expense_report_empty_no_entries():
+    """When no entries are found, the message no longer mentions 1290
+    specifically."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.commit()
+
+    result = _invoke(["repair-bank-account-1200", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "(không có bút toán nào cần chuyển)" in result.output
+    assert "1290" not in result.output.split("(không có bút toán nào cần chuyển)")[1].split("\n")[0]
+
+
+def test_expense_report_shows_expense_and_tien_rut_mixed():
+    """Report correctly labels mixed kinds (tien_rut + expense) and routes
+    each to its own target account code."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        oid = _insert_order(conn, order_ref="BA-MIX", total_price=120000)
+        _insert_tien_rut_return_entry_on(
+            conn, order_id=oid, order_ref="BA-MIX", amount=120000, asset_code="1200",
+        )
+        eid = _insert_expense_event(
+            conn, payment_source="TK Ân VCB", amount_vnd=70000, summary="Chi phí mix",
+        )
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=70000, asset_code="1200",
+        )
+        conn.commit()
+
+    result = _invoke(["repair-bank-account-1200", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "Tiền rút trả" in result.output
+    assert "Chi phí" in result.output
+    assert "đã sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        tr_entry = _latest_non_reversal_entry(conn, "order", oid)
+        assert _entry_credit_code(conn, tr_entry) == UNALLOCATED_BANK_CODE
+        ex_entry = _latest_non_reversal_entry(conn, "expense", eid)
+        assert _entry_credit_code(conn, ex_entry) == "1220"
+
+
+def test_expense_report_help_includes_chi_phi():
+    """The --help text mentions chi phí after the update."""
+    result = _invoke(["repair-bank-account-1200", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "chi phí" in result.output.lower()
