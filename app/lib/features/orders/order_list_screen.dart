@@ -18,6 +18,7 @@ import '../../providers/order/critical_alert_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
 import 'filtered_orders_screen.dart' show countCriticalActive, countUrgentActive, countIncompleteActive;
+import 'widgets/date_filter_chips.dart';
 import 'widgets/delivery_content.dart';
 import 'widgets/order_card.dart';
 
@@ -54,6 +55,10 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
 
   // View mode: 'list' or 'kanban'
   String _viewMode = 'list';
+
+  // Date filter for order list (DG-193 Phase 2 — FR1, FR2).
+  // Default is [DateFilterOption.all] so the initial view shows every order.
+  DateFilterOption _dateFilter = DateFilterOption.all;
 
   @override
   String screenRoutePath() => '/orders';
@@ -184,8 +189,46 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         .toList();
   }
 
+  /// Filters orders by [dueDate] (YYYY-MM-DD) against the selected
+  /// [_dateFilter] option (DG-193 Phase 2 — FR2).
+  ///
+  /// - [DateFilterOption.all] returns every order (filter cleared).
+  /// - The other options compare each order's parsed `dueDate` against today
+  ///   and/or tomorrow. Orders without a `dueDate` (null or empty) are
+  ///   excluded from non-`all` date filters — they only reappear when the
+  ///   user selects "Tất cả".
+  ///
+  /// Date comparison is day-precision: the `dueDate` string (`yyyy-MM-dd`)
+  /// is parsed via [parseApiDate] and compared to `today`/`tomorrow` produced
+  /// from `DateTime.now()`. This keeps filtering O(n) and client-side only
+  /// (NFR2).
+  List<Order> _applyDateFilter(List<Order> orders) {
+    if (_dateFilter == DateFilterOption.all) return orders;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    final todayStr = formatApiDate(today);
+    final tomorrowStr = formatApiDate(tomorrow);
+    bool matches(String? dueDate) {
+      if (dueDate == null || dueDate.isEmpty) return false;
+      switch (_dateFilter) {
+        case DateFilterOption.today:
+          return dueDate == todayStr;
+        case DateFilterOption.tomorrow:
+          return dueDate == tomorrowStr;
+        case DateFilterOption.todayTomorrow:
+          return dueDate == todayStr || dueDate == tomorrowStr;
+        case DateFilterOption.all:
+          return true;
+      }
+    }
+    return orders.where((o) => matches(o.dueDate)).toList();
+  }
+
   List<Order> _applyFilters(List<Order> orders) {
+    // Pipeline: search → status → date → urgency (DG-193 Phase 2 — FR3).
     var filtered = _applySearchFilter(_applyStatusFilter(orders));
+    filtered = _applyDateFilter(filtered);
     filtered = _applyUrgencyFilter(filtered);
     return filtered;
   }
@@ -395,6 +438,12 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                 ),
               ),
 
+              // Date filter chips (visible in both list and kanban view — DG-193 Phase 2, FR4)
+              DateFilterChips(
+                selected: _dateFilter,
+                onChanged: (option) => setState(() => _dateFilter = option),
+              ),
+
               // Status filter chips (hidden in Kanban — columns already group by status)
               if (_viewMode == 'list')
                 SizedBox(
@@ -435,7 +484,8 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
                 child: _viewMode == 'kanban'
                     ? _KanbanBoard(
                         filteredOrders: ordersAsync.maybeWhen(
-                          data: _applySearchFilter,
+                          data: (orders) =>
+                              _applyDateFilter(_applySearchFilter(orders)),
                           orElse: () => <Order>[],
                         ),
                       )
