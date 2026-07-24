@@ -2859,7 +2859,7 @@ def _process_bank_account_1200_repair(conn, item, *, dry_run: bool) -> dict:
     detection query so a second run is a no-op.
     """
     kind = item["kind"]
-    order_ref = item["order_ref"]
+    order_ref = item.get("order_ref", "")
     amount = item["amount"]
     if dry_run:
         return {
@@ -2867,7 +2867,7 @@ def _process_bank_account_1200_repair(conn, item, *, dry_run: bool) -> dict:
             "order_ref": order_ref,
             "amount": amount,
             "from_code": _LEGACY_BANK_PARENT_CODE,
-            "to_code": UNALLOCATED_BANK_CODE,
+            "to_code": item.get("target_code", UNALLOCATED_BANK_CODE),
             "kind": kind,
             "action": "will-repair",
         }
@@ -2914,12 +2914,23 @@ def _process_bank_account_1200_repair(conn, item, *, dry_run: bool) -> dict:
             txn_row["method"] or "transfer",
             order_id=order_id,
         )
+    elif kind == "expense":
+        event_id = item["event_id"]
+        row = conn.execute(
+            "SELECT data, summary FROM events WHERE id = ?",
+            (event_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"expense event {event_id} not found")
+        data = json.loads(row["data"])
+        summary = row["summary"]
+        _sync_expense_journal(conn, event_id, data, summary)
     return {
         "entry_id": entry_id,
         "order_ref": order_ref,
         "amount": amount,
         "from_code": _LEGACY_BANK_PARENT_CODE,
-        "to_code": UNALLOCATED_BANK_CODE,
+        "to_code": item.get("target_code", UNALLOCATED_BANK_CODE),
         "kind": kind,
         "action": "repaired",
     }
@@ -2935,7 +2946,12 @@ def _print_bank_account_1200_report(results, *, dry_run):
     )
     click.echo("-" * 70)
     for r in results:
-        kind_label = "Tiền rút trả" if r["kind"] == "tien_rut_return" else "Hoàn tiền"
+        if r["kind"] == "tien_rut_return":
+            kind_label = "Tiền rút trả"
+        elif r["kind"] == "expense":
+            kind_label = "Chi phí"
+        else:
+            kind_label = "Hoàn tiền"
         click.echo(
             f"{r['order_ref'][:19]:<20}"
             f"{_vn_amount(r['amount']):>16}"
@@ -2996,7 +3012,7 @@ def repair_bank_account_1200_cmd(order_id, repair_all, dry_run):
                 conn, order_id=order_id if not repair_all else None,
             ) + _refund_entries_on_1200(
                 conn, order_id=order_id if not repair_all else None,
-            )
+            ) + _expense_entries_on_1200(conn)
             results = [
                 _process_bank_account_1200_repair(conn, it, dry_run=dry_run)
                 for it in items

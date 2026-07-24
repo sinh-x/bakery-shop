@@ -817,3 +817,194 @@ def test_expense_detection_locked_entry():
         found = _expense_entries_on_1200(conn)
         assert len(found) == 1
         assert found[0]["locked"] is True
+
+
+# ---------------------------------------------------------------------------
+# Expense repair (DG-286 Phase 2 — FR2, FR3, AC1, AC2)
+# ---------------------------------------------------------------------------
+
+
+def test_expense_repair_unlocked_entry_re_synced_to_correct_account():
+    """AC1: an unlocked expense entry crediting 1200 (TK Ân VCB) is re-synced
+    so its credit line moves to 1220 via _sync_expense_journal."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, payment_source="TK Ân VCB", amount_vnd=300000,
+        )
+        entry_id = _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=300000, asset_code="1200",
+        )
+        assert _entry_credit_code(conn, entry_id) == "1200"
+        conn.commit()
+
+    result = _invoke(["repair-bank-account-1200", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        new_entry = _latest_non_reversal_entry(conn, "expense", eid)
+        assert new_entry is not None
+        assert _entry_credit_code(conn, new_entry) == "1220"
+
+
+def test_expense_repair_locked_entry_reversed_and_recreated():
+    """AC2: a locked expense entry on 1200 is reversed and a new correct
+    entry crediting 1220 is created (no double-entry)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, payment_source="TK Ân VCB", amount_vnd=250000,
+        )
+        entry_id = _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=250000, asset_code="1200", locked=True,
+        )
+        pre_lines = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_lines WHERE journal_entry_id = ?",
+            (entry_id,),
+        ).fetchone()["c"]
+        conn.commit()
+
+    result = _invoke(["repair-bank-account-1200", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        new_entry = _latest_non_reversal_entry(conn, "expense", eid)
+        assert new_entry is not None
+        assert new_entry != entry_id
+        assert _entry_credit_code(conn, new_entry) == "1220"
+        rev = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_entries "
+            "WHERE source_type = 'expense' AND source_id = ? "
+            "AND description LIKE 'Reversal:%'",
+            (eid,),
+        ).fetchone()["c"]
+        assert int(rev) >= 1
+        new_lines = conn.execute(
+            "SELECT COUNT(*) AS c FROM journal_lines WHERE journal_entry_id = ?",
+            (new_entry,),
+        ).fetchone()["c"]
+        assert int(new_lines) == pre_lines
+
+
+def test_expense_repair_balance_maintained():
+    """After repair, the sum of debits equals the sum of credits (double-entry
+    integrity preserved)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, payment_source="TK Ân VCB", amount_vnd=180000,
+        )
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=180000, asset_code="1200",
+        )
+        conn.commit()
+
+    result = _invoke(["repair-bank-account-1200", "--all"])
+    assert result.exit_code == 0, result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        row = conn.execute(
+            "SELECT COALESCE(SUM(debit), 0) AS d, COALESCE(SUM(credit), 0) AS c "
+            "FROM journal_lines"
+        ).fetchone()
+        assert abs(float(row["d"]) - float(row["c"])) < 0.005
+
+
+def test_expense_repair_multiple_entries():
+    """Multiple expense entries on 1200 are repaired in one run."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid_a = _insert_expense_event(
+            conn, payment_source="TK Ân VCB", amount_vnd=120000, summary="Chi phí A",
+        )
+        eid_b = _insert_expense_event(
+            conn, payment_source="TK Phượng VCB", amount_vnd=90000, summary="Chi phí B",
+        )
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid_a, amount=120000, asset_code="1200",
+        )
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid_b, amount=90000, asset_code="1200",
+        )
+        conn.commit()
+
+    result = _invoke(["repair-bank-account-1200", "--all"])
+    assert result.exit_code == 0, result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        assert _entry_credit_code(
+            conn, _latest_non_reversal_entry(conn, "expense", eid_a)
+        ) == "1220"
+        assert _entry_credit_code(
+            conn, _latest_non_reversal_entry(conn, "expense", eid_b)
+        ) == "1210"
+
+
+def test_expense_repair_non_an_vcb_payment_source():
+    """An expense entry with TK Phượng VCB on 1200 routes to 1210 after repair."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, payment_source="TK Phượng VCB", amount_vnd=150000,
+        )
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=150000, asset_code="1200",
+        )
+        conn.commit()
+
+    result = _invoke(["repair-bank-account-1200", "--all"])
+    assert result.exit_code == 0, result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        new_entry = _latest_non_reversal_entry(conn, "expense", eid)
+        assert _entry_credit_code(conn, new_entry) == "1210"
+
+
+def test_expense_repair_tien_rut_and_refund_still_work():
+    """Regression: existing tien_rut + refund repair still works alongside the
+    new expense repair path."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        # tien_rut return entry on 1200
+        oid = _insert_order(conn, order_ref="BA-REG-TR", total_price=200000)
+        _insert_tien_rut_return_entry_on(
+            conn, order_id=oid, order_ref="BA-REG-TR", amount=200000, asset_code="1200",
+        )
+        # refund entry on 1200
+        txn = _insert_payment(
+            conn, order_id=oid, amount=50000, ptype="refund", method="transfer",
+        )
+        _insert_refund_journal_entry_on(
+            conn, txn_id=txn, amount=50000, asset_code="1200",
+        )
+        # expense entry on 1200
+        eid = _insert_expense_event(
+            conn, payment_source="TK Ân VCB", amount_vnd=80000,
+        )
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=80000, asset_code="1200",
+        )
+        conn.commit()
+
+    result = _invoke(["repair-bank-account-1200", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        # tien_rut return → 1290
+        tr_entry = _latest_non_reversal_entry(conn, "order", oid)
+        assert _entry_credit_code(conn, tr_entry) == UNALLOCATED_BANK_CODE
+        # refund → 1290
+        rf_entry = _latest_non_reversal_entry(conn, "payment_transaction", txn)
+        assert _entry_credit_code(conn, rf_entry) == UNALLOCATED_BANK_CODE
+        # expense → 1220
+        ex_entry = _latest_non_reversal_entry(conn, "expense", eid)
+        assert _entry_credit_code(conn, ex_entry) == "1220"
