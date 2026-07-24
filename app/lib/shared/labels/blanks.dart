@@ -38,6 +38,22 @@ class BlanksLabels {
   static const actionStockOut = 'Xuất kho';
   static const actionAddBom = 'Thêm BOM';
   static const actionDeleteBom = 'Xóa BOM';
+  static const actionSelectBlank = 'Chọn phôi';
+
+  // BOM mapping field labels (FR2 / NFR4).
+  static const fieldBlank = 'Phôi';
+  static const fieldBomQuantity = 'Số lượng trong công thức';
+
+  // BOM mapping messages (FR2 / NFR4).
+  static const messageBomCreateSuccess = 'Thêm BOM thành công';
+  static const messageBomUpdateSuccess = 'Cập nhật BOM thành công';
+  static const messageBomDeleteSuccess = 'Xóa BOM thành công';
+  static const messageBomDeleteBlocked = 'Không thể xóa BOM này';
+  static const messageBomSelectBlank = 'Vui lòng chọn phôi';
+  static const messageBomInvalidQuantity = 'Số lượng không hợp lệ';
+
+  // BOM mapping empty states (NFR4).
+  static const emptyBom = 'Chưa có phôi nào trong BOM';
 
   // Stock movement types (FR3 / NFR4).
   static const stockTypeProduction = 'Sản xuất';
