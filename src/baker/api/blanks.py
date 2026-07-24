@@ -12,6 +12,7 @@ Routes:
 * ``GET    /api/blanks/stock``                 — current stock per blank (FR4)
 * ``POST   /api/blanks/stock``                 — record production/usage (FR4, FR5)
 * ``GET    /api/blanks/demand``                — demand vs stock per blank (FR3, FR6)
+* ``GET    /api/blanks/{blank_id}/stock-log``   — audit log per blank (FR5)
 
 Demand calc: JOIN orders → order_items → product_blank_bom → blanks
 aggregating BOM.quantity × order_items.quantity grouped by blank_id.
@@ -361,3 +362,25 @@ def list_demand():
                 }
             )
         return result
+
+
+# --- Audit log (FR5) ----------------------------------------------------------
+
+
+@router.get("/blanks/{blank_id}/stock-log")
+def list_stock_log(blank_id: int = Path(ge=0)):
+    """Chronological audit log of stock changes for a single blank (FR5).
+
+    Each entry includes the signed ``quantityChange`` (production = +,
+    usage = −), ``type``, optional ``producedDate``/``expiryDate``, and the
+    row ``createdAt`` timestamp. Results are ordered newest-first.
+    """
+    with get_db() as conn:
+        _ensure_blank_exists(conn, blank_id)
+        rows = conn.execute(
+            """SELECT * FROM blank_stock_log
+               WHERE blank_id = ?
+               ORDER BY id DESC""",
+            (blank_id,),
+        ).fetchall()
+        return [BlankStockLog.from_row(r).to_api_dict() for r in rows]

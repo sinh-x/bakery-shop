@@ -59,6 +59,19 @@ class BlanksLabels {
   static const stockTypeProduction = 'Sản xuất';
   static const stockTypeUsage = 'Sử dụng';
 
+  // Stock action sheet labels (FR4 / NFR4).
+  static const fieldProducedDate = 'Ngày sản xuất';
+  static const fieldExpiryDateOptional = 'Ngày hết hạn (tùy chọn)';
+  static const messageStockRecordSuccess = 'Ghi nhận thành công';
+  static const messageStockRecordFailed = 'Ghi nhận thất bại';
+  static const messageStockInvalidQuantity = 'Số lượng không hợp lệ';
+
+  // Audit log entry labels (FR5 / NFR4).
+  static const fieldQuantityChange = 'Biến động';
+  static const fieldEntryDate = 'Thời gian';
+  static const fieldProducedDateShort = 'NSX';
+  static const fieldExpiryDateShort = 'HSD';
+
   // Demand labels (FR5 / NFR4).
   static const demand = 'Nhu cầu';
   static const demandStock = 'Tồn kho';

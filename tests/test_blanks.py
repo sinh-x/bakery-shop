@@ -479,3 +479,60 @@ def test_bom_response_uses_camelcase_keys(api_client):
     ).json()
     expected_keys = {"id", "productId", "priceChipId", "blankId", "quantity", "createdAt"}
     assert set(bom.keys()) == expected_keys
+
+
+# --- API: Stock audit log (FR5 / AC5) ----------------------------------------
+
+
+def test_stock_log_empty_for_blank_with_no_history(api_client):
+    blank = _create_blank(api_client)
+    resp = api_client.get(f"/api/blanks/{blank['id']}/stock-log")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_stock_log_lists_entries_chronological_newest_first(api_client):
+    blank = _create_blank(api_client)
+    api_client.post(
+        "/api/blanks/stock",
+        json={"blankId": blank["id"], "quantity": 10, "type": "production", "producedDate": "2026-07-24"},
+    )
+    api_client.post(
+        "/api/blanks/stock",
+        json={"blankId": blank["id"], "quantity": 4, "type": "usage"},
+    )
+    log = api_client.get(f"/api/blanks/{blank['id']}/stock-log").json()
+    assert len(log) == 2
+    # Newest-first (usage inserted after production)
+    assert log[0]["type"] == "usage"
+    assert log[0]["quantityChange"] == -4
+    assert log[1]["type"] == "production"
+    assert log[1]["quantityChange"] == 10
+    assert log[1]["producedDate"] == "2026-07-24"
+
+
+def test_stock_log_isolated_per_blank(api_client):
+    blank_a = _create_blank(api_client, name="A")
+    blank_b = _create_blank(api_client, name="B")
+    api_client.post(
+        "/api/blanks/stock",
+        json={"blankId": blank_a["id"], "quantity": 5, "type": "production", "producedDate": "2026-07-24"},
+    )
+    log_b = api_client.get(f"/api/blanks/{blank_b['id']}/stock-log").json()
+    assert log_b == []
+
+
+def test_stock_log_blank_not_found(api_client):
+    resp = api_client.get("/api/blanks/9999/stock-log")
+    assert resp.status_code == 404
+
+
+def test_stock_log_response_uses_camelcase_keys(api_client):
+    blank = _create_blank(api_client)
+    api_client.post(
+        "/api/blanks/stock",
+        json={"blankId": blank["id"], "quantity": 1, "type": "production", "producedDate": "2026-07-24"},
+    )
+    entry = api_client.get(f"/api/blanks/{blank['id']}/stock-log").json()[0]
+    expected_keys = {"id", "blankId", "quantityChange", "type", "producedDate", "expiryDate", "createdAt"}
+    assert set(entry.keys()) == expected_keys

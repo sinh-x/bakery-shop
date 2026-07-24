@@ -1,5 +1,6 @@
 import 'package:bakery_app/data/api/api_client.dart';
 import 'package:bakery_app/data/providers/blank_demand_provider.dart';
+import 'package:bakery_app/data/providers/blank_stock_log_provider.dart';
 import 'package:bakery_app/data/providers/blank_stock_provider.dart';
 import 'package:bakery_app/data/providers/blanks_provider.dart';
 import 'package:dio/dio.dart';
@@ -13,6 +14,7 @@ class _BlankApiInterceptor extends Interceptor {
     this.blanks = const [],
     this.stock = const [],
     this.demand = const [],
+    this.stockLog = const [],
     this.createdBlank,
     this.createdStockEntry,
   });
@@ -20,6 +22,7 @@ class _BlankApiInterceptor extends Interceptor {
   final List<Map<String, dynamic>> blanks;
   final List<Map<String, dynamic>> stock;
   final List<Map<String, dynamic>> demand;
+  final List<Map<String, dynamic>> stockLog;
   final Map<String, dynamic>? createdBlank;
   final Map<String, dynamic>? createdStockEntry;
 
@@ -51,6 +54,8 @@ class _BlankApiInterceptor extends Interceptor {
       statusCode = 201;
     } else if (path == '/api/blanks/demand' && method == 'GET') {
       data = demand;
+    } else if (path.endsWith('/stock-log') && method == 'GET') {
+      data = stockLog;
     } else {
       data = <String, dynamic>{};
     }
@@ -119,6 +124,24 @@ Map<String, dynamic> _stockEntryJson({int id = 7, int blankId = 1}) => {
       'producedDate': '2026-07-24',
       'expiryDate': null,
       'type': 'production',
+      'createdAt': '2026-07-24T10:00:00Z',
+    };
+
+Map<String, dynamic> _stockLogJson({
+  int id = 1,
+  int blankId = 1,
+  double quantityChange = 10.0,
+  String type = 'production',
+  String? producedDate = '2026-07-24',
+  String? expiryDate,
+}) =>
+    {
+      'id': id,
+      'blankId': blankId,
+      'quantityChange': quantityChange,
+      'type': type,
+      'producedDate': producedDate,
+      'expiryDate': expiryDate,
       'createdAt': '2026-07-24T10:00:00Z',
     };
 
@@ -383,6 +406,45 @@ void main() {
       await container.read(blankDemandProvider.notifier).refresh();
 
       expect(container.read(blankDemandProvider).value!.first.shortage, 0.0);
+    });
+  });
+
+  group('BlankStockLogNotifier', () {
+    test('build() fetches audit log via GET /api/blanks/{id}/stock-log',
+        () async {
+      final interceptor = _BlankApiInterceptor(
+        stockLog: [
+          _stockLogJson(id: 1, blankId: 2, quantityChange: 10.0),
+          _stockLogJson(
+              id: 2, blankId: 2, quantityChange: -4.0, type: 'usage'),
+        ],
+      );
+      final container = _container(interceptor);
+      addTearDown(container.dispose);
+
+      final log = await container.read(blankStockLogProvider(2).future);
+
+      expect(log, hasLength(2));
+      expect(log.first.id, 1);
+      expect(log.first.quantityChange, 10.0);
+      expect(log.last.type, 'usage');
+    });
+
+    test('refresh() reloads the audit log', () async {
+      final interceptor = _BlankApiInterceptor(
+        stockLog: [_stockLogJson(id: 1, blankId: 2)],
+      );
+      final container = _container(interceptor);
+      addTearDown(container.dispose);
+
+      await container.read(blankStockLogProvider(2).future);
+      interceptor.stockLog.add(
+        _stockLogJson(id: 2, blankId: 2, quantityChange: -4.0, type: 'usage'),
+      );
+
+      await container.read(blankStockLogProvider(2).notifier).refresh();
+
+      expect(container.read(blankStockLogProvider(2)).value!, hasLength(2));
     });
   });
 }

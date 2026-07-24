@@ -140,6 +140,17 @@ class BlankService {
     return BlankStockEntry.fromJson(response.data as Map<String, dynamic>);
   }
 
+  // --- Audit log (FR5) -----------------------------------------------------
+
+  /// List the stock audit log for a single blank, newest-first.
+  Future<List<BlankStockLog>> listStockLog(int blankId) async {
+    final response = await _dio.get('/api/blanks/$blankId/stock-log');
+    final list = response.data as List;
+    return list
+        .map((json) => BlankStockLog.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
   // --- Demand (FR3) --------------------------------------------------------
 
   /// Get demand vs stock vs shortage per blank from pending orders.
