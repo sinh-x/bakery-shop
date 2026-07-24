@@ -172,4 +172,10 @@ class OrdersLabels {
 
   // Delivery tab with count (DG-261 review CQ-2)
   static String deliveryTabWithCount(int count) => 'Giao hàng ($count)';
+
+  // Date filter labels for order list (DG-193 Phase 1).
+  // "Hôm nay" and "Tất cả" reuse VN.filterToday and VN.filterAll respectively
+  // (see vietnamese_labels.dart) — only the two new options live here.
+  static const dateFilterTomorrow = 'Ngày mai';
+  static const dateFilterTodayTomorrow = 'Nay + Mai';
 }
