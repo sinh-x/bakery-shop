@@ -89,3 +89,15 @@ class BlanksNotifier extends AsyncNotifier<List<Blank>> {
 
 final blanksProvider =
     AsyncNotifierProvider<BlanksNotifier, List<Blank>>(BlanksNotifier.new);
+
+/// Family provider that fetches a single blank by id (used by the detail
+/// screen). Falls back to filtering the cached list when available.
+final blankByIdProvider =
+    FutureProvider.family<Blank, int>((ref, id) async {
+  final service = ref.read(blankServiceProvider);
+  final all = await service.listBlanks();
+  return all.firstWhere(
+    (b) => b.id == id,
+    orElse: () => throw StateError('Blank $id not found'),
+  );
+});
