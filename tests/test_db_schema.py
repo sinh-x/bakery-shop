@@ -364,6 +364,59 @@ def _assert_users_role_check_constraint(conn) -> None:
         )
 
 
+def _assert_blanks_schema(conn) -> None:
+    """CQ-4 (DG-290 Phase 4.1): v81 blanks tables exist after migration."""
+    for table in ("blanks", "product_blank_bom", "blank_stock", "blank_stock_log"):
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        ).fetchone()
+        assert row is not None, f"{table} table missing after migration"
+
+    blanks_columns = _schema_columns(conn, "blanks")
+    assert set(blanks_columns) >= {
+        "id",
+        "name",
+        "category",
+        "unit",
+        "notes",
+        "created_at",
+        "updated_at",
+    }
+
+    bom_columns = _schema_columns(conn, "product_blank_bom")
+    assert set(bom_columns) >= {
+        "id",
+        "product_id",
+        "price_chip_id",
+        "blank_id",
+        "quantity",
+        "created_at",
+    }
+
+    stock_columns = _schema_columns(conn, "blank_stock")
+    assert set(stock_columns) >= {
+        "id",
+        "blank_id",
+        "quantity",
+        "produced_date",
+        "expiry_date",
+        "type",
+        "created_at",
+    }
+
+    log_columns = _schema_columns(conn, "blank_stock_log")
+    assert set(log_columns) >= {
+        "id",
+        "blank_id",
+        "quantity_change",
+        "type",
+        "produced_date",
+        "expiry_date",
+        "created_at",
+    }
+
+
 def _seed_v35_stock(conn) -> tuple[int, int, int]:
     conn.execute(
         """INSERT INTO products (name, category, base_price, cost, recipe_notes)
@@ -406,6 +459,7 @@ def test_schema_migration_v31_fresh_db():
         _assert_event_history_schema(conn)
         _assert_soft_delete_columns(conn)
         _assert_users_role_check_constraint(conn)
+        _assert_blanks_schema(conn)
 
 
 def test_schema_migration_v30_to_v31():
@@ -424,6 +478,7 @@ def test_schema_migration_v30_to_v31():
         _assert_event_history_schema(conn)
         _assert_soft_delete_columns(conn)
         _assert_users_role_check_constraint(conn)
+        _assert_blanks_schema(conn)
 
 
 def test_schema_migration_v31_idempotent():
