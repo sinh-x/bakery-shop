@@ -23,7 +23,7 @@ sealed class PaymentTransaction with _$PaymentTransaction {
     )
     DateTime? invalidatedAt,
     @JsonKey(name: 'invalidatedBy') @Default('') String invalidatedBy,
-    @JsonKey(name: 'payment_source') String? paymentSource,
+    @JsonKey(name: 'paymentSource') String? paymentSource,
   }) = _PaymentTransaction;
 
   factory PaymentTransaction.fromJson(Map<String, dynamic> json) =>

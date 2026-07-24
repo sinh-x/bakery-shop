@@ -1594,8 +1594,8 @@ INVENTORY_PURCHASE_CATEGORIES = {"Nguyên liệu", "Bao bì"}
 # "Nhân viên ứng trước" creates a sub-account per staff name (handled in backfill).
 EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE = {
     "Shop tiền mặt": "1100",
-    "TK Phượng VCB": "1200",
-    "TK Ân VCB": "1200",
+    "TK Phượng VCB": "1210",
+    "TK Ân VCB": "1220",
     "Nhân viên ứng trước": "2300",
 }
 
@@ -1609,7 +1609,7 @@ PAYMENT_METHOD_TO_ASSET_CODE = {
 # DG-244 Phase 4: Map payment_transactions.payment_source → bank asset
 # account code. Used ONLY by the payment_transaction journal routing path
 # (_build_payment_journal_lines). Distinct from EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
-# which the expense flow depends on (both VCB labels collapse to 1200 there).
+# which the expense flow depends on (VCB labels map to sub-accounts 1210/1220 there).
 # An empty/unknown payment_source falls back to UNALLOCATED_BANK_CODE via
 # _resolve_transaction_asset_code (see journal_sync.py).
 TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE = {

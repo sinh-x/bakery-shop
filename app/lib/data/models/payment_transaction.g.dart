@@ -17,7 +17,7 @@ _PaymentTransaction _$PaymentTransactionFromJson(Map<String, dynamic> json) =>
       createdAt: parseApiDateTime(json['createdAt'] as String?),
       invalidatedAt: parseApiDateTime(json['invalidatedAt'] as String?),
       invalidatedBy: json['invalidatedBy'] as String? ?? '',
-      paymentSource: json['payment_source'] as String?,
+      paymentSource: json['paymentSource'] as String?,
     );
 
 Map<String, dynamic> _$PaymentTransactionToJson(_PaymentTransaction instance) =>
@@ -31,5 +31,5 @@ Map<String, dynamic> _$PaymentTransactionToJson(_PaymentTransaction instance) =>
       'createdAt': timestampToJson(instance.createdAt),
       'invalidatedAt': timestampToJson(instance.invalidatedAt),
       'invalidatedBy': instance.invalidatedBy,
-      'payment_source': instance.paymentSource,
+      'paymentSource': instance.paymentSource,
     };
