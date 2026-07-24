@@ -7,12 +7,14 @@ import '../../data/providers/blanks_provider.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
 import 'widgets/blank_form.dart';
+import 'widgets/blanks_states.dart';
 
 /// View / edit / delete a single blank (FR1 / AC1).
 ///
 /// Route: `/blanks/:id`. Displays all blank fields, with actions to edit
 /// (opens [BlankForm] in edit mode), delete (with confirmation dialog), and
-/// placeholder buttons for BOM mapping (Phase 4.5) and audit log (Phase 4.8).
+/// an audit log button. BOM mapping is keyed by price_chip (not blank), so
+/// it is accessed from the product/price_chip flow rather than here.
 class BlankDetailScreen extends ConsumerWidget {
   const BlankDetailScreen({super.key, required this.blankId});
 
@@ -28,8 +30,7 @@ class BlankDetailScreen extends ConsumerWidget {
       ),
       body: blankAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => _DetailErrorView(
-          message: e.toString(),
+        error: (e, _) => BlanksErrorView(
           onRetry: () => ref.invalidate(blankByIdProvider(blankId)),
         ),
         data: (blank) => _BlankDetailBody(blankId: blank.id, blank: blank),
@@ -61,13 +62,7 @@ class _BlankDetailBody extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         FilledButton.tonalIcon(
-          onPressed: () => context.push('/blanks/$blankId/bom'),
-          icon: const Icon(Icons.link),
-          label: const Text(BlanksLabels.screenBomMapping),
-        ),
-        const SizedBox(height: 12),
-        FilledButton.tonalIcon(
-          onPressed: () => context.push('/blanks/$blankId/history'),
+          onPressed: () => context.push('/blanks/$blankId/audit-log'),
           icon: const Icon(Icons.history),
           label: const Text(BlanksLabels.screenHistory),
         ),
@@ -139,33 +134,6 @@ class _BlankFieldRow extends StatelessWidget {
             ),
           ),
           Expanded(child: Text(value.isEmpty ? '—' : value)),
-        ],
-      ),
-    );
-  }
-}
-
-class _DetailErrorView extends StatelessWidget {
-  const _DetailErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(VN.apiError, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
-            label: const Text(VN.retry),
-          ),
         ],
       ),
     );

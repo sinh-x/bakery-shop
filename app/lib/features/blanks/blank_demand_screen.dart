@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/blank.dart';
 import '../../data/providers/blank_demand_provider.dart';
+import '../../shared/utils/format_double.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
+import 'widgets/blanks_category_grouped_list.dart';
+import 'widgets/blanks_states.dart';
 
 /// Demand planning screen — demand vs stock vs shortage per blank
 /// (FR3 / AC4).
@@ -33,63 +36,27 @@ class BlankDemandScreen extends ConsumerWidget {
       ),
       body: demandAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => _DemandErrorView(
+        error: (e, _) => BlanksErrorView(
           onRetry: () => ref.read(blankDemandProvider.notifier).refresh(),
         ),
         data: (rows) {
           if (rows.isEmpty) {
-            return const _DemandEmptyView();
+            return const BlanksEmptyView(
+              icon: Icons.query_stats_outlined,
+              label: BlanksLabels.emptyData,
+            );
           }
           return RefreshIndicator(
             onRefresh: () =>
                 ref.read(blankDemandProvider.notifier).refresh(),
-            child: _DemandGroupedList(rows: rows),
+            child: BlanksCategoryGroupedList<BlankDemand>(
+              items: rows,
+              categoryKeyOf: (r) => r.category,
+              itemLabelOf: (r) => r.name,
+              itemBuilder: (context, r) => _DemandRow(row: r),
+            ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _DemandGroupedList extends StatelessWidget {
-  const _DemandGroupedList({required this.rows});
-
-  final List<BlankDemand> rows;
-
-  @override
-  Widget build(BuildContext context) {
-    final groups = <String, List<BlankDemand>>{};
-    for (final r in rows) {
-      groups.putIfAbsent(r.category, () => []).add(r);
-    }
-    final categories = groups.keys.toList()..sort();
-    return ListView(
-      children: [
-        for (final category in categories) ...[
-          _DemandCategoryHeader(category: category),
-          for (final r in groups[category]!) _DemandRow(row: r),
-          const Divider(height: 1),
-        ],
-      ],
-    );
-  }
-}
-
-class _DemandCategoryHeader extends StatelessWidget {
-  const _DemandCategoryHeader({required this.category});
-
-  final String category;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      dense: true,
-      title: Text(
-        category.isEmpty ? BlanksLabels.categoryFilterAll : category,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Colors.grey,
-              fontWeight: FontWeight.bold,
-            ),
       ),
     );
   }
@@ -118,17 +85,17 @@ class _DemandRow extends StatelessWidget {
         children: [
           _DemandChip(
             label: BlanksLabels.demand,
-            value: _format(row.demand),
+            value: formatDouble(row.demand),
             unit: row.unit,
           ),
           _DemandChip(
             label: BlanksLabels.demandStock,
-            value: _format(row.stock),
+            value: formatDouble(row.stock),
             unit: row.unit,
           ),
           _DemandChip(
             label: BlanksLabels.demandShortfall,
-            value: _format(row.shortage),
+            value: formatDouble(row.shortage),
             unit: row.unit,
             color: shortageColor,
             emphasize: hasShortage,
@@ -168,56 +135,4 @@ class _DemandChip extends StatelessWidget {
           ),
     );
   }
-}
-
-class _DemandEmptyView extends StatelessWidget {
-  const _DemandEmptyView();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.query_stats_outlined, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(
-            BlanksLabels.emptyData,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DemandErrorView extends StatelessWidget {
-  const _DemandErrorView({required this.onRetry});
-
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(VN.apiError, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
-            label: const Text(VN.retry),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-String _format(double v) {
-  if (v == v.roundToDouble()) return v.toInt().toString();
-  return v.toString();
 }

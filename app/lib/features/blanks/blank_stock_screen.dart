@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/blank.dart';
 import '../../data/providers/blank_stock_provider.dart';
+import '../../shared/utils/format_double.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
+import 'widgets/blanks_category_grouped_list.dart';
+import 'widgets/blanks_states.dart';
 import 'widgets/stock_action_sheet.dart';
 
 /// Stock tracking screen — current net stock per blank (FR4 / AC3).
@@ -34,63 +37,27 @@ class BlankStockScreen extends ConsumerWidget {
       ),
       body: stockAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => _StockErrorView(
+        error: (e, _) => BlanksErrorView(
           onRetry: () => ref.read(blankStockProvider.notifier).refresh(),
         ),
         data: (summaries) {
           if (summaries.isEmpty) {
-            return const _StockEmptyView();
+            return const BlanksEmptyView(
+              icon: Icons.inventory_2_outlined,
+              label: BlanksLabels.emptyBlanks,
+            );
           }
           return RefreshIndicator(
             onRefresh: () =>
                 ref.read(blankStockProvider.notifier).refresh(),
-            child: _StockGroupedList(summaries: summaries),
+            child: BlanksCategoryGroupedList<BlankStockSummary>(
+              items: summaries,
+              categoryKeyOf: (s) => s.category,
+              itemLabelOf: (s) => s.name,
+              itemBuilder: (context, s) => _StockRow(summary: s),
+            ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _StockGroupedList extends StatelessWidget {
-  const _StockGroupedList({required this.summaries});
-
-  final List<BlankStockSummary> summaries;
-
-  @override
-  Widget build(BuildContext context) {
-    final groups = <String, List<BlankStockSummary>>{};
-    for (final s in summaries) {
-      groups.putIfAbsent(s.category, () => []).add(s);
-    }
-    final categories = groups.keys.toList()..sort();
-    return ListView(
-      children: [
-        for (final category in categories) ...[
-          _StockCategoryHeader(category: category),
-          for (final s in groups[category]!) _StockRow(summary: s),
-          const Divider(height: 1),
-        ],
-      ],
-    );
-  }
-}
-
-class _StockCategoryHeader extends StatelessWidget {
-  const _StockCategoryHeader({required this.category});
-
-  final String category;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      dense: true,
-      title: Text(
-        category.isEmpty ? BlanksLabels.categoryFilterAll : category,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Colors.grey,
-              fontWeight: FontWeight.bold,
-            ),
       ),
     );
   }
@@ -112,7 +79,7 @@ class _StockRow extends StatelessWidget {
       title: Text(summary.name),
       subtitle: Text(
         '${BlanksLabels.demandStock}: '
-        '${_formatStock(summary.stock)}'
+        '${formatDouble(summary.stock)}'
         '${summary.unit.isNotEmpty ? ' ${summary.unit}' : ''}',
         style: TextStyle(color: stockColor),
       ),
@@ -141,56 +108,4 @@ class _StockRow extends StatelessWidget {
       ),
     );
   }
-}
-
-class _StockEmptyView extends StatelessWidget {
-  const _StockEmptyView();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.inventory_2_outlined, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(
-            BlanksLabels.emptyBlanks,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StockErrorView extends StatelessWidget {
-  const _StockErrorView({required this.onRetry});
-
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(VN.apiError, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
-            label: const Text(VN.retry),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-String _formatStock(double v) {
-  if (v == v.roundToDouble()) return v.toInt().toString();
-  return v.toString();
 }

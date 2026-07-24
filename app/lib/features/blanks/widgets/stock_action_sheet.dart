@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/blank.dart';
 import '../../../data/providers/blank_stock_provider.dart';
+import '../../../shared/utils/format_double.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
 
 /// Type of stock movement being recorded.
@@ -119,7 +120,7 @@ class _BlankStockActionSheetState
               Text(
                 '${widget.summary.name}'
                 '${widget.summary.unit.isNotEmpty ? ' (${widget.summary.unit})' : ''}'
-                ' — ${BlanksLabels.demandStock}: ${_formatStock(widget.summary.stock)}',
+                ' — ${BlanksLabels.demandStock}: ${formatDouble(widget.summary.stock)}',
                 style: Theme.of(context).textTheme.bodyMedium
                     ?.copyWith(color: Colors.grey),
               ),
@@ -187,9 +188,4 @@ class _BlankStockActionSheetState
       ),
     );
   }
-}
-
-String _formatStock(double v) {
-  if (v == v.roundToDouble()) return v.toInt().toString();
-  return v.toString();
 }

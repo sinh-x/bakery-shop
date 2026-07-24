@@ -4,16 +4,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models/blank.dart';
 import '../../data/providers/blanks_provider.dart';
 import '../../data/providers/bom_provider.dart';
+import '../../shared/utils/format_double.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
+import 'widgets/blanks_states.dart';
 import 'widgets/bom_add_sheet.dart';
 
 /// BOM mapping screen for a single price_chip product (FR2/AC2).
 ///
-/// Route: `/blanks/:id/bom` (the `:id` is the price_chip id, passed from the
-/// blank detail screen's BOM button). Lists all blank→price_chip mappings
-/// with quantity, and supports add / inline-edit quantity / remove with
-/// confirmation. Loading, empty, and error states are rendered inline.
+/// Route: `/blanks/bom/:priceChipId`. The `:priceChipId` is the price_chip
+/// id. Lists all blank→price_chip mappings with quantity, and supports
+/// add / inline-edit quantity / remove with confirmation. Loading, empty,
+/// and error states are rendered inline. Accessed from the product/price_chip
+/// flow, not the blank detail screen (BOM is keyed by price_chip).
 class BomMappingScreen extends ConsumerWidget {
   const BomMappingScreen({super.key, required this.priceChipId});
 
@@ -29,12 +32,15 @@ class BomMappingScreen extends ConsumerWidget {
       ),
       body: bomAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => _BomErrorView(
+        error: (e, _) => BlanksErrorView(
           onRetry: () => ref.invalidate(bomProvider(priceChipId)),
         ),
         data: (boms) {
           if (boms.isEmpty) {
-            return const _BomEmptyView();
+            return const BlanksEmptyView(
+              icon: Icons.inventory_2_outlined,
+              label: BlanksLabels.emptyBom,
+            );
           }
           return _BomListBody(priceChipId: priceChipId, boms: boms);
         },
@@ -60,7 +66,7 @@ class _BomListBody extends ConsumerWidget {
     final blanksAsync = ref.watch(blanksProvider);
     return blanksAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => _BomErrorView(
+      error: (e, _) => BlanksErrorView(
         onRetry: () => ref.invalidate(blanksProvider),
       ),
       data: (allBlanks) {
@@ -109,18 +115,13 @@ class _BomRowState extends ConsumerState<_BomRow> {
   @override
   void initState() {
     super.initState();
-    _qtyCtrl = TextEditingController(text: _formatQty(widget.bom.quantity));
+    _qtyCtrl = TextEditingController(text: formatDouble(widget.bom.quantity));
   }
 
   @override
   void dispose() {
     _qtyCtrl.dispose();
     super.dispose();
-  }
-
-  String _formatQty(double q) {
-    if (q == q.roundToDouble()) return q.toInt().toString();
-    return q.toString();
   }
 
   Future<void> _saveQuantity() async {
@@ -193,7 +194,7 @@ class _BomRowState extends ConsumerState<_BomRow> {
               onSubmitted: (_) => _saveQuantity(),
             )
           : Text(
-              '${_formatQty(widget.bom.quantity)}'
+              '${formatDouble(widget.bom.quantity)}'
               '${widget.blankUnit.isNotEmpty ? ' ${widget.blankUnit}' : ''}',
             ),
       trailing: Row(
@@ -215,53 +216,6 @@ class _BomRowState extends ConsumerState<_BomRow> {
             icon: const Icon(Icons.delete_outline, color: Colors.red),
             tooltip: BlanksLabels.actionDeleteBom,
             onPressed: _confirmDelete,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BomEmptyView extends StatelessWidget {
-  const _BomEmptyView();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.inventory_2_outlined, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(
-            BlanksLabels.emptyBom,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BomErrorView extends StatelessWidget {
-  const _BomErrorView({required this.onRetry});
-
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(VN.apiError, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
-            label: const Text(VN.retry),
           ),
         ],
       ),

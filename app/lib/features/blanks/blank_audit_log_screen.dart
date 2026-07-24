@@ -3,14 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/blank.dart';
 import '../../data/providers/blank_stock_log_provider.dart';
+import '../../shared/utils/format_double.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
+import 'widgets/blanks_states.dart';
 
 /// Stock audit log screen — chronological history per blank (FR5 / AC5).
 ///
-/// Route: `/blanks/:id/history`. Lists all production/usage entries for a
-/// single blank, newest-first, with quantity change, type, produced/expiry
-/// dates and the entry timestamp. Empty state renders when no history.
+/// Route: `/blanks/:blankId/audit-log`. Lists all production/usage entries
+/// for a single blank, newest-first, with quantity change, type,
+/// produced/expiry dates and the entry timestamp. Empty state renders when
+/// no history.
 class BlankAuditLogScreen extends ConsumerWidget {
   const BlankAuditLogScreen({super.key, required this.blankId});
 
@@ -34,13 +37,16 @@ class BlankAuditLogScreen extends ConsumerWidget {
       ),
       body: logAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => _AuditLogErrorView(
+        error: (e, _) => BlanksErrorView(
           onRetry: () =>
               ref.read(blankStockLogProvider(blankId).notifier).refresh(),
         ),
         data: (entries) {
           if (entries.isEmpty) {
-            return const _AuditLogEmptyView();
+            return const BlanksEmptyView(
+              icon: Icons.history,
+              label: BlanksLabels.emptyHistory,
+            );
           }
           return RefreshIndicator(
             onRefresh: () =>
@@ -77,7 +83,7 @@ class _AuditLogEntryRow extends StatelessWidget {
         color: changeColor,
       ),
       title: Text(
-        '$sign${_formatChange(entry.quantityChange)} ($typeLabel)',
+        '$sign${formatDouble(entry.quantityChange)} ($typeLabel)',
         style: TextStyle(color: changeColor, fontWeight: FontWeight.bold),
       ),
       subtitle: Wrap(
@@ -112,56 +118,4 @@ class _MetaChip extends StatelessWidget {
       style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
     );
   }
-}
-
-class _AuditLogEmptyView extends StatelessWidget {
-  const _AuditLogEmptyView();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.history, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(
-            BlanksLabels.emptyHistory,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AuditLogErrorView extends StatelessWidget {
-  const _AuditLogErrorView({required this.onRetry});
-
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(VN.apiError, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
-            label: const Text(VN.retry),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-String _formatChange(double v) {
-  if (v == v.roundToDouble()) return v.toInt().toString();
-  return v.toString();
 }
