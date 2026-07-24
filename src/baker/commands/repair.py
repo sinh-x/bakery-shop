@@ -2653,7 +2653,7 @@ def _tien_rut_return_entries_on_1200(conn, order_id=None):
 
     Returns a list of dicts ``{entry_id, order_id, order_ref, amount, locked}``.
     """
-    sql = f"""
+    sql = """
         SELECT je.id AS entry_id, je.source_id AS order_id,
                je.description AS description,
                je.locked_at AS locked_at,
@@ -2764,7 +2764,7 @@ def _refund_entries_on_1200(conn, order_id=None):
     return result
 
 
-def _expense_entries_on_1200(conn, order_id=None):
+def _expense_entries_on_1200(conn):
     """Return expense journal entries (``source_type='expense'``) whose
     credit-side asset line still references account 1200 (FR1, DG-286 Phase 1).
 
@@ -2778,9 +2778,6 @@ def _expense_entries_on_1200(conn, order_id=None):
       - ``Reversal:%`` entries are excluded.
       - Entries with unparseable event data or a missing ``payment_source``
         are skipped (cannot resolve a target account).
-      - ``order_id`` is accepted for interface consistency with the other
-        detection functions but is ignored — expense entries are not
-        order-scoped (§5 Out of Scope).
 
     Returns a list of dicts ``{entry_id, event_id, summary, amount,
     payment_source, target_code, kind="expense", locked}``.
@@ -2837,26 +2834,32 @@ def _expense_entries_on_1200(conn, order_id=None):
 
 
 def _process_bank_account_1200_repair(conn, item, *, dry_run: bool) -> dict:
-    """Re-point one credit-side entry from 1200 to 1290 (FR3/FR4).
+    """Re-point one credit-side entry from 1200 to the correct account (FR3/FR4).
 
     The credit (asset) line of the entry is re-pointed from account 1200 to
-    1290 (the un-allocated bank) — a data-only account-id change that
-    preserves double-entry integrity (both 1200 and 1290 are asset accounts
-    under the same parent, so the entry still balances).
+    the appropriate target account — a data-only account-id change that
+    preserves double-entry integrity (both 1200 and the target are asset
+    accounts under the same parent, so the entry still balances).
 
       - ``tien_rut`` return entries (``source_type='order'``): the credit
-        line is the asset returned to the customer. Re-pointed directly
-        because ``_reconcile_tien_rut_return_entry`` is tolerant of which
+        line is the asset returned to the customer. Re-pointed directly to
+        1290 because ``_reconcile_tien_rut_return_entry`` is tolerant of which
         asset account is credited (it sums across 1100/1200/1210/1220/1290)
         and would skip a rebuild for an entry already matching in total.
       - ``refund`` payment-transaction entries: re-synced via
         ``_sync_payment_journal`` which rebuilds via
         ``_build_payment_journal_lines`` — the single source of truth —
         so the credit side routes to 1290 for empty-source transfers.
+      - ``expense`` entries (``source_type='expense'``): re-synced via
+        ``_sync_expense_journal`` which rebuilds via
+        ``_build_expense_journal_lines`` — the credit side routes to the
+        sub-account mapped by ``EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE``
+        (e.g. ``TK Ân VCB`` → ``1220``), so the target code varies by
+        ``payment_source`` rather than always landing on 1290.
 
     Locked entries are reversed + recreated (no double-entry). Idempotent
-    (FR5): once the credit line is on 1290 the entry drops out of the
-    detection query so a second run is a no-op.
+    (FR5): once the credit line is on the correct account the entry drops
+    out of the detection query so a second run is a no-op.
     """
     kind = item["kind"]
     order_ref = item.get("order_ref", "")
