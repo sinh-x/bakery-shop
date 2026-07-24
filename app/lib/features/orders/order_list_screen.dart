@@ -207,7 +207,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   }
 
   List<Order> _applyFilters(List<Order> orders) {
-    // Pipeline: search → status → date → urgency (DG-193 Phase 2 — FR3).
+    // Pipeline: status → search → date → urgency (DG-193 Phase 2 — FR3).
     var filtered = _applySearchFilter(_applyStatusFilter(orders));
     filtered = _applyDateFilter(filtered);
     filtered = _applyUrgencyFilter(filtered);
@@ -599,6 +599,7 @@ List<Order> applyDateFilter(List<Order> orders, DateFilterOption option) {
         return dueDate == tomorrowStr;
       case DateFilterOption.todayTomorrow:
         return dueDate == todayStr || dueDate == tomorrowStr;
+      // required for switch exhaustiveness never reached.
       case DateFilterOption.all:
         return true;
     }
