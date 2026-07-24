@@ -27,7 +27,6 @@ from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
 from baker.models.blank import Blank, BlankStock, BlankStockLog, ProductBlankBom
-from baker.utils.time import now_utc
 
 
 router = APIRouter(prefix="/api", tags=["blanks"])
@@ -96,18 +95,6 @@ def _ensure_bom_exists(conn, chip_id: int, bom_id: int) -> ProductBlankBom:
     if row is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy BOM mapping")
     return ProductBlankBom.from_row(row)
-
-
-def _current_stock(conn, blank_id: int) -> float:
-    """Aggregate net stock for a blank: production (+), usage (−)."""
-    row = conn.execute(
-        """SELECT
-               COALESCE(SUM(CASE WHEN type = 'production' THEN quantity ELSE -quantity END), 0)
-               AS net
-           FROM blank_stock WHERE blank_id = ?""",
-        (blank_id,),
-    ).fetchone()
-    return float(row["net"] or 0)
 
 
 # --- Blank CRUD (FR1) ---------------------------------------------------------
