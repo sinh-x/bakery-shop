@@ -1082,3 +1082,94 @@ def test_expense_report_help_includes_chi_phi():
     result = _invoke(["repair-bank-account-1200", "--help"])
     assert result.exit_code == 0, result.output
     assert "chi phí" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# Expense dry-run, idempotency, balance (DG-286 Phase 4 — FR5, AC3, AC4)
+# ---------------------------------------------------------------------------
+
+
+def test_expense_dry_run_no_db_change():
+    """AC4: --dry-run shows "sẽ sửa" for expense entries and makes no DB changes."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, payment_source="TK Ân VCB", amount_vnd=420000,
+            summary="Chi phí dry-run",
+        )
+        entry_id = _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=420000, asset_code="1200",
+        )
+        je_before = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        jl_before = conn.execute("SELECT COUNT(*) AS c FROM journal_lines").fetchone()["c"]
+        conn.commit()
+
+    result = _invoke(["repair-bank-account-1200", "--all", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "sẽ sửa" in result.output
+    assert "Chi phí" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        je_after = conn.execute("SELECT COUNT(*) AS c FROM journal_entries").fetchone()["c"]
+        jl_after = conn.execute("SELECT COUNT(*) AS c FROM journal_lines").fetchone()["c"]
+        assert je_before == je_after
+        assert jl_before == jl_after
+        # Credit line still on 1200 — no mutation.
+        assert _entry_credit_code(conn, entry_id) == "1200"
+
+
+def test_expense_idempotent_second_run_finds_nothing():
+    """AC3 / FR5: after repair, a second run finds no expense entries to repair."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, payment_source="TK Ân VCB", amount_vnd=260000,
+            summary="Chi phí idem",
+        )
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=260000, asset_code="1200",
+        )
+        conn.commit()
+
+    r1 = _invoke(["repair-bank-account-1200", "--all"])
+    assert r1.exit_code == 0, r1.output
+    assert "đã sửa" in r1.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        new_entry = _latest_non_reversal_entry(conn, "expense", eid)
+        assert _entry_credit_code(conn, new_entry) == "1220"
+        # Detection should now find zero expense entries.
+        assert _expense_entries_on_1200(conn) == []
+
+    r2 = _invoke(["repair-bank-account-1200", "--all"])
+    assert r2.exit_code == 0, r2.output
+    # Second run produces no entries to repair — idempotent empty message.
+    assert "(không có bút toán nào cần chuyển)" in r2.output
+
+
+def test_expense_balance_after_repair():
+    """NFR3: account balances remain valid after expense repair (double-entry
+    integrity preserved across the 1200 → 1220 re-point)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, payment_source="TK Ân VCB", amount_vnd=333000,
+            summary="Chi phí balance",
+        )
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=333000, asset_code="1200",
+        )
+        conn.commit()
+
+    result = _invoke(["repair-bank-account-1200", "--all"])
+    assert result.exit_code == 0, result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        row = conn.execute(
+            "SELECT COALESCE(SUM(debit), 0) AS d, COALESCE(SUM(credit), 0) AS c "
+            "FROM journal_lines"
+        ).fetchone()
+        assert abs(float(row["d"]) - float(row["c"])) < 0.005
