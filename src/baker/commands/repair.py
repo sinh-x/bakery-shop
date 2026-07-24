@@ -2764,6 +2764,78 @@ def _refund_entries_on_1200(conn, order_id=None):
     return result
 
 
+def _expense_entries_on_1200(conn, order_id=None):
+    """Return expense journal entries (``source_type='expense'``) whose
+    credit-side asset line still references account 1200 (FR1, DG-286 Phase 1).
+
+    Scope:
+      - ``source_type = 'expense'`` entries joined to ``events`` for the
+        expense data (``payment_source``, ``amount_vnd``, ``category``).
+      - The credit (asset) line references account 1200. After re-sync the
+        entry credits the sub-account mapped by
+        ``EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE`` (e.g. ``TK Ân VCB`` →
+        ``1220``).
+      - ``Reversal:%`` entries are excluded.
+      - Entries with unparseable event data or a missing ``payment_source``
+        are skipped (cannot resolve a target account).
+      - ``order_id`` is accepted for interface consistency with the other
+        detection functions but is ignored — expense entries are not
+        order-scoped (§5 Out of Scope).
+
+    Returns a list of dicts ``{entry_id, event_id, summary, amount,
+    payment_source, target_code, kind="expense", locked}``.
+    """
+    sql = """
+        SELECT je.id AS entry_id, je.source_id AS event_id,
+               je.description AS description,
+               je.locked_at AS locked_at,
+               e.summary AS event_summary,
+               e.data AS event_data,
+               COALESCE((
+                   SELECT jl.credit
+                   FROM journal_lines jl
+                   JOIN accounts a ON a.id = jl.account_id
+                   WHERE jl.journal_entry_id = je.id AND a.code = ?
+                     AND jl.credit > 0
+                   ORDER BY jl.id LIMIT 1
+               ), 0) AS amount
+        FROM journal_entries je
+        JOIN events e ON e.id = je.source_id
+        WHERE je.source_type = 'expense'
+          AND je.description NOT LIKE 'Reversal:%'
+          AND EXISTS (
+              SELECT 1 FROM journal_lines jl
+              JOIN accounts a ON a.id = jl.account_id
+              WHERE jl.journal_entry_id = je.id
+                AND a.code = ? AND jl.credit > 0
+          )
+    """
+    params = [_LEGACY_BANK_PARENT_CODE, _LEGACY_BANK_PARENT_CODE]
+    sql += " ORDER BY je.id ASC"
+    rows = conn.execute(sql, params).fetchall()
+    result = []
+    for r in rows:
+        try:
+            data = json.loads(r["event_data"] or "{}")
+        except (json.JSONDecodeError, TypeError):
+            continue
+        payment_source = data.get("payment_source")
+        if not isinstance(payment_source, str) or not payment_source:
+            continue
+        target_code = EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE.get(payment_source)
+        result.append({
+            "entry_id": int(r["entry_id"]),
+            "event_id": int(r["event_id"]),
+            "summary": r["event_summary"] or r["description"],
+            "amount": float(r["amount"] or 0),
+            "payment_source": payment_source,
+            "target_code": target_code,
+            "kind": "expense",
+            "locked": bool(r["locked_at"]),
+        })
+    return result
+
+
 def _process_bank_account_1200_repair(conn, item, *, dry_run: bool) -> dict:
     """Re-point one credit-side entry from 1200 to 1290 (FR3/FR4).
 

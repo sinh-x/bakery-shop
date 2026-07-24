@@ -18,11 +18,14 @@ Covers:
   - 1200 balance decreases by the moved amount after the repair.
 """
 
+import json
+
 import click
 import click.testing
 
 from baker.cli import app
 from baker.commands.repair import (
+    _expense_entries_on_1200,
     _refund_entries_on_1200,
     _tien_rut_return_entries_on_1200,
 )
@@ -146,6 +149,74 @@ def _insert_refund_journal_entry_on(
         "VALUES (?, ?, 0.0, ?, 'Trả lại tiền')",
         (entry_id, asset_acc, amount),
     )
+    return entry_id
+
+
+def _insert_expense_event(
+    conn,
+    *,
+    event_id: int | None = None,
+    payment_source: str = "TK Ân VCB",
+    amount_vnd: float = 500000.0,
+    category: str = "Vận chuyển",
+    summary: str = "Chi phí thử",
+    data_override: dict | None = None,
+) -> int:
+    """Insert an ``expense`` event row and return its id.
+
+    ``data_override`` (if provided) replaces the default ``data`` JSON — used
+    by the malformed/missing-field tests.
+    """
+    data = {
+        "payment_source": payment_source,
+        "amount_vnd": amount_vnd,
+        "category": category,
+    }
+    if data_override is not None:
+        data = data_override
+    cur = conn.execute(
+        "INSERT INTO events (type, summary, data, timestamp) "
+        "VALUES ('expense', ?, ?, datetime('now'))",
+        (summary, json.dumps(data)),
+    )
+    return int(cur.lastrowid)
+
+
+def _insert_expense_journal_entry_on(
+    conn,
+    *,
+    event_id: int,
+    amount: float,
+    asset_code: str,
+    locked: bool = False,
+) -> int:
+    """Insert an ``expense`` journal entry whose credit (asset) line references
+    ``asset_code``. Mirrors the structure produced by
+    ``_build_expense_journal_lines``.
+    """
+    asset_acc = _account_id(conn, asset_code)
+    expense_acc = _account_id(conn, "5300")
+    cur = conn.execute(
+        "INSERT INTO journal_entries (description, source_type, source_id) "
+        "VALUES (?, 'expense', ?)",
+        (f"Expense: Chi phí thử", event_id),
+    )
+    entry_id = int(cur.lastrowid)
+    conn.execute(
+        "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+        "VALUES (?, ?, ?, 0.0, 'Chi phí')",
+        (entry_id, expense_acc, amount),
+    )
+    conn.execute(
+        "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+        "VALUES (?, ?, 0.0, ?, 'Thanh toán')",
+        (entry_id, asset_acc, amount),
+    )
+    if locked:
+        conn.execute(
+            "UPDATE journal_entries SET locked_at = datetime('now') WHERE id = ?",
+            (entry_id,),
+        )
     return entry_id
 
 
@@ -624,3 +695,125 @@ def test_vn_labels_in_report():
     assert "Loại" in result.output
     assert "Hành động" in result.output
     assert "đã sửa" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Expense detection (DG-286 Phase 1 — FR1, AC5)
+# ---------------------------------------------------------------------------
+
+
+def test_expense_detection_finds_entries_on_1200():
+    """FR1: expense journal entries with credit on 1200 are detected."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(conn, payment_source="TK Ân VCB", amount_vnd=300000)
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=300000, asset_code="1200",
+        )
+        found = _expense_entries_on_1200(conn)
+        assert len(found) == 1
+        assert found[0]["entry_id"] > 0
+        assert found[0]["event_id"] == eid
+        assert found[0]["amount"] == 300000.0
+        assert found[0]["payment_source"] == "TK Ân VCB"
+        assert found[0]["kind"] == "expense"
+        assert found[0]["target_code"] == "1220"
+        assert found[0]["locked"] is False
+
+
+def test_expense_detection_excludes_already_correct():
+    """AC5: expense entries already on 1220 (non-1200) are excluded."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(conn, payment_source="TK Ân VCB", amount_vnd=300000)
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=300000, asset_code="1220",
+        )
+        assert _expense_entries_on_1200(conn) == []
+
+
+def test_expense_detection_excludes_reversal():
+    """Reversal:% expense entries are excluded."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(conn, payment_source="TK Ân VCB", amount_vnd=300000)
+        asset_acc = _account_id(conn, "1200")
+        expense_acc = _account_id(conn, "5300")
+        cur = conn.execute(
+            "INSERT INTO journal_entries (description, source_type, source_id) "
+            "VALUES (?, 'expense', ?)",
+            ("Reversal: Expense: Chi phí thử", eid),
+        )
+        entry_id = int(cur.lastrowid)
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, ?, 0.0, 'reverse')",
+            (entry_id, expense_acc, 300000),
+        )
+        conn.execute(
+            "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, description) "
+            "VALUES (?, ?, 0.0, ?, 'reverse')",
+            (entry_id, asset_acc, 300000),
+        )
+        assert _expense_entries_on_1200(conn) == []
+
+
+def test_expense_detection_target_code_from_mapping():
+    """target_code is derived from EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(
+            conn, payment_source="TK Phượng VCB", amount_vnd=150000,
+        )
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=150000, asset_code="1200",
+        )
+        found = _expense_entries_on_1200(conn)
+        assert len(found) == 1
+        assert found[0]["payment_source"] == "TK Phượng VCB"
+        assert found[0]["target_code"] == "1210"
+
+
+def test_expense_detection_skips_malformed_data():
+    """Malformed JSON event data is skipped."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cur = conn.execute(
+            "INSERT INTO events (type, summary, data, timestamp) "
+            "VALUES ('expense', ?, ?, datetime('now'))",
+            ("Chi phí hỏng", "not-valid-json{"),
+        )
+        eid = int(cur.lastrowid)
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=200000, asset_code="1200",
+        )
+        assert _expense_entries_on_1200(conn) == []
+
+
+def test_expense_detection_skips_missing_payment_source():
+    """Missing payment_source field → entry is skipped."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        cur = conn.execute(
+            "INSERT INTO events (type, summary, data, timestamp) "
+            "VALUES ('expense', ?, ?, datetime('now'))",
+            ("Chi phí thiếu nguồn", json.dumps({"amount_vnd": 100000, "category": "Khác"})),
+        )
+        eid = int(cur.lastrowid)
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=100000, asset_code="1200",
+        )
+        assert _expense_entries_on_1200(conn) == []
+
+
+def test_expense_detection_locked_entry():
+    """Locked expense entries return locked=True."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        eid = _insert_expense_event(conn, payment_source="TK Ân VCB", amount_vnd=400000)
+        _insert_expense_journal_entry_on(
+            conn, event_id=eid, amount=400000, asset_code="1200", locked=True,
+        )
+        found = _expense_entries_on_1200(conn)
+        assert len(found) == 1
+        assert found[0]["locked"] is True
