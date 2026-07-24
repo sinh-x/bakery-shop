@@ -203,26 +203,7 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
   /// from `DateTime.now()`. This keeps filtering O(n) and client-side only
   /// (NFR2).
   List<Order> _applyDateFilter(List<Order> orders) {
-    if (_dateFilter == DateFilterOption.all) return orders;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final tomorrow = today.add(const Duration(days: 1));
-    final todayStr = formatApiDate(today);
-    final tomorrowStr = formatApiDate(tomorrow);
-    bool matches(String? dueDate) {
-      if (dueDate == null || dueDate.isEmpty) return false;
-      switch (_dateFilter) {
-        case DateFilterOption.today:
-          return dueDate == todayStr;
-        case DateFilterOption.tomorrow:
-          return dueDate == tomorrowStr;
-        case DateFilterOption.todayTomorrow:
-          return dueDate == todayStr || dueDate == tomorrowStr;
-        case DateFilterOption.all:
-          return true;
-      }
-    }
-    return orders.where((o) => matches(o.dueDate)).toList();
+    return applyDateFilter(orders, _dateFilter);
   }
 
   List<Order> _applyFilters(List<Order> orders) {
@@ -587,6 +568,43 @@ const _kanbanStatuses = [
   'to_deliver',
   'awaiting_payment',
 ];
+
+/// Filters [orders] by [dueDate] (YYYY-MM-DD) against the selected [option]
+/// (DG-193 Phase 2 — FR2; extracted as a top-level function in Phase 4 for
+/// direct unit testing — see `date_filter_test.dart`).
+///
+/// - [DateFilterOption.all] returns every order (filter cleared).
+/// - The other options compare each order's parsed `dueDate` against today
+///   and/or tomorrow derived from `DateTime.now()`. Orders without a
+///   `dueDate` (null or empty) are excluded from non-`all` date filters —
+///   they only reappear when the user selects "Tất cả".
+///
+/// Date comparison is day-precision: the `dueDate` string (`yyyy-MM-dd`) is
+/// compared lexicographically against `formatApiDate(today)`/`formatApiDate(
+/// tomorrow)`, which is safe because `formatApiDate` always zero-pads. This
+/// keeps filtering O(n) and client-side only (NFR2).
+List<Order> applyDateFilter(List<Order> orders, DateFilterOption option) {
+  if (option == DateFilterOption.all) return orders;
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final tomorrow = today.add(const Duration(days: 1));
+  final todayStr = formatApiDate(today);
+  final tomorrowStr = formatApiDate(tomorrow);
+  bool matches(String? dueDate) {
+    if (dueDate == null || dueDate.isEmpty) return false;
+    switch (option) {
+      case DateFilterOption.today:
+        return dueDate == todayStr;
+      case DateFilterOption.tomorrow:
+        return dueDate == tomorrowStr;
+      case DateFilterOption.todayTomorrow:
+        return dueDate == todayStr || dueDate == tomorrowStr;
+      case DateFilterOption.all:
+        return true;
+    }
+  }
+  return orders.where((o) => matches(o.dueDate)).toList();
+}
 
 /// Groups active orders into Kanban columns.
 ///
