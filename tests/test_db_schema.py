@@ -364,6 +364,59 @@ def _assert_users_role_check_constraint(conn) -> None:
         )
 
 
+def _assert_blanks_schema(conn) -> None:
+    """CQ-4 (DG-290 Phase 4.1): v81 blanks tables exist after migration."""
+    for table in ("blanks", "product_blank_bom", "blank_stock", "blank_stock_log"):
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        ).fetchone()
+        assert row is not None, f"{table} table missing after migration"
+
+    blanks_columns = _schema_columns(conn, "blanks")
+    assert set(blanks_columns) >= {
+        "id",
+        "name",
+        "category",
+        "unit",
+        "notes",
+        "created_at",
+        "updated_at",
+    }
+
+    bom_columns = _schema_columns(conn, "product_blank_bom")
+    assert set(bom_columns) >= {
+        "id",
+        "product_id",
+        "price_chip_id",
+        "blank_id",
+        "quantity",
+        "created_at",
+    }
+
+    stock_columns = _schema_columns(conn, "blank_stock")
+    assert set(stock_columns) >= {
+        "id",
+        "blank_id",
+        "quantity",
+        "produced_date",
+        "expiry_date",
+        "type",
+        "created_at",
+    }
+
+    log_columns = _schema_columns(conn, "blank_stock_log")
+    assert set(log_columns) >= {
+        "id",
+        "blank_id",
+        "quantity_change",
+        "type",
+        "produced_date",
+        "expiry_date",
+        "created_at",
+    }
+
+
 def _seed_v35_stock(conn) -> tuple[int, int, int]:
     conn.execute(
         """INSERT INTO products (name, category, base_price, cost, recipe_notes)
@@ -396,7 +449,7 @@ def _seed_v35_stock(conn) -> tuple[int, int, int]:
 def test_schema_migration_v31_fresh_db():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 80
+        assert _migrated_version(conn) == 81
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -406,6 +459,7 @@ def test_schema_migration_v31_fresh_db():
         _assert_event_history_schema(conn)
         _assert_soft_delete_columns(conn)
         _assert_users_role_check_constraint(conn)
+        _assert_blanks_schema(conn)
 
 
 def test_schema_migration_v30_to_v31():
@@ -414,7 +468,7 @@ def test_schema_migration_v30_to_v31():
         assert _migrated_version(conn) == 30
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 80
+        assert _migrated_version(conn) == 81
         _assert_product_attribute_options_schema(conn)
         _assert_nhan_banh_seed(conn)
         _assert_print_tracking_schema(conn)
@@ -424,15 +478,16 @@ def test_schema_migration_v30_to_v31():
         _assert_event_history_schema(conn)
         _assert_soft_delete_columns(conn)
         _assert_users_role_check_constraint(conn)
+        _assert_blanks_schema(conn)
 
 
 def test_schema_migration_v31_idempotent():
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 80
+        assert _migrated_version(conn) == 81
 
         ensure_schema(conn)
-        assert _migrated_version(conn) == 80
+        assert _migrated_version(conn) == 81
 
         attr_count = conn.execute(
             "SELECT COUNT(*) FROM product_attributes WHERE attribute_type = 'nhan_banh'"
@@ -3362,7 +3417,7 @@ def test_v71_fresh_db_has_role_check():
     """Fresh DBs (migrated from 0 → 71) get the CHECK in USERS_SCHEMA."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 80
+        assert _migrated_version(conn) == 81
         _assert_users_role_check_constraint(conn)
 
 
@@ -3428,7 +3483,7 @@ def test_v71_idempotent():
     """Re-running v71's callable on a DB that already has the CHECK is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 80
+        assert _migrated_version(conn) == 81
         from baker.db.schema import _migrate_v71_users_role_check
 
         _migrate_v71_users_role_check(conn)
@@ -3551,7 +3606,7 @@ def test_v72_idempotent():
     """Re-running v72 on a DB where all usernames are already lowercase is a no-op."""
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 80
+        assert _migrated_version(conn) == 81
 
         from baker.db.schema import _migrate_v72_lowercase_usernames
 
@@ -3625,7 +3680,7 @@ def test_v68_seed_quiet_suppresses_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.setenv("BAKER_SEED_QUIET", "1")
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 80
+        assert _migrated_version(conn) == 81
 
     out = capsys.readouterr().out
     # The "passwords suppressed" summary line IS present.
@@ -3652,7 +3707,7 @@ def test_v68_seed_default_prints_plaintext_passwords(monkeypatch, capsys):
     monkeypatch.delenv("BAKER_SEED_QUIET", raising=False)
     with get_db() as conn:
         ensure_schema(conn)
-        assert _migrated_version(conn) == 80
+        assert _migrated_version(conn) == 81
 
     out = capsys.readouterr().out
     # The non-quiet header banner IS present.
