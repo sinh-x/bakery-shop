@@ -2895,7 +2895,7 @@ def repair_bank_account_1200_cmd(order_id, repair_all, dry_run):
 
     DG-285 Phase 2 — historical credit-side backfill (FR3, FR4, FR5, AC3, AC4):
 
-      Tìm các bút toán nhật ký có dòng Có (tài sản)仍在 TK 1200 và chuyển
+      Tìm các bút toán nhật ký có dòng Có (tài sản)vẫn ở TK 1200 và chuyển
       sang TK 1290 (Un-allocated Bank) qua các hàm tái tạo duy nhất
       (``_reconcile_tien_rut_return_entry`` cho tiền rút trả,
       ``_sync_payment_journal`` cho hoàn tiền). Bên Nợ (2100/2400) giữ
