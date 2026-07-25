@@ -15,6 +15,42 @@ class WorkItemStatus(str, Enum):
 
 
 @dataclass
+class BlankAssignment:
+    """A blank assigned to a work item via the ``order_item_blanks`` junction
+    table (DG-294). Many blanks may be assigned to a single work item, each
+    with its own ``quantity`` and ``notes``."""
+
+    blank_id: int
+    order_item_id: Optional[int] = None
+    quantity: float = 1.0
+    notes: str = ""
+    id: Optional[int] = None
+    created_at: Optional[str] = None
+
+    @staticmethod
+    def from_row(row) -> "BlankAssignment":
+        keys = row.keys() if hasattr(row, "keys") else []
+        return BlankAssignment(
+            id=row["id"] if "id" in keys else None,
+            order_item_id=row["order_item_id"] if "order_item_id" in keys else None,
+            blank_id=row["blank_id"],
+            quantity=float(row["quantity"]) if "quantity" in keys else 1.0,
+            notes=row["notes"] if "notes" in keys else "",
+            created_at=row["created_at"] if "created_at" in keys else None,
+        )
+
+    def to_api_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "orderItemId": self.order_item_id,
+            "blankId": self.blank_id,
+            "quantity": self.quantity,
+            "notes": self.notes,
+            "createdAt": self.created_at,
+        }
+
+
+@dataclass
 class WorkItem:
     order_id: int
     product_name: str
@@ -30,7 +66,7 @@ class WorkItem:
     is_gift: bool = False
     attributes: dict = field(default_factory=dict)
     price_chip_id: Optional[int] = None
-    blank_id: Optional[int] = None
+    blanks: list = field(default_factory=list)
     id: Optional[int] = None
     created_at: Optional[str] = None
 
@@ -39,8 +75,8 @@ class WorkItem:
         attrs_json = json.dumps(self.attributes)
         cursor = conn.execute(
             """INSERT INTO order_items
-               (order_id, product_id, product_name, quantity, unit_price, notes, position, status, is_birthday, age, is_extra, is_gift, attributes, price_chip_id, blank_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (order_id, product_id, product_name, quantity, unit_price, notes, position, status, is_birthday, age, is_extra, is_gift, attributes, price_chip_id, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 self.order_id,
                 self.product_id,
@@ -56,7 +92,6 @@ class WorkItem:
                 1 if self.is_gift else 0,
                 attrs_json,
                 self.price_chip_id,
-                self.blank_id,
                 now_utc(),
             ),
         )
@@ -99,7 +134,7 @@ class WorkItem:
             is_gift=bool(row["is_gift"]) if "is_gift" in keys else False,
             attributes=attrs,
             price_chip_id=row["price_chip_id"] if "price_chip_id" in keys else None,
-            blank_id=row["blank_id"] if "blank_id" in keys else None,
+            blanks=[],
             created_at=row["created_at"],
         )
 
@@ -120,6 +155,6 @@ class WorkItem:
             "isGift": self.is_gift,
             "attributes": self.attributes,
             "priceChipId": self.price_chip_id,
-            "blankId": self.blank_id,
+            "blanks": [b.to_api_dict() if isinstance(b, BlankAssignment) else b for b in self.blanks],
             "createdAt": self.created_at,
         }

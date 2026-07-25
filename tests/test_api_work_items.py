@@ -125,120 +125,35 @@ def test_update_work_item_notes(api_client):
     assert resp.json()["notes"] == "Ghi chú mới"
 
 
-# --- Update work item: blankId (DG-293 Phase 1) ---
+# --- Update work item: blankId removed (DG-294 Phase 1) ---
+# The single blankId field on WorkItemUpdate and the order_items.blank_id
+# column were replaced by the order_item_blanks junction table. Blank
+# assignment is now done via POST/PATCH/DELETE /api/orders/{ref}/items/{id}/blanks
+# (see test_api_work_item_blanks.py). PATCH with blankId is now a no-op
+# (ignored, not an error) because the field is no longer on WorkItemUpdate.
 
 
-def test_update_work_item_blank_id(api_client):
-    """PATCH accepts blankId and persists it on the work item (FR2)."""
-    from baker.db.connection import get_db
-    from baker.db.schema import ensure_schema
-    from baker.models.blank import Blank
+def test_update_work_item_ignores_blank_id_after_removal(api_client):
+    """PATCH with a stale blankId payload is ignored (no error, no DB write).
 
-    # Create a blank to link to
-    with get_db() as conn:
-        ensure_schema(conn)
-        blank = Blank(name="Cốt", category="cot", unit="cai")
-        blank.save(conn)
-
+    DG-294 removed ``blankId`` from ``WorkItemUpdate``. Pydantic ignores
+    extra fields by default, so a client still sending ``blankId`` gets a
+    200 with the work item unchanged and ``blanks`` empty.
+    """
     order = _create_order(api_client)
     ref = order["orderRef"]
     item = _create_item(api_client, ref)
     item_id = item["id"]
 
-    # Initially no blank assigned
-    assert item["blankId"] is None
-
-    # Assign blank via PATCH
     resp = api_client.patch(
-        f"/api/orders/{ref}/items/{item_id}", json={"blankId": blank.id}
+        f"/api/orders/{ref}/items/{item_id}", json={"blankId": 5}
     )
-    assert resp.status_code == 200
-    updated = resp.json()
-    assert updated["blankId"] == blank.id
-
-    # GET list reflects the linked blankId
-    listed = api_client.get(f"/api/orders/{ref}/items").json()
-    assert listed[0]["blankId"] == blank.id
+    # blankId is not a recognized field → no updates → 400 "nothing to update"
+    assert resp.status_code == 400
+    assert "Không có gì" in resp.json()["detail"]
 
 
-def test_update_work_item_clear_blank_id(api_client):
-    """PATCH with blankId=null clears the link (FR1 nullable)."""
-    from baker.db.connection import get_db
-    from baker.db.schema import ensure_schema
-    from baker.models.blank import Blank
-
-    with get_db() as conn:
-        ensure_schema(conn)
-        blank = Blank(name="Cốt", category="cot", unit="cai")
-        blank.save(conn)
-
-    order = _create_order(api_client)
-    ref = order["orderRef"]
-    item = _create_item(api_client, ref)
-    item_id = item["id"]
-    api_client.patch(f"/api/orders/{ref}/items/{item_id}", json={"blankId": blank.id})
-
-    # Clear by setting to null
-    resp = api_client.patch(
-        f"/api/orders/{ref}/items/{item_id}", json={"blankId": None}
-    )
-    assert resp.status_code == 200
-    assert resp.json()["blankId"] is None
-
-
-def test_update_work_item_blank_id_persists_in_db(api_client):
-    """blankId written via PATCH is committed to the order_items row."""
-    from baker.db.connection import get_db
-    from baker.db.schema import ensure_schema
-    from baker.models.blank import Blank
-
-    with get_db() as conn:
-        ensure_schema(conn)
-        blank = Blank(name="Kem", category="kem", unit="gram")
-        blank.save(conn)
-        blank_id = blank.id
-
-    order = _create_order(api_client)
-    ref = order["orderRef"]
-    item = _create_item(api_client, ref)
-    item_id = int(item["id"])
-
-    api_client.patch(f"/api/orders/{ref}/items/{item_id}", json={"blankId": blank_id})
-
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT blank_id FROM order_items WHERE id = ?", (item_id,)
-        ).fetchone()
-        assert row["blank_id"] == blank_id
-
-
-def test_update_work_item_blank_id_syncs_order_items_json(api_client):
-    """Linking a blank via PATCH regenerates orders.items JSON with blank_id."""
-    from baker.db.connection import get_db
-    from baker.db.schema import ensure_schema
-    from baker.models.blank import Blank
-
-    with get_db() as conn:
-        ensure_schema(conn)
-        blank = Blank(name="Cốt", category="cot", unit="cai")
-        blank.save(conn)
-
-    order = _create_order(api_client)
-    ref = order["orderRef"]
-    item = _create_item(api_client, ref)
-    item_id = item["id"]
-    api_client.patch(f"/api/orders/{ref}/items/{item_id}", json={"blankId": blank.id})
-
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT items FROM orders WHERE order_ref = ?", (ref,)
-        ).fetchone()
-        import json
-        items = json.loads(row["items"])
-        assert items[0]["blank_id"] == blank.id
-
-
-def test_update_work_item_quantity(api_client):
+def test_update_work_item_notes(api_client):
     order = _create_order(api_client)
     ref = order["orderRef"]
     item = _create_item(api_client, ref)

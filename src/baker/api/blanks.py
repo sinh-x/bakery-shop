@@ -435,14 +435,34 @@ def list_blank_products(blank_id: int = Path(ge=0)):
             for r in bom_rows
         ]
 
-        # Work-item-linked products: order_items rows with blank_id = this blank.
+        # Work-item-linked products: order_items rows linked to this blank via
+        # the order_item_blanks junction table (DG-294). One work item may have
+        # multiple blanks; a work item appears once per assignment row.
         wi_rows = conn.execute(
-            """SELECT * FROM order_items
-               WHERE blank_id = ?
-               ORDER BY id""",
+            """SELECT oi.*, oib.quantity AS blank_quantity, oib.notes AS blank_notes,
+                      oib.id AS blank_item_id, oib.created_at AS blank_created_at
+               FROM order_item_blanks oib
+               JOIN order_items oi ON oi.id = oib.order_item_id
+               WHERE oib.blank_id = ?
+               ORDER BY oib.id""",
             (blank_id,),
         ).fetchall()
-        work_items = [WorkItem.from_row(r).to_api_dict() for r in wi_rows]
+        work_items = []
+        for r in wi_rows:
+            wi = WorkItem.from_row(r)
+            # Attach the single blank assignment that matched, so the
+            # response includes quantity/notes for this blank linkage.
+            from baker.models.work_item import BlankAssignment
+            keys = r.keys()
+            wi.blanks = [BlankAssignment(
+                id=r["blank_item_id"] if "blank_item_id" in keys else None,
+                order_item_id=wi.id,
+                blank_id=blank_id,
+                quantity=float(r["blank_quantity"]) if "blank_quantity" in keys else 1.0,
+                notes=r["blank_notes"] if "blank_notes" in keys else "",
+                created_at=r["blank_created_at"] if "blank_created_at" in keys else None,
+            )]
+            work_items.append(wi.to_api_dict())
 
         return {
             "blankId": blank_id,

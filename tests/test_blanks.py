@@ -575,12 +575,12 @@ def test_blank_products_returns_work_items_linked_via_blank_id(api_client):
         {"productName": "Bánh kem 16cm", "unitPrice": 200000, "quantity": 1},
     ])
     item_id = order["workItems"][0]["id"]
-    # Link the work item to the blank via PATCH with blankId
-    resp = api_client.patch(
-        f"/api/orders/{order['orderRef']}/items/{item_id}",
-        json={"blankId": blank["id"]},
+    # Link the work item to the blank via the blank-assignment endpoint
+    resp = api_client.post(
+        f"/api/orders/{order['orderRef']}/items/{item_id}/blanks",
+        json={"blankId": blank["id"], "quantity": 1, "notes": ""},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 201
     assert resp.json()["blankId"] == blank["id"]
 
     # Reverse lookup should now include the work item
@@ -588,7 +588,7 @@ def test_blank_products_returns_work_items_linked_via_blank_id(api_client):
     assert len(lookup["workItems"]) == 1
     wi = lookup["workItems"][0]
     assert wi["id"] == item_id
-    assert wi["blankId"] == blank["id"]
+    assert wi["blanks"][0]["blankId"] == blank["id"]
 
 
 def test_blank_products_includes_both_bom_and_work_items(api_client):
@@ -604,9 +604,9 @@ def test_blank_products_includes_both_bom_and_work_items(api_client):
         {"productName": "Bánh kem 16cm", "unitPrice": 200000, "quantity": 1},
     ])
     item_id = order["workItems"][0]["id"]
-    api_client.patch(
-        f"/api/orders/{order['orderRef']}/items/{item_id}",
-        json={"blankId": blank["id"]},
+    api_client.post(
+        f"/api/orders/{order['orderRef']}/items/{item_id}/blanks",
+        json={"blankId": blank["id"], "quantity": 1},
     )
     body = api_client.get(f"/api/blanks/{blank['id']}/products").json()
     assert len(body["bomProducts"]) == 1

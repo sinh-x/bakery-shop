@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from baker.db.connection import get_db
 from baker.models.order import is_backward_transition
-from baker.models.work_item import WorkItem, WorkItemStatus
+from baker.models.work_item import BlankAssignment, WorkItem, WorkItemStatus
 from baker.utils.time import now_utc
 
 router = APIRouter(prefix="/api/orders", tags=["work-items"])
@@ -78,7 +78,6 @@ class WorkItemUpdate(BaseModel):
     isExtra: Optional[bool] = None
     isGift: Optional[bool] = None
     attributes: Optional[dict] = None
-    blankId: Optional[int] = None
 
 
 class WorkItemStatusTransition(BaseModel):
@@ -86,12 +85,65 @@ class WorkItemStatusTransition(BaseModel):
     reason: str
 
 
+class BlankAssignmentCreate(BaseModel):
+    blankId: int
+    quantity: float = 1.0
+    notes: str = ""
+
+
+class BlankAssignmentUpdate(BaseModel):
+    quantity: Optional[float] = None
+    notes: Optional[str] = None
+
+
+def _load_blanks_for_item(conn, order_item_id: int) -> list:
+    """Return all BlankAssignment rows linked to a work item, ordered by id."""
+    rows = conn.execute(
+        "SELECT * FROM order_item_blanks WHERE order_item_id = ? ORDER BY id",
+        (order_item_id,),
+    ).fetchall()
+    return [BlankAssignment.from_row(r) for r in rows]
+
+
+def _attach_blanks(conn, items: list) -> None:
+    """Attach blanks lists to a list of WorkItem objects (in-place)."""
+    if not items:
+        return
+    ids = [it.id for it in items if it.id is not None]
+    if not ids:
+        return
+    placeholders = ",".join("?" * len(ids))
+    rows = conn.execute(
+        f"SELECT * FROM order_item_blanks WHERE order_item_id IN ({placeholders}) ORDER BY id",
+        ids,
+    ).fetchall()
+    by_item: dict[int, list] = {}
+    for r in rows:
+        by_item.setdefault(r["order_item_id"], []).append(BlankAssignment.from_row(r))
+    for it in items:
+        it.blanks = by_item.get(it.id, [])
+
+
 def _sync_order_items_json(conn, order_id: int) -> None:
     """Regenerate orders.items JSON from order_items table and recalculate total_price."""
     rows = conn.execute(
-        "SELECT product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes, blank_id FROM order_items WHERE order_id = ?",
+        "SELECT id, product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes FROM order_items WHERE order_id = ?",
         (order_id,),
     ).fetchall()
+    item_ids = [r["id"] for r in rows]
+    blanks_by_item: dict[int, list] = {}
+    if item_ids:
+        placeholders = ",".join("?" * len(item_ids))
+        blank_rows = conn.execute(
+            f"SELECT order_item_id, blank_id, quantity, notes FROM order_item_blanks WHERE order_item_id IN ({placeholders}) ORDER BY id",
+            item_ids,
+        ).fetchall()
+        for br in blank_rows:
+            blanks_by_item.setdefault(br["order_item_id"], []).append({
+                "blankId": br["blank_id"],
+                "quantity": float(br["quantity"]),
+                "notes": br["notes"] or "",
+            })
     items_json = json.dumps([
         {
             "product": r["product_name"],
@@ -102,7 +154,7 @@ def _sync_order_items_json(conn, order_id: int) -> None:
             "is_extra": bool(r["is_extra"]),
             "is_gift": bool(r["is_gift"]),
             "attributes": json.loads(r["attributes"]) if r["attributes"] and r["attributes"] != '{}' else {},
-            "blank_id": r["blank_id"],
+            "blanks": blanks_by_item.get(r["id"], []),
         }
         for r in rows
     ])
@@ -204,7 +256,9 @@ def list_work_items(ref: str):
             "SELECT * FROM order_items WHERE order_id = ? ORDER BY position, id",
             (order_id,),
         ).fetchall()
-        return [WorkItem.from_row(r).to_api_dict() for r in rows]
+        items = [WorkItem.from_row(r) for r in rows]
+        _attach_blanks(conn, items)
+        return [it.to_api_dict() for it in items]
 
 
 @router.post("/{ref}/items", status_code=201)
@@ -230,7 +284,9 @@ def create_work_item(ref: str, body: WorkItemCreate):
         item.save(conn)
         row = conn.execute("SELECT * FROM order_items WHERE id = ?", (item.id,)).fetchone()
         _sync_order_items_json(conn, order_id)
-        return WorkItem.from_row(row).to_api_dict()
+        wi = WorkItem.from_row(row)
+        wi.blanks = _load_blanks_for_item(conn, wi.id)
+        return wi.to_api_dict()
 
 
 @router.patch("/{ref}/items/{item_id}")
@@ -260,7 +316,6 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
             "isExtra": "is_extra",
             "isGift": "is_gift",
             "attributes": "attributes",
-            "blankId": "blank_id",
         }
         updates = []
         params: list = []
@@ -283,7 +338,9 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
         )
         updated = conn.execute("SELECT * FROM order_items WHERE id = ?", (item_id,)).fetchone()
         _sync_order_items_json(conn, order_id)
-        return WorkItem.from_row(updated).to_api_dict()
+        wi = WorkItem.from_row(updated)
+        wi.blanks = _load_blanks_for_item(conn, wi.id)
+        return wi.to_api_dict()
 
 
 @router.delete("/{ref}/items/{item_id}", status_code=204)
@@ -304,6 +361,110 @@ def delete_work_item(ref: str, item_id: int):
             "UPDATE orders SET updated_at = ? WHERE id = ?",
             (now_utc(), order_id),
         )
+
+
+# --- Blank assignment CRUD (DG-294 Phase 1) ----------------------------------
+
+
+def _ensure_blank_exists(conn, blank_id: int) -> None:
+    row = conn.execute("SELECT 1 FROM blanks WHERE id = ?", (blank_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phôi")
+
+
+def _ensure_work_item(conn, order_id: int, item_id: int):
+    row = conn.execute(
+        "SELECT * FROM order_items WHERE id = ? AND order_id = ?",
+        (item_id, order_id),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
+    return row
+
+
+def _ensure_blank_assignment(conn, item_id: int, blank_item_id: int):
+    row = conn.execute(
+        "SELECT * FROM order_item_blanks WHERE id = ? AND order_item_id = ?",
+        (blank_item_id, item_id),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phôi được gán")
+    return row
+
+
+@router.post("/{ref}/items/{item_id}/blanks", status_code=201)
+def add_blank_assignment(ref: str, item_id: int, body: BlankAssignmentCreate):
+    """Gán phôi bánh cho công việc (FR8)."""
+    with get_db() as conn:
+        order_id = _resolve_order_id(conn, ref)
+        _ensure_work_item(conn, order_id, item_id)
+        _ensure_blank_exists(conn, body.blankId)
+        if body.quantity < 0:
+            raise HTTPException(status_code=400, detail="Số lượng không được âm")
+        # Enforce uniqueness of (order_item_id, blank_id) via INSERT OR IGNORE
+        conn.execute(
+            """INSERT OR IGNORE INTO order_item_blanks
+               (order_item_id, blank_id, quantity, notes, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (item_id, body.blankId, body.quantity, body.notes, now_utc()),
+        )
+        row = conn.execute(
+            "SELECT * FROM order_item_blanks WHERE order_item_id = ? AND blank_id = ?",
+            (item_id, body.blankId),
+        ).fetchone()
+        _sync_order_items_json(conn, order_id)
+        return BlankAssignment.from_row(row).to_api_dict()
+
+
+@router.patch("/{ref}/items/{item_id}/blanks/{blank_item_id}")
+def update_blank_assignment(
+    ref: str, item_id: int, blank_item_id: int, body: BlankAssignmentUpdate
+):
+    """Cập nhật số lượng/ghi chú phôi đã gán (FR9)."""
+    data = body.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="Không có gì để cập nhật")
+
+    with get_db() as conn:
+        order_id = _resolve_order_id(conn, ref)
+        _ensure_work_item(conn, order_id, item_id)
+        row = _ensure_blank_assignment(conn, item_id, blank_item_id)
+
+        updates = []
+        params: list = []
+        if "quantity" in data:
+            if data["quantity"] < 0:
+                raise HTTPException(status_code=400, detail="Số lượng không được âm")
+            updates.append("quantity = ?")
+            params.append(float(data["quantity"]))
+        if "notes" in data:
+            updates.append("notes = ?")
+            params.append(data["notes"])
+
+        if not updates:
+            raise HTTPException(status_code=400, detail="Không có gì để cập nhật")
+
+        params.append(blank_item_id)
+        conn.execute(
+            f"UPDATE order_item_blanks SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        updated = conn.execute(
+            "SELECT * FROM order_item_blanks WHERE id = ?", (blank_item_id,)
+        ).fetchone()
+        _sync_order_items_json(conn, order_id)
+        return BlankAssignment.from_row(updated).to_api_dict()
+
+
+@router.delete("/{ref}/items/{item_id}/blanks/{blank_item_id}", status_code=204)
+def delete_blank_assignment(ref: str, item_id: int, blank_item_id: int):
+    """Xóa phôi đã gán khỏi công việc (FR10)."""
+    with get_db() as conn:
+        order_id = _resolve_order_id(conn, ref)
+        _ensure_work_item(conn, order_id, item_id)
+        _ensure_blank_assignment(conn, item_id, blank_item_id)
+        conn.execute("DELETE FROM order_item_blanks WHERE id = ?", (blank_item_id,))
+        _sync_order_items_json(conn, order_id)
 
 
 @router.post("/{ref}/items/{item_id}/status")
@@ -368,7 +529,9 @@ def transition_work_item_status(ref: str, item_id: int, body: WorkItemStatusTran
                 sync_extras_to_order_status(conn, order_id, derived_order_status)
 
         updated = conn.execute("SELECT * FROM order_items WHERE id = ?", (item_id,)).fetchone()
-        return WorkItem.from_row(updated).to_api_dict()
+        wi = WorkItem.from_row(updated)
+        wi.blanks = _load_blanks_for_item(conn, wi.id)
+        return wi.to_api_dict()
 
 
 def _sync_extras_to_order_status(conn, order_id: int, order_status: str) -> None:
