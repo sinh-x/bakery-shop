@@ -348,7 +348,7 @@ def list_demand():
             ) d ON d.blank_id = b.id
             ORDER BY b.id
             """,
-            excluded_statuses + excluded_statuses,
+            excluded_statuses + excluded_statuses,  # duplicated for both UNION branches
         ).fetchall()
 
         # Stock lookup in a single pass to avoid N+1 queries (NFR2).

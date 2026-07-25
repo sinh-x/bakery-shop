@@ -9,10 +9,9 @@ import 'add_blank_modal.dart';
 /// Renders the blank (phôi bánh) section on the CakeDetailScreen (DG-294).
 ///
 /// Shows a "Thêm phôi bánh" button that opens the [showAddBlankModal] and a
-/// list of inline blank line items. In **edit mode** the line items also show
-/// edit and delete actions; in **read mode** they are read-only but the add
-/// button remains available (the add modal calls `OrderWorkItemsNotifier.addBlank`
-/// which does not require edit mode).
+/// list of inline blank line items. The add button and the edit/delete actions
+/// on line items are available in both read and edit modes (the add modal calls
+/// [OrderWorkItemsNotifier.addBlank] which does not require edit mode).
 ///
 /// Mutations are performed through [onAddBlank]/[onUpdateBlank]/[onDeleteBlank]
 /// so the widget stays a pure view; the parent wires these callbacks to the
@@ -161,7 +160,6 @@ class _CakeDetailBlankSectionState
             child: _BlankLineItem(
               assignment: assignment,
               blankName: _resolveBlankName(assignment),
-              editing: widget.editing,
               busy: _busy,
               onEdit: () => _openEditModal(assignment),
               onDelete: () => _confirmDelete(assignment),
@@ -197,7 +195,6 @@ class _BlankLineItem extends StatelessWidget {
   const _BlankLineItem({
     required this.assignment,
     required this.blankName,
-    required this.editing,
     required this.busy,
     required this.onEdit,
     required this.onDelete,
@@ -205,7 +202,6 @@ class _BlankLineItem extends StatelessWidget {
 
   final BlankAssignment assignment;
   final String blankName;
-  final bool editing;
   final bool busy;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
