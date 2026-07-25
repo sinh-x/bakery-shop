@@ -10,6 +10,7 @@ CakeQueueItem _item({
   required String status,
   String? dueDate,
   String? dueTime,
+  String? orderStatus,
 }) {
   return CakeQueueItem(
     id: id,
@@ -27,6 +28,7 @@ CakeQueueItem _item({
     dueDate: dueDate,
     dueTime: dueTime,
     createdAt: null,
+    orderStatus: orderStatus ?? status,
   );
 }
 
@@ -45,13 +47,13 @@ void main() {
   final futureStr = formatApiDate(today.add(const Duration(days: 30)));
 
   List<CakeQueueItem> sample() => [
-        _item(id: '1', status: 'pending', dueDate: todayStr, dueTime: '09:00'),
-        _item(id: '2', status: 'pending', dueDate: tomorrowStr, dueTime: '10:00'),
-        _item(id: '3', status: 'working', dueDate: yesterdayStr, dueTime: '08:00'),
-        _item(id: '4', status: 'ready', dueDate: pastStr, dueTime: '07:00'),
-        _item(id: '5', status: 'delivered', dueDate: futureStr, dueTime: '12:00'),
-        _item(id: '6', status: 'pending', dueDate: null, dueTime: null),
-        _item(id: '7', status: 'pending', dueDate: '', dueTime: ''),
+        _item(id: '1', status: 'pending', orderStatus: 'new', dueDate: todayStr, dueTime: '09:00'),
+        _item(id: '2', status: 'pending', orderStatus: 'new', dueDate: tomorrowStr, dueTime: '10:00'),
+        _item(id: '3', status: 'working', orderStatus: 'in_progress', dueDate: yesterdayStr, dueTime: '08:00'),
+        _item(id: '4', status: 'ready', orderStatus: 'ready', dueDate: pastStr, dueTime: '07:00'),
+        _item(id: '5', status: 'delivered', orderStatus: 'delivered', dueDate: futureStr, dueTime: '12:00'),
+        _item(id: '6', status: 'pending', orderStatus: 'new', dueDate: null, dueTime: null),
+        _item(id: '7', status: 'pending', orderStatus: 'new', dueDate: '', dueTime: ''),
       ];
 
   group('filterCakeQueueByDate — today', () {
@@ -179,30 +181,33 @@ void main() {
   });
 
   group('groupCakeQueueByStatus — status ordering', () {
-    test('returns groups in pending → working → ready → delivered order', () {
+    test('returns groups in new → confirmed → in_progress → ready → delivered order', () {
       final result = groupCakeQueueByStatus(sample());
-      expect(result.keys.toList(), ['pending', 'working', 'ready', 'delivered']);
+      expect(result.keys.toList(),
+          ['new', 'confirmed', 'in_progress', 'ready', 'delivered']);
     });
 
-    test('each group contains only items of that status', () {
+    test('each group contains only items of that order status', () {
       final result = groupCakeQueueByStatus(sample());
       for (final entry in result.entries) {
         for (final item in entry.value) {
-          expect(item.status, entry.key);
+          expect(item.orderStatus, entry.key);
         }
       }
     });
 
     test('unknown statuses are dropped', () {
       final items = [
-        _item(id: 'x', status: 'cancelled'),
-        _item(id: 'y', status: 'weird'),
-        _item(id: '1', status: 'pending'),
+        _item(id: 'x', status: 'cancelled', orderStatus: 'cancelled'),
+        _item(id: 'y', status: 'weird', orderStatus: 'weird'),
+        _item(id: '1', status: 'pending', orderStatus: 'new'),
       ];
       final result = groupCakeQueueByStatus(items);
-      expect(result.keys.toSet(), {'pending', 'working', 'ready', 'delivered'});
-      expect(result['pending']!.length, 1);
-      expect(result['working'], isEmpty);
+      expect(result.keys.toSet(),
+          {'new', 'confirmed', 'in_progress', 'ready', 'delivered'});
+      expect(result['new']!.length, 1);
+      expect(result['confirmed'], isEmpty);
+      expect(result['in_progress'], isEmpty);
       expect(result['ready'], isEmpty);
       expect(result['delivered'], isEmpty);
     });
@@ -211,69 +216,69 @@ void main() {
   group('groupCakeQueueByStatus — sort within groups', () {
     test('items without dueDate appear first', () {
       final items = [
-        _item(id: 'a', status: 'pending', dueDate: todayStr, dueTime: '09:00'),
-        _item(id: 'b', status: 'pending', dueDate: null),
-        _item(id: 'c', status: 'pending', dueDate: '', dueTime: ''),
-        _item(id: 'd', status: 'pending', dueDate: tomorrowStr, dueTime: '08:00'),
+        _item(id: 'a', status: 'pending', orderStatus: 'new', dueDate: todayStr, dueTime: '09:00'),
+        _item(id: 'b', status: 'pending', orderStatus: 'new', dueDate: null),
+        _item(id: 'c', status: 'pending', orderStatus: 'new', dueDate: '', dueTime: ''),
+        _item(id: 'd', status: 'pending', orderStatus: 'new', dueDate: tomorrowStr, dueTime: '08:00'),
       ];
       final result = groupCakeQueueByStatus(items);
-      final ids = result['pending']!.map((i) => i.id).toList();
+      final ids = result['new']!.map((i) => i.id).toList();
       // No-date items first (b, c), then by date ascending (a=today, d=tomorrow)
       expect(ids, ['b', 'c', 'a', 'd']);
     });
 
     test('by dueDate ascending when both have dates', () {
       final items = [
-        _item(id: 'late', status: 'pending', dueDate: tomorrowStr),
-        _item(id: 'early', status: 'pending', dueDate: todayStr),
-        _item(id: 'mid', status: 'pending', dueDate: yesterdayStr),
+        _item(id: 'late', status: 'pending', orderStatus: 'new', dueDate: tomorrowStr),
+        _item(id: 'early', status: 'pending', orderStatus: 'new', dueDate: todayStr),
+        _item(id: 'mid', status: 'pending', orderStatus: 'new', dueDate: yesterdayStr),
       ];
       final result = groupCakeQueueByStatus(items);
-      final ids = result['pending']!.map((i) => i.id).toList();
+      final ids = result['new']!.map((i) => i.id).toList();
       expect(ids, ['mid', 'early', 'late']);
     });
 
     test('by dueTime ascending when dueDate is equal', () {
       final items = [
-        _item(id: 'pm', status: 'working', dueDate: todayStr, dueTime: '14:00'),
-        _item(id: 'am', status: 'working', dueDate: todayStr, dueTime: '09:00'),
-        _item(id: 'noon', status: 'working', dueDate: todayStr, dueTime: '12:00'),
+        _item(id: 'pm', status: 'working', orderStatus: 'in_progress', dueDate: todayStr, dueTime: '14:00'),
+        _item(id: 'am', status: 'working', orderStatus: 'in_progress', dueDate: todayStr, dueTime: '09:00'),
+        _item(id: 'noon', status: 'working', orderStatus: 'in_progress', dueDate: todayStr, dueTime: '12:00'),
       ];
       final result = groupCakeQueueByStatus(items);
-      final ids = result['working']!.map((i) => i.id).toList();
+      final ids = result['in_progress']!.map((i) => i.id).toList();
       expect(ids, ['am', 'noon', 'pm']);
     });
 
     test('null dueTime sorts before non-empty dueTime at same date', () {
       final items = [
-        _item(id: 'withtime', status: 'pending', dueDate: todayStr, dueTime: '09:00'),
-        _item(id: 'notime', status: 'pending', dueDate: todayStr, dueTime: null),
+        _item(id: 'withtime', status: 'pending', orderStatus: 'new', dueDate: todayStr, dueTime: '09:00'),
+        _item(id: 'notime', status: 'pending', orderStatus: 'new', dueDate: todayStr, dueTime: null),
       ];
       final result = groupCakeQueueByStatus(items);
-      final ids = result['pending']!.map((i) => i.id).toList();
+      final ids = result['new']!.map((i) => i.id).toList();
       expect(ids, ['notime', 'withtime']);
     });
 
     test('no-date items with null/empty dueTime compare equal (stable)', () {
       final items = [
-        _item(id: 'nullt', status: 'pending', dueDate: null, dueTime: null),
-        _item(id: 'emptyt', status: 'pending', dueDate: '', dueTime: ''),
+        _item(id: 'nullt', status: 'pending', orderStatus: 'new', dueDate: null, dueTime: null),
+        _item(id: 'emptyt', status: 'pending', orderStatus: 'new', dueDate: '', dueTime: ''),
       ];
       final result = groupCakeQueueByStatus(items);
-      expect(result['pending']!.length, 2);
+      expect(result['new']!.length, 2);
     });
 
     test('full sort chain: no-date first, then date asc, then time asc', () {
       final items = [
-        _item(id: 'p1', status: 'pending', dueDate: todayStr, dueTime: '14:00'),
-        _item(id: 'p2', status: 'pending', dueDate: null),
-        _item(id: 'p3', status: 'pending', dueDate: todayStr, dueTime: '09:00'),
-        _item(id: 'p4', status: 'pending', dueDate: tomorrowStr, dueTime: '08:00'),
-        _item(id: 'p5', status: 'pending', dueDate: '', dueTime: ''),
-        _item(id: 'p6', status: 'pending', dueDate: todayStr, dueTime: '12:00'),
+        _item(id: 'p1', status: 'pending', orderStatus: 'new', dueDate: todayStr, dueTime: '14:00'),
+        _item(id: 'p2', status: 'pending', orderStatus: 'new', dueDate: null),
+        _item(id: 'p3', status: 'pending', orderStatus: 'new', dueDate: todayStr, dueTime: '09:00'),
+        _item(id: 'p4', status: 'pending', orderStatus: 'new', dueDate: tomorrowStr, dueTime: '08:00'),
+        _item(id: 'p5', status: 'pending', orderStatus: 'new', dueDate: '', dueTime: ''),
+        _item(id: 'p6', status: 'pending', orderStatus: 'new', dueDate: todayStr, dueTime: '12:00'),
       ];
       final result = groupCakeQueueByStatus(items);
-      final ids = result['pending']!.map((i) => i.id).toList();
+      final ids = result['new']!.map((i) => i.id).toList();
       // No-date first: p2, p5
       // today (09:00, 12:00, 14:00): p3, p6, p1
       // tomorrow (08:00): p4
@@ -282,26 +287,29 @@ void main() {
   });
 
   group('groupCakeQueueByStatus — edge cases', () {
-    test('empty input returns all four empty groups', () {
+    test('empty input returns all five empty groups', () {
       final result = groupCakeQueueByStatus(<CakeQueueItem>[]);
-      expect(result.keys.toList(), ['pending', 'working', 'ready', 'delivered']);
-      expect(result['pending'], isEmpty);
-      expect(result['working'], isEmpty);
+      expect(result.keys.toList(),
+          ['new', 'confirmed', 'in_progress', 'ready', 'delivered']);
+      expect(result['new'], isEmpty);
+      expect(result['confirmed'], isEmpty);
+      expect(result['in_progress'], isEmpty);
       expect(result['ready'], isEmpty);
       expect(result['delivered'], isEmpty);
     });
 
     test('all items same status are grouped together', () {
       final items = [
-        _item(id: 'r3', status: 'ready', dueDate: todayStr, dueTime: '12:00'),
-        _item(id: 'r1', status: 'ready', dueDate: todayStr, dueTime: '08:00'),
-        _item(id: 'r2', status: 'ready', dueDate: todayStr, dueTime: '10:00'),
+        _item(id: 'r3', status: 'ready', orderStatus: 'ready', dueDate: todayStr, dueTime: '12:00'),
+        _item(id: 'r1', status: 'ready', orderStatus: 'ready', dueDate: todayStr, dueTime: '08:00'),
+        _item(id: 'r2', status: 'ready', orderStatus: 'ready', dueDate: todayStr, dueTime: '10:00'),
       ];
       final result = groupCakeQueueByStatus(items);
       expect(result['ready']!.length, 3);
       expect(result['ready']!.map((i) => i.id).toList(), ['r1', 'r2', 'r3']);
-      expect(result['pending'], isEmpty);
-      expect(result['working'], isEmpty);
+      expect(result['new'], isEmpty);
+      expect(result['confirmed'], isEmpty);
+      expect(result['in_progress'], isEmpty);
       expect(result['delivered'], isEmpty);
     });
   });

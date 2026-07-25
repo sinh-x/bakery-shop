@@ -5,9 +5,11 @@ import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Header row for a status group in the cake queue (FR1, FR3).
 ///
-/// Renders a colored dot from `BakeryTheme.workItemStatusColors`, the status
-/// label from `workItemStatusLabel()`, and a count badge. Tapping toggles
-/// the group's collapsed state via [onTap].
+/// Renders a colored dot from `BakeryTheme.statusColors`, the status label
+/// from `statusMap`, and a count badge. Tapping toggles the group's
+/// collapsed state via [onTap]. Grouping keys are the parent order's
+/// status (new/confirmed/in_progress/ready/delivered), not the work item
+/// status.
 class CakeQueueGroupHeader extends StatelessWidget {
   const CakeQueueGroupHeader({
     super.key,
@@ -24,9 +26,8 @@ class CakeQueueGroupHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusColor =
-        BakeryTheme.workItemStatusColors[status] ?? Colors.grey;
-    final label = workItemStatusLabel(status);
+    final statusColor = BakeryTheme.statusColors[status] ?? Colors.grey;
+    final label = statusMap[status] ?? status;
     return Padding(
       padding: const EdgeInsets.only(top: 12, bottom: 4),
       child: InkWell(

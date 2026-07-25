@@ -142,7 +142,7 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
           }
           final queueItem = item as CakeQueueItem;
           // Skip rendering the card if its group is collapsed.
-          final status = queueItem.status;
+          final status = queueItem.orderStatus;
           final isCollapsed = _collapsedGroups[status] ?? false;
           if (isCollapsed) {
             return const SizedBox.shrink();

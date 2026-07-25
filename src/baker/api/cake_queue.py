@@ -54,7 +54,8 @@ def list_work_items_queue(
                 o.order_ref,
                 o.customer_name,
                 o.due_date,
-                o.due_time
+                o.due_time,
+                o.status AS order_status
             FROM order_items oi
             JOIN orders o ON oi.order_id = o.id
             WHERE {status_clause}
@@ -84,6 +85,7 @@ def list_work_items_queue(
                 "dueDate": row["due_date"],
                 "dueTime": row["due_time"],
                 "createdAt": row["created_at"],
+                "orderStatus": row["order_status"],
             }
             for row in rows
         ]

@@ -52,8 +52,8 @@ List<CakeQueueItem> filterCakeQueueByDate(
   }
 }
 
-/// Groups [CakeQueueItem]s by their `status` in workflow order:
-/// `pending` → `working` → `ready` → `delivered`.
+/// Groups [CakeQueueItem]s by their parent order's `orderStatus` in workflow
+/// order: `new` → `confirmed` → `in_progress` → `ready` → `delivered`.
 ///
 /// Within each group, items are sorted so that:
 /// 1. items without a `dueDate` (null or empty) appear first,
@@ -61,17 +61,18 @@ List<CakeQueueItem> filterCakeQueueByDate(
 /// 3. then by `dueTime` ascending (null/empty `dueTime` sorts before
 ///    non-empty `dueTime`).
 ///
-/// Mirrors the `groupDeliveryOrdersByStatus` pattern in `delivery_helpers.dart`
-/// but keys groups by the work-item status workflow instead of order status.
-/// Statuses outside the four-value workflow are dropped (per §11 risk
-/// mitigation: unknown statuses skipped rather than mis-grouped).
+/// Mirrors the `groupDeliveryOrdersByStatus` pattern in `delivery_helpers.dart`,
+/// keying groups by the parent order status workflow (not the work item
+/// status). Statuses outside the five-value workflow are dropped (per §11
+/// risk mitigation: unknown statuses skipped rather than mis-grouped).
 Map<String, List<CakeQueueItem>> groupCakeQueueByStatus(
   List<CakeQueueItem> items,
 ) {
-  const workflowOrder = ['pending', 'working', 'ready', 'delivered'];
+  const workflowOrder = ['new', 'confirmed', 'in_progress', 'ready', 'delivered'];
   final result = <String, List<CakeQueueItem>>{};
   for (final status in workflowOrder) {
-    final statusItems = items.where((i) => i.status == status).toList();
+    final statusItems =
+        items.where((i) => i.orderStatus == status).toList();
     statusItems.sort(_compareByDueDateAndTime);
     result[status] = statusItems;
   }
