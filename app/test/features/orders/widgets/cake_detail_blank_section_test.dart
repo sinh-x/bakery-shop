@@ -109,9 +109,9 @@ void main() {
         find.text('${BlanksLabels.fieldBlankNotes}: Đặc biệt'),
         findsOneWidget,
       );
-      // No edit/delete icons in read mode.
-      expect(find.byIcon(Icons.edit_outlined), findsNothing);
-      expect(find.byIcon(Icons.close), findsNothing);
+      // Edit/delete icons are visible in read mode too (DG-294 Phase 5.6-c2).
+      expect(find.byIcon(Icons.edit_outlined), findsNWidgets(2));
+      expect(find.byIcon(Icons.close), findsNWidgets(2));
     });
 
     testWidgets('read mode: shows empty hint when no blanks', (tester) async {

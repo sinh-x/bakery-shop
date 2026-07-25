@@ -148,7 +148,7 @@ class _CakeDetailBlankSectionState
       children: [
         const _SectionLabel(BlanksLabels.sectionBlanks),
         const SizedBox(height: 8),
-        if (blanks.isEmpty && !widget.editing)
+          if (blanks.isEmpty)
           Text(
             BlanksLabels.emptyBlanksAssigned,
             style: theme.textTheme.bodySmall?.copyWith(
@@ -248,18 +248,16 @@ class _BlankLineItem extends StatelessWidget {
               ],
             ),
           ),
-          if (editing) ...[
-            IconButton(
-              tooltip: BlanksLabels.actionEdit,
-              onPressed: busy ? null : onEdit,
-              icon: const Icon(Icons.edit_outlined, size: 20),
-            ),
-            IconButton(
-              tooltip: BlanksLabels.actionDelete,
-              onPressed: busy ? null : onDelete,
-              icon: const Icon(Icons.close, size: 20),
-            ),
-          ],
+          IconButton(
+            tooltip: BlanksLabels.actionEdit,
+            onPressed: busy ? null : onEdit,
+            icon: const Icon(Icons.edit_outlined, size: 20),
+          ),
+          IconButton(
+            tooltip: BlanksLabels.actionDelete,
+            onPressed: busy ? null : onDelete,
+            icon: const Icon(Icons.close, size: 20),
+          ),
         ],
       ),
     );
