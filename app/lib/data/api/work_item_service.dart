@@ -5,16 +5,14 @@ import '../models/cake_queue_item.dart';
 import '../models/work_item.dart';
 import 'api_client.dart';
 
-/// Sentinel distinguishing "not provided" from "explicitly clear to null".
-/// Used by [WorkItemService.updateWorkItem] for the nullable `blankId` field
-/// so the caller can pass `blankId: null` to clear the assignment while
-/// omitting the parameter leaves the server value unchanged.
-const Object unset = Object();
-
 class WorkItemService {
   final Dio _dio;
 
   WorkItemService(this._dio);
+
+  /// Returns the base path for blank CRUD on a work item.
+  static String _blanksBasePath(String orderRef, String itemId) =>
+      '/api/orders/$orderRef/items/$itemId/blanks';
 
   Future<List<WorkItem>> listWorkItems(String orderRef) async {
     final response = await _dio.get('/api/orders/$orderRef/items');
@@ -68,7 +66,6 @@ class WorkItemService {
     bool? isExtra,
     bool? isGift,
     Map<String, dynamic>? attributes,
-    Object? blankId = unset,
   }) async {
     final body = <String, dynamic>{};
     if (productName != null) body['productName'] = productName;
@@ -81,13 +78,61 @@ class WorkItemService {
     if (isExtra != null) body['isExtra'] = isExtra;
     if (isGift != null) body['isGift'] = isGift;
     if (attributes != null) body['attributes'] = attributes;
-    if (!identical(blankId, unset)) body['blankId'] = blankId;
 
     final response = await _dio.patch(
       '/api/orders/$orderRef/items/$itemId',
       data: body,
     );
     return WorkItem.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Add a blank assignment to a work item.
+  /// POST /api/orders/{ref}/items/{id}/blanks
+  Future<BlankAssignment> addBlank(
+    String orderRef,
+    String itemId, {
+    required int blankId,
+    double quantity = 1.0,
+    String notes = '',
+  }) async {
+    final response = await _dio.post(
+      _blanksBasePath(orderRef, itemId),
+      data: {
+        'blankId': blankId,
+        'quantity': quantity,
+        'notes': notes,
+      },
+    );
+    return BlankAssignment.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Update quantity/notes on an existing blank assignment.
+  /// PATCH /api/orders/{ref}/items/{id}/blanks/{blankItemId}
+  Future<BlankAssignment> updateBlank(
+    String orderRef,
+    String itemId,
+    int blankItemId, {
+    double? quantity,
+    String? notes,
+  }) async {
+    final body = <String, dynamic>{};
+    if (quantity != null) body['quantity'] = quantity;
+    if (notes != null) body['notes'] = notes;
+    final response = await _dio.patch(
+      '${_blanksBasePath(orderRef, itemId)}/$blankItemId',
+      data: body,
+    );
+    return BlankAssignment.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Remove a blank assignment from a work item.
+  /// DELETE /api/orders/{ref}/items/{id}/blanks/{blankItemId}
+  Future<void> deleteBlank(
+    String orderRef,
+    String itemId,
+    int blankItemId,
+  ) async {
+    await _dio.delete('${_blanksBasePath(orderRef, itemId)}/$blankItemId');
   }
 
   Future<void> deleteWorkItem(String orderRef, String itemId) async {
