@@ -101,3 +101,12 @@ final blankByIdProvider =
     orElse: () => throw StateError('Blank $id not found'),
   );
 });
+
+/// Reverse-lookup provider: products/work items linked to a blank
+/// (DG-293 Phase 4 / FR3). Used by the blank detail screen's
+/// "Sản phẩm liên kết" section.
+final blankProductsProvider =
+    FutureProvider.family<BlankProducts, int>((ref, id) async {
+  final service = ref.read(blankServiceProvider);
+  return service.getBlankProducts(id);
+});

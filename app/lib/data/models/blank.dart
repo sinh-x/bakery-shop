@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'work_item.dart';
+
 part 'blank.freezed.dart';
 part 'blank.g.dart';
 
@@ -172,4 +174,62 @@ sealed class BlankStockLog with _$BlankStockLog {
 
   factory BlankStockLog.fromJson(Map<String, dynamic> json) =>
       _$BlankStockLogFromJson(json);
+}
+
+/// A product linked to a blank via the BOM mapping (`product_blank_bom`).
+///
+/// Returned by `GET /api/blanks/{id}/products` inside [BlankProducts.bomProducts].
+class BlankBomProduct {
+  const BlankBomProduct({
+    required this.bomId,
+    this.productId,
+    required this.productName,
+    this.productCategory = '',
+    this.priceChipId,
+    this.quantity = 0.0,
+  });
+
+  final int bomId;
+  final int? productId;
+  final String productName;
+  final String productCategory;
+  final int? priceChipId;
+  final double quantity;
+
+  factory BlankBomProduct.fromJson(Map<String, dynamic> json) => BlankBomProduct(
+        bomId: (json['bomId'] as num).toInt(),
+        productId: json['productId'] == null
+            ? null
+            : (json['productId'] as num).toInt(),
+        productName: (json['productName'] as String?) ?? '',
+        productCategory: (json['productCategory'] as String?) ?? '',
+        priceChipId: json['priceChipId'] == null
+            ? null
+            : (json['priceChipId'] as num).toInt(),
+        quantity: (json['quantity'] as num?)?.toDouble() ?? 0.0,
+      );
+}
+
+/// Reverse-lookup response for a blank: products linked via BOM and work
+/// items linked via the `blank_id` FK (FR3 / DG-293 Phase 4).
+class BlankProducts {
+  const BlankProducts({
+    required this.blankId,
+    required this.bomProducts,
+    required this.workItems,
+  });
+
+  final int blankId;
+  final List<BlankBomProduct> bomProducts;
+  final List<WorkItem> workItems;
+
+  factory BlankProducts.fromJson(Map<String, dynamic> json) => BlankProducts(
+        blankId: (json['blankId'] as num).toInt(),
+        bomProducts: ((json['bomProducts'] as List?) ?? const [])
+            .map((e) => BlankBomProduct.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        workItems: ((json['workItems'] as List?) ?? const [])
+            .map((e) => WorkItem.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
 }

@@ -97,4 +97,15 @@ class BlanksLabels {
 
   // Work item blank assignment (DG-293 FR8 / AC2).
   static const notAssigned = 'Chưa gán phôi';
+
+  // Blank detail enhancements (DG-293 FR4-FR6 / AC3-AC4).
+  static const sectionStock = 'Tồn kho hiện tại';
+  static const sectionDemand = 'Nhu cầu sản xuất';
+  static const sectionLinkedProducts = 'Sản phẩm liên kết';
+  static const linkedBomProducts = 'Theo công thức (BOM)';
+  static const linkedWorkItems = 'Theo đơn hàng';
+  static const demandShortage = 'Thiếu';
+  static const linkedEmpty = 'Chưa có sản phẩm liên kết';
+  static const linkedWorkItemQuantity = 'SL';
+  static const linkedBomQuantity = 'SL công thức';
 }

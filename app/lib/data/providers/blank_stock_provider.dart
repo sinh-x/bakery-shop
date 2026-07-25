@@ -69,3 +69,11 @@ class BlankStockNotifier extends AsyncNotifier<List<BlankStockSummary>> {
 final blankStockProvider =
     AsyncNotifierProvider<BlankStockNotifier, List<BlankStockSummary>>(
         BlankStockNotifier.new);
+
+/// Derived provider: net stock summary for a single blank by id
+/// (DG-293 Phase 4 / FR4). Returns `null` when the blank has no stock row.
+final blankStockByIdProvider =
+    FutureProvider.family<BlankStockSummary?, int>((ref, id) async {
+  final list = await ref.watch(blankStockProvider.future);
+  return list.where((s) => s.blankId == id).firstOrNull;
+});

@@ -161,6 +161,14 @@ class BlankService {
         .map((json) => BlankDemand.fromJson(json as Map<String, dynamic>))
         .toList();
   }
+
+  // --- Reverse lookup (DG-293 FR3) -----------------------------------------
+
+  /// Get products/work items linked to a blank (BOM products + work items).
+  Future<BlankProducts> getBlankProducts(int blankId) async {
+    final response = await _dio.get('/api/blanks/$blankId/products');
+    return BlankProducts.fromJson(response.data as Map<String, dynamic>);
+  }
 }
 
 /// Riverpod provider for [BlankService].

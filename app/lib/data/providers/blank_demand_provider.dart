@@ -27,3 +27,11 @@ class BlankDemandNotifier extends AsyncNotifier<List<BlankDemand>> {
 final blankDemandProvider =
     AsyncNotifierProvider<BlankDemandNotifier, List<BlankDemand>>(
         BlankDemandNotifier.new);
+
+/// Derived provider: demand vs stock vs shortage for a single blank by id
+/// (DG-293 Phase 4 / FR5). Returns `null` when the blank has no demand row.
+final blankDemandByIdProvider =
+    FutureProvider.family<BlankDemand?, int>((ref, id) async {
+  final list = await ref.watch(blankDemandProvider.future);
+  return list.where((d) => d.blankId == id).firstOrNull;
+});
