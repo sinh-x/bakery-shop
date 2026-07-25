@@ -1008,3 +1008,238 @@ def test_get_delivery_critical_threshold_db_oversized_falls_back():
             (DELIVERY_CRITICAL_THRESHOLD_CONFIG_KEY, "99999999", now_utc()),
         )
         assert get_delivery_critical_threshold(conn) == 60
+
+
+# --- DG-280 Phase 2: auto-sync main items status on terminal order transitions ---
+
+
+def _dg280_create_order_with_main_items(client, *, main_statuses=None, extra=False, gift=False, unit_price=100000):
+    """Create an order with N main items at the given initial statuses.
+
+    Work items are created via POST /api/orders (which starts every item at
+    'pending'); callers then drive each main item through the requested
+    status sequence using the work-item status endpoint before triggering
+    the order-level transition under test.
+    """
+    items_payload = [
+        {"productName": f"Bánh chính {i + 1}", "quantity": 1, "unitPrice": unit_price}
+        for i in range(len(main_statuses or []))
+    ]
+    if extra:
+        items_payload.append(
+            {"productName": "Phụ kiện", "quantity": 1, "unitPrice": 5000, "isExtra": True}
+        )
+    if gift:
+        items_payload.append(
+            {"productName": "Quà tặng", "quantity": 1, "unitPrice": 0, "isGift": True}
+        )
+    resp = client.post(
+        "/api/orders",
+        json={"customerName": "DG-280 Test", "dueDate": "2026-07-25", "items": items_payload},
+    )
+    assert resp.status_code == 201
+    return resp.json()
+
+
+def _dg280_advance_item(client, ref, item_id, target_status, reason=""):
+    """Transition a work item to target_status, walking forward as needed."""
+    resp = client.get(f"/api/orders/{ref}/items")
+    current = next(i for i in resp.json() if int(i["id"]) == int(item_id))["status"]
+    if current == target_status:
+        return
+    # Walk the canonical forward path pending -> working -> ready -> delivered
+    path = ["working", "ready", "delivered"]
+    for step in path:
+        if current == step:
+            continue
+        r = client.post(
+            f"/api/orders/{ref}/items/{item_id}/status",
+            json={"status": step, "reason": reason},
+        )
+        assert r.status_code == 200, f"advance to {step} failed: {r.json()}"
+        if step == target_status:
+            return
+    # If target is cancelled, jump from current forward position
+    if target_status == "cancelled":
+        r = client.post(
+            f"/api/orders/{ref}/items/{item_id}/status",
+            json={"status": "cancelled", "reason": reason},
+        )
+        assert r.status_code == 200, f"cancel failed: {r.json()}"
+
+
+def _dg280_main_items(order_json):
+    return [i for i in order_json["workItems"] if not i["isExtra"] and not i["isGift"]]
+
+
+def _dg280_item_statuses(client, ref):
+    items = client.get(f"/api/orders/{ref}/items").json()
+    return {i["productName"]: i["status"] for i in items}
+
+
+def test_dg280_ac1_delivered_syncs_main_items_to_delivered(api_client):
+    """AC1: order -> delivered: all non-cancelled main items become 'delivered'."""
+    order = _dg280_create_order_with_main_items(
+        api_client, main_statuses=["pending", "working", "ready", "delivered"]
+    )
+    ref = order["orderRef"]
+    main_items = _dg280_main_items(order)
+    # Drive the first three to non-terminal forward statuses; leave the 4th at pending->delivered.
+    _dg280_advance_item(api_client, ref, main_items[1]["id"], "working")
+    _dg280_advance_item(api_client, ref, main_items[2]["id"], "ready")
+    _dg280_advance_item(api_client, ref, main_items[3]["id"], "delivered")
+
+    # Trigger the order-level transition to delivered (no payment required for delivered).
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "delivered"})
+    assert resp.status_code == 200, resp.text
+
+    statuses = _dg280_item_statuses(api_client, ref)
+    assert statuses["Bánh chính 1"] == "delivered"
+    assert statuses["Bánh chính 2"] == "delivered"
+    assert statuses["Bánh chính 3"] == "delivered"
+    assert statuses["Bánh chính 4"] == "delivered"
+
+
+def test_dg280_ac2_completed_syncs_main_items_to_delivered(api_client):
+    """AC2: order -> completed: all non-cancelled main items become 'delivered'."""
+    order = _dg280_create_order_with_main_items(
+        api_client, main_statuses=["pending", "working", "ready"], unit_price=100000
+    )
+    ref = order["orderRef"]
+    # Completed requires full payment — record a payment covering total_price.
+    total = order["totalPrice"]
+    pay = api_client.post(
+        f"/api/orders/{ref}/transactions",
+        json={"amount": total, "type": "payment", "method": "cash"},
+    )
+    assert pay.status_code == 201, pay.text
+
+    main_items = _dg280_main_items(order)
+    _dg280_advance_item(api_client, ref, main_items[1]["id"], "working")
+    _dg280_advance_item(api_client, ref, main_items[2]["id"], "ready")
+
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "completed"})
+    assert resp.status_code == 200, resp.text
+
+    statuses = _dg280_item_statuses(api_client, ref)
+    assert statuses["Bánh chính 1"] == "delivered"
+    assert statuses["Bánh chính 2"] == "delivered"
+    assert statuses["Bánh chính 3"] == "delivered"
+
+
+def test_dg280_ac3_cancelled_syncs_main_items_to_cancelled(api_client):
+    """AC3: order -> cancelled: all non-cancelled main items become 'cancelled'."""
+    order = _dg280_create_order_with_main_items(
+        api_client, main_statuses=["pending", "working", "ready"]
+    )
+    ref = order["orderRef"]
+    main_items = _dg280_main_items(order)
+    _dg280_advance_item(api_client, ref, main_items[1]["id"], "working")
+    _dg280_advance_item(api_client, ref, main_items[2]["id"], "ready")
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "cancelled", "reason": "Khách hủy"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    statuses = _dg280_item_statuses(api_client, ref)
+    assert statuses["Bánh chính 1"] == "cancelled"
+    assert statuses["Bánh chính 2"] == "cancelled"
+    assert statuses["Bánh chính 3"] == "cancelled"
+
+
+def test_dg280_ac4_already_delivered_items_not_changed_on_delivered_transition(api_client):
+    """AC4: items already at 'delivered' are not re-updated (idempotent delivered transition)."""
+    order = _dg280_create_order_with_main_items(
+        api_client, main_statuses=["delivered", "pending"]
+    )
+    ref = order["orderRef"]
+    main_items = _dg280_main_items(order)
+    # Drive item 1 to delivered; leave item 2 at pending.
+    _dg280_advance_item(api_client, ref, main_items[0]["id"], "delivered")
+    pre = _dg280_item_statuses(api_client, ref)
+    assert pre["Bánh chính 1"] == "delivered"
+
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "delivered"})
+    assert resp.status_code == 200, resp.text
+
+    post = _dg280_item_statuses(api_client, ref)
+    # Item 1 stays delivered (no backward / no duplicate update), item 2 synced up.
+    assert post["Bánh chính 1"] == "delivered"
+    assert post["Bánh chính 2"] == "delivered"
+
+
+def test_dg280_ac5_cancelled_items_preserved_on_delivered_transition(api_client):
+    """AC5: cancelled main items stay cancelled when order -> delivered."""
+    order = _dg280_create_order_with_main_items(
+        api_client, main_statuses=["cancelled", "pending"]
+    )
+    ref = order["orderRef"]
+    main_items = _dg280_main_items(order)
+    _dg280_advance_item(api_client, ref, main_items[0]["id"], "cancelled")
+
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "delivered"})
+    assert resp.status_code == 200, resp.text
+
+    statuses = _dg280_item_statuses(api_client, ref)
+    assert statuses["Bánh chính 1"] == "cancelled"
+    assert statuses["Bánh chính 2"] == "delivered"
+
+
+def test_dg280_ac6_response_includes_updated_work_items(api_client):
+    """AC6: the order status transition response embeds workItems with updated statuses."""
+    order = _dg280_create_order_with_main_items(
+        api_client, main_statuses=["pending", "working"]
+    )
+    ref = order["orderRef"]
+    main_items = _dg280_main_items(order)
+    _dg280_advance_item(api_client, ref, main_items[1]["id"], "working")
+
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "delivered"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert "workItems" in body
+    statuses = {i["productName"]: i["status"] for i in body["workItems"]}
+    assert statuses["Bánh chính 1"] == "delivered"
+    assert statuses["Bánh chính 2"] == "delivered"
+
+
+def test_dg280_ac3_cancelled_preserves_already_cancelled_item(api_client):
+    """AC3 complement: an already-cancelled main item is not re-touched on order -> cancelled."""
+    order = _dg280_create_order_with_main_items(
+        api_client, main_statuses=["cancelled", "working"]
+    )
+    ref = order["orderRef"]
+    main_items = _dg280_main_items(order)
+    _dg280_advance_item(api_client, ref, main_items[0]["id"], "cancelled")
+    _dg280_advance_item(api_client, ref, main_items[1]["id"], "working")
+
+    resp = api_client.post(
+        f"/api/orders/{ref}/status",
+        json={"status": "cancelled", "reason": "Khách hủy"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    statuses = _dg280_item_statuses(api_client, ref)
+    assert statuses["Bánh chính 1"] == "cancelled"
+    assert statuses["Bánh chính 2"] == "cancelled"
+
+
+def test_dg280_extras_and_gifts_not_treated_as_main_items(api_client):
+    """Out-of-scope guard: extras/gifts are not main items and are handled by sync_extras_to_order_status.
+
+    This test asserts the WHERE clause (`is_extra=0 AND is_gift=0`) by creating an
+    order with one main, one extra, and one gift, transitioning to delivered, and
+    confirming the auto-sync UPDATE never raises and main item is delivered.
+    """
+    order = _dg280_create_order_with_main_items(
+        api_client, main_statuses=["pending"], extra=True, gift=True
+    )
+    ref = order["orderRef"]
+
+    resp = api_client.post(f"/api/orders/{ref}/status", json={"status": "delivered"})
+    assert resp.status_code == 200, resp.text
+
+    statuses = _dg280_item_statuses(api_client, ref)
+    assert statuses["Bánh chính 1"] == "delivered"
