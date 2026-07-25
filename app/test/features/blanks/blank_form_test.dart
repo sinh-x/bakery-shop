@@ -111,10 +111,13 @@ void main() {
       find.widgetWithText(TextFormField, BlanksLabels.fieldName),
       'Phôi dâu',
     );
-    await tester.enterText(
-      find.widgetWithText(TextFormField, BlanksLabels.fieldCategory),
-      'kem',
-    );
+    // Category is now a server-managed dropdown. With no categoriesProvider
+    // override in this test, the form falls back to the hardcoded
+    // categoryMap fallback; open the dropdown and pick the first item.
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('${VN.emojiBanhMi} ${VN.catBanhMi}').first);
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.widgetWithText(TextFormField, BlanksLabels.fieldUnit),
       'kg',
@@ -140,7 +143,9 @@ void main() {
       ),
     );
     expect(find.text('Phôi sẵn'), findsOneWidget);
-    expect(find.text('cot'), findsOneWidget);
+    // 'cot' is not a server Category slug, so the dropdown shows the hint
+    // instead of the stored value; the original value is preserved on save.
+    expect(find.text(BlanksLabels.fieldCategoryHint), findsWidgets);
     expect(find.text('cai'), findsOneWidget);
   });
 

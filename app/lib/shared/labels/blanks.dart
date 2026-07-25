@@ -22,6 +22,9 @@ class BlanksLabels {
   // Field labels (FR1-FR6 / NFR4).
   static const fieldName = 'Tên phôi';
   static const fieldCategory = 'Danh mục';
+  // Hint shown when the category dropdown has no selection (e.g. an existing
+  // blank whose stored category does not match any server Category slug).
+  static const fieldCategoryHint = 'Chọn danh mục';
   static const fieldUnit = 'Đơn vị';
   static const fieldNote = 'Ghi chú';
   static const fieldQuantity = 'Số lượng';
