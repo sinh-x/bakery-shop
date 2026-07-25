@@ -94,4 +94,7 @@ class BlanksLabels {
 
   // Category filter (NFR4).
   static const categoryFilterAll = 'Tất cả danh mục';
+
+  // Work item blank assignment (DG-293 FR8 / AC2).
+  static const notAssigned = 'Chưa gán phôi';
 }

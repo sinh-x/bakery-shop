@@ -307,6 +307,7 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     bool? isExtra,
     bool? isGift,
     Map<String, dynamic>? attributes,
+    Object? blankId = unset,
   }) async {
     final service = ref.read(workItemServiceProvider);
     final updated = await service.updateWorkItem(
@@ -322,6 +323,7 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
       isExtra: isExtra,
       isGift: isGift,
       attributes: attributes,
+      blankId: blankId,
     );
     final current = state.value ?? [];
     state = AsyncData(

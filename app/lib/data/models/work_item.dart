@@ -26,6 +26,7 @@ sealed class WorkItem with _$WorkItem {
     String? createdAt,
     String? updatedAt,
     @Default({}) Map<String, dynamic> attributes,
+    @JsonKey(name: 'blankId') int? blankId,
   }) = _WorkItem;
 
   factory WorkItem.fromJson(Map<String, dynamic> json) =>

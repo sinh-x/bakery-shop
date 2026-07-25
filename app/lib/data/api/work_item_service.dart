@@ -5,6 +5,12 @@ import '../models/cake_queue_item.dart';
 import '../models/work_item.dart';
 import 'api_client.dart';
 
+/// Sentinel distinguishing "not provided" from "explicitly clear to null".
+/// Used by [WorkItemService.updateWorkItem] for the nullable `blankId` field
+/// so the caller can pass `blankId: null` to clear the assignment while
+/// omitting the parameter leaves the server value unchanged.
+const Object unset = Object();
+
 class WorkItemService {
   final Dio _dio;
 
@@ -62,6 +68,7 @@ class WorkItemService {
     bool? isExtra,
     bool? isGift,
     Map<String, dynamic>? attributes,
+    Object? blankId = unset,
   }) async {
     final body = <String, dynamic>{};
     if (productName != null) body['productName'] = productName;
@@ -74,6 +81,7 @@ class WorkItemService {
     if (isExtra != null) body['isExtra'] = isExtra;
     if (isGift != null) body['isGift'] = isGift;
     if (attributes != null) body['attributes'] = attributes;
+    if (!identical(blankId, unset)) body['blankId'] = blankId;
 
     final response = await _dio.patch(
       '/api/orders/$orderRef/items/$itemId',

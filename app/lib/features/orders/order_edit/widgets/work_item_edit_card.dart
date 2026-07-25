@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/api/api_client.dart';
+import '../../../../data/api/work_item_service.dart';
 import '../../../../data/models/product.dart';
 import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
@@ -11,6 +12,7 @@ import '../../../../shared/utils/api_error.dart';
 import '../../../../shared/widgets/vietnamese_labels.dart';
 import '../../utils/trung_bay_inventory_extensions.dart';
 import '../../widgets/order_photo_section.dart';
+import 'work_item_blank_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 class WorkItemEditCard extends ConsumerStatefulWidget {
@@ -137,6 +139,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
     bool? isExtra,
     bool? isGift,
     Map<String, dynamic>? attributes,
+    Object? blankId = unset,
   }) async {
     if (!mounted) return;
     try {
@@ -152,6 +155,7 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
             isExtra: isExtra,
             isGift: isGift,
             attributes: attributes,
+            blankId: blankId,
           );
     } catch (e) {
       if (mounted) {
@@ -162,6 +166,11 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
 
   void _toggleGift() {
     _editItem(isGift: !widget.item.isGift);
+  }
+
+  void _onBlankChanged(int? newBlankId) {
+    if (newBlankId == widget.item.blankId) return;
+    _editItem(blankId: newBlankId);
   }
 
   Future<void> _confirmRemove() async {
@@ -388,6 +397,10 @@ class _WorkItemEditCardState extends ConsumerState<WorkItemEditCard> {
                     const SizedBox(height: 8),
                   ],
                   ..._buildEnumChipSections(theme, product),
+                  WorkItemBlankDropdown(
+                    blankId: item.blankId,
+                    onChanged: _onBlankChanged,
+                  ),
                   TextFormField(
                     controller: _notesCtrl,
                     focusNode: _notesFocus,
