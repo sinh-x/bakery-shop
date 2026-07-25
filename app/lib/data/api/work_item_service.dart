@@ -10,6 +10,10 @@ class WorkItemService {
 
   WorkItemService(this._dio);
 
+  /// Returns the base path for blank CRUD on a work item.
+  static String _blanksBasePath(String orderRef, String itemId) =>
+      '/api/orders/$orderRef/items/$itemId/blanks';
+
   Future<List<WorkItem>> listWorkItems(String orderRef) async {
     final response = await _dio.get('/api/orders/$orderRef/items');
     final list = response.data as List;
@@ -80,6 +84,55 @@ class WorkItemService {
       data: body,
     );
     return WorkItem.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Add a blank assignment to a work item.
+  /// POST /api/orders/{ref}/items/{id}/blanks
+  Future<BlankAssignment> addBlank(
+    String orderRef,
+    String itemId, {
+    required int blankId,
+    double quantity = 1.0,
+    String notes = '',
+  }) async {
+    final response = await _dio.post(
+      _blanksBasePath(orderRef, itemId),
+      data: {
+        'blankId': blankId,
+        'quantity': quantity,
+        'notes': notes,
+      },
+    );
+    return BlankAssignment.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Update quantity/notes on an existing blank assignment.
+  /// PATCH /api/orders/{ref}/items/{id}/blanks/{blankItemId}
+  Future<BlankAssignment> updateBlank(
+    String orderRef,
+    String itemId,
+    int blankItemId, {
+    double? quantity,
+    String? notes,
+  }) async {
+    final body = <String, dynamic>{};
+    if (quantity != null) body['quantity'] = quantity;
+    if (notes != null) body['notes'] = notes;
+    final response = await _dio.patch(
+      '${_blanksBasePath(orderRef, itemId)}/$blankItemId',
+      data: body,
+    );
+    return BlankAssignment.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Remove a blank assignment from a work item.
+  /// DELETE /api/orders/{ref}/items/{id}/blanks/{blankItemId}
+  Future<void> deleteBlank(
+    String orderRef,
+    String itemId,
+    int blankItemId,
+  ) async {
+    await _dio.delete('${_blanksBasePath(orderRef, itemId)}/$blankItemId');
   }
 
   Future<void> deleteWorkItem(String orderRef, String itemId) async {

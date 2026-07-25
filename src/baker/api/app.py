@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from baker.api.accounts import router as accounts_router
 from baker.api.audit_log import router as audit_log_router
 from baker.api.auth import router as auth_router
+from baker.api.blanks import router as blanks_router
 from baker.api.cake_queue import router as cake_queue_router
 from baker.api.catalog import catalog_router as catalog_browse_router
 from baker.api.catalog import router as catalog_router
@@ -143,6 +144,7 @@ def create_app() -> FastAPI:
     app.include_router(work_items_router)
     app.include_router(payment_transactions_router)
     app.include_router(cake_queue_router)
+    app.include_router(blanks_router)
     app.include_router(product_attributes_router)
     app.include_router(product_attribute_options_router)
     app.include_router(product_price_chips_router)

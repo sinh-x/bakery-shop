@@ -339,6 +339,78 @@ class OrderWorkItemsNotifier extends AsyncNotifier<List<WorkItem>> {
     await ref.read(orderDetailProvider(orderRef).notifier).refresh();
   }
 
+  /// Adds a blank assignment to a work item (DG-294 FR3/FR4).
+  ///
+  /// Calls the backend POST endpoint and optimistically appends the returned
+  /// [BlankAssignment] to the matching [WorkItem] in the local cache.
+  Future<BlankAssignment> addBlank(
+    String itemId, {
+    required int blankId,
+    double quantity = 1.0,
+    String notes = '',
+  }) async {
+    final service = ref.read(workItemServiceProvider);
+    final assignment = await service.addBlank(
+      orderRef,
+      itemId,
+      blankId: blankId,
+      quantity: quantity,
+      notes: notes,
+    );
+    _replaceItem(itemId, (item) => item.copyWith(
+      blanks: [...item.blanks, assignment],
+    ));
+    return assignment;
+  }
+
+  /// Updates an existing blank assignment on a work item (DG-294 FR5).
+  ///
+  /// Calls the backend PATCH endpoint and replaces the matching
+  /// [BlankAssignment] in the local cache with the server-returned value.
+  Future<BlankAssignment> updateBlank(
+    String itemId,
+    int blankItemId, {
+    double? quantity,
+    String? notes,
+  }) async {
+    final service = ref.read(workItemServiceProvider);
+    final updated = await service.updateBlank(
+      orderRef,
+      itemId,
+      blankItemId,
+      quantity: quantity,
+      notes: notes,
+    );
+    _replaceItem(itemId, (item) => item.copyWith(
+      blanks: item.blanks
+          .map((b) => b.id == blankItemId ? updated : b)
+          .toList(),
+    ));
+    return updated;
+  }
+
+  /// Removes a blank assignment from a work item (DG-294 FR5).
+  ///
+  /// Calls the backend DELETE endpoint and removes the matching
+  /// [BlankAssignment] from the local cache.
+  Future<void> removeBlank(String itemId, int blankItemId) async {
+    final service = ref.read(workItemServiceProvider);
+    await service.deleteBlank(orderRef, itemId, blankItemId);
+    _replaceItem(itemId, (item) => item.copyWith(
+      blanks: item.blanks.where((b) => b.id != blankItemId).toList(),
+    ));
+  }
+
+  void _replaceItem(
+    String itemId,
+    WorkItem Function(WorkItem) update,
+  ) {
+    final current = state.value ?? [];
+    state = AsyncData(
+      current.map((i) => i.id == itemId ? update(i) : i).toList(),
+    );
+  }
+
   Future<WorkItem> transitionStatus(
     String itemId,
     String status, {

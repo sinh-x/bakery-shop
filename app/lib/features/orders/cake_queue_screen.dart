@@ -9,8 +9,11 @@ import '../../data/models/cake_queue_item.dart';
 import '../../data/providers/cake_queue_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/theme/bakery_theme.dart';
+import '../../shared/utils/cake_queue_helpers.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/order_helpers.dart';
+import 'widgets/cake_queue_group_header.dart';
+import 'widgets/date_filter_chips.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
 /// Cake queue content widget — embedded inside the Orders tab as a sub-view.
@@ -24,6 +27,12 @@ class CakeQueueContent extends ConsumerStatefulWidget {
 
 class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
   bool _includeReady = false;
+  DateFilterOption _selectedDateFilter = DateFilterOption.all;
+
+  /// Collapse state per status group. All groups start expanded by default.
+  /// Reset when the date filter or include-ready toggle changes (§11 risk
+  /// mitigation: collapse state reset on filter change).
+  final Map<String, bool> _collapsedGroups = {};
 
   Future<void> _onRefresh() async {
     await ref.read(cakeQueueProvider(_includeReady).notifier).refresh();
@@ -37,13 +46,24 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Filter bar
+        // Date filter chips (FR2)
+        DateFilterChips(
+          selected: _selectedDateFilter,
+          onChanged: (option) => setState(() {
+            _selectedDateFilter = option;
+            _collapsedGroups.clear();
+          }),
+        ),
+        // Include-ready filter (FR4 — preserve existing behavior)
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
           child: FilterChip(
             label: const Text(VN.includeReadyFilter),
             selected: _includeReady,
-            onSelected: (v) => setState(() => _includeReady = v),
+            onSelected: (v) => setState(() {
+              _includeReady = v;
+              _collapsedGroups.clear();
+            }),
           ),
         ),
 
@@ -65,7 +85,9 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
               ),
             ),
             data: (items) {
-              if (items.isEmpty) {
+              final filtered =
+                  filterCakeQueueByDate(items, _selectedDateFilter);
+              if (filtered.isEmpty) {
                 return Center(
                   child: Text(
                     VN.noCakeQueueItems,
@@ -75,23 +97,64 @@ class _CakeQueueContentState extends ConsumerState<CakeQueueContent> {
                   ),
                 );
               }
-              return RefreshIndicator(
-                onRefresh: _onRefresh,
-                child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                  itemCount: items.length,
-                  itemBuilder: (ctx, index) => _CakeQueueCard(
-                    item: items[index],
-                    onTap: () => ctx.push(
-                      '/orders/${items[index].orderRef}/items/${items[index].id}',
-                    ),
-                  ),
-                ),
-              );
+              return _buildGroupedList(filtered);
             },
           ),
         ),
       ],
+    );
+  }
+
+  /// Builds a mixed list of status group headers + cake queue cards (FR1,
+  /// FR3, FR5). Groups with no items after filtering are hidden. Each group
+  /// header shows a colored dot, the status label, a count badge, and toggles
+  /// collapse on tap. Mirrors `_buildGroupedList` in `delivery_content.dart`
+  /// but adds collapsible behavior.
+  Widget _buildGroupedList(List<CakeQueueItem> items) {
+    final grouped = groupCakeQueueByStatus(items);
+    final listItems = <Object>[];
+    for (final entry in grouped.entries) {
+      if (entry.value.isNotEmpty) {
+        listItems.add(entry.key);
+        listItems.addAll(entry.value);
+      }
+    }
+
+    return RefreshIndicator(
+      onRefresh: _onRefresh,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        itemCount: listItems.length,
+        itemBuilder: (ctx, index) {
+          final item = listItems[index];
+          if (item is String) {
+            final status = item;
+            final groupItems = grouped[status]!;
+            final isCollapsed = _collapsedGroups[status] ?? false;
+            return CakeQueueGroupHeader(
+              status: status,
+              count: groupItems.length,
+              isCollapsed: isCollapsed,
+              onTap: () => setState(() {
+                _collapsedGroups[status] = !isCollapsed;
+              }),
+            );
+          }
+          final queueItem = item as CakeQueueItem;
+          // Skip rendering the card if its group is collapsed.
+          final status = queueItem.orderStatus;
+          final isCollapsed = _collapsedGroups[status] ?? false;
+          if (isCollapsed) {
+            return const SizedBox.shrink();
+          }
+          return _CakeQueueCard(
+            item: queueItem,
+            onTap: () => ctx.push(
+              '/orders/${queueItem.orderRef}/items/${queueItem.id}',
+            ),
+          );
+        },
+      ),
     );
   }
 }

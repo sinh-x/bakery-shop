@@ -317,7 +317,11 @@ def _order_detail(conn, row, threshold_minutes: Optional[int] = None) -> dict:
         "SELECT * FROM order_items WHERE order_id = ? ORDER BY position, id",
         (row["id"],),
     ).fetchall()
-    result["workItems"] = [WorkItem.from_row(r).to_api_dict() for r in item_rows]
+    items = [WorkItem.from_row(r) for r in item_rows]
+    # Attach blanks lists via the order_item_blanks junction (DG-294)
+    from baker.api.work_items import _attach_blanks
+    _attach_blanks(conn, items)
+    result["workItems"] = [it.to_api_dict() for it in items]
 
     txn_rows = conn.execute(
         "SELECT * FROM payment_transactions WHERE order_id = ? ORDER BY id",
@@ -1112,6 +1116,32 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
         if body.status == "confirmed":
             conn.execute(
                 "UPDATE order_items SET status = 'confirmed' WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 AND status = 'pending'",
+                (row["id"],),
+            )
+
+        # Auto-sync main items (non-extra, non-gift) on terminal order transitions (DG-280 Phase 1).
+        # Skip cancelled items so they remain cancelled (AC5) and skip items already at the target
+        # status to avoid redundant updates (AC4). WorkItemStatus has no 'completed' value, so a
+        # completed order maps main items to 'delivered' (FR2).
+        if body.status == "delivered":
+            conn.execute(
+                "UPDATE order_items SET status = 'delivered' "
+                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
+                "AND status != 'cancelled' AND status != 'delivered'",
+                (row["id"],),
+            )
+        elif body.status == "completed":
+            conn.execute(
+                "UPDATE order_items SET status = 'delivered' "
+                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
+                "AND status != 'cancelled' AND status != 'delivered'",
+                (row["id"],),
+            )
+        elif body.status == "cancelled":
+            conn.execute(
+                "UPDATE order_items SET status = 'cancelled' "
+                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
+                "AND status != 'cancelled'",
                 (row["id"],),
             )
 

@@ -4218,6 +4218,142 @@ def _migrate_v80_drop_amount_paid_from_orders(conn):
     _guard_drop_column(conn, "orders", "amount_paid")
 
 
+def _migrate_v82_add_blank_id_to_order_items(conn):
+    """Add nullable ``blank_id`` FK column to ``order_items`` (DG-293 Phase 1).
+
+    The column links a work item (order_items row) to a single blank
+    (semi-finished good). Nullable: NULL/empty means no blank assigned
+    (FR1). Idempotent via PRAGMA-guarded ALTER TABLE (order_items is in
+    ALLOWED_TABLES). An index supports the reverse-lookup
+    ``GET /api/blanks/{id}/products`` query.
+    """
+    _guard_add_column(
+        conn,
+        "order_items",
+        "blank_id",
+        "blank_id INTEGER REFERENCES blanks(id)",
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_order_items_blank ON order_items(blank_id)"
+    )
+
+
+BLANKS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS blanks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    category    TEXT NOT NULL DEFAULT '',
+    unit        TEXT NOT NULL DEFAULT '',
+    notes       TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_blanks_category ON blanks(category);
+
+CREATE TABLE IF NOT EXISTS product_blank_bom (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id      INTEGER,
+    price_chip_id   INTEGER,
+    blank_id        INTEGER NOT NULL REFERENCES blanks(id) ON DELETE CASCADE,
+    quantity        REAL NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_blank_bom_blank ON product_blank_bom(blank_id);
+CREATE INDEX IF NOT EXISTS idx_product_blank_bom_product ON product_blank_bom(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_blank_bom_price_chip ON product_blank_bom(price_chip_id);
+
+CREATE TABLE IF NOT EXISTS blank_stock (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    blank_id        INTEGER NOT NULL REFERENCES blanks(id) ON DELETE CASCADE,
+    quantity        REAL NOT NULL DEFAULT 0,
+    produced_date   TEXT NOT NULL,
+    expiry_date     TEXT,
+    type            TEXT NOT NULL DEFAULT 'production',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_blank_stock_blank ON blank_stock(blank_id);
+
+CREATE TABLE IF NOT EXISTS blank_stock_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    blank_id        INTEGER NOT NULL REFERENCES blanks(id) ON DELETE CASCADE,
+    quantity_change REAL NOT NULL,
+    type            TEXT NOT NULL,
+    produced_date   TEXT,
+    expiry_date     TEXT,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_blank_stock_log_blank ON blank_stock_log(blank_id);
+"""
+
+
+ORDER_ITEM_BLANKS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS order_item_blanks (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_item_id   INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+    blank_id        INTEGER NOT NULL REFERENCES blanks(id) ON DELETE CASCADE,
+    quantity        REAL NOT NULL DEFAULT 1,
+    notes           TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_item_blanks_item ON order_item_blanks(order_item_id);
+CREATE INDEX IF NOT EXISTS idx_order_item_blanks_blank ON order_item_blanks(blank_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_order_item_blanks_item_blank_unique
+    ON order_item_blanks(order_item_id, blank_id);
+"""
+
+
+def _migrate_v83_order_item_blanks(conn):
+    """Replace the single ``order_items.blank_id`` FK with the
+    ``order_item_blanks`` junction table (DG-294 Phase 1).
+
+    Steps (idempotent, NFR3):
+
+    1. Create the ``order_item_blanks`` table (``CREATE TABLE IF NOT EXISTS``).
+    2. Migrate existing ``order_items.blank_id`` values into the new table,
+       one row per work item with a non-null ``blank_id``. Re-runs are
+       no-ops because of the unique index on ``(order_item_id, blank_id)``
+       and the ``INSERT OR IGNORE`` qualifier.
+    3. Drop the now-redundant ``blank_id`` column from ``order_items`` via
+       the PRAGMA-guarded ``_guard_drop_column`` helper (``order_items`` is
+       in ``ALLOWED_TABLES`` and the host SQLite is >= 3.35.0). The
+       ``idx_order_items_blank`` index created by v82 is dropped first
+       because SQLite refuses to drop a column that an index references.
+
+    The junction table supports multiple blanks per work item (FR7) with
+    per-assignment ``quantity`` and ``notes`` (FR8/FR9). The unique index
+    prevents duplicate (order_item, blank) pairs and makes the data
+    migration idempotent (FR11).
+    """
+    conn.executescript(ORDER_ITEM_BLANKS_SCHEMA)
+
+    # Migrate existing single blank_id values into the junction table.
+    # Only run while the legacy column still exists; on already-migrated DBs
+    # the column is gone and this block is skipped (idempotent, NFR3).
+    existing = [r[1] for r in conn.execute("PRAGMA table_info(order_items)").fetchall()]
+    if "blank_id" in existing:
+        rows = conn.execute(
+            "SELECT id, blank_id FROM order_items WHERE blank_id IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            order_item_id = int(row["id"])
+            blank_id = int(row["blank_id"])
+            conn.execute(
+                """INSERT OR IGNORE INTO order_item_blanks
+                   (order_item_id, blank_id, quantity, notes, created_at)
+                   VALUES (?, ?, 1, '', strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')""",
+                (order_item_id, blank_id),
+            )
+        # Drop the v82 index before dropping the column it references.
+        conn.execute("DROP INDEX IF EXISTS idx_order_items_blank")
+
+    _guard_drop_column(conn, "order_items", "blank_id")
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -4603,6 +4739,20 @@ MIGRATIONS = {
         "description": "Drop redundant amount_paid column from orders table — live-computed from payment_transactions (DG-274)",
         "sql": "",
         "callable": _migrate_v80_drop_amount_paid_from_orders,
+    },
+    81: {
+        "description": "Blanks foundation: blanks, product_blank_bom, blank_stock, blank_stock_log tables (DG-290 Phase 4.1)",
+        "sql": BLANKS_SCHEMA,
+    },
+    82: {
+        "description": "Add blank_id nullable FK column to order_items + index (DG-293 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v82_add_blank_id_to_order_items,
+    },
+    83: {
+        "description": "Replace order_items.blank_id with order_item_blanks junction table (DG-294 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v83_order_item_blanks,
     },
 }
 

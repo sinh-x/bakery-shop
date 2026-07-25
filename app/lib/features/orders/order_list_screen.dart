@@ -18,6 +18,7 @@ import '../../providers/order/critical_alert_provider.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'cake_queue_screen.dart';
 import 'filtered_orders_screen.dart' show countCriticalActive, countUrgentActive, countIncompleteActive;
+import 'package:bakery_app/shared/labels/blanks.dart';
 import 'widgets/date_filter_chips.dart';
 import 'widgets/delivery_content.dart';
 import 'widgets/order_card.dart';
@@ -98,6 +99,15 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
         return;
       case 'manage_customers':
         context.push('/customers');
+        return;
+      case 'manage_blanks':
+        context.push('/blanks');
+        return;
+      case 'blank_stock':
+        context.push('/blanks/stock');
+        return;
+      case 'blank_demand':
+        context.push('/blanks/demand');
         return;
       case 'settings':
         context.push('/settings');
@@ -359,6 +369,18 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
               PopupMenuItem<String>(
                 value: 'manage_customers',
                 child: Text(VN.openCustomerManagement),
+              ),
+              PopupMenuItem<String>(
+                value: 'manage_blanks',
+                child: Text(BlanksLabels.screenManage),
+              ),
+              PopupMenuItem<String>(
+                value: 'blank_stock',
+                child: Text(BlanksLabels.screenStock),
+              ),
+              PopupMenuItem<String>(
+                value: 'blank_demand',
+                child: Text(BlanksLabels.screenDemand),
               ),
             ],
           ),

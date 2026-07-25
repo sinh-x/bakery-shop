@@ -1808,7 +1808,11 @@ def _order_detail(conn, row) -> dict:
         "SELECT * FROM order_items WHERE order_id = ? ORDER BY position, id",
         (row["id"],),
     ).fetchall()
-    result["workItems"] = [WorkItem.from_row(r).to_api_dict() for r in item_rows]
+    items = [WorkItem.from_row(r) for r in item_rows]
+    # Attach blanks lists via the order_item_blanks junction (DG-294)
+    from baker.api.work_items import _attach_blanks
+    _attach_blanks(conn, items)
+    result["workItems"] = [it.to_api_dict() for it in items]
     result["id"] = row["id"]  # keep as int for PaymentTransaction lookup
 
     return result

@@ -13,6 +13,12 @@ import '../../data/providers/knowledge_provider.dart';
 import '../../features/audit_log/audit_log_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/auth_provider.dart';
+import '../../features/blanks/blank_audit_log_screen.dart';
+import '../../features/blanks/blank_demand_screen.dart';
+import '../../features/blanks/blank_detail_screen.dart';
+import '../../features/blanks/blank_list_screen.dart';
+import '../../features/blanks/blank_stock_screen.dart';
+import '../../features/blanks/bom_mapping_screen.dart';
 import '../../features/categories/category_management_screen.dart';
 import '../../features/checklist/checklist_config_screen.dart';
 import '../../features/checklist/checklist_history_screen.dart';
@@ -486,6 +492,48 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       builder: (context, state) {
         final id = int.parse(state.pathParameters['id']!);
         return _KnowledgeEditLoader(entryId: id);
+      },
+    ),
+    // Blanks management — full-screen (outside shell). Static routes are
+    // registered BEFORE `/blanks/:blankId` so the int path parameter does
+    // not shadow them (DG-291 Phase 4.10 — FR1-FR6/NFR4).
+    GoRoute(
+      path: '/blanks',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const BlankListScreen(),
+    ),
+    GoRoute(
+      path: '/blanks/stock',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const BlankStockScreen(),
+    ),
+    GoRoute(
+      path: '/blanks/demand',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const BlankDemandScreen(),
+    ),
+    GoRoute(
+      path: '/blanks/bom/:priceChipId',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final priceChipId = int.parse(state.pathParameters['priceChipId']!);
+        return BomMappingScreen(priceChipId: priceChipId);
+      },
+    ),
+    GoRoute(
+      path: '/blanks/:blankId',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final blankId = int.parse(state.pathParameters['blankId']!);
+        return BlankDetailScreen(blankId: blankId);
+      },
+    ),
+    GoRoute(
+      path: '/blanks/:blankId/audit-log',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final blankId = int.parse(state.pathParameters['blankId']!);
+        return BlankAuditLogScreen(blankId: blankId);
       },
     ),
     ],
