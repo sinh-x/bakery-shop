@@ -298,11 +298,14 @@ def list_demand():
     """Demand from pending orders compared to stock, per blank.
 
     For each blank, aggregates ``BOM.quantity × order_items.quantity``
-    across pending orders (status not in delivered/cancelled). When an
-    order_item has a ``price_chip_id`` the BOM is matched by
-    ``price_chip_id``; otherwise the BOM is matched by ``product_id``
-    (FR2 fallback). ``shortage = max(0, demand - stock)`` (FR6).
+    across pending orders (status not in delivered/cancelled) plus direct
+    blank assignments from ``order_item_blanks``. When an order_item has
+    a ``price_chip_id`` the BOM is matched by ``price_chip_id``; otherwise
+    the BOM is matched by ``product_id`` (FR2 fallback).
+    ``shortage = max(0, demand - stock)`` (FR6).
     """
+    excluded_statuses = list(_EXCLUDED_ORDER_STATUSES)
+    status_placeholders = ",".join("?" * len(excluded_statuses))
     with get_db() as conn:
         rows = conn.execute(
             f"""
@@ -313,27 +316,39 @@ def list_demand():
                    COALESCE(d.demand, 0) AS demand
             FROM blanks b
             LEFT JOIN (
-                SELECT pb.blank_id AS blank_id,
-                       SUM(pb.quantity * oi.quantity) AS demand
-                FROM product_blank_bom pb
-                JOIN order_items oi
-                   ON (
-                       (oi.price_chip_id IS NOT NULL
-                        AND oi.price_chip_id = pb.price_chip_id)
-                       OR
-                       (oi.price_chip_id IS NULL
-                        AND oi.product_id IS NOT NULL
-                        AND oi.product_id != ''
-                        AND pb.product_id IS NOT NULL
-                        AND CAST(oi.product_id AS INTEGER) = pb.product_id)
-                   )
-                JOIN orders o ON o.id = oi.order_id
-                WHERE o.status NOT IN ({",".join("?" * len(_EXCLUDED_ORDER_STATUSES))})
-                GROUP BY pb.blank_id
+                SELECT blank_id, SUM(demand) AS demand
+                FROM (
+                    SELECT pb.blank_id,
+                           SUM(pb.quantity * oi.quantity) AS demand
+                    FROM product_blank_bom pb
+                    JOIN order_items oi
+                       ON (
+                           (oi.price_chip_id IS NOT NULL
+                            AND oi.price_chip_id = pb.price_chip_id)
+                           OR
+                           (oi.price_chip_id IS NULL
+                            AND oi.product_id IS NOT NULL
+                            AND oi.product_id != ''
+                            AND pb.product_id IS NOT NULL
+                            AND CAST(oi.product_id AS INTEGER) = pb.product_id)
+                       )
+                    JOIN orders o ON o.id = oi.order_id
+                    WHERE o.status NOT IN ({status_placeholders})
+                    GROUP BY pb.blank_id
+                    UNION ALL
+                    SELECT oib.blank_id,
+                           SUM(oib.quantity) AS demand
+                    FROM order_item_blanks oib
+                    JOIN order_items oi ON oi.id = oib.order_item_id
+                    JOIN orders o ON o.id = oi.order_id
+                    WHERE o.status NOT IN ({status_placeholders})
+                    GROUP BY oib.blank_id
+                )
+                GROUP BY blank_id
             ) d ON d.blank_id = b.id
             ORDER BY b.id
             """,
-            list(_EXCLUDED_ORDER_STATUSES),
+            excluded_statuses + excluded_statuses,
         ).fetchall()
 
         # Stock lookup in a single pass to avoid N+1 queries (NFR2).
