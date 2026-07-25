@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:bakery_app/data/models/blank.dart';
 import 'package:bakery_app/data/models/work_item.dart';
 import 'package:bakery_app/data/providers/blanks_provider.dart';
-import 'package:bakery_app/features/orders/widgets/add_blank_modal.dart';
 import 'package:bakery_app/features/orders/widgets/cake_detail_blank_section.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
 

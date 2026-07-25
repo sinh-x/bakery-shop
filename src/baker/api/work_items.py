@@ -401,11 +401,15 @@ def add_blank_assignment(ref: str, item_id: int, body: BlankAssignmentCreate):
         _ensure_blank_exists(conn, body.blankId)
         if body.quantity < 0:
             raise HTTPException(status_code=400, detail="Số lượng không được âm")
-        # Enforce uniqueness of (order_item_id, blank_id) via INSERT OR IGNORE
+        # Upsert on (order_item_id, blank_id) — update quantity/notes on duplicate
+        # to avoid silently returning 201 with stale data (DG-294 CQ-1).
         conn.execute(
-            """INSERT OR IGNORE INTO order_item_blanks
+            """INSERT INTO order_item_blanks
                (order_item_id, blank_id, quantity, notes, created_at)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(order_item_id, blank_id) DO UPDATE SET
+                   quantity = excluded.quantity,
+                   notes = excluded.notes""",
             (item_id, body.blankId, body.quantity, body.notes, now_utc()),
         )
         row = conn.execute(

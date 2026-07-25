@@ -127,8 +127,12 @@ def test_add_blank_assignment_negative_quantity_rejected(api_client):
     assert resp.status_code == 400
 
 
-def test_add_blank_assignment_duplicate_pair_ignored(api_client):
-    """Adding the same (order_item, blank) pair twice is idempotent (unique index)."""
+def test_add_blank_assignment_duplicate_pair_upserts(api_client):
+    """Re-adding the same (order_item, blank) pair upserts quantity/notes (DG-294 CQ-1).
+
+    Previously INSERT OR IGNORE silently kept stale data. Now ON CONFLICT DO
+    UPDATE refreshes quantity/notes while preserving the row id.
+    """
     blank = _create_blank(api_client)
     order = _create_order(api_client)
     ref = order["orderRef"]
@@ -137,20 +141,30 @@ def test_add_blank_assignment_duplicate_pair_ignored(api_client):
 
     r1 = api_client.post(
         f"/api/orders/{ref}/items/{item_id}/blanks",
-        json={"blankId": blank["id"], "quantity": 2},
+        json={"blankId": blank["id"], "quantity": 2, "notes": "Ban đầu"},
     )
     assert r1.status_code == 201
     first_id = r1.json()["id"]
+    assert r1.json()["quantity"] == 2
+    assert r1.json()["notes"] == "Ban đầu"
 
-    # Second insert for the same pair is ignored (INSERT OR IGNORE + unique index)
+    # Second insert for the same pair upserts: id preserved, quantity/notes refreshed
     r2 = api_client.post(
         f"/api/orders/{ref}/items/{item_id}/blanks",
-        json={"blankId": blank["id"], "quantity": 5},
+        json={"blankId": blank["id"], "quantity": 5, "notes": "Cập nhật"},
     )
     assert r2.status_code == 201
-    # Returns the existing row (id unchanged, quantity unchanged)
     assert r2.json()["id"] == first_id
-    assert r2.json()["quantity"] == 2
+    assert r2.json()["quantity"] == 5
+    assert r2.json()["notes"] == "Cập nhật"
+
+    # GET list reflects the upserted values (no stale data)
+    listed = api_client.get(f"/api/orders/{ref}/items").json()
+    blanks = listed[0]["blanks"]
+    assert len(blanks) == 1
+    assert blanks[0]["id"] == first_id
+    assert blanks[0]["quantity"] == 5
+    assert blanks[0]["notes"] == "Cập nhật"
 
 
 def test_add_multiple_blanks_to_same_work_item(api_client):

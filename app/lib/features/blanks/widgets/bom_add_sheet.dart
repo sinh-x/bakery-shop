@@ -101,7 +101,7 @@ class _BomAddSheetState extends ConsumerState<_BomAddSheet> {
                   ),
                   const SizedBox(height: 20),
                   DropdownButtonFormField<int>(
-                    value: _selectedBlankId,
+                    initialValue: _selectedBlankId,
                     decoration: const InputDecoration(
                       labelText: BlanksLabels.fieldBlank,
                       border: OutlineInputBorder(),
