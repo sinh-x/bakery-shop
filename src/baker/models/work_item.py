@@ -30,6 +30,7 @@ class WorkItem:
     is_gift: bool = False
     attributes: dict = field(default_factory=dict)
     price_chip_id: Optional[int] = None
+    blank_id: Optional[int] = None
     id: Optional[int] = None
     created_at: Optional[str] = None
 
@@ -38,8 +39,8 @@ class WorkItem:
         attrs_json = json.dumps(self.attributes)
         cursor = conn.execute(
             """INSERT INTO order_items
-               (order_id, product_id, product_name, quantity, unit_price, notes, position, status, is_birthday, age, is_extra, is_gift, attributes, price_chip_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (order_id, product_id, product_name, quantity, unit_price, notes, position, status, is_birthday, age, is_extra, is_gift, attributes, price_chip_id, blank_id, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 self.order_id,
                 self.product_id,
@@ -55,6 +56,7 @@ class WorkItem:
                 1 if self.is_gift else 0,
                 attrs_json,
                 self.price_chip_id,
+                self.blank_id,
                 now_utc(),
             ),
         )
@@ -97,6 +99,7 @@ class WorkItem:
             is_gift=bool(row["is_gift"]) if "is_gift" in keys else False,
             attributes=attrs,
             price_chip_id=row["price_chip_id"] if "price_chip_id" in keys else None,
+            blank_id=row["blank_id"] if "blank_id" in keys else None,
             created_at=row["created_at"],
         )
 
@@ -117,5 +120,6 @@ class WorkItem:
             "isGift": self.is_gift,
             "attributes": self.attributes,
             "priceChipId": self.price_chip_id,
+            "blankId": self.blank_id,
             "createdAt": self.created_at,
         }

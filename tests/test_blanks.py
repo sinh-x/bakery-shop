@@ -536,3 +536,98 @@ def test_stock_log_response_uses_camelcase_keys(api_client):
     entry = api_client.get(f"/api/blanks/{blank['id']}/stock-log").json()[0]
     expected_keys = {"id", "blankId", "quantityChange", "type", "producedDate", "expiryDate", "createdAt"}
     assert set(entry.keys()) == expected_keys
+
+
+# --- API: Reverse lookup — GET /api/blanks/{id}/products (DG-293 FR3) --------
+
+
+def test_blank_products_empty_when_no_links(api_client):
+    blank = _create_blank(api_client)
+    resp = api_client.get(f"/api/blanks/{blank['id']}/products")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["blankId"] == blank["id"]
+    assert body["bomProducts"] == []
+    assert body["workItems"] == []
+
+
+def test_blank_products_returns_bom_linked_products(api_client):
+    product = _create_product(api_client)
+    chip = _create_price_chip(api_client, product["id"])
+    blank = _create_blank(api_client)
+    api_client.post(
+        f"/api/price-chips/{chip['id']}/blanks", json={"blankId": blank["id"], "quantity": 2}
+    )
+    resp = api_client.get(f"/api/blanks/{blank['id']}/products")
+    assert resp.status_code == 200
+    bom_products = resp.json()["bomProducts"]
+    assert len(bom_products) == 1
+    entry = bom_products[0]
+    assert entry["productId"] == product["id"]
+    assert entry["priceChipId"] == chip["id"]
+    assert entry["quantity"] == 2
+    assert entry["productName"] == product["name"]
+
+
+def test_blank_products_returns_work_items_linked_via_blank_id(api_client):
+    blank = _create_blank(api_client)
+    order = _create_order(api_client, [
+        {"productName": "Bánh kem 16cm", "unitPrice": 200000, "quantity": 1},
+    ])
+    item_id = order["workItems"][0]["id"]
+    # Link the work item to the blank via PATCH with blankId
+    resp = api_client.patch(
+        f"/api/orders/{order['orderRef']}/items/{item_id}",
+        json={"blankId": blank["id"]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["blankId"] == blank["id"]
+
+    # Reverse lookup should now include the work item
+    lookup = api_client.get(f"/api/blanks/{blank['id']}/products").json()
+    assert len(lookup["workItems"]) == 1
+    wi = lookup["workItems"][0]
+    assert wi["id"] == item_id
+    assert wi["blankId"] == blank["id"]
+
+
+def test_blank_products_includes_both_bom_and_work_items(api_client):
+    product = _create_product(api_client)
+    chip = _create_price_chip(api_client, product["id"])
+    blank = _create_blank(api_client)
+    # BOM link
+    api_client.post(
+        f"/api/price-chips/{chip['id']}/blanks", json={"blankId": blank["id"], "quantity": 1}
+    )
+    # Work-item link
+    order = _create_order(api_client, [
+        {"productName": "Bánh kem 16cm", "unitPrice": 200000, "quantity": 1},
+    ])
+    item_id = order["workItems"][0]["id"]
+    api_client.patch(
+        f"/api/orders/{order['orderRef']}/items/{item_id}",
+        json={"blankId": blank["id"]},
+    )
+    body = api_client.get(f"/api/blanks/{blank['id']}/products").json()
+    assert len(body["bomProducts"]) == 1
+    assert len(body["workItems"]) == 1
+
+
+def test_blank_products_not_found(api_client):
+    resp = api_client.get("/api/blanks/9999/products")
+    assert resp.status_code == 404
+
+
+def test_blank_products_response_uses_camelcase_keys(api_client):
+    product = _create_product(api_client)
+    chip = _create_price_chip(api_client, product["id"])
+    blank = _create_blank(api_client)
+    api_client.post(
+        f"/api/price-chips/{chip['id']}/blanks", json={"blankId": blank["id"], "quantity": 1}
+    )
+    body = api_client.get(f"/api/blanks/{blank['id']}/products").json()
+    assert set(body.keys()) == {"blankId", "bomProducts", "workItems"}
+    bom_entry = body["bomProducts"][0]
+    assert set(bom_entry.keys()) == {
+        "bomId", "productId", "productName", "productCategory", "priceChipId", "quantity"
+    }

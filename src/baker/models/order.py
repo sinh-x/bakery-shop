@@ -246,6 +246,7 @@ class OrderItem:
     is_gift: bool = False
     price_chip_id: Optional[int] = None
     attributes: dict = field(default_factory=dict)
+    blank_id: Optional[int] = None
 
     def to_dict(self):
         return {
@@ -260,6 +261,7 @@ class OrderItem:
             "is_gift": self.is_gift,
             "price_chip_id": self.price_chip_id,
             "attributes": self.attributes,
+            "blank_id": self.blank_id,
         }
 
     def to_api_dict(self) -> dict:
@@ -275,6 +277,7 @@ class OrderItem:
             "isGift": self.is_gift,
             "priceChipId": self.price_chip_id,
             "attributes": self.attributes,
+            "blankId": self.blank_id,
         }
 
     @staticmethod

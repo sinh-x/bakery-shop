@@ -4218,6 +4218,26 @@ def _migrate_v80_drop_amount_paid_from_orders(conn):
     _guard_drop_column(conn, "orders", "amount_paid")
 
 
+def _migrate_v82_add_blank_id_to_order_items(conn):
+    """Add nullable ``blank_id`` FK column to ``order_items`` (DG-293 Phase 1).
+
+    The column links a work item (order_items row) to a single blank
+    (semi-finished good). Nullable: NULL/empty means no blank assigned
+    (FR1). Idempotent via PRAGMA-guarded ALTER TABLE (order_items is in
+    ALLOWED_TABLES). An index supports the reverse-lookup
+    ``GET /api/blanks/{id}/products`` query.
+    """
+    _guard_add_column(
+        conn,
+        "order_items",
+        "blank_id",
+        "blank_id INTEGER REFERENCES blanks(id)",
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_order_items_blank ON order_items(blank_id)"
+    )
+
+
 BLANKS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS blanks (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4659,6 +4679,11 @@ MIGRATIONS = {
     81: {
         "description": "Blanks foundation: blanks, product_blank_bom, blank_stock, blank_stock_log tables (DG-290 Phase 4.1)",
         "sql": BLANKS_SCHEMA,
+    },
+    82: {
+        "description": "Add blank_id nullable FK column to order_items + index (DG-293 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v82_add_blank_id_to_order_items,
     },
 }
 

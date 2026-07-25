@@ -13,6 +13,7 @@ Routes:
 * ``POST   /api/blanks/stock``                 — record production/usage (FR4, FR5)
 * ``GET    /api/blanks/demand``                — demand vs stock per blank (FR3, FR6)
 * ``GET    /api/blanks/{blank_id}/stock-log``   — audit log per blank (FR5)
+* ``GET    /api/blanks/{blank_id}/products``    — reverse lookup: products/work items linked to a blank (DG-293 FR3)
 
 Demand calc: JOIN orders → order_items → product_blank_bom → blanks
 aggregating BOM.quantity × order_items.quantity grouped by blank_id.
@@ -384,3 +385,67 @@ def list_stock_log(blank_id: int = Path(ge=0)):
             (blank_id,),
         ).fetchall()
         return [BlankStockLog.from_row(r).to_api_dict() for r in rows]
+
+
+# --- Reverse lookup: products/work items linked to a blank (DG-293 Phase 1) ---
+
+
+@router.get("/blanks/{blank_id}/products")
+def list_blank_products(blank_id: int = Path(ge=0)):
+    """Reverse lookup: products/work items linked to a blank (FR3).
+
+    Returns two arrays:
+
+    * ``bomProducts`` — products linked via ``product_blank_bom`` (BOM
+      mapping). Each entry includes the product id, name, category, and the
+      BOM quantity and price_chip id (when the BOM is keyed on a price chip).
+    * ``workItems`` — order work items (``order_items`` rows) linked directly
+      to this blank via the ``blank_id`` FK column. Each entry uses the
+      ``WorkItem.to_api_dict()`` camelCase shape so the response is consistent
+      with ``GET /api/orders/{ref}/items``.
+
+    Both arrays are empty when no links exist. The blank must exist (404
+    otherwise). Order is deterministic (BOM by id, work items by id).
+    """
+    from baker.models.work_item import WorkItem
+
+    with get_db() as conn:
+        _ensure_blank_exists(conn, blank_id)
+
+        # BOM-linked products: join product_blank_bom → products to surface
+        # the product name/category alongside the BOM row.
+        bom_rows = conn.execute(
+            """SELECT pb.id AS bom_id, pb.product_id, pb.price_chip_id,
+                      pb.quantity, p.name AS product_name, p.category AS product_category
+               FROM product_blank_bom pb
+               LEFT JOIN products p ON p.id = pb.product_id
+               WHERE pb.blank_id = ?
+               ORDER BY pb.id""",
+            (blank_id,),
+        ).fetchall()
+        bom_products = [
+            {
+                "bomId": r["bom_id"],
+                "productId": r["product_id"],
+                "productName": r["product_name"] if r["product_name"] is not None else "",
+                "productCategory": r["product_category"] if r["product_category"] is not None else "",
+                "priceChipId": r["price_chip_id"],
+                "quantity": r["quantity"],
+            }
+            for r in bom_rows
+        ]
+
+        # Work-item-linked products: order_items rows with blank_id = this blank.
+        wi_rows = conn.execute(
+            """SELECT * FROM order_items
+               WHERE blank_id = ?
+               ORDER BY id""",
+            (blank_id,),
+        ).fetchall()
+        work_items = [WorkItem.from_row(r).to_api_dict() for r in wi_rows]
+
+        return {
+            "blankId": blank_id,
+            "bomProducts": bom_products,
+            "workItems": work_items,
+        }

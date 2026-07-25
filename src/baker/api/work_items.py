@@ -78,6 +78,7 @@ class WorkItemUpdate(BaseModel):
     isExtra: Optional[bool] = None
     isGift: Optional[bool] = None
     attributes: Optional[dict] = None
+    blankId: Optional[int] = None
 
 
 class WorkItemStatusTransition(BaseModel):
@@ -88,7 +89,7 @@ class WorkItemStatusTransition(BaseModel):
 def _sync_order_items_json(conn, order_id: int) -> None:
     """Regenerate orders.items JSON from order_items table and recalculate total_price."""
     rows = conn.execute(
-        "SELECT product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes FROM order_items WHERE order_id = ?",
+        "SELECT product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes, blank_id FROM order_items WHERE order_id = ?",
         (order_id,),
     ).fetchall()
     items_json = json.dumps([
@@ -101,6 +102,7 @@ def _sync_order_items_json(conn, order_id: int) -> None:
             "is_extra": bool(r["is_extra"]),
             "is_gift": bool(r["is_gift"]),
             "attributes": json.loads(r["attributes"]) if r["attributes"] and r["attributes"] != '{}' else {},
+            "blank_id": r["blank_id"],
         }
         for r in rows
     ])
@@ -258,6 +260,7 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
             "isExtra": "is_extra",
             "isGift": "is_gift",
             "attributes": "attributes",
+            "blankId": "blank_id",
         }
         updates = []
         params: list = []
