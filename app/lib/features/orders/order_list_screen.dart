@@ -103,6 +103,12 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
       case 'manage_blanks':
         context.push('/blanks');
         return;
+      case 'blank_stock':
+        context.push('/blanks/stock');
+        return;
+      case 'blank_demand':
+        context.push('/blanks/demand');
+        return;
       case 'settings':
         context.push('/settings');
         return;
@@ -367,6 +373,14 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
               PopupMenuItem<String>(
                 value: 'manage_blanks',
                 child: Text(BlanksLabels.screenManage),
+              ),
+              PopupMenuItem<String>(
+                value: 'blank_stock',
+                child: Text(BlanksLabels.screenStock),
+              ),
+              PopupMenuItem<String>(
+                value: 'blank_demand',
+                child: Text(BlanksLabels.screenDemand),
               ),
             ],
           ),
