@@ -98,6 +98,23 @@ class BlanksLabels {
   // Work item blank assignment (DG-293 FR8 / AC2).
   static const notAssigned = 'Chưa gán phôi';
 
+  // Cake detail blank section (DG-294 FR2-FR6 / NFR4).
+  static const sectionBlanks = 'Phôi bánh';
+  static const actionAddCakeBlank = 'Thêm phôi bánh';
+  static const addBlankTitle = 'Thêm phôi bánh';
+  static const editBlankTitle = 'Sửa phôi bánh';
+  static const fieldBlankSelect = 'Chọn phôi';
+  static const fieldBlankQuantity = 'Số lượng';
+  static const fieldBlankNotes = 'Ghi chú phôi';
+  static const fieldBlankNotesHint = 'Ghi chú cho phôi này (tùy chọn)';
+  static const messageBlankRequired = 'Vui lòng chọn phôi';
+  static const messageBlankQuantityInvalid = 'Số lượng không hợp lệ';
+  static const messageBlankDeleteConfirm = 'Xóa phôi này khỏi sản phẩm?';
+  static const messageBlankAdded = 'Đã thêm phôi';
+  static const messageBlankUpdated = 'Đã cập nhật phôi';
+  static const messageBlankDeleted = 'Đã xóa phôi';
+  static const emptyBlanksAssigned = 'Chưa có phôi nào được gán';
+
   // Blank detail enhancements (DG-293 FR4-FR6 / AC3-AC4).
   static const sectionStock = 'Tồn kho hiện tại';
   static const sectionDemand = 'Nhu cầu sản xuất';
