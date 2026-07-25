@@ -98,8 +98,8 @@ void main() {
       );
 
       expect(find.text(BlanksLabels.sectionBlanks), findsOneWidget);
-      // No add button in read mode.
-      expect(find.text(BlanksLabels.actionAddCakeBlank), findsNothing);
+      // Add button is visible in read mode too (DG-294 Phase 5.6-c2 / Mn-6).
+      expect(find.text(BlanksLabels.actionAddCakeBlank), findsOneWidget);
       // Line items with names.
       expect(find.text('Phôi cốt'), findsOneWidget);
       expect(find.text('Phôi kem'), findsOneWidget);

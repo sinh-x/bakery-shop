@@ -35,12 +35,13 @@ class BlanksNotifier extends AsyncNotifier<List<Blank>> {
   }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await _service().createBlank(
+      final created = await _service().createBlank(
         name: name,
         category: category,
         unit: unit,
         notes: notes,
       );
+      ref.invalidate(blankByIdProvider(created.id));
       return _service().listBlanks();
     });
   }
@@ -62,6 +63,7 @@ class BlanksNotifier extends AsyncNotifier<List<Blank>> {
         unit: unit,
         notes: notes,
       );
+      ref.invalidate(blankByIdProvider(id));
       return _service().listBlanks();
     });
   }
@@ -71,6 +73,7 @@ class BlanksNotifier extends AsyncNotifier<List<Blank>> {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       await _service().deleteBlank(id);
+      ref.invalidate(blankByIdProvider(id));
       return _service().listBlanks();
     });
   }

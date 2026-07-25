@@ -8,10 +8,11 @@ import 'add_blank_modal.dart';
 
 /// Renders the blank (phôi bánh) section on the CakeDetailScreen (DG-294).
 ///
-/// In **edit mode** shows a "Thêm phôi bánh" button that opens the
-/// [showAddBlankModal] and a list of inline blank line items with edit and
-/// delete actions. In **read mode** shows a read-only list of assigned blanks
-/// below the existing read-mode fields (FR6).
+/// Shows a "Thêm phôi bánh" button that opens the [showAddBlankModal] and a
+/// list of inline blank line items. In **edit mode** the line items also show
+/// edit and delete actions; in **read mode** they are read-only but the add
+/// button remains available (the add modal calls `OrderWorkItemsNotifier.addBlank`
+/// which does not require edit mode).
 ///
 /// Mutations are performed through [onAddBlank]/[onUpdateBlank]/[onDeleteBlank]
 /// so the widget stays a pure view; the parent wires these callbacks to the
@@ -166,20 +167,18 @@ class _CakeDetailBlankSectionState
               onDelete: () => _confirmDelete(assignment),
             ),
           ),
-        if (widget.editing) ...[
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : _openAddModal,
-            icon: _busy
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.add, size: 18),
-            label: const Text(BlanksLabels.actionAddCakeBlank),
-          ),
-        ],
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _openAddModal,
+          icon: _busy
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.add, size: 18),
+          label: const Text(BlanksLabels.actionAddCakeBlank),
+        ),
       ],
     );
   }
