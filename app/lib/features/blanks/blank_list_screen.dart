@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../data/models/blank.dart';
 import '../../data/providers/blanks_provider.dart';
@@ -74,7 +75,40 @@ class _BlankListScreenState extends ConsumerState<BlankListScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text(BlanksLabels.screenManage),
-        actions: const [AppBarOverflowMenu()],
+        actions: [
+          AppBarOverflowMenu(
+            items: const [
+              PopupMenuItem<String>(
+                value: 'stock',
+                child: Row(
+                  children: [
+                    Icon(Icons.inventory),
+                    SizedBox(width: 8),
+                    Text(BlanksLabels.screenStock),
+                  ],
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'demand',
+                child: Row(
+                  children: [
+                    Icon(Icons.analytics_outlined),
+                    SizedBox(width: 8),
+                    Text(BlanksLabels.screenDemand),
+                  ],
+                ),
+              ),
+            ],
+            onSelected: (value) {
+              switch (value) {
+                case 'stock':
+                  context.push('/blanks/stock');
+                case 'demand':
+                  context.push('/blanks/demand');
+              }
+            },
+          ),
+        ],
       ),
       body: blanksAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
