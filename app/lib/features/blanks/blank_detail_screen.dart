@@ -7,6 +7,7 @@ import '../../data/models/work_item.dart';
 import '../../data/providers/blank_demand_provider.dart';
 import '../../data/providers/blank_stock_provider.dart';
 import '../../data/providers/blanks_provider.dart';
+import '../../shared/utils/format_double.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/blanks.dart';
 import 'widgets/blank_form.dart';
@@ -155,7 +156,7 @@ class _StockSummarySection extends ConsumerWidget {
 
   String _formatStock(double stock, String unit) {
     final unitLabel = unit.isEmpty ? '' : ' $unit';
-    return '${stock.toStringAsFixed(stock.truncateToDouble() == stock ? 0 : 1)}$unitLabel';
+    return '${formatDecimal(stock)}$unitLabel';
   }
 }
 
@@ -185,15 +186,15 @@ class _DemandSummarySection extends ConsumerWidget {
             children: [
               _DemandRow(
                 label: BlanksLabels.demand,
-                value: _format(d.demand),
+                value: formatDecimal(d.demand),
               ),
               _DemandRow(
                 label: BlanksLabels.demandStock,
-                value: _format(d.stock),
+                value: formatDecimal(d.stock),
               ),
               _DemandRow(
                 label: BlanksLabels.demandShortage,
-                value: _format(d.shortage),
+                value: formatDecimal(d.shortage),
                 emphasize: d.shortage > 0,
               ),
             ],
@@ -202,9 +203,6 @@ class _DemandSummarySection extends ConsumerWidget {
       ),
     );
   }
-
-  String _format(double v) =>
-      v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 1);
 }
 
 class _DemandRow extends StatelessWidget {
@@ -309,7 +307,7 @@ class _BomProductTile extends StatelessWidget {
         product.productName.isEmpty ? '—' : product.productName,
       ),
       subtitle: Text(
-        '${BlanksLabels.linkedBomQuantity}: ${product.quantity.toStringAsFixed(product.quantity.truncateToDouble() == product.quantity ? 0 : 1)}',
+        '${BlanksLabels.linkedBomQuantity}: ${formatDecimal(product.quantity)}',
       ),
       onTap: product.productId == null
           ? null

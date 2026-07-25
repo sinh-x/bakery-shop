@@ -38,7 +38,7 @@ class WorkItemBlankDropdown extends ConsumerWidget {
         return Padding(
           padding: const EdgeInsets.only(top: 8),
           child: DropdownButtonFormField<int?>(
-            value: blanks.any((b) => b.id == blankId) ? blankId : null,
+            initialValue: blanks.any((b) => b.id == blankId) ? blankId : null,
             decoration: const InputDecoration(
               labelText: BlanksLabels.fieldBlank,
               border: OutlineInputBorder(),
