@@ -58,14 +58,32 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   bool _customerTouched = false;
   int _currentStage = 1;
 
+  /// FR2/FR3: the delivery phone syncs with the customer phone until the user
+  /// manually makes them differ; once diverged it stays independent for the
+  /// rest of the edit session.
+  bool _deliveryPhoneDiverged = false;
+
+  /// Re-entrancy guard set while syncing the delivery phone from the customer
+  /// phone so the delivery-phone listener does not treat the sync as a manual
+  /// edit and flip [_deliveryPhoneDiverged].
+  bool _syncingDeliveryPhone = false;
+
+  /// Guards controller writes performed during [_initFrom] so the sync
+  /// listeners do not run against partially-initialized state.
+  bool _initializing = false;
+
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0);
+    _phoneCtrl.addListener(_onCustomerPhoneChanged);
+    _deliveryPhoneCtrl.addListener(_onDeliveryPhoneChanged);
   }
 
   @override
   void dispose() {
+    _phoneCtrl.removeListener(_onCustomerPhoneChanged);
+    _deliveryPhoneCtrl.removeListener(_onDeliveryPhoneChanged);
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     _addressCtrl.dispose();
@@ -75,9 +93,34 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     super.dispose();
   }
 
+  /// FR2: while the delivery phone has not been manually diverged, every
+  /// customer-phone change also updates the delivery phone so the two stay
+  /// in sync.
+  void _onCustomerPhoneChanged() {
+    if (_initializing || _deliveryPhoneDiverged) return;
+    _syncingDeliveryPhone = true;
+    _deliveryPhoneCtrl.text = _phoneCtrl.text;
+    _syncingDeliveryPhone = false;
+  }
+
+  /// FR3: a user edit to the delivery phone that makes it differ from the
+  /// customer phone marks the two as diverged; from then on the delivery phone
+  /// is independent and customer-phone changes no longer touch it. Sync-driven
+  /// writes (see [_onCustomerPhoneChanged]) are ignored via
+  /// [_syncingDeliveryPhone].
+  void _onDeliveryPhoneChanged() {
+    if (_initializing || _syncingDeliveryPhone) return;
+    if (_digits(_deliveryPhoneCtrl.text) != _digits(_phoneCtrl.text)) {
+      _deliveryPhoneDiverged = true;
+    }
+  }
+
+  String _digits(String s) => s.replaceAll(RegExp(r'\D'), '');
+
   void _initFrom(Order order) {
     if (_initialized) return;
     _initialized = true;
+    _initializing = true;
     _nameCtrl.text = order.customerName;
     _phoneCtrl.text = formatPhone(order.customerPhone);
     _addressCtrl.text = order.deliveryAddress;
@@ -94,8 +137,15 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         _phoneCtrl.text.trim().isNotEmpty) {
       _deliveryPhoneCtrl.text = _phoneCtrl.text.trim();
     }
+    // FR2/FR3: an order whose stored delivery phone already differs from the
+    // customer phone starts diverged so the user's prior manual override is
+    // preserved across the edit session.
+    _deliveryPhoneDiverged =
+        _digits(_deliveryPhoneCtrl.text) != _digits(_phoneCtrl.text) &&
+            _deliveryPhoneCtrl.text.trim().isNotEmpty;
     _dueDate = parseDueDate(order.dueDate);
     _dueTime = parseDueTime(order.dueTime);
+    _initializing = false;
   }
 
   Future<void> _loadLinkedCustomer(int customerId) async {
