@@ -167,3 +167,108 @@ def test_future_cost_history_falls_back_to_selling_price(db):
     assert resolve_product_cost(db, pid, selling_price=200000.0) == pytest.approx(
         60000.0
     )
+
+
+# --- DG-296 Phase 2: assigned_price baseline anchor -------------------------
+#
+# FR5: For trưng bày products sold at a markup, COGS is anchored on the
+# assigned price (base_price or selected price chip) rather than the marked-up
+# selling price. NFR1: COGS(250k sale, 200k assigned) == COGS(200k sale, 200k
+# assigned). FR8: callers without assigned_price keep the historical
+# selling_price/base_price behaviour (regression-free).
+
+
+def test_assigned_price_overrides_selling_price(db):
+    """AC2 (Phase 2): trưng bày product base_price 200,000 sold at 250,000
+    with assigned_price=200,000 → COGS = 30% × 200,000 = 60,000 (not
+    30% × 250,000 = 75,000)."""
+    pid = _insert_product(db, category="banh_mi", base_price=200000)
+    assert resolve_product_cost(
+        db, pid, selling_price=250000.0, assigned_price=200000.0
+    ) == pytest.approx(60000.0)
+
+
+def test_nfr1_cogs_equivalence_assigned_price(db):
+    """NFR1: COGS(250k sale, 200k assigned) == COGS(200k sale, 200k assigned).
+    The marked-up selling price must not affect COGS when assigned_price is
+    provided."""
+    pid = _insert_product(db, category="banh_mi", base_price=200000)
+    cogs_marked_up = resolve_product_cost(
+        db, pid, selling_price=250000.0, assigned_price=200000.0
+    )
+    cogs_flat = resolve_product_cost(
+        db, pid, selling_price=200000.0, assigned_price=200000.0
+    )
+    assert cogs_marked_up == pytest.approx(cogs_flat)
+    assert cogs_marked_up == pytest.approx(60000.0)
+
+
+def test_ac5_chip_price_assigned_anchor(db):
+    """AC5 (Phase 2 partial — resolver-level): trưng bày product with a price
+    chip of 300,000 (assigned_price=300,000) marked up to 350,000 →
+    COGS = 30% × 300,000 = 90,000."""
+    pid = _insert_product(db, category="banh_mi", base_price=200000)
+    assert resolve_product_cost(
+        db, pid, selling_price=350000.0, assigned_price=300000.0
+    ) == pytest.approx(90000.0)
+
+
+def test_assigned_price_zero_treated_as_not_provided(db):
+    """A 0 assigned_price falls back to selling_price (mirrors the
+    selling_price=0 clamp) so zero-assigned orders do not zero out COGS."""
+    pid = _insert_product(db, category="banh_mi", base_price=100000)
+    # assigned_price=0 → selling_price=200000 anchor → 30% = 60000
+    assert resolve_product_cost(
+        db, pid, selling_price=200000.0, assigned_price=0.0
+    ) == pytest.approx(60000.0)
+
+
+def test_assigned_price_none_falls_back_to_selling_price(db):
+    """FR8: when assigned_price is None, selling_price is used as the anchor
+    (DG-208 Phase 1 behaviour preserved — regression-free)."""
+    pid = _insert_product(db, category="banh_mi", base_price=100000)
+    assert resolve_product_cost(
+        db, pid, selling_price=200000.0, assigned_price=None
+    ) == pytest.approx(60000.0)
+
+
+def test_both_none_falls_back_to_base_price(db):
+    """FR8: when neither assigned_price nor selling_price is provided, the
+    historical base_price × 30% baseline runs (regression-free)."""
+    pid = _insert_product(db, category="banh_mi", base_price=100000)
+    assert resolve_product_cost(db, pid) == pytest.approx(30000.0)
+    assert resolve_product_cost(
+        db, pid, selling_price=None, assigned_price=None
+    ) == pytest.approx(30000.0)
+
+
+def test_assigned_price_phu_kien_ignored(db):
+    """phụ kiện baseline is always 100% of base_price regardless of
+    assigned_price — the 100% rule is intentional and unchanged (Non-Goal,
+    mirrors test_baseline_phu_kien_ignores_selling_price)."""
+    pid = _insert_product(db, category="phu_kien", base_price=20000)
+    assert resolve_product_cost(
+        db, pid, selling_price=50000.0, assigned_price=40000.0
+    ) == pytest.approx(20000.0)
+
+
+def test_cost_history_wins_over_assigned_price(db):
+    """cost_history precedence is unchanged: an in-effect cost_history row
+    wins over both assigned_price and selling_price (mirrors
+    test_cost_history_wins_over_selling_price)."""
+    pid = _insert_product(db, category="banh_mi", base_price=100000)
+    _insert_cost_history(db, pid, 28000.0, effective_from="2020-01-01T00:00:00Z")
+    assert resolve_product_cost(
+        db, pid, selling_price=250000.0, assigned_price=200000.0
+    ) == pytest.approx(28000.0)
+
+
+def test_future_cost_history_falls_back_to_assigned_price(db):
+    """When the only cost_history row is future-dated, the baseline runs with
+    assigned_price as the anchor (precedence: assigned > selling > base)."""
+    pid = _insert_product(db, category="banh_mi", base_price=100000)
+    _insert_cost_history(db, pid, 9999.0, effective_from="9999-12-31T00:00:00Z")
+    # assigned_price=200000 wins over selling_price=250000 → 30% × 200000
+    assert resolve_product_cost(
+        db, pid, selling_price=250000.0, assigned_price=200000.0
+    ) == pytest.approx(60000.0)

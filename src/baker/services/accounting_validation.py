@@ -475,10 +475,12 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
       cost_history edits after delivery do not produce false-positive
       mismatches (historical cost snapshots stay authoritative).
     - When ``cost_at_sale`` is 0/NULL the cost is recomputed via
-      :func:`resolve_product_cost` using ``unit_price`` as the baseline
-      anchor. Unresolvable ``product_id`` values fall back to
-      :func:`_baseline_cost_for_product` with ``price_override=unit_price``
-      — exact parity with journal_sync.py:1341-1345.
+      :func:`resolve_product_cost` using the trưng bày assigned price as the
+      baseline anchor when present (DG-296 Phase 2, FR5/NFR1), falling back to
+      ``unit_price`` (DG-208 Phase 1) when no assigned price is stored.
+      Unresolvable ``product_id`` values fall back to
+      :func:`_baseline_cost_for_product` with the same anchor precedence
+      — exact parity with journal_sync.py._compute_order_cogs_total.
 
     The validator performs no writes: ``cost_at_sale`` is read but never
     updated (read-only guarantee, FR5/NFR1).
@@ -502,6 +504,14 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
     ).fetchall()
 
     findings: list[dict[str, Any]] = []
+    # ``assigned_price`` was added in v84 (DG-296 Phase 1). Detect it so the
+    # validator works on databases that haven't reached v84 yet (NULL →
+    # falls back to unit_price anchor, FR8 backward compatibility) and
+    # keeps parity with journal_sync._compute_order_cogs_total.
+    oi_columns = {
+        r[1] for r in conn.execute("PRAGMA table_info(order_items)").fetchall()
+    }
+    has_assigned_price = "assigned_price" in oi_columns
     for r in rows:
         entry_id = int(r["entry_id"])
         order_id = int(r["order_id"])
@@ -511,6 +521,9 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
             """
             SELECT oi.product_id, oi.product_name, oi.quantity, oi.unit_price,
                    oi.cost_at_sale
+                   """
+            + (", oi.assigned_price " if has_assigned_price else ", NULL AS assigned_price ")
+            + """
             FROM order_items oi
             WHERE oi.order_id = ?
               AND oi.is_extra = 0
@@ -542,8 +555,25 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
                             pid = int(prod_row["id"])
                 unit_price = i["unit_price"]
                 selling_price = float(unit_price) if unit_price is not None else None
+                assigned_price_raw = i["assigned_price"]
+                assigned_price: float | None = None
+                if assigned_price_raw is not None:
+                    try:
+                        assigned_price = float(assigned_price_raw)
+                    except (TypeError, ValueError):
+                        assigned_price = None
+                    if assigned_price is not None and assigned_price <= 0:
+                        assigned_price = None
                 if pid is None:
-                    anchor = selling_price if (selling_price and selling_price > 0) else 0.0
+                    # Anchor precedence mirrors journal_sync.py
+                    # _compute_order_cogs_total (DG-296 Phase 2): assigned →
+                    # selling → 0.
+                    if assigned_price is not None and assigned_price > 0:
+                        anchor = assigned_price
+                    elif selling_price is not None and selling_price > 0:
+                        anchor = selling_price
+                    else:
+                        anchor = 0.0
                     if anchor > 0:
                         cost_at_sale = _baseline_cost_for_product(
                             "", 0.0, price_override=anchor
@@ -552,7 +582,10 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
                         cost_at_sale = 0.0
                 else:
                     cost_at_sale = resolve_product_cost(
-                        conn, pid, selling_price=selling_price
+                        conn,
+                        pid,
+                        selling_price=selling_price,
+                        assigned_price=assigned_price,
                     )
             if cost_at_sale > 0:
                 expected += cost_at_sale * qty

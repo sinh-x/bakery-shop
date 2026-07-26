@@ -25,7 +25,11 @@ UNRESOLVED_COST = 0.0
 
 
 def resolve_product_cost(
-    conn, product_id: int, *, selling_price: Optional[float] = None
+    conn,
+    product_id: int,
+    *,
+    selling_price: Optional[float] = None,
+    assigned_price: Optional[float] = None,
 ) -> float:
     """Resolve the effective cost for ``product_id`` at the current time.
 
@@ -34,18 +38,37 @@ def resolve_product_cost(
          the current localtime. Future-dated records are skipped.
       2. Baseline rule derived from ``products.base_price`` and ``category``:
          100% of ``base_price`` for phụ kiện (unchanged), 30% of the anchor
-         price otherwise. The anchor is ``selling_price`` when provided, else
-         ``base_price`` — so custom-priced orders compute COGS from the actual
-         sale price rather than the catalog price (DG-208 Phase 1, FR1).
+         price otherwise. The anchor is selected with the following precedence
+         (DG-296 Phase 2, FR5):
+
+           a. ``assigned_price`` — when provided (> 0). Used for trưng bày
+              products sold at a markup so COGS is anchored on the assigned
+              price (base_price or selected price chip) rather than the
+              marked-up ``selling_price`` (NFR1:
+              COGS(250k sale, 200k assigned) == COGS(200k sale, 200k assigned)).
+           b. ``selling_price`` — when provided (> 0) and no assigned_price.
+              Preserves the DG-208 Phase 1 behaviour for custom-priced orders
+              without an explicit assigned price.
+           c. ``base_price`` — when neither is provided. Preserves the
+              historical behaviour for callers that supply neither anchor
+              (FR8 backward-compatibility).
 
     Args:
         conn: SQLite DB connection (row factory expected to support indexing).
         product_id: Product primary key.
         selling_price: Optional actual selling price used as the baseline anchor
-            when no ``cost_history`` row is in effect. When ``None`` (the
-            default) the baseline falls back to ``base_price × 30%``, preserving
-            the historical behaviour for callers that do not supply it (FR1
-            backward-compatibility requirement).
+            when no ``cost_history`` row is in effect and ``assigned_price`` is
+            not provided. When ``None`` (the default) the baseline falls back
+            to ``base_price × 30%`` (or ``assigned_price`` when given),
+            preserving the historical behaviour for callers that do not supply
+            it (FR1/FR8 backward-compatibility requirement).
+        assigned_price: Optional assigned price (base_price or selected price
+            chip) for trưng bày products sold at a markup. When provided (> 0)
+            it takes precedence over ``selling_price`` as the baseline anchor so
+            COGS reflects the assigned price rather than the marked-up selling
+            price (FR5, NFR1). When ``None`` (the default) behaviour is
+            unchanged — ``selling_price``/``base_price`` are used as before
+            (FR8).
 
     Returns:
         Resolved cost as a non-negative ``float``. Returns ``0.0`` when the
@@ -56,6 +79,8 @@ def resolve_product_cost(
     Notes:
         - Query-time fallback only; no rows are inserted into ``cost_history``.
         - The baseline helper rounds non-phụ-kiện costs to 2 decimals.
+        - ``assigned_price`` is only consulted for non-phụ-kiện products; the
+          phụ kiện 100% rule is intentional and unchanged (Non-Goal).
     """
     latest_row = conn.execute(
         """
@@ -82,9 +107,18 @@ def resolve_product_cost(
 
     category = product_row["category"] if product_row["category"] is not None else ""
     base_price = float(product_row["base_price"] or 0)
-    # A zero/negative selling_price is treated as "not provided" so zero-priced
-    # orders fall back to the base_price anchor rather than zeroing out COGS.
-    anchor = selling_price if (selling_price is not None and selling_price > 0) else None
+    # Anchor precedence (DG-296 Phase 2, FR5):
+    #   1. assigned_price — trưng bày markup → COGS from assigned price (NFR1)
+    #   2. selling_price  — DG-208 Phase 1 custom-price anchor (FR1)
+    #   3. base_price     — historical fallback (FR8)
+    # A zero/negative value is treated as "not provided" so zero-priced orders
+    # fall back to the next anchor rather than zeroing out COGS.
+    if assigned_price is not None and assigned_price > 0:
+        anchor = assigned_price
+    elif selling_price is not None and selling_price > 0:
+        anchor = selling_price
+    else:
+        anchor = None
     return _baseline_cost_for_product(category, base_price, price_override=anchor)
 
 
