@@ -55,7 +55,9 @@ def list_work_items_queue(
                 o.customer_name,
                 o.due_date,
                 o.due_time,
-                o.status AS order_status
+                o.status AS order_status,
+                (SELECT COUNT(*) FROM order_item_blanks oib
+                 WHERE oib.order_item_id = oi.id) AS blank_count
             FROM order_items oi
             JOIN orders o ON oi.order_id = o.id
             WHERE {status_clause}
@@ -86,6 +88,7 @@ def list_work_items_queue(
                 "dueTime": row["due_time"],
                 "createdAt": row["created_at"],
                 "orderStatus": row["order_status"],
+                "blankCount": row["blank_count"],
             }
             for row in rows
         ]

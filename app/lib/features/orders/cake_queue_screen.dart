@@ -15,6 +15,7 @@ import '../../shared/utils/order_helpers.dart';
 import 'widgets/cake_queue_group_header.dart';
 import 'widgets/date_filter_chips.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'package:bakery_app/shared/labels/blanks.dart' as BlanksV;
 
 /// Cake queue content widget — embedded inside the Orders tab as a sub-view.
 /// Shows work items across all orders, sorted by due date ascending.
@@ -330,6 +331,38 @@ class _CakeQueueCard extends ConsumerWidget {
                   ),
                 ),
               ],
+
+              // Blank assignment indicator
+              SizedBox(
+                height: item.notes.isNotEmpty ? 4 : 6,
+              ),
+              Row(
+                children: [
+                  Icon(
+                    item.blankCount > 0
+                        ? Icons.check_circle_outline
+                        : Icons.info_outline,
+                    size: 14,
+                    color: item.blankCount > 0
+                        ? Colors.green.shade600
+                        : theme.colorScheme.outline,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    item.blankCount > 0
+                        ? 'Đã gán ${item.blankCount} phôi'
+                        : BlanksV.BlanksLabels.notAssigned,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: item.blankCount > 0
+                          ? Colors.green.shade700
+                          : theme.colorScheme.outline,
+                      fontWeight: item.blankCount > 0
+                          ? FontWeight.w500
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ],
+              ),
 
               // Due date/time + price
               if (item.dueDate != null) ...[

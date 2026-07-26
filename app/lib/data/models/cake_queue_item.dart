@@ -18,6 +18,7 @@ class CakeQueueItem {
   final String? dueTime;
   final String? createdAt;
   final String orderStatus;
+  final int blankCount;
 
   const CakeQueueItem({
     required this.id,
@@ -37,6 +38,7 @@ class CakeQueueItem {
     this.dueTime,
     this.createdAt,
     required this.orderStatus,
+    this.blankCount = 0,
   });
 
   factory CakeQueueItem.fromJson(Map<String, dynamic> json) => CakeQueueItem(
@@ -57,5 +59,6 @@ class CakeQueueItem {
         dueTime: json['dueTime'] as String?,
         createdAt: json['createdAt'] as String?,
         orderStatus: (json['orderStatus'] as String?) ?? '',
+        blankCount: (json['blankCount'] as int?) ?? 0,
       );
 }
