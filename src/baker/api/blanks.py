@@ -73,6 +73,10 @@ class StockCreate(BaseModel):
 
 _EXCLUDED_ORDER_STATUSES = ("delivered", "cancelled")
 
+# Work item statuses that should no longer count toward blank demand (FR1).
+# Work items with status ``pending`` or ``confirmed`` continue to contribute.
+_EXCLUDED_WORK_ITEM_STATUSES = ("working", "ready", "delivered", "cancelled")
+
 
 def _ensure_blank_exists(conn, blank_id: int) -> Blank:
     row = conn.execute("SELECT * FROM blanks WHERE id = ?", (blank_id,)).fetchone()
@@ -302,10 +306,19 @@ def list_demand():
     blank assignments from ``order_item_blanks``. When an order_item has
     a ``price_chip_id`` the BOM is matched by ``price_chip_id``; otherwise
     the BOM is matched by ``product_id`` (FR2 fallback).
+
+    Work items whose status is ``working``, ``ready``, or ``delivered`` are
+    excluded from demand — they are already being made or have been finished
+    (FR1). Work items with status ``pending`` or ``confirmed`` continue to
+    contribute. The exclusion applies to both the BOM branch and the
+    junction-table (``order_item_blanks``) branch (FR3).
+
     ``shortage = max(0, demand - stock)`` (FR6).
     """
     excluded_statuses = list(_EXCLUDED_ORDER_STATUSES)
     status_placeholders = ",".join("?" * len(excluded_statuses))
+    excluded_work_item_statuses = list(_EXCLUDED_WORK_ITEM_STATUSES)
+    work_item_placeholders = ",".join("?" * len(excluded_work_item_statuses))
     with get_db() as conn:
         rows = conn.execute(
             f"""
@@ -334,6 +347,7 @@ def list_demand():
                        )
                     JOIN orders o ON o.id = oi.order_id
                     WHERE o.status NOT IN ({status_placeholders})
+                      AND oi.status NOT IN ({work_item_placeholders})
                     GROUP BY pb.blank_id
                     UNION ALL
                     SELECT oib.blank_id,
@@ -342,13 +356,15 @@ def list_demand():
                     JOIN order_items oi ON oi.id = oib.order_item_id
                     JOIN orders o ON o.id = oi.order_id
                     WHERE o.status NOT IN ({status_placeholders})
+                      AND oi.status NOT IN ({work_item_placeholders})
                     GROUP BY oib.blank_id
                 )
                 GROUP BY blank_id
             ) d ON d.blank_id = b.id
             ORDER BY b.id
             """,
-            excluded_statuses + excluded_statuses,  # duplicated for both UNION branches
+            excluded_statuses + excluded_work_item_statuses
+            + excluded_statuses + excluded_work_item_statuses,  # duplicated for both UNION branches
         ).fetchall()
 
         # Stock lookup in a single pass to avoid N+1 queries (NFR2).

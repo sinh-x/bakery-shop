@@ -456,6 +456,204 @@ def test_demand_response_uses_camelcase_keys(api_client):
     assert set(demand[0].keys()) == expected_keys
 
 
+# --- API: Demand work-item-status exclusion (DG-295 Phase 2) -----------------
+#
+# The demand query now excludes work items (order_items) whose status is
+# ``working``, ``ready``, or ``delivered``. ``pending`` and ``confirmed``
+# work items continue to contribute. The exclusion applies to both the
+# BOM UNION branch and the junction-table (``order_item_blanks``) branch.
+#
+# To isolate the work-item-status filter from the order-status filter
+# (transitioning a work item via the API auto-syncs the order status),
+# these tests set the work item status directly in the DB while leaving
+# the order status at its default ``new`` (which is NOT excluded).
+
+
+def _set_work_item_status(order_item_id, status):
+    """Set an order_item's status directly in the DB, bypassing auto-sync."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        conn.execute(
+            "UPDATE order_items SET status = ? WHERE id = ?",
+            (status, order_item_id),
+        )
+
+
+def _bom_demand_setup(api_client, quantity=2, order_qty=3):
+    """Create one product + price chip + BOM blank link + one pending order.
+
+    BOM quantity is ``quantity`` blanks per unit; the order has ``order_qty``
+    units of a price-chip-linked item. Returns ``(blank, order, item_id)``.
+    Default demand = 2 × 3 = 6.
+    """
+    product = _create_product(api_client)
+    chip = _create_price_chip(api_client, product["id"])
+    blank = _create_blank(api_client)
+    api_client.post(
+        f"/api/price-chips/{chip['id']}/blanks",
+        json={"blankId": blank["id"], "quantity": quantity},
+    )
+    order = _create_order(api_client, [
+        {"productName": "Bánh", "unitPrice": 200000, "priceChipId": chip["id"], "quantity": order_qty},
+    ])
+    item_id = order["workItems"][0]["id"]
+    return blank, order, item_id
+
+
+def _junction_demand_setup(api_client, assign_qty=4, order_qty=1):
+    """Create one blank + one order with a direct blank assignment via the
+    ``order_item_blanks`` junction table (no BOM). Default demand = 4.
+
+    Returns ``(blank, order, item_id)``.
+    """
+    blank = _create_blank(api_client)
+    order = _create_order(api_client, [
+        {"productName": "Bánh kem 16cm", "unitPrice": 200000, "quantity": order_qty},
+    ])
+    item_id = order["workItems"][0]["id"]
+    api_client.post(
+        f"/api/orders/{order['orderRef']}/items/{item_id}/blanks",
+        json={"blankId": blank["id"], "quantity": assign_qty},
+    )
+    return blank, order, item_id
+
+
+def test_demand_excludes_work_item_status_working_bom(api_client):
+    """AC1 (BOM path): a work item in ``working`` is excluded from demand."""
+    blank, _order, item_id = _bom_demand_setup(api_client, quantity=2, order_qty=3)
+    # Baseline: demand = 6
+    assert api_client.get("/api/blanks/demand").json()[0]["demand"] == 6
+    _set_work_item_status(item_id, "working")
+    demand = api_client.get("/api/blanks/demand").json()
+    assert demand == [] or demand[0]["demand"] == 0
+
+
+def test_demand_excludes_work_item_status_ready_bom(api_client):
+    """AC2 (BOM path): a work item in ``ready`` is excluded from demand."""
+    blank, _order, item_id = _bom_demand_setup(api_client, quantity=1, order_qty=5)
+    assert api_client.get("/api/blanks/demand").json()[0]["demand"] == 5
+    _set_work_item_status(item_id, "ready")
+    demand = api_client.get("/api/blanks/demand").json()
+    assert demand == [] or demand[0]["demand"] == 0
+
+
+def test_demand_excludes_work_item_status_delivered_bom(api_client):
+    """AC3 (BOM path): a work item in ``delivered`` is excluded from demand.
+
+    Distinct from order-status ``delivered``: here the order stays ``new``
+    so this verifies the work-item-status filter, not the order filter.
+    """
+    blank, _order, item_id = _bom_demand_setup(api_client, quantity=3, order_qty=2)
+    assert api_client.get("/api/blanks/demand").json()[0]["demand"] == 6
+    _set_work_item_status(item_id, "delivered")
+    demand = api_client.get("/api/blanks/demand").json()
+    assert demand == [] or demand[0]["demand"] == 0
+
+
+def test_demand_excludes_work_item_status_cancelled_bom(api_client):
+    """CQ-1 (BOM path): a work item in ``cancelled`` is excluded from demand.
+
+    Distinct from order-status ``cancelled``: here the order stays ``new``
+    so this verifies the work-item-status filter, not the order filter.
+    """
+    blank, _order, item_id = _bom_demand_setup(api_client, quantity=3, order_qty=2)
+    assert api_client.get("/api/blanks/demand").json()[0]["demand"] == 6
+    _set_work_item_status(item_id, "cancelled")
+    demand = api_client.get("/api/blanks/demand").json()
+    assert demand == [] or demand[0]["demand"] == 0
+
+
+def test_demand_includes_work_item_status_pending_bom(api_client):
+    """AC4 (BOM path): default ``pending`` work items contribute to demand."""
+    blank, _order, _item_id = _bom_demand_setup(api_client, quantity=2, order_qty=3)
+    demand = api_client.get("/api/blanks/demand").json()
+    assert len(demand) == 1
+    assert demand[0]["blankId"] == blank["id"]
+    assert demand[0]["demand"] == 6
+
+
+def test_demand_includes_work_item_status_confirmed_bom(api_client):
+    """AC4 (BOM path): ``confirmed`` work items continue to contribute."""
+    blank, _order, item_id = _bom_demand_setup(api_client, quantity=2, order_qty=4)
+    _set_work_item_status(item_id, "confirmed")
+    demand = api_client.get("/api/blanks/demand").json()
+    assert len(demand) == 1
+    assert demand[0]["demand"] == 8
+
+
+def test_demand_excludes_work_item_status_working_junction(api_client):
+    """AC1/AC5 (junction path): ``working`` work item excluded via junction."""
+    blank, _order, item_id = _junction_demand_setup(api_client, assign_qty=4)
+    assert api_client.get("/api/blanks/demand").json()[0]["demand"] == 4
+    _set_work_item_status(item_id, "working")
+    demand = api_client.get("/api/blanks/demand").json()
+    assert demand == [] or demand[0]["demand"] == 0
+
+
+def test_demand_excludes_work_item_status_ready_junction(api_client):
+    """AC2/AC5 (junction path): ``ready`` work item excluded via junction."""
+    blank, _order, item_id = _junction_demand_setup(api_client, assign_qty=7)
+    assert api_client.get("/api/blanks/demand").json()[0]["demand"] == 7
+    _set_work_item_status(item_id, "ready")
+    demand = api_client.get("/api/blanks/demand").json()
+    assert demand == [] or demand[0]["demand"] == 0
+
+
+def test_demand_excludes_work_item_status_delivered_junction(api_client):
+    """AC3/AC5 (junction path): ``delivered`` work item excluded via junction."""
+    blank, _order, item_id = _junction_demand_setup(api_client, assign_qty=5)
+    assert api_client.get("/api/blanks/demand").json()[0]["demand"] == 5
+    _set_work_item_status(item_id, "delivered")
+    demand = api_client.get("/api/blanks/demand").json()
+    assert demand == [] or demand[0]["demand"] == 0
+
+
+def test_demand_excludes_work_item_status_cancelled_junction(api_client):
+    """CQ-1 (junction path): ``cancelled`` work item excluded via junction."""
+    blank, _order, item_id = _junction_demand_setup(api_client, assign_qty=5)
+    assert api_client.get("/api/blanks/demand").json()[0]["demand"] == 5
+    _set_work_item_status(item_id, "cancelled")
+    demand = api_client.get("/api/blanks/demand").json()
+    assert demand == [] or demand[0]["demand"] == 0
+
+
+def test_demand_includes_work_item_status_confirmed_junction(api_client):
+    """AC4/AC5 (junction path): ``confirmed`` work item still contributes."""
+    blank, _order, item_id = _junction_demand_setup(api_client, assign_qty=6)
+    _set_work_item_status(item_id, "confirmed")
+    demand = api_client.get("/api/blanks/demand").json()
+    assert len(demand) == 1
+    assert demand[0]["demand"] == 6
+
+
+def test_demand_mixed_work_item_statuses_bom(api_client):
+    """AC5 (BOM path): only non-excluded work items contribute.
+
+    Two orders share the same BOM blank. One work item is ``working``
+    (excluded), the other stays ``pending`` (included).
+    """
+    product = _create_product(api_client)
+    chip = _create_price_chip(api_client, product["id"])
+    blank = _create_blank(api_client)
+    api_client.post(
+        f"/api/price-chips/{chip['id']}/blanks",
+        json={"blankId": blank["id"], "quantity": 2},
+    )
+    order1 = _create_order(api_client, [
+        {"productName": "Bánh", "unitPrice": 200000, "priceChipId": chip["id"], "quantity": 3},
+    ])
+    order2 = _create_order(api_client, [
+        {"productName": "Bánh", "unitPrice": 200000, "priceChipId": chip["id"], "quantity": 4},
+    ])
+    # Both pending → demand = 2×(3+4) = 14
+    assert api_client.get("/api/blanks/demand").json()[0]["demand"] == 14
+    # Exclude the first work item → demand = 2×4 = 8
+    _set_work_item_status(order1["workItems"][0]["id"], "working")
+    demand = api_client.get("/api/blanks/demand").json()
+    assert len(demand) == 1
+    assert demand[0]["demand"] == 8
+
+
 # --- AC7: camelCase consistency ----------------------------------------------
 
 
