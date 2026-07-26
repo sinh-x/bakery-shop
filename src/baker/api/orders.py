@@ -214,6 +214,7 @@ class OrderItemIn(BaseModel):
     isGift: bool = False
     priceChipId: int | None = None
     attributes: dict = Field(default_factory=dict)
+    assignedPrice: Optional[float] = None
 
 
 class DepositIn(BaseModel):
@@ -300,6 +301,7 @@ def _item_in_to_model(item: OrderItemIn) -> OrderItem:
         is_gift=item.isGift,
         attributes=item.attributes,
         price_chip_id=item.priceChipId,
+        assigned_price=item.assignedPrice,
     )
 
 
@@ -602,6 +604,7 @@ def create_order(body: OrderCreate, request: Request):
                 is_gift=item.isGift,
                 attributes=item.attributes,
                 price_chip_id=item.priceChipId,
+                assigned_price=item.assignedPrice,
             )
             work_item.save(conn)
 

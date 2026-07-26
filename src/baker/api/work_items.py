@@ -65,6 +65,7 @@ class WorkItemCreate(BaseModel):
     isGift: bool = False
     attributes: dict = Field(default_factory=dict)
     priceChipId: int | None = None
+    assignedPrice: Optional[float] = None
 
 
 class WorkItemUpdate(BaseModel):
@@ -78,6 +79,7 @@ class WorkItemUpdate(BaseModel):
     isExtra: Optional[bool] = None
     isGift: Optional[bool] = None
     attributes: Optional[dict] = None
+    assignedPrice: Optional[float] = None
 
 
 class WorkItemStatusTransition(BaseModel):
@@ -127,7 +129,7 @@ def _attach_blanks(conn, items: list) -> None:
 def _sync_order_items_json(conn, order_id: int) -> None:
     """Regenerate orders.items JSON from order_items table and recalculate total_price."""
     rows = conn.execute(
-        "SELECT id, product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes FROM order_items WHERE order_id = ?",
+        "SELECT id, product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes, assigned_price FROM order_items WHERE order_id = ?",
         (order_id,),
     ).fetchall()
     item_ids = [r["id"] for r in rows]
@@ -155,6 +157,7 @@ def _sync_order_items_json(conn, order_id: int) -> None:
             "is_gift": bool(r["is_gift"]),
             "attributes": json.loads(r["attributes"]) if r["attributes"] and r["attributes"] != '{}' else {},
             "blanks": blanks_by_item.get(r["id"], []),
+            "assigned_price": r["assigned_price"],
         }
         for r in rows
     ])
@@ -280,6 +283,7 @@ def create_work_item(ref: str, body: WorkItemCreate):
             is_gift=body.isGift,
             attributes=body.attributes,
             price_chip_id=body.priceChipId,
+            assigned_price=body.assignedPrice,
         )
         item.save(conn)
         row = conn.execute("SELECT * FROM order_items WHERE id = ?", (item.id,)).fetchone()
@@ -316,6 +320,7 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
             "isExtra": "is_extra",
             "isGift": "is_gift",
             "attributes": "attributes",
+            "assignedPrice": "assigned_price",
         }
         updates = []
         params: list = []

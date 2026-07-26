@@ -248,6 +248,7 @@ class OrderItem:
     attributes: dict = field(default_factory=dict)
     blank_id: Optional[int] = None
     blanks: list = field(default_factory=list)
+    assigned_price: Optional[float] = None
 
     def to_dict(self):
         return {
@@ -264,6 +265,7 @@ class OrderItem:
             "attributes": self.attributes,
             "blank_id": self.blank_id,
             "blanks": self.blanks,
+            "assigned_price": self.assigned_price,
         }
 
     def to_api_dict(self) -> dict:
@@ -281,6 +283,7 @@ class OrderItem:
             "attributes": self.attributes,
             "blankId": self.blank_id,
             "blanks": self.blanks,
+            "assignedPrice": self.assigned_price,
         }
 
     @staticmethod
