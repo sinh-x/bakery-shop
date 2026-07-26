@@ -15,6 +15,7 @@ import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/order_stage_indicator.dart';
 import 'widgets/gated_page_physics.dart';
 import 'widgets/order_wizard.dart';
+import 'utils/trung_bay_inventory_extensions.dart';
 import 'widgets/stage1_product_selection_screen.dart';
 import 'widgets/stage2_customer_info_screen.dart';
 import 'widgets/stage3_delivery_options_screen.dart';
@@ -133,6 +134,16 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       final customerName = state.wizardData.customerName.isEmpty
           ? OrdersLabels.walkInCustomerFallback
           : state.wizardData.customerName;
+
+      // Price floor enforcement (FR3/AC3): clamp selling price to the assigned
+      // price for trưng bày markup items before submitting. DG-296 Phase 4.
+      for (final i in state.items) {
+        if (i.product.isTrungBay &&
+            i.assignedPrice != null &&
+            i.unitPrice < i.assignedPrice!) {
+          i.customUnitPrice = i.assignedPrice;
+        }
+      }
 
       var customerId = state.wizardData.selectedCustomer?.id;
       if (customerId == null &&

@@ -223,5 +223,136 @@ void main() {
         expect(item.attributes['useInventory'], 'true');
       },
     );
+
+    // ── DG-296 Phase 4: regular order flow markup ──────────────────────────
+
+    testWidgets(
+      'AC1: trưng bày item shows Giá gốc and editable Giá bán (thousands)',
+      (tester) async {
+        final item = DraftOrderItem(
+          product: const Product(
+            id: 300,
+            name: 'Bánh trưng bày',
+            basePrice: 200000,
+            attributes: {'trung_bay': 'true'},
+          ),
+        );
+
+        await _pumpCard(tester, item);
+
+        // "Giá gốc" label shows the assigned price (200.000đ).
+        expect(find.textContaining('${VN.giaGoc}:'), findsOneWidget);
+        expect(find.text('200.000đ'), findsWidgets);
+        // "Giá bán" editable field is present (not "Đơn giá").
+        expect(find.text(VN.giaBan), findsOneWidget);
+        expect(find.text(VN.itemPrice), findsNothing);
+        // Default selling price == assigned price (no markup yet).
+        expect(item.unitPrice, 200000);
+        expect(item.assignedPrice, 200000);
+      },
+    );
+
+    testWidgets(
+      'AC1: editing Giá bán upward sets the selling price above assigned',
+      (tester) async {
+        final item = DraftOrderItem(
+          product: const Product(
+            id: 301,
+            name: 'Bánh trưng bày',
+            basePrice: 200000,
+            attributes: {'trung_bay': 'true'},
+          ),
+        );
+
+        await _pumpCard(tester, item);
+
+        // Enter 250 (= 250.000đ) in the Giá bán field.
+        await tester.enterText(find.byType(TextFormField).first, '250');
+        await tester.pump();
+
+        expect(item.customUnitPrice, 250000);
+        expect(item.unitPrice, 250000);
+        // Assigned price (COGS anchor) stays at base price.
+        expect(item.assignedPrice, 200000);
+        // No floor warning since 250.000 >= 200.000.
+        expect(find.text(VN.markupFloorWarning), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'AC3: entering a selling price below assigned shows floor warning',
+      (tester) async {
+        final item = DraftOrderItem(
+          product: const Product(
+            id: 302,
+            name: 'Bánh trưng bày',
+            basePrice: 200000,
+            attributes: {'trung_bay': 'true'},
+          ),
+        );
+
+        await _pumpCard(tester, item);
+
+        // Enter 150 (= 150.000đ) — below the 200.000đ assigned price.
+        await tester.enterText(find.byType(TextFormField).first, '150');
+        await tester.pump();
+
+        expect(find.text(VN.markupFloorWarning), findsOneWidget);
+        // The draft item still records the entered (below-floor) value; the
+        // floor is enforced at order-submit time (order_create_screen.dart).
+        expect(item.customUnitPrice, 150000);
+      },
+    );
+
+    testWidgets(
+      'AC4: non-trưng bày item shows Đơn giá (no markup UI)',
+      (tester) async {
+        final item = DraftOrderItem(
+          product: const Product(
+            id: 303,
+            name: 'Bánh thường',
+            basePrice: 200000,
+          ),
+        );
+
+        await _pumpCard(tester, item);
+
+        expect(find.text(VN.itemPrice), findsOneWidget);
+        expect(find.text(VN.giaBan), findsNothing);
+        expect(find.textContaining('${VN.giaGoc}:'), findsNothing);
+        // assignedPrice stays null for non-trưng bày (FR8).
+        expect(item.assignedPrice, isNull);
+      },
+    );
+
+    testWidgets(
+      'selecting a price chip resets assigned price for trưng bày',
+      (tester) async {
+        final priceChips = const [
+          PriceChip(id: 1, label: 'Nhỏ', price: 200000),
+          PriceChip(id: 2, label: 'Lớn', price: 300000),
+        ];
+        final item = DraftOrderItem(
+          product: Product(
+            id: 304,
+            name: 'Bánh trưng bày',
+            basePrice: 200000,
+            priceChips: priceChips,
+            attributes: const {'trung_bay': 'true'},
+          ),
+        );
+
+        await _pumpCard(tester, item);
+
+        // Tap the "Lớn" chip — assigned price should reset to 300.000đ.
+        await tester.tap(find.widgetWithText(ChoiceChip, 'Lớn · 300.000đ'));
+        await tester.pump();
+
+        expect(item.priceChipId, 2);
+        expect(item.customUnitPrice, 300000);
+        expect(item.assignedPrice, 300000);
+        expect(find.text('300.000đ'), findsWidgets);
+      },
+    );
   });
 }

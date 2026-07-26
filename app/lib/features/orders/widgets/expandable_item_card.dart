@@ -29,6 +29,8 @@ class ExpandableItemCard extends StatefulWidget {
 class _ExpandableItemCardState extends State<ExpandableItemCard> {
   bool _expanded = true;
   bool _isBirthday = false;
+  bool _isTrungBayMarkup = false;
+  String? _floorWarning;
   late TextEditingController _notesCtrl;
   late TextEditingController _ageCtrl;
   late TextEditingController _priceCtrl;
@@ -38,11 +40,20 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   void initState() {
     super.initState();
     _isBirthday = widget.item.isBirthday;
+    _isTrungBayMarkup = widget.item.product.isTrungBay;
     _notesCtrl = TextEditingController(text: widget.item.notes);
     _ageCtrl = TextEditingController(text: widget.item.age);
     _priceCtrl = TextEditingController(
-      text: widget.item.unitPrice.toInt().toString(),
+      text: _isTrungBayMarkup
+          ? (widget.item.unitPrice / 1000).toInt().toString()
+          : widget.item.unitPrice.toInt().toString(),
     );
+    // Seed the assigned price (COGS anchor) for trưng bày products if it was
+    // not already set by the picker. Defaults to the product base price.
+    // See DG-296 Phase 4.
+    if (_isTrungBayMarkup && widget.item.assignedPrice == null) {
+      widget.item.assignedPrice = widget.item.product.basePrice;
+    }
   }
 
   @override
@@ -67,8 +78,26 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
   void _updateManualPrice(String text) {
     final selectedLabel = widget.item.attributes['price_chip_label']
         ?.toString();
-    widget.item.customUnitPrice =
-        double.tryParse(text.trim()) ?? widget.item.product.basePrice;
+
+    if (_isTrungBayMarkup) {
+      // Trưng bày markup flow (DG-296 Phase 4): the price field is in thousands
+      // of đồng (same style as the POS chip picker). Selling price may be set
+      // upward from the assigned price; below-floor values are clamped.
+      final thousands = int.tryParse(text.trim());
+      if (thousands == null) {
+        setState(() => _floorWarning = null);
+        return;
+      }
+      final selling = thousands.toDouble() * 1000;
+      final assigned = widget.item.assignedPrice ?? widget.item.product.basePrice;
+      widget.item.customUnitPrice = selling;
+      setState(() {
+        _floorWarning = selling < assigned ? VN.markupFloorWarning : null;
+      });
+    } else {
+      widget.item.customUnitPrice =
+          double.tryParse(text.trim()) ?? widget.item.product.basePrice;
+    }
 
     final manuallyClearPreset =
         selectedLabel != null &&
@@ -202,11 +231,20 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                           selected: isSelected,
                           onSelected: (_) {
                             setState(() {
-                              _priceCtrl.text = chip.price.toInt().toString();
+                              _priceCtrl.text = _isTrungBayMarkup
+                                  ? (chip.price / 1000).toInt().toString()
+                                  : chip.price.toInt().toString();
                               widget.item.customUnitPrice = chip.price;
                               widget.item.priceChipId = chip.id;
                               widget.item.attributes['price_chip_label'] =
                                   chip.label;
+                              // Selecting a chip resets the assigned (COGS
+                              // anchor) and selling price to the chip price
+                              // for trưng bày markup (DG-296 Phase 4).
+                              if (_isTrungBayMarkup) {
+                                widget.item.assignedPrice = chip.price;
+                                _floorWarning = null;
+                              }
                             });
                             widget.onStateChanged();
                           },
@@ -216,17 +254,53 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
                     const SizedBox(height: 8),
                   ],
                   // Price
-                  TextFormField(
-                    controller: _priceCtrl,
-                    decoration: const InputDecoration(
-                      labelText: VN.itemPrice,
-                      border: OutlineInputBorder(),
-                      suffixText: 'đ',
-                      isDense: true,
+                  if (_isTrungBayMarkup) ...[
+                    // "Giá gốc" — non-editable assigned price (COGS anchor).
+                    // DG-296 Phase 4 (regular order flow).
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Text(
+                        '${VN.giaGoc}: ${formatVND(widget.item.assignedPrice ?? widget.item.product.basePrice)}',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                    keyboardType: TextInputType.number,
-                    onChanged: _updateManualPrice,
-                  ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _priceCtrl,
+                      decoration: const InputDecoration(
+                        labelText: VN.giaBan,
+                        helperText: VN.markupThousandsHint,
+                        border: OutlineInputBorder(),
+                        suffixText: ',000đ',
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.number,
+                      onChanged: _updateManualPrice,
+                    ),
+                    if (_floorWarning != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          _floorWarning!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.error,
+                          ),
+                        ),
+                      ),
+                  ] else
+                    TextFormField(
+                      controller: _priceCtrl,
+                      decoration: const InputDecoration(
+                        labelText: VN.itemPrice,
+                        border: OutlineInputBorder(),
+                        suffixText: 'đ',
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.number,
+                      onChanged: _updateManualPrice,
+                    ),
                   const SizedBox(height: 8),
                   if (_isTrungBay) ...[
                     SwitchListTile.adaptive(
