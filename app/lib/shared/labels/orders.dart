@@ -178,4 +178,7 @@ class OrdersLabels {
   // (see vietnamese_labels.dart) — only the two new options live here.
   static const dateFilterTomorrow = 'Ngày mai';
   static const dateFilterTodayTomorrow = 'Nay + Mai';
+
+  // Phone dialer launch failure (DG-283 review cycle 1 — CQ-1)
+  static const cannotOpenDialer = 'Không mở được trình quay số.';
 }

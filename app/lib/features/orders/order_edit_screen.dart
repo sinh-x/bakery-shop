@@ -110,12 +110,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   /// [_syncingDeliveryPhone].
   void _onDeliveryPhoneChanged() {
     if (_initializing || _syncingDeliveryPhone) return;
-    if (_digits(_deliveryPhoneCtrl.text) != _digits(_phoneCtrl.text)) {
+    if (stripNonDigits(_deliveryPhoneCtrl.text) !=
+        stripNonDigits(_phoneCtrl.text)) {
       _deliveryPhoneDiverged = true;
     }
   }
-
-  String _digits(String s) => s.replaceAll(RegExp(r'\D'), '');
 
   void _initFrom(Order order) {
     if (_initialized) return;
@@ -141,7 +140,8 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     // customer phone starts diverged so the user's prior manual override is
     // preserved across the edit session.
     _deliveryPhoneDiverged =
-        _digits(_deliveryPhoneCtrl.text) != _digits(_phoneCtrl.text) &&
+        stripNonDigits(_deliveryPhoneCtrl.text) !=
+            stripNonDigits(_phoneCtrl.text) &&
             _deliveryPhoneCtrl.text.trim().isNotEmpty;
     _dueDate = parseDueDate(order.dueDate);
     _dueTime = parseDueTime(order.dueTime);

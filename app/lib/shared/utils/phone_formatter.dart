@@ -1,5 +1,9 @@
 import 'package:flutter/services.dart';
 
+/// Strip all non-digit characters from [input] (e.g. formatted phone numbers).
+/// Used to compare two phone values by their digits only, ignoring formatting.
+String stripNonDigits(String input) => input.replaceAll(RegExp(r'\D'), '');
+
 /// Format phone to match PhoneInputFormatter rendering:
 /// - 9 digits → xxx-xxx-xxx
 /// - 10 digits → xxxx-xxx-xxx

@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/order_helpers.dart';
+import '../../../shared/utils/phone_formatter.dart';
 import '../../../shared/widgets/phone_text_field.dart';
 import 'due_date_time_picker_row.dart';
 import 'section_header.dart';
@@ -87,10 +88,8 @@ class OrderDeliverySection extends StatelessWidget {
     if (dp.isEmpty) return false;
     final cp = customerPhone?.trim() ?? '';
     if (cp.isEmpty) return true;
-    return _digits(dp) != _digits(cp);
+    return stripNonDigits(dp) != stripNonDigits(cp);
   }
-
-  static String _digits(String s) => s.replaceAll(RegExp(r'\D'), '');
 
   @override
   Widget build(BuildContext context) {
@@ -370,13 +369,13 @@ class OrderDeliverySection extends StatelessWidget {
   }
 
   Future<void> _launchPhone(BuildContext context, String phone) async {
-    final digits = phone.replaceAll(RegExp(r'\D'), '');
+    final digits = stripNonDigits(phone);
     if (digits.isEmpty) return;
     final uri = Uri.parse('tel:$digits');
     final launched = await launchUrl(uri);
     if (!launched && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Không mở được trình quay số.')),
+        const SnackBar(content: Text(OrdersLabels.cannotOpenDialer)),
       );
     }
   }
