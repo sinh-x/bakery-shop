@@ -604,6 +604,30 @@ def _wrapped_enum_attribute_lines(item: dict, labels: dict, font, max_w: int) ->
     return lines
 
 
+def _delivery_phone_value(order: dict) -> str:
+    """Return trimmed delivery phone from order dict (camelCase or snake_case)."""
+    raw = order.get("deliveryPhone", "") or order.get("delivery_phone", "") or ""
+    return str(raw).strip()
+
+
+def _phones_differ(customer_phone: str, delivery_phone: str) -> bool:
+    """True when delivery_phone is non-empty and its digits differ from customer phone.
+
+    DG-283 Phase 4 / FR11: digit-only comparison so format differences
+    ("0972 283 134" vs "0972-283-134") do not count as a difference.
+    Returns False when delivery phone is blank or identical — callers then
+    render a single phone (no duplication).
+    """
+    d = (delivery_phone or "").strip()
+    if not d:
+        return False
+    c_digits = "".join(c for c in (customer_phone or "") if c.isdigit())
+    d_digits = "".join(c for c in d if c.isdigit())
+    if not d_digits:
+        return False
+    return d_digits != c_digits
+
+
 def _order_public_code(order: dict) -> str:
     """Return trimmed public order code or empty string."""
     public_code = order.get("publicOrderCode", "") or order.get("public_order_code", "") or ""
@@ -796,11 +820,17 @@ def _render_work_ticket(order, work_item, cfg, photo_bytes, conn, paper_mode="la
     dtype_vn = _DTYPE_VN.get(dtype, dtype)
 
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
+    dphone = _delivery_phone_value(order)
     daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
 
     y = _left(draw, y, f"GIAO HÀNG:  {dtype_vn}", fnormal)
 
-    if phone:
+    if _phones_differ(phone, dphone):
+        # FR10: delivery phone takes precedence in the delivery section; the
+        # customer phone is not duplicated here so production staff see the
+        # contact that matters for this delivery.
+        y = _icon_text(draw, y, "\u260E", format_phone(dphone), fb)
+    elif phone:
         y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
 
     if dtype != "pickup" and daddr:
@@ -1162,7 +1192,12 @@ def _render_bus_label(order, cfg, paper_mode="label") -> Image.Image:
     section_gap = 16  # extra spacing between phone / address / notes
 
     # Phone — largest, centered, bold, formatted as xxxx-xxx-xxx or xxx-xxx-xxx
+    # FR8: prefer delivery phone as the prominent contact when it differs from
+    # the customer phone; otherwise fall back to the customer phone.
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
+    dphone = _delivery_phone_value(order)
+    if _phones_differ(phone, dphone):
+        phone = dphone
     if phone:
         phone = format_phone(phone)
         y = _draw_centered(y, phone, f_phone)
@@ -1362,11 +1397,16 @@ def _render_shop_receipt(order, cfg, conn, paper_mode="label") -> Image.Image:
     # Customer section
     name = order.get("customerName", "") or order.get("customer_name", "")
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
+    dphone = _delivery_phone_value(order)
 
     if name:
         y = _left(draw, y, name, fbb)
     if phone:
         y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
+    # FR9: show delivery phone when it differs from the customer phone so
+    # pickup-verification staff can reach the recipient.
+    if _phones_differ(phone, dphone):
+        y = _icon_text(draw, y, "\U0001F4DE", format_phone(dphone), fb, color=(0, 100, 180))
 
     y = _sep(draw, y)
 
@@ -1439,6 +1479,7 @@ def _render_delivery_receipt(order, cfg, conn, paper_mode="label") -> Image.Imag
     # Customer section
     name = order.get("customerName", "") or order.get("customer_name", "")
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
+    dphone = _delivery_phone_value(order)
 
     if name:
         y = _left(draw, y, name, fbb)
@@ -1457,6 +1498,9 @@ def _render_delivery_receipt(order, cfg, conn, paper_mode="label") -> Image.Imag
     # Delivery section
     y = _left(draw, y, "Giao tận nơi", fbb)
     daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
+    # FR7: print delivery phone prominently when it differs from customer phone.
+    if _phones_differ(phone, dphone):
+        y = _icon_text(draw, y, "\U0001F4DE", format_phone(dphone), fbb, color=(0, 100, 180))
     if daddr:
         for ln in _wrap(daddr, fb, CONTENT_WIDTH):
             y = _left(draw, y, f"  {ln}", fb)
@@ -1740,10 +1784,11 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
     due_time = order.get("dueTime", "") or order.get("due_time", "") or ""
     dtype = order.get("deliveryType", "") or order.get("delivery_type", "pickup")
     phone = order.get("customerPhone", "") or order.get("customer_phone", "") or ""
+    dphone = _delivery_phone_value(order)
     daddr = order.get("deliveryAddress", "") or order.get("delivery_address", "") or ""
     order_notes = order.get("notes", "") or ""
 
-    has_delivery_content = bool(due or phone or order_notes or (dtype != "pickup" and daddr))
+    has_delivery_content = bool(due or phone or dphone or order_notes or (dtype != "pickup" and daddr))
 
     if has_delivery_content:
         y = _left(draw, y, "GIAO HÀNG", _font(_SZ_SUBTITLE, True))
@@ -1759,7 +1804,11 @@ def _render_customer_receipt(order, cfg, conn, show_photos=True, paper_mode="lab
         dtype_vn = _DTYPE_VN.get(dtype, dtype)
         y = _left(draw, y, f"Hình thức: {dtype_vn}", fb)
 
-        if phone:
+        # FR6: show delivery phone in the delivery section when it differs
+        # from the customer phone; otherwise show the customer phone once.
+        if _phones_differ(phone, dphone):
+            y = _icon_text(draw, y, "\U0001F4DE", format_phone(dphone), fb, color=(0, 100, 180))
+        elif phone:
             y = _icon_text(draw, y, "\u260E", format_phone(phone), fb)
 
         if dtype != "pickup" and daddr:
