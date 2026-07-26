@@ -92,12 +92,11 @@ class _Stage3DeliveryOptionsScreenState
     _maybePrefillDeliveryPhone(type);
   }
 
-  /// UAT-2: When bus/door delivery is selected and the delivery phone is still
-  /// empty, prefill it from the Stage-2 customer phone. Never overwrite a phone
-  /// the user has already entered, and keep the prefilled value synced to state
-  /// so it persists in the draft and on submission.
+  /// Prefill the delivery phone from the Stage-2 customer phone for all
+  /// delivery types when the delivery phone field is still empty. Never
+  /// overwrite a phone the user has already entered, and keep the prefilled
+  /// value synced to state so it persists in the draft and on submission.
   void _maybePrefillDeliveryPhone(String type) {
-    if (type != 'bus' && type != 'door') return;
     if (_deliveryPhoneCtrl.text.trim().isNotEmpty) return;
     final customerPhone =
         ref.read(widget.orderStateProvider).wizardData.customerPhone.trim();
