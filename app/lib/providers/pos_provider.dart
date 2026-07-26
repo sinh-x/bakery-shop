@@ -16,6 +16,7 @@ class PosCartItem {
     this.selectedPrice,
     this.selectedChipId,
     this.selectedChipLabel,
+    this.assignedPrice,
     this.notes = '',
     this.pendingPhotos = const [],
     this.isBirthday = false,
@@ -33,6 +34,10 @@ class PosCartItem {
   final double? selectedPrice;
   final int? selectedChipId;
   final String? selectedChipLabel;
+  /// The assigned price (base_price or selected chip price) used as the COGS
+  /// anchor for trưng bày markup items. Null for non-trưng bày products (no
+  /// behavior change — backend falls back to unitPrice). See DG-296 Phase 3.
+  final double? assignedPrice;
   String notes;
   List<XFile> pendingPhotos;
   final bool isBirthday;
@@ -77,6 +82,7 @@ class PosCartNotifier extends Notifier<PosCartState> {
     double? selectedPrice,
     int? selectedChipId,
     String? selectedChipLabel,
+    double? assignedPrice,
     bool useInventory = true,
     bool isBirthday = false,
     String age = '',
@@ -102,6 +108,7 @@ class PosCartNotifier extends Notifier<PosCartState> {
           selectedPrice: selectedPrice,
           selectedChipId: selectedChipId,
           selectedChipLabel: selectedChipLabel,
+          assignedPrice: assignedPrice,
           isBirthday: isBirthday,
           age: age,
           rutTien: rutTien,

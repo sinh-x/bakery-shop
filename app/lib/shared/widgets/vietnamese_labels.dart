@@ -357,6 +357,17 @@ class VN {
   static const uploadingPhotos = 'Đang tải ảnh lên...';
   static const itemPrice = 'Đơn giá';
 
+  // ── Markup (trưng bày) ──────────────────────────────────────────────────
+  /// "Giá gốc" — the assigned price (base_price or selected chip price) shown
+  /// as a non-editable reference in the POS chip picker. DG-296 Phase 3.
+  static const giaGoc = 'Giá gốc';
+  /// "Giá bán" — the editable selling price field (markup). DG-296 Phase 3.
+  static const giaBan = 'Giá bán';
+  /// Price floor warning: selling price cannot be below the assigned price.
+  static const markupFloorWarning = 'Giá bán không được thấp hơn giá gốc';
+  /// Helper text for the markup price field (thousands of đ).
+  static const markupThousandsHint = 'Nhập nghìn đồng (VD: 250 = 250.000đ)';
+
   // Catalog gallery
   static const catalogTitle = 'Bộ sưu tập';
   static const addCatalogPhoto = 'Thêm ảnh mẫu';

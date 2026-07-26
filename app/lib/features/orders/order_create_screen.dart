@@ -166,6 +166,7 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
             'isGift': i.isGift,
             'attributes': i.attributes,
             'priceChipId': i.priceChipId,
+            if (i.assignedPrice != null) 'assignedPrice': i.assignedPrice,
           };
           if (i.isBirthday && i.age.isNotEmpty) {
             final age = int.tryParse(i.age.trim());
