@@ -367,6 +367,8 @@ CREATE TABLE IF NOT EXISTS order_items (
 
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
 
+CREATE INDEX IF NOT EXISTS idx_order_items_status ON order_items(status);
+
 CREATE TABLE IF NOT EXISTS payment_transactions (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id        INTEGER NOT NULL REFERENCES orders(id),

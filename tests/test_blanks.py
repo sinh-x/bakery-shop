@@ -550,6 +550,19 @@ def test_demand_excludes_work_item_status_delivered_bom(api_client):
     assert demand == [] or demand[0]["demand"] == 0
 
 
+def test_demand_excludes_work_item_status_cancelled_bom(api_client):
+    """CQ-1 (BOM path): a work item in ``cancelled`` is excluded from demand.
+
+    Distinct from order-status ``cancelled``: here the order stays ``new``
+    so this verifies the work-item-status filter, not the order filter.
+    """
+    blank, _order, item_id = _bom_demand_setup(api_client, quantity=3, order_qty=2)
+    assert api_client.get("/api/blanks/demand").json()[0]["demand"] == 6
+    _set_work_item_status(item_id, "cancelled")
+    demand = api_client.get("/api/blanks/demand").json()
+    assert demand == [] or demand[0]["demand"] == 0
+
+
 def test_demand_includes_work_item_status_pending_bom(api_client):
     """AC4 (BOM path): default ``pending`` work items contribute to demand."""
     blank, _order, _item_id = _bom_demand_setup(api_client, quantity=2, order_qty=3)
@@ -591,6 +604,15 @@ def test_demand_excludes_work_item_status_delivered_junction(api_client):
     blank, _order, item_id = _junction_demand_setup(api_client, assign_qty=5)
     assert api_client.get("/api/blanks/demand").json()[0]["demand"] == 5
     _set_work_item_status(item_id, "delivered")
+    demand = api_client.get("/api/blanks/demand").json()
+    assert demand == [] or demand[0]["demand"] == 0
+
+
+def test_demand_excludes_work_item_status_cancelled_junction(api_client):
+    """CQ-1 (junction path): ``cancelled`` work item excluded via junction."""
+    blank, _order, item_id = _junction_demand_setup(api_client, assign_qty=5)
+    assert api_client.get("/api/blanks/demand").json()[0]["demand"] == 5
+    _set_work_item_status(item_id, "cancelled")
     demand = api_client.get("/api/blanks/demand").json()
     assert demand == [] or demand[0]["demand"] == 0
 

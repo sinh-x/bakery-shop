@@ -75,7 +75,7 @@ _EXCLUDED_ORDER_STATUSES = ("delivered", "cancelled")
 
 # Work item statuses that should no longer count toward blank demand (FR1).
 # Work items with status ``pending`` or ``confirmed`` continue to contribute.
-_EXCLUDED_WORK_ITEM_STATUSES = ("working", "ready", "delivered")
+_EXCLUDED_WORK_ITEM_STATUSES = ("working", "ready", "delivered", "cancelled")
 
 
 def _ensure_blank_exists(conn, blank_id: int) -> Blank:
