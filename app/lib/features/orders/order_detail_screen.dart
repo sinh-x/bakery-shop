@@ -28,6 +28,7 @@ import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/enum_attribute_display.dart';
 import 'widgets/order_customer_section.dart';
 import 'widgets/order_delivery_section.dart';
+import 'widgets/order_item_markup_line.dart';
 import 'widgets/order_photo_section.dart';
 import 'widgets/rut_tien_section.dart';
 import 'widgets/section_header.dart';
@@ -729,6 +730,11 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                               color: theme.colorScheme.outline,
                             ),
                           ),
+                          // Markup display for trưng bày items (DG-296 Phase 5, FR7/AC6).
+                          OrderItemMarkupLine(
+                            unitPrice: item.unitPrice,
+                            assignedPrice: item.assignedPrice,
+                          ),
                           // Enum attribute display (DG-092 F7 / AC-6)
                           ...buildEnumAttributeLines(
                             context,
@@ -798,6 +804,11 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: theme.colorScheme.outline,
                               ),
+                            ),
+                            // Markup display for trưng bày extras (DG-296 Phase 5, FR7/AC6).
+                            OrderItemMarkupLine(
+                              unitPrice: item.unitPrice,
+                              assignedPrice: item.assignedPrice,
                             ),
                             ...buildEnumAttributeLines(
                               context,
@@ -2223,6 +2234,16 @@ class _WorkItemCard extends StatelessWidget {
                   ),
                 ),
               ),
+              // Markup display for trưng bày work items (DG-296 Phase 5, FR7/AC6).
+              if (item.assignedPrice != null &&
+                  item.assignedPrice! < item.unitPrice)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: OrderItemMarkupLine(
+                    unitPrice: item.unitPrice,
+                    assignedPrice: item.assignedPrice,
+                  ),
+                ),
               // Birthday badge + age
               if (item.isBirthday)
                 Padding(

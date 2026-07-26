@@ -367,6 +367,9 @@ class VN {
   static const markupFloorWarning = 'Giá bán không được thấp hơn giá gốc';
   /// Helper text for the markup price field (thousands of đ).
   static const markupThousandsHint = 'Nhập nghìn đồng (VD: 250 = 250.000đ)';
+  /// "Phần cộng thêm" — the markup amount (unitPrice − assignedPrice) shown
+  /// on trưng bày order line items in the order detail view. DG-296 Phase 5.
+  static const markupAmount = 'Phần cộng thêm';
 
   // Catalog gallery
   static const catalogTitle = 'Bộ sưu tập';
