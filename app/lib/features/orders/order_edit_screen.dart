@@ -130,9 +130,10 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _shippingFee = order.shippingFee;
     // FR9: load the existing linked customer from `order.customerId`.
     if (order.customerId != null) _loadLinkedCustomer(order.customerId!);
-    // FR7: prefill delivery phone from customer phone for bus/door when empty.
-    if ((order.deliveryType == 'bus' || order.deliveryType == 'door') &&
-        _deliveryPhoneCtrl.text.trim().isEmpty &&
+    // FR7: prefill delivery phone from customer phone for all delivery types
+    // when empty (CQ-2: aligns the edit flow with the create flow, which
+    // auto-fills for every type rather than only bus/door).
+    if (_deliveryPhoneCtrl.text.trim().isEmpty &&
         _phoneCtrl.text.trim().isNotEmpty) {
       _deliveryPhoneCtrl.text = _phoneCtrl.text.trim();
     }

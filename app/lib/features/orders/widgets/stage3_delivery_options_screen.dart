@@ -41,7 +41,14 @@ class _Stage3DeliveryOptionsScreenState
     _addressCtrl.addListener(_syncToState);
     _deliveryPhoneCtrl.addListener(_syncToState);
     _notesCtrl.addListener(_syncToState);
-    _maybePrefillDeliveryPhone(state.wizardData.deliveryType);
+    // CQ-1: deferring the prefill to the next frame avoids synchronously
+    // mutating the provider during widget build (initState), which broke
+    // 3 tests that assert the build phase does not update wizard state.
+    final initialType = state.wizardData.deliveryType;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _maybePrefillDeliveryPhone(initialType);
+    });
   }
 
   @override
