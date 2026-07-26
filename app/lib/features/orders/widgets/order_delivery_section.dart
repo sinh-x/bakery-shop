@@ -372,7 +372,7 @@ class OrderDeliverySection extends StatelessWidget {
     final digits = stripNonDigits(phone);
     if (digits.isEmpty) return;
     final uri = Uri.parse('tel:$digits');
-    final launched = await launchUrl(uri);
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!launched && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text(OrdersLabels.cannotOpenDialer)),
