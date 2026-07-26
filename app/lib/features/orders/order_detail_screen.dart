@@ -693,6 +693,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           deliveryType: order.deliveryType,
           deliveryAddress: order.deliveryAddress,
           customerPhone: order.customerPhone,
+          deliveryPhone: order.deliveryPhone,
           shippingFee: order.shippingFee,
           notes: order.notes,
           mode: OrderDeliverySectionMode.readOnly,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // EXEMPT: 200-line widget threshold exceeded because OrderDeliverySection
 // is the canonical shared delivery widget with multiple sub-sections
@@ -8,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/labels/orders.dart';
 import '../../../shared/utils/order_helpers.dart';
+import '../../../shared/utils/phone_formatter.dart';
 import '../../../shared/widgets/phone_text_field.dart';
 import 'due_date_time_picker_row.dart';
 import 'section_header.dart';
@@ -19,6 +21,7 @@ class OrderDeliverySection extends StatelessWidget {
     required this.deliveryType,
     this.deliveryAddress,
     this.customerPhone,
+    this.deliveryPhone,
     this.shippingFee,
     this.notes,
     this.mode = OrderDeliverySectionMode.readOnly,
@@ -44,6 +47,7 @@ class OrderDeliverySection extends StatelessWidget {
   final String deliveryType;
   final String? deliveryAddress;
   final String? customerPhone;
+  final String? deliveryPhone;
   final double? shippingFee;
   final String? notes;
   final OrderDeliverySectionMode mode;
@@ -66,6 +70,26 @@ class OrderDeliverySection extends StatelessWidget {
   final VoidCallback? onRetryShippingFeeConfig;
 
   bool get _needsAddress => deliveryType == 'bus' || deliveryType == 'door';
+
+  /// Whether the customer phone should be shown in read-only mode.
+  ///
+  /// Per FR5/AC5, when the customer phone and delivery phone are identical we
+  /// display only one phone number (the customer phone) to avoid duplication.
+  bool get _shouldShowCustomerPhone =>
+      customerPhone != null && customerPhone!.trim().isNotEmpty;
+
+  /// Whether the delivery phone should be shown in read-only mode.
+  ///
+  /// Shown only when it is non-empty and differs from the customer phone
+  /// (FR4/AC4). When both phones are identical only the customer phone row is
+  /// rendered (FR5/AC5).
+  bool get _shouldShowDeliveryPhone {
+    final dp = deliveryPhone?.trim() ?? '';
+    if (dp.isEmpty) return false;
+    final cp = customerPhone?.trim() ?? '';
+    if (cp.isEmpty) return true;
+    return stripNonDigits(dp) != stripNonDigits(cp);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -100,8 +124,10 @@ class OrderDeliverySection extends StatelessWidget {
           ),
         _buildInfoRow(context, Icons.local_shipping_outlined, VN.deliveryType, deliveryTypeLabel(deliveryType)),
         if (_needsAddress) ...[
-          if (customerPhone != null && customerPhone!.isNotEmpty)
-            _buildInfoRow(context, Icons.phone_outlined, VN.customerPhone, customerPhone!),
+          if (_shouldShowCustomerPhone)
+            _buildPhoneRow(context, VN.customerPhone, customerPhone!),
+          if (_shouldShowDeliveryPhone)
+            _buildPhoneRow(context, OrdersLabels.deliveryPhone, deliveryPhone!),
           if (deliveryAddress != null && deliveryAddress!.isNotEmpty)
             _buildInfoRow(context, Icons.location_on_outlined, VN.deliveryAddress, deliveryAddress!),
         ],
@@ -290,6 +316,68 @@ class OrderDeliverySection extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// Read-only phone row with a tap-to-call action that opens the native dialer
+  /// via a `tel:` URI (FR4/AC4). Falls back to a plain info row when the dialer
+  /// cannot be launched.
+  Widget _buildPhoneRow(BuildContext context, String label, String phone) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.phone_outlined, size: 16, color: Colors.grey),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 80,
+            child: Text(
+              '$label:',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
+            ),
+          ),
+          Expanded(
+            child: InkWell(
+              onTap: () => _launchPhone(context, phone),
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        phone,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      Icons.phone_in_talk,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _launchPhone(BuildContext context, String phone) async {
+    final digits = stripNonDigits(phone);
+    if (digits.isEmpty) return;
+    final uri = Uri.parse('tel:$digits');
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(OrdersLabels.cannotOpenDialer)),
+      );
+    }
   }
 }
 
