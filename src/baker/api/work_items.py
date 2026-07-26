@@ -1,15 +1,18 @@
 """Work item API routes — per-order production tasks."""
 
 import json
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from baker.db.connection import get_db
 from baker.models.order import is_backward_transition
 from baker.models.work_item import BlankAssignment, WorkItem, WorkItemStatus
 from baker.utils.time import now_utc
+
+logger = logging.getLogger("baker.server")
 
 router = APIRouter(prefix="/api/orders", tags=["work-items"])
 
@@ -67,6 +70,22 @@ class WorkItemCreate(BaseModel):
     priceChipId: int | None = None
     assignedPrice: Optional[float] = None
 
+    @model_validator(mode="after")
+    def _validate_assigned_price_le_unit_price(self):
+        # Defense-in-depth (DG-296 CQ-4): the trưng bày markup flow requires
+        # unitPrice (selling price) to be >= assignedPrice (COGS anchor).
+        # Soft validation — log a warning only, do not reject, so existing
+        # clients with historical data remain backward compatible.
+        if self.assignedPrice is not None and self.unitPrice < self.assignedPrice:
+            logger.warning(
+                "WorkItemCreate: unitPrice %.2f < assignedPrice %.2f for product %r "
+                "(markup invariant violated; accepting for backward compatibility)",
+                self.unitPrice,
+                self.assignedPrice,
+                self.productName,
+            )
+        return self
+
 
 class WorkItemUpdate(BaseModel):
     productName: Optional[str] = None
@@ -80,6 +99,24 @@ class WorkItemUpdate(BaseModel):
     isGift: Optional[bool] = None
     attributes: Optional[dict] = None
     assignedPrice: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _validate_assigned_price_le_unit_price(self):
+        # Defense-in-depth (DG-296 CQ-4): when both fields are supplied in the
+        # same PATCH, unitPrice must be >= assignedPrice. Soft validation —
+        # log a warning only, do not reject, for backward compatibility.
+        if (
+            self.assignedPrice is not None
+            and self.unitPrice is not None
+            and self.unitPrice < self.assignedPrice
+        ):
+            logger.warning(
+                "WorkItemUpdate: unitPrice %.2f < assignedPrice %.2f "
+                "(markup invariant violated; accepting for backward compatibility)",
+                self.unitPrice,
+                self.assignedPrice,
+            )
+        return self
 
 
 class WorkItemStatusTransition(BaseModel):
@@ -128,8 +165,19 @@ def _attach_blanks(conn, items: list) -> None:
 
 def _sync_order_items_json(conn, order_id: int) -> None:
     """Regenerate orders.items JSON from order_items table and recalculate total_price."""
+    # ``assigned_price`` was added in migration v84 (DG-296 Phase 1). Older
+    # databases that have not yet reached v84 do not have the column yet —
+    # detect it and fall back to NULL so the SELECT works at every migration
+    # stage (FR8 backward compatibility, parity with journal_sync.py and
+    # accounting_validation.py).
+    oi_columns = {
+        r[1] for r in conn.execute("PRAGMA table_info(order_items)").fetchall()
+    }
+    has_assigned_price = "assigned_price" in oi_columns
     rows = conn.execute(
-        "SELECT id, product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes, assigned_price FROM order_items WHERE order_id = ?",
+        "SELECT id, product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes"
+        + (", assigned_price " if has_assigned_price else ", NULL AS assigned_price ")
+        + "FROM order_items WHERE order_id = ?",
         (order_id,),
     ).fetchall()
     item_ids = [r["id"] for r in rows]

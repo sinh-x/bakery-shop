@@ -74,29 +74,62 @@ class WorkItem:
     def save(self, conn) -> int:
         import json
         attrs_json = json.dumps(self.attributes)
-        cursor = conn.execute(
-            """INSERT INTO order_items
-               (order_id, product_id, product_name, quantity, unit_price, notes, position, status, is_birthday, age, is_extra, is_gift, attributes, price_chip_id, assigned_price, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                self.order_id,
-                self.product_id,
-                self.product_name,
-                self.quantity,
-                self.unit_price,
-                self.notes,
-                self.position,
-                self.status,
-                1 if self.is_birthday else 0,
-                self.age,
-                1 if self.is_extra else 0,
-                1 if self.is_gift else 0,
-                attrs_json,
-                self.price_chip_id,
-                self.assigned_price,
-                now_utc(),
-            ),
-        )
+        # ``assigned_price`` was added in migration v84 (DG-296 Phase 1).
+        # Older databases that have not yet reached v84 do not have the
+        # column yet — detect it and omit it from the INSERT so writes
+        # succeed at every migration stage (FR8 backward compatibility,
+        # parity with journal_sync.py and accounting_validation.py).
+        oi_columns = {
+            r[1] for r in conn.execute("PRAGMA table_info(order_items)").fetchall()
+        }
+        has_assigned_price = "assigned_price" in oi_columns
+        if has_assigned_price:
+            cursor = conn.execute(
+                """INSERT INTO order_items
+                   (order_id, product_id, product_name, quantity, unit_price, notes, position, status, is_birthday, age, is_extra, is_gift, attributes, price_chip_id, assigned_price, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    self.order_id,
+                    self.product_id,
+                    self.product_name,
+                    self.quantity,
+                    self.unit_price,
+                    self.notes,
+                    self.position,
+                    self.status,
+                    1 if self.is_birthday else 0,
+                    self.age,
+                    1 if self.is_extra else 0,
+                    1 if self.is_gift else 0,
+                    attrs_json,
+                    self.price_chip_id,
+                    self.assigned_price,
+                    now_utc(),
+                ),
+            )
+        else:
+            cursor = conn.execute(
+                """INSERT INTO order_items
+                   (order_id, product_id, product_name, quantity, unit_price, notes, position, status, is_birthday, age, is_extra, is_gift, attributes, price_chip_id, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    self.order_id,
+                    self.product_id,
+                    self.product_name,
+                    self.quantity,
+                    self.unit_price,
+                    self.notes,
+                    self.position,
+                    self.status,
+                    1 if self.is_birthday else 0,
+                    self.age,
+                    1 if self.is_extra else 0,
+                    1 if self.is_gift else 0,
+                    attrs_json,
+                    self.price_chip_id,
+                    now_utc(),
+                ),
+            )
         self.id = cursor.lastrowid
         return self.id
 

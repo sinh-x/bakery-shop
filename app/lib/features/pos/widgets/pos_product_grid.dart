@@ -109,7 +109,7 @@ class PosProductGrid extends ConsumerWidget {
         double selectedPrice = defaultPrice;
         // Assigned price (COGS anchor) — only tracked for trưng bày markup.
         // For non-trưng bày it stays null so backend falls back to unitPrice.
-        double assignedPrice = isTrungBay ? defaultPrice : 0;
+        double? assignedPrice = isTrungBay ? defaultPrice : null;
         final priceCtrl = TextEditingController(
           text: isTrungBay
               ? (defaultPrice / 1000).toInt().toString()
@@ -186,7 +186,7 @@ class PosProductGrid extends ConsumerWidget {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Text(
-                        '${VN.giaGoc}: ${formatVND(assignedPrice)}',
+                        '${VN.giaGoc}: ${formatVND(assignedPrice!)}',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -227,7 +227,7 @@ class PosProductGrid extends ConsumerWidget {
                           }
                           // Price floor: selling price cannot go below the
                           // assigned price (FR3). Clamp + warn.
-                          if (selling < assignedPrice) {
+                          if (selling < assignedPrice!) {
                             floorWarning = VN.markupFloorWarning;
                           } else {
                             floorWarning = null;
@@ -286,8 +286,8 @@ class PosProductGrid extends ConsumerWidget {
                 onPressed: () {
                   // Price floor enforcement (FR3/AC3): clamp selling price to
                   // the assigned price when staff entered a lower value.
-                  if (isTrungBay && selectedPrice < assignedPrice) {
-                    selectedPrice = assignedPrice;
+                  if (isTrungBay && selectedPrice < assignedPrice!) {
+                    selectedPrice = assignedPrice!;
                     // Reset chip selection to the assigned-price option (if
                     // any) since selling == assigned after clamping.
                     final match = options
@@ -308,8 +308,7 @@ class PosProductGrid extends ConsumerWidget {
                       selectedStockQty != null && selectedStockQty <= 0;
                   final isManualBaseOutOfStock =
                       selectedOption == null && posBaseStockQty(product) <= 0;
-                  final assignedForCart =
-                      isTrungBay ? assignedPrice : null;
+                  final assignedForCart = assignedPrice;
                   if (isOutOfStock ||
                       isSelectedOptionOutOfStock ||
                       isManualBaseOutOfStock) {

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from baker.db.connection import get_db
 from baker.db.schema import _order_year, _recompute_customer_year_summary, _strip_diacritics
@@ -215,6 +215,22 @@ class OrderItemIn(BaseModel):
     priceChipId: int | None = None
     attributes: dict = Field(default_factory=dict)
     assignedPrice: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _validate_assigned_price_le_unit_price(self):
+        # Defense-in-depth (DG-296 CQ-4): the trưng bày markup flow requires
+        # unitPrice (selling price) to be >= assignedPrice (COGS anchor).
+        # Soft validation — log a warning only, do not reject, so existing
+        # clients with historical data remain backward compatible.
+        if self.assignedPrice is not None and self.unitPrice < self.assignedPrice:
+            logger.warning(
+                "OrderItemIn: unitPrice %.2f < assignedPrice %.2f for product %r "
+                "(markup invariant violated; accepting for backward compatibility)",
+                self.unitPrice,
+                self.assignedPrice,
+                self.productName,
+            )
+        return self
 
 
 class DepositIn(BaseModel):
