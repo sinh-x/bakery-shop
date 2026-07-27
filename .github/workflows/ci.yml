@@ -31,7 +31,9 @@ jobs:
         id: f
         run: |
           set -euo pipefail
-          # Determine the base commit to diff against.
+          # Determine the base commit to diff against. Use merge-base to find
+          # the common ancestor, which is robust on first push of a new branch
+          # where the base ref may not be present locally (OPS-2).
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE="${{ github.event.pull_request.base.sha }}"
           else
@@ -44,8 +46,15 @@ jobs:
           fi
 
           # List changed files (added/modified/deleted) relative to repo root.
-          if ! CHANGES=$(git diff --name-only "$BASE..HEAD" 2>/dev/null); then
-            CHANGES=$(git diff --name-only HEAD~1..HEAD 2>/dev/null || true)
+          # Fall back through several strategies so a first-push branch whose
+          # base ref is absent locally still resolves a usable diff range
+          # (OPS-2): merge-base → HEAD~1 → empty (treated as first-push).
+          if ! CHANGES=$(git diff --name-only "$BASE..HEAD" 2>/dev/null) || [ -z "$CHANGES" ]; then
+            if ANCESTOR=$(git merge-base "$BASE" HEAD 2>/dev/null) && [ -n "$ANCESTOR" ]; then
+              CHANGES=$(git diff --name-only "$ANCESTOR..HEAD" 2>/dev/null || echo "first-push")
+            else
+              CHANGES=$(git diff --name-only HEAD~1..HEAD 2>/dev/null || echo "first-push")
+            fi
           fi
 
           echo "Changed files (base=$BASE):"
@@ -110,10 +119,12 @@ jobs:
       - name: Fast gate tests
         # Phase 4.4 — runs `fast or critical` so critical-flow tests
         # (auth/payments/POS/migrations) are never skipped in the fast gate.
+        # Phase 5.5 — `-n auto` parallelises via pytest-xdist so the 947-test
+        # gate completes comfortably under the 5-min timeout (OPS-1).
         timeout-minutes: 5
         env:
           BAKER_BCRYPT_ROUNDS: "4"
-        run: python -m pytest tests -v -m "fast or critical"
+        run: python -m pytest tests -v -n auto -m "fast or critical"
 
   python-tests:
     # Runs when Python source or config changes
