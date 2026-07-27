@@ -935,15 +935,20 @@ CASHFLOW_RECONCILIATION_TOLERANCE = 0.01
 # source_type values that represent operating-activity cash inflows on cash
 # accounts. ``payment_transaction`` covers customer deposits/payments and
 # refunds (refunds credit cash → outflow, but they still belong to operating).
-# ``order_shipping_release`` releases a held bus shipping fee back to cash
-# (DR 2200 / CR 1100) — the cash credit is an operating inflow to the shop.
-OPERATING_INFLOW_SOURCE_TYPES = ("payment_transaction", "order_shipping_release")
+OPERATING_INFLOW_SOURCE_TYPES = ("payment_transaction",)
 
 # source_type values that represent operating-activity cash outflows on cash
 # accounts. ``expense`` debits an expense/inventory account and credits a
 # cash account; ``expense_settlement`` debits Accounts Payable (2500) and
 # credits a cash account when a debt expense is paid off.
-OPERATING_OUTFLOW_SOURCE_TYPES = ("expense", "expense_settlement")
+# ``order_shipping_release`` releases a held bus shipping fee back to the bus
+# driver/supplier (DR 2200 / CR 1100) — crediting cash is an operating outflow,
+# i.e. cash paid to suppliers/services, so it belongs with the other outflows.
+OPERATING_OUTFLOW_SOURCE_TYPES = (
+    "expense",
+    "expense_settlement",
+    "order_shipping_release",
+)
 
 # source_type values that represent financing-activity cash movements.
 FINANCING_SOURCE_TYPES = ("owner_capital", "owner_draw")
