@@ -195,6 +195,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         'productName': i.product.name,
         'quantity': i.quantity,
         'unitPrice': i.unitPrice,
+        'notes': i.notes,
         'isExtra': i.isExtra,
         'isGift': i.isGift,
         'isBirthday': i.isBirthday,
