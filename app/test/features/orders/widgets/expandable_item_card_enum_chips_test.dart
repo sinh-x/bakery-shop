@@ -280,7 +280,7 @@ void main() {
     );
 
     testWidgets(
-      'AC3: entering a selling price below assigned shows floor warning',
+      'AC3: entering a selling price below assigned shows floor warning and clamps',
       (tester) async {
         final item = DraftOrderItem(
           product: const Product(
@@ -298,9 +298,13 @@ void main() {
         await tester.pump();
 
         expect(find.text(VN.markupFloorWarning), findsOneWidget);
-        // The draft item still records the entered (below-floor) value; the
-        // floor is enforced at order-submit time (order_create_screen.dart).
-        expect(item.customUnitPrice, 150000);
+        // DG-296 FR3/AC3 review-remediation: the editor now clamps the draft
+        // item's customUnitPrice upward to the assigned price (COGS anchor)
+        // instead of leaving the below-floor value in place. The floor warning
+        // still surfaces so staff see that their entry was adjusted. The
+        // draftItemToCart write-back is the second defense-in-depth.
+        expect(item.customUnitPrice, 200000);
+        expect(item.assignedPrice, 200000);
       },
     );
 

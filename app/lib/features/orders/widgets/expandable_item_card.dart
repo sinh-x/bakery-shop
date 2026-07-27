@@ -90,7 +90,13 @@ class _ExpandableItemCardState extends State<ExpandableItemCard> {
       }
       final selling = thousands.toDouble() * 1000;
       final assigned = widget.item.assignedPrice ?? widget.item.product.basePrice;
-      widget.item.customUnitPrice = selling;
+      // FR3/AC3 price floor enforcement (DG-296 review-remediation): clamp the
+      // selling price to the assigned price (COGS anchor) when staff entered a
+      // lower value, instead of only warning. This prevents the wizard Stage 1
+      // editor from producing a unitPrice < assignedPrice row that would then
+      // be written back to the POS cart and submitted to the backend.
+      final clamped = selling < assigned ? assigned : selling;
+      widget.item.customUnitPrice = clamped;
       setState(() {
         _floorWarning = selling < assigned ? VN.markupFloorWarning : null;
       });

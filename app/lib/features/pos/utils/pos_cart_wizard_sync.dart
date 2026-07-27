@@ -54,6 +54,21 @@ PosCartItem draftItemToCart(DraftOrderItem item) {
   final rutTien = item.attributes['rut_tien']?.toString() == 'true';
   final cashFeeStr = item.attributes['cash_fee']?.toString();
   final cashAmountStr = item.attributes['cash_amount']?.toString();
+  // FR3/AC3 price floor enforcement (DG-296 review-remediation): clamp the
+  // selling price to the assigned price (COGS anchor) when the wizard Stage 1
+  // editor produced a `customUnitPrice` below `assignedPrice`. This is the
+  // final defense-in-depth on the wizard→cart write-back path so the POS cart
+  // (the single source of truth at submit) can never carry a trưng bày item
+  // with unitPrice < assignedPrice. Non-trưng bày items keep `assignedPrice`
+  // null and are unaffected.
+  final assigned = item.assignedPrice;
+  double? selectedPrice = item.customUnitPrice;
+  if (assigned != null &&
+      assigned > 0 &&
+      selectedPrice != null &&
+      selectedPrice < assigned) {
+    selectedPrice = assigned;
+  }
   return PosCartItem(
     product: item.product,
     quantity: item.quantity,
@@ -68,7 +83,7 @@ PosCartItem draftItemToCart(DraftOrderItem item) {
     cashAmount: cashAmountStr != null && cashAmountStr.isNotEmpty
         ? double.tryParse(cashAmountStr)
         : null,
-    selectedPrice: item.customUnitPrice,
+    selectedPrice: selectedPrice,
     selectedChipId: item.priceChipId,
     selectedChipLabel: _resolveChipLabel(item),
     assignedPrice: item.assignedPrice,

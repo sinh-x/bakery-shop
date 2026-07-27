@@ -72,18 +72,19 @@ class WorkItemCreate(BaseModel):
 
     @model_validator(mode="after")
     def _validate_assigned_price_le_unit_price(self):
-        # Defense-in-depth (DG-296 CQ-4): the trưng bày markup flow requires
-        # unitPrice (selling price) to be >= assignedPrice (COGS anchor).
-        # Soft validation — log a warning only, do not reject, so existing
-        # clients with historical data remain backward compatible.
+        # Defense-in-depth (DG-296 CQ-4 / review-remediation): clamp unitPrice
+        # upward to assignedPrice when a client submits a below-floor value, so
+        # the trưng bày markup invariant holds even when the frontend clamp is
+        # bypassed. A warning is logged so the violation is observable.
         if self.assignedPrice is not None and self.unitPrice < self.assignedPrice:
             logger.warning(
-                "WorkItemCreate: unitPrice %.2f < assignedPrice %.2f for product %r "
-                "(markup invariant violated; accepting for backward compatibility)",
+                "WorkItemCreate: clamping unitPrice %.2f up to assignedPrice %.2f "
+                "for product %r (markup invariant violated; client clamp bypassed)",
                 self.unitPrice,
                 self.assignedPrice,
                 self.productName,
             )
+            object.__setattr__(self, "unitPrice", self.assignedPrice)
         return self
 
 
@@ -102,20 +103,21 @@ class WorkItemUpdate(BaseModel):
 
     @model_validator(mode="after")
     def _validate_assigned_price_le_unit_price(self):
-        # Defense-in-depth (DG-296 CQ-4): when both fields are supplied in the
-        # same PATCH, unitPrice must be >= assignedPrice. Soft validation —
-        # log a warning only, do not reject, for backward compatibility.
+        # Defense-in-depth (DG-296 CQ-4 / review-remediation): when both fields
+        # are supplied in the same PATCH, clamp unitPrice upward to assignedPrice
+        # when below floor. A warning is logged so the violation is observable.
         if (
             self.assignedPrice is not None
             and self.unitPrice is not None
             and self.unitPrice < self.assignedPrice
         ):
             logger.warning(
-                "WorkItemUpdate: unitPrice %.2f < assignedPrice %.2f "
-                "(markup invariant violated; accepting for backward compatibility)",
+                "WorkItemUpdate: clamping unitPrice %.2f up to assignedPrice %.2f "
+                "(markup invariant violated; client clamp bypassed)",
                 self.unitPrice,
                 self.assignedPrice,
             )
+            object.__setattr__(self, "unitPrice", self.assignedPrice)
         return self
 
 
