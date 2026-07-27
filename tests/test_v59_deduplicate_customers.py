@@ -5,9 +5,12 @@ case-insensitive trimmed name, reassigning orders to the winner, and deleting
 duplicates. Idempotent — re-running is a no-op.
 """
 
+import pytest
 import sqlite3
 
 from baker.db.schema import _migrate_v59_deduplicate_customers
+
+pytestmark = pytest.mark.critical
 
 
 def _setup_db() -> sqlite3.Connection:

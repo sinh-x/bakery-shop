@@ -20,6 +20,8 @@ Covers:
 
 from __future__ import annotations
 
+import pytest
+
 from datetime import datetime, timezone
 
 from baker.api.customers import (
@@ -30,6 +32,8 @@ from baker.api.customers import (
 from baker.db.connection import get_db
 from baker.models.customer import load_year_summary
 from tests.auth_helpers import _auth_headers, _seed_user
+
+pytestmark = pytest.mark.critical
 
 
 # ---------------------------------------------------------------------------

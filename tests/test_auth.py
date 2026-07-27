@@ -22,6 +22,8 @@ from baker.api.auth import _pwd_ctx, _reset_auth_state
 from baker.config import JWT_SECRET
 from baker.db.connection import get_db
 
+pytestmark = pytest.mark.critical
+
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -16,6 +16,8 @@ from baker.db.connection import get_db
 
 from tests.auth_helpers import _auth_headers, _seed_user
 
+pytestmark = pytest.mark.critical
+
 runner = CliRunner()
 
 

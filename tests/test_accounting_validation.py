@@ -25,12 +25,15 @@ CLI command:
 - CLI command exit code + output
 """
 
+import pytest
 import click.testing
 
 from baker.cli import app
 from baker.db.connection import get_db
 from baker.db.schema import ensure_schema
 from baker.services.accounting_validation import run_validation
+
+pytestmark = pytest.mark.critical
 
 
 # ---------------------------------------------------------------------------

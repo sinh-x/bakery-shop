@@ -1,3 +1,4 @@
+import pytest
 import json
 
 from baker.db.connection import get_db
@@ -8,6 +9,8 @@ from baker.db.schema import (
     PRINT_LOG_AND_PRINTED_BY_SCHEMA,
     ensure_schema,
 )
+
+pytestmark = pytest.mark.critical
 
 
 def _migrate_to_version(conn, target_version: int) -> None:

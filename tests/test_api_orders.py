@@ -7,6 +7,8 @@ import pytest
 
 from baker.db.connection import get_db
 
+pytestmark = pytest.mark.critical
+
 
 # --- Helpers ---
 
