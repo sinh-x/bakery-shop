@@ -644,6 +644,20 @@ class VN {
   static const expenseCategoryRepair = 'Sửa chữa';
   static const expenseCategorySalaryAllowance = 'Lương/phụ cấp';
   static const expenseCategoryOther = 'Khác';
+
+  // Expense subcategories (DG-302 Phase 3) — Nguyên liệu & Bao bì
+  static const expenseSubcategoryEggs = 'Trứng';
+  static const expenseSubcategoryCream = 'Kem';
+  static const expenseSubcategoryFlour = 'Bột';
+  static const expenseSubcategoryOtherAdditives = 'Phụ gia khác';
+  static const expenseSubcategoryBoxAndBase = 'Hộp & đế';
+  static const expenseSubcategoryAccessories = 'Phụ kiện';
+  static const expenseSubcategoryWrap = 'Bọc nilon';
+
+  // Expense subcategory form / report labels
+  static const expenseSubcategoryLabel = 'Danh mục con';
+  static const expenseSubcategoryHint = 'Chọn danh mục con';
+  static const expenseSubcategoryNone = '—';
   static const expenseSaveAction = 'Lưu chi phí';
   static const expenseAddAction = 'Thêm chi phí';
   static const expenseUpdateAction = 'Cập nhật chi phí';
