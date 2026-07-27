@@ -2,6 +2,78 @@
 
 ## [Unreleased]
 
+## [0.8.13] — 2026-07-27
+
+- feat(DG-271): Customer receipt continuous view + margin normalization
+  - Backend: customer receipt continuous view with normalized margins (Phase 1)
+  - Flutter: share button on POS receipt screen (Phase 2); review findings remediated (remove redundant saveToFile, share button tap test)
+- feat(DG-264): Staff reconciliation menu access for POS and Stock screens
+  - Flutter: removed `isAdmin` gate on reconciliation menu items in POS (Phase 1) and Stock (Phase 2)
+  - Flutter: staff/admin reconciliation menu visibility tests for POS and Stock screens (Phase 3)
+- feat(DG-266): Stock item card chip-tap restock
+  - Flutter: extracted `_StockItemCard` to its own widget file (Phase 1); optional `initialPrice` + autofocus on `StockActionSheet` (Phase 2)
+  - Flutter: tappable price chips with InkWell + trailing + icon (Phase 3); chip-tap restock widget tests (Phase 4)
+  - Flutter: replaced quantity input with +/- stepper buttons
+  - Review cycle 1 (touch target, dead code, swallowed exception, EOF) and cycle 2 (null-safe `onChipTap`) remediated
+- feat(DG-254): Order-status report subcommand
+  - Backend: `baker report order-status` subcommand (Phase 1); order-status report tests (Phase 2); `setdefault` pattern aligned with rendering (fix)
+- feat(DG-269) + feat(DG-274): Fix order completion financial reporting + drop stored `amount_paid` column
+  - Backend: removed `_recompute_amount_paid` and all 7 call sites (DG-274 Phase 1); updated `Order` model and `from_row` (Phase 2); `list_orders` filtering uses live-computed `amount_paid` (Phase 3)
+  - Backend: schema migration v80 drops the stored `amount_paid` column (requires SQLite ≥ 3.35.0)
+  - Review-auto c1 (dedupe list_orders filter, tighten from_row conn contract, document SQLite requirement) and c2 (return (False, None) for non-delivered rows, document amount_paid lazy-cache kwarg) remediated
+- feat(DG-155): Reconciliation detail readability
+  - Flutter: category-grouped rendering path with summary card, category grouping, collapsible line cards (Phase 4.3)
+  - Backend: `category` field on history detail API (Phase 4.1) and `ReconciliationHistoryLine` (Phase 4.2)
+  - Refactor: consolidated `_SummaryChip`/`_SummaryPill` into shared `ReconciliationSummaryChip` widget; restored `chipLabel` vs `sourceChipLabels` distinction; added test coverage for category-grouped rendering path
+- feat(DG-278): Reconciliation sell/waste modal
+  - Flutter: separate sale and waste modal widget (Phase 1); replaced inline sell/waste editors with modal trigger button (Phase 2); tests updated for two-button design (Phase 3)
+  - Flutter: inline line items with edit/delete controls (Phase 2); extracted shared modal widgets and payment method constants (CQ-1, CQ-2)
+  - Fixes: payment method validation, zero-qty guard, removed auto-row creation, stuck +/- steppers, multiple editable forms, hide existing sale rows when editing, waste reason required when qty > 0
+  - Review-auto cycles 1 and 2 minor findings remediated
+- feat(DG-276): COGS sync on bypassed-delivery completion
+  - Backend: COGS sync added to `_sync_completed_order_journal` (Phase 1); COGS tests for bypassed-delivery completion (Phase 2)
+- fix(DG-281): Fix edit transaction bank account
+  - Backend: route VCB expense credits to sub-accounts 1210/1220 (Phase 1); fix JSON key mismatch for `paymentSource` (Phase 1)
+  - Backend: `repair-bank-account-1200` for historical credit-side entries (Phase 2); `TargetAccountDropdown` widget tests (Phase 3)
+  - Backend: bind `TargetAccountDropdown` via `value` instead of `initialValue` (Phase 2); docs rationale for deprecated value usage
+- fix(DG-285): Restore version 0.8.9 and correct stale schema comment
+- feat(DG-286): Expense 1200 repair command
+  - Backend: expense journal entry detection on 1200 (Phase 1); repair dispatch + integration (Phase 2); VN labels + CLI docs (Phase 3); dry-run + idempotency + balance tests (Phase 4)
+  - Code-quality remediation: docstring/f-string/unused param; replaced Chinese character with Vietnamese 'vẫn' in docstring
+- feat(DG-193): Order list date filter
+  - Flutter: VN labels + `DateFilterChips` widget (Phase 1); integrated date filter into order list screen (Phase 2); kanban columns sort by `dueDate` ascending (Phase 3)
+  - Flutter: unit + widget tests for date filter (Phase 4); review-auto cycle 1 CQ-1/CQ-2 code-quality fixes
+- feat(DG-290): Blanks foundation — backend models, API endpoints, migration v81
+  - Backend: schema migration v81 blanks foundation (Phase 4.1); backend models, API endpoints, and tests (Phase 4.2)
+  - Fixes: 3 minor review findings; migration tests assert v81 blanks tables (Phase 5.6-c2-fix)
+- feat(DG-291): Blanks management UI — freezed models, providers, CRUD/BOM/stock/demand screens
+  - Flutter: freezed models, `BlankService`, and unit tests (Phase 1); data-layer providers and unit tests (Phase 2)
+  - Flutter: VN labels for blanks UI (Phase 4.3); blank CRUD screens with widget tests (Phase 4.4); BOM mapping screen with widget tests (Phase 4.5); stock tracking screen + audit log (Phase 4.6); demand planning screen (Phase 4.7); router + navigation (Phase 4.10)
+  - Flutter: helpers + unit tests for cake-queue grouping (Phase 1); grouped collapsible list + date filter (Phase 2)
+  - Review remediation: BOM nav route + DRY refactors
+- feat(DG-292): Cake-queue group by parent order status
+  - Flutter: cake-queue groups by parent order status; review fixes (trailing newlines + extract group header)
+  - Flutter: excluded `is_gift` items from production queue
+- feat(DG-293): Work item blank assignment UI
+  - Flutter: link work items to blanks via `blank_id` (Phase 1); migrate category field to server-managed dropdown (Phase 2); work item blank assignment UI (Phase 3); blank detail stock, demand, and linked products (Phase 4)
+- feat(DG-294): Backend DB migration v83 + blank CRUD API endpoints + Flutter blank UI
+  - Backend: schema migration v83 + blank CRUD API endpoints (Phase 1); Flutter models + service layer (Phase 2); `CakeDetailScreen` blank UI (Phase 3); extracted `formatDecimal` helper + fixed deprecated `DropdownButtonFormField` value (Phase 4)
+  - Flutter: stock/demand menu items on `BlankListScreen` overflow menu and Làm bánh screen menu; edit/delete buttons on blank line items in read mode; `order_item_blanks` included in demand calculation
+  - Review-auto findings (5.6-c1-fix, 5.6-c2 stale state + button visibility) and 3 minor findings (docstring, unused field, SQL comment) remediated
+- feat(cake-queue): Show blank assignment status on Làm bánh cards
+- feat(DG-296): Order-level price markup for Trưng Bày products
+- feat(DG-283): Delivery phone auto-fill, dual display, tap-to-call, and receipt printing
+  - Flutter: auto-fill delivery phone on create for all delivery types (Phase 1); sync-until-diverged delivery phone on order edit (Phase 2)
+  - Flutter: dual phone display + tap-to-call on order detail (Phase 3); delivery phone on all 5 receipt types (Phase 4)
+  - Review cycle 1 (extract `stripNonDigits` & centralize dialer label) and cycle 2 (CQ-1/CQ-2 delivery phone prefill fixes) remediated
+  - Fix: `LaunchMode.externalApplication` added to phone `launchUrl` (UI-1)
+- fix(DG-298): Include notes in POS checkout payload
+  - Flutter: include notes in `_buildOrderItems()` checkout payload (Phase 1); regression test for `_buildOrderItems()` notes field (Phase 2)
+- feat(DG-280): Auto-sync main items on terminal order transitions + backfill CLI
+  - Backend: auto-sync main items on terminal order transitions (Phase 1); backend tests for auto-sync order items status (Phase 2); backfill CLI command for old order items (Phase 3)
+- chore(release): Bump patch versions 0.8.1+111 through 0.8.11+121 (interim auto-bumps on develop)
+- fix(repair): Use `docker compose exec` in `repair-all-accounting.sh` for lily
+
 ## [0.8.0] — 2026-07-20
 
 - feat(DG-244): Target bank account selector on payment transactions
