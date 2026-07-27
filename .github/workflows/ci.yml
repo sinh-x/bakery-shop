@@ -11,14 +11,78 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  filter:
+    # Phase 4.7 — path-based job filtering. Detects which stack areas changed
+    # and exports boolean outputs used by downstream jobs' `if:` conditions so
+    # a Python-only PR skips the Flutter job (and vice versa), while a change
+    # to shared/root files (or any file outside both stack filters) triggers
+    # both stacks as a conservative fallback (FR6, AC6).
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.f.outputs.python }}
+      flutter: ${{ steps.f.outputs.flutter }}
+      docker: ${{ steps.f.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed areas
+        id: f
+        run: |
+          set -euo pipefail
+          # Determine the base commit to diff against.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              BASE="HEAD~1"
+            else
+              BASE="$BEFORE"
+            fi
+          fi
+
+          # List changed files (added/modified/deleted) relative to repo root.
+          if ! CHANGES=$(git diff --name-only "$BASE..HEAD" 2>/dev/null); then
+            CHANGES=$(git diff --name-only HEAD~1..HEAD 2>/dev/null || true)
+          fi
+
+          echo "Changed files (base=$BASE):"
+          echo "$CHANGES"
+
+          py=0; fl=0; dk=0; fallback=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            # Python stack filter: src/**, tests/**, pyproject.toml, uv.lock
+            if [[ "$f" == src/* || "$f" == tests/* || "$f" == "pyproject.toml" || "$f" == "uv.lock" ]]; then
+              py=1
+            fi
+            # Flutter stack filter: app/**
+            if [[ "$f" == app/* ]]; then
+              fl=1
+            fi
+            # Docker filter: src/**, Dockerfile
+            if [[ "$f" == src/* || "$f" == "Dockerfile" ]]; then
+              dk=1
+            fi
+            # Fallback: any file outside both stack filters (python + flutter)
+            # triggers both stacks (shared/root files, unknown paths, etc.).
+            if [[ "$f" != src/* && "$f" != tests/* && "$f" != app/* && "$f" != "pyproject.toml" && "$f" != "uv.lock" ]]; then
+              fallback=1
+            fi
+          done <<< "$CHANGES"
+
+          echo "python=$(( py || fallback ))" >> "$GITHUB_OUTPUT"
+          echo "flutter=$(( fl || fallback ))" >> "$GITHUB_OUTPUT"
+          echo "docker=$(( dk || fallback ))" >> "$GITHUB_OUTPUT"
+
   fast-gate:
     # Phase 4.3/4.4 — fast smoke tier as PR early-exit gate (<5 min target).
-    # Runs tests tagged `@pytest.mark.fast` or `@pytest.mark.critical` so
-    # critical-flow tests (auth/payments/POS/migrations) are never skipped.
-    # Shares the same Python dependency cache as the `python-tests` job
-    # (same cache key) so a cache-hit on either job benefits both. The full
-    # `python-tests` job below continues to run on every PR — this is an
-    # additional gate, not a replacement (FR7).
+    # Phase 4.7 — only runs when the `filter` job detects Python-stack changes
+    # or triggers the both-stacks fallback (FR6, AC6).
+    needs: filter
+    if: needs.filter.outputs.python == '1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +117,11 @@ jobs:
 
   python-tests:
     # Runs when Python source or config changes
+    # Phase 4.7 — only runs when the `filter` job detects Python-stack changes
+    # or triggers the both-stacks fallback (FR6, AC6). The full test suite
+    # still runs on every qualifying PR (FR7).
+    needs: filter
+    if: needs.filter.outputs.python == '1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -89,6 +158,10 @@ jobs:
 
   flutter-checks:
     # Runs when Flutter app changes
+    # Phase 4.7 — only runs when the `filter` job detects Flutter-stack changes
+    # or triggers the both-stacks fallback (FR6, AC6).
+    needs: filter
+    if: needs.filter.outputs.flutter == '1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -164,6 +237,10 @@ jobs:
 
   docker-build:
     # Runs when backend source or Dockerfile changes
+    # Phase 4.7 — only runs when the `filter` job detects Docker-relevant
+    # changes (src/** or Dockerfile) or triggers the both-stacks fallback.
+    needs: filter
+    if: needs.filter.outputs.docker == '1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
