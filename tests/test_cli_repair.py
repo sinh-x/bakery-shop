@@ -1567,3 +1567,261 @@ def test_inventory_backfill_creates_1300_debit():
         ).fetchone()
         assert cr_row is not None
         assert float(cr_row["credit"]) == 500000.0
+
+
+# ---------------------------------------------------------------------------
+# DG-301 Phase 3 — repair commands backfill past reconciliation sale orders
+# (AC6: repair-order-revenue --all, repair-order-revenue --cogs --all,
+#  repair-payment-journal --all backfill reconciliation orders that were
+#  created before the journal sync fix and therefore have no journal entries)
+# ---------------------------------------------------------------------------
+
+
+def _submit_reconciliation_with_sale(api_client):
+    """Submit a reconciliation with one sale row and return (order_id, txn_id).
+
+    Uses the FastAPI test client so the full reconciliation flow (order,
+    payment, stock decrement, journal sync) runs end-to-end. The journal
+    entries created by Phase 1 are intentionally deleted by the caller to
+    simulate a past reconciliation order created before the fix.
+    """
+    from baker.db.connection import get_db
+    from baker.api.inventory_fifo import create_lot_with_items
+
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO product_attribute_values (product_id, attribute_type, value)
+               VALUES (?, 'trung_bay', ?)
+               ON CONFLICT(product_id, attribute_type) DO UPDATE SET value = excluded.value""",
+            (1, "true"),
+        )
+        # Reset and seed stock for product 1.
+        conn.execute(
+            "DELETE FROM inventory_items WHERE lot_id IN (SELECT id FROM stock_lots WHERE product_id = ?)",
+            (1,),
+        )
+        conn.execute("DELETE FROM stock_lots WHERE product_id = ?", (1,))
+        create_lot_with_items(conn, 1, None, 6)
+
+    payload = {
+        "staff_name": "An",
+        "payment_method": "cash",
+        "lines": [
+            {
+                "product_id": 1,
+                "expected_qty": 6,
+                "counted_qty": 4,
+                "sale_qty": 2,
+                "waste_qty": 0,
+                "manual_unit_price": 12000,
+            }
+        ],
+    }
+    resp = api_client.post("/api/reconciliations/submit", json=payload)
+    assert resp.status_code == 201, resp.text
+
+    with get_db() as conn:
+        order = conn.execute(
+            "SELECT id, order_ref FROM orders ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert order is not None
+        payment = conn.execute(
+            "SELECT id FROM payment_transactions ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert payment is not None
+
+    return int(order["id"]), str(order["order_ref"]), int(payment["id"])
+
+
+def _delete_all_order_journal_entries(conn, order_id: int) -> None:
+    """Delete every journal entry owned by an order (revenue + COGS) and the
+    payment transaction's entry, simulating a pre-fix reconciliation order.
+
+    Uses the cascade delete helper so reversal links and lines are cleaned up
+    consistently, mirroring what a pre-fix DB would look like (no entries at
+    all).
+    """
+    from baker.services.journal_sync import _delete_journal_entry_cascade
+
+    rows = conn.execute(
+        "SELECT id FROM journal_entries "
+        "WHERE (source_type = 'order' AND source_id = ?) "
+        "   OR (source_type = 'order_cogs' AND source_id = ?) "
+        "   OR (source_type = 'payment_transaction' AND source_id IN "
+        "       (SELECT id FROM payment_transactions WHERE order_id = ?))",
+        (order_id, order_id, order_id),
+    ).fetchall()
+    for r in rows:
+        _delete_journal_entry_cascade(conn, int(r["id"]))
+
+
+def _journal_entry_ids(conn, order_id: int, txn_id: int) -> dict:
+    """Return a map of source_type -> list of journal_entry ids for the order
+    and its payment transaction. Used to assert before/after state."""
+    result = {"order": [], "order_cogs": [], "payment_transaction": []}
+    for source_type, source_id in (
+        ("order", order_id),
+        ("order_cogs", order_id),
+        ("payment_transaction", txn_id),
+    ):
+        rows = conn.execute(
+            "SELECT id FROM journal_entries WHERE source_type = ? AND source_id = ? "
+            "AND description NOT LIKE 'Reversal:%' ORDER BY id",
+            (source_type, source_id),
+        ).fetchall()
+        result[source_type] = [int(r["id"]) for r in rows]
+    return result
+
+
+def _journal_line_codes(conn, entry_id: int) -> list[tuple[str, float, float]]:
+    """Return [(account_code, debit, credit)] for a journal entry."""
+    rows = conn.execute(
+        "SELECT a.code, jl.debit, jl.credit "
+        "FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id "
+        "WHERE jl.journal_entry_id = ? ORDER BY a.code",
+        (entry_id,),
+    ).fetchall()
+    return [(r["code"], float(r["debit"]), float(r["credit"])) for r in rows]
+
+
+def test_repair_backfills_reconciliation_revenue_journal_entry(api_client):
+    """AC6 (part 1): ``repair-order-revenue --all`` backfills the missing
+    revenue journal entry (DR 2100 / CR 4100, source_type='order') for a
+    past reconciliation sale order created before the journal sync fix."""
+    order_id, order_ref, txn_id = _submit_reconciliation_with_sale(api_client)
+
+    # Simulate a pre-fix reconciliation order: delete all journal entries
+    # owned by the order (revenue + COGS) and its payment transaction.
+    with get_db() as conn:
+        ensure_schema(conn)
+        _delete_all_order_journal_entries(conn, order_id)
+        before = _journal_entry_ids(conn, order_id, txn_id)
+        assert before["order"] == [], "precondition: revenue entry deleted"
+        assert before["order_cogs"] == [], "precondition: COGS entry deleted"
+        assert before["payment_transaction"] == [], "precondition: payment entry deleted"
+
+    result = _invoke(["repair-order-revenue", "--all"])
+    assert result.exit_code == 0, result.output
+    # The revenue repair reports "đã sửa" (repaired + created counts).
+    assert "đã sửa" in result.output
+    assert order_ref in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        after = _journal_entry_ids(conn, order_id, txn_id)
+        # Revenue entry was backfilled.
+        assert len(after["order"]) == 1, f"revenue entry backfilled: {after['order']}"
+        lines = _journal_line_codes(conn, after["order"][0])
+        deposits_line = next(l for l in lines if l[0] == "2100")
+        revenue_line = next(l for l in lines if l[0] == "4100")
+        # 2 units × 12000 = 24000.
+        assert deposits_line[1] == 24000.0, deposits_line
+        assert revenue_line[2] == 24000.0, revenue_line
+
+
+def test_repair_backfills_reconciliation_cogs_journal_entry(api_client):
+    """AC6 (part 2): ``repair-order-revenue --cogs --all`` backfills the
+    missing COGS journal entry (DR 5900 / CR 1300, source_type='order_cogs')
+    for a past reconciliation sale order created before the journal sync
+    fix."""
+    order_id, order_ref, txn_id = _submit_reconciliation_with_sale(api_client)
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        _delete_all_order_journal_entries(conn, order_id)
+        before = _journal_entry_ids(conn, order_id, txn_id)
+        assert before["order_cogs"] == [], "precondition: COGS entry deleted"
+
+    result = _invoke(["repair-order-revenue", "--cogs", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        after = _journal_entry_ids(conn, order_id, txn_id)
+        assert len(after["order_cogs"]) == 1, f"COGS entry backfilled: {after['order_cogs']}"
+        lines = _journal_line_codes(conn, after["order_cogs"][0])
+        cogs_line = next(l for l in lines if l[0] == "5900")
+        inv_line = next(l for l in lines if l[0] == "1300")
+        assert cogs_line[1] > 0, cogs_line
+        assert inv_line[2] == cogs_line[1], inv_line
+
+
+def test_repair_backfills_reconciliation_payment_journal_entry(api_client):
+    """AC6 (part 3): ``repair-payment-journal --all`` backfills the missing
+    payment journal entry (DR Asset / CR 2100, source_type='payment_transaction')
+    for a past reconciliation sale order created before the journal sync
+    fix."""
+    order_id, order_ref, txn_id = _submit_reconciliation_with_sale(api_client)
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        _delete_all_order_journal_entries(conn, order_id)
+        before = _journal_entry_ids(conn, order_id, txn_id)
+        assert before["payment_transaction"] == [], "precondition: payment entry deleted"
+
+    result = _invoke(["repair-payment-journal", "--all"])
+    assert result.exit_code == 0, result.output
+    assert "đã sửa" in result.output
+    assert "#" + str(txn_id) in result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        after = _journal_entry_ids(conn, order_id, txn_id)
+        assert len(after["payment_transaction"]) == 1, (
+            f"payment entry backfilled: {after['payment_transaction']}"
+        )
+        lines = _journal_line_codes(conn, after["payment_transaction"][0])
+        # Cash method → asset account 1100 (Cash on Hand).
+        asset_line = next(l for l in lines if l[0] == "1100")
+        deposits_line = next(l for l in lines if l[0] == "2100")
+        # 2 units × 12000 = 24000 inflow.
+        assert asset_line[1] == 24000.0, asset_line
+        assert deposits_line[2] == 24000.0, deposits_line
+
+
+def test_repair_backfills_all_reconciliation_journal_entries_idempotent(api_client):
+    """AC6 (idempotency): running all three repair commands a second time is
+    a no-op — the backfilled entries are detected as correct and skipped
+    (revenue) or no transactions are found needing backfill (payment)."""
+    order_id, order_ref, txn_id = _submit_reconciliation_with_sale(api_client)
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        _delete_all_order_journal_entries(conn, order_id)
+        before = _journal_entry_ids(conn, order_id, txn_id)
+        assert before["order"] == []
+        assert before["order_cogs"] == []
+        assert before["payment_transaction"] == []
+
+    # First run — backfills all three entry types.
+    r1 = _invoke(["repair-order-revenue", "--all"])
+    assert r1.exit_code == 0, r1.output
+    r2 = _invoke(["repair-order-revenue", "--cogs", "--all"])
+    assert r2.exit_code == 0, r2.output
+    r3 = _invoke(["repair-payment-journal", "--all"])
+    assert r3.exit_code == 0, r3.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        after_first = _journal_entry_ids(conn, order_id, txn_id)
+        assert len(after_first["order"]) == 1
+        assert len(after_first["order_cogs"]) == 1
+        assert len(after_first["payment_transaction"]) == 1
+
+    # Second run — idempotent: revenue/COGS report "bỏ qua" (skipped) and
+    # payment reports no transactions needing backfill.
+    r1b = _invoke(["repair-order-revenue", "--all"])
+    assert r1b.exit_code == 0, r1b.output
+    r2b = _invoke(["repair-order-revenue", "--cogs", "--all"])
+    assert r2b.exit_code == 0, r2b.output
+    r3b = _invoke(["repair-payment-journal", "--all"])
+    assert r3b.exit_code == 0, r3b.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        after_second = _journal_entry_ids(conn, order_id, txn_id)
+        # No new entries created on the second run.
+        assert after_second["order"] == after_first["order"]
+        assert after_second["order_cogs"] == after_first["order_cogs"]
+        assert after_second["payment_transaction"] == after_first["payment_transaction"]
