@@ -21,6 +21,8 @@ from baker.db.schema import (
     ensure_schema,
 )
 
+pytestmark = pytest.mark.critical
+
 
 # --- Helpers ---------------------------------------------------------------
 

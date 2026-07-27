@@ -2,6 +2,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.critical
+
 
 # --- Helpers ---
 

@@ -21,6 +21,7 @@ Covers:
   when payment_source is set on the tien_rut transaction.
 """
 
+import pytest
 from baker.db.connection import get_db
 from baker.db.schema import (
     EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
@@ -29,6 +30,8 @@ from baker.db.schema import (
     ensure_schema,
 )
 from baker.models.payment_transaction import PaymentTransaction
+
+pytestmark = pytest.mark.critical
 
 
 # ---------------------------------------------------------------------------

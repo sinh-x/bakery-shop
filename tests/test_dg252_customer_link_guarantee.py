@@ -6,10 +6,13 @@ re-resolution never leaves customer_id NULL), AC1, and NFR1 (added
 resolution/auto-create work ≤ 50 ms p95 on a seeded DB).
 """
 
+import pytest
 import statistics
 import time
 
 from baker.db.connection import get_db
+
+pytestmark = pytest.mark.critical
 
 
 def _create_order_payload(customer="Khách lẻ", phone="", items=None, **kwargs):

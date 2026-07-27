@@ -13,9 +13,12 @@ Helpers are duplicated locally (matches the standalone-test-file convention used
 elsewhere in tests/ — e.g. test_api_payment_transactions.py).
 """
 
+import pytest
 from baker.db.connection import get_db
 from baker.models.account import Account
 from baker.models.journal_entry import JournalEntry
+
+pytestmark = pytest.mark.critical
 
 
 # ---------------------------------------------------------------------------

@@ -23,6 +23,8 @@ from baker.cli import app
 from baker.config import JWT_SECRET
 from baker.db.connection import get_db
 
+pytestmark = pytest.mark.critical
+
 
 runner = CliRunner()
 

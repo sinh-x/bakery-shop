@@ -12,11 +12,14 @@ Covers:
 - Double-entry integrity preserved after re-sync.
 """
 
+import pytest
 from baker.db.connection import get_db
 from baker.db.schema import (
     BUS_SHIPPING_HELD_CODE,
     CUSTOMER_DEPOSITS_CODE,
 )
+
+pytestmark = pytest.mark.critical
 
 
 # ---------------------------------------------------------------------------

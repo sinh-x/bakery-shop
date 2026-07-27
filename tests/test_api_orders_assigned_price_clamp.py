@@ -20,6 +20,8 @@ import pytest
 
 from baker.api.orders import OrderItemIn
 
+pytestmark = pytest.mark.critical
+
 
 def test_order_item_in_clamps_unit_price_up_to_assigned_price():
     """FR3/AC3 backend safety net: ``unitPrice < assignedPrice`` is clamped

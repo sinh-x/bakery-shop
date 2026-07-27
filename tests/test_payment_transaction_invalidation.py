@@ -5,9 +5,12 @@ Covers DG-196 Phase 1: schema migration v53 adds ``invalidated_at`` /
 invalidated rows. FR5 / AC5 (partial).
 """
 
+import pytest
 from baker.db.connection import get_db
 from baker.db.schema import ensure_schema
 from baker.models.payment_transaction import PaymentTransaction
+
+pytestmark = pytest.mark.critical
 
 
 def _seed_order(conn, total=300000):
