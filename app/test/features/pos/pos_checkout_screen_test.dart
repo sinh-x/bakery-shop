@@ -510,6 +510,68 @@ void main() {
       expect(regularItem['attributes']['cash_amount'], '20000');
     });
 
+    testWidgets('AC-5: _buildOrderItems() includes the notes field in the submitted item map', (tester) async {
+      final fakeOrderService = _FakeOrderService();
+      final cartItem = PosCartItem(
+        product: _product(),
+        quantity: 1,
+        notes: 'Không đường, ít bơ',
+      );
+
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[cartItem], orderService: fakeOrderService));
+      await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
+      await _navigateToPayment(tester);
+
+      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
+      await tester.ensureVisible(createButton);
+      await tester.pumpAndSettle();
+      await tester.tap(createButton);
+
+
+      // Regression guard for DG-298 Phase 1: _buildOrderItems() must serialize
+      // the per-item `notes` field into the API request map so per-item notes
+      // persist through checkout (FR-1, AC-5).
+      final submitted = fakeOrderService.createdItems.single;
+      expect(submitted, hasLength(1));
+      expect(submitted.single['notes'], 'Không đường, ít bơ');
+    });
+
+    testWidgets('AC-5: _buildOrderItems() preserves distinct notes per cart item', (tester) async {
+      final fakeOrderService = _FakeOrderService();
+      final firstItem = PosCartItem(
+        product: _product(),
+        quantity: 1,
+        notes: 'Không đường',
+      );
+      final secondItem = PosCartItem(
+        product: const Product(id: 2, name: 'Bánh su kem', basePrice: 15000, category: 'bread', active: 1),
+        quantity: 2,
+        notes: 'Thêm kem',
+      );
+
+      await tester.pumpWidget(_buildCheckoutApp(items: <PosCartItem>[firstItem, secondItem], orderService: fakeOrderService));
+      await tester.pumpAndSettle();
+
+      await _navigateToReview(tester);
+      await _navigateToPayment(tester);
+
+      final createButton = find.widgetWithText(FilledButton, OrdersLabels.payNow);
+      await tester.ensureVisible(createButton);
+      await tester.pumpAndSettle();
+      await tester.tap(createButton);
+
+
+      // FR-1 / AC-4: each cart item's notes serialize independently.
+      final submitted = fakeOrderService.createdItems.single;
+      expect(submitted, hasLength(2));
+      final firstPayload = submitted.firstWhere((i) => i['productId'] == '1');
+      final secondPayload = submitted.firstWhere((i) => i['productId'] == '2');
+      expect(firstPayload['notes'], 'Không đường');
+      expect(secondPayload['notes'], 'Thêm kem');
+    });
+
     testWidgets('Pay Later: submits order with skipPayment and empty payment method', (tester) async {
       final fakeOrderService = _FakeOrderService();
       final cartItem = PosCartItem(product: _product(), quantity: 1);
