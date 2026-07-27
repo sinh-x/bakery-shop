@@ -406,6 +406,32 @@ def _create_sale_orders(
             Order.update_status(conn, order.order_ref, "delivered", "")
             auto_decrement_stock(conn, order.id or 0, order.order_ref)
 
+            # DG-301 Phase 1: auto-generate revenue + COGS + payment journal
+            # entries for reconciliation sale orders (reuses the normal order
+            # and payment_transaction sync patterns). Inline import keeps the
+            # accounting coupling at call-site and avoids circular imports.
+            from baker.services.journal_sync import (
+                _sync_delivered_order_journal,
+                _sync_payment_journal,
+                run_journal_sync,
+            )
+
+            run_journal_sync(
+                _sync_delivered_order_journal,
+                conn, order.id, order.order_ref,
+                log_label=f"delivered order journal sync for reconciliation order {order.id}",
+                source_type="order",
+                source_id=order.id,
+            )
+            run_journal_sync(
+                _sync_payment_journal,
+                conn, payment_txn.id, float(order.total_price), "payment", row_payload["payment_method"],
+                order_id=order.id,
+                log_label=f"payment journal sync for reconciliation txn {payment_txn.id}",
+                source_type="payment_transaction",
+                source_id=payment_txn.id,
+            )
+
             sale_movement = conn.execute(
                 """SELECT id
                    FROM stock_movements
