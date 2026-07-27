@@ -98,6 +98,7 @@ def test_cost_history_negative_cost_clamped_to_zero(db):
     assert resolve_product_cost(db, pid) == pytest.approx(0.0)
 
 
+@pytest.mark.fast
 def test_is_phu_kien_helper():
     assert is_phu_kien("phu_kien") is True
     assert is_phu_kien("banh_mi") is False

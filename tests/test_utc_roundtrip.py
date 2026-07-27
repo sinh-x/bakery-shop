@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from baker.config import TIMEZONE
 from baker.utils.time import now_utc
 
@@ -31,6 +33,7 @@ from baker.utils.time import now_utc
 # --- now_utc() (FR3) ------------------------------------------------------
 
 
+@pytest.mark.fast
 def test_now_utc_returns_z_suffix():
     """``now_utc()`` always produces a trailing ``Z`` (FR3)."""
     ts = now_utc()
@@ -41,6 +44,7 @@ def test_now_utc_returns_z_suffix():
     assert len(ts) == len("2026-06-30T08:06:00Z")
 
 
+@pytest.mark.fast
 def test_now_utc_is_utc():
     """``now_utc()`` matches the current UTC time within a small tolerance."""
     before = datetime.now(timezone.utc)
@@ -50,6 +54,7 @@ def test_now_utc_is_utc():
     assert before - timedelta(seconds=5) <= parsed <= after + timedelta(seconds=5)
 
 
+@pytest.mark.fast
 def test_now_utc_is_idempotent_in_format():
     """Two calls return the same fixed-width format (NFR2 — negligible overhead)."""
     a = now_utc()

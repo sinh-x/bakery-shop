@@ -28,3 +28,7 @@ baker = ["assets/fonts/*.ttf"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "fast: fast tests for CI fast gate",
+    "critical: tests for critical flows (auth, payments, POS, migrations)",
+]
