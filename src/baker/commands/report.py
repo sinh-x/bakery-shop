@@ -1069,6 +1069,20 @@ def _query_investing_cash_activity(
     return total_in, total_out, per_account
 
 
+def _query_cash_account_names(conn) -> dict[str, str]:
+    """Return ``{code: name}`` for all cash accounts (DG-300 Phase 2)."""
+    placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
+    rows = conn.execute(
+        f"""
+        SELECT a.code AS code, a.name AS name
+        FROM accounts a
+        WHERE a.code IN ({placeholders})
+        """,
+        list(CASH_ACCOUNT_CODES),
+    ).fetchall()
+    return {r["code"]: r["name"] for r in rows}
+
+
 def _query_cash_balance(
     conn, until_b: str | None, *, inclusive: bool = False,
 ) -> dict[str, float]:
@@ -1195,6 +1209,8 @@ def cashflow_cmd(since, until):
         investing_in, investing_out, investing_per = _query_investing_cash_activity(
             conn, since_b, until_b
         )
+        # Account names for the per-account breakdown table (DG-300 Phase 2).
+        account_names = _query_cash_account_names(conn)
 
     # ---- Aggregate sections ----
     cust_in, cust_out, cust_per = _sum_section(
@@ -1216,6 +1232,19 @@ def cashflow_cmd(since, until):
 
     opening_total = sum(opening_by_account.values())
     closing_total = sum(closing_by_account.values())
+
+    # ---- Per-account period activity (DG-300 Phase 2, FR6/AC6) ----
+    # Aggregate inflows/outflows across operating, investing, and financing
+    # sections for each cash account so the standalone breakdown table shows
+    # the total period movement per account.
+    per_account_activity: dict[str, dict[str, float]] = {}
+    for per in (cust_per, sup_per, investing_per, fin_per):
+        for code, mov in per.items():
+            per_account_activity.setdefault(
+                code, {"inflow": 0.0, "outflow": 0.0}
+            )
+            per_account_activity[code]["inflow"] += mov["inflow"]
+            per_account_activity[code]["outflow"] += mov["outflow"]
 
     # ---- Print sections ----
     click.echo("Operating Activities")
@@ -1282,4 +1311,43 @@ def cashflow_cmd(since, until):
     click.echo(
         f"{'Reconciliation (closing - opening)':<40}{expected_change:>20,.2f}"
         f"  [{status}]"
+    )
+    click.echo("")
+
+    # ---- Per-account breakdown (DG-300 Phase 2, FR6/AC6) ----
+    # Standalone table showing each cash account's inflows, outflows, net
+    # change, opening balance, and closing balance for the period. Aggregates
+    # across operating, investing, and financing activity.
+    click.echo("Per-Account Breakdown")
+    click.echo("=====================")
+    click.echo(
+        f"{'Code':<8}{'Account':<40}{'Inflows':>18}{'Outflows':>18}"
+        f"{'Net':>18}{'Opening':>18}{'Closing':>18}"
+    )
+    click.echo("-" * 120)
+    total_in = 0.0
+    total_out = 0.0
+    total_opening = 0.0
+    total_closing = 0.0
+    for code in CASH_ACCOUNT_CODES:
+        name = account_names.get(code, "")
+        mov = per_account_activity.get(code, {"inflow": 0.0, "outflow": 0.0})
+        inflow = mov["inflow"]
+        outflow = mov["outflow"]
+        net = inflow - outflow
+        opening = opening_by_account.get(code, 0.0)
+        closing = closing_by_account.get(code, 0.0)
+        total_in += inflow
+        total_out += outflow
+        total_opening += opening
+        total_closing += closing
+        click.echo(
+            f"{code:<8}{name[:39]:<40}{inflow:>18,.2f}{outflow:>18,.2f}"
+            f"{net:>18,.2f}{opening:>18,.2f}{closing:>18,.2f}"
+        )
+    click.echo("-" * 120)
+    click.echo(
+        f"{'TOTAL':<48}{total_in:>18,.2f}{total_out:>18,.2f}"
+        f"{(total_in - total_out):>18,.2f}{total_opening:>18,.2f}"
+        f"{total_closing:>18,.2f}"
     )

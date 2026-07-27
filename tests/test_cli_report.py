@@ -1474,3 +1474,133 @@ def test_cashflow_rejects_invalid_since_date():
     )
     assert result.exit_code != 0, result.output
     assert "YYYY-MM-DD" in result.output
+
+
+# ---------------------------------------------------------------------------
+# cashflow Phase 2 — per-account breakdown and balance reconciliation (DG-300)
+# ---------------------------------------------------------------------------
+
+
+def test_cashflow_per_account_breakdown_section_present():
+    """AC6/FR6: a standalone per-account breakdown table is printed."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Per-Account Breakdown" in result.output
+    # Every cash account code appears in the breakdown.
+    for code in ("1100", "1200", "1210", "1220", "1290"):
+        assert code in result.output
+
+
+def test_cashflow_per_account_breakdown_values():
+    """AC6/FR6: per-account inflows, outflows, and net change are correct."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    output = result.output
+    # From _seed_cashflow_dataset, expected per-account period activity:
+    #   1100: inflow 200000 (customer) - outflow 10000 (expense) + 100000 (owner_draw)
+    #         => inflows 200000, outflows 110000, net 90000
+    #   1210: outflow 50000 (refund) => inflows 0, outflows 50000, net -50000
+    #   1220: inflow 500000 (owner_capital) => inflows 500000, outflows 0, net 500000
+    #   1290: outflow 300000 (investing) => inflows 0, outflows 300000, net -300000
+    #   1200: no activity
+    # Locate the Per-Account Breakdown block and verify the per-account rows.
+    breakdown_idx = output.index("Per-Account Breakdown")
+    breakdown = output[breakdown_idx:]
+    # 1100 row: inflows 200000, outflows 110000, net 90000.
+    assert "1100" in breakdown
+    assert "200,000.00" in breakdown
+    assert "110,000.00" in breakdown
+    assert "90,000.00" in breakdown
+    # 1210 row: outflows 50000, net -50000.
+    assert "50,000.00" in breakdown
+    # 1220 row: inflows 500000.
+    assert "500,000.00" in breakdown
+    # 1290 row: outflows 300000, net -300000.
+    assert "300,000.00" in breakdown
+
+
+def test_cashflow_per_account_breakdown_totals_row():
+    """AC6/AC8: the breakdown TOTAL row matches the reconciliation totals."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    # The TOTAL row net change (700000 - 460000 = 240000) equals the net cash
+    # flow asserted by test_cashflow_reconciliation_ok.
+    assert "TOTAL" in result.output
+    # Net change 240000 appears in the breakdown totals.
+    assert "240,000.00" in result.output
+    # Opening total 100000 and closing total 340000.
+    assert "100,000.00" in result.output
+    assert "340,000.00" in result.output
+
+
+def test_cashflow_opening_closing_balance_correct():
+    """AC5/FR5: opening and closing balances are computed correctly.
+
+    From _seed_cashflow_dataset:
+      - Opening (before 2026-06-01): 100000 on 1100 (pre-period sale).
+      - Closing (≤ 2026-06-30):
+          1100: 100000 + 200000 - 10000 - 100000 = 190000
+          1210: -50000
+          1220: 500000
+          1290: -300000
+          total = 340000
+    closing - opening = 240000, which equals net cash flow.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Opening cash balance" in result.output
+    assert "Closing cash balance" in result.output
+    # Opening 100000 (pre-period sale on 1100); closing 340000.
+    assert "100,000.00" in result.output
+    assert "340,000.00" in result.output
+
+
+def test_cashflow_reconciliation_closing_equals_opening_plus_net():
+    """AC5: closing = opening + net cash flow (within tolerance)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    # closing - opening = 240000 = net cash flow → reconciliation OK.
+    assert "Reconciliation (closing - opening)" in result.output
+    assert "[OK]" in result.output
+    assert "240,000.00" in result.output
+
+
+def test_cashflow_per_account_breakdown_empty_db():
+    """AC6: the per-account breakdown table renders on an empty DB with zeros."""
+    with get_db() as conn:
+        ensure_schema(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Per-Account Breakdown" in result.output
+    # All five cash account codes appear even with no activity.
+    for code in ("1100", "1200", "1210", "1220", "1290"):
+        assert code in result.output
+    # TOTAL row is present.
+    assert "TOTAL" in result.output
