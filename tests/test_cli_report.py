@@ -1217,3 +1217,545 @@ def test_order_status_rejects_invalid_since_date():
     )
     assert result.exit_code != 0, result.output
     assert "YYYY-MM-DD" in result.output
+
+
+# ---------------------------------------------------------------------------
+# cashflow (DG-300 Phase 1)
+# ---------------------------------------------------------------------------
+
+
+def _seed_cashflow_dataset(conn):
+    """Seed a known dataset exercising operating, investing, and financing.
+
+    All entries dated 2026-06-15 unless noted. Amounts chosen so each section
+    has a distinct, easily-asserted total.
+
+    Layout:
+      - Customer payment (operating inflow):
+          DR 1100 (Cash) 200000 / CR 2100 (Customer Deposits) 200000
+          source_type='payment_transaction'
+      - Customer refund (operating outflow):
+          DR 2100 50000 / CR 1210 (Phượng VCB) 50000
+          source_type='payment_transaction'
+      - Expense paid in cash (operating outflow):
+          DR 5300 (Vận chuyển) 10000 / CR 1100 10000
+          source_type='expense'
+      - Owner capital contribution (financing inflow):
+          DR 1220 (Ân VCB) 500000 / CR 3100 (Owner's Equity) 500000
+          source_type='owner_capital'
+      - Owner draw (financing outflow):
+          DR 3100 100000 / CR 1100 100000
+          source_type='owner_draw'
+      - Fixed-asset purchase (investing outflow):
+          DR 1600 (Fixed Assets) 300000 / CR 1290 (Un-allocated Bank) 300000
+          source_type='manual'
+      - Pre-period entry (opens the opening balance):
+          DR 1100 100000 / CR 4100 (Order Revenue) 100000
+          source_type='order', dated 2026-05-10
+
+    Expected period (June 2026) totals:
+      - Operating inflow (customers):   200000 (1100) + 0 (1210) = 200000
+      - Operating outflow (customers):   50000 (1210 refund)
+      - Operating outflow (suppliers):   10000 (1100 expense)
+      - Investing outflow:               300000 (1290)
+      - Financing inflow:                500000 (1220)
+      - Financing outflow:               100000 (1100)
+      - Net cash flow = (200000 + 500000) - (50000 + 10000 + 300000 + 100000)
+                      = 700000 - 460000 = 240000
+      - Opening cash (before 2026-06-01): 100000 (1100)
+      - Closing cash (≤ 2026-06-30):
+          1100: 100000 + 200000 - 10000 - 100000 = 190000
+          1210: -50000
+          1220: 500000
+          1290: -300000
+          total = 190000 - 50000 + 500000 - 300000 = 340000
+      - closing - opening = 340000 - 100000 = 240000  ✓ reconciles
+    """
+    cash = _account_id(conn, "1100")
+    phuong = _account_id(conn, "1210")
+    an = _account_id(conn, "1220")
+    unalloc = _account_id(conn, "1290")
+    deposits = _account_id(conn, "2100")
+    transport = _account_id(conn, "5300")
+    equity = _account_id(conn, "3100")
+    revenue = _account_id(conn, "4100")
+    fixed_assets = _account_id(conn, "1600")
+    ts = "2026-06-15T10:00:00Z"
+    pre_ts = "2026-05-10T10:00:00Z"
+
+    # Pre-period entry establishing the opening balance.
+    _insert_entry(
+        conn, debit_account_id=cash, credit_account_id=revenue,
+        amount=100000.0, source_type="order", source_id=99,
+        description="Pre-period sale", created_at=pre_ts, transaction_date=pre_ts,
+    )
+
+    # Operating: customer payment (inflow) and refund (outflow).
+    _insert_entry(
+        conn, debit_account_id=cash, credit_account_id=deposits,
+        amount=200000.0, source_type="payment_transaction", source_id=1,
+        description="Customer deposit", created_at=ts, transaction_date=ts,
+    )
+    _insert_entry(
+        conn, debit_account_id=deposits, credit_account_id=phuong,
+        amount=50000.0, source_type="payment_transaction", source_id=2,
+        description="Customer refund", created_at=ts, transaction_date=ts,
+    )
+
+    # Operating: expense paid in cash (outflow).
+    event_id = _insert_expense_event(
+        conn, category="Vận chuyển", amount=10000, created_at=ts,
+    )
+    _insert_entry(
+        conn, debit_account_id=transport, credit_account_id=cash,
+        amount=10000.0, source_type="expense", source_id=event_id,
+        description="Expense: Vận chuyển", created_at=ts, transaction_date=ts,
+    )
+
+    # Financing: owner capital contribution (inflow) and draw (outflow).
+    _insert_entry(
+        conn, debit_account_id=an, credit_account_id=equity,
+        amount=500000.0, source_type="owner_capital", source_id=None,
+        description="Owner capital contribution", created_at=ts, transaction_date=ts,
+    )
+    _insert_entry(
+        conn, debit_account_id=equity, credit_account_id=cash,
+        amount=100000.0, source_type="owner_draw", source_id=None,
+        description="Owner draw", created_at=ts, transaction_date=ts,
+    )
+
+    # Investing: fixed-asset purchase (outflow on cash side).
+    _insert_entry(
+        conn, debit_account_id=fixed_assets, credit_account_id=unalloc,
+        amount=300000.0, source_type="manual", source_id=None,
+        description="Fixed-asset purchase", created_at=ts, transaction_date=ts,
+    )
+
+
+def test_cashflow_exits_zero_and_prints_header():
+    """AC1: command exits 0 and prints a structured cashflow report."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Cashflow Statement (Direct Method)" in result.output
+    assert "Period: 2026-06-01 → 2026-06-30" in result.output
+
+
+def test_cashflow_operating_subsections_present():
+    """AC2: operating section shows customers and suppliers/employees sub-sections."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Operating Activities" in result.output
+    assert "Cash from customers" in result.output
+    assert "Cash paid to suppliers/employees" in result.output
+    assert "Net operating cashflow" in result.output
+    # Customer inflow 200000 on 1100; refund outflow 50000 on 1210.
+    assert "200,000.00" in result.output
+    assert "50,000.00" in result.output
+    # Supplier/employee outflow 10000 on 1100.
+    assert "10,000.00" in result.output
+
+
+def test_cashflow_financing_section_shows_capital_and_draw():
+    """AC3: financing section shows owner_capital inflow and owner_draw outflow."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Financing Activities" in result.output
+    assert "Net financing cashflow" in result.output
+    # Owner capital contribution 500000 on 1220.
+    assert "500,000.00" in result.output
+    # Owner draw 100000 on 1100 (already asserted elsewhere, but ensure present).
+    assert "100,000.00" in result.output
+
+
+def test_cashflow_investing_section_shows_fixed_asset_flow():
+    """AC4: investing section shows cash flow on account 1600."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Investing Activities" in result.output
+    assert "Net investing cashflow" in result.output
+    # Fixed-asset purchase: 300000 outflow on 1290.
+    assert "300,000.00" in result.output
+
+
+def test_cashflow_date_filter_excludes_out_of_range():
+    """AC7: --since/--until restricts period activity to entries within the period."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    # July range excludes all June-dated seed entries from period activity.
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-07-01", "--until", "2026-07-31",
+    ])
+    assert result.exit_code == 0, result.output
+    # No activity in any section.
+    assert result.output.count("(no activity)") >= 3
+    # Reconciliation should still be OK (0 net cash flow = 0 change).
+    assert "[OK]" in result.output
+    # Period activity totals are zero.
+    assert "Net cash flow                                           0.00" in result.output
+    # Opening and closing balances are equal (no period movement) — both
+    # include all pre-July entries (the May sale + all June activity).
+    assert "Opening cash balance                              340,000.00" in result.output
+    assert "Closing cash balance                              340,000.00" in result.output
+
+
+def test_cashflow_reconciliation_ok():
+    """AC8/FR7: net cash flow reconciles with closing - opening within tolerance."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Reconciliation (closing - opening)" in result.output
+    assert "[OK]" in result.output
+    # Net cash flow = 240000 (see _seed_cashflow_dataset docstring).
+    assert "240,000.00" in result.output
+
+
+def test_cashflow_empty_db():
+    """Empty DB still prints a complete report with zero totals and OK reconciliation."""
+    with get_db() as conn:
+        ensure_schema(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Cashflow Statement (Direct Method)" in result.output
+    assert result.output.count("(no activity)") >= 3
+    assert "[OK]" in result.output
+
+
+def test_cashflow_account_1600_seeded():
+    """The v85 migration seeds account 1600 in the chart of accounts."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        row = conn.execute(
+            "SELECT code, name, type FROM accounts WHERE code = '1600'"
+        ).fetchone()
+    assert row is not None
+    assert row["code"] == "1600"
+    assert row["type"] == "asset"
+    assert "Tài sản cố định" in row["name"]
+
+
+def test_cashflow_registered_in_report_group():
+    """The cashflow subcommand is registered under ``baker report``."""
+    result = _invoke(["report", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "cashflow" in result.output
+
+
+def test_cashflow_rejects_invalid_since_date():
+    """Date validation applies to the cashflow command."""
+    result = _invoke(
+        ["report", "cashflow", "--since", "not-a-date", "--until", "2026-06-30"]
+    )
+    assert result.exit_code != 0, result.output
+    assert "YYYY-MM-DD" in result.output
+
+
+# ---------------------------------------------------------------------------
+# cashflow Phase 2 — per-account breakdown and balance reconciliation (DG-300)
+# ---------------------------------------------------------------------------
+
+
+def test_cashflow_per_account_breakdown_section_present():
+    """AC6/FR6: a standalone per-account breakdown table is printed."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Per-Account Breakdown" in result.output
+    # Every cash account code appears in the breakdown.
+    for code in ("1100", "1200", "1210", "1220", "1290"):
+        assert code in result.output
+
+
+def test_cashflow_per_account_breakdown_values():
+    """AC6/FR6: per-account inflows, outflows, and net change are correct."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    output = result.output
+    # From _seed_cashflow_dataset, expected per-account period activity:
+    #   1100: inflow 200000 (customer) - outflow 10000 (expense) + 100000 (owner_draw)
+    #         => inflows 200000, outflows 110000, net 90000
+    #   1210: outflow 50000 (refund) => inflows 0, outflows 50000, net -50000
+    #   1220: inflow 500000 (owner_capital) => inflows 500000, outflows 0, net 500000
+    #   1290: outflow 300000 (investing) => inflows 0, outflows 300000, net -300000
+    #   1200: no activity
+    # Locate the Per-Account Breakdown block and verify the per-account rows.
+    breakdown_idx = output.index("Per-Account Breakdown")
+    breakdown = output[breakdown_idx:]
+    # 1100 row: inflows 200000, outflows 110000, net 90000.
+    assert "1100" in breakdown
+    assert "200,000.00" in breakdown
+    assert "110,000.00" in breakdown
+    assert "90,000.00" in breakdown
+    # 1210 row: outflows 50000, net -50000.
+    assert "50,000.00" in breakdown
+    # 1220 row: inflows 500000.
+    assert "500,000.00" in breakdown
+    # 1290 row: outflows 300000, net -300000.
+    assert "300,000.00" in breakdown
+
+
+def test_cashflow_per_account_breakdown_totals_row():
+    """AC6/AC8: the breakdown TOTAL row matches the reconciliation totals."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    # The TOTAL row net change (700000 - 460000 = 240000) equals the net cash
+    # flow asserted by test_cashflow_reconciliation_ok.
+    assert "TOTAL" in result.output
+    # Net change 240000 appears in the breakdown totals.
+    assert "240,000.00" in result.output
+    # Opening total 100000 and closing total 340000.
+    assert "100,000.00" in result.output
+    assert "340,000.00" in result.output
+
+
+def test_cashflow_opening_closing_balance_correct():
+    """AC5/FR5: opening and closing balances are computed correctly.
+
+    From _seed_cashflow_dataset:
+      - Opening (before 2026-06-01): 100000 on 1100 (pre-period sale).
+      - Closing (≤ 2026-06-30):
+          1100: 100000 + 200000 - 10000 - 100000 = 190000
+          1210: -50000
+          1220: 500000
+          1290: -300000
+          total = 340000
+    closing - opening = 240000, which equals net cash flow.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Opening cash balance" in result.output
+    assert "Closing cash balance" in result.output
+    # Opening 100000 (pre-period sale on 1100); closing 340000.
+    assert "100,000.00" in result.output
+    assert "340,000.00" in result.output
+
+
+def test_cashflow_reconciliation_closing_equals_opening_plus_net():
+    """AC5: closing = opening + net cash flow (within tolerance)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    # closing - opening = 240000 = net cash flow → reconciliation OK.
+    assert "Reconciliation (closing - opening)" in result.output
+    assert "[OK]" in result.output
+    assert "240,000.00" in result.output
+
+
+def test_cashflow_per_account_breakdown_empty_db():
+    """AC6: the per-account breakdown table renders on an empty DB with zeros."""
+    with get_db() as conn:
+        ensure_schema(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Per-Account Breakdown" in result.output
+    # All five cash account codes appear even with no activity.
+    for code in ("1100", "1200", "1210", "1220", "1290"):
+        assert code in result.output
+    # TOTAL row is present.
+    assert "TOTAL" in result.output
+
+
+# ---------------------------------------------------------------------------
+# cashflow Phase 3 — edge cases and polish (DG-300)
+# ---------------------------------------------------------------------------
+
+
+def test_cashflow_missing_since_and_until_all_time():
+    """Edge case #2: no --since/--until computes the all-time range.
+
+    With no date filters, the report should still exit 0, show the
+    'All time' period label, and print a complete report. The
+    reconciliation may report [MISMATCH] when unclassified cash-affecting
+    entries (e.g. ``source_type='order'`` direct cash sales, which FR2
+    excludes to avoid double-counting with ``payment_transaction``) fall
+    inside the all-time period — that is accurate reporting, not a crash.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke(["report", "cashflow"])
+    assert result.exit_code == 0, result.output
+    assert "Period: All time" in result.output
+    assert "Opening cash balance" in result.output
+    assert "Closing cash balance" in result.output
+    # Opening is 0 (all-time starts at the beginning); closing reflects
+    # every cash entry ever recorded.
+    assert "Reconciliation (closing - opening)" in result.output
+
+
+def test_cashflow_missing_until_only():
+    """Edge case #2b: only --since given → 'since <date>' period label."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke(["report", "cashflow", "--since", "2026-06-01"])
+    assert result.exit_code == 0, result.output
+    assert "Period: since 2026-06-01" in result.output
+    assert "[OK]" in result.output
+
+
+def test_cashflow_missing_since_only():
+    """Edge case #2c: only --until given → 'until <date>' period label.
+
+    Like the all-time case, omitting --since means the period starts at
+    the beginning of time, so unclassified cash-affecting entries (the
+    pre-period ``order`` sale) fall inside the period and the
+    reconciliation may report [MISMATCH] — that is accurate, not a crash.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke(["report", "cashflow", "--until", "2026-06-30"])
+    assert result.exit_code == 0, result.output
+    assert "Period: until 2026-06-30" in result.output
+    assert "Reconciliation (closing - opening)" in result.output
+
+
+def test_cashflow_rejects_invalid_until_date():
+    """Edge case #3: invalid --until format is rejected (not a crash)."""
+    result = _invoke(
+        ["report", "cashflow", "--since", "2026-06-01", "--until", "31-06-2026"]
+    )
+    assert result.exit_code != 0, result.output
+    assert "YYYY-MM-DD" in result.output
+
+
+def test_cashflow_rejects_inverted_range():
+    """Edge case #6: --since later than --until is rejected with a clear error."""
+    result = _invoke(
+        ["report", "cashflow", "--since", "2026-06-30", "--until", "2026-06-01"]
+    )
+    assert result.exit_code != 0, result.output
+    assert "must not be later than" in result.output
+
+
+def test_cashflow_same_day_range_allowed():
+    """Edge case #6b: same-day --since/--until is valid (not inverted)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-15", "--until", "2026-06-15",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "[OK]" in result.output
+
+
+def test_cashflow_no_cash_activity_but_other_entries_exist():
+    """Edge case #4: non-cash journal entries present → report shows zero cashflow.
+
+    Seed a journal entry that touches only non-cash accounts (2100 customer
+    deposits ↔ 2500 accounts payable). The cashflow report should show
+    '(no activity)' in every section, zero net cash flow, and [OK]
+    reconciliation with opening == closing.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        deposits = _account_id(conn, "2100")
+        ap = _account_id(conn, "2500")
+        ts = "2026-06-15T10:00:00Z"
+        _insert_entry(
+            conn, debit_account_id=deposits, credit_account_id=ap,
+            amount=75000.0, source_type="manual", source_id=None,
+            description="Non-cash accrual", created_at=ts, transaction_date=ts,
+        )
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    # No cash account activity in any section.
+    assert result.output.count("(no activity)") >= 3
+    # Net cash flow is zero (no cash movement).
+    assert "Net cash flow" in result.output
+    assert "0.00" in result.output
+    # Opening == closing (both 0 — no cash movement ever).
+    assert "Opening cash balance" in result.output
+    assert "Closing cash balance" in result.output
+    assert "[OK]" in result.output
+
+
+def test_cashflow_empty_range_shows_zeroes_and_no_activity():
+    """Edge case #1: a date range with no journal entries shows zeroes, not a crash.
+
+    A range entirely before any seeded entry (Jan 2026) should produce a
+    complete report with zero totals, '(no activity)' in every section,
+    and [OK] reconciliation.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-01-01", "--until", "2026-01-31",
+    ])
+    assert result.exit_code == 0, result.output
+    assert result.output.count("(no activity)") >= 3
+    assert "Net cash flow" in result.output
+    # Opening balance is 0 (no entries before 2026-01-01).
+    assert "Opening cash balance" in result.output
+    assert "Closing cash balance" in result.output
+    assert "[OK]" in result.output
+
+
+def test_cashflow_output_is_plain_text_no_ansi():
+    """NFR1: report output contains no ANSI escape codes."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    # Click's CliRunner strips styling by default; assert no raw escape
+    # sequences leaked into the captured output.
+    assert "\x1b[" not in result.output
