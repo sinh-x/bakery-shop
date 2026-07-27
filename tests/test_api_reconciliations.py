@@ -1084,6 +1084,283 @@ def test_submit_reconciliation_survives_waste_cogs_sync_failure(api_client, monk
     assert resp.status_code == 201
 
 
+# ─── DG-301 Phase 2: reconciliation sale-order journal sync tests ────────────
+
+
+def test_submit_sale_creates_revenue_journal_entry(api_client):
+    """AC1: submitting a reconciliation with sale items produces a
+    ``source_type='order'`` revenue journal entry (DR 2100 / CR 4100) for the
+    auto-created sale order."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 6)
+
+    payload = {
+        "staff_name": "An",
+        "payment_method": "cash",
+        "lines": [
+            {
+                "product_id": 1,
+                "expected_qty": 6,
+                "counted_qty": 4,
+                "sale_qty": 2,
+                "waste_qty": 0,
+                "manual_unit_price": 12000,
+            }
+        ],
+    }
+
+    resp = api_client.post("/api/reconciliations/submit", json=payload)
+    assert resp.status_code == 201
+
+    with get_db() as conn:
+        order = conn.execute("SELECT id, order_ref FROM orders ORDER BY id DESC LIMIT 1").fetchone()
+        assert order is not None
+
+        entries = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type = 'order' AND source_id = ? "
+            "AND description NOT LIKE 'Reversal:%' ORDER BY id",
+            (order["id"],),
+        ).fetchall()
+        assert len(entries) == 1
+
+        lines = conn.execute(
+            "SELECT jl.debit, jl.credit, a.code "
+            "FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id "
+            "WHERE jl.journal_entry_id = ? ORDER BY a.code",
+            (entries[0]["id"],),
+        ).fetchall()
+        deposits_line = next(l for l in lines if l["code"] == "2100")
+        revenue_line = next(l for l in lines if l["code"] == "4100")
+        # 2 units × 12000 = 24000 paid in cash → deposited then recognised.
+        assert deposits_line["debit"] == 24000.0
+        assert revenue_line["credit"] == 24000.0
+
+
+def test_submit_sale_creates_cogs_journal_entry(api_client):
+    """AC2: submitting a reconciliation with sale items produces a
+    ``source_type='order_cogs'`` journal entry (DR 5900 / CR 1300) for the
+    auto-created sale order."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 6)
+
+    payload = {
+        "staff_name": "An",
+        "payment_method": "cash",
+        "lines": [
+            {
+                "product_id": 1,
+                "expected_qty": 6,
+                "counted_qty": 4,
+                "sale_qty": 2,
+                "waste_qty": 0,
+                "manual_unit_price": 12000,
+            }
+        ],
+    }
+
+    resp = api_client.post("/api/reconciliations/submit", json=payload)
+    assert resp.status_code == 201
+
+    with get_db() as conn:
+        order = conn.execute("SELECT id, order_ref FROM orders ORDER BY id DESC LIMIT 1").fetchone()
+        assert order is not None
+
+        entries = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type = 'order_cogs' AND source_id = ? "
+            "ORDER BY id",
+            (order["id"],),
+        ).fetchall()
+        assert len(entries) == 1
+
+        lines = conn.execute(
+            "SELECT jl.debit, jl.credit, a.code "
+            "FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id "
+            "WHERE jl.journal_entry_id = ? ORDER BY a.code",
+            (entries[0]["id"],),
+        ).fetchall()
+        cogs_line = next(l for l in lines if l["code"] == "5900")
+        inv_line = next(l for l in lines if l["code"] == "1300")
+        # COGS amount is whatever the cost rule yields; only structure matters here.
+        assert cogs_line["debit"] > 0
+        assert inv_line["credit"] == cogs_line["debit"]
+
+
+def test_submit_sale_creates_payment_journal_entry(api_client):
+    """AC3: submitting a reconciliation with sale items produces a
+    ``source_type='payment_transaction'`` journal entry (DR Asset / CR 2100)
+    for the auto-created payment transaction."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 6)
+
+    payload = {
+        "staff_name": "An",
+        "payment_method": "cash",
+        "lines": [
+            {
+                "product_id": 1,
+                "expected_qty": 6,
+                "counted_qty": 4,
+                "sale_qty": 2,
+                "waste_qty": 0,
+                "manual_unit_price": 12000,
+            }
+        ],
+    }
+
+    resp = api_client.post("/api/reconciliations/submit", json=payload)
+    assert resp.status_code == 201
+
+    with get_db() as conn:
+        payment = conn.execute(
+            "SELECT id FROM payment_transactions ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert payment is not None
+
+        entries = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type = 'payment_transaction' "
+            "AND source_id = ? ORDER BY id",
+            (payment["id"],),
+        ).fetchall()
+        assert len(entries) == 1
+
+        lines = conn.execute(
+            "SELECT jl.debit, jl.credit, a.code "
+            "FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id "
+            "WHERE jl.journal_entry_id = ? ORDER BY a.code",
+            (entries[0]["id"],),
+        ).fetchall()
+        # Cash method → asset account 1100 (Cash on Hand).
+        asset_line = next(l for l in lines if l["code"] == "1100")
+        deposits_line = next(l for l in lines if l["code"] == "2100")
+        # 2 units × 12000 = 24000 inflow.
+        assert asset_line["debit"] == 24000.0
+        assert deposits_line["credit"] == 24000.0
+
+
+def test_submit_no_sale_creates_no_revenue_payment_journal(api_client):
+    """AC4: a reconciliation with no sale items (waste-only) produces no
+    ``source_type='order'`` or ``source_type='payment_transaction'`` journal
+    entries — only the waste_cogs entries (existing behaviour, not under test)."""
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 9)
+
+    payload = {
+        "staff_name": "An",
+        "payment_method": "cash",
+        "waste_reason": "Bị hỏng",
+        "lines": [
+            {
+                "product_id": 1,
+                "expected_qty": 9,
+                "counted_qty": 8,
+                "sale_qty": 0,
+                "waste_qty": 1,
+                "manual_unit_price": 15000,
+            }
+        ],
+    }
+
+    resp = api_client.post("/api/reconciliations/submit", json=payload)
+    assert resp.status_code == 201
+
+    with get_db() as conn:
+        order_count = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+        payment_count = conn.execute("SELECT COUNT(*) FROM payment_transactions").fetchone()[0]
+        assert order_count == 0
+        assert payment_count == 0
+
+        order_entries = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type = 'order'"
+        ).fetchone()[0]
+        payment_entries = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type = 'payment_transaction'"
+        ).fetchone()[0]
+        order_cogs_entries = conn.execute(
+            "SELECT COUNT(*) FROM journal_entries WHERE source_type = 'order_cogs'"
+        ).fetchone()[0]
+        assert order_entries == 0
+        assert payment_entries == 0
+        assert order_cogs_entries == 0
+
+
+def test_reconciliation_sale_journal_sync_failure_is_non_blocking(
+    api_client, monkeypatch
+):
+    """AC5 / FR4: a failure inside ``run_journal_sync`` (called from
+    ``_create_sale_orders``) must NOT block reconciliation submission. The
+    sync wrapper swallows the exception, increments the
+    ``journal_sync_failures`` counter, and records a row in the
+    ``journal_sync_failure_log`` audit table — but the session, orders, and
+    payments are still created (NFR1)."""
+    from baker.services import journal_sync
+
+    # Capture the counter value before the test so the assertion is robust to
+    # ordering with other tests in the same process.
+    failures_before = journal_sync.journal_sync_failures
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated accounting failure")
+
+    monkeypatch.setattr(journal_sync, "_sync_delivered_order_journal", _boom)
+    monkeypatch.setattr(journal_sync, "_sync_payment_journal", _boom)
+
+    with get_db() as conn:
+        _mark_product_display(conn, 1, "true")
+        _set_stock(conn, 1, 6)
+
+    payload = {
+        "staff_name": "An",
+        "payment_method": "cash",
+        "lines": [
+            {
+                "product_id": 1,
+                "expected_qty": 6,
+                "counted_qty": 4,
+                "sale_qty": 2,
+                "waste_qty": 0,
+                "manual_unit_price": 12000,
+            }
+        ],
+    }
+
+    resp = api_client.post("/api/reconciliations/submit", json=payload)
+    # Submission must succeed despite both journal sync callables raising.
+    assert resp.status_code == 201
+
+    with get_db() as conn:
+        session = conn.execute("SELECT * FROM reconciliation_sessions ORDER BY id DESC LIMIT 1").fetchone()
+        assert session is not None
+        order = conn.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 1").fetchone()
+        assert order is not None
+        assert order["status"] == "delivered"
+        payment = conn.execute(
+            "SELECT * FROM payment_transactions WHERE order_id = ?", (order["id"],)
+        ).fetchone()
+        assert payment is not None
+        assert payment["method"] == "cash"
+
+        # NFR1: the failure is observable via the audit log. At least the
+        # revenue (source_type='order') or COGS sync should have logged a row
+        # for the created order id.
+        log_rows = conn.execute(
+            "SELECT source_type, source_id, error_message FROM journal_sync_failure_log "
+            "WHERE source_id = ?",
+            (order["id"],),
+        ).fetchall()
+        assert len(log_rows) >= 1
+        assert any(r["error_message"] == "simulated accounting failure" for r in log_rows)
+
+    # NFR1: the process-level counter was incremented at least once for this
+    # submission (two sync callables are patched to raise, so >= 2 expected,
+    # but ordering with other tests only lets us assert strictly greater than
+    # the captured baseline).
+    assert journal_sync.journal_sync_failures > failures_before
+
+
 # ─── Timestamp format (DG-202 TC-7) ──────────────────────────────────────────
 
 
