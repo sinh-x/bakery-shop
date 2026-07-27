@@ -1,3 +1,4 @@
+import 'package:bakery_app/data/models/expense_category.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
 
@@ -64,6 +65,9 @@ class ExpenseFilterCard extends StatelessWidget {
     required this.formatDate,
     this.filterDebtStatus = ExpenseDebtStatusFilter.all,
     this.onFilterDebtStatusChanged,
+    this.categoryTree = const <ExpenseCategory>[],
+    this.filterSubcategory = '',
+    this.onFilterSubcategoryChanged,
   });
 
   final TextEditingController searchCtrl;
@@ -97,6 +101,46 @@ class ExpenseFilterCard extends StatelessWidget {
   /// behavior for callers that did not opt in).
   final ValueChanged<ExpenseDebtStatusFilter>? onFilterDebtStatusChanged;
 
+  /// Loaded expense category tree (DG-302 Phase 4 — FR2). Used to compute
+  /// the subcategory chips shown below the selected category. Empty for
+  /// callers that have not opted in (preserves existing behavior).
+  final List<ExpenseCategory> categoryTree;
+
+  /// Currently selected subcategory filter (empty string = no filter).
+  final String filterSubcategory;
+
+  /// Optional callback for subcategory chip changes. When ``null``, the
+  /// subcategory chip strip is not rendered (preserves existing behavior
+  /// for callers that did not opt in).
+  final ValueChanged<String>? onFilterSubcategoryChanged;
+
+  /// Subcategory filter chips for the currently selected category
+  /// (DG-302 Phase 4 — FR2). Empty when no callback is wired, no category
+  /// is selected, or the selected category has no subcategories (FR6
+  /// backward compat — categories without children simply omit the strip).
+  List<Widget> get _subcategoryChips {
+    if (onFilterSubcategoryChanged == null) return const <Widget>[];
+    if (filterCategory.isEmpty) return const <Widget>[];
+    final subs = categoryTree.subcategoriesOf(filterCategory);
+    if (subs.isEmpty) return const <Widget>[];
+    return [
+      FilterChip(
+        label: const Text(VN.filterAll),
+        selected: filterSubcategory.isEmpty,
+        onSelected: (_) => onFilterSubcategoryChanged!(''),
+        visualDensity: VisualDensity.compact,
+      ),
+      ...subs.map(
+        (sub) => FilterChip(
+          label: Text(sub.name),
+          selected: filterSubcategory == sub.name,
+          onSelected: (_) => onFilterSubcategoryChanged!(sub.name),
+          visualDensity: VisualDensity.compact,
+        ),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -106,6 +150,7 @@ class ExpenseFilterCard extends StatelessWidget {
     final singleLabel = since == null
         ? VN.expenseSinceLabel
         : formatDate(since!);
+    final subcategoryChips = _subcategoryChips;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Padding(
@@ -192,6 +237,13 @@ class ExpenseFilterCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (subcategoryChips.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              _FilterChipStrip(
+                label: VN.expenseSubcategoryLabel,
+                chips: subcategoryChips,
+              ),
+            ],
             const SizedBox(height: 4),
             _FilterChipStrip(
               label: VN.expensePaymentSourceLabel,

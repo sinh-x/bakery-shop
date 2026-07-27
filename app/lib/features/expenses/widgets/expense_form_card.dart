@@ -1,3 +1,4 @@
+import 'package:bakery_app/data/models/expense_category.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
 import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
 import 'package:flutter/material.dart';
@@ -30,6 +31,9 @@ class ExpenseFormCard extends StatefulWidget {
     required this.onSave,
     required this.amountValidator,
     this.vendorSuggestions = const <String>[],
+    this.categoryTree = const <ExpenseCategory>[],
+    this.subcategory,
+    this.onSubcategoryChanged,
   });
 
   final GlobalKey<FormState> formKey;
@@ -61,6 +65,20 @@ class ExpenseFormCard extends StatefulWidget {
   /// recorded expense vendors (DG-212 Phase 3 — FR2).
   final List<String> vendorSuggestions;
 
+  /// Loaded expense category tree (DG-302 Phase 4 — FR1/FR5). Used to
+  /// look up the subcategories of the selected parent category. Empty for
+  /// callers that have not opted in (preserves existing behavior).
+  final List<ExpenseCategory> categoryTree;
+
+  /// Currently selected subcategory name (empty/null when none selected).
+  final String? subcategory;
+
+  /// Callback invoked when the subcategory dropdown changes. When null,
+  /// the subcategory dropdown is not rendered even if the category has
+  /// children (preserves existing behavior for callers that did not opt
+  /// in).
+  final ValueChanged<String?>? onSubcategoryChanged;
+
   @override
   State<ExpenseFormCard> createState() => _ExpenseFormCardState();
 }
@@ -81,6 +99,19 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
   }
 
   bool get _isDebt => widget.paymentMethod == VN.methodDebt;
+
+  /// Subcategory names available for the currently selected category
+  /// (DG-302 Phase 4 — FR1). Empty when the category has no children or
+  /// when no category is selected. The dropdown is only rendered when
+  /// this list is non-empty AND an [onSubcategoryChanged] callback is
+  /// provided (FR6 backward compat — callers that have not opted in keep
+  /// the legacy single-dropdown behavior).
+  List<String> get _subcategoryOptions {
+    final category = widget.category;
+    if (category == null || category.isEmpty) return const <String>[];
+    if (widget.onSubcategoryChanged == null) return const <String>[];
+    return widget.categoryTree.subcategoriesOf(category).map((c) => c.name).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -119,6 +150,25 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                     (value == null || value.isEmpty) ? VN.fieldRequired : null,
               ),
               const SizedBox(height: 8),
+              if (_subcategoryOptions.isNotEmpty)
+                DropdownButtonFormField<String>(
+                  initialValue: widget.subcategory,
+                  decoration: const InputDecoration(
+                    labelText: VN.expenseSubcategoryLabel,
+                    hintText: VN.expenseSubcategoryHint,
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _subcategoryOptions
+                      .map(
+                        (item) =>
+                            DropdownMenuItem(value: item, child: Text(item)),
+                      )
+                      .toList(),
+                  onChanged: widget.onSubcategoryChanged,
+                  validator: (value) =>
+                      (value == null || value.isEmpty) ? VN.fieldRequired : null,
+                ),
+              if (_subcategoryOptions.isNotEmpty) const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 initialValue: widget.paymentMethod,
                 decoration: const InputDecoration(

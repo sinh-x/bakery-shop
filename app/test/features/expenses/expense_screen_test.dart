@@ -59,6 +59,7 @@ Future<List<BakeryEvent>> _emptyHistory({
   String? loggedBy,
   String? searchText,
   String? debtStatus,
+  String? subcategory,
 }) async => const [];
 
 void main() {
@@ -84,6 +85,7 @@ void main() {
               loggedBy,
               searchText,
               debtStatus,
+              subcategory,
             }) async {
               capturedSince = since;
                   capturedUntil = until;
@@ -172,6 +174,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => [event],
           ),
         ),
@@ -262,6 +265,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => [event],
           ),
         ),
@@ -298,6 +302,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async {
                   loads += 1;
                   return const [];
@@ -361,6 +366,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => events,
           ),
         ),
@@ -434,6 +440,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async {
                   capturedCategory = category;
                   capturedPaidByName = paidByName;
@@ -486,6 +493,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async {
                   capturedCategory = category;
                   return events;
@@ -550,6 +558,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => [event],
           ),
         ),
@@ -593,6 +602,7 @@ void main() {
                     loggedBy,
                     searchText,
                     debtStatus,
+                    subcategory,
                   }) async => [event],
             ),
           ),
@@ -637,6 +647,7 @@ void main() {
                     loggedBy,
                     searchText,
                     debtStatus,
+                    subcategory,
                   }) async => [event],
             ),
           ),
@@ -680,6 +691,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => [event],
           ),
         ),
@@ -748,6 +760,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async {
                   capturedPaymentSource = paymentSource;
                   return events;
@@ -803,6 +816,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => events,
           ),
         ),
@@ -891,6 +905,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => [event],
           ),
         ),
@@ -932,6 +947,7 @@ void main() {
                   loggedBy,
                   searchText,
                   debtStatus,
+                  subcategory,
                 }) async => [event],
           ),
         ),
@@ -1029,6 +1045,12 @@ void main() {
     await tester.tap(find.text(VN.expenseCategoryIngredient).last);
     await tester.pumpAndSettle();
 
+    // Select subcategory (required when category has children — DG-302).
+    await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.expenseSubcategoryEggs).last);
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text(VN.expenseSaveAction));
     await tester.pumpAndSettle();
 
@@ -1065,6 +1087,12 @@ void main() {
       await tester.tap(find.text(VN.expenseCategoryIngredient).last);
       await tester.pumpAndSettle();
 
+      // Select subcategory (required when category has children — DG-302).
+      await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(VN.expenseSubcategoryEggs).last);
+      await tester.pumpAndSettle();
+
       await tester.tap(find.text(VN.expenseSaveAction));
       await tester.pumpAndSettle();
 
@@ -1098,6 +1126,12 @@ void main() {
     await tester.tap(find.byType(DropdownButtonFormField<String>).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text(VN.expenseCategoryIngredient).last);
+    await tester.pumpAndSettle();
+
+    // Select subcategory (required when category has children — DG-302).
+    await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(VN.expenseSubcategoryEggs).last);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text(VN.expenseSaveAction));
@@ -1137,6 +1171,7 @@ void main() {
                     loggedBy,
                     searchText,
                     debtStatus,
+                    subcategory,
                   }) async => [event],
             ),
           ),
@@ -1194,6 +1229,7 @@ void main() {
                     loggedBy,
                     searchText,
                     debtStatus,
+                    subcategory,
                   }) async => [event],
             ),
           ),
@@ -1247,6 +1283,7 @@ void main() {
                     loggedBy,
                     searchText,
                     debtStatus,
+                    subcategory,
                   }) async => [event],
             ),
           ),
@@ -1300,6 +1337,7 @@ void main() {
                     loggedBy,
                     searchText,
                     debtStatus,
+                    subcategory,
                   }) async => [event],
             ),
           ),
@@ -1359,6 +1397,9 @@ void main() {
   testWidgets(
     'form screen shows vendor required validation when Nợ selected and vendor empty',
     (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 1920));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
       SharedPreferences.setMockInitialValues({
       'auth_token': kTestAdminToken,
       'auth_username': 'Lan',
@@ -1383,8 +1424,15 @@ void main() {
       await tester.tap(find.text(VN.expenseCategoryIngredient).last);
       await tester.pumpAndSettle();
 
-      // Select Nợ.
+      // Select subcategory (required when category has children — DG-302).
       await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(VN.expenseSubcategoryEggs).last);
+      await tester.pumpAndSettle();
+
+      // Select Nợ (payment method dropdown — index 2 now that subcategory
+      // dropdown is rendered between category and payment method).
+      await tester.tap(find.byType(DropdownButtonFormField<String>).at(2));
       await tester.pumpAndSettle();
       await tester.tap(find.text(VN.methodDebt).last);
       await tester.pumpAndSettle();
@@ -1452,6 +1500,7 @@ void main() {
                 loggedBy,
                 searchText,
                 debtStatus,
+                subcategory,
               }) async {
                 capturedDebtStatus = debtStatus;
                 return const [];
