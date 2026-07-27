@@ -1526,6 +1526,93 @@ CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON journal_lines(journal_entr
 CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(account_id);
 """
 
+# ---------------------------------------------------------------------------
+# DG-302 Phase 1: Expense categories table (parent-child tree for subcategory
+# support). The table replaces the hardcode list in expense_constants.dart and
+# is exposed via `GET /api/expense-categories` (Phase 2). Seed data is
+# idempotent — INSERT OR IGNORE on (name, parent_id).
+# ---------------------------------------------------------------------------
+
+EXPENSE_CATEGORIES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS expense_categories (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    account_code TEXT NOT NULL,
+    parent_id    INTEGER REFERENCES expense_categories(id),
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_expense_categories_parent ON expense_categories(parent_id);
+CREATE INDEX IF NOT EXISTS idx_expense_categories_account_code ON expense_categories(account_code);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_expense_categories_name_parent
+    ON expense_categories(name, COALESCE(parent_id, -1));
+"""
+
+# Seed data: (name, account_code, parent_name_or_None)
+# 8 parent categories (matching EXPENSE_CATEGORY_TO_ACCOUNT_CODE) + 7
+# subcategories (4 under Nguyên liệu, 3 under Bao bì). Account codes match
+# SEED_CHART_OF_ACCOUNTS rows added above.
+SEED_EXPENSE_CATEGORIES = [
+    # Parent categories
+    ("Nguyên liệu", "5100", None),
+    ("Bao bì", "5200", None),
+    ("Vận chuyển", "5300", None),
+    ("Điện/nước", "5400", None),
+    ("Dụng cụ", "5500", None),
+    ("Sửa chữa", "5600", None),
+    ("Lương/phụ cấp", "5700", None),
+    ("Khác", "5800", None),
+    # Subcategories of Nguyên liệu
+    ("Trứng", "5110", "Nguyên liệu"),
+    ("Kem", "5120", "Nguyên liệu"),
+    ("Bột", "5130", "Nguyên liệu"),
+    ("Phụ gia khác", "5140", "Nguyên liệu"),
+    # Subcategories of Bao bì
+    ("Hộp & đế", "5210", "Bao bì"),
+    ("Phụ kiện", "5220", "Bao bì"),
+    ("Bọc nilon", "5230", "Bao bì"),
+]
+
+
+def _seed_expense_categories(conn) -> None:
+    """Seed the ``expense_categories`` table (idempotent via INSERT OR IGNORE).
+
+    Parents are inserted first so their generated ids can be referenced by the
+    subcategory rows. The unique index on (name, COALESCE(parent_id, -1))
+    guarantees re-runs are no-ops on an already-seeded DB.
+    """
+    name_to_id: dict[str, int] = {}
+    for name, account_code, parent_name in SEED_EXPENSE_CATEGORIES:
+        parent_id = name_to_id.get(parent_name) if parent_name else None
+        conn.execute(
+            "INSERT OR IGNORE INTO expense_categories (name, account_code, parent_id) "
+            "VALUES (?, ?, ?)",
+            (name, account_code, parent_id),
+        )
+        row = conn.execute(
+            "SELECT id FROM expense_categories "
+            "WHERE name = ? AND COALESCE(parent_id, -1) = COALESCE(?, -1)",
+            (name, parent_id),
+        ).fetchone()
+        if row is not None:
+            name_to_id[name] = int(row[0])
+
+
+def _migrate_v86_expense_categories(conn):
+    """Create ``expense_categories`` table and seed the parent + subcategory
+    tree (DG-302 Phase 1).
+
+    Also re-runs ``_seed_chart_of_accounts()`` so the new subcategory account
+    codes (5110–5140, 5210–5230) are inserted into ``accounts`` — they were
+    added to ``SEED_CHART_OF_ACCOUNTS`` as part of this phase. Both operations
+    are idempotent (INSERT OR IGNORE / CREATE TABLE IF NOT EXISTS), so re-running
+    v86 on an already-migrated DB is a no-op.
+    """
+    conn.executescript(EXPENSE_CATEGORIES_SCHEMA)
+    _seed_chart_of_accounts(conn)
+    _seed_expense_categories(conn)
+
+
 # Chart of accounts seed: (code, name, type, parent_code)
 # parent_code is None for top-level; otherwise resolved to parent account id.
 SEED_CHART_OF_ACCOUNTS = [
@@ -1571,13 +1658,33 @@ SEED_CHART_OF_ACCOUNTS = [
     ("5600", "Sửa chữa (Equipment Maintenance)", "expense", "5000"),
     ("5700", "Lương/phụ cấp (Staff Salary)", "expense", "5000"),
     ("5800", "Khác (Other Expenses)", "expense", "5000"),
+    # DG-302 Phase 1: Ingredient subcategory accounts (sub-accounts of 5100).
+    # Each subcategory debits its own account so journal entries can be sliced
+    # by raw-material type. The parent account 5100 is still used for expense
+    # events that have no subcategory (backward compatibility, FR6).
+    ("5110", "Trứng (Eggs)", "expense", "5100"),
+    ("5120", "Kem (Cream)", "expense", "5100"),
+    ("5130", "Bột (Flour)", "expense", "5100"),
+    ("5140", "Phụ gia khác (Other Additives)", "expense", "5100"),
+    # DG-302 Phase 1: Packaging subcategory accounts (sub-accounts of 5200).
+    ("5210", "Hộp & đế (Boxes & Bases)", "expense", "5200"),
+    ("5220", "Phụ kiện (Accessories)", "expense", "5200"),
+    ("5230", "Bọc nilon (Plastic Wrap)", "expense", "5200"),
     # COGS
     ("5900", "Giá vốn hàng bán (COGS)", "expense", "5000"),
 ]
 
 # Map expense category (stored in events.data JSON) → expense account code.
 # Keys must match VN labels in app/lib/features/expenses/expense_constants.dart.
+#
+# DG-302 Phase 1: Subcategory keys (Trứng, Kem, Bột, Phụ gia khác, Hộp & đế,
+# Phụ kiện, Bọc nilon) take precedence over their parent category when an
+# expense event carries a subcategory in `events.data.subcategory`. The
+# journal-sync resolver (Phase 6) prefers the subcategory code when present;
+# this map only carries the static mapping for accounting validation and
+# backfill. Parent keys remain for backward compatibility (FR6).
 EXPENSE_CATEGORY_TO_ACCOUNT_CODE = {
+    # Parent categories
     "Nguyên liệu": "5100",
     "Bao bì": "5200",
     "Vận chuyển": "5300",
@@ -1586,13 +1693,41 @@ EXPENSE_CATEGORY_TO_ACCOUNT_CODE = {
     "Sửa chữa": "5600",
     "Lương/phụ cấp": "5700",
     "Khác": "5800",
+    # DG-302 subcategories — Nguyên liệu (5110–5140)
+    "Trứng": "5110",
+    "Kem": "5120",
+    "Bột": "5130",
+    "Phụ gia khác": "5140",
+    # DG-302 subcategories — Bao bì (5210–5230)
+    "Hộp & đế": "5210",
+    "Phụ kiện": "5220",
+    "Bọc nilon": "5230",
 }
 
 # Categories that represent inventory purchases (raw materials, packaging).
 # These debit Inventory (1300) instead of an expense account — the cost sits
 # in inventory until goods are sold/wasted, at which point COGS (5900) is
 # debited and Inventory is credited.
-INVENTORY_PURCHASE_CATEGORIES = {"Nguyên liệu", "Bao bì"}
+#
+# DG-302 Phase 1: Subcategory names of Nguyên liệu / Bao bì are also inventory
+# purchases — an expense tagged "Trứng" or "Hộp & đế" still debits Inventory,
+# not the subcategory expense account. The journal-sync resolver (Phase 6)
+# checks parent membership via the ``expense_categories`` table; this static
+# set keeps the legacy non-DB lookups (accounting validation, repair) aligned
+# without a DB round-trip.
+INVENTORY_PURCHASE_CATEGORIES = {
+    "Nguyên liệu",
+    "Bao bì",
+    # Subcategories of Nguyên liệu
+    "Trứng",
+    "Kem",
+    "Bột",
+    "Phụ gia khác",
+    # Subcategories of Bao bì
+    "Hộp & đế",
+    "Phụ kiện",
+    "Bọc nilon",
+}
 
 # Map expense payment_source (events.data JSON) → payment account code.
 # "Nhân viên ứng trước" creates a sub-account per staff name (handled in backfill).
@@ -4798,6 +4933,11 @@ MIGRATIONS = {
         "description": "Seed account 1600 (Tài sản cố định / Fixed Assets) for investing-activity cash flows (DG-300 Phase 1)",
         "sql": "",
         "callable": _migrate_v85_add_account_1600,
+    },
+    86: {
+        "description": "Expense subcategories: expense_categories table + seed data + account codes 5110-5140, 5210-5230 (DG-302 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v86_expense_categories,
     },
 }
 
