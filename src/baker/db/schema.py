@@ -2016,7 +2016,14 @@ def _insert_journal_entry(
 
 
 def _backfill_expense_journal_entries(conn) -> None:
-    """Backfill journal entries for all non-deleted expense events."""
+    """Backfill journal entries for all non-deleted expense events.
+
+    DG-302 Phase 6 (FR4/AC4): when ``events.data.subcategory`` maps to an
+    account code, the debit hits that subcategory account (e.g. 5110 for
+    Trứng) and the inventory-purchase path is bypassed. Without a mappable
+    subcategory, the legacy behavior applies: parent categories in
+    ``INVENTORY_PURCHASE_CATEGORIES`` debit Inventory (1300).
+    """
     import json
 
     rows = conn.execute(
@@ -2053,7 +2060,17 @@ def _backfill_expense_journal_entries(conn) -> None:
         if not isinstance(payment_source, str) or not payment_source:
             continue
 
-        expense_code = EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category)
+        # Phase 6: prefer subcategory account code; fall back to category.
+        subcategory = data.get("subcategory")
+        has_subcategory_code = (
+            isinstance(subcategory, str)
+            and bool(subcategory)
+            and bool(EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(subcategory))
+        )
+        if has_subcategory_code:
+            expense_code = EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(subcategory)
+        else:
+            expense_code = EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category)
         if not expense_code:
             continue
 
@@ -2068,7 +2085,10 @@ def _backfill_expense_journal_entries(conn) -> None:
                 continue
             payment_account_id = _account_id_by_code(conn, account_code)
 
-        if category in INVENTORY_PURCHASE_CATEGORIES:
+        # Phase 6: a mappable subcategory debits its own account and bypasses
+        # the inventory-purchase path (FR4/AC4). Otherwise, parent
+        # inventory-purchase categories still debit Inventory (1300) (FR6).
+        if not has_subcategory_code and category in INVENTORY_PURCHASE_CATEGORIES:
             inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
             _insert_journal_entry(
                 conn,

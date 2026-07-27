@@ -218,6 +218,32 @@ def _update_journal_entry_in_place(
     )
 
 
+def _resolve_expense_account_code(data: dict) -> Optional[str]:
+    """Resolve the expense account code, preferring subcategory over category.
+
+    DG-302 Phase 6 (FR4/AC4): when ``events.data.subcategory`` is present and
+    maps to an account code in ``EXPENSE_CATEGORY_TO_ACCOUNT_CODE``, use that
+    subcategory code (e.g. Trứng→5110). Otherwise fall back to the parent
+    ``category`` code (e.g. Nguyên liệu→5100). Returns ``None`` when neither
+    resolves.
+
+    A subcategory code takes precedence over the inventory-purchase path:
+    an expense tagged ``category=Nguyên liệu`` + ``subcategory=Trứng`` debits
+    account 5110, not Inventory (1300). The inventory-purchase debit only
+    applies to expenses that carry no mappable subcategory (FR6 backward
+    compatibility).
+    """
+    subcategory = data.get("subcategory")
+    if isinstance(subcategory, str) and subcategory:
+        sub_code = EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(subcategory)
+        if sub_code:
+            return sub_code
+    category = data.get("category")
+    if isinstance(category, str) and category:
+        return EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category)
+    return None
+
+
 def _is_expense_journallable(data: dict) -> bool:
     """Return True iff an expense event should produce a journal entry.
 
@@ -233,24 +259,22 @@ def _is_expense_journallable(data: dict) -> bool:
         non-idempotent and creates phantom vendor sub-accounts (CQ-3/CQ-4).
 
     An event is journallable iff it has a positive numeric ``amount_vnd``, a
-    non-empty ``category`` mapped by ``EXPENSE_CATEGORY_TO_ACCOUNT_CODE``, a
-    resolvable payment configuration (``payment_method`` debt, or a
-    ``payment_source`` in the asset map), and — for debt / staff-advance
-    events — a non-empty ``vendor`` / ``paid_by_name`` respectively.
+    resolvable expense account code (subcategory preferred, then category —
+    DG-302 Phase 6), a resolvable payment configuration (``payment_method``
+    debt, or a ``payment_source`` in the asset map), and — for debt /
+    staff-advance events — a non-empty ``vendor`` / ``paid_by_name``
+    respectively.
 
     This predicate performs no I/O and mutates nothing; callers retain the
     branch-specific resolution (sub-account creation, account-id lookup) after
     it returns True (CQ-5).
     """
     amount = data.get("amount_vnd")
-    category = data.get("category")
     payment_source = data.get("payment_source")
     payment_method = data.get("payment_method", "")
     if not isinstance(amount, (int, float)) or amount <= 0:
         return False
-    if not isinstance(category, str) or not category:
-        return False
-    if not EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category):
+    if not _resolve_expense_account_code(data):
         return False
     is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
     if not is_debt and (not isinstance(payment_source, str) or not payment_source):
@@ -273,6 +297,13 @@ def _build_expense_journal_lines(
     """Build (description, lines) for an expense event's journal entry.
 
     Returns None when the expense data is incomplete/unsupported (silently skip).
+
+    DG-302 Phase 6 (FR4/AC4): when ``data.subcategory`` maps to an account
+    code, the debit hits that subcategory account (e.g. 5110 for Trứng) and
+    the inventory-purchase path is bypassed — the subcategory account is the
+    debit target even for inventory parent categories (Nguyên liệu, Bao bì).
+    Without a mappable subcategory, the legacy behavior applies: parent
+    categories in ``INVENTORY_PURCHASE_CATEGORIES`` debit Inventory (1300).
     """
     amount = data.get("amount_vnd")
     category = data.get("category")
@@ -282,7 +313,14 @@ def _build_expense_journal_lines(
         return None
 
     is_debt = payment_method == EXPENSE_DEBT_PAYMENT_METHOD
-    expense_code = EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category)
+    # Phase 6: prefer subcategory account code; fall back to category code.
+    subcategory = data.get("subcategory")
+    has_subcategory_code = (
+        isinstance(subcategory, str)
+        and bool(subcategory)
+        and bool(EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(subcategory))
+    )
+    expense_code = _resolve_expense_account_code(data)
 
     if is_debt:
         # FR3 (DG-245 Phase 3): debt expenses credit a per-vendor sub-account
@@ -307,7 +345,10 @@ def _build_expense_journal_lines(
     amount_f = float(amount)
     description = f"Expense: {summary}"
 
-    if category in INVENTORY_PURCHASE_CATEGORIES:
+    # Phase 6: a mappable subcategory debits its own account and bypasses the
+    # inventory-purchase path (FR4/AC4). Otherwise, parent inventory-purchase
+    # categories still debit Inventory (1300) for backward compatibility (FR6).
+    if not has_subcategory_code and category in INVENTORY_PURCHASE_CATEGORIES:
         inventory_account_id = _account_id_by_code(conn, INVENTORY_CODE)
         lines = [
             (inventory_account_id, amount_f, 0.0, "Nhập kho nguyên vật liệu"),

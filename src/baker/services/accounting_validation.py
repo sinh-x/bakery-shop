@@ -893,12 +893,19 @@ def _check_expense_category_mismatch(conn) -> dict[str, Any]:
     However, inventory purchase categories (``INVENTORY_PURCHASE_CATEGORIES``
     — "Nguyên liệu", "Bao bì") correctly debit Inventory (1300), not expense
     accounts, so they are excluded from this check.
+
+    DG-302 Phase 6 (FR4/AC4): when ``events.data.subcategory`` maps to an
+    account code, the expected debit account is that subcategory account
+    (e.g. 5110 for Trứng) — the inventory-purchase exclusion no longer
+    applies because subcategory-tagged expenses debit the subcategory
+    account, not Inventory (1300).
     """
     from baker.db.schema import (
         EXPENSE_CATEGORY_TO_ACCOUNT_CODE,
         INVENTORY_PURCHASE_CATEGORIES,
         INVENTORY_CODE,
     )
+    from baker.services.journal_sync import _resolve_expense_account_code
 
     inventory_id = conn.execute(
         "SELECT id FROM accounts WHERE code = ?", (INVENTORY_CODE,)
@@ -940,9 +947,26 @@ def _check_expense_category_mismatch(conn) -> dict[str, Any]:
         if not isinstance(category, str) or not category:
             continue
 
-        # Inventory purchase categories correctly debit Inventory, not
-        # expense accounts — skip them.
-        if category in INVENTORY_PURCHASE_CATEGORIES:
+        # Phase 6: a mappable subcategory resolves to its own account code
+        # and bypasses the inventory-purchase exclusion.
+        subcategory = data.get("subcategory")
+        has_subcategory_code = (
+            isinstance(subcategory, str)
+            and bool(subcategory)
+            and bool(EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(subcategory))
+        )
+
+        if has_subcategory_code:
+            expected_code = EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(subcategory)
+            expected_row = conn.execute(
+                "SELECT id FROM accounts WHERE code = ?", (expected_code,),
+            ).fetchone()
+            if expected_row is None:
+                continue
+            expected_account_id = int(expected_row["id"])
+        elif category in INVENTORY_PURCHASE_CATEGORIES:
+            # Inventory purchase categories correctly debit Inventory, not
+            # expense accounts — skip them.
             expected_account_id = inventory_account_id
         else:
             expected_code = EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category)
@@ -962,8 +986,12 @@ def _check_expense_category_mismatch(conn) -> dict[str, Any]:
                 "description": r["description"],
                 "category": category,
                 "expected_account_code": (
-                    INVENTORY_CODE if category in INVENTORY_PURCHASE_CATEGORIES
-                    else EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category)
+                    EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(subcategory)
+                    if has_subcategory_code
+                    else (
+                        INVENTORY_CODE if category in INVENTORY_PURCHASE_CATEGORIES
+                        else EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(category)
+                    )
                 ),
                 "actual_account_code": r["debit_account_code"],
                 "actual_account_id": int(r["debit_account_id"]),

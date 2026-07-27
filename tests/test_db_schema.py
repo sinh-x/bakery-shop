@@ -963,18 +963,20 @@ def _seed_expense_event(
     payment_source="Shop tiền mặt",
     paid_by_name="",
     summary="Test expense",
+    subcategory=None,
 ):
-    data = json.dumps(
-        {
-            "amount_vnd": amount_vnd,
-            "category": category,
-            "payment_method": "TM",
-            "payment_source": payment_source,
-            "vendor": "NCC A",
-            "note": "",
-            "paid_by_name": paid_by_name,
-        }
-    )
+    payload = {
+        "amount_vnd": amount_vnd,
+        "category": category,
+        "payment_method": "TM",
+        "payment_source": payment_source,
+        "vendor": "NCC A",
+        "note": "",
+        "paid_by_name": paid_by_name,
+    }
+    if subcategory is not None:
+        payload["subcategory"] = subcategory
+    data = json.dumps(payload)
     cursor = conn.execute(
         "INSERT INTO events (type, summary, data, logged_by, timestamp) "
         "VALUES ('expense', ?, ?, '', '2026-06-22T10:00:00+07:00')",
@@ -1181,6 +1183,72 @@ def test_v44_backfill_expense_staff_advance_creates_sub_account():
         ).fetchall()
         credit_line = next(l for l in lines if float(l["credit"]) > 0)
         assert credit_line["account_id"] == subs[0]["id"]
+        _assert_double_entry_integrity(conn)
+
+
+def test_v86_backfill_expense_subcategory_debits_subcategory_account():
+    """DG-302 Phase 6 / FR4 / AC4: an expense event with
+    ``category=Nguyên liệu`` + ``subcategory=Trứng`` debits account 5110
+    (not Inventory 1300, not parent 5100) when the v44 backfill runs.
+    Verifies the subcategory-aware resolver in ``_backfill_expense_journal_entries``.
+    """
+    with get_db() as conn:
+        _migrate_to_version(conn, 43)
+        event_id_trung = _seed_expense_event(
+            conn,
+            amount_vnd=50000,
+            category="Nguyên liệu",
+            subcategory="Trứng",
+            summary="Mua trứng",
+        )
+        event_id_kem = _seed_expense_event(
+            conn,
+            amount_vnd=30000,
+            category="Nguyên liệu",
+            subcategory="Kem",
+            summary="Mua kem",
+        )
+        # Legacy Nguyên liệu expense without subcategory — still debits Inventory.
+        event_id_legacy = _seed_expense_event(
+            conn,
+            amount_vnd=20000,
+            category="Nguyên liệu",
+            summary="Mua đường (legacy)",
+        )
+        # Bao bì subcategory — Hộp & đế → 5210.
+        event_id_hop = _seed_expense_event(
+            conn,
+            amount_vnd=15000,
+            category="Bao bì",
+            subcategory="Hộp & đế",
+            summary="Mua hộp",
+        )
+
+        _migrate_to_version(conn, 44)
+        assert _migrated_version(conn) == 44
+
+        entries = conn.execute(
+            "SELECT * FROM journal_entries WHERE source_type = 'expense' ORDER BY id"
+        ).fetchall()
+        assert len(entries) == 4
+
+        def _debit_code(source_id):
+            entry = next(e for e in entries if e["source_id"] == source_id)
+            lines = conn.execute(
+                "SELECT * FROM journal_lines WHERE journal_entry_id = ?",
+                (entry["id"],),
+            ).fetchall()
+            debit_line = next(l for l in lines if float(l["debit"]) > 0)
+            return conn.execute(
+                "SELECT code FROM accounts WHERE id = ?", (debit_line["account_id"],)
+            ).fetchone()["code"]
+
+        # Subcategory expenses debit the subcategory account, not Inventory.
+        assert _debit_code(event_id_trung) == "5110"
+        assert _debit_code(event_id_kem) == "5120"
+        assert _debit_code(event_id_hop) == "5210"
+        # Legacy Nguyên liệu expense (no subcategory) still debits Inventory (1300).
+        assert _debit_code(event_id_legacy) == "1300"
         _assert_double_entry_integrity(conn)
 
 
