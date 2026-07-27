@@ -99,7 +99,8 @@ def count_events_by_logger(conn, since=None, until=None):
 
 def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
                  search=None, untagged=False, logged_by=None, involving=None,
-                 expense_category=None, expense_payment_method=None,
+                 expense_category=None, expense_subcategory=None,
+                 expense_payment_method=None,
                  expense_staff_name=None, expense_paid_by_name=None,
                  expense_payment_source=None,
                  expense_search=None, debt_status=None, limit=50):
@@ -147,6 +148,16 @@ def fetch_events(conn, *, event_type=None, tags=None, since=None, until=None,
             "LOWER(COALESCE(json_extract(e.data, '$.category'), '')) = LOWER(?)"
         )
         params.append(expense_category)
+    if expense_subcategory:
+        # FR2 (DG-302 Phase 2): filter expenses by subcategory stored in the
+        # event data JSON. Uses COALESCE so expenses without a subcategory
+        # fall back to '' and never match a non-empty filter value (FR6
+        # backward compat — old expenses remain visible under category-only
+        # filters, but are excluded when a subcategory filter is applied).
+        conditions.append(
+            "LOWER(COALESCE(json_extract(e.data, '$.subcategory'), '')) = LOWER(?)"
+        )
+        params.append(expense_subcategory)
     if expense_payment_method:
         conditions.append(
             "LOWER(COALESCE(json_extract(e.data, '$.payment_method'), '')) = LOWER(?)"
