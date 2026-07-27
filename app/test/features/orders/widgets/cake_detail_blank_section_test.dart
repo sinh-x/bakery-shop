@@ -93,8 +93,8 @@ void main() {
         editing: false,
         onAddBlank: (_, {required blankId, quantity = 1.0, notes = ''}) async =>
             _assignment1,
-        onUpdateBlank: (_, __, {quantity, notes}) async => _assignment1,
-        onDeleteBlank: (_, __) async {},
+        onUpdateBlank: (_, _, {quantity, notes}) async => _assignment1,
+        onDeleteBlank: (_, _) async {},
       );
 
       expect(find.text(BlanksLabels.sectionBlanks), findsOneWidget);
@@ -121,8 +121,8 @@ void main() {
         editing: false,
         onAddBlank: (_, {required blankId, quantity = 1.0, notes = ''}) async =>
             _assignment1,
-        onUpdateBlank: (_, __, {quantity, notes}) async => _assignment1,
-        onDeleteBlank: (_, __) async {},
+        onUpdateBlank: (_, _, {quantity, notes}) async => _assignment1,
+        onDeleteBlank: (_, _) async {},
       );
 
       expect(find.text(BlanksLabels.emptyBlanksAssigned), findsOneWidget);
@@ -137,8 +137,8 @@ void main() {
         editing: true,
         onAddBlank: (_, {required blankId, quantity = 1.0, notes = ''}) async =>
             _assignment1,
-        onUpdateBlank: (_, __, {quantity, notes}) async => _assignment1,
-        onDeleteBlank: (_, __) async {},
+        onUpdateBlank: (_, _, {quantity, notes}) async => _assignment1,
+        onDeleteBlank: (_, _) async {},
       );
 
       expect(find.text(BlanksLabels.actionAddCakeBlank), findsOneWidget);
@@ -155,8 +155,8 @@ void main() {
         editing: true,
         onAddBlank: (_, {required blankId, quantity = 1.0, notes = ''}) async =>
             _assignment1,
-        onUpdateBlank: (_, __, {quantity, notes}) async => _assignment1,
-        onDeleteBlank: (_, __) async {},
+        onUpdateBlank: (_, _, {quantity, notes}) async => _assignment1,
+        onDeleteBlank: (_, _) async {},
       );
 
       await tester.tap(find.text(BlanksLabels.actionAddCakeBlank));
@@ -175,8 +175,8 @@ void main() {
         editing: true,
         onAddBlank: (_, {required blankId, quantity = 1.0, notes = ''}) async =>
             _assignment1,
-        onUpdateBlank: (_, __, {quantity, notes}) async => _assignment1,
-        onDeleteBlank: (_, __) async {},
+        onUpdateBlank: (_, _, {quantity, notes}) async => _assignment1,
+        onDeleteBlank: (_, _) async {},
       );
 
       await tester.tap(find.byIcon(Icons.edit_outlined));
@@ -200,8 +200,8 @@ void main() {
         editing: true,
         onAddBlank: (_, {required blankId, quantity = 1.0, notes = ''}) async =>
             _assignment1,
-        onUpdateBlank: (_, __, {quantity, notes}) async => _assignment1,
-        onDeleteBlank: (_, __) async {
+        onUpdateBlank: (_, _, {quantity, notes}) async => _assignment1,
+        onDeleteBlank: (_, _) async {
           deleteCalled = true;
         },
       );
@@ -231,8 +231,8 @@ void main() {
         editing: true,
         onAddBlank: (_, {required blankId, quantity = 1.0, notes = ''}) async =>
             _assignment1,
-        onUpdateBlank: (_, __, {quantity, notes}) async => _assignment1,
-        onDeleteBlank: (_, __) async {
+        onUpdateBlank: (_, _, {quantity, notes}) async => _assignment1,
+        onDeleteBlank: (_, _) async {
           deleteCalled = true;
         },
       );
