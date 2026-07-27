@@ -83,7 +83,9 @@ jobs:
           # Lower bcrypt work factor in TEST only so the full suite completes
           # well under the 10-min cap. Production default stays 12 (NFR4).
           BAKER_BCRYPT_ROUNDS: "4"
-        run: python -m pytest tests -v -n auto
+        # Phase 4.5 — `--durations=25` surfaces the 25 slowest tests in the
+        # job log so slow tests are visible (FR4, AC5). Non-gating.
+        run: python -m pytest tests -v -n auto --durations=25
 
   flutter-checks:
     # Runs when Flutter app changes
@@ -123,8 +125,30 @@ jobs:
         working-directory: app
 
       - name: Test with coverage
-        run: flutter test --coverage
+        # Phase 4.5 — surface Flutter test timing in the job log AND in the
+        # GitHub Actions job summary ($GITHUB_STEP_SUMMARY) for slow-test
+        # visibility (FR4, AC5). `--reporter compact` keeps per-test output
+        # readable; the trailing summary lines (pass/fail counts + elapsed)
+        # are written to the job summary by the next step. Non-gating.
+        run: |
+          set -o pipefail
+          flutter test --coverage --reporter compact 2>&1 | tee /tmp/flutter-test.log
         working-directory: app
+
+      - name: Flutter test timing summary
+        # Phase 4.5 — write the tail of the test log (which includes the
+        # pass/fail counts and total elapsed time) to the job summary so
+        # Flutter test timing is visible alongside the pytest --durations
+        # output from the python-tests job.
+        if: always()
+        run: |
+          {
+            echo "## Flutter test timing"
+            echo "Tail of \`flutter test --coverage\` output:"
+            echo '```'
+            tail -n 15 /tmp/flutter-test.log 2>/dev/null || echo "(log unavailable)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check dependency health
         run: flutter pub outdated --no-color
