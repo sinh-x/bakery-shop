@@ -1193,13 +1193,30 @@ def cashflow_cmd(since, until):
     """
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
+    # Reject an inverted range (--since later than --until) up front rather
+    # than emitting a confusing report with a [MISMATCH] reconciliation
+    # (DG-300 Phase 3, edge case #6). Same-day ranges are allowed: the
+    # normalized ``until_b`` carries a ``T23:59:59`` suffix so it always
+    # sorts after the bare ``since_b`` for the same calendar day.
+    if since_b and until_b and since_b > until_b:
+        raise click.BadParameter(
+            f"--since ({since}) must not be later than --until ({until}).",
+            param_hint="Use a date range where --since is on or before --until.",
+        )
     _echo_header("Cashflow Statement (Direct Method)", since, until)
 
     with get_db() as conn:
         # Opening balance: cumulative cash-account balances before --since.
         # `_query_cash_balance` applies ``je.transaction_date < since_b`` so a
         # None since_b means no opening bound (opening = 0 for all accounts).
-        opening_by_account = _query_cash_balance(conn, since_b, inclusive=False)
+        if since_b:
+            opening_by_account = _query_cash_balance(conn, since_b, inclusive=False)
+        else:
+            # No --since ⇒ the period starts at the beginning of time, so the
+            # opening balance is zero by definition (there is nothing before
+            # the first entry). Querying with no upper bound would otherwise
+            # sum every entry ever recorded and produce a false [MISMATCH].
+            opening_by_account = {code: 0.0 for code in CASH_ACCOUNT_CODES}
         # Closing balance: cumulative cash-account balances up to and including
         # --until (inclusive upper bound). None until_b → all-time balance.
         closing_by_account = _query_cash_balance(conn, until_b, inclusive=True)

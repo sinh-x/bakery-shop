@@ -1604,3 +1604,158 @@ def test_cashflow_per_account_breakdown_empty_db():
         assert code in result.output
     # TOTAL row is present.
     assert "TOTAL" in result.output
+
+
+# ---------------------------------------------------------------------------
+# cashflow Phase 3 — edge cases and polish (DG-300)
+# ---------------------------------------------------------------------------
+
+
+def test_cashflow_missing_since_and_until_all_time():
+    """Edge case #2: no --since/--until computes the all-time range.
+
+    With no date filters, the report should still exit 0, show the
+    'All time' period label, and print a complete report. The
+    reconciliation may report [MISMATCH] when unclassified cash-affecting
+    entries (e.g. ``source_type='order'`` direct cash sales, which FR2
+    excludes to avoid double-counting with ``payment_transaction``) fall
+    inside the all-time period — that is accurate reporting, not a crash.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke(["report", "cashflow"])
+    assert result.exit_code == 0, result.output
+    assert "Period: All time" in result.output
+    assert "Opening cash balance" in result.output
+    assert "Closing cash balance" in result.output
+    # Opening is 0 (all-time starts at the beginning); closing reflects
+    # every cash entry ever recorded.
+    assert "Reconciliation (closing - opening)" in result.output
+
+
+def test_cashflow_missing_until_only():
+    """Edge case #2b: only --since given → 'since <date>' period label."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke(["report", "cashflow", "--since", "2026-06-01"])
+    assert result.exit_code == 0, result.output
+    assert "Period: since 2026-06-01" in result.output
+    assert "[OK]" in result.output
+
+
+def test_cashflow_missing_since_only():
+    """Edge case #2c: only --until given → 'until <date>' period label.
+
+    Like the all-time case, omitting --since means the period starts at
+    the beginning of time, so unclassified cash-affecting entries (the
+    pre-period ``order`` sale) fall inside the period and the
+    reconciliation may report [MISMATCH] — that is accurate, not a crash.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke(["report", "cashflow", "--until", "2026-06-30"])
+    assert result.exit_code == 0, result.output
+    assert "Period: until 2026-06-30" in result.output
+    assert "Reconciliation (closing - opening)" in result.output
+
+
+def test_cashflow_rejects_invalid_until_date():
+    """Edge case #3: invalid --until format is rejected (not a crash)."""
+    result = _invoke(
+        ["report", "cashflow", "--since", "2026-06-01", "--until", "31-06-2026"]
+    )
+    assert result.exit_code != 0, result.output
+    assert "YYYY-MM-DD" in result.output
+
+
+def test_cashflow_rejects_inverted_range():
+    """Edge case #6: --since later than --until is rejected with a clear error."""
+    result = _invoke(
+        ["report", "cashflow", "--since", "2026-06-30", "--until", "2026-06-01"]
+    )
+    assert result.exit_code != 0, result.output
+    assert "must not be later than" in result.output
+
+
+def test_cashflow_same_day_range_allowed():
+    """Edge case #6b: same-day --since/--until is valid (not inverted)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-15", "--until", "2026-06-15",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "[OK]" in result.output
+
+
+def test_cashflow_no_cash_activity_but_other_entries_exist():
+    """Edge case #4: non-cash journal entries present → report shows zero cashflow.
+
+    Seed a journal entry that touches only non-cash accounts (2100 customer
+    deposits ↔ 2500 accounts payable). The cashflow report should show
+    '(no activity)' in every section, zero net cash flow, and [OK]
+    reconciliation with opening == closing.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        deposits = _account_id(conn, "2100")
+        ap = _account_id(conn, "2500")
+        ts = "2026-06-15T10:00:00Z"
+        _insert_entry(
+            conn, debit_account_id=deposits, credit_account_id=ap,
+            amount=75000.0, source_type="manual", source_id=None,
+            description="Non-cash accrual", created_at=ts, transaction_date=ts,
+        )
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    # No cash account activity in any section.
+    assert result.output.count("(no activity)") >= 3
+    # Net cash flow is zero (no cash movement).
+    assert "Net cash flow" in result.output
+    assert "0.00" in result.output
+    # Opening == closing (both 0 — no cash movement ever).
+    assert "Opening cash balance" in result.output
+    assert "Closing cash balance" in result.output
+    assert "[OK]" in result.output
+
+
+def test_cashflow_empty_range_shows_zeroes_and_no_activity():
+    """Edge case #1: a date range with no journal entries shows zeroes, not a crash.
+
+    A range entirely before any seeded entry (Jan 2026) should produce a
+    complete report with zero totals, '(no activity)' in every section,
+    and [OK] reconciliation.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-01-01", "--until", "2026-01-31",
+    ])
+    assert result.exit_code == 0, result.output
+    assert result.output.count("(no activity)") >= 3
+    assert "Net cash flow" in result.output
+    # Opening balance is 0 (no entries before 2026-01-01).
+    assert "Opening cash balance" in result.output
+    assert "Closing cash balance" in result.output
+    assert "[OK]" in result.output
+
+
+def test_cashflow_output_is_plain_text_no_ansi():
+    """NFR1: report output contains no ANSI escape codes."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_cashflow_dataset(conn)
+    result = _invoke([
+        "report", "cashflow", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    # Click's CliRunner strips styling by default; assert no raw escape
+    # sequences leaked into the captured output.
+    assert "\x1b[" not in result.output
