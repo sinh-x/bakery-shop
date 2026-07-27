@@ -550,6 +550,7 @@ def test_history_detail_exposes_per_line_waste_reason(api_client):
     line = detail["lines"][0]
     assert line["waste_qty"] == 1
     assert line["waste_reason"] == "Bị hỏng"
+    assert "category" in line
 
 
 def test_submit_accepts_grouped_sale_rows_and_persists_row_details(api_client):

@@ -18,6 +18,10 @@ class DraftOrderItem {
   Map<String, dynamic> attributes;
   bool daDuaTienRut;
   int? priceChipId;
+  /// The assigned price (base_price or selected chip price) used as the COGS
+  /// anchor for trưng bày markup items. Null for non-trưng bày products.
+  /// See DG-296 Phase 3.
+  double? assignedPrice;
 
   DraftOrderItem({
     required this.product,
@@ -32,6 +36,7 @@ class DraftOrderItem {
     Map<String, dynamic>? attributes,
     this.daDuaTienRut = false,
     this.priceChipId,
+    this.assignedPrice,
   }) : pendingPhotos = pendingPhotos ?? [],
        attributes = _populateEnumDefaults(product, attributes);
 

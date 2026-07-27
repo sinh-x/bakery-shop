@@ -10,6 +10,7 @@ import '../../../providers/products_provider.dart';
 import '../../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import '../../products/widgets/product_card.dart';
+import '../utils/trung_bay_inventory_extensions.dart';
 import 'category_tab_tracker.dart';
 
 class ProductPickerPage extends ConsumerStatefulWidget {
@@ -51,9 +52,22 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
   }
 
   void _selectSingleProduct(Product product) {
-    widget.selectedItems.add(DraftOrderItem(product: product));
+    widget.selectedItems.add(_createDraftItem(product));
     widget.onChanged();
     Navigator.of(context).pop();
+  }
+
+  /// Builds a [DraftOrderItem] for a newly picked product. For trưng bày
+  /// products the assigned price (COGS anchor) is seeded to the product's
+  /// base price; staff may later select a price chip or mark the selling
+  /// price upward in [ExpandableItemCard]. Non-trưng bày products keep
+  /// `assignedPrice` null so backend COGS falls back to `unitPrice` (FR8).
+  /// See DG-296 Phase 4.
+  DraftOrderItem _createDraftItem(Product product) {
+    return DraftOrderItem(
+      product: product,
+      assignedPrice: product.isTrungBay ? product.basePrice : null,
+    );
   }
 
   void _enterMultiSelectMode(Product product) {
@@ -75,7 +89,7 @@ class _ProductPickerPageState extends ConsumerState<ProductPickerPage> {
       if (!alreadyAdded) {
         final product = allProducts.where((p) => p.id == id).firstOrNull;
         if (product != null) {
-          widget.selectedItems.add(DraftOrderItem(product: product));
+          widget.selectedItems.add(_createDraftItem(product));
         }
       }
     }

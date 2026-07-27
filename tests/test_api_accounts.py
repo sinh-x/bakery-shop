@@ -1136,10 +1136,10 @@ def test_ac6_cash_expense_lifecycle_unchanged(api_client):
 def test_ac6_transfer_expense_lifecycle_unchanged(api_client):
     """AC6: a Chuyển khoản expense's view/edit/delete behaves exactly as before.
 
-    Credits the Bank Account (1200) rather than Cash on Hand (1100), and
-    otherwise mirrors the cash-expense lifecycle: no debt fields in the
-    response, single in-place journal re-sync on edit, and full removal of
-    the journal entry on delete (unlocked).
+    Credits the Phượng VCB sub-account (1210) rather than Cash on Hand (1100)
+    per DG-285 FR1/FR2, and otherwise mirrors the cash-expense lifecycle: no
+    debt fields in the response, single in-place journal re-sync on edit, and
+    full removal of the journal entry on delete (unlocked).
     """
     ev = _create_expense(api_client, amount=120000, category="Vận chuyển",
                         payment_source="TK Phượng VCB", payment_method="Chuyển khoản")
@@ -1162,10 +1162,10 @@ def test_ac6_transfer_expense_lifecycle_unchanged(api_client):
         assert len(entries) == 1
         lines = _lines_for_entry(conn, entries[0].id)
         credit_line = next(l for l in lines if l.credit > 0)
-        # Transfer expenses credit the Bank Account (1200), unchanged.
-        assert Account.get_by_id(conn, credit_line.account_id).code == "1200"
+        # Transfer expenses credit the Phượng VCB sub-account (1210), per DG-285.
+        assert Account.get_by_id(conn, credit_line.account_id).code == "1210"
 
-    # 2. Edit — in-place re-sync, still credits 1200.
+    # 2. Edit — in-place re-sync, still credits 1210.
     patch = api_client.patch(f"/api/events/{eid}", json={
         "data": {
             "amount_vnd": 150000,
@@ -1186,7 +1186,7 @@ def test_ac6_transfer_expense_lifecycle_unchanged(api_client):
         credit_line = next(l for l in lines if l.credit > 0)
         assert debit_line.debit == 150000.0
         assert credit_line.credit == 150000.0
-        assert Account.get_by_id(conn, credit_line.account_id).code == "1200"
+        assert Account.get_by_id(conn, credit_line.account_id).code == "1210"
 
     # 3. Delete — single unlocked entry removed.
     dele = api_client.delete(f"/api/events/{eid}?deleted_by=test")

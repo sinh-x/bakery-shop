@@ -357,6 +357,20 @@ class VN {
   static const uploadingPhotos = 'Đang tải ảnh lên...';
   static const itemPrice = 'Đơn giá';
 
+  // ── Markup (trưng bày) ──────────────────────────────────────────────────
+  /// "Giá gốc" — the assigned price (base_price or selected chip price) shown
+  /// as a non-editable reference in the POS chip picker. DG-296 Phase 3.
+  static const giaGoc = 'Giá gốc';
+  /// "Giá bán" — the editable selling price field (markup). DG-296 Phase 3.
+  static const giaBan = 'Giá bán';
+  /// Price floor warning: selling price cannot be below the assigned price.
+  static const markupFloorWarning = 'Giá bán không được thấp hơn giá gốc';
+  /// Helper text for the markup price field (thousands of đ).
+  static const markupThousandsHint = 'Nhập nghìn đồng (VD: 250 = 250.000đ)';
+  /// "Phần cộng thêm" — the markup amount (unitPrice − assignedPrice) shown
+  /// on trưng bày order line items in the order detail view. DG-296 Phase 5.
+  static const markupAmount = 'Phần cộng thêm';
+
   // Catalog gallery
   static const catalogTitle = 'Bộ sưu tập';
   static const addCatalogPhoto = 'Thêm ảnh mẫu';
@@ -455,6 +469,7 @@ class VN {
   static const save = 'Lưu';
   static const cancel = 'Hủy';
   static const back = 'Quay lại';
+  static const dong = 'Đóng';
   static const currency = 'đ';
 
   // Receipts
@@ -812,6 +827,7 @@ class VN {
   static const soLuongHaoHut = 'Số lượng hao hụt';
   static const donGiaNhapTay = 'Đơn giá nhập tay';
   static const phuongThucThanhToan = 'Phương thức thanh toán';
+  static const chonPhuongThucThanhToan = 'Vui lòng chọn phương thức thanh toán';
   static const lyDoHaoHut = 'Lý do hao hụt';
   static const guiDoiSoat = 'Gửi đối soát';
   static const dangGuiDoiSoat = 'Đang gửi đối soát...';
@@ -839,6 +855,7 @@ class VN {
   static const trangThaiCoLoi = 'Có lỗi';
   static const themDongBan = 'Thêm dòng bán';
   static const soLuongChenhLech = 'Số lượng chênh lệch';
+  static const sua = 'Sửa';
 
   // Reconciliation surplus / restock inflow (DG-200 Phase 6, FR-9, AC-11)
   /// Label for the surplus inflow quantity (counted - expected, when > 0).
@@ -863,6 +880,16 @@ class VN {
   static const thamChieuXuatBan = 'Tham chiếu xuất bán';
   static const thamChieuXuatHaoHut = 'Tham chiếu xuất hao hụt';
   static const khongCo = 'Không có';
+
+  // Reconciliation history detail summary card (DG-155 Phase 4.3)
+  static const tongTonDuKien = 'Tổng tồn dự kiến';
+  static const tongTonDaDem = 'Tổng tồn đã đếm';
+  static const tongSoLuongSanPham = 'Số sản phẩm';
+  static const tongSoDong = 'Tổng số dòng';
+  static const tongChenhLech = 'Tổng chênh lệch';
+  static const khongPhanLoai = 'Không phân loại';
+  static const soDongBan = 'Số dòng bán';
+  static const dongBanCu = 'Dòng bán cũ';
 
   // Catalog browse
   static const danhMuc = 'Danh mục';

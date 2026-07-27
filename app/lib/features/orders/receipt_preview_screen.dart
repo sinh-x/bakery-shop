@@ -74,9 +74,6 @@ class _ReceiptPreviewScreenState extends ConsumerState<ReceiptPreviewScreen> {
       final fileName =
           'receipt_${widget.orderRef}_${widget.receiptType.value}.png';
 
-      // Save to temp file then share
-      await platform.saveToFile(_imageBytes!, fileName);
-
       await SharePlus.instance.share(
         ShareParams(
           files: [

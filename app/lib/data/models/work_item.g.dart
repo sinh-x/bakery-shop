@@ -6,6 +6,24 @@ part of 'work_item.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
+_BlankAssignment _$BlankAssignmentFromJson(Map<String, dynamic> json) =>
+    _BlankAssignment(
+      id: (json['id'] as num?)?.toInt(),
+      blankId: (json['blankId'] as num).toInt(),
+      blankName: json['blankName'] as String? ?? '',
+      quantity: (json['quantity'] as num?)?.toDouble() ?? 1.0,
+      notes: json['notes'] as String? ?? '',
+    );
+
+Map<String, dynamic> _$BlankAssignmentToJson(_BlankAssignment instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'blankId': instance.blankId,
+      'blankName': instance.blankName,
+      'quantity': instance.quantity,
+      'notes': instance.notes,
+    };
+
 _WorkItem _$WorkItemFromJson(Map<String, dynamic> json) => _WorkItem(
   id: json['id'] as String,
   orderId: json['orderId'] as String,
@@ -13,6 +31,7 @@ _WorkItem _$WorkItemFromJson(Map<String, dynamic> json) => _WorkItem(
   productName: json['productName'] as String,
   quantity: (json['quantity'] as num?)?.toInt() ?? 1,
   unitPrice: (json['unitPrice'] as num?)?.toDouble() ?? 0.0,
+  assignedPrice: (json['assignedPrice'] as num?)?.toDouble(),
   notes: json['notes'] as String? ?? '',
   status: json['status'] as String? ?? 'pending',
   dueDate: json['dueDate'] as String?,
@@ -27,6 +46,11 @@ _WorkItem _$WorkItemFromJson(Map<String, dynamic> json) => _WorkItem(
   createdAt: json['createdAt'] as String?,
   updatedAt: json['updatedAt'] as String?,
   attributes: json['attributes'] as Map<String, dynamic>? ?? const {},
+  blanks:
+      (json['blanks'] as List<dynamic>?)
+          ?.map((e) => BlankAssignment.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const <BlankAssignment>[],
 );
 
 Map<String, dynamic> _$WorkItemToJson(_WorkItem instance) => <String, dynamic>{
@@ -36,6 +60,7 @@ Map<String, dynamic> _$WorkItemToJson(_WorkItem instance) => <String, dynamic>{
   'productName': instance.productName,
   'quantity': instance.quantity,
   'unitPrice': instance.unitPrice,
+  'assignedPrice': instance.assignedPrice,
   'notes': instance.notes,
   'status': instance.status,
   'dueDate': instance.dueDate,
@@ -50,4 +75,5 @@ Map<String, dynamic> _$WorkItemToJson(_WorkItem instance) => <String, dynamic>{
   'createdAt': instance.createdAt,
   'updatedAt': instance.updatedAt,
   'attributes': instance.attributes,
+  'blanks': instance.blanks,
 };

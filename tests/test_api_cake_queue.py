@@ -60,6 +60,21 @@ def test_cake_queue_item_has_required_fields(api_client):
     assert item["age"] == 3
 
 
+def test_cake_queue_returns_parent_order_status(api_client):
+    """orderStatus must reflect the parent order's status (DG-292).
+
+    A freshly created order has order status `new`; the work item is
+    `pending` but `orderStatus` should report `new`, not `pending`.
+    """
+    _create_order_with_items(api_client, [
+        {"productName": "Bánh kem 16cm", "unitPrice": 200000},
+    ])
+    items = api_client.get("/api/work-items").json()
+    assert len(items) == 1
+    assert items[0]["orderStatus"] == "new"
+    assert items[0]["status"] == "pending"
+
+
 def test_cake_queue_id_is_string(api_client):
     _create_order_with_items(api_client, [{"productName": "Bánh mì", "unitPrice": 10000}])
     items = api_client.get("/api/work-items").json()

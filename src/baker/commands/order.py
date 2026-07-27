@@ -186,3 +186,20 @@ def order_edit(ref, notes, due_date, due_time, phone, address):
 
         conn.execute(f"UPDATE orders SET {', '.join(updates)} WHERE id = ?", params)
         console.print(f"  [green]Updated[/green] {row['order_ref']}")
+
+
+@order_cmd.command("backfill")
+def order_backfill():
+    """Backfill old order items to match terminal order statuses."""
+    with get_db() as conn:
+        delivered = conn.execute(
+            "UPDATE order_items SET status = 'delivered' "
+            "WHERE order_id IN (SELECT id FROM orders WHERE status IN ('delivered', 'completed')) "
+            "AND is_extra = 0 AND is_gift = 0 AND status != 'cancelled' AND status != 'delivered'"
+        ).rowcount
+        cancelled = conn.execute(
+            "UPDATE order_items SET status = 'cancelled' "
+            "WHERE order_id IN (SELECT id FROM orders WHERE status = 'cancelled') "
+            "AND is_extra = 0 AND is_gift = 0 AND status != 'cancelled'"
+        ).rowcount
+        console.print(f"  [green]Backfilled[/green]: {delivered} items → delivered, {cancelled} items → cancelled")

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../data/api/receipt_service.dart';
 import '../../providers/events_provider.dart';
@@ -82,6 +83,26 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
     context.go('/pos');
   }
 
+  Future<void> _shareImage() async {
+    if (_imageBytes == null) return;
+    try {
+      const fileName = 'receipt_customer.png';
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [
+            XFile.fromData(_imageBytes!, mimeType: 'image/png', name: fileName),
+          ],
+          text: '${ReceiptType.customer.label} - ${widget.orderRef}',
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        showTopSnackBar(context, '${VN.apiError}: $e');
+      }
+    }
+  }
+
   @override
   // ignore: prefer_const_constructors
   Widget build(BuildContext context) {
@@ -102,6 +123,14 @@ class _PosReceiptScreenState extends ConsumerState<PosReceiptScreen> {
                   onPressed: _skip,
                   icon: const Icon(Icons.check),
                   label: const Text('Xong'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _imageBytes == null ? null : _shareImage,
+                  icon: const Icon(Icons.share),
+                  label: const Text(VN.share),
                 ),
               ),
               const SizedBox(width: 12),

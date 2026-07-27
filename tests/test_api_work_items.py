@@ -125,7 +125,35 @@ def test_update_work_item_notes(api_client):
     assert resp.json()["notes"] == "Ghi chú mới"
 
 
-def test_update_work_item_quantity(api_client):
+# --- Update work item: blankId removed (DG-294 Phase 1) ---
+# The single blankId field on WorkItemUpdate and the order_items.blank_id
+# column were replaced by the order_item_blanks junction table. Blank
+# assignment is now done via POST/PATCH/DELETE /api/orders/{ref}/items/{id}/blanks
+# (see test_api_work_item_blanks.py). PATCH with blankId is now a no-op
+# (ignored, not an error) because the field is no longer on WorkItemUpdate.
+
+
+def test_update_work_item_ignores_blank_id_after_removal(api_client):
+    """PATCH with a stale blankId payload is ignored (no error, no DB write).
+
+    DG-294 removed ``blankId`` from ``WorkItemUpdate``. Pydantic ignores
+    extra fields by default, so a client still sending ``blankId`` gets a
+    200 with the work item unchanged and ``blanks`` empty.
+    """
+    order = _create_order(api_client)
+    ref = order["orderRef"]
+    item = _create_item(api_client, ref)
+    item_id = item["id"]
+
+    resp = api_client.patch(
+        f"/api/orders/{ref}/items/{item_id}", json={"blankId": 5}
+    )
+    # blankId is not a recognized field → no updates → 400 "nothing to update"
+    assert resp.status_code == 400
+    assert "Không có gì" in resp.json()["detail"]
+
+
+def test_update_work_item_notes(api_client):
     order = _create_order(api_client)
     ref = order["orderRef"]
     item = _create_item(api_client, ref)

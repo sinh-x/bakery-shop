@@ -305,16 +305,21 @@ def test_multiple_transactions_accumulate(api_client):
 
 
 def test_migration_v12_deposit_transaction_created(api_client):
-    """Orders with amount_paid > 0 get a deposit transaction from v12 migration."""
+    """Orders with amount_paid > 0 get a deposit transaction from v12 migration.
+
+    The ``amount_paid`` column is dropped by migration v80 (DG-274), so this test
+    no longer writes that column; it simulates the post-v12 state directly by
+    inserting the deposit transaction that v12 would have created.
+    """
     from baker.db.connection import get_db
     from baker.db.schema import ensure_schema
 
     with get_db() as conn:
         ensure_schema(conn)
-        # Insert order with amount_paid (pre-v12 style)
+        # Insert order (post-v80 schema: amount_paid column no longer exists)
         conn.execute(
-            """INSERT INTO orders (order_ref, customer_name, items, total_price, status, amount_paid)
-               VALUES ('ORD-MIGR-TXN-001', 'Test', '[]', 200000, 'new', 100000)""",
+            """INSERT INTO orders (order_ref, customer_name, items, total_price, status)
+               VALUES ('ORD-MIGR-TXN-001', 'Test', '[]', 200000, 'new')""",
         )
         order_row = conn.execute(
             "SELECT id FROM orders WHERE order_ref = 'ORD-MIGR-TXN-001'"

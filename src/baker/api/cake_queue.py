@@ -54,11 +54,15 @@ def list_work_items_queue(
                 o.order_ref,
                 o.customer_name,
                 o.due_date,
-                o.due_time
+                o.due_time,
+                o.status AS order_status,
+                (SELECT COUNT(*) FROM order_item_blanks oib
+                 WHERE oib.order_item_id = oi.id) AS blank_count
             FROM order_items oi
             JOIN orders o ON oi.order_id = o.id
             WHERE {status_clause}
               AND COALESCE(oi.is_extra, 0) = 0
+              AND COALESCE(oi.is_gift, 0) = 0
             ORDER BY o.due_date ASC NULLS LAST, o.due_time ASC NULLS LAST, oi.id ASC
             LIMIT ? OFFSET ?
             """,
@@ -83,6 +87,8 @@ def list_work_items_queue(
                 "dueDate": row["due_date"],
                 "dueTime": row["due_time"],
                 "createdAt": row["created_at"],
+                "orderStatus": row["order_status"],
+                "blankCount": row["blank_count"],
             }
             for row in rows
         ]

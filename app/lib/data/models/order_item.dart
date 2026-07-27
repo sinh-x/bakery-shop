@@ -10,6 +10,7 @@ sealed class OrderItem with _$OrderItem {
     required String productName,
     @Default(1) int quantity,
     required double unitPrice,
+    double? assignedPrice,
     @Default('') String notes,
     @Default(false) bool isBirthday,
     int? age,

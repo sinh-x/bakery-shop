@@ -1756,3 +1756,175 @@ def test_unresolvable_product_fallback_parity():
         f"{check['details']}"
     )
     assert check["issue_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# DG-285 Phase 3 — account_balance_sanity (check 10) passes for bank accounts
+# after Phase 2 repair, and expense_payment_account_mismatch (check 17)
+# prevents future expense-vs-payment routing asymmetry (FR6/AC5).
+# ---------------------------------------------------------------------------
+
+
+def _dg285_insert_order_with_tien_rut_return_on_1200(
+    conn, *, order_ref, amount
+):
+    """Insert a delivered order whose ``Tien rut return:`` entry credits 1200
+    (the historical broken state Phase 2 repairs), plus a matching debit on
+    1290 reflecting the post-Phase-5 backfill state (the original transfer
+    deposit that debited 1200 was already moved to 1290 by
+    ``repair-unallocated-transfers``). Returns the entry id.
+
+    This mirrors the production state at the start of Phase 2: 1200 has only
+    the credit-side return line (driving it negative), and 1290 has the
+    debit-side deposit line. After ``repair-bank-account-1200`` moves the
+    credit to 1290, both accounts net to zero.
+    """
+    import json
+    from baker.db.schema import TIEN_RUT_HELD_CODE
+    from baker.services.journal_sync import _TIEN_RUT_RETURN_PREFIX
+
+    cur = conn.execute(
+        "INSERT INTO orders (order_ref, customer_name, total_price, status, "
+        "due_date, delivery_type, shipping_fee) "
+        "VALUES (?, ?, ?, 'delivered', '2026-06-10', 'pickup', 0)",
+        (order_ref, "Khách thử", amount),
+    )
+    order_id = int(cur.lastrowid)
+    conn.execute(
+        "INSERT INTO events (type, order_id, timestamp, summary, data) "
+        "VALUES ('order', ?, datetime('now'), ?, ?)",
+        (order_id, f"Deliver {order_ref}",
+         json.dumps({"order_ref": order_ref, "to_status": "delivered"})),
+    )
+    asset_1200 = _account_id(conn, "1200")
+    asset_1290 = _account_id(conn, "1290")
+    tien_rut_acc = _account_id(conn, TIEN_RUT_HELD_CODE)
+    # Debit-side: the original transfer deposit, already backfilled to 1290
+    # by repair-unallocated-transfers (Phase 5). A balanced entry debiting
+    # 1290 and crediting Customer Deposits (2100).
+    deposits_acc = _account_id(conn, "2100")
+    cur = conn.execute(
+        "INSERT INTO journal_entries (description, source_type, source_id) "
+        "VALUES (?, 'payment_transaction', 1)",
+        (f"Payment: deposit {amount}",),
+    )
+    dep_entry_id = int(cur.lastrowid)
+    conn.execute(
+        "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, "
+        "description) VALUES (?, ?, ?, 0.0, 'Khách đặt cọc')",
+        (dep_entry_id, asset_1290, amount),
+    )
+    conn.execute(
+        "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, "
+        "description) VALUES (?, ?, 0.0, ?, 'Tiền cọc')",
+        (dep_entry_id, deposits_acc, amount),
+    )
+    # Credit-side: the broken ``Tien rut return:`` entry crediting 1200.
+    cur = conn.execute(
+        "INSERT INTO journal_entries (description, source_type, source_id) "
+        "VALUES (?, 'order', ?)",
+        (f"{_TIEN_RUT_RETURN_PREFIX} {order_ref}", order_id),
+    )
+    entry_id = int(cur.lastrowid)
+    conn.execute(
+        "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, "
+        "description) VALUES (?, ?, ?, 0.0, 'Trả tiền rút cho khách')",
+        (entry_id, tien_rut_acc, amount),
+    )
+    conn.execute(
+        "INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, "
+        "description) VALUES (?, ?, 0.0, ?, 'Tiền rút đã trả')",
+        (entry_id, asset_1200, amount),
+    )
+    return entry_id, order_id
+
+
+def test_dg285_check10_account_balance_sanity_passes_for_bank_accounts_after_repair():
+    """AC5: Given all repairs applied, when ``baker validate-accounts`` runs,
+    then check 10 (account_balance_sanity) passes with zero findings for
+    bank accounts.
+
+    The historical broken state (credit-side lines on 1200 driving its
+    balance negative) is repaired by ``repair-bank-account-1200`` (Phase 2).
+    After the repair, every bank account (1200, 1210, 1220, 1290) has a
+    non-negative debit−credit balance, so check 10 reports zero bank-account
+    findings.
+    """
+    import click.testing
+    from baker.cli import app
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        _dg285_insert_order_with_tien_rut_return_on_1200(
+            conn, order_ref="DG285-AC5", amount=10_000_000,
+        )
+        conn.commit()
+        pre_report = run_validation(conn)
+    pre_check = next(
+        c for c in pre_report["checks"] if c["check"] == "account_balance_sanity"
+    )
+    pre_codes = [f["code"] for f in pre_check["details"]]
+    assert "1200" in pre_codes, "1200 should be flagged before repair"
+
+    runner = click.testing.CliRunner()
+    result = runner.invoke(app, ["repair-bank-account-1200", "--all"])
+    assert result.exit_code == 0, result.output
+
+    with get_db() as conn:
+        ensure_schema(conn)
+        post_report = run_validation(conn)
+    post_check = next(
+        c for c in post_report["checks"] if c["check"] == "account_balance_sanity"
+    )
+    bank_codes = {"1100", "1200", "1210", "1220", "1290"}
+    bank_findings = [f for f in post_check["details"] if f["code"] in bank_codes]
+    assert bank_findings == [], (
+        f"check 10 should report zero bank-account findings after repair; "
+        f"got: {bank_findings}"
+    )
+
+
+def test_dg285_check17_expense_payment_account_mismatch_prevents_routing_asymmetry():
+    """Preventive validation (FR6 scope): a new expense entry that credits
+    1200 for a VCB payment_source is flagged by check 17
+    (expense_payment_account_mismatch), preventing the expense-vs-payment
+    routing asymmetry from recurring.
+
+    With Phase 1's corrected ``EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE`` the
+    expected credit for ``TK Phượng VCB`` is 1210; an entry crediting 1200
+    is flagged as a ``payment_account`` mismatch.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        event_id = _insert_expense_event_full(
+            conn, category="Vận chuyển", payment_source="TK Phượng VCB",
+        )
+        _expense_je(conn, event_id, "5300", "1200")  # wrong — should be 1210
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "expense_payment_account_mismatch"
+    )
+    assert check["status"] == "fail"
+    assert check["issue_count"] == 1
+    f = check["details"][0]
+    assert f["expected_account_code"] == "1210"
+    assert f["actual_account_code"] == "1200"
+    assert f["mismatch_kind"] == "payment_account"
+
+
+def test_dg285_check17_passes_when_vcb_expense_routes_to_correct_sub_account():
+    """Preventive validation: a new expense entry that credits 1210 for
+    ``TK Phượng VCB`` (the Phase 1 corrected routing) passes check 17 —
+    confirming the validator and the corrected constant agree."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        event_id = _insert_expense_event_full(
+            conn, category="Vận chuyển", payment_source="TK Phượng VCB",
+        )
+        _expense_je(conn, event_id, "5300", "1210")  # correct per Phase 1
+        report = run_validation(conn)
+    check = next(
+        c for c in report["checks"] if c["check"] == "expense_payment_account_mismatch"
+    )
+    assert check["status"] == "pass"
+    assert check["issue_count"] == 0

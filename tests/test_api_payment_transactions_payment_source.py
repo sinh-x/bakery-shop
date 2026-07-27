@@ -12,8 +12,8 @@ Covers:
 - AC7: payment_source='TK Ân VCB' + transfer → lines reference 1220 (POS path
   converges on the same POST /api/orders/{ref}/transactions endpoint).
 - AC8: empty payment_source + transfer → lines reference 1290.
-- Regression: EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE unchanged — both VCB
-  labels still credit 1200 in expense journal entries.
+- Regression: EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE routes VCB labels to
+  their bank sub-accounts (1210/1220) in expense journal entries (DG-285).
 - Edge: unknown payment_source value is treated as un-allocated (transfer)
   rather than rejected.
 - Update on payment_source re-syncs the journal entry to the new account.
@@ -109,15 +109,15 @@ def test_distinct_bank_sub_accounts_seeded(api_client):
 
 def test_transaction_source_mapping_has_distinct_codes():
     """FR8: TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE maps VCB labels to
-    distinct codes (1210/1220), separate from the expense mapping (1200)."""
+    distinct codes (1210/1220), aligned with the expense mapping (1210/1220)."""
     assert TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE == {
         "TK Phượng VCB": "1210",
         "TK Ân VCB": "1220",
     }
-    # Expense mapping must still collapse both VCB labels to 1200 (FR8 note:
-    # do NOT repoint EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE).
-    assert EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE["TK Phượng VCB"] == "1200"
-    assert EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE["TK Ân VCB"] == "1200"
+    # DG-285: expense mapping now routes VCB labels to sub-accounts (1210/1220),
+    # aligned with the payment-side routing.
+    assert EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE["TK Phượng VCB"] == "1210"
+    assert EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE["TK Ân VCB"] == "1220"
     assert UNALLOCATED_BANK_CODE == "1290"
 
 
@@ -329,12 +329,12 @@ def test_unknown_payment_source_treated_as_unallocated(api_client):
 
 
 def test_expense_payment_source_mapping_unchanged():
-    """Regression: EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE still maps both VCB
-    labels to 1200 (FR8 note — do NOT repoint the expense mapping)."""
+    """Regression: EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE maps VCB labels to
+    their bank sub-accounts (1210/1220) per DG-285 FR1/FR2."""
     assert EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE == {
         "Shop tiền mặt": "1100",
-        "TK Phượng VCB": "1200",
-        "TK Ân VCB": "1200",
+        "TK Phượng VCB": "1210",
+        "TK Ân VCB": "1220",
         "Nhân viên ứng trước": "2300",
     }
 

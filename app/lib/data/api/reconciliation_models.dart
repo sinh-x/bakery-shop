@@ -433,11 +433,13 @@ class ReconciliationHistoryLine {
     required this.linkedStockMovementSaleId,
     required this.linkedStockMovementWasteId,
     required this.saleRows,
+    this.category,
   });
 
   final int id;
   final int productId;
   final String productName;
+  final String? category;
   final int? priceChipId;
   final String chipLabel;
   final int? normalizedPrice;
@@ -465,6 +467,7 @@ class ReconciliationHistoryLine {
       id: json['id'] as int,
       productId: json['product_id'] as int,
       productName: (json['product_name'] as String?) ?? '',
+      category: json['category'] as String?,
       priceChipId: (json['price_chip_id'] as num?)?.toInt(),
       chipLabel: (json['chip_label'] as String?) ?? 'Gia goc',
       normalizedPrice: (json['normalized_price'] as num?)?.toInt(),

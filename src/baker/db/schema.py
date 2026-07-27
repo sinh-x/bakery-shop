@@ -1218,6 +1218,14 @@ def _guard_add_column(conn, table: str, column: str, col_def: str):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
 
 
+def _guard_drop_column(conn, table: str, column: str):
+    """Drop a column only if it still exists (idempotent forward-only migration)."""
+    assert table in ALLOWED_TABLES, f"table {table!r} not in ALLOWED_TABLES"
+    existing = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    if column in existing:
+        conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+
+
 def _migrate_v29_add_pin_support(conn):
     """Add pin columns to knowledge_entries (idempotent via PRAGMA guard)."""
     existing = [r[1] for r in conn.execute("PRAGMA table_info(knowledge_entries)").fetchall()]
@@ -1586,8 +1594,8 @@ INVENTORY_PURCHASE_CATEGORIES = {"Nguyên liệu", "Bao bì"}
 # "Nhân viên ứng trước" creates a sub-account per staff name (handled in backfill).
 EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE = {
     "Shop tiền mặt": "1100",
-    "TK Phượng VCB": "1200",
-    "TK Ân VCB": "1200",
+    "TK Phượng VCB": "1210",
+    "TK Ân VCB": "1220",
     "Nhân viên ứng trước": "2300",
 }
 
@@ -1601,7 +1609,7 @@ PAYMENT_METHOD_TO_ASSET_CODE = {
 # DG-244 Phase 4: Map payment_transactions.payment_source → bank asset
 # account code. Used ONLY by the payment_transaction journal routing path
 # (_build_payment_journal_lines). Distinct from EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
-# which the expense flow depends on (both VCB labels collapse to 1200 there).
+# which the expense flow depends on (VCB labels map to sub-accounts 1210/1220 there).
 # An empty/unknown payment_source falls back to UNALLOCATED_BANK_CODE via
 # _resolve_transaction_asset_code (see journal_sync.py).
 TRANSACTION_PAYMENT_SOURCE_TO_ASSET_CODE = {
@@ -4197,6 +4205,174 @@ def _migrate_v79_add_staff_name_to_orders(conn):
     _guard_add_column(conn, "orders", "work_ticket_printed_staff_name", "work_ticket_printed_staff_name TEXT DEFAULT ''")
 
 
+def _migrate_v80_drop_amount_paid_from_orders(conn):
+    """Drop the redundant ``amount_paid`` column from ``orders`` (DG-274).
+
+    The column is now live-computed from ``payment_transactions`` via
+    ``PaymentTransaction.total_paid_excl_outflows``; the stored value was lossy
+    (included outflows) and is no longer written by ``Order.save``. The v12
+    migration still reads ``amount_paid`` for pre-v12 rows, but v12 runs before
+    v80 so the column exists at v12 time and is dropped here. Idempotent via
+    PRAGMA-guarded ALTER TABLE (orders is in ALLOWED_TABLES).
+    """
+    _guard_drop_column(conn, "orders", "amount_paid")
+
+
+def _migrate_v82_add_blank_id_to_order_items(conn):
+    """Add nullable ``blank_id`` FK column to ``order_items`` (DG-293 Phase 1).
+
+    The column links a work item (order_items row) to a single blank
+    (semi-finished good). Nullable: NULL/empty means no blank assigned
+    (FR1). Idempotent via PRAGMA-guarded ALTER TABLE (order_items is in
+    ALLOWED_TABLES). An index supports the reverse-lookup
+    ``GET /api/blanks/{id}/products`` query.
+    """
+    _guard_add_column(
+        conn,
+        "order_items",
+        "blank_id",
+        "blank_id INTEGER REFERENCES blanks(id)",
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_order_items_blank ON order_items(blank_id)"
+    )
+
+
+BLANKS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS blanks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    category    TEXT NOT NULL DEFAULT '',
+    unit        TEXT NOT NULL DEFAULT '',
+    notes       TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z'),
+    updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_blanks_category ON blanks(category);
+
+CREATE TABLE IF NOT EXISTS product_blank_bom (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id      INTEGER,
+    price_chip_id   INTEGER,
+    blank_id        INTEGER NOT NULL REFERENCES blanks(id) ON DELETE CASCADE,
+    quantity        REAL NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_blank_bom_blank ON product_blank_bom(blank_id);
+CREATE INDEX IF NOT EXISTS idx_product_blank_bom_product ON product_blank_bom(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_blank_bom_price_chip ON product_blank_bom(price_chip_id);
+
+CREATE TABLE IF NOT EXISTS blank_stock (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    blank_id        INTEGER NOT NULL REFERENCES blanks(id) ON DELETE CASCADE,
+    quantity        REAL NOT NULL DEFAULT 0,
+    produced_date   TEXT NOT NULL,
+    expiry_date     TEXT,
+    type            TEXT NOT NULL DEFAULT 'production',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_blank_stock_blank ON blank_stock(blank_id);
+
+CREATE TABLE IF NOT EXISTS blank_stock_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    blank_id        INTEGER NOT NULL REFERENCES blanks(id) ON DELETE CASCADE,
+    quantity_change REAL NOT NULL,
+    type            TEXT NOT NULL,
+    produced_date   TEXT,
+    expiry_date     TEXT,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_blank_stock_log_blank ON blank_stock_log(blank_id);
+"""
+
+
+ORDER_ITEM_BLANKS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS order_item_blanks (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_item_id   INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+    blank_id        INTEGER NOT NULL REFERENCES blanks(id) ON DELETE CASCADE,
+    quantity        REAL NOT NULL DEFAULT 1,
+    notes           TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_item_blanks_item ON order_item_blanks(order_item_id);
+CREATE INDEX IF NOT EXISTS idx_order_item_blanks_blank ON order_item_blanks(blank_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_order_item_blanks_item_blank_unique
+    ON order_item_blanks(order_item_id, blank_id);
+"""
+
+
+def _migrate_v83_order_item_blanks(conn):
+    """Replace the single ``order_items.blank_id`` FK with the
+    ``order_item_blanks`` junction table (DG-294 Phase 1).
+
+    Steps (idempotent, NFR3):
+
+    1. Create the ``order_item_blanks`` table (``CREATE TABLE IF NOT EXISTS``).
+    2. Migrate existing ``order_items.blank_id`` values into the new table,
+       one row per work item with a non-null ``blank_id``. Re-runs are
+       no-ops because of the unique index on ``(order_item_id, blank_id)``
+       and the ``INSERT OR IGNORE`` qualifier.
+    3. Drop the now-redundant ``blank_id`` column from ``order_items`` via
+       the PRAGMA-guarded ``_guard_drop_column`` helper (``order_items`` is
+       in ``ALLOWED_TABLES`` and the host SQLite is >= 3.35.0). The
+       ``idx_order_items_blank`` index created by v82 is dropped first
+       because SQLite refuses to drop a column that an index references.
+
+    The junction table supports multiple blanks per work item (FR7) with
+    per-assignment ``quantity`` and ``notes`` (FR8/FR9). The unique index
+    prevents duplicate (order_item, blank) pairs and makes the data
+    migration idempotent (FR11).
+    """
+    conn.executescript(ORDER_ITEM_BLANKS_SCHEMA)
+
+    # Migrate existing single blank_id values into the junction table.
+    # Only run while the legacy column still exists; on already-migrated DBs
+    # the column is gone and this block is skipped (idempotent, NFR3).
+    existing = [r[1] for r in conn.execute("PRAGMA table_info(order_items)").fetchall()]
+    if "blank_id" in existing:
+        rows = conn.execute(
+            "SELECT id, blank_id FROM order_items WHERE blank_id IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            order_item_id = int(row["id"])
+            blank_id = int(row["blank_id"])
+            conn.execute(
+                """INSERT OR IGNORE INTO order_item_blanks
+                   (order_item_id, blank_id, quantity, notes, created_at)
+                   VALUES (?, ?, 1, '', strftime('%Y-%m-%dT%H:%M:%S', 'now') || 'Z')""",
+                (order_item_id, blank_id),
+            )
+        # Drop the v82 index before dropping the column it references.
+        conn.execute("DROP INDEX IF EXISTS idx_order_items_blank")
+
+    _guard_drop_column(conn, "order_items", "blank_id")
+
+
+def _migrate_v84_order_item_assigned_price(conn):
+    """Add nullable ``assigned_price`` column to ``order_items`` (DG-296 Phase 1).
+
+    The column stores the assigned price (base_price or selected price chip
+    price) at time of sale for trưng bày products, so COGS can be anchored on
+    it independently from ``unit_price`` (the marked-up selling price). It is
+    nullable (DEFAULT NULL): existing rows are unaffected and readers treat
+    NULL as equal to ``unit_price`` for backward compatibility (FR8).
+    Idempotent via PRAGMA-guarded ``_guard_add_column`` (``order_items`` is in
+    ALLOWED_TABLES). Traceability: FR6, FR8.
+    """
+    _guard_add_column(
+        conn,
+        "order_items",
+        "assigned_price",
+        "assigned_price REAL DEFAULT NULL",
+    )
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -4577,6 +4753,30 @@ MIGRATIONS = {
         "description": "Add created_staff_name and work_ticket_printed_staff_name to orders table for display-name attribution — DG-259 Cycle 5",
         "sql": "",
         "callable": _migrate_v79_add_staff_name_to_orders,
+    },
+    80: {
+        "description": "Drop redundant amount_paid column from orders table — live-computed from payment_transactions (DG-274)",
+        "sql": "",
+        "callable": _migrate_v80_drop_amount_paid_from_orders,
+    },
+    81: {
+        "description": "Blanks foundation: blanks, product_blank_bom, blank_stock, blank_stock_log tables (DG-290 Phase 4.1)",
+        "sql": BLANKS_SCHEMA,
+    },
+    82: {
+        "description": "Add blank_id nullable FK column to order_items + index (DG-293 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v82_add_blank_id_to_order_items,
+    },
+    83: {
+        "description": "Replace order_items.blank_id with order_item_blanks junction table (DG-294 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v83_order_item_blanks,
+    },
+    84: {
+        "description": "Add assigned_price REAL DEFAULT NULL column to order_items for trưng bày markup audit (DG-296 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v84_order_item_assigned_price,
     },
 }
 

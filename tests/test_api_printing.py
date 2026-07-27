@@ -169,6 +169,7 @@ def test_print_fills_missing_printed_by_when_legacy_timestamp_exists(mock_tspl, 
     assert order_detail["workTicketPrintedBy"] == "Ngân"
 
 
+@patch("baker.api.printing.PRINT_IPP_URL", None)
 @patch("baker.api.printing.os.close")
 @patch("baker.api.printing.os.write")
 @patch("baker.api.printing.usb_printer.open_printer", side_effect=FileNotFoundError)
@@ -223,6 +224,7 @@ def test_print_log_returns_404_when_order_missing(api_client):
     assert resp.status_code == 404
 
 
+@patch("baker.api.printing.PRINT_IPP_URL", None)
 @patch("baker.api.printing.os.close")
 @patch("baker.api.printing.os.write")
 @patch("baker.api.printing.usb_printer.open_printer")

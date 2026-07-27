@@ -1158,6 +1158,14 @@ def _reconcile_revenue_entry_lines(
         )
         return
 
+    # Clean up any stale AR entry left over from a prior delivery sync when
+    # the order was unpaid but is now paid (e.g. payment arrived between
+    # delivery and completion). Without this the AR entry persists alongside
+    # the revenue entry, doubling 4100 credit and inflating AR debit.
+    stale_ar_id = _find_order_entry_by_prefix(conn, order_id, _AR_ENTRY_PREFIX)
+    if stale_ar_id is not None:
+        _replace_order_entry(conn, stale_ar_id, respect_locks=respect_locks)
+
     # Paid: clear the full 2100 deposit balance to revenue (DR 2100, CR 4100).
     # Deposits only — tien_rut is returned separately. Lines with a zero amount
     # are omitted so double-entry integrity holds (DG-198 reversal, FR3).
@@ -1386,6 +1394,48 @@ def _sync_bus_shipping_release_entry(
     )
 
 
+def _sync_completed_order_journal(conn, order_id: int, order_ref: str) -> None:
+    """Reconcile revenue journal entries when an order transitions to "completed".
+
+    DG-269 Phase 2. Mirrors the revenue portion of
+    :func:`_sync_delivered_order_journal` but is triggered on the
+    delivered→completed (or bypassed-delivery→completed) transition. Delegates
+    to :func:`_reconcile_order_revenue_entry`, which already:
+
+      - Queries **all** non-invalidated payment transactions for the order
+        (full deposit context, not just delivery-time deposits) — so deposits
+        recorded between delivery and completion are reflected.
+      - Detects pre-existing ``source_type='order'`` revenue / AR entries via
+        their description prefix and reconciles them **within the 0.005 VND
+        tolerance** (FR2/NFR4 idempotency):
+          * matching amounts → no-op (AC3a),
+          * stale amounts → update-in-place / reverse-and-recreate (AC3b),
+          * no prior entries (bypassed delivery) → create fresh (AC3c).
+      - Handles all payment scenarios (paid deposits, partial paid, AR,
+        multi-payment, bus/shipping fee split, tien rut) — same code path as
+        delivery sync (FR6).
+      - Respects lock semantics (``respect_locks=True``): locked stale entries
+        are reversed, not deleted.
+
+    COGS is handled here via :func:`_sync_order_cogs_entry` so orders that
+    bypassed "delivered" still get the ``order_cogs`` journal entry
+    (DR 5900 / CR 1300) at completion time (DG-276). The call is idempotent —
+    an order that already has an ``order_cogs`` entry (e.g. from a prior
+    delivery sync on the delivered→completed path) is left untouched (FR2).
+
+    Bus-shipping release entries remain delivery-time entries created by
+    :func:`_sync_delivered_order_journal` and are not touched here; orders
+    that bypassed "delivered" still rely on the existing repair commands for
+    that release.
+
+    Fire-and-forget error handling is provided by the caller wrapping this in
+    :func:`run_journal_sync` with ``source_type="order"`` (FR5) — a COGS sync
+    failure never blocks the completion transition (FR3).
+    """
+    _reconcile_order_revenue_entry(conn, order_id, order_ref, respect_locks=True)
+    _sync_order_cogs_entry(conn, order_id, order_ref)
+
+
 def _sync_delivered_order_journal(conn, order_id: int, order_ref: str) -> None:
     """Create/update revenue conversion + COGS journal entries for a delivered/completed order.
 
@@ -1426,19 +1476,31 @@ def _compute_order_cogs_total(
       missing or cost_at_sale = 0; existing non-zero cost_at_sale is
       preserved").
     - When ``cost_at_sale == 0`` or ``force`` is True the cost is resolved via
-      :func:`resolve_product_cost` using ``unit_price`` as the baseline anchor
-      (DG-208 Phase 1, FR1/FR2). When ``populate_cost_at_sale`` is True the
-      resolved value is also written back to ``order_items.cost_at_sale``
-      (delivery-time snapshot behaviour). When False the row is left untouched
-      — used by the COGS repair to compute the *expected* total without side
-      effects before deciding whether to mutate.
+      :func:`resolve_product_cost` using the trưng bày assigned price as the
+      baseline anchor when present (DG-296 Phase 2, FR5/NFR1), falling back to
+      ``unit_price`` (DG-208 Phase 1, FR1/FR2) when no assigned price is
+      stored. When ``populate_cost_at_sale`` is True the resolved value is also
+      written back to ``order_items.cost_at_sale`` (delivery-time snapshot
+      behaviour). When False the row is left untouched — used by the COGS
+      repair to compute the *expected* total without side effects before
+      deciding whether to mutate.
 
     Returns the summed ``cost * qty`` as a non-negative ``float``.
     """
+    # ``assigned_price`` was added in migration v84 (DG-296 Phase 1). Older
+    # databases that have not yet reached v84 (e.g. a fresh DB mid-migration
+    # at v63, which calls this function via _sync_delivered_order_journal)
+    # do not have the column yet — detect it and fall back to NULL so the
+    # SELECT works at every migration stage (FR8 backward compatibility).
+    oi_columns = {
+        r[1] for r in conn.execute("PRAGMA table_info(order_items)").fetchall()
+    }
+    has_assigned_price = "assigned_price" in oi_columns
     items = conn.execute(
         "SELECT oi.id AS item_id, oi.product_id, oi.quantity, oi.cost_at_sale, "
-        "oi.unit_price "
-        "FROM order_items oi "
+        "oi.unit_price"
+        + (", oi.assigned_price " if has_assigned_price else ", NULL AS assigned_price ")
+        + "FROM order_items oi "
         "WHERE oi.order_id = ? AND oi.is_extra = 0 AND oi.is_gift = 0",
         (order_id,),
     ).fetchall()
@@ -1457,15 +1519,30 @@ def _compute_order_cogs_total(
                 except (TypeError, ValueError):
                     pid = None
             selling_price = float(irow["unit_price"] or 0) or None
+            assigned_price = irow["assigned_price"]
+            if assigned_price is not None:
+                try:
+                    assigned_price = float(assigned_price)
+                except (TypeError, ValueError):
+                    assigned_price = None
+                if assigned_price <= 0:
+                    assigned_price = None
             if pid is None:
                 # Unresolvable product_id (e.g. custom codes like BKS-DG-01
                 # with no products row). Apply the 30% non-phụ-kiện baseline
-                # directly to unit_price — mirrors the v45 backfill fallback
-                # in _backfill_order_items_cost_at_sale so the live delivery
-                # path no longer silently contributes 0 to COGS
+                # directly to the effective anchor — mirrors the v45 backfill
+                # fallback in _backfill_order_items_cost_at_sale so the live
+                # delivery path no longer silently contributes 0 to COGS
                 # (DG-208 review finding CQ-2). Unresolvable products are
                 # never phụ kiện (phụ kiện is always a resolvable category).
-                anchor = selling_price if (selling_price and selling_price > 0) else 0.0
+                # Anchor precedence: assigned_price (trưng bày markup) →
+                # selling_price (DG-208 Phase 1) — same as resolve_product_cost.
+                if assigned_price is not None and assigned_price > 0:
+                    anchor = assigned_price
+                elif selling_price is not None and selling_price > 0:
+                    anchor = selling_price
+                else:
+                    anchor = 0.0
                 if anchor > 0:
                     cost_at_sale = _baseline_cost_for_product(
                         "", 0.0, price_override=anchor
@@ -1473,7 +1550,12 @@ def _compute_order_cogs_total(
                 else:
                     cost_at_sale = 0.0
             else:
-                cost_at_sale = resolve_product_cost(conn, pid, selling_price=selling_price)
+                cost_at_sale = resolve_product_cost(
+                    conn,
+                    pid,
+                    selling_price=selling_price,
+                    assigned_price=assigned_price,
+                )
             if cost_at_sale > 0 and populate_cost_at_sale:
                 conn.execute(
                     "UPDATE order_items SET cost_at_sale = ? WHERE id = ?",

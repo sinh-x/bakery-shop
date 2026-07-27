@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from baker.db.connection import get_db
 from baker.db.schema import _order_year, _recompute_customer_year_summary, _strip_diacritics
@@ -35,6 +35,25 @@ def _day_bounds(date_str: str) -> tuple[str, str]:
     day = datetime.strptime(date_str, "%Y-%m-%d")
     next_day = day + timedelta(days=1)
     return f"{date_str}T00:00:00", next_day.strftime("%Y-%m-%dT00:00:00")
+
+
+def _is_delivered_and_fully_paid(conn, row) -> tuple[bool, Optional[float]]:
+    """Return (is_fully_paid, amount_paid) for a delivered order row.
+
+    DG-274 review-auto c1 (CQ-1): deduplicates the delivered+paid filter used
+    in both ``active_only`` and ``status`` branches of ``list_orders``.
+    Computes ``amount_paid`` once via ``PaymentTransaction.total_paid_excl_outflows``
+    and returns it so the caller can forward it to ``Order.from_row`` via
+    ``amount_paid=`` and avoid a duplicate query for partially-paid delivered
+    orders. Non-delivered rows return ``(False, None)`` — the amount_paid
+    is not precomputed because the filter never skips these rows, and
+    ``Order.from_row`` will compute it lazily when ``amount_paid is None``
+    (CQ-2 clarifies the lazy-cache contract).
+    """
+    if row["status"] != "delivered":
+        return (False, None)
+    amount_paid = PaymentTransaction.total_paid_excl_outflows(conn, row["id"])
+    return (amount_paid >= float(row["total_price"]), amount_paid)
 
 
 def _resolve_customer_id_by_phone(conn, phone: str, customer_name: Optional[str] = None) -> Optional[int]:
@@ -195,6 +214,32 @@ class OrderItemIn(BaseModel):
     isGift: bool = False
     priceChipId: int | None = None
     attributes: dict = Field(default_factory=dict)
+    assignedPrice: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _validate_assigned_price_le_unit_price(self):
+        # Defense-in-depth (DG-296 CQ-4 / review-remediation): the trưng bày
+        # markup flow requires unitPrice (selling price) to be >= assignedPrice
+        # (COGS anchor). The frontend clamps at every entry point (POS chip
+        # picker, wizard Stage 1 editor, cart write-back); this is the backend
+        # safety net that clamps unitPrice upward to assignedPrice when a
+        # legacy or buggy client submits a below-floor value, so the invariant
+        # is preserved even when the client clamp is bypassed. A warning is
+        # logged so the violation is observable in production logs (matches the
+        # evidence pattern from order M52-T / order_item #5206).
+        if self.assignedPrice is not None and self.unitPrice < self.assignedPrice:
+            logger.warning(
+                "OrderItemIn: clamping unitPrice %.2f up to assignedPrice %.2f "
+                "for product %r (markup invariant violated; client clamp bypassed)",
+                self.unitPrice,
+                self.assignedPrice,
+                self.productName,
+            )
+            # Use object.__setattr__ because the model is otherwise treated as
+            # mutable in pydantic v2 validators; assigning the field directly
+            # would raise a TypeError on frozen models.
+            object.__setattr__(self, "unitPrice", self.assignedPrice)
+        return self
 
 
 class DepositIn(BaseModel):
@@ -281,6 +326,7 @@ def _item_in_to_model(item: OrderItemIn) -> OrderItem:
         is_gift=item.isGift,
         attributes=item.attributes,
         price_chip_id=item.priceChipId,
+        assigned_price=item.assignedPrice,
     )
 
 
@@ -298,7 +344,11 @@ def _order_detail(conn, row, threshold_minutes: Optional[int] = None) -> dict:
         "SELECT * FROM order_items WHERE order_id = ? ORDER BY position, id",
         (row["id"],),
     ).fetchall()
-    result["workItems"] = [WorkItem.from_row(r).to_api_dict() for r in item_rows]
+    items = [WorkItem.from_row(r) for r in item_rows]
+    # Attach blanks lists via the order_item_blanks junction (DG-294)
+    from baker.api.work_items import _attach_blanks
+    _attach_blanks(conn, items)
+    result["workItems"] = [it.to_api_dict() for it in items]
 
     txn_rows = conn.execute(
         "SELECT * FROM payment_transactions WHERE order_id = ? ORDER BY id",
@@ -477,9 +527,15 @@ def list_orders(
             ).fetchall()
             result = []
             for r in rows:
-                order = Order.from_row(r, conn)
-                if order.status == "delivered" and order.amount_paid >= order.total_price:
+                # DG-274 Phase 3 (FR3) / review-auto c1 (CQ-1): filter
+                # delivered+fully-paid orders out of the active view using
+                # the live-computed amount_paid (stored column was dropped in
+                # v80). The cached amount_paid is forwarded to from_row so we
+                # don't re-query total_paid_excl_outflows for the rows we keep.
+                fully_paid, amount_paid = _is_delivered_and_fully_paid(conn, r)
+                if fully_paid:
                     continue
+                order = Order.from_row(r, conn, amount_paid=amount_paid)
                 result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
@@ -491,9 +547,12 @@ def list_orders(
             ).fetchall()
             result = []
             for r in rows:
-                order = Order.from_row(r, conn)
-                if order.status == "delivered" and order.amount_paid >= order.total_price:
+                # DG-274 Phase 3 (FR3) / review-auto c1 (CQ-1): same
+                # delivered+paid filter as the active_only branch above.
+                fully_paid, amount_paid = _is_delivered_and_fully_paid(conn, r)
+                if fully_paid:
                     continue
+                order = Order.from_row(r, conn, amount_paid=amount_paid)
                 result.append(order.to_api_dict(threshold_minutes=threshold_minutes))
             return result
 
@@ -570,6 +629,7 @@ def create_order(body: OrderCreate, request: Request):
                 is_gift=item.isGift,
                 attributes=item.attributes,
                 price_chip_id=item.priceChipId,
+                assigned_price=item.assignedPrice,
             )
             work_item.save(conn)
 
@@ -982,6 +1042,11 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
 @router.post("/{ref}/status")
 def transition_status(ref: str, body: StatusTransition, request: Request):
     """Chuyển trạng thái đơn hàng. Lý do bắt buộc khi lùi trạng thái."""
+    # Shared journal-sync helpers used by multiple branches below (DG-269
+    # Phase 5.6-c1 / CQ-4): import once to avoid duplicate imports in each
+    # conditional branch.
+    from baker.services.journal_sync import run_journal_sync, sync_status_to_warning
+
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM orders WHERE order_ref = ? OR CAST(id AS TEXT) = ?",
@@ -1028,7 +1093,7 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
 
         if body.status == "cancelled":
             restore_stock_for_order(conn, row["id"], row["order_ref"])
-            from baker.services.journal_sync import _sync_cancelled_order_journal, run_journal_sync, sync_status_to_warning
+            from baker.services.journal_sync import _sync_cancelled_order_journal
             sync_status = run_journal_sync(
                 _sync_cancelled_order_journal,
                 conn, row["id"],
@@ -1052,7 +1117,7 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
 
         # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
         if body.status == "delivered" and row["status"] != "delivered":
-            from baker.services.journal_sync import _sync_delivered_order_journal, run_journal_sync, sync_status_to_warning
+            from baker.services.journal_sync import _sync_delivered_order_journal
             sync_status = run_journal_sync(
                 _sync_delivered_order_journal,
                 conn, row["id"], row["order_ref"],
@@ -1062,10 +1127,49 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
             )
             accounting_sync_warning = sync_status_to_warning(sync_status)
 
+        # When transitioning TO completed, reconcile 2100 deposits into revenue
+        # and clear 1500 AR (DG-269 Phase 3).
+        if body.status == "completed" and row["status"] != "completed":
+            from baker.services.journal_sync import _sync_completed_order_journal
+            sync_status = run_journal_sync(
+                _sync_completed_order_journal,
+                conn, row["id"], row["order_ref"],
+                log_label=f"completed order journal sync for order {row['id']}",
+                source_type="order",
+                source_id=row["id"],
+            )
+            accounting_sync_warning = sync_status_to_warning(sync_status)
+
         # Auto-cascade confirmed order status to main items (non-extra, non-gift) at pending (F5)
         if body.status == "confirmed":
             conn.execute(
                 "UPDATE order_items SET status = 'confirmed' WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 AND status = 'pending'",
+                (row["id"],),
+            )
+
+        # Auto-sync main items (non-extra, non-gift) on terminal order transitions (DG-280 Phase 1).
+        # Skip cancelled items so they remain cancelled (AC5) and skip items already at the target
+        # status to avoid redundant updates (AC4). WorkItemStatus has no 'completed' value, so a
+        # completed order maps main items to 'delivered' (FR2).
+        if body.status == "delivered":
+            conn.execute(
+                "UPDATE order_items SET status = 'delivered' "
+                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
+                "AND status != 'cancelled' AND status != 'delivered'",
+                (row["id"],),
+            )
+        elif body.status == "completed":
+            conn.execute(
+                "UPDATE order_items SET status = 'delivered' "
+                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
+                "AND status != 'cancelled' AND status != 'delivered'",
+                (row["id"],),
+            )
+        elif body.status == "cancelled":
+            conn.execute(
+                "UPDATE order_items SET status = 'cancelled' "
+                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
+                "AND status != 'cancelled'",
                 (row["id"],),
             )
 

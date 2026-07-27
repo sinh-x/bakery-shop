@@ -6,6 +6,7 @@ import '../../../data/models/product.dart';
 import '../../../data/api/api_client.dart';
 import '../../../providers/pos_provider.dart';
 import '../../../providers/products_provider.dart';
+import '../../orders/utils/trung_bay_inventory_extensions.dart';
 import 'package:bakery_app/shared/labels/shared.dart';
 import 'package:bakery_app/shared/utils/product_photo_url.dart';
 
@@ -92,6 +93,7 @@ class PosProductGrid extends ConsumerWidget {
       product,
       showOutOfStockProducts: showOutOfStockProducts,
     );
+    final isTrungBay = product.isTrungBay;
 
     showDialog(
       context: context,
@@ -105,9 +107,15 @@ class PosProductGrid extends ConsumerWidget {
         int? selectedChipUiId = defaultOption?.uiId;
         String? selectedChipLabel = defaultOption?.cartLabel;
         double selectedPrice = defaultPrice;
+        // Assigned price (COGS anchor) — only tracked for trưng bày markup.
+        // For non-trưng bày it stays null so backend falls back to unitPrice.
+        double? assignedPrice = isTrungBay ? defaultPrice : null;
         final priceCtrl = TextEditingController(
-          text: defaultPrice.toInt().toString(),
+          text: isTrungBay
+              ? (defaultPrice / 1000).toInt().toString()
+              : defaultPrice.toInt().toString(),
         );
+        String? floorWarning;
 
         return StatefulBuilder(
           builder: (ctx, setState) => AlertDialog(
@@ -154,7 +162,18 @@ class PosProductGrid extends ConsumerWidget {
                               selectedChipId = option.backendChipId;
                               selectedChipLabel = option.cartLabel;
                               selectedPrice = option.price;
-                              priceCtrl.text = option.price.toInt().toString();
+                              if (isTrungBay) {
+                                // Selecting a chip resets both the assigned
+                                // (COGS anchor) and selling price to the chip
+                                // price — markup is applied upward from there.
+                                assignedPrice = option.price;
+                                priceCtrl.text =
+                                    (option.price / 1000).toInt().toString();
+                                floorWarning = null;
+                              } else {
+                                priceCtrl.text =
+                                    option.price.toInt().toString();
+                              }
                             });
                           },
                         );
@@ -162,34 +181,99 @@ class PosProductGrid extends ConsumerWidget {
                     ),
                     const SizedBox(height: 12),
                   ],
-                  TextFormField(
-                    controller: priceCtrl,
-                    decoration: const InputDecoration(
-                      labelText: VN.itemPrice,
-                      border: OutlineInputBorder(),
-                      suffixText: 'đ',
-                      isDense: true,
+                  if (isTrungBay) ...[
+                    // "Giá gốc" — non-editable assigned price (COGS anchor).
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Text(
+                        '${VN.giaGoc}: ${formatVND(assignedPrice!)}',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                    keyboardType: TextInputType.number,
-                    onChanged: (v) {
-                      final parsed = double.tryParse(v.trim());
-                      if (parsed != null) {
+                    const SizedBox(height: 8),
+                    // "Giá bán" — editable selling price (markup). Entry is in
+                    // thousands of đồng, same style as the transaction amount
+                    // input (DG-296 Phase 3, FR1).
+                    TextFormField(
+                      controller: priceCtrl,
+                      decoration: const InputDecoration(
+                        labelText: VN.giaBan,
+                        helperText: VN.markupThousandsHint,
+                        border: OutlineInputBorder(),
+                        suffixText: ',000đ',
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.number,
+                      onChanged: (v) {
+                        final thousands = int.tryParse(v.trim());
+                        if (thousands == null) {
+                          setState(() => floorWarning = null);
+                          return;
+                        }
+                        final selling = thousands.toDouble() * 1000;
                         setState(() {
-                          selectedPrice = parsed;
+                          selectedPrice = selling;
                           final matchesOption = options.any(
                             (option) =>
                                 option.uiId == selectedChipUiId &&
-                                option.price == parsed,
+                                option.price == selling,
                           );
                           if (!matchesOption) {
                             selectedChipUiId = null;
                             selectedChipId = null;
                             selectedChipLabel = null;
                           }
+                          // Price floor: selling price cannot go below the
+                          // assigned price (FR3). Clamp + warn.
+                          if (selling < assignedPrice!) {
+                            floorWarning = VN.markupFloorWarning;
+                          } else {
+                            floorWarning = null;
+                          }
                         });
-                      }
-                    },
-                  ),
+                      },
+                    ),
+                    if (floorWarning != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          floorWarning!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.error,
+                          ),
+                        ),
+                      ),
+                  ] else
+                    TextFormField(
+                      controller: priceCtrl,
+                      decoration: const InputDecoration(
+                        labelText: VN.itemPrice,
+                        border: OutlineInputBorder(),
+                        suffixText: 'đ',
+                        isDense: true,
+                      ),
+                      keyboardType: TextInputType.number,
+                      onChanged: (v) {
+                        final parsed = double.tryParse(v.trim());
+                        if (parsed != null) {
+                          setState(() {
+                            selectedPrice = parsed;
+                            final matchesOption = options.any(
+                              (option) =>
+                                  option.uiId == selectedChipUiId &&
+                                  option.price == parsed,
+                            );
+                            if (!matchesOption) {
+                              selectedChipUiId = null;
+                              selectedChipId = null;
+                              selectedChipLabel = null;
+                            }
+                          });
+                        }
+                      },
+                    ),
                 ],
               ),
             ),
@@ -200,6 +284,19 @@ class PosProductGrid extends ConsumerWidget {
               ),
               FilledButton(
                 onPressed: () {
+                  // Price floor enforcement (FR3/AC3): clamp selling price to
+                  // the assigned price when staff entered a lower value.
+                  if (isTrungBay && selectedPrice < assignedPrice!) {
+                    selectedPrice = assignedPrice!;
+                    // Reset chip selection to the assigned-price option (if
+                    // any) since selling == assigned after clamping.
+                    final match = options
+                        .where((o) => o.price == assignedPrice)
+                        .firstOrNull;
+                    selectedChipUiId = match?.uiId;
+                    selectedChipId = match?.backendChipId;
+                    selectedChipLabel = match?.cartLabel;
+                  }
                   Navigator.pop(dialogCtx);
                   final selectedOption = selectedChipUiId == null
                       ? null
@@ -211,6 +308,7 @@ class PosProductGrid extends ConsumerWidget {
                       selectedStockQty != null && selectedStockQty <= 0;
                   final isManualBaseOutOfStock =
                       selectedOption == null && posBaseStockQty(product) <= 0;
+                  final assignedForCart = assignedPrice;
                   if (isOutOfStock ||
                       isSelectedOptionOutOfStock ||
                       isManualBaseOutOfStock) {
@@ -221,6 +319,7 @@ class PosProductGrid extends ConsumerWidget {
                       selectedPrice: selectedPrice,
                       selectedChipId: selectedChipId,
                       selectedChipLabel: selectedChipLabel,
+                      assignedPrice: assignedForCart,
                     );
                   } else {
                     ref
@@ -230,6 +329,7 @@ class PosProductGrid extends ConsumerWidget {
                           selectedPrice: selectedPrice,
                           selectedChipId: selectedChipId,
                           selectedChipLabel: selectedChipLabel,
+                          assignedPrice: assignedForCart,
                         );
                   }
                 },
@@ -249,6 +349,7 @@ class PosProductGrid extends ConsumerWidget {
     double? selectedPrice,
     int? selectedChipId,
     String? selectedChipLabel,
+    double? assignedPrice,
   }) {
     showDialog(
       context: context,
@@ -270,6 +371,7 @@ class PosProductGrid extends ConsumerWidget {
                     selectedPrice: selectedPrice,
                     selectedChipId: selectedChipId,
                     selectedChipLabel: selectedChipLabel,
+                    assignedPrice: assignedPrice,
                     useInventory: false,
                   );
               if (context.mounted) {

@@ -48,9 +48,6 @@ class _FakeService extends ReconciliationService {
 }
 
 void main() {
-  Finder unitPriceFieldFinder() =>
-      find.byKey(const Key('reconciliation-unit-price-field')).first;
-
   Finder textFieldByLabel(String label) {
     return find.byWidgetPredicate(
       (widget) => widget is TextField && widget.decoration?.labelText == label,
@@ -73,6 +70,50 @@ void main() {
     final header = find.textContaining('${VN.priceChipPrice} ').at(index);
     await tester.ensureVisible(header);
     await tester.tap(header);
+    await tester.pumpAndSettle();
+  }
+
+  Finder saleModalButton() => find.text(VN.banHang);
+
+  Finder wasteModalButton() => find.text(VN.haoHutSheet);
+
+  Future<void> openSaleModal(WidgetTester tester, {int index = 0}) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    final button = saleModalButton().at(index);
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button, warnIfMissed: false);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> openWasteModal(WidgetTester tester, {int index = 0}) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    final button = wasteModalButton().at(index);
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button, warnIfMissed: false);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> confirmModal(WidgetTester tester) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    final button = find.text(VN.xacNhan);
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button, warnIfMissed: false);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> cancelModal(WidgetTester tester) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    final button = find.text(VN.dong);
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button, warnIfMissed: false);
     await tester.pumpAndSettle();
   }
 
@@ -262,31 +303,26 @@ void main() {
 
     await tester.enterText(find.byType(TextField).first, '3');
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(OutlinedButton, VN.themDongBan));
-    await tester.pumpAndSettle();
 
-    final unitPriceField = tester.widget<TextFormField>(unitPriceFieldFinder());
+    await openSaleModal(tester);
+
+    final unitPriceField = tester.widget<TextFormField>(
+      find.byKey(const Key('reconciliation-sale-modal-unit-price-field')),
+    );
     expect(unitPriceField.controller?.text, '12000');
 
-    await tester.enterText(unitPriceFieldFinder(), '15000');
+    await tester.enterText(
+      find.byKey(const Key('reconciliation-sale-modal-unit-price-field')),
+      '15000',
+    );
     await tester.pumpAndSettle();
     final editedUnitPriceField = tester.widget<TextFormField>(
-      unitPriceFieldFinder(),
+      find.byKey(const Key('reconciliation-sale-modal-unit-price-field')),
     );
     expect(editedUnitPriceField.controller?.text, '15000');
 
-    final firstSaleRow = find.ancestor(
-      of: find.text('${VN.dongBan} 1'),
-      matching: find.byType(Container),
-    );
-    await tester.tap(
-      find.descendant(
-        of: firstSaleRow.first,
-        matching: find.byIcon(Icons.delete_outline),
-      ),
-    );
+    await confirmModal(tester);
     await tester.pumpAndSettle();
-    expect(find.text('${VN.dongBan} 1'), findsOneWidget);
   });
 
   testWidgets('expanded option header hides chips without initial inventory', (
@@ -493,7 +529,10 @@ void main() {
 
     await tester.enterText(find.byType(TextField).first, '1');
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(OutlinedButton, VN.themDongBan));
+    await openSaleModal(tester);
+    await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
+    await tester.pumpAndSettle();
+    await confirmModal(tester);
     await tester.pumpAndSettle();
 
     final saleRow = find.ancestor(
@@ -585,39 +624,49 @@ void main() {
       await tester.enterText(countedFields.at(1), '1');
       await tester.pumpAndSettle();
 
-      expect(find.text('${VN.dongBan} 1'), findsNWidgets(2));
+      await openSaleModal(tester, index: 0);
+      await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
+      final saleRow1UnitPrice = find.byKey(
+        const Key('reconciliation-sale-modal-unit-price-field'),
+      );
+      await tester.enterText(saleRow1UnitPrice, '15500');
+      await tester.pumpAndSettle();
+      final firstEdited = tester.widget<TextFormField>(saleRow1UnitPrice);
+      expect(firstEdited.controller?.text, '15500');
+      await confirmModal(tester);
+      await tester.pumpAndSettle();
 
+      // Inline sale row for option 1 has no ActionChip shortcuts.
       final saleRow1 = find.ancestor(
-        of: find.text('${VN.dongBan} 1').first,
+        of: find.text('${VN.dongBan} 1'),
         matching: find.byType(Container),
       );
       expect(
         find.descendant(of: saleRow1.first, matching: find.byType(ActionChip)),
         findsNothing,
       );
+
+      await openSaleModal(tester, index: 1);
+      await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
+      final saleRow2UnitPrice = find.byKey(
+        const Key('reconciliation-sale-modal-unit-price-field'),
+      );
+      await tester.enterText(saleRow2UnitPrice, '16500');
+      await tester.pumpAndSettle();
+      final secondEdited = tester.widget<TextFormField>(saleRow2UnitPrice);
+      expect(secondEdited.controller?.text, '16500');
+      await confirmModal(tester);
+      await tester.pumpAndSettle();
+
+      // Inline sale row for option 2 has no ActionChip shortcuts.
       final saleRow2 = find.ancestor(
-        of: find.text('${VN.dongBan} 1').last,
+        of: find.text('${VN.dongBan} 1'),
         matching: find.byType(Container),
       );
       expect(
         find.descendant(of: saleRow2.first, matching: find.byType(ActionChip)),
         findsNothing,
       );
-
-      final unitPriceFields = find.byKey(
-        const Key('reconciliation-unit-price-field'),
-      );
-      expect(unitPriceFields, findsAtLeastNWidgets(1));
-
-      await tester.enterText(unitPriceFields.first, '15500');
-      final firstEdited = tester.widget<TextFormField>(unitPriceFields.first);
-      expect(firstEdited.controller?.text, '15500');
-      await tester.ensureVisible(find.text('${VN.dongBan} 1').last);
-      await tester.enterText(unitPriceFields.last, '16500');
-      await tester.pumpAndSettle();
-
-      final secondEdited = tester.widget<TextFormField>(unitPriceFields.last);
-      expect(secondEdited.controller?.text, '16500');
     },
   );
 
@@ -671,10 +720,12 @@ void main() {
         find.descendant(of: summary, matching: find.text('${VN.tonDaDem}: 5')),
         findsOneWidget,
       );
+      // Complete sale row (qty=1, price=15000, method defaults to cash) —
+      // no validation errors expected.
       expect(
         find.descendant(
           of: summary,
-          matching: find.text('${VN.soLuongBan}: 0'),
+          matching: find.text('${VN.trangThai}: ${VN.trangThaiOn}'),
         ),
         findsOneWidget,
       );
@@ -729,19 +780,26 @@ void main() {
       await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '4');
       await tester.pumpAndSettle();
 
-      expect(find.text('${VN.dongBan} 1'), findsOneWidget);
+      await openSaleModal(tester);
       expect(
-        find.byKey(const Key('reconciliation-unit-price-field')),
+        find.byKey(const Key('reconciliation-sale-modal-unit-price-field')),
         findsOneWidget,
       );
       await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
-      await tester.enterText(unitPriceFieldFinder(), '15000');
+      await tester.enterText(
+        find.byKey(const Key('reconciliation-sale-modal-unit-price-field')),
+        '15000',
+      );
+      await tester.pumpAndSettle();
+      await confirmModal(tester);
       await tester.pumpAndSettle();
 
+      // Complete sale row (qty=1, price=15000, method defaults to cash) —
+      // no validation errors expected.
       expect(
         find.descendant(
           of: summary,
-          matching: find.text('${VN.trangThai}: ${VN.trangThaiCoLoi}'),
+          matching: find.text('${VN.trangThai}: ${VN.trangThaiOn}'),
         ),
         findsOneWidget,
       );
@@ -750,10 +808,12 @@ void main() {
         find.descendant(of: summary, matching: find.text('${VN.tonDaDem}: 4')),
         findsOneWidget,
       );
+      // Complete sale row (qty=1, price=15000, method defaults to cash) —
+      // no validation errors expected.
       expect(
         find.descendant(
           of: summary,
-          matching: find.text('${VN.soLuongBan}: 1'),
+          matching: find.text('${VN.trangThai}: ${VN.trangThaiOn}'),
         ),
         findsOneWidget,
       );
@@ -771,18 +831,16 @@ void main() {
         ),
         findsOneWidget,
       );
+      // Complete sale row (qty=1, price=15000, method defaults to cash) —
+      // no validation errors expected.
       expect(
         find.descendant(
           of: summary,
-          matching: find.text('${VN.trangThai}: ${VN.trangThaiCoLoi}'),
+          matching: find.text('${VN.trangThai}: ${VN.trangThaiOn}'),
         ),
         findsOneWidget,
       );
 
-      final unitPriceField = tester.widget<TextFormField>(
-        unitPriceFieldFinder(),
-      );
-      expect(unitPriceField.controller?.text, '15000');
       expect(tester.takeException(), isNull);
     },
   );
@@ -831,25 +889,14 @@ void main() {
 
     await tester.enterText(find.byType(TextField).first, '4');
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(OutlinedButton, VN.themDongBan));
-    await tester.pumpAndSettle();
-    final saleRow = find.ancestor(
-      of: find.text('${VN.dongBan} 1'),
-      matching: find.byType(Container),
-    );
+    await openSaleModal(tester);
+    await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
     await tester.enterText(
-      find.descendant(
-        of: saleRow.first,
-        matching: find.byWidgetPredicate(
-          (widget) =>
-              widget is TextField &&
-              widget.controller != null &&
-              widget.controller!.text == '0',
-        ),
-      ),
-      '1',
+      find.byKey(const Key('reconciliation-sale-modal-unit-price-field')),
+      '',
     );
-    await tester.enterText(unitPriceFieldFinder(), '');
+    await tester.pumpAndSettle();
+    await confirmModal(tester);
     await tester.pumpAndSettle();
 
     await tester.tap(find.widgetWithText(FilledButton, VN.guiDoiSoat));
@@ -917,29 +964,33 @@ void main() {
 
     await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '4');
     await tester.pumpAndSettle();
+    await openSaleModal(tester);
     await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
+    await tester.pumpAndSettle();
+    await confirmModal(tester);
     await tester.pumpAndSettle();
 
     expect(
       find.descendant(
         of: optionSummary('1:100000'),
-        matching: find.text('${VN.trangThai}: ${VN.trangThaiCoLoi}'),
+        matching: find.text('${VN.soLuongBan}: 1'),
       ),
       findsOneWidget,
     );
 
+    // Payment method defaults to 'cash', so no method error — submit review
+    // proceeds normally.
     await tester.tap(find.widgetWithText(FilledButton, VN.guiDoiSoat));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Chọn phương thức'), findsWidgets);
+    expect(find.textContaining(VN.tongSoLuongBan), findsOneWidget);
     final confirmButton = tester.widget<FilledButton>(
       find.descendant(
         of: find.byType(AlertDialog),
         matching: find.widgetWithText(FilledButton, VN.guiDoiSoat),
       ),
     );
-    expect(confirmButton.onPressed, isNull);
-    expect(service.submitCalls, 0);
+    expect(confirmButton.onPressed, isNotNull);
   });
 
   testWidgets('load failure and empty states show guidance with retry', (
@@ -1084,7 +1135,10 @@ void main() {
           .first;
       expect(positiveVarianceText.style?.color, Colors.red[700]);
 
+      await openSaleModal(tester);
       await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
+      await tester.pumpAndSettle();
+      await confirmModal(tester);
       await tester.pumpAndSettle();
 
       final zeroVarianceFinder = find.text('${VN.soLuongChenhLech}: 0');
@@ -1094,7 +1148,12 @@ void main() {
           .first;
       expect(zeroVarianceText.style?.color, Colors.green[700]);
 
+      await openWasteModal(tester);
       await tester.enterText(textFieldByLabel(VN.soLuongHaoHut).first, '1');
+      await tester.pumpAndSettle();
+      await tester.enterText(textFieldByLabel(VN.lyDoHaoHut).first, 'Hết hạn');
+      await tester.pumpAndSettle();
+      await confirmModal(tester);
       await tester.pumpAndSettle();
 
       final negativeVarianceFinder = find.text('${VN.soLuongChenhLech}: -1');
@@ -1113,7 +1172,7 @@ void main() {
   );
 
   testWidgets(
-    'auto sales row supports reorder, manual price, and waste-only path',
+    'sales row supports reorder, manual price, and waste-only path',
     (tester) async {
       SharedPreferences.setMockInitialValues({
       'auth_token': kTestAdminToken,
@@ -1156,54 +1215,58 @@ void main() {
       await tester.enterText(find.byType(TextField).first, '4');
       await tester.pumpAndSettle();
 
-      expect(find.text('${VN.dongBan} 1'), findsOneWidget);
+      await openSaleModal(tester);
+      final saleUnitPriceField = find.byKey(
+        const Key('reconciliation-sale-modal-unit-price-field'),
+      );
       final prefilledUnitPrice = tester.widget<TextFormField>(
-        unitPriceFieldFinder(),
+        saleUnitPriceField,
       );
       expect(prefilledUnitPrice.controller?.text, '100000');
 
-      final saleRowDy = tester.getTopLeft(find.text('${VN.dongBan} 1')).dy;
-      final wasteLabelDy = tester
-          .getTopLeft(find.text(VN.soLuongHaoHut).last)
-          .dy;
-      expect(saleRowDy, lessThan(wasteLabelDy));
+      await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
+      await tester.enterText(saleUnitPriceField, '15000');
+      await tester.pumpAndSettle();
 
+      final editedUnitPrice = tester.widget<TextFormField>(
+        saleUnitPriceField,
+      );
+      expect(editedUnitPrice.controller?.text, '15000');
+      await confirmModal(tester);
+      await tester.pumpAndSettle();
+
+      // Submitted sale row renders inline below the sale/waste buttons.
+      expect(find.text('${VN.dongBan} 1'), findsOneWidget);
+      final saleRowDy = tester.getTopLeft(find.text('${VN.dongBan} 1')).dy;
+      final wasteButtonDy = tester.getTopLeft(
+        find.widgetWithText(OutlinedButton, VN.haoHutSheet),
+      ).dy;
+      expect(saleRowDy, greaterThan(wasteButtonDy));
+
+      // Delete the inline sale row via the X (close) icon button.
       final saleRow = find.ancestor(
         of: find.text('${VN.dongBan} 1'),
         matching: find.byType(Container),
       );
-      await tester.enterText(
-        find.descendant(
-          of: saleRow.first,
-          matching: find.byWidgetPredicate(
-            (widget) =>
-                widget is TextField &&
-                widget.controller != null &&
-                widget.controller!.text == '0',
-          ),
-        ),
-        '1',
+      final deleteButton = find.descendant(
+        of: saleRow.first,
+        matching: find.widgetWithIcon(IconButton, Icons.close),
       );
-      await tester.enterText(unitPriceFieldFinder(), '15000');
+      expect(deleteButton, findsOneWidget);
+      await tester.ensureVisible(deleteButton);
       await tester.pumpAndSettle();
-
-      final editedUnitPrice = tester.widget<TextFormField>(
-        unitPriceFieldFinder(),
-      );
-      expect(editedUnitPrice.controller?.text, '15000');
-
-      await tester.tap(
-        find.descendant(
-          of: saleRow.first,
-          matching: find.byIcon(Icons.delete_outline),
-        ),
-      );
+      await tester.tap(deleteButton);
       await tester.pumpAndSettle();
+      // Verify the row was removed.
       expect(find.text('${VN.dongBan} 1'), findsNothing);
-      expect(find.text(VN.soLuongHaoHut), findsWidgets);
 
-      final wasteField = find.byType(TextField).last;
-      await tester.enterText(wasteField, '1');
+      // Waste-only path: open the waste modal, enter qty + reason, submit.
+      await openWasteModal(tester);
+      await tester.enterText(textFieldByLabel(VN.soLuongHaoHut).first, '1');
+      await tester.pumpAndSettle();
+      await tester.enterText(textFieldByLabel(VN.lyDoHaoHut).first, 'Hết hạn');
+      await tester.pumpAndSettle();
+      await confirmModal(tester);
       await tester.pumpAndSettle();
     },
   );
@@ -1402,7 +1465,10 @@ void main() {
       // First create a missing scenario to seed a sale row, then push counted above expected.
       await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '4');
       await tester.pumpAndSettle();
+      await openSaleModal(tester);
       await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
+      await tester.pumpAndSettle();
+      await confirmModal(tester);
       await tester.pumpAndSettle();
 
       // Now push counted above expected while a sale row remains.
@@ -1426,4 +1492,117 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'cancel sell/waste modal preserves live sale row and waste mutations',
+    (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'auth_token': kTestAdminToken,
+      'auth_username': 'An',
+      'auth_role': 'staff',
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final service = _FakeService(
+      ReconciliationDraft(
+        date: '2026-05-04',
+        products: [
+          ReconciliationDraftProduct(
+            productId: 1,
+            name: 'Bánh kem dâu',
+            category: 'banh_kem',
+            expectedQty: 5,
+            basePrice: 100000,
+            priceChips: const [],
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reconciliationServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp.router(routerConfig: buildRouter()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await expandFirstCategory(tester);
+    await tester.tap(find.text('Bánh kem dâu'));
+    await tester.pumpAndSettle();
+    await expandOptionInventory(tester);
+
+    await tester.enterText(textFieldByLabel(VN.tonDaDem).first, '4');
+    await tester.pumpAndSettle();
+
+    final summary = optionSummary('1:100000');
+    expect(
+      find.descendant(
+        of: summary,
+        matching: find.text('${VN.soLuongBan}: 0'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: summary,
+        matching: find.text('${VN.soLuongHaoHut}: 0'),
+      ),
+      findsOneWidget,
+    );
+
+    await openSaleModal(tester);
+    await tester.enterText(textFieldByLabel(VN.soLuongBan).first, '1');
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('reconciliation-sale-modal-unit-price-field')),
+      '15000',
+    );
+    await tester.pumpAndSettle();
+    await confirmModal(tester);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: summary,
+        matching: find.text('${VN.soLuongBan}: 1'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: summary,
+        matching: find.text('${VN.soLuongHaoHut}: 0'),
+      ),
+      findsOneWidget,
+    );
+
+    await openWasteModal(tester);
+    await tester.enterText(textFieldByLabel(VN.soLuongHaoHut).first, '1');
+    await tester.pumpAndSettle();
+    await cancelModal(tester);
+    await tester.pumpAndSettle();
+
+    // Modal is dismissed.
+    expect(find.text(VN.xacNhan), findsNothing);
+    expect(find.text(VN.dong), findsNothing);
+    // The sale row submitted earlier remains in shared state; the waste
+    // modal was cancelled before submit so waste stays at 0.
+    expect(
+      find.descendant(
+        of: summary,
+        matching: find.text('${VN.soLuongBan}: 1'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: summary,
+        matching: find.text('${VN.soLuongHaoHut}: 0'),
+      ),
+      findsOneWidget,
+    );
+  });
 }
