@@ -79,13 +79,17 @@ def _insert_entry(
 
 
 def _insert_expense_event(conn, *, category: str, amount: float = 10000,
-                           created_at: str | None = None) -> int:
+                           created_at: str | None = None,
+                           subcategory: str | None = None) -> int:
     """Insert an expense event with a category and return its id."""
-    data = json.dumps({
+    payload = {
         "amount_vnd": amount,
         "category": category,
         "payment_source": "Shop tiền mặt",
-    })
+    }
+    if subcategory is not None:
+        payload["subcategory"] = subcategory
+    data = json.dumps(payload)
     if created_at:
         cur = conn.execute(
             "INSERT INTO events (type, summary, data, timestamp) VALUES (?, ?, ?, ?)",
@@ -797,6 +801,109 @@ def test_expense_by_category_empty_db():
     ])
     assert result.exit_code == 0, result.output
     assert "no expense journal entries in range" in result.output
+
+
+def test_expense_by_category_subcategory_breakdown():
+    """FR3 / AC3: parent categories with subcategories show a breakdown.
+
+    Seeds expenses under Nguyên liệu (Trứng, Kem, Bột, Phụ gia khác) plus a
+    legacy Nguyên liệu expense with no subcategory, and a Vận chuyển expense
+    (no children). The report must print the Nguyên liệu parent total and a
+    sub-breakdown: Trứng, Kem, Bột, Phụ gia khác, and the no-subcategory
+    remainder. Vận chuyển has no children → no breakdown block.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        ts = "2026-06-15T10:00:00Z"
+        cash = _account_id(conn, "1100")
+
+        def _exp(category, subcategory, account_code, amount):
+            eid = _insert_expense_event(
+                conn, category=category, amount=amount,
+                created_at=ts, subcategory=subcategory,
+            )
+            acc = _account_id(conn, account_code)
+            _insert_entry(
+                conn, debit_account_id=acc, credit_account_id=cash,
+                amount=float(amount), source_type="expense", source_id=eid,
+                description=f"Expense: {category}/{subcategory}", created_at=ts,
+            )
+
+        # Nguyên liệu subcategories (FR4 account codes)
+        _exp("Nguyên liệu", "Trứng", "5110", 50000)
+        _exp("Nguyên liệu", "Kem", "5120", 30000)
+        _exp("Nguyên liệu", "Bột", "5130", 20000)
+        _exp("Nguyên liệu", "Phụ gia khác", "5140", 10000)
+        # Legacy Nguyên liệu expense with no subcategory (FR6)
+        eid_legacy = _insert_expense_event(
+            conn, category="Nguyên liệu", amount=15000, created_at=ts,
+        )
+        nl = _account_id(conn, "5100")
+        _insert_entry(
+            conn, debit_account_id=nl, credit_account_id=cash,
+            amount=15000.0, source_type="expense", source_id=eid_legacy,
+            description="Expense: Nguyên liệu (legacy)", created_at=ts,
+        )
+        # Vận chuyển — no subcategory breakdown
+        transport = _account_id(conn, "5300")
+        eid_trans = _insert_expense_event(
+            conn, category="Vận chuyển", amount=10000, created_at=ts,
+        )
+        _insert_entry(
+            conn, debit_account_id=transport, credit_account_id=cash,
+            amount=10000.0, source_type="expense", source_id=eid_trans,
+            description="Expense: Vận chuyển", created_at=ts,
+        )
+
+    result = _invoke([
+        "report", "expense-by-category", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Expense by Category" in result.output
+    # Parent totals
+    assert "Nguyên liệu" in result.output
+    assert "Vận chuyển" in result.output
+    # Subcategory breakdown lines (AC3)
+    assert "Trứng" in result.output
+    assert "Kem" in result.output
+    assert "Bột" in result.output
+    assert "Phụ gia khác" in result.output
+    # Subcategory amounts
+    assert "50,000.00" in result.output
+    assert "30,000.00" in result.output
+    assert "20,000.00" in result.output
+    assert "10,000.00" in result.output
+    # Grand total = 50+30+20+10+15+10 = 135000
+    assert "135,000.00" in result.output
+
+
+def test_expense_by_category_subcategory_only_legacy_category_string():
+    """FR6: a legacy expense whose category is itself a subcategory name
+    (subcategory stored in events.data.category with no subcategory field)
+    is normalized back to its parent for the breakdown.
+    """
+    with get_db() as conn:
+        ensure_schema(conn)
+        ts = "2026-06-15T10:00:00Z"
+        cash = _account_id(conn, "1100")
+        eggs = _account_id(conn, "5110")
+        eid = _insert_expense_event(
+            conn, category="Trứng", amount=40000, created_at=ts,
+        )
+        _insert_entry(
+            conn, debit_account_id=eggs, credit_account_id=cash,
+            amount=40000.0, source_type="expense", source_id=eid,
+            description="Expense: Trứng (legacy category)", created_at=ts,
+        )
+    result = _invoke([
+        "report", "expense-by-category", "--since", "2026-06-01", "--until", "2026-06-30",
+    ])
+    assert result.exit_code == 0, result.output
+    # The parent "Nguyên liệu" row should include the 40000, and the
+    # subcategory breakdown should attribute it to Trứng.
+    assert "Nguyên liệu" in result.output
+    assert "Trứng" in result.output
+    assert "40,000.00" in result.output
 
 
 # ---------------------------------------------------------------------------

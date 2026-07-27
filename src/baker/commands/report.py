@@ -603,7 +603,16 @@ def account_ledger_cmd(account_code, since, until):
 @click.option("--since", help="From date (YYYY-MM-DD)")
 @click.option("--until", help="To date (YYYY-MM-DD, inclusive)")
 def expense_by_category_cmd(since, until):
-    """Expense totals grouped by source event category for a date range."""
+    """Expense totals grouped by source event category for a date range.
+
+    When a parent category has subcategories (per the ``expense_categories``
+    table — DG-302), the report prints a breakdown by subcategory below the
+    parent row (FR3 / AC3). Expenses that carry a ``subcategory`` field in
+    ``events.data`` are bucketed under their subcategory; the parent row's
+    total still includes those subcategory amounts so column totals are
+    consistent. Expenses without a subcategory (legacy rows, FR6) are
+    attributed to the parent category directly.
+    """
     since_b = _normalize_date(since)
     until_b = _normalize_date(until, end_of_day=True)
     _echo_header("Expense by Category", since, until)
@@ -639,12 +648,37 @@ def expense_by_category_cmd(since, until):
             click.echo("(no expense journal entries in range)")
             return
 
-        # Aggregate by category from events.data JSON, falling back to the
-        # debited account name when the event/data is unavailable.
+        # Map subcategory name -> parent category name (DG-302 Phase 1).
+        # Only categories with children get a breakdown block (FR3).
+        parent_of: dict[str, str] = {}
+        children_of: dict[str, list[str]] = {}
+        cat_rows = conn.execute(
+            """
+            SELECT child.name AS child_name,
+                   parent.name AS parent_name
+            FROM expense_categories child
+            JOIN expense_categories parent ON parent.id = child.parent_id
+            """
+        ).fetchall()
+        for cr in cat_rows:
+            child = cr["child_name"]
+            parent = cr["parent_name"]
+            parent_of[child] = parent
+            children_of.setdefault(parent, []).append(child)
+        for parent in children_of:
+            children_of[parent].sort()
+
+        # Aggregate by category (and subcategory when present) from
+        # events.data JSON, falling back to the debited account name when
+        # the event/data is unavailable.
+        # totals[parent_category] = total (incl. all subcategories)
+        # sub_totals[parent_category][subcategory] = subtotal
         totals: dict[str, float] = {}
+        sub_totals: dict[str, dict[str, float]] = {}
         uncategorized = 0.0
         for r in rows:
             category = None
+            subcategory = None
             event_id = r["event_id"]
             if event_id is not None:
                 ev = conn.execute(
@@ -656,10 +690,30 @@ def expense_by_category_cmd(since, until):
                         cat = data.get("category")
                         if isinstance(cat, str) and cat:
                             category = cat
+                        sub = data.get("subcategory")
+                        if isinstance(sub, str) and sub:
+                            subcategory = sub
                     except (json.JSONDecodeError, TypeError):
                         pass
             if category:
-                totals[category] = totals.get(category, 0.0) + float(r["debit"])
+                # If the "category" itself is a subcategory name (legacy
+                # rows where subcategory was stored in category), normalize
+                # it back to the parent so it lands in the right bucket.
+                if category in parent_of:
+                    parent = parent_of[category]
+                    sub_totals.setdefault(parent, {})
+                    sub_totals[parent][category] = (
+                        sub_totals[parent].get(category, 0.0) + float(r["debit"])
+                    )
+                    totals[parent] = totals.get(parent, 0.0) + float(r["debit"])
+                else:
+                    totals[category] = totals.get(category, 0.0) + float(r["debit"])
+                    if subcategory:
+                        sub_totals.setdefault(category, {})
+                        sub_totals[category][subcategory] = (
+                            sub_totals[category].get(subcategory, 0.0)
+                            + float(r["debit"])
+                        )
             else:
                 uncategorized += float(r["debit"])
 
@@ -670,6 +724,19 @@ def expense_by_category_cmd(since, until):
             amount = totals[category]
             grand_total += amount
             click.echo(f"{category[:31]:<32}{amount:>20,.2f}")
+            # FR3 / AC3: subcategory breakdown for parent categories that
+            # have children defined in the expense_categories table.
+            subs = sub_totals.get(category, {})
+            if category in children_of:
+                for sub_name in children_of[category]:
+                    sub_amount = subs.get(sub_name, 0.0)
+                    click.echo(f"  {sub_name[:30]:<30}{sub_amount:>20,.2f}")
+                # Legacy/other subcategory values not in the seed tree.
+                known = set(children_of[category])
+                for sub_name in sorted(subs):
+                    if sub_name not in known:
+                        sub_amount = subs[sub_name]
+                        click.echo(f"  {sub_name[:30]:<30}{sub_amount:>20,.2f}")
         if uncategorized:
             grand_total += uncategorized
             click.echo(f"{'(uncategorized)':<32}{uncategorized:>20,.2f}")
