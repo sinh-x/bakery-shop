@@ -21,6 +21,16 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Cache Python dependencies (uv/pip)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.cache/pip
+          key: python-deps-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            python-deps-${{ runner.os }}-
+
       - name: Install dependencies
         run: pip install -e ".[dev,web]" ruff pytest-xdist
 
@@ -50,6 +60,15 @@ jobs:
         with:
           flutter-version: '3.44.0'
           channel: stable
+          cache: true
+
+      - name: Cache Flutter pub dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: flutter-pub-${{ runner.os }}-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: |
+            flutter-pub-${{ runner.os }}-
 
       - name: Get dependencies
         run: flutter pub get
