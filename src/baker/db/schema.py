@@ -1544,6 +1544,10 @@ SEED_CHART_OF_ACCOUNTS = [
     ("1290", "TK ngân hàng chưa phân bổ (Un-allocated Bank)", "asset", "1200"),
     ("1300", "Hàng tồn kho (Inventory)", "asset", "1000"),
     ("1500", "Phải thu khách hàng (Accounts Receivable)", "asset", "1000"),
+    # DG-300 Phase 1: Fixed Assets account for investing-activity cash flows.
+    # Sub-account of 1000 (Tài sản) so it sits within the asset hierarchy
+    # alongside cash, inventory, and receivables.
+    ("1600", "Tài sản cố định (Fixed Assets)", "asset", "1000"),
     # Liabilities
     ("2000", "Nợ phải trả", "liability", None),
     ("2100", "Tiền khách đặt cọc (Customer Deposits)", "liability", "2000"),
@@ -4373,6 +4377,18 @@ def _migrate_v84_order_item_assigned_price(conn):
     )
 
 
+def _migrate_v85_add_account_1600(conn):
+    """Ensure account 1600 (Tài sản cố định / Fixed Assets) exists (DG-300 Phase 1).
+
+    Mirrors ``_migrate_v54_add_account_2400`` and ``_migrate_v73_add_account_2500``:
+    calls the existing ``_seed_chart_of_accounts()`` which uses
+    ``INSERT OR IGNORE`` for every account, so re-running v85 on an
+    already-migrated DB is a no-op (idempotent by design). The 1600 row was
+    added to ``SEED_CHART_OF_ACCOUNTS`` as part of this phase.
+    """
+    _seed_chart_of_accounts(conn)
+
+
 MIGRATIONS = {
     1: {
         "description": "Initial schema",
@@ -4777,6 +4793,11 @@ MIGRATIONS = {
         "description": "Add assigned_price REAL DEFAULT NULL column to order_items for trưng bày markup audit (DG-296 Phase 1)",
         "sql": "",
         "callable": _migrate_v84_order_item_assigned_price,
+    },
+    85: {
+        "description": "Seed account 1600 (Tài sản cố định / Fixed Assets) for investing-activity cash flows (DG-300 Phase 1)",
+        "sql": "",
+        "callable": _migrate_v85_add_account_1600,
     },
 }
 

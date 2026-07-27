@@ -912,3 +912,374 @@ def order_status_cmd(since, until):
     click.echo(
         f"{'GRAND TOTAL':<34}{grand_count:>10,}{grand_value:>20,.2f}"
     )
+
+
+# ---------------------------------------------------------------------------
+# cashflow (DG-300 Phase 1)
+# ---------------------------------------------------------------------------
+
+# Cash accounts tracked by the direct-method cashflow statement. Cash held in
+# 1200 (the parent bank account, used by the expense flow and owner-capital
+# transfers) is included alongside the DG-244 Phase 4 bank sub-accounts so the
+# report matches the cash-flow integrity check in accounting_validation.py.
+CASH_ACCOUNT_CODES = ("1100", "1200", "1210", "1220", "1290")
+
+# Fixed-asset account seeded by DG-300 Phase 1 — investing-activity cash flows
+# land on this account.
+FIXED_ASSETS_CODE = "1600"
+
+# Reconciliation tolerance (VND). Matches DEBIT_CREDIT_TOLERANCE used by the
+# accounting-validation cash-flow integrity check.
+CASHFLOW_RECONCILIATION_TOLERANCE = 0.01
+
+# source_type values that represent operating-activity cash inflows on cash
+# accounts. ``payment_transaction`` covers customer deposits/payments and
+# refunds (refunds credit cash → outflow, but they still belong to operating).
+# ``order_shipping_release`` releases a held bus shipping fee back to cash
+# (DR 2200 / CR 1100) — the cash credit is an operating inflow to the shop.
+OPERATING_INFLOW_SOURCE_TYPES = ("payment_transaction", "order_shipping_release")
+
+# source_type values that represent operating-activity cash outflows on cash
+# accounts. ``expense`` debits an expense/inventory account and credits a
+# cash account; ``expense_settlement`` debits Accounts Payable (2500) and
+# credits a cash account when a debt expense is paid off.
+OPERATING_OUTFLOW_SOURCE_TYPES = ("expense", "expense_settlement")
+
+# source_type values that represent financing-activity cash movements.
+FINANCING_SOURCE_TYPES = ("owner_capital", "owner_draw")
+
+
+def _cash_account_placeholders(codes: tuple[str, ...]) -> str:
+    """Return a SQL ``IN (...)`` placeholder list for the given account codes."""
+    return ",".join("?" * len(codes))
+
+
+def _query_cash_period_activity(
+    conn, since_b: str | None, until_b: str | None,
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Aggregate period cash-account movements grouped by ``source_type``.
+
+    Returns ``{source_type: {cash_account_code: {"inflow": float, "outflow": float}}}``.
+    Only journal lines whose account is one of ``CASH_ACCOUNT_CODES`` and whose
+    journal entry's ``transaction_date`` falls within ``[since_b, until_b]`` are
+    summed. Entries that also touch the fixed-asset account 1600 are excluded —
+    those are reported under investing activities to avoid double-counting.
+    """
+    placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
+    params: list = list(CASH_ACCOUNT_CODES)
+    where_clauses = [f"a.code IN ({placeholders})"]
+    if since_b:
+        where_clauses.append("je.transaction_date >= ?")
+        params.append(since_b)
+    if until_b:
+        where_clauses.append("je.transaction_date <= ?")
+        params.append(until_b)
+    # Exclude entries that touch the fixed-asset account — those are investing.
+    where_clauses.append(
+        "NOT EXISTS ("
+        " SELECT 1 FROM journal_lines jl2"
+        " JOIN accounts a2 ON a2.id = jl2.account_id"
+        " WHERE jl2.journal_entry_id = je.id AND a2.code = ?"
+        ")"
+    )
+    params.append(FIXED_ASSETS_CODE)
+    where_sql = " AND ".join(where_clauses)
+
+    rows = conn.execute(
+        f"""
+        SELECT je.source_type AS source_type,
+               a.code         AS account_code,
+               COALESCE(SUM(jl.debit), 0)  AS inflow,
+               COALESCE(SUM(jl.credit), 0) AS outflow
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE {where_sql}
+        GROUP BY je.source_type, a.code
+        """,
+        params,
+    ).fetchall()
+
+    activity: dict[str, dict[str, dict[str, float]]] = {}
+    for r in rows:
+        source_type = r["source_type"] or ""
+        code = r["account_code"]
+        activity.setdefault(source_type, {}).setdefault(
+            code, {"inflow": 0.0, "outflow": 0.0}
+        )
+        activity[source_type][code]["inflow"] += float(r["inflow"])
+        activity[source_type][code]["outflow"] += float(r["outflow"])
+    return activity
+
+
+def _query_investing_cash_activity(
+    conn, since_b: str | None, until_b: str | None,
+) -> tuple[float, float, dict[str, dict[str, float]]]:
+    """Investing-activity cash flows: cash-side movements of entries touching 1600.
+
+    A journal entry is treated as investing when at least one of its lines is
+    on the fixed-asset account 1600. The cash side of that entry (debit to a
+    cash account = inflow from disposal, credit from a cash account = outflow
+    for purchase) is reported here. Returns
+    ``(total_inflow, total_outflow, per_account)``.
+    """
+    placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
+    params: list = list(CASH_ACCOUNT_CODES)
+    where_clauses = [f"a.code IN ({placeholders})"]
+    if since_b:
+        where_clauses.append("je.transaction_date >= ?")
+        params.append(since_b)
+    if until_b:
+        where_clauses.append("je.transaction_date <= ?")
+        params.append(until_b)
+    where_clauses.append(
+        "EXISTS ("
+        " SELECT 1 FROM journal_lines jl2"
+        " JOIN accounts a2 ON a2.id = jl2.account_id"
+        " WHERE jl2.journal_entry_id = je.id AND a2.code = ?"
+        ")"
+    )
+    params.append(FIXED_ASSETS_CODE)
+    where_sql = " AND ".join(where_clauses)
+
+    rows = conn.execute(
+        f"""
+        SELECT a.code         AS account_code,
+               COALESCE(SUM(jl.debit), 0)  AS inflow,
+               COALESCE(SUM(jl.credit), 0) AS outflow
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.journal_entry_id = je.id
+        JOIN accounts a ON a.id = jl.account_id
+        WHERE {where_sql}
+        GROUP BY a.code
+        """,
+        params,
+    ).fetchall()
+
+    total_in = 0.0
+    total_out = 0.0
+    per_account: dict[str, dict[str, float]] = {}
+    for r in rows:
+        code = r["account_code"]
+        inflow = float(r["inflow"])
+        outflow = float(r["outflow"])
+        total_in += inflow
+        total_out += outflow
+        per_account[code] = {"inflow": inflow, "outflow": outflow}
+    return total_in, total_out, per_account
+
+
+def _query_cash_balance(
+    conn, until_b: str | None, *, inclusive: bool = False,
+) -> dict[str, float]:
+    """Cumulative cash-account balances (debit − credit).
+
+    When ``until_b`` is given and ``inclusive`` is False (the opening-balance
+    case), only entries with ``transaction_date < until_b`` are summed. When
+    ``inclusive`` is True (the closing-balance case), entries with
+    ``transaction_date <= until_b`` are summed. A ``None`` ``until_b`` means
+    "all time" (no upper bound).
+    """
+    placeholders = _cash_account_placeholders(CASH_ACCOUNT_CODES)
+    params: list = list(CASH_ACCOUNT_CODES)
+    where_clauses = [f"a.code IN ({placeholders})"]
+    if until_b:
+        op = "<=" if inclusive else "<"
+        where_clauses.append(f"je.transaction_date {op} ?")
+        params.append(until_b)
+    where_sql = " AND ".join(where_clauses)
+
+    rows = conn.execute(
+        f"""
+        SELECT a.code AS account_code,
+               COALESCE(SUM(jl.debit - jl.credit), 0) AS balance
+        FROM accounts a
+        LEFT JOIN journal_lines jl ON jl.account_id = a.id
+        LEFT JOIN journal_entries je ON je.id = jl.journal_entry_id
+        WHERE {where_sql}
+        GROUP BY a.code
+        """,
+        params,
+    ).fetchall()
+    return {r["account_code"]: float(r["balance"]) for r in rows}
+
+
+def _sum_section(
+    activity: dict[str, dict[str, dict[str, float]]],
+    source_types: tuple[str, ...],
+) -> tuple[float, float, dict[str, dict[str, float]]]:
+    """Sum inflow/outflow across the given ``source_types``.
+
+    Returns ``(total_inflow, total_outflow, per_account)`` where
+    ``per_account`` is ``{cash_account_code: {"inflow": float, "outflow": float}}``.
+    """
+    total_in = 0.0
+    total_out = 0.0
+    per_account: dict[str, dict[str, float]] = {}
+    for st in source_types:
+        for code, mov in activity.get(st, {}).items():
+            inflow = mov["inflow"]
+            outflow = mov["outflow"]
+            total_in += inflow
+            total_out += outflow
+            per_account.setdefault(code, {"inflow": 0.0, "outflow": 0.0})
+            per_account[code]["inflow"] += inflow
+            per_account[code]["outflow"] += outflow
+    return total_in, total_out, per_account
+
+
+def _echo_cashflow_subsection(
+    title: str, per_account: dict[str, dict[str, float]],
+    total_inflow: float, total_outflow: float, indent: str = "  ",
+) -> None:
+    """Print a cashflow sub-section: title, per-account lines, subtotal."""
+    click.echo(f"{indent}{title}")
+    click.echo(f"{indent}{'-' * len(title)}")
+    if not per_account:
+        click.echo(f"{indent}(no activity)")
+    else:
+        for code in sorted(per_account):
+            mov = per_account[code]
+            net = mov["inflow"] - mov["outflow"]
+            click.echo(
+                f"{indent}  {code:<8}{mov['inflow']:>20,.2f}"
+                f"{mov['outflow']:>20,.2f}{net:>20,.2f}"
+            )
+    click.echo(
+        f"{indent}  {'Subtotal':<8}{total_inflow:>20,.2f}"
+        f"{total_outflow:>20,.2f}{(total_inflow - total_outflow):>20,.2f}"
+    )
+    click.echo("")
+
+
+@report_cmd.command("cashflow")
+@click.option("--since", help="From date (YYYY-MM-DD)")
+@click.option("--until", help="To date (YYYY-MM-DD, inclusive)")
+def cashflow_cmd(since, until):
+    """Direct-method cashflow statement for a date range.
+
+    Classifies cash movements on the bakery's cash accounts (1100, 1200,
+    1210, 1220, 1290) into operating, investing, and financing activities and
+    reconciles the net cash flow against the change in cash-account balances
+    for the period.
+
+    Operating activities are sub-sectioned into:
+      - Cash from customers (payment_transaction inflows + refunds)
+      - Cash paid to suppliers/employees (expense + expense_settlement outflows)
+
+    Investing activities capture cash flows on account 1600 (Tài sản cố định):
+    journal entries that touch account 1600 are reported here, and the cash
+    side of those entries is excluded from operating to avoid double-counting.
+
+    Financing activities capture owner_capital contributions and owner_draw
+    withdrawals on cash accounts.
+
+    The report is read-only (SELECT only). Journal sync must be current for
+    accurate numbers — run ``baker repair-payment-journal`` if totals look off.
+    """
+    since_b = _normalize_date(since)
+    until_b = _normalize_date(until, end_of_day=True)
+    _echo_header("Cashflow Statement (Direct Method)", since, until)
+
+    with get_db() as conn:
+        # Opening balance: cumulative cash-account balances before --since.
+        # `_query_cash_balance` applies ``je.transaction_date < since_b`` so a
+        # None since_b means no opening bound (opening = 0 for all accounts).
+        opening_by_account = _query_cash_balance(conn, since_b, inclusive=False)
+        # Closing balance: cumulative cash-account balances up to and including
+        # --until (inclusive upper bound). None until_b → all-time balance.
+        closing_by_account = _query_cash_balance(conn, until_b, inclusive=True)
+        # Period activity grouped by source_type (excludes 1600-touching entries).
+        period_activity = _query_cash_period_activity(conn, since_b, until_b)
+        # Investing activity: cash side of entries that touch account 1600.
+        investing_in, investing_out, investing_per = _query_investing_cash_activity(
+            conn, since_b, until_b
+        )
+
+    # ---- Aggregate sections ----
+    cust_in, cust_out, cust_per = _sum_section(
+        period_activity, OPERATING_INFLOW_SOURCE_TYPES,
+    )
+    sup_in, sup_out, sup_per = _sum_section(
+        period_activity, OPERATING_OUTFLOW_SOURCE_TYPES,
+    )
+    oper_in = cust_in + sup_in
+    oper_out = cust_out + sup_out
+
+    fin_in, fin_out, fin_per = _sum_section(
+        period_activity, FINANCING_SOURCE_TYPES,
+    )
+
+    total_inflow = oper_in + investing_in + fin_in
+    total_outflow = oper_out + investing_out + fin_out
+    net_cash_flow = total_inflow - total_outflow
+
+    opening_total = sum(opening_by_account.values())
+    closing_total = sum(closing_by_account.values())
+
+    # ---- Print sections ----
+    click.echo("Operating Activities")
+    click.echo("=====================")
+    _echo_cashflow_subsection(
+        "Cash from customers", cust_per, cust_in, cust_out, indent="  ",
+    )
+    _echo_cashflow_subsection(
+        "Cash paid to suppliers/employees", sup_per, sup_in, sup_out, indent="  ",
+    )
+    click.echo(
+        f"  {'Net operating cashflow':<24}{oper_in:>20,.2f}"
+        f"{oper_out:>20,.2f}{(oper_in - oper_out):>20,.2f}"
+    )
+    click.echo("")
+
+    click.echo("Investing Activities")
+    click.echo("===================")
+    if not investing_per:
+        click.echo("  (no activity)")
+    else:
+        for code in sorted(investing_per):
+            mov = investing_per[code]
+            net = mov["inflow"] - mov["outflow"]
+            click.echo(
+                f"  {code:<8}{mov['inflow']:>20,.2f}{mov['outflow']:>20,.2f}"
+                f"{net:>20,.2f}"
+            )
+    click.echo(
+        f"  {'Net investing cashflow':<24}{investing_in:>20,.2f}"
+        f"{investing_out:>20,.2f}{(investing_in - investing_out):>20,.2f}"
+    )
+    click.echo("")
+
+    click.echo("Financing Activities")
+    click.echo("====================")
+    if not fin_per:
+        click.echo("  (no activity)")
+    else:
+        for code in sorted(fin_per):
+            mov = fin_per[code]
+            net = mov["inflow"] - mov["outflow"]
+            click.echo(
+                f"  {code:<8}{mov['inflow']:>20,.2f}{mov['outflow']:>20,.2f}"
+                f"{net:>20,.2f}"
+            )
+    click.echo(
+        f"  {'Net financing cashflow':<24}{fin_in:>20,.2f}{fin_out:>20,.2f}"
+        f"{(fin_in - fin_out):>20,.2f}"
+    )
+    click.echo("")
+
+    # ---- Reconciliation ----
+    click.echo("=" * 84)
+    click.echo(f"{'Total inflows':<40}{total_inflow:>20,.2f}")
+    click.echo(f"{'Total outflows':<40}{total_outflow:>20,.2f}")
+    click.echo(f"{'Net cash flow':<40}{net_cash_flow:>20,.2f}")
+    click.echo("")
+    click.echo(f"{'Opening cash balance':<40}{opening_total:>20,.2f}")
+    click.echo(f"{'Closing cash balance':<40}{closing_total:>20,.2f}")
+    expected_change = closing_total - opening_total
+    imbalance = abs(net_cash_flow - expected_change)
+    status = "OK" if imbalance <= CASHFLOW_RECONCILIATION_TOLERANCE else "MISMATCH"
+    click.echo(
+        f"{'Reconciliation (closing - opening)':<40}{expected_change:>20,.2f}"
+        f"  [{status}]"
+    )
