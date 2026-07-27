@@ -1,15 +1,18 @@
 """Work item API routes — per-order production tasks."""
 
 import json
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from baker.db.connection import get_db
 from baker.models.order import is_backward_transition
 from baker.models.work_item import BlankAssignment, WorkItem, WorkItemStatus
 from baker.utils.time import now_utc
+
+logger = logging.getLogger("baker.server")
 
 router = APIRouter(prefix="/api/orders", tags=["work-items"])
 
@@ -65,6 +68,24 @@ class WorkItemCreate(BaseModel):
     isGift: bool = False
     attributes: dict = Field(default_factory=dict)
     priceChipId: int | None = None
+    assignedPrice: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _validate_assigned_price_le_unit_price(self):
+        # Defense-in-depth (DG-296 CQ-4 / review-remediation): clamp unitPrice
+        # upward to assignedPrice when a client submits a below-floor value, so
+        # the trưng bày markup invariant holds even when the frontend clamp is
+        # bypassed. A warning is logged so the violation is observable.
+        if self.assignedPrice is not None and self.unitPrice < self.assignedPrice:
+            logger.warning(
+                "WorkItemCreate: clamping unitPrice %.2f up to assignedPrice %.2f "
+                "for product %r (markup invariant violated; client clamp bypassed)",
+                self.unitPrice,
+                self.assignedPrice,
+                self.productName,
+            )
+            object.__setattr__(self, "unitPrice", self.assignedPrice)
+        return self
 
 
 class WorkItemUpdate(BaseModel):
@@ -78,6 +99,26 @@ class WorkItemUpdate(BaseModel):
     isExtra: Optional[bool] = None
     isGift: Optional[bool] = None
     attributes: Optional[dict] = None
+    assignedPrice: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _validate_assigned_price_le_unit_price(self):
+        # Defense-in-depth (DG-296 CQ-4 / review-remediation): when both fields
+        # are supplied in the same PATCH, clamp unitPrice upward to assignedPrice
+        # when below floor. A warning is logged so the violation is observable.
+        if (
+            self.assignedPrice is not None
+            and self.unitPrice is not None
+            and self.unitPrice < self.assignedPrice
+        ):
+            logger.warning(
+                "WorkItemUpdate: clamping unitPrice %.2f up to assignedPrice %.2f "
+                "(markup invariant violated; client clamp bypassed)",
+                self.unitPrice,
+                self.assignedPrice,
+            )
+            object.__setattr__(self, "unitPrice", self.assignedPrice)
+        return self
 
 
 class WorkItemStatusTransition(BaseModel):
@@ -126,8 +167,19 @@ def _attach_blanks(conn, items: list) -> None:
 
 def _sync_order_items_json(conn, order_id: int) -> None:
     """Regenerate orders.items JSON from order_items table and recalculate total_price."""
+    # ``assigned_price`` was added in migration v84 (DG-296 Phase 1). Older
+    # databases that have not yet reached v84 do not have the column yet —
+    # detect it and fall back to NULL so the SELECT works at every migration
+    # stage (FR8 backward compatibility, parity with journal_sync.py and
+    # accounting_validation.py).
+    oi_columns = {
+        r[1] for r in conn.execute("PRAGMA table_info(order_items)").fetchall()
+    }
+    has_assigned_price = "assigned_price" in oi_columns
     rows = conn.execute(
-        "SELECT id, product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes FROM order_items WHERE order_id = ?",
+        "SELECT id, product_name, quantity, unit_price, notes, product_id, is_extra, is_gift, attributes"
+        + (", assigned_price " if has_assigned_price else ", NULL AS assigned_price ")
+        + "FROM order_items WHERE order_id = ?",
         (order_id,),
     ).fetchall()
     item_ids = [r["id"] for r in rows]
@@ -155,6 +207,7 @@ def _sync_order_items_json(conn, order_id: int) -> None:
             "is_gift": bool(r["is_gift"]),
             "attributes": json.loads(r["attributes"]) if r["attributes"] and r["attributes"] != '{}' else {},
             "blanks": blanks_by_item.get(r["id"], []),
+            "assigned_price": r["assigned_price"],
         }
         for r in rows
     ])
@@ -280,6 +333,7 @@ def create_work_item(ref: str, body: WorkItemCreate):
             is_gift=body.isGift,
             attributes=body.attributes,
             price_chip_id=body.priceChipId,
+            assigned_price=body.assignedPrice,
         )
         item.save(conn)
         row = conn.execute("SELECT * FROM order_items WHERE id = ?", (item.id,)).fetchone()
@@ -316,6 +370,7 @@ def update_work_item(ref: str, item_id: int, body: WorkItemUpdate):
             "isExtra": "is_extra",
             "isGift": "is_gift",
             "attributes": "attributes",
+            "assignedPrice": "assigned_price",
         }
         updates = []
         params: list = []

@@ -64,6 +64,7 @@ class _Stage1ProductSelectionScreenState
               attributes: Map<String, dynamic>.from(i.attributes),
               daDuaTienRut: i.daDuaTienRut,
               priceChipId: i.priceChipId,
+              assignedPrice: i.assignedPrice,
             )..pendingPhotos = List<XFile>.from(i.pendingPhotos))
         .toList();
 

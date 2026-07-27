@@ -200,6 +200,7 @@ class _PosCheckoutScreenState extends ConsumerState<PosCheckoutScreen> {
         'isBirthday': i.isBirthday,
         'attributes': i.attributes,
         'priceChipId': i.priceChipId,
+        if (i.assignedPrice != null) 'assignedPrice': i.assignedPrice,
       };
       if (i.isBirthday && i.age.isNotEmpty) {
         final age = int.tryParse(i.age.trim());

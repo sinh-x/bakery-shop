@@ -34,6 +34,7 @@ sealed class WorkItem with _$WorkItem {
     required String productName,
     @Default(1) int quantity,
     @Default(0.0) double unitPrice,
+    double? assignedPrice,
     @Default('') String notes,
     @Default('pending') String status,
     String? dueDate,

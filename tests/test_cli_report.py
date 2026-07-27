@@ -566,6 +566,98 @@ def test_income_statement_date_basis_default_help_shows_option():
     assert "due-date" in result.output
 
 
+def _seed_markup_dataset(conn):
+    """Seed one delivered order with a trưng bày markup item.
+
+    Order #1 (delivered, 2026-06-15):
+      - item: unit_price=250000, assigned_price=200000 → markup 50000
+      - item: unit_price=100000, assigned_price=NULL     → no markup (historical)
+      - item: unit_price=200000, assigned_price=200000   → no markup (equal)
+    """
+    cash = _account_id(conn, "1100")
+    revenue = _account_id(conn, "4100")
+    ts = "2026-06-15T10:00:00Z"
+    conn.execute(
+        "INSERT INTO orders "
+        "(id, order_ref, customer_name, items, total_price, status, due_date, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (1, "ORD-1", "Khach A", "[]", 550000, "delivered", "2026-06-15", ts),
+    )
+    conn.execute(
+        "INSERT INTO order_items "
+        "(order_id, product_id, product_name, quantity, unit_price, "
+        " position, status, cost_at_sale, is_extra, is_gift, assigned_price) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (1, "", "Banh trung bay", 1, 250000, 0, "delivered", 60000, 0, 0, 200000),
+    )
+    conn.execute(
+        "INSERT INTO order_items "
+        "(order_id, product_id, product_name, quantity, unit_price, "
+        " position, status, cost_at_sale, is_extra, is_gift, assigned_price) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (1, "", "Banh lich su", 1, 100000, 1, "delivered", 30000, 0, 0, None),
+    )
+    conn.execute(
+        "INSERT INTO order_items "
+        "(order_id, product_id, product_name, quantity, unit_price, "
+        " position, status, cost_at_sale, is_extra, is_gift, assigned_price) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (1, "", "Banh khong markup", 1, 200000, 2, "delivered", 60000, 0, 0, 200000),
+    )
+    _insert_entry(conn, debit_account_id=cash, credit_account_id=revenue,
+                  amount=550000.0, source_type="order", source_id=1,
+                  description="Order revenue: ORD-1", created_at=ts)
+
+
+def test_income_statement_shows_markup_line_when_markup_present():
+    """DG-296 Phase 5 FR7: income statement shows a Markup line for trưng bày."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_markup_dataset(conn)
+    result = _invoke(["report", "income-statement",
+                      "--since", "2026-06-01", "--until", "2026-06-30"])
+    assert result.exit_code == 0, result.output
+    assert "Markup (trung bay)" in result.output
+    # Only the 250000/200000 item contributes → 50000
+    assert "50,000.00" in result.output
+
+
+def test_income_statement_omits_markup_line_when_no_markup():
+    """No markup items → the Markup line must not appear (clean output)."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_known_dataset(conn)  # no order_items with assigned_price markup
+    result = _invoke(["report", "income-statement",
+                      "--since", "2026-06-01", "--until", "2026-06-30"])
+    assert result.exit_code == 0, result.output
+    assert "Markup (trung bay)" not in result.output
+
+
+def test_income_statement_markup_respects_date_filter():
+    """Markup outside the date window is excluded."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_markup_dataset(conn)
+    # Window in July — the 2026-06-15 order is out of range.
+    result = _invoke(["report", "income-statement",
+                      "--since", "2026-07-01", "--until", "2026-07-31"])
+    assert result.exit_code == 0, result.output
+    assert "Markup (trung bay)" not in result.output
+
+
+def test_income_statement_markup_due_date_basis():
+    """DG-296 Phase 5: due-date basis also surfaces the markup line."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        _seed_markup_dataset(conn)
+    result = _invoke(["report", "income-statement",
+                      "--date-basis", "due-date",
+                      "--since", "2026-06-01", "--until", "2026-06-30"])
+    assert result.exit_code == 0, result.output
+    assert "Markup (trung bay)" in result.output
+    assert "50,000.00" in result.output
+
+
 # ---------------------------------------------------------------------------
 # balance-sheet
 # ---------------------------------------------------------------------------

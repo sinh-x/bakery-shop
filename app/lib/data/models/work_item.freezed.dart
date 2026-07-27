@@ -286,7 +286,7 @@ as String,
 /// @nodoc
 mixin _$WorkItem {
 
- String get id; String get orderId; String get productId; String get productName; int get quantity; double get unitPrice; String get notes; String get status; String? get dueDate; String? get dueTime; String? get deliveryType; String? get deliveryAddress; int get position; bool get isBirthday; bool get isExtra; bool get isGift; int? get age; String? get createdAt; String? get updatedAt; Map<String, dynamic> get attributes; List<BlankAssignment> get blanks;
+ String get id; String get orderId; String get productId; String get productName; int get quantity; double get unitPrice; double? get assignedPrice; String get notes; String get status; String? get dueDate; String? get dueTime; String? get deliveryType; String? get deliveryAddress; int get position; bool get isBirthday; bool get isExtra; bool get isGift; int? get age; String? get createdAt; String? get updatedAt; Map<String, dynamic> get attributes; List<BlankAssignment> get blanks;
 /// Create a copy of WorkItem
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -299,16 +299,16 @@ $WorkItemCopyWith<WorkItem> get copyWith => _$WorkItemCopyWithImpl<WorkItem>(thi
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is WorkItem&&(identical(other.id, id) || other.id == id)&&(identical(other.orderId, orderId) || other.orderId == orderId)&&(identical(other.productId, productId) || other.productId == productId)&&(identical(other.productName, productName) || other.productName == productName)&&(identical(other.quantity, quantity) || other.quantity == quantity)&&(identical(other.unitPrice, unitPrice) || other.unitPrice == unitPrice)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.status, status) || other.status == status)&&(identical(other.dueDate, dueDate) || other.dueDate == dueDate)&&(identical(other.dueTime, dueTime) || other.dueTime == dueTime)&&(identical(other.deliveryType, deliveryType) || other.deliveryType == deliveryType)&&(identical(other.deliveryAddress, deliveryAddress) || other.deliveryAddress == deliveryAddress)&&(identical(other.position, position) || other.position == position)&&(identical(other.isBirthday, isBirthday) || other.isBirthday == isBirthday)&&(identical(other.isExtra, isExtra) || other.isExtra == isExtra)&&(identical(other.isGift, isGift) || other.isGift == isGift)&&(identical(other.age, age) || other.age == age)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&const DeepCollectionEquality().equals(other.attributes, attributes)&&const DeepCollectionEquality().equals(other.blanks, blanks));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is WorkItem&&(identical(other.id, id) || other.id == id)&&(identical(other.orderId, orderId) || other.orderId == orderId)&&(identical(other.productId, productId) || other.productId == productId)&&(identical(other.productName, productName) || other.productName == productName)&&(identical(other.quantity, quantity) || other.quantity == quantity)&&(identical(other.unitPrice, unitPrice) || other.unitPrice == unitPrice)&&(identical(other.assignedPrice, assignedPrice) || other.assignedPrice == assignedPrice)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.status, status) || other.status == status)&&(identical(other.dueDate, dueDate) || other.dueDate == dueDate)&&(identical(other.dueTime, dueTime) || other.dueTime == dueTime)&&(identical(other.deliveryType, deliveryType) || other.deliveryType == deliveryType)&&(identical(other.deliveryAddress, deliveryAddress) || other.deliveryAddress == deliveryAddress)&&(identical(other.position, position) || other.position == position)&&(identical(other.isBirthday, isBirthday) || other.isBirthday == isBirthday)&&(identical(other.isExtra, isExtra) || other.isExtra == isExtra)&&(identical(other.isGift, isGift) || other.isGift == isGift)&&(identical(other.age, age) || other.age == age)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&const DeepCollectionEquality().equals(other.attributes, attributes)&&const DeepCollectionEquality().equals(other.blanks, blanks));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hashAll([runtimeType,id,orderId,productId,productName,quantity,unitPrice,notes,status,dueDate,dueTime,deliveryType,deliveryAddress,position,isBirthday,isExtra,isGift,age,createdAt,updatedAt,const DeepCollectionEquality().hash(attributes),const DeepCollectionEquality().hash(blanks)]);
+int get hashCode => Object.hashAll([runtimeType,id,orderId,productId,productName,quantity,unitPrice,assignedPrice,notes,status,dueDate,dueTime,deliveryType,deliveryAddress,position,isBirthday,isExtra,isGift,age,createdAt,updatedAt,const DeepCollectionEquality().hash(attributes),const DeepCollectionEquality().hash(blanks)]);
 
 @override
 String toString() {
-  return 'WorkItem(id: $id, orderId: $orderId, productId: $productId, productName: $productName, quantity: $quantity, unitPrice: $unitPrice, notes: $notes, status: $status, dueDate: $dueDate, dueTime: $dueTime, deliveryType: $deliveryType, deliveryAddress: $deliveryAddress, position: $position, isBirthday: $isBirthday, isExtra: $isExtra, isGift: $isGift, age: $age, createdAt: $createdAt, updatedAt: $updatedAt, attributes: $attributes, blanks: $blanks)';
+  return 'WorkItem(id: $id, orderId: $orderId, productId: $productId, productName: $productName, quantity: $quantity, unitPrice: $unitPrice, assignedPrice: $assignedPrice, notes: $notes, status: $status, dueDate: $dueDate, dueTime: $dueTime, deliveryType: $deliveryType, deliveryAddress: $deliveryAddress, position: $position, isBirthday: $isBirthday, isExtra: $isExtra, isGift: $isGift, age: $age, createdAt: $createdAt, updatedAt: $updatedAt, attributes: $attributes, blanks: $blanks)';
 }
 
 
@@ -319,7 +319,7 @@ abstract mixin class $WorkItemCopyWith<$Res>  {
   factory $WorkItemCopyWith(WorkItem value, $Res Function(WorkItem) _then) = _$WorkItemCopyWithImpl;
 @useResult
 $Res call({
- String id, String orderId, String productId, String productName, int quantity, double unitPrice, String notes, String status, String? dueDate, String? dueTime, String? deliveryType, String? deliveryAddress, int position, bool isBirthday, bool isExtra, bool isGift, int? age, String? createdAt, String? updatedAt, Map<String, dynamic> attributes, List<BlankAssignment> blanks
+ String id, String orderId, String productId, String productName, int quantity, double unitPrice, double? assignedPrice, String notes, String status, String? dueDate, String? dueTime, String? deliveryType, String? deliveryAddress, int position, bool isBirthday, bool isExtra, bool isGift, int? age, String? createdAt, String? updatedAt, Map<String, dynamic> attributes, List<BlankAssignment> blanks
 });
 
 
@@ -336,7 +336,7 @@ class _$WorkItemCopyWithImpl<$Res>
 
 /// Create a copy of WorkItem
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? orderId = null,Object? productId = null,Object? productName = null,Object? quantity = null,Object? unitPrice = null,Object? notes = null,Object? status = null,Object? dueDate = freezed,Object? dueTime = freezed,Object? deliveryType = freezed,Object? deliveryAddress = freezed,Object? position = null,Object? isBirthday = null,Object? isExtra = null,Object? isGift = null,Object? age = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,Object? attributes = null,Object? blanks = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? orderId = null,Object? productId = null,Object? productName = null,Object? quantity = null,Object? unitPrice = null,Object? assignedPrice = freezed,Object? notes = null,Object? status = null,Object? dueDate = freezed,Object? dueTime = freezed,Object? deliveryType = freezed,Object? deliveryAddress = freezed,Object? position = null,Object? isBirthday = null,Object? isExtra = null,Object? isGift = null,Object? age = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,Object? attributes = null,Object? blanks = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,orderId: null == orderId ? _self.orderId : orderId // ignore: cast_nullable_to_non_nullable
@@ -344,7 +344,8 @@ as String,productId: null == productId ? _self.productId : productId // ignore: 
 as String,productName: null == productName ? _self.productName : productName // ignore: cast_nullable_to_non_nullable
 as String,quantity: null == quantity ? _self.quantity : quantity // ignore: cast_nullable_to_non_nullable
 as int,unitPrice: null == unitPrice ? _self.unitPrice : unitPrice // ignore: cast_nullable_to_non_nullable
-as double,notes: null == notes ? _self.notes : notes // ignore: cast_nullable_to_non_nullable
+as double,assignedPrice: freezed == assignedPrice ? _self.assignedPrice : assignedPrice // ignore: cast_nullable_to_non_nullable
+as double?,notes: null == notes ? _self.notes : notes // ignore: cast_nullable_to_non_nullable
 as String,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as String,dueDate: freezed == dueDate ? _self.dueDate : dueDate // ignore: cast_nullable_to_non_nullable
 as String?,dueTime: freezed == dueTime ? _self.dueTime : dueTime // ignore: cast_nullable_to_non_nullable
@@ -441,10 +442,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String orderId,  String productId,  String productName,  int quantity,  double unitPrice,  String notes,  String status,  String? dueDate,  String? dueTime,  String? deliveryType,  String? deliveryAddress,  int position,  bool isBirthday,  bool isExtra,  bool isGift,  int? age,  String? createdAt,  String? updatedAt,  Map<String, dynamic> attributes,  List<BlankAssignment> blanks)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String orderId,  String productId,  String productName,  int quantity,  double unitPrice,  double? assignedPrice,  String notes,  String status,  String? dueDate,  String? dueTime,  String? deliveryType,  String? deliveryAddress,  int position,  bool isBirthday,  bool isExtra,  bool isGift,  int? age,  String? createdAt,  String? updatedAt,  Map<String, dynamic> attributes,  List<BlankAssignment> blanks)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _WorkItem() when $default != null:
-return $default(_that.id,_that.orderId,_that.productId,_that.productName,_that.quantity,_that.unitPrice,_that.notes,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.position,_that.isBirthday,_that.isExtra,_that.isGift,_that.age,_that.createdAt,_that.updatedAt,_that.attributes,_that.blanks);case _:
+return $default(_that.id,_that.orderId,_that.productId,_that.productName,_that.quantity,_that.unitPrice,_that.assignedPrice,_that.notes,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.position,_that.isBirthday,_that.isExtra,_that.isGift,_that.age,_that.createdAt,_that.updatedAt,_that.attributes,_that.blanks);case _:
   return orElse();
 
 }
@@ -462,10 +463,10 @@ return $default(_that.id,_that.orderId,_that.productId,_that.productName,_that.q
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String orderId,  String productId,  String productName,  int quantity,  double unitPrice,  String notes,  String status,  String? dueDate,  String? dueTime,  String? deliveryType,  String? deliveryAddress,  int position,  bool isBirthday,  bool isExtra,  bool isGift,  int? age,  String? createdAt,  String? updatedAt,  Map<String, dynamic> attributes,  List<BlankAssignment> blanks)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String orderId,  String productId,  String productName,  int quantity,  double unitPrice,  double? assignedPrice,  String notes,  String status,  String? dueDate,  String? dueTime,  String? deliveryType,  String? deliveryAddress,  int position,  bool isBirthday,  bool isExtra,  bool isGift,  int? age,  String? createdAt,  String? updatedAt,  Map<String, dynamic> attributes,  List<BlankAssignment> blanks)  $default,) {final _that = this;
 switch (_that) {
 case _WorkItem():
-return $default(_that.id,_that.orderId,_that.productId,_that.productName,_that.quantity,_that.unitPrice,_that.notes,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.position,_that.isBirthday,_that.isExtra,_that.isGift,_that.age,_that.createdAt,_that.updatedAt,_that.attributes,_that.blanks);}
+return $default(_that.id,_that.orderId,_that.productId,_that.productName,_that.quantity,_that.unitPrice,_that.assignedPrice,_that.notes,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.position,_that.isBirthday,_that.isExtra,_that.isGift,_that.age,_that.createdAt,_that.updatedAt,_that.attributes,_that.blanks);}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -479,10 +480,10 @@ return $default(_that.id,_that.orderId,_that.productId,_that.productName,_that.q
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String orderId,  String productId,  String productName,  int quantity,  double unitPrice,  String notes,  String status,  String? dueDate,  String? dueTime,  String? deliveryType,  String? deliveryAddress,  int position,  bool isBirthday,  bool isExtra,  bool isGift,  int? age,  String? createdAt,  String? updatedAt,  Map<String, dynamic> attributes,  List<BlankAssignment> blanks)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String orderId,  String productId,  String productName,  int quantity,  double unitPrice,  double? assignedPrice,  String notes,  String status,  String? dueDate,  String? dueTime,  String? deliveryType,  String? deliveryAddress,  int position,  bool isBirthday,  bool isExtra,  bool isGift,  int? age,  String? createdAt,  String? updatedAt,  Map<String, dynamic> attributes,  List<BlankAssignment> blanks)?  $default,) {final _that = this;
 switch (_that) {
 case _WorkItem() when $default != null:
-return $default(_that.id,_that.orderId,_that.productId,_that.productName,_that.quantity,_that.unitPrice,_that.notes,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.position,_that.isBirthday,_that.isExtra,_that.isGift,_that.age,_that.createdAt,_that.updatedAt,_that.attributes,_that.blanks);case _:
+return $default(_that.id,_that.orderId,_that.productId,_that.productName,_that.quantity,_that.unitPrice,_that.assignedPrice,_that.notes,_that.status,_that.dueDate,_that.dueTime,_that.deliveryType,_that.deliveryAddress,_that.position,_that.isBirthday,_that.isExtra,_that.isGift,_that.age,_that.createdAt,_that.updatedAt,_that.attributes,_that.blanks);case _:
   return null;
 
 }
@@ -494,7 +495,7 @@ return $default(_that.id,_that.orderId,_that.productId,_that.productName,_that.q
 @JsonSerializable()
 
 class _WorkItem implements WorkItem {
-  const _WorkItem({required this.id, required this.orderId, this.productId = '', required this.productName, this.quantity = 1, this.unitPrice = 0.0, this.notes = '', this.status = 'pending', this.dueDate, this.dueTime, this.deliveryType, this.deliveryAddress, this.position = 0, this.isBirthday = false, this.isExtra = false, this.isGift = false, this.age, this.createdAt, this.updatedAt, final  Map<String, dynamic> attributes = const {}, final  List<BlankAssignment> blanks = const <BlankAssignment>[]}): _attributes = attributes,_blanks = blanks;
+  const _WorkItem({required this.id, required this.orderId, this.productId = '', required this.productName, this.quantity = 1, this.unitPrice = 0.0, this.assignedPrice, this.notes = '', this.status = 'pending', this.dueDate, this.dueTime, this.deliveryType, this.deliveryAddress, this.position = 0, this.isBirthday = false, this.isExtra = false, this.isGift = false, this.age, this.createdAt, this.updatedAt, final  Map<String, dynamic> attributes = const {}, final  List<BlankAssignment> blanks = const <BlankAssignment>[]}): _attributes = attributes,_blanks = blanks;
   factory _WorkItem.fromJson(Map<String, dynamic> json) => _$WorkItemFromJson(json);
 
 @override final  String id;
@@ -503,6 +504,7 @@ class _WorkItem implements WorkItem {
 @override final  String productName;
 @override@JsonKey() final  int quantity;
 @override@JsonKey() final  double unitPrice;
+@override final  double? assignedPrice;
 @override@JsonKey() final  String notes;
 @override@JsonKey() final  String status;
 @override final  String? dueDate;
@@ -544,16 +546,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _WorkItem&&(identical(other.id, id) || other.id == id)&&(identical(other.orderId, orderId) || other.orderId == orderId)&&(identical(other.productId, productId) || other.productId == productId)&&(identical(other.productName, productName) || other.productName == productName)&&(identical(other.quantity, quantity) || other.quantity == quantity)&&(identical(other.unitPrice, unitPrice) || other.unitPrice == unitPrice)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.status, status) || other.status == status)&&(identical(other.dueDate, dueDate) || other.dueDate == dueDate)&&(identical(other.dueTime, dueTime) || other.dueTime == dueTime)&&(identical(other.deliveryType, deliveryType) || other.deliveryType == deliveryType)&&(identical(other.deliveryAddress, deliveryAddress) || other.deliveryAddress == deliveryAddress)&&(identical(other.position, position) || other.position == position)&&(identical(other.isBirthday, isBirthday) || other.isBirthday == isBirthday)&&(identical(other.isExtra, isExtra) || other.isExtra == isExtra)&&(identical(other.isGift, isGift) || other.isGift == isGift)&&(identical(other.age, age) || other.age == age)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&const DeepCollectionEquality().equals(other._attributes, _attributes)&&const DeepCollectionEquality().equals(other._blanks, _blanks));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _WorkItem&&(identical(other.id, id) || other.id == id)&&(identical(other.orderId, orderId) || other.orderId == orderId)&&(identical(other.productId, productId) || other.productId == productId)&&(identical(other.productName, productName) || other.productName == productName)&&(identical(other.quantity, quantity) || other.quantity == quantity)&&(identical(other.unitPrice, unitPrice) || other.unitPrice == unitPrice)&&(identical(other.assignedPrice, assignedPrice) || other.assignedPrice == assignedPrice)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.status, status) || other.status == status)&&(identical(other.dueDate, dueDate) || other.dueDate == dueDate)&&(identical(other.dueTime, dueTime) || other.dueTime == dueTime)&&(identical(other.deliveryType, deliveryType) || other.deliveryType == deliveryType)&&(identical(other.deliveryAddress, deliveryAddress) || other.deliveryAddress == deliveryAddress)&&(identical(other.position, position) || other.position == position)&&(identical(other.isBirthday, isBirthday) || other.isBirthday == isBirthday)&&(identical(other.isExtra, isExtra) || other.isExtra == isExtra)&&(identical(other.isGift, isGift) || other.isGift == isGift)&&(identical(other.age, age) || other.age == age)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&const DeepCollectionEquality().equals(other._attributes, _attributes)&&const DeepCollectionEquality().equals(other._blanks, _blanks));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hashAll([runtimeType,id,orderId,productId,productName,quantity,unitPrice,notes,status,dueDate,dueTime,deliveryType,deliveryAddress,position,isBirthday,isExtra,isGift,age,createdAt,updatedAt,const DeepCollectionEquality().hash(_attributes),const DeepCollectionEquality().hash(_blanks)]);
+int get hashCode => Object.hashAll([runtimeType,id,orderId,productId,productName,quantity,unitPrice,assignedPrice,notes,status,dueDate,dueTime,deliveryType,deliveryAddress,position,isBirthday,isExtra,isGift,age,createdAt,updatedAt,const DeepCollectionEquality().hash(_attributes),const DeepCollectionEquality().hash(_blanks)]);
 
 @override
 String toString() {
-  return 'WorkItem(id: $id, orderId: $orderId, productId: $productId, productName: $productName, quantity: $quantity, unitPrice: $unitPrice, notes: $notes, status: $status, dueDate: $dueDate, dueTime: $dueTime, deliveryType: $deliveryType, deliveryAddress: $deliveryAddress, position: $position, isBirthday: $isBirthday, isExtra: $isExtra, isGift: $isGift, age: $age, createdAt: $createdAt, updatedAt: $updatedAt, attributes: $attributes, blanks: $blanks)';
+  return 'WorkItem(id: $id, orderId: $orderId, productId: $productId, productName: $productName, quantity: $quantity, unitPrice: $unitPrice, assignedPrice: $assignedPrice, notes: $notes, status: $status, dueDate: $dueDate, dueTime: $dueTime, deliveryType: $deliveryType, deliveryAddress: $deliveryAddress, position: $position, isBirthday: $isBirthday, isExtra: $isExtra, isGift: $isGift, age: $age, createdAt: $createdAt, updatedAt: $updatedAt, attributes: $attributes, blanks: $blanks)';
 }
 
 
@@ -564,7 +566,7 @@ abstract mixin class _$WorkItemCopyWith<$Res> implements $WorkItemCopyWith<$Res>
   factory _$WorkItemCopyWith(_WorkItem value, $Res Function(_WorkItem) _then) = __$WorkItemCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String orderId, String productId, String productName, int quantity, double unitPrice, String notes, String status, String? dueDate, String? dueTime, String? deliveryType, String? deliveryAddress, int position, bool isBirthday, bool isExtra, bool isGift, int? age, String? createdAt, String? updatedAt, Map<String, dynamic> attributes, List<BlankAssignment> blanks
+ String id, String orderId, String productId, String productName, int quantity, double unitPrice, double? assignedPrice, String notes, String status, String? dueDate, String? dueTime, String? deliveryType, String? deliveryAddress, int position, bool isBirthday, bool isExtra, bool isGift, int? age, String? createdAt, String? updatedAt, Map<String, dynamic> attributes, List<BlankAssignment> blanks
 });
 
 
@@ -581,7 +583,7 @@ class __$WorkItemCopyWithImpl<$Res>
 
 /// Create a copy of WorkItem
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? orderId = null,Object? productId = null,Object? productName = null,Object? quantity = null,Object? unitPrice = null,Object? notes = null,Object? status = null,Object? dueDate = freezed,Object? dueTime = freezed,Object? deliveryType = freezed,Object? deliveryAddress = freezed,Object? position = null,Object? isBirthday = null,Object? isExtra = null,Object? isGift = null,Object? age = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,Object? attributes = null,Object? blanks = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? orderId = null,Object? productId = null,Object? productName = null,Object? quantity = null,Object? unitPrice = null,Object? assignedPrice = freezed,Object? notes = null,Object? status = null,Object? dueDate = freezed,Object? dueTime = freezed,Object? deliveryType = freezed,Object? deliveryAddress = freezed,Object? position = null,Object? isBirthday = null,Object? isExtra = null,Object? isGift = null,Object? age = freezed,Object? createdAt = freezed,Object? updatedAt = freezed,Object? attributes = null,Object? blanks = null,}) {
   return _then(_WorkItem(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,orderId: null == orderId ? _self.orderId : orderId // ignore: cast_nullable_to_non_nullable
@@ -589,7 +591,8 @@ as String,productId: null == productId ? _self.productId : productId // ignore: 
 as String,productName: null == productName ? _self.productName : productName // ignore: cast_nullable_to_non_nullable
 as String,quantity: null == quantity ? _self.quantity : quantity // ignore: cast_nullable_to_non_nullable
 as int,unitPrice: null == unitPrice ? _self.unitPrice : unitPrice // ignore: cast_nullable_to_non_nullable
-as double,notes: null == notes ? _self.notes : notes // ignore: cast_nullable_to_non_nullable
+as double,assignedPrice: freezed == assignedPrice ? _self.assignedPrice : assignedPrice // ignore: cast_nullable_to_non_nullable
+as double?,notes: null == notes ? _self.notes : notes // ignore: cast_nullable_to_non_nullable
 as String,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as String,dueDate: freezed == dueDate ? _self.dueDate : dueDate // ignore: cast_nullable_to_non_nullable
 as String?,dueTime: freezed == dueTime ? _self.dueTime : dueTime // ignore: cast_nullable_to_non_nullable

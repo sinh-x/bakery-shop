@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from baker.db.connection import get_db
 from baker.db.schema import _order_year, _recompute_customer_year_summary, _strip_diacritics
@@ -214,6 +214,32 @@ class OrderItemIn(BaseModel):
     isGift: bool = False
     priceChipId: int | None = None
     attributes: dict = Field(default_factory=dict)
+    assignedPrice: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _validate_assigned_price_le_unit_price(self):
+        # Defense-in-depth (DG-296 CQ-4 / review-remediation): the trưng bày
+        # markup flow requires unitPrice (selling price) to be >= assignedPrice
+        # (COGS anchor). The frontend clamps at every entry point (POS chip
+        # picker, wizard Stage 1 editor, cart write-back); this is the backend
+        # safety net that clamps unitPrice upward to assignedPrice when a
+        # legacy or buggy client submits a below-floor value, so the invariant
+        # is preserved even when the client clamp is bypassed. A warning is
+        # logged so the violation is observable in production logs (matches the
+        # evidence pattern from order M52-T / order_item #5206).
+        if self.assignedPrice is not None and self.unitPrice < self.assignedPrice:
+            logger.warning(
+                "OrderItemIn: clamping unitPrice %.2f up to assignedPrice %.2f "
+                "for product %r (markup invariant violated; client clamp bypassed)",
+                self.unitPrice,
+                self.assignedPrice,
+                self.productName,
+            )
+            # Use object.__setattr__ because the model is otherwise treated as
+            # mutable in pydantic v2 validators; assigning the field directly
+            # would raise a TypeError on frozen models.
+            object.__setattr__(self, "unitPrice", self.assignedPrice)
+        return self
 
 
 class DepositIn(BaseModel):
@@ -300,6 +326,7 @@ def _item_in_to_model(item: OrderItemIn) -> OrderItem:
         is_gift=item.isGift,
         attributes=item.attributes,
         price_chip_id=item.priceChipId,
+        assigned_price=item.assignedPrice,
     )
 
 
@@ -602,6 +629,7 @@ def create_order(body: OrderCreate, request: Request):
                 is_gift=item.isGift,
                 attributes=item.attributes,
                 price_chip_id=item.priceChipId,
+                assigned_price=item.assignedPrice,
             )
             work_item.save(conn)
 
