@@ -3274,3 +3274,151 @@ def test_existing_orders_retain_null_new_fields(api_client):
     assert body["longitude"] is None
     assert body["googleMapsUrl"] is None
     assert body["deliveryTimeSlot"] is None
+
+
+# --- DG-303 review cycle 1 SEC-5: googleMapsUrl URL validation coverage ---
+
+
+def test_create_order_accepts_valid_google_maps_url_https(api_client):
+    """SEC-5: a well-formed https:// URL is accepted and persisted."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "URL hợp lệ",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 100}],
+        "dueDate": "2026-03-25",
+        "deliveryType": "delivery",
+        "googleMapsUrl": "https://maps.google.com/?q=10.762622,106.660172",
+    })
+    assert resp.status_code == 201
+    assert resp.json()["googleMapsUrl"] == "https://maps.google.com/?q=10.762622,106.660172"
+
+
+def test_create_order_accepts_valid_google_maps_url_http(api_client):
+    """SEC-5: a plain http:// URL is also accepted (not restricted to https)."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "URL http",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 100}],
+        "dueDate": "2026-03-25",
+        "deliveryType": "delivery",
+        "googleMapsUrl": "http://maps.google.com/?q=10,106",
+    })
+    assert resp.status_code == 201
+    assert resp.json()["googleMapsUrl"] == "http://maps.google.com/?q=10,106"
+
+
+def test_create_order_normalizes_whitespace_google_maps_url(api_client):
+    """SEC-5: surrounding whitespace is stripped from a valid URL."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "URL khoảng trắng",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 100}],
+        "dueDate": "2026-03-25",
+        "deliveryType": "delivery",
+        "googleMapsUrl": "  https://maps.google.com/?q=10,106  ",
+    })
+    assert resp.status_code == 201
+    assert resp.json()["googleMapsUrl"] == "https://maps.google.com/?q=10,106"
+
+
+def test_create_order_treats_empty_google_maps_url_as_null(api_client):
+    """SEC-5: an empty/whitespace URL normalizes to None rather than 422."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "URL rỗng",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 100}],
+        "dueDate": "2026-03-25",
+        "deliveryType": "delivery",
+        "googleMapsUrl": "   ",
+    })
+    assert resp.status_code == 201
+    assert resp.json()["googleMapsUrl"] is None
+
+
+def test_create_order_rejects_invalid_google_maps_url_javascript(api_client):
+    """SEC-5: javascript: URIs are rejected with 422 (review-auto SEC-2)."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "URL javascript",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 100}],
+        "dueDate": "2026-03-25",
+        "deliveryType": "delivery",
+        "googleMapsUrl": "javascript:alert(1)",
+    })
+    assert resp.status_code == 422
+
+
+def test_create_order_rejects_invalid_google_maps_url_data(api_client):
+    """SEC-5: data: URIs are rejected with 422."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "URL data",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 100}],
+        "dueDate": "2026-03-25",
+        "deliveryType": "delivery",
+        "googleMapsUrl": "data:text/html,<script>alert(1)</script>",
+    })
+    assert resp.status_code == 422
+
+
+def test_create_order_rejects_invalid_google_maps_url_file(api_client):
+    """SEC-5: file: URIs are rejected with 422."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "URL file",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 100}],
+        "dueDate": "2026-03-25",
+        "deliveryType": "delivery",
+        "googleMapsUrl": "file:///etc/passwd",
+    })
+    assert resp.status_code == 422
+
+
+def test_create_order_rejects_invalid_google_maps_url_ftp(api_client):
+    """SEC-5: ftp: URIs are rejected with 422 (only http(s) allowed)."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "URL ftp",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 100}],
+        "dueDate": "2026-03-25",
+        "deliveryType": "delivery",
+        "googleMapsUrl": "ftp://example.com/map",
+    })
+    assert resp.status_code == 422
+
+
+def test_create_order_rejects_invalid_google_maps_url_no_scheme(api_client):
+    """SEC-5: a schemeless value is rejected with 422."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "URL không scheme",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 100}],
+        "dueDate": "2026-03-25",
+        "deliveryType": "delivery",
+        "googleMapsUrl": "maps.google.com/?q=10,106",
+    })
+    assert resp.status_code == 422
+
+
+def test_edit_order_accepts_valid_google_maps_url(api_client):
+    """SEC-5: editing with a valid https URL persists it."""
+    order = _create_order(api_client, deliveryType="delivery")
+    ref = order["orderRef"]
+    resp = api_client.patch(f"/api/orders/{ref}", json={
+        "googleMapsUrl": "https://maps.google.com/?q=11,107",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["googleMapsUrl"] == "https://maps.google.com/?q=11,107"
+
+
+def test_edit_order_rejects_invalid_google_maps_url(api_client):
+    """SEC-5: editing with a javascript: URI is rejected with 422."""
+    order = _create_order(api_client, deliveryType="delivery")
+    ref = order["orderRef"]
+    resp = api_client.patch(f"/api/orders/{ref}", json={
+        "googleMapsUrl": "javascript:alert(1)",
+    })
+    assert resp.status_code == 422
+
+
+def test_edit_order_clears_google_maps_url_with_empty_string(api_client):
+    """SEC-5: editing with an empty string clears the URL to None."""
+    order = _create_order(api_client, deliveryType="delivery")
+    ref = order["orderRef"]
+    api_client.patch(f"/api/orders/{ref}", json={
+        "googleMapsUrl": "https://maps.google.com/?q=11,107",
+    })
+    resp = api_client.patch(f"/api/orders/{ref}", json={"googleMapsUrl": ""})
+    assert resp.status_code == 200
+    assert resp.json()["googleMapsUrl"] is None
