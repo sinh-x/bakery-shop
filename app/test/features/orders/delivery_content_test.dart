@@ -243,5 +243,43 @@ void main() {
 
       expect(find.text(OrdersLabels.deliveryEmptyToday), findsOneWidget);
     });
+
+    testWidgets('AC9: toggling to calendar and back to list preserves '
+        'status-grouped list rendering', (tester) async {
+      final orders = [
+        _order(
+          id: 1,
+          ref: 'ORD-NEW',
+          status: 'new',
+          deliveryType: 'bus',
+          dueDate: '2026-07-19',
+        ),
+        _order(
+          id: 2,
+          ref: 'ORD-READY',
+          status: 'ready',
+          deliveryType: 'door',
+          dueDate: '2026-07-19',
+        ),
+      ];
+      await tester.pumpWidget(buildTestWidget(orders));
+      await tester.pumpAndSettle();
+
+      // Default list view renders both orders grouped by status.
+      expect(find.text('ORD-NEW'), findsOneWidget);
+      expect(find.text('ORD-READY'), findsOneWidget);
+
+      // Toggle to calendar view (week grid).
+      await tester.tap(find.byTooltip(OrdersLabels.deliverySwitchToCalendar));
+      await tester.pumpAndSettle();
+      expect(find.byType(DeliveryContent), findsOneWidget);
+
+      // Toggle back to list view — the status-grouped list still renders.
+      await tester.tap(find.byTooltip(OrdersLabels.deliverySwitchToList));
+      await tester.pumpAndSettle();
+
+      expect(find.text('ORD-NEW'), findsOneWidget);
+      expect(find.text('ORD-READY'), findsOneWidget);
+    });
   });
 }

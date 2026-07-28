@@ -192,7 +192,6 @@ class OrdersLabels {
   static const cannotOpenMap = 'Không mở được bản đồ.';
   static const latitudeInvalid = 'Vĩ độ phải từ -90 đến 90';
   static const longitudeInvalid = 'Kinh độ phải từ -180 đến 180';
-  static const deliveryTimeSlotEmpty = 'Chưa chọn khung giờ';
 
   /// Predefined 1-hour delivery time slots (FR3): "6:00" … "21:00".
   static const deliveryTimeSlots = <String>[
@@ -215,15 +214,9 @@ class OrdersLabels {
   ];
 
   // Delivery tab calendar view toggle + grouping (DG-303 Phase 5) — FR5, AC6.
-  static const deliveryViewList = 'Danh sách';
-  static const deliveryViewCalendar = 'Lịch';
   static const deliverySwitchToList = 'Chuyển sang danh sách';
   static const deliverySwitchToCalendar = 'Chuyển sang lịch';
-  static const deliveryCalendarSlotLabel = 'Khung giờ giao';
   static const deliveryCalendarNoSlot = 'Chưa có khung giờ';
-  static String deliveryCalendarSlotCount(int count) => '$count đơn';
-  static String deliveryCalendarSlotTotal(int count) => 'Tổng: $count đơn';
-  static const deliveryCalendarEmpty = 'Không có đơn giao theo lịch';
 
   // Delivery week calendar view (DG-306 Phase 2) — FR3, FR5, AC1–AC3.
   static const deliveryWeekToday = 'Hôm nay';
