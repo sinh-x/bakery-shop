@@ -185,12 +185,14 @@ class OrdersLabels {
   // Delivery schedule + GPS (DG-303 Phase 4) — door delivery only
   static const latitudeLabel = 'Vĩ độ';
   static const longitudeLabel = 'Kinh độ';
-  static const googleMapsUrlLabel = 'Link Google Maps';
-  static const deliveryTimeSlotLabel = 'Giờ giao';
+  static const googleMapsUrlLabel = 'Liên kết Google Maps';
+  static const deliveryTimeSlotLabel = 'Khung giờ giao';
+  static const gpsCoordinatesLabel = 'Tọa độ GPS';
   static const openMap = 'Mở bản đồ';
   static const cannotOpenMap = 'Không mở được bản đồ.';
   static const latitudeInvalid = 'Vĩ độ phải từ -90 đến 90';
   static const longitudeInvalid = 'Kinh độ phải từ -180 đến 180';
+  static const deliveryTimeSlotEmpty = 'Chưa chọn khung giờ';
 
   /// Predefined 1-hour delivery time slots (FR3): "7:00" … "20:00".
   static const deliveryTimeSlots = <String>[
@@ -215,8 +217,8 @@ class OrdersLabels {
   static const deliveryViewCalendar = 'Lịch';
   static const deliverySwitchToList = 'Chuyển sang danh sách';
   static const deliverySwitchToCalendar = 'Chuyển sang lịch';
-  static const deliveryCalendarSlotLabel = 'Giờ giao';
-  static const deliveryCalendarNoSlot = 'Chưa có giờ';
+  static const deliveryCalendarSlotLabel = 'Khung giờ giao';
+  static const deliveryCalendarNoSlot = 'Chưa có khung giờ';
   static String deliveryCalendarSlotCount(int count) => '$count đơn';
   static String deliveryCalendarSlotTotal(int count) => 'Tổng: $count đơn';
   static const deliveryCalendarEmpty = 'Không có đơn giao theo lịch';

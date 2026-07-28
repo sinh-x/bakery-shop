@@ -168,7 +168,7 @@ class OrderDeliverySection extends StatelessWidget {
           _buildInfoRow(
             context,
             Icons.my_location,
-            OrdersLabels.latitudeLabel,
+            OrdersLabels.gpsCoordinatesLabel,
             '$latitude, $longitude',
           ),
         if (_isDoorDelivery &&
@@ -415,7 +415,7 @@ class OrderDeliverySection extends StatelessWidget {
       items: [
         const DropdownMenuItem<String?>(
           value: null,
-          child: Text(OrdersLabels.notSelected),
+          child: Text(OrdersLabels.deliveryTimeSlotEmpty),
         ),
         ...OrdersLabels.deliveryTimeSlots.map(
           (slot) => DropdownMenuItem<String?>(

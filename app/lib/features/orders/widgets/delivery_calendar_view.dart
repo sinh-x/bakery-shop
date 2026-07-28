@@ -11,7 +11,7 @@ import 'delivery_order_card.dart';
 ///
 /// Renders delivery orders grouped by 1-hour `deliveryTimeSlot` rows
 /// (7:00 … 20:00), with a per-slot count badge. Orders without an assigned
-/// slot collapse into a trailing "Chưa có giờ" row. Each order renders as a
+/// slot collapse into a trailing "Chưa có khung giờ" row. Each order renders as a
 /// [DeliveryOrderCard]. Designed to scale to ~50 orders/day (NFR3) by leaning
 /// on a single [ListView] over a flat items list.
 class DeliveryCalendarView extends ConsumerWidget {
