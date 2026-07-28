@@ -17,6 +17,10 @@ class OrderCreateState {
   final String source;
   final int currentStage;
   final String? selectedCategorySlug;
+  final double? latitude;
+  final double? longitude;
+  final String? googleMapsUrl;
+  final String? deliveryTimeSlot;
 
   const OrderCreateState({
     this.items = const [],
@@ -26,6 +30,10 @@ class OrderCreateState {
     this.source = '',
     this.currentStage = 1,
     this.selectedCategorySlug,
+    this.latitude,
+    this.longitude,
+    this.googleMapsUrl,
+    this.deliveryTimeSlot,
   });
 
   bool canNavigateToStage(int stage) {
@@ -47,6 +55,10 @@ class OrderCreateState {
     int? currentStage,
     String? selectedCategorySlug,
     bool clearSelectedCategorySlug = false,
+    double? latitude,
+    double? longitude,
+    String? googleMapsUrl,
+    String? deliveryTimeSlot,
   }) {
     return OrderCreateState(
       items: items ?? this.items,
@@ -58,6 +70,10 @@ class OrderCreateState {
       selectedCategorySlug: clearSelectedCategorySlug
           ? null
           : selectedCategorySlug ?? this.selectedCategorySlug,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      googleMapsUrl: googleMapsUrl ?? this.googleMapsUrl,
+      deliveryTimeSlot: deliveryTimeSlot ?? this.deliveryTimeSlot,
     );
   }
 }

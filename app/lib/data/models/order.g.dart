@@ -47,6 +47,10 @@ _Order _$OrderFromJson(Map<String, dynamic> json) => _Order(
           .toList() ??
       const [],
   completeness: json['completeness'] as String? ?? 'complete',
+  latitude: (json['latitude'] as num?)?.toDouble(),
+  longitude: (json['longitude'] as num?)?.toDouble(),
+  googleMapsUrl: json['googleMapsUrl'] as String?,
+  deliveryTimeSlot: json['deliveryTimeSlot'] as String?,
   createdAt: parseApiDateTimeRequired(json['createdAt'] as String),
   updatedAt: parseApiDateTimeRequired(json['updatedAt'] as String),
 );
@@ -81,6 +85,10 @@ Map<String, dynamic> _$OrderToJson(_Order instance) => <String, dynamic>{
   'acknowledgedAt': instance.acknowledgedAt,
   'missingFields': instance.missingFields,
   'completeness': instance.completeness,
+  'latitude': instance.latitude,
+  'longitude': instance.longitude,
+  'googleMapsUrl': instance.googleMapsUrl,
+  'deliveryTimeSlot': instance.deliveryTimeSlot,
   'createdAt': timestampToJson(instance.createdAt),
   'updatedAt': timestampToJson(instance.updatedAt),
 };

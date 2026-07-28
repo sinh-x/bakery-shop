@@ -39,6 +39,10 @@ sealed class Order with _$Order {
     String? acknowledgedAt,
     @Default([]) List<String> missingFields,
     @Default('complete') String completeness,
+    double? latitude,
+    double? longitude,
+    String? googleMapsUrl,
+    String? deliveryTimeSlot,
     @JsonKey(name: 'createdAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)
     required DateTime createdAt,
     @JsonKey(name: 'updatedAt', fromJson: parseApiDateTimeRequired, toJson: timestampToJson)
