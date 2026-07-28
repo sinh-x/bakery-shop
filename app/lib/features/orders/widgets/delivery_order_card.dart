@@ -1,12 +1,12 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../data/api/api_client.dart';
 import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
 import '../../../shared/theme/bakery_theme.dart';
+import '../../../shared/utils/launch_external_url.dart';
 import '../../../shared/utils/order_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
@@ -305,7 +305,7 @@ class DeliveryOrderCard extends ConsumerWidget {
         if (hasMapUrl) ...[
           const SizedBox(width: 8),
           InkWell(
-            onTap: () => _launchMap(context, mapUrl),
+            onTap: () => launchExternalUrl(context, mapUrl),
             borderRadius: BorderRadius.circular(4),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -322,24 +322,5 @@ class DeliveryOrderCard extends ConsumerWidget {
         ],
       ],
     );
-  }
-
-  Future<void> _launchMap(BuildContext context, String? url) async {
-    final trimmed = url?.trim() ?? '';
-    if (trimmed.isEmpty) return;
-    final uri = Uri.parse(trimmed);
-    if (!await canLaunchUrl(uri)) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(OrdersLabels.cannotOpenMap)),
-      );
-      return;
-    }
-    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(OrdersLabels.cannotOpenMap)),
-      );
-    }
   }
 }

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api/api_client.dart';
 import '../../data/api/order_service.dart';
@@ -23,6 +22,7 @@ import '../../shared/utils/vnd_units.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/theme/bakery_theme.dart';
 import '../../shared/utils/api_error.dart';
+import '../../shared/utils/launch_external_url.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/target_account_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
@@ -348,29 +348,6 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
     if (d == null) return time != null ? '$date $time' : date;
     final dateStr = formatDisplayDate(d);
     return time != null ? '$dateStr $time' : dateStr;
-  }
-
-  /// Launches the Google Maps URL via `url_launcher` (AC2/AC4). Checks
-  /// `canLaunch` before opening and shows a snackbar on failure, mirroring the
-  /// existing `_launchPhone()` pattern from `order_delivery_section.dart`.
-  Future<void> _launchMapUrl(BuildContext context, String? url) async {
-    final trimmed = url?.trim() ?? '';
-    if (trimmed.isEmpty) return;
-    final uri = Uri.parse(trimmed);
-    if (!await canLaunchUrl(uri)) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(OrdersLabels.cannotOpenMap)),
-      );
-      return;
-    }
-    final launched =
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(OrdersLabels.cannotOpenMap)),
-      );
-    }
   }
 
   Future<void> _onTransition(String targetStatus) async {
@@ -725,7 +702,7 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           longitude: order.longitude,
           googleMapsUrl: order.googleMapsUrl,
           deliveryTimeSlot: order.deliveryTimeSlot,
-          onLaunchMap: () => _launchMapUrl(context, order.googleMapsUrl),
+          onLaunchMap: () => launchExternalUrl(context, order.googleMapsUrl),
           mode: OrderDeliverySectionMode.readOnly,
         ),
         if (order.createdBy.isNotEmpty || order.createdStaffName.isNotEmpty)

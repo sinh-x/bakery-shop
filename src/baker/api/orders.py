@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from baker.db.connection import get_db
 from baker.db.schema import _order_year, _recompute_customer_year_summary, _strip_diacritics
@@ -247,6 +247,24 @@ class DepositIn(BaseModel):
     method: str = "cash"
 
 
+def _validate_google_maps_url(value: Optional[str]) -> Optional[str]:
+    """Validate googleMapsUrl is an https:// (or http://) URL when provided.
+
+    DG-303 review-auto SEC-2: prevents arbitrary javascript:/data:/file: URIs
+    from being stored and later launched by the Flutter client. Empty strings
+    are normalized to None so callers can rely on a truthy-or-None contract.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    lowered = stripped.lower()
+    if not (lowered.startswith("https://") or lowered.startswith("http://")):
+        raise ValueError("googleMapsUrl must be an http(s) URL")
+    return stripped
+
+
 class OrderCreate(BaseModel):
     customerName: str
     customerPhone: str = ""
@@ -272,6 +290,11 @@ class OrderCreate(BaseModel):
     googleMapsUrl: Optional[str] = None
     deliveryTimeSlot: Optional[str] = None
 
+    @field_validator("googleMapsUrl", mode="before")
+    @classmethod
+    def _validate_google_maps_url_create(cls, v):
+        return _validate_google_maps_url(v)
+
 
 class OrderEdit(BaseModel):
     customerName: Optional[str] = None
@@ -294,6 +317,11 @@ class OrderEdit(BaseModel):
     longitude: Optional[float] = Field(default=None, ge=-180, le=180)
     googleMapsUrl: Optional[str] = None
     deliveryTimeSlot: Optional[str] = None
+
+    @field_validator("googleMapsUrl", mode="before")
+    @classmethod
+    def _validate_google_maps_url_edit(cls, v):
+        return _validate_google_maps_url(v)
 
 
 class StatusTransition(BaseModel):

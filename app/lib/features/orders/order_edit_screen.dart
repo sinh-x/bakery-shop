@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api/customer_service.dart';
 import '../../data/models/customer.dart';
@@ -11,10 +10,10 @@ import '../../data/models/order.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/api_error.dart';
+import '../../shared/utils/launch_external_url.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
-import 'package:bakery_app/shared/labels/orders.dart';
 import 'order_edit/utils/edit_public_code_dialog.dart';
 import 'order_edit/utils/edit_save_helpers.dart';
 import 'order_edit/utils/edit_summary_helpers.dart';
@@ -179,29 +178,6 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   bool get _needsAddress => _deliveryType == 'bus' || _deliveryType == 'door';
 
   String _formatTime(TimeOfDay t) => formatHourMinute(t.hour, t.minute);
-
-  /// Launches the Google Maps URL via `url_launcher` (AC4). Checks `canLaunch`
-  /// before opening and shows a snackbar on failure, mirroring the existing
-  /// `_launchPhone()` pattern from `order_delivery_section.dart`.
-  Future<void> _launchMap(String url) async {
-    final trimmed = url.trim();
-    if (trimmed.isEmpty) return;
-    final uri = Uri.parse(trimmed);
-    if (!await canLaunchUrl(uri)) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(OrdersLabels.cannotOpenMap)),
-      );
-      return;
-    }
-    final launched =
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(OrdersLabels.cannotOpenMap)),
-      );
-    }
-  }
 
   void _updateShippingFeeForDeliveryType(
     String type, {
@@ -473,7 +449,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         onDeliveryTimeSlotChanged: (slot) =>
                             setState(() => _deliveryTimeSlot = slot),
                         onLaunchMap: () =>
-                            _launchMap(_googleMapsUrlCtrl.text),
+                            launchExternalUrl(context, _googleMapsUrlCtrl.text),
                       ),
                       EditStage4Review(
                         orderRef: widget.orderRef,

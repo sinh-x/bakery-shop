@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../providers/config_provider.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../shared/utils/config_parsers.dart';
+import '../../../shared/utils/launch_external_url.dart';
 import 'order_delivery_section.dart';
 import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
@@ -182,29 +182,6 @@ class _Stage3DeliveryOptionsScreenState
     widget.onContinue();
   }
 
-  /// Launches the Google Maps URL via `url_launcher` (AC4). Checks `canLaunch`
-  /// before opening and shows a snackbar on failure, mirroring the existing
-  /// `_launchPhone()` pattern from `order_delivery_section.dart`.
-  Future<void> _launchMap(BuildContext context, String url) async {
-    final trimmed = url.trim();
-    if (trimmed.isEmpty) return;
-    final uri = Uri.parse(trimmed);
-    if (!await canLaunchUrl(uri)) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(OrdersLabels.cannotOpenMap)),
-      );
-      return;
-    }
-    final launched =
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!launched && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(OrdersLabels.cannotOpenMap)),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(widget.orderStateProvider);
@@ -256,7 +233,8 @@ class _Stage3DeliveryOptionsScreenState
                     googleMapsUrl: state.googleMapsUrl,
                     deliveryTimeSlot: slot,
                   ),
-              onLaunchMap: () => _launchMap(context, _googleMapsUrlCtrl.text),
+              onLaunchMap: () =>
+                  launchExternalUrl(context, _googleMapsUrlCtrl.text),
               summaryCardSlots: [
                 ProductSummaryCard(items: state.items),
                 CustomerSummaryCard(
