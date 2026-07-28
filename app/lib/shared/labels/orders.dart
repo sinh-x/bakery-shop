@@ -181,4 +181,32 @@ class OrdersLabels {
 
   // Phone dialer launch failure (DG-283 review cycle 1 — CQ-1)
   static const cannotOpenDialer = 'Không mở được trình quay số.';
+
+  // Delivery schedule + GPS (DG-303 Phase 4) — door delivery only
+  static const latitudeLabel = 'Vĩ độ';
+  static const longitudeLabel = 'Kinh độ';
+  static const googleMapsUrlLabel = 'Link Google Maps';
+  static const deliveryTimeSlotLabel = 'Giờ giao';
+  static const openMap = 'Mở bản đồ';
+  static const cannotOpenMap = 'Không mở được bản đồ.';
+  static const latitudeInvalid = 'Vĩ độ phải từ -90 đến 90';
+  static const longitudeInvalid = 'Kinh độ phải từ -180 đến 180';
+
+  /// Predefined 1-hour delivery time slots (FR3): "7:00" … "20:00".
+  static const deliveryTimeSlots = <String>[
+    '7:00',
+    '8:00',
+    '9:00',
+    '10:00',
+    '11:00',
+    '12:00',
+    '13:00',
+    '14:00',
+    '15:00',
+    '16:00',
+    '17:00',
+    '18:00',
+    '19:00',
+    '20:00',
+  ];
 }

@@ -37,6 +37,12 @@ class EditStage3Delivery extends ConsumerWidget {
     required this.summaryItems,
     required this.onBack,
     required this.onContinue,
+    this.latitudeCtrl,
+    this.longitudeCtrl,
+    this.googleMapsUrlCtrl,
+    this.deliveryTimeSlot,
+    this.onDeliveryTimeSlotChanged,
+    this.onLaunchMap,
   });
 
   final String deliveryType;
@@ -58,6 +64,13 @@ class EditStage3Delivery extends ConsumerWidget {
   final List<DraftOrderItem> summaryItems;
   final VoidCallback onBack;
   final VoidCallback onContinue;
+  // DG-303 Phase 4: GPS + delivery time slot (door delivery only).
+  final TextEditingController? latitudeCtrl;
+  final TextEditingController? longitudeCtrl;
+  final TextEditingController? googleMapsUrlCtrl;
+  final String? deliveryTimeSlot;
+  final ValueChanged<String?>? onDeliveryTimeSlotChanged;
+  final VoidCallback? onLaunchMap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -92,6 +105,12 @@ class EditStage3Delivery extends ConsumerWidget {
               dueDate: dueDate,
               dueTime: dueTime,
               dueDateTimeSlot: _buildEditDueDateTime(context),
+              latitudeCtrl: latitudeCtrl,
+              longitudeCtrl: longitudeCtrl,
+              googleMapsUrlCtrl: googleMapsUrlCtrl,
+              deliveryTimeSlot: deliveryTimeSlot,
+              onDeliveryTimeSlotChanged: onDeliveryTimeSlotChanged,
+              onLaunchMap: onLaunchMap,
               summaryCardSlots: [
                 ProductSummaryCard(items: summaryItems),
                 CustomerSummaryCard(

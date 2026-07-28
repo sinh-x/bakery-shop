@@ -56,9 +56,13 @@ class OrderCreateState {
     String? selectedCategorySlug,
     bool clearSelectedCategorySlug = false,
     double? latitude,
+    bool clearLatitude = false,
     double? longitude,
+    bool clearLongitude = false,
     String? googleMapsUrl,
+    bool clearGoogleMapsUrl = false,
     String? deliveryTimeSlot,
+    bool clearDeliveryTimeSlot = false,
   }) {
     return OrderCreateState(
       items: items ?? this.items,
@@ -70,10 +74,13 @@ class OrderCreateState {
       selectedCategorySlug: clearSelectedCategorySlug
           ? null
           : selectedCategorySlug ?? this.selectedCategorySlug,
-      latitude: latitude ?? this.latitude,
-      longitude: longitude ?? this.longitude,
-      googleMapsUrl: googleMapsUrl ?? this.googleMapsUrl,
-      deliveryTimeSlot: deliveryTimeSlot ?? this.deliveryTimeSlot,
+      latitude: clearLatitude ? null : latitude ?? this.latitude,
+      longitude: clearLongitude ? null : longitude ?? this.longitude,
+      googleMapsUrl:
+          clearGoogleMapsUrl ? null : googleMapsUrl ?? this.googleMapsUrl,
+      deliveryTimeSlot: clearDeliveryTimeSlot
+          ? null
+          : deliveryTimeSlot ?? this.deliveryTimeSlot,
     );
   }
 }
@@ -117,6 +124,28 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
     state = slug == null
         ? state.copyWith(clearSelectedCategorySlug: true)
         : state.copyWith(selectedCategorySlug: slug);
+  }
+
+  /// DG-303 Phase 4: update GPS coordinate + map URL + delivery time slot
+  /// fields on `OrderCreateState`. Called by the Stage 3 delivery screen when
+  /// the user types in the GPS / map URL fields or picks a time slot.
+  void updateGpsFields({
+    double? latitude,
+    bool clearLatitude = false,
+    double? longitude,
+    bool clearLongitude = false,
+    String? googleMapsUrl,
+    bool clearGoogleMapsUrl = false,
+    String? deliveryTimeSlot,
+    bool clearDeliveryTimeSlot = false,
+  }) {
+    state = state.copyWith(
+      latitude: clearLatitude ? null : latitude,
+      longitude: clearLongitude ? null : longitude,
+      googleMapsUrl: clearGoogleMapsUrl ? null : googleMapsUrl,
+      deliveryTimeSlot:
+          clearDeliveryTimeSlot ? null : deliveryTimeSlot,
+    );
   }
 
   Future<void> restoreCustomerFromDraft(int customerId) async {

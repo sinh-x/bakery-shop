@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/api/customer_service.dart';
 import '../../data/models/customer.dart';
@@ -13,6 +14,7 @@ import '../../shared/utils/api_error.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 import 'order_edit/utils/edit_public_code_dialog.dart';
 import 'order_edit/utils/edit_save_helpers.dart';
 import 'order_edit/utils/edit_summary_helpers.dart';
@@ -49,6 +51,11 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   double _shippingFee = 0.0;
   bool _saving = false;
   bool _initialized = false;
+  // DG-303 Phase 4: GPS + delivery time slot fields (door delivery only).
+  final _latitudeCtrl = TextEditingController();
+  final _longitudeCtrl = TextEditingController();
+  final _googleMapsUrlCtrl = TextEditingController();
+  String? _deliveryTimeSlot;
   // FR9: single-state customer model (was tri-state: _selectedCustomer +
   // _linkedCustomerId + _customerTouched). The existing linked customer is
   // loaded from `order.customerId` into `_selectedCustomer` on open.
@@ -89,6 +96,9 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _addressCtrl.dispose();
     _deliveryPhoneCtrl.dispose();
     _notesCtrl.dispose();
+    _latitudeCtrl.dispose();
+    _longitudeCtrl.dispose();
+    _googleMapsUrlCtrl.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -146,6 +156,13 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             _deliveryPhoneCtrl.text.trim().isNotEmpty;
     _dueDate = parseDueDate(order.dueDate);
     _dueTime = parseDueTime(order.dueTime);
+    // DG-303 Phase 4: prefill GPS + time slot fields from the existing order.
+    _latitudeCtrl.text =
+        order.latitude != null ? order.latitude.toString() : '';
+    _longitudeCtrl.text =
+        order.longitude != null ? order.longitude.toString() : '';
+    _googleMapsUrlCtrl.text = order.googleMapsUrl ?? '';
+    _deliveryTimeSlot = order.deliveryTimeSlot;
     _initializing = false;
   }
 
@@ -162,6 +179,29 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   bool get _needsAddress => _deliveryType == 'bus' || _deliveryType == 'door';
 
   String _formatTime(TimeOfDay t) => formatHourMinute(t.hour, t.minute);
+
+  /// Launches the Google Maps URL via `url_launcher` (AC4). Checks `canLaunch`
+  /// before opening and shows a snackbar on failure, mirroring the existing
+  /// `_launchPhone()` pattern from `order_delivery_section.dart`.
+  Future<void> _launchMap(String url) async {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return;
+    final uri = Uri.parse(trimmed);
+    if (!await canLaunchUrl(uri)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(OrdersLabels.cannotOpenMap)),
+      );
+      return;
+    }
+    final launched =
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(OrdersLabels.cannotOpenMap)),
+      );
+    }
+  }
 
   void _updateShippingFeeForDeliveryType(
     String type, {
@@ -265,6 +305,12 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             customerTouched: _customerTouched,
             shippingFee: _shippingFee,
             publicCodeDateChangeDecision: publicCodeDateChangeDecision,
+            latitude: double.tryParse(_latitudeCtrl.text.trim()),
+            longitude: double.tryParse(_longitudeCtrl.text.trim()),
+            googleMapsUrl: _googleMapsUrlCtrl.text.trim().isEmpty
+                ? null
+                : _googleMapsUrlCtrl.text.trim(),
+            deliveryTimeSlot: _deliveryTimeSlot,
           );
     } catch (e, stackTrace) {
       debugPrint('order_edit: save failed for ${widget.orderRef}: $e');
@@ -302,6 +348,12 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         shippingFee: _shippingFee,
         notes: _notesCtrl.text,
         source: _source,
+        latitude: double.tryParse(_latitudeCtrl.text.trim()),
+        longitude: double.tryParse(_longitudeCtrl.text.trim()),
+        googleMapsUrl: _googleMapsUrlCtrl.text.trim().isEmpty
+            ? null
+            : _googleMapsUrlCtrl.text.trim(),
+        deliveryTimeSlot: _deliveryTimeSlot,
       );
 
   void _onCustomerSelected(Customer? c) {
@@ -414,6 +466,14 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         summaryItems: summaryItems,
                         onBack: () => _goToStage(2),
                         onContinue: () => _goToStage(4),
+                        latitudeCtrl: _latitudeCtrl,
+                        longitudeCtrl: _longitudeCtrl,
+                        googleMapsUrlCtrl: _googleMapsUrlCtrl,
+                        deliveryTimeSlot: _deliveryTimeSlot,
+                        onDeliveryTimeSlotChanged: (slot) =>
+                            setState(() => _deliveryTimeSlot = slot),
+                        onLaunchMap: () =>
+                            _launchMap(_googleMapsUrlCtrl.text),
                       ),
                       EditStage4Review(
                         orderRef: widget.orderRef,

@@ -71,6 +71,12 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
     notifier.updateDueTime(draft.dueTime);
     notifier.updateSource(draft.source);
     notifier.updateSelectedCategorySlug(draft.selectedCategorySlug);
+    notifier.updateGpsFields(
+      latitude: draft.latitude,
+      longitude: draft.longitude,
+      googleMapsUrl: draft.googleMapsUrl,
+      deliveryTimeSlot: draft.deliveryTimeSlot,
+    );
     if (draft.customerId != null) {
       notifier.restoreCustomerFromDraft(draft.customerId!);
     }
@@ -101,6 +107,10 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       currentStage: state.currentStage,
       selectedCategorySlug: state.selectedCategorySlug,
       customerId: state.wizardData.selectedCustomer?.id,
+      latitude: state.latitude,
+      longitude: state.longitude,
+      googleMapsUrl: state.googleMapsUrl,
+      deliveryTimeSlot: state.deliveryTimeSlot,
     );
     if (draft.isNotEmpty) {
       ref.read(orderDraftProvider.notifier).save(draft);
@@ -196,6 +206,10 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         notes: state.wizardData.notes.trim(),
         source: state.source.isEmpty ? null : state.source,
         createdBy: staffName,
+        latitude: state.latitude,
+        longitude: state.longitude,
+        googleMapsUrl: state.googleMapsUrl,
+        deliveryTimeSlot: state.deliveryTimeSlot,
       );
 
       final hasPerItemPhotos = state.items.any(

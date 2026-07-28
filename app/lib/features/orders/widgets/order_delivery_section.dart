@@ -42,6 +42,15 @@ class OrderDeliverySection extends StatelessWidget {
     this.shippingFeeConfigLoading = false,
     this.shippingFeeConfigError,
     this.onRetryShippingFeeConfig,
+    this.latitude,
+    this.longitude,
+    this.googleMapsUrl,
+    this.deliveryTimeSlot,
+    this.latitudeCtrl,
+    this.longitudeCtrl,
+    this.googleMapsUrlCtrl,
+    this.onDeliveryTimeSlotChanged,
+    this.onLaunchMap,
   });
 
   final String deliveryType;
@@ -69,7 +78,24 @@ class OrderDeliverySection extends StatelessWidget {
   final String? shippingFeeConfigError;
   final VoidCallback? onRetryShippingFeeConfig;
 
+  // DG-303 Phase 4: GPS + delivery time slot fields (door delivery only).
+  // Read-only mode consumes `latitude`, `longitude`, `googleMapsUrl`,
+  // `deliveryTimeSlot` directly; editable mode uses the controllers so changes
+  // sync back to the parent provider/state.
+  final double? latitude;
+  final double? longitude;
+  final String? googleMapsUrl;
+  final String? deliveryTimeSlot;
+  final TextEditingController? latitudeCtrl;
+  final TextEditingController? longitudeCtrl;
+  final TextEditingController? googleMapsUrlCtrl;
+  final ValueChanged<String?>? onDeliveryTimeSlotChanged;
+  final VoidCallback? onLaunchMap;
+
   bool get _needsAddress => deliveryType == 'bus' || deliveryType == 'door';
+
+  /// GPS/map fields are only relevant for door delivery (FR1/FR2/AC1).
+  bool get _isDoorDelivery => deliveryType == 'door';
 
   /// Whether the customer phone should be shown in read-only mode.
   ///
@@ -131,6 +157,24 @@ class OrderDeliverySection extends StatelessWidget {
           if (deliveryAddress != null && deliveryAddress!.isNotEmpty)
             _buildInfoRow(context, Icons.location_on_outlined, VN.deliveryAddress, deliveryAddress!),
         ],
+        if (deliveryTimeSlot != null && deliveryTimeSlot!.isNotEmpty)
+          _buildInfoRow(
+            context,
+            Icons.schedule,
+            OrdersLabels.deliveryTimeSlotLabel,
+            deliveryTimeSlot!,
+          ),
+        if (_isDoorDelivery && latitude != null && longitude != null)
+          _buildInfoRow(
+            context,
+            Icons.my_location,
+            OrdersLabels.latitudeLabel,
+            '$latitude, $longitude',
+          ),
+        if (_isDoorDelivery &&
+            googleMapsUrl != null &&
+            googleMapsUrl!.isNotEmpty)
+          _buildMapLinkRow(context, googleMapsUrl!),
         if (shippingFee != null && shippingFee! > 0)
           _buildInfoRow(context, Icons.monetization_on_outlined, VN.shippingFee, formatVND(shippingFee!)),
         if (notes != null && notes!.isNotEmpty)
@@ -198,6 +242,18 @@ class OrderDeliverySection extends StatelessWidget {
         if ((deliveryType == 'bus' || deliveryType == 'door') &&
             onShippingFeeChanged != null)
           _buildShippingFeeSection(context),
+        if (_isDoorDelivery) ...[
+          if (onDeliveryTimeSlotChanged != null) ...[
+            const SizedBox(height: 16),
+            _buildDeliveryTimeSlotDropdown(context),
+          ],
+          if (latitudeCtrl != null &&
+              longitudeCtrl != null &&
+              googleMapsUrlCtrl != null) ...[
+            const SizedBox(height: 16),
+            _buildGpsFieldsSection(context),
+          ],
+        ],
         if (notesCtrl != null) ...[
           const SizedBox(height: 16),
           TextFormField(
@@ -293,6 +349,148 @@ class OrderDeliverySection extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  /// Read-only tappable Google Maps link row (AC2/AC4). Falls back to a plain
+  /// info row when `onLaunchMap` is null or the URL cannot be opened.
+  Widget _buildMapLinkRow(BuildContext context, String url) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.map_outlined, size: 16, color: Colors.grey),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 80,
+            child: Text(
+              '${OrdersLabels.googleMapsUrlLabel}:',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.grey),
+            ),
+          ),
+          Expanded(
+            child: InkWell(
+              onTap: onLaunchMap,
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        OrdersLabels.openMap,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      Icons.open_in_new,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Delivery time-slot dropdown (FR3/AC5): 14 predefined 1-hour blocks from
+  /// 7:00 to 20:00. Rendered for door delivery only.
+  Widget _buildDeliveryTimeSlotDropdown(BuildContext context) {
+    return DropdownButtonFormField<String?>(
+      initialValue: deliveryTimeSlot,
+      decoration: const InputDecoration(
+        labelText: OrdersLabels.deliveryTimeSlotLabel,
+        border: OutlineInputBorder(),
+      ),
+      items: [
+        const DropdownMenuItem<String?>(
+          value: null,
+          child: Text(OrdersLabels.notSelected),
+        ),
+        ...OrdersLabels.deliveryTimeSlots.map(
+          (slot) => DropdownMenuItem<String?>(
+            value: slot,
+            child: Text(slot),
+          ),
+        ),
+      ],
+      onChanged: onDeliveryTimeSlotChanged,
+    );
+  }
+
+  /// GPS coordinate + Google Maps URL fields for door delivery (FR1/FR2/AC1).
+  /// Latitude is validated to [-90, 90], longitude to [-180, 180] (NFR2).
+  Widget _buildGpsFieldsSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionHeader(OrdersLabels.googleMapsUrlLabel),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: latitudeCtrl,
+                decoration: const InputDecoration(
+                  labelText: OrdersLabels.latitudeLabel,
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true, signed: true),
+                validator: _validateLatitude,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: longitudeCtrl,
+                decoration: const InputDecoration(
+                  labelText: OrdersLabels.longitudeLabel,
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true, signed: true),
+                validator: _validateLongitude,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: googleMapsUrlCtrl,
+          decoration: const InputDecoration(
+            labelText: OrdersLabels.googleMapsUrlLabel,
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.url,
+        ),
+      ],
+    );
+  }
+
+  String? _validateLatitude(String? v) {
+    if (v == null || v.trim().isEmpty) return null;
+    final n = double.tryParse(v.trim());
+    if (n == null) return VN.invalidPrice;
+    if (n < -90 || n > 90) return OrdersLabels.latitudeInvalid;
+    return null;
+  }
+
+  String? _validateLongitude(String? v) {
+    if (v == null || v.trim().isEmpty) return null;
+    final n = double.tryParse(v.trim());
+    if (n == null) return VN.invalidPrice;
+    if (n < -180 || n > 180) return OrdersLabels.longitudeInvalid;
+    return null;
   }
 
   Widget _buildInfoRow(BuildContext context, IconData icon, String label, String value) {
