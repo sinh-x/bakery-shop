@@ -24,6 +24,7 @@ class ExpenseEventData {
     this.reimbursed = false,
     this.creditorName = '',
     this.settlementAmounts = const <int>[],
+    this.subcategory = '',
   });
 
   final int amountVnd;
@@ -35,6 +36,11 @@ class ExpenseEventData {
   final String loggedBy;
   final String paidByName;
   final bool reimbursed;
+
+  /// Expense subcategory (DG-302). Empty string for expenses without a
+  /// subcategory (FR6 backward compat — old expenses have no `subcategory`
+  /// key in their data JSON and parse as empty here).
+  final String subcategory;
 
   /// Creditor name for debt expenses. Equals [vendor] when
   /// [paymentMethod] is [expenseDebtPaymentMethod]; empty otherwise.
@@ -85,6 +91,7 @@ class ExpenseEventMapper {
       'note': input.note,
       'paid_by_name': input.paidByName,
       'reimbursed': input.reimbursed,
+      if (input.subcategory.isNotEmpty) 'subcategory': input.subcategory,
     };
   }
 
@@ -114,6 +121,7 @@ class ExpenseEventMapper {
       reimbursed: data['reimbursed'] == true,
       creditorName: isDebt ? vendor : '',
       settlementAmounts: settlements,
+      subcategory: '${data['subcategory'] ?? ''}',
     );
   }
 
@@ -140,6 +148,7 @@ class ExpenseEventMapper {
   static bool matchesFilters(
     BakeryEvent event, {
     String? category,
+    String? subcategory,
     String? paymentMethod,
     String? paymentSource,
     String? staffName,
@@ -152,6 +161,11 @@ class ExpenseEventMapper {
       return false;
     }
     if (category != null && category.isNotEmpty && expense.category != category) {
+      return false;
+    }
+    if (subcategory != null &&
+        subcategory.isNotEmpty &&
+        expense.subcategory != subcategory) {
       return false;
     }
     if (paymentMethod != null &&
@@ -182,6 +196,7 @@ class ExpenseEventMapper {
       event.loggedBy,
       expense.paidByName,
       expense.category,
+      expense.subcategory,
       expense.paymentMethod,
       expense.paymentSource,
       '${expense.amountVnd}',

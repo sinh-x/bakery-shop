@@ -122,6 +122,7 @@ class _FakeEventService extends EventService {
     String? expensePaidByName,
     String? expenseSearch,
     String? expenseDebtStatus,
+    String? expenseSubcategory,
     int limit = 50,
   }) async {
     capturedSince = since;

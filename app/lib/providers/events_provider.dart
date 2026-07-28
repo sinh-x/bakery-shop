@@ -138,6 +138,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
     String? loggedBy,
     String? searchText,
     String? debtStatus,
+    String? subcategory,
     int limit = expenseMaxHistoryLimit,
   }) async {
     final service = ref.read(eventServiceProvider);
@@ -151,6 +152,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
       expensePaidByName: paidByName,
       expenseSearch: searchText,
       expenseDebtStatus: debtStatus,
+      expenseSubcategory: subcategory,
       limit: safeLimit,
     );
     final sinceLocal = _parseLocalDateTimeOrNull(since);
@@ -161,6 +163,7 @@ class EventsNotifier extends AsyncNotifier<List<BakeryEvent>> {
           ExpenseEventMapper.matchesFilters(
             event,
             category: category,
+            subcategory: subcategory,
             paymentMethod: paymentMethod,
             paymentSource: paymentSource,
             staffName: staffName,

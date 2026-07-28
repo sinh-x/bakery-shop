@@ -1,5 +1,6 @@
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/data/models/event.dart';
+import 'package:bakery_app/data/models/expense_category.dart';
 import 'package:bakery_app/features/expenses/expense_constants.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_form_card.dart';
 import 'package:bakery_app/providers/events_provider.dart';
@@ -28,6 +29,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   bool _loading = false;
   int? _editingId;
   String? _category;
+  String? _subcategory;
   String _paymentMethod = VN.methodCash;
   String _paymentSource = VN.paymentSourceShopCash;
   String? _staffName;
@@ -51,6 +53,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     if (data == null) return;
     _amountCtrl.text = data.amountVnd.toString();
     _category = data.category;
+    _subcategory = data.subcategory.isNotEmpty ? data.subcategory : null;
     _paymentMethod = data.paymentMethod;
     _paymentSource = data.paymentSource;
     _vendorCtrl.text = data.vendor;
@@ -80,6 +83,11 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
           data: (names) => names,
         ) ??
         const <String>[];
+    final categoriesAsync = ref.watch(expenseCategoriesProvider);
+    final categoryTree = categoriesAsync.whenOrNull<List<ExpenseCategory>>(
+          data: (tree) => tree,
+        ) ??
+        const <ExpenseCategory>[];
 
     return Scaffold(
       appBar: AppBar(
@@ -105,7 +113,14 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             eventDateTime: _eventDateTime,
             loading: _loading,
             editing: _editing,
-            onCategoryChanged: (value) => setState(() => _category = value),
+            categoryTree: categoryTree,
+            subcategory: _subcategory,
+            onSubcategoryChanged: (value) =>
+                setState(() => _subcategory = value),
+            onCategoryChanged: (value) => setState(() {
+              _category = value;
+              _subcategory = null;
+            }),
             onPaymentMethodChanged: (value) =>
                 setState(() => _paymentMethod = value ?? _paymentMethod),
             onPaymentSourceChanged: (value) =>
@@ -165,6 +180,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       note: _noteCtrl.text.trim(),
       loggedBy: loggedBy,
       paidByName: _paidByName ?? loggedBy,
+      subcategory: _subcategory ?? '',
     );
 
     setState(() => _loading = true);

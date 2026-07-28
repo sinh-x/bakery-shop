@@ -47,6 +47,7 @@ from baker.db.schema import (
     ACCOUNTS_PAYABLE_CODE,
     ACCOUNTS_RECEIVABLE_CODE,
     CUSTOMER_DEPOSITS_CODE,
+    EXPENSE_CATEGORY_TO_ACCOUNT_CODE,
     EXPENSE_DEBT_PAYMENT_METHOD,
     EXPENSE_PAYMENT_SOURCE_TO_ACCOUNT_CODE,
     INVENTORY_PURCHASE_CATEGORIES,
@@ -1204,6 +1205,10 @@ def _expense_events_needing_inventory_backfill(conn, event_id=None):
     (Inventory) instead of an expense account. Missing journal entries for these
     events mean the purchase debit to 1300 was never recorded, which can cause a
     negative inventory balance.
+
+    DG-302 Phase 6: expenses that carry a mappable ``subcategory`` debit the
+    subcategory account (e.g. 5110), not Inventory, so they are excluded —
+    ``repair-inventory`` is only for events that should debit 1300.
     """
     import json
 
@@ -1229,12 +1234,21 @@ def _expense_events_needing_inventory_backfill(conn, event_id=None):
     for r in rows:
         data = json.loads(r["data"] or "{}")
         category = data.get("category")
-        if category in INVENTORY_PURCHASE_CATEGORIES:
-            result.append({
-                "id": int(r["id"]),
-                "summary": r["summary"],
-                "data": data,
-            })
+        if category not in INVENTORY_PURCHASE_CATEGORIES:
+            continue
+        # Phase 6: a mappable subcategory debits its own account, not Inventory.
+        subcategory = data.get("subcategory")
+        if (
+            isinstance(subcategory, str)
+            and subcategory
+            and EXPENSE_CATEGORY_TO_ACCOUNT_CODE.get(subcategory)
+        ):
+            continue
+        result.append({
+            "id": int(r["id"]),
+            "summary": r["summary"],
+            "data": data,
+        })
     return result
 
 

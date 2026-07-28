@@ -1,4 +1,5 @@
 import 'package:bakery_app/data/models/event.dart';
+import 'package:bakery_app/data/models/expense_category.dart';
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
 import 'package:bakery_app/features/expenses/expense_constants.dart';
 import 'package:bakery_app/features/expenses/widgets/expense_filter_card.dart';
@@ -33,6 +34,7 @@ class ExpenseScreen extends ConsumerStatefulWidget {
     String? loggedBy,
     String? searchText,
     String? debtStatus,
+    String? subcategory,
   })?
   loadHistory;
 
@@ -57,6 +59,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
   String _filterPaidByName = '';
   String _filterLoggedByName = '';
   String _filterPaymentSource = '';
+  String _filterSubcategory = '';
   ExpenseDebtStatusFilter _filterDebtStatus = ExpenseDebtStatusFilter.all;
   List<BakeryEvent> _history = <BakeryEvent>[];
 
@@ -111,6 +114,7 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
       _filterPaidByName = '';
       _filterLoggedByName = '';
       _filterPaymentSource = '';
+      _filterSubcategory = '';
       _filterDebtStatus = ExpenseDebtStatusFilter.all;
       _searchCtrl.clear();
     });
@@ -157,6 +161,11 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
 
   @override
   Widget build(BuildContext context) {
+    final categoriesAsync = ref.watch(expenseCategoriesProvider);
+    final categoryTree = categoriesAsync.whenOrNull<List<ExpenseCategory>>(
+          data: (tree) => tree,
+        ) ??
+        const <ExpenseCategory>[];
     return Scaffold(
       appBar: AppBar(
         title: const Text(VN.expenseTitle),
@@ -200,6 +209,12 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
               setState(() => _filterDebtStatus = value);
               _refreshHistory();
             },
+            categoryTree: categoryTree,
+            filterSubcategory: _filterSubcategory,
+            onFilterSubcategoryChanged: (value) {
+              setState(() => _filterSubcategory = value);
+              _refreshHistory();
+            },
             onDateFilterModeChanged: (value) => setState(() {
               _dateFilterMode = value;
               if (value == ExpenseDateFilterMode.single && _since != null) {
@@ -208,7 +223,10 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
             }),
             onPickDate: _pickDate,
             onFilterCategoryChanged: (value) {
-              setState(() => _filterCategory = value);
+              setState(() {
+                _filterCategory = value;
+                _filterSubcategory = '';
+              });
               _refreshHistory();
             },
             onFilterPaymentSourceChanged: (value) {
@@ -288,20 +306,22 @@ class _ExpenseScreenState extends ConsumerState<ExpenseScreen>
               loggedBy: _filterLoggedByName,
               searchText: _searchCtrl.text.trim(),
               debtStatus: debtStatusApi.isEmpty ? null : debtStatusApi,
+              subcategory: _filterSubcategory,
             )
           : ref
                  .read(eventsProvider.notifier)
                  .loadExpenseHistory(
-                   since: _since == null ? null : _localDayStartIso(_since!),
-                   until: _until == null ? null : _localDayEndIso(_until!),
-                   category: _filterCategory,
-                   paymentMethod: null,
-                   paymentSource: _filterPaymentSource,
-                   paidByName: _filterPaidByName,
-                   loggedBy: _filterLoggedByName,
-                   searchText: _searchCtrl.text.trim(),
-                   debtStatus: debtStatusApi.isEmpty ? null : debtStatusApi,
-                 ));
+                    since: _since == null ? null : _localDayStartIso(_since!),
+                    until: _until == null ? null : _localDayEndIso(_until!),
+                    category: _filterCategory,
+                    paymentMethod: null,
+                    paymentSource: _filterPaymentSource,
+                    paidByName: _filterPaidByName,
+                    loggedBy: _filterLoggedByName,
+                    searchText: _searchCtrl.text.trim(),
+                    debtStatus: debtStatusApi.isEmpty ? null : debtStatusApi,
+                    subcategory: _filterSubcategory,
+                  ));
       _setHistory(events);
     } catch (e) {
       if (shouldToggleInitialLoading) {

@@ -16,6 +16,7 @@ from baker.api.config import router as config_router
 from baker.api.customers import router as customers_router
 from baker.api.events import expenses_router, router as events_router
 from baker.api.exception_handlers import global_exception_handler
+from baker.api.expense_categories import router as expense_categories_router
 from baker.api.knowledge import router as knowledge_router
 from baker.api.middleware import AuthMiddleware, LoggingMiddleware
 from baker.api.order_photos import router as order_photos_router
@@ -138,6 +139,7 @@ def create_app() -> FastAPI:
     app.include_router(customers_router)
     app.include_router(events_router)
     app.include_router(expenses_router)
+    app.include_router(expense_categories_router)
     app.include_router(knowledge_router)
     app.include_router(orders_router)
     app.include_router(order_photos_router)
