@@ -701,7 +701,6 @@ class _OrderDetailBodyState extends ConsumerState<_OrderDetailBody> {
           latitude: order.latitude,
           longitude: order.longitude,
           googleMapsUrl: order.googleMapsUrl,
-          deliveryTimeSlot: order.deliveryTimeSlot,
           onLaunchMap: () => launchExternalUrl(context, order.googleMapsUrl),
           mode: OrderDeliverySectionMode.readOnly,
         ),

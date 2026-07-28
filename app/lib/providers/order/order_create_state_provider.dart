@@ -20,7 +20,6 @@ class OrderCreateState {
   final double? latitude;
   final double? longitude;
   final String? googleMapsUrl;
-  final String? deliveryTimeSlot;
 
   const OrderCreateState({
     this.items = const [],
@@ -33,7 +32,6 @@ class OrderCreateState {
     this.latitude,
     this.longitude,
     this.googleMapsUrl,
-    this.deliveryTimeSlot,
   });
 
   bool canNavigateToStage(int stage) {
@@ -61,8 +59,6 @@ class OrderCreateState {
     bool clearLongitude = false,
     String? googleMapsUrl,
     bool clearGoogleMapsUrl = false,
-    String? deliveryTimeSlot,
-    bool clearDeliveryTimeSlot = false,
   }) {
     return OrderCreateState(
       items: items ?? this.items,
@@ -78,9 +74,6 @@ class OrderCreateState {
       longitude: clearLongitude ? null : longitude ?? this.longitude,
       googleMapsUrl:
           clearGoogleMapsUrl ? null : googleMapsUrl ?? this.googleMapsUrl,
-      deliveryTimeSlot: clearDeliveryTimeSlot
-          ? null
-          : deliveryTimeSlot ?? this.deliveryTimeSlot,
     );
   }
 }
@@ -126,9 +119,11 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
         : state.copyWith(selectedCategorySlug: slug);
   }
 
-  /// DG-303 Phase 4: update GPS coordinate + map URL + delivery time slot
-  /// fields on `OrderCreateState`. Called by the Stage 3 delivery screen when
-  /// the user types in the GPS / map URL fields or picks a time slot.
+  /// DG-303 Phase 4 / DG-306 Phase 1: update GPS coordinate + map URL fields
+  /// on `OrderCreateState`. Called by the Stage 3 delivery screen when the
+  /// user types in the GPS / map URL fields. The manual `deliveryTimeSlot`
+  /// dropdown was removed (DG-306 Phase 1 / FR2) — the slot is auto-derived
+  /// from `dueTime` at submit time via `deriveTimeSlot()`.
   void updateGpsFields({
     double? latitude,
     bool clearLatitude = false,
@@ -136,15 +131,11 @@ class OrderCreateStateNotifier extends Notifier<OrderCreateState> {
     bool clearLongitude = false,
     String? googleMapsUrl,
     bool clearGoogleMapsUrl = false,
-    String? deliveryTimeSlot,
-    bool clearDeliveryTimeSlot = false,
   }) {
     state = state.copyWith(
       latitude: clearLatitude ? null : latitude,
       longitude: clearLongitude ? null : longitude,
       googleMapsUrl: clearGoogleMapsUrl ? null : googleMapsUrl,
-      deliveryTimeSlot:
-          clearDeliveryTimeSlot ? null : deliveryTimeSlot,
     );
   }
 

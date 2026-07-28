@@ -45,11 +45,9 @@ class OrderDeliverySection extends StatelessWidget {
     this.latitude,
     this.longitude,
     this.googleMapsUrl,
-    this.deliveryTimeSlot,
     this.latitudeCtrl,
     this.longitudeCtrl,
     this.googleMapsUrlCtrl,
-    this.onDeliveryTimeSlotChanged,
     this.onLaunchMap,
   });
 
@@ -78,18 +76,18 @@ class OrderDeliverySection extends StatelessWidget {
   final String? shippingFeeConfigError;
   final VoidCallback? onRetryShippingFeeConfig;
 
-  // DG-303 Phase 4: GPS + delivery time slot fields (door delivery only).
-  // Read-only mode consumes `latitude`, `longitude`, `googleMapsUrl`,
-  // `deliveryTimeSlot` directly; editable mode uses the controllers so changes
-  // sync back to the parent provider/state.
+  // DG-303 Phase 4 / DG-306 Phase 1: GPS fields (door delivery only).
+  // Read-only mode consumes `latitude`, `longitude`, `googleMapsUrl`
+  // directly; editable mode uses the controllers so changes sync back to
+  // the parent provider/state. The manual `deliveryTimeSlot` dropdown was
+  // removed (DG-306 Phase 1 / FR2/AC5) — the slot is now auto-derived from
+  // `dueTime` by `deriveTimeSlot()` in `delivery_helpers.dart`.
   final double? latitude;
   final double? longitude;
   final String? googleMapsUrl;
-  final String? deliveryTimeSlot;
   final TextEditingController? latitudeCtrl;
   final TextEditingController? longitudeCtrl;
   final TextEditingController? googleMapsUrlCtrl;
-  final ValueChanged<String?>? onDeliveryTimeSlotChanged;
   final VoidCallback? onLaunchMap;
 
   bool get _needsAddress => deliveryType == 'bus' || deliveryType == 'door';
@@ -157,12 +155,14 @@ class OrderDeliverySection extends StatelessWidget {
           if (deliveryAddress != null && deliveryAddress!.isNotEmpty)
             _buildInfoRow(context, Icons.location_on_outlined, VN.deliveryAddress, deliveryAddress!),
         ],
-        if (deliveryTimeSlot != null && deliveryTimeSlot!.isNotEmpty)
+        // DG-306 Phase 1 / FR1: the time slot is auto-derived from `dueTime`
+        // (the stored `deliveryTimeSlot` DB column is ignored by the frontend).
+        if (dueTime != null)
           _buildInfoRow(
             context,
             Icons.schedule,
             OrdersLabels.deliveryTimeSlotLabel,
-            deliveryTimeSlot!,
+            '${dueTime!.hour}:00',
           ),
         if (_isDoorDelivery && latitude != null && longitude != null)
           _buildInfoRow(
@@ -243,10 +243,6 @@ class OrderDeliverySection extends StatelessWidget {
             onShippingFeeChanged != null)
           _buildShippingFeeSection(context),
         if (_isDoorDelivery) ...[
-          if (onDeliveryTimeSlotChanged != null) ...[
-            const SizedBox(height: 16),
-            _buildDeliveryTimeSlotDropdown(context),
-          ],
           if (latitudeCtrl != null &&
               longitudeCtrl != null &&
               googleMapsUrlCtrl != null) ...[
@@ -400,31 +396,6 @@ class OrderDeliverySection extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-
-  /// Delivery time-slot dropdown (FR3/AC5): 14 predefined 1-hour blocks from
-  /// 7:00 to 20:00. Rendered for door delivery only.
-  Widget _buildDeliveryTimeSlotDropdown(BuildContext context) {
-    return DropdownButtonFormField<String?>(
-      initialValue: deliveryTimeSlot,
-      decoration: const InputDecoration(
-        labelText: OrdersLabels.deliveryTimeSlotLabel,
-        border: OutlineInputBorder(),
-      ),
-      items: [
-        const DropdownMenuItem<String?>(
-          value: null,
-          child: Text(OrdersLabels.deliveryTimeSlotEmpty),
-        ),
-        ...OrdersLabels.deliveryTimeSlots.map(
-          (slot) => DropdownMenuItem<String?>(
-            value: slot,
-            child: Text(slot),
-          ),
-        ),
-      ],
-      onChanged: onDeliveryTimeSlotChanged,
     );
   }
 

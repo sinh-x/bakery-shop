@@ -90,20 +90,20 @@ class _Stage3DeliveryOptionsScreenState
     );
   }
 
-  /// DG-303 Phase 4: sync GPS coordinate + map URL text fields back to
-  /// `OrderCreateState`. Latitude/longitude are parsed to `double?` so the
-  /// backend receives numeric values; invalid input is left as `null` and the
-  /// field validator surfaces the error to the user.
+  /// DG-303 Phase 4 / DG-306 Phase 1: sync GPS coordinate + map URL text fields
+  /// back to `OrderCreateState`. Latitude/longitude are parsed to `double?` so
+  /// the backend receives numeric values; invalid input is left as `null` and
+  /// the field validator surfaces the error to the user. The manual
+  /// `deliveryTimeSlot` dropdown was removed (DG-306 Phase 1 / FR2) — the slot
+  /// is auto-derived from `dueTime` by `deriveTimeSlot()`.
   void _syncGpsToState() {
     final notifier = ref.read(widget.orderStateProvider.notifier);
-    final state = ref.read(widget.orderStateProvider);
     notifier.updateGpsFields(
       latitude: double.tryParse(_latitudeCtrl.text.trim()),
       longitude: double.tryParse(_longitudeCtrl.text.trim()),
       googleMapsUrl: _googleMapsUrlCtrl.text.trim().isEmpty
           ? null
           : _googleMapsUrlCtrl.text.trim(),
-      deliveryTimeSlot: state.deliveryTimeSlot,
     );
   }
 
@@ -224,15 +224,6 @@ class _Stage3DeliveryOptionsScreenState
               latitudeCtrl: _latitudeCtrl,
               longitudeCtrl: _longitudeCtrl,
               googleMapsUrlCtrl: _googleMapsUrlCtrl,
-              deliveryTimeSlot: state.deliveryTimeSlot,
-              onDeliveryTimeSlotChanged: (slot) => ref
-                  .read(widget.orderStateProvider.notifier)
-                  .updateGpsFields(
-                    latitude: state.latitude,
-                    longitude: state.longitude,
-                    googleMapsUrl: state.googleMapsUrl,
-                    deliveryTimeSlot: slot,
-                  ),
               onLaunchMap: () =>
                   launchExternalUrl(context, _googleMapsUrlCtrl.text),
               summaryCardSlots: [

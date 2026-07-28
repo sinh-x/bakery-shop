@@ -1,4 +1,5 @@
 import 'package:bakery_app/data/models/order.dart';
+import 'package:bakery_app/shared/labels/orders.dart';
 import 'package:bakery_app/shared/utils/delivery_helpers.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -339,6 +340,105 @@ void main() {
         total += c.length;
       }
       expect(total, 9);
+    });
+  });
+
+  group('deriveTimeSlot', () {
+    test('derives slot from dueTime hour (14:30 -> 14:00)', () {
+      expect(deriveTimeSlot('14:30'), '14:00');
+    });
+
+    test('derives slot from dueTime hour (07:15 -> 7:00)', () {
+      expect(deriveTimeSlot('07:15'), '7:00');
+    });
+
+    test('derives slot from dueTime hour (6:00 -> 6:00)', () {
+      expect(deriveTimeSlot('6:00'), '6:00');
+    });
+
+    test('derives slot from dueTime hour (21:45 -> 21:00)', () {
+      expect(deriveTimeSlot('21:45'), '21:00');
+    });
+
+    test('returns null for null dueTime', () {
+      expect(deriveTimeSlot(null), isNull);
+    });
+
+    test('returns null for empty dueTime', () {
+      expect(deriveTimeSlot(''), isNull);
+    });
+
+    test('returns null for malformed dueTime (no colon)', () {
+      expect(deriveTimeSlot('1400'), isNull);
+    });
+
+    test('returns null for non-numeric hour', () {
+      expect(deriveTimeSlot('ab:30'), isNull);
+    });
+  });
+
+  group('groupDeliveryOrdersByTimeSlot', () {
+    test('groups orders by auto-derived dueTime hour', () {
+      final orders = [
+        _order(id: 1, ref: 'ORD-A', status: 'new', dueTime: '14:30'),
+        _order(id: 2, ref: 'ORD-B', status: 'new', dueTime: '14:00'),
+        _order(id: 3, ref: 'ORD-C', status: 'new', dueTime: '09:15'),
+      ];
+      final grouped = groupDeliveryOrdersByTimeSlot(orders);
+
+      expect(grouped['14:00']!.length, 2);
+      expect(grouped['9:00']!.length, 1);
+    });
+
+    test('orders without dueTime fall into no-slot group', () {
+      final orders = [
+        _order(id: 1, ref: 'ORD-NO-TIME', status: 'new', dueTime: null),
+        _order(id: 2, ref: 'ORD-EMPTY-TIME', status: 'new', dueTime: ''),
+      ];
+      final grouped = groupDeliveryOrdersByTimeSlot(orders);
+
+      expect(grouped[OrdersLabels.deliveryCalendarNoSlot]!.length, 2);
+    });
+
+    test('orders with dueTime outside 6:00-21:00 fall into no-slot group', () {
+      final orders = [
+        _order(id: 1, ref: 'ORD-EARLY', status: 'new', dueTime: '05:30'),
+        _order(id: 2, ref: 'ORD-LATE', status: 'new', dueTime: '22:00'),
+      ];
+      final grouped = groupDeliveryOrdersByTimeSlot(orders);
+
+      expect(grouped[OrdersLabels.deliveryCalendarNoSlot]!.length, 2);
+    });
+
+    test('derives slot ignoring the stored deliveryTimeSlot DB column', () {
+      // FR1: the stored `deliveryTimeSlot` column is ignored by the frontend;
+      // the slot is auto-derived from `dueTime`.
+      final orders = [
+        Order(
+          id: '1',
+          orderRef: 'ORD-STORED',
+          status: 'new',
+          deliveryType: 'door',
+          customerName: 'Test',
+          items: const [],
+          totalPrice: 0,
+          dueDate: today,
+          dueTime: '14:30',
+          deliveryTimeSlot: '09:00', // stale stored value, must be ignored
+          createdAt: DateTime(2026, 1, 1),
+          updatedAt: DateTime(2026, 1, 1),
+        ),
+      ];
+      final grouped = groupDeliveryOrdersByTimeSlot(orders);
+
+      expect(grouped['14:00']!.length, 1);
+      expect(grouped.containsKey('9:00'), isFalse);
+    });
+
+    test('empty list produces empty map', () {
+      final grouped = groupDeliveryOrdersByTimeSlot([]);
+
+      expect(grouped, isEmpty);
     });
   });
 }

@@ -49,12 +49,30 @@ Map<String, List<Order>> groupDeliveryOrdersByStatus(List<Order> orders) {
   return result;
 }
 
-/// Groups delivery orders by 1-hour `deliveryTimeSlot` value (FR3/FR5).
+/// Auto-derives a 1-hour delivery time slot from an order's `dueTime` hour
+/// (FR1/AC4). Given `dueTime: "14:30"` the slot is `"14:00"`; given `"07:15"`
+/// the slot is `"7:00"` (matching [OrdersLabels.deliveryTimeSlots] label
+/// format, which omits the leading zero for single-digit hours). Returns
+/// `null` when [dueTime] is null/empty/malformed.
 ///
-/// Returns an ordered map keyed by slot label ("7:00" … "20:00"). Orders whose
-/// `deliveryTimeSlot` is null/empty or outside the predefined slots land under
-/// [OrdersLabels.deliveryCalendarNoSlot] ("Chưa có giờ") at the end.
-/// Within each slot, orders sort by dueDate ascending then dueTime ascending
+/// The frontend derives the slot from `dueTime` and ignores the stored
+/// `deliveryTimeSlot` DB column (the column is still persisted for backward
+/// compatibility — see FR1 notes).
+String? deriveTimeSlot(String? dueTime) {
+  if (dueTime == null || dueTime.isEmpty) return null;
+  final parts = dueTime.split(':');
+  if (parts.length < 2) return null;
+  final hour = int.tryParse(parts[0]);
+  if (hour == null) return null;
+  return '$hour:00';
+}
+
+/// Groups delivery orders by 1-hour time slot auto-derived from each order's
+/// `dueTime` hour (FR1/FR3/FR5). Returns an ordered map keyed by slot label
+/// ("6:00" … "21:00"). Orders whose `dueTime` is null/empty or whose derived
+/// slot falls outside the predefined range land under
+/// [OrdersLabels.deliveryCalendarNoSlot] ("Chưa có giờ") at the end. Within
+/// each slot, orders sort by dueDate ascending then dueTime ascending
 /// (mirroring [groupDeliveryOrdersByStatus]).
 Map<String, List<Order>> groupDeliveryOrdersByTimeSlot(List<Order> orders) {
   final slots = <String, List<Order>>{
@@ -63,8 +81,8 @@ Map<String, List<Order>> groupDeliveryOrdersByTimeSlot(List<Order> orders) {
   final noSlot = <Order>[];
 
   for (final o in orders) {
-    final slot = o.deliveryTimeSlot;
-    if (slot == null || slot.isEmpty || !slots.containsKey(slot)) {
+    final slot = deriveTimeSlot(o.dueTime);
+    if (slot == null || !slots.containsKey(slot)) {
       noSlot.add(o);
       continue;
     }

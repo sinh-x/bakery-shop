@@ -194,8 +194,9 @@ class OrdersLabels {
   static const longitudeInvalid = 'Kinh độ phải từ -180 đến 180';
   static const deliveryTimeSlotEmpty = 'Chưa chọn khung giờ';
 
-  /// Predefined 1-hour delivery time slots (FR3): "7:00" … "20:00".
+  /// Predefined 1-hour delivery time slots (FR3): "6:00" … "21:00".
   static const deliveryTimeSlots = <String>[
+    '6:00',
     '7:00',
     '8:00',
     '9:00',
@@ -210,6 +211,7 @@ class OrdersLabels {
     '18:00',
     '19:00',
     '20:00',
+    '21:00',
   ];
 
   // Delivery tab calendar view toggle + grouping (DG-303 Phase 5) — FR5, AC6.

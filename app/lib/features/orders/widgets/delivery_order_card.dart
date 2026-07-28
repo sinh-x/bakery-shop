@@ -7,6 +7,7 @@ import '../../../data/models/order.dart';
 import '../../../providers/order_providers.dart';
 import '../../../shared/theme/bakery_theme.dart';
 import '../../../shared/utils/launch_external_url.dart';
+import '../../../shared/utils/delivery_helpers.dart';
 import '../../../shared/utils/order_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 
@@ -156,8 +157,9 @@ class DeliveryOrderCard extends ConsumerWidget {
                 const SizedBox(height: 4),
                 _buildGpsMapRow(context, theme),
               ],
-              if (order.deliveryTimeSlot != null &&
-                  order.deliveryTimeSlot!.isNotEmpty) ...[
+              // DG-306 Phase 1 / FR1: auto-derive the slot from `dueTime`
+              // (the stored `deliveryTimeSlot` DB column is ignored).
+              if (deriveTimeSlot(order.dueTime) case final slot?) ...[
                 const SizedBox(height: 4),
                 Row(
                   children: [
@@ -168,7 +170,7 @@ class DeliveryOrderCard extends ConsumerWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      '${OrdersLabels.deliveryTimeSlotLabel} ${order.deliveryTimeSlot}',
+                      '${OrdersLabels.deliveryTimeSlotLabel} $slot',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.outline,
                         fontWeight: FontWeight.w600,

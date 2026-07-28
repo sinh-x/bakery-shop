@@ -40,8 +40,6 @@ class EditStage3Delivery extends ConsumerWidget {
     this.latitudeCtrl,
     this.longitudeCtrl,
     this.googleMapsUrlCtrl,
-    this.deliveryTimeSlot,
-    this.onDeliveryTimeSlotChanged,
     this.onLaunchMap,
   });
 
@@ -64,12 +62,12 @@ class EditStage3Delivery extends ConsumerWidget {
   final List<DraftOrderItem> summaryItems;
   final VoidCallback onBack;
   final VoidCallback onContinue;
-  // DG-303 Phase 4: GPS + delivery time slot (door delivery only).
+  // DG-303 Phase 4 / DG-306 Phase 1: GPS fields (door delivery only). The
+  // manual `deliveryTimeSlot` dropdown was removed (DG-306 Phase 1 / FR2) —
+  // the slot is now auto-derived from `dueTime` by `deriveTimeSlot()`.
   final TextEditingController? latitudeCtrl;
   final TextEditingController? longitudeCtrl;
   final TextEditingController? googleMapsUrlCtrl;
-  final String? deliveryTimeSlot;
-  final ValueChanged<String?>? onDeliveryTimeSlotChanged;
   final VoidCallback? onLaunchMap;
 
   @override
@@ -108,8 +106,6 @@ class EditStage3Delivery extends ConsumerWidget {
               latitudeCtrl: latitudeCtrl,
               longitudeCtrl: longitudeCtrl,
               googleMapsUrlCtrl: googleMapsUrlCtrl,
-              deliveryTimeSlot: deliveryTimeSlot,
-              onDeliveryTimeSlotChanged: onDeliveryTimeSlotChanged,
               onLaunchMap: onLaunchMap,
               summaryCardSlots: [
                 ProductSummaryCard(items: summaryItems),

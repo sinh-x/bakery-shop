@@ -10,6 +10,7 @@ import '../../providers/order/order_create_state_provider.dart';
 import '../../providers/order_providers.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/utils/date_formatting.dart';
+import '../../shared/utils/delivery_helpers.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/order_stage_indicator.dart';
@@ -75,7 +76,6 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       latitude: draft.latitude,
       longitude: draft.longitude,
       googleMapsUrl: draft.googleMapsUrl,
-      deliveryTimeSlot: draft.deliveryTimeSlot,
     );
     if (draft.customerId != null) {
       notifier.restoreCustomerFromDraft(draft.customerId!);
@@ -110,7 +110,6 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
       latitude: state.latitude,
       longitude: state.longitude,
       googleMapsUrl: state.googleMapsUrl,
-      deliveryTimeSlot: state.deliveryTimeSlot,
     );
     if (draft.isNotEmpty) {
       ref.read(orderDraftProvider.notifier).save(draft);
@@ -209,7 +208,10 @@ class _OrderCreateScreenState extends ConsumerState<OrderCreateScreen> {
         latitude: state.latitude,
         longitude: state.longitude,
         googleMapsUrl: state.googleMapsUrl,
-        deliveryTimeSlot: state.deliveryTimeSlot,
+        // DG-306 Phase 1 / FR1: auto-derive the slot from `dueTime`.
+        deliveryTimeSlot: state.dueTime != null
+            ? deriveTimeSlot(formatHourMinute(state.dueTime!.hour, state.dueTime!.minute))
+            : null,
       );
 
       final hasPerItemPhotos = state.items.any(

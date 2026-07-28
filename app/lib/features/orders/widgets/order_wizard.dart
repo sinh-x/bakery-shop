@@ -15,7 +15,6 @@ class OrderWizardData {
   final double? latitude;
   final double? longitude;
   final String? googleMapsUrl;
-  final String? deliveryTimeSlot;
 
   const OrderWizardData({
     this.customerName = '',
@@ -30,7 +29,6 @@ class OrderWizardData {
     this.latitude,
     this.longitude,
     this.googleMapsUrl,
-    this.deliveryTimeSlot,
   });
 
   OrderWizardData copyWith({
@@ -47,7 +45,6 @@ class OrderWizardData {
     double? latitude,
     double? longitude,
     String? googleMapsUrl,
-    String? deliveryTimeSlot,
   }) {
     return OrderWizardData(
       customerName: customerName ?? this.customerName,
@@ -64,7 +61,6 @@ class OrderWizardData {
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       googleMapsUrl: googleMapsUrl ?? this.googleMapsUrl,
-      deliveryTimeSlot: deliveryTimeSlot ?? this.deliveryTimeSlot,
     );
   }
 

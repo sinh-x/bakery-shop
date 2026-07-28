@@ -159,7 +159,6 @@ class OrderDraft {
   final double? latitude;
   final double? longitude;
   final String? googleMapsUrl;
-  final String? deliveryTimeSlot;
 
   OrderDraft({
     this.customerName = '',
@@ -183,7 +182,6 @@ class OrderDraft {
     this.latitude,
     this.longitude,
     this.googleMapsUrl,
-    this.deliveryTimeSlot,
   }) : items = items ?? [],
        pendingPhotos = pendingPhotos ?? [];
 
