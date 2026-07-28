@@ -3164,3 +3164,113 @@ def test_cancel_order_returns_warning_when_journal_sync_fails(api_client):
         assert resp.json().get("accountingSyncWarning") == "journal_sync_failed"
     finally:
         js_mod._sync_cancelled_order_journal = original
+
+
+# --- DG-303 Phase 4.2: delivery schedule + GPS fields ---
+
+
+def test_create_order_persists_gps_and_schedule_fields(api_client):
+    """FR1/FR2/FR3: create door delivery order with GPS + maps URL + time slot."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "Giao tận nơi",
+        "customerPhone": "0901234567",
+        "deliveryPhone": "0901234567",
+        "items": [{"productName": "Bánh kem", "quantity": 1, "unitPrice": 200000}],
+        "dueDate": "2026-03-25",
+        "dueTime": "14:00",
+        "deliveryType": "delivery",
+        "deliveryAddress": "123 Lê Lợi",
+        "latitude": 10.762622,
+        "longitude": 106.660172,
+        "googleMapsUrl": "https://maps.google.com/?q=10.762622,106.660172",
+        "deliveryTimeSlot": "14:00",
+    })
+    assert resp.status_code == 201
+    order = resp.json()
+    assert order["latitude"] == 10.762622
+    assert order["longitude"] == 106.660172
+    assert order["googleMapsUrl"] == "https://maps.google.com/?q=10.762622,106.660172"
+    assert order["deliveryTimeSlot"] == "14:00"
+
+
+def test_create_order_gps_fields_default_null_when_omitted(api_client):
+    """NFR1/AC7: omitting the new fields leaves them null (bus/pickup)."""
+    order = _create_order(api_client, deliveryType="pickup")
+    assert order["latitude"] is None
+    assert order["longitude"] is None
+    assert order["googleMapsUrl"] is None
+    assert order["deliveryTimeSlot"] is None
+
+
+def test_create_order_rejects_latitude_out_of_range(api_client):
+    """NFR2: latitude > 90 returns 422."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "X",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 100}],
+        "dueDate": "2026-03-25",
+        "latitude": 91.0,
+    })
+    assert resp.status_code == 422
+
+
+def test_create_order_rejects_longitude_out_of_range(api_client):
+    """NFR2: longitude < -180 returns 422."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "X",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 100}],
+        "dueDate": "2026-03-25",
+        "longitude": -181.0,
+    })
+    assert resp.status_code == 422
+
+
+def test_create_order_accepts_boundary_gps_coordinates(api_client):
+    """NFR2: boundary values 90/-90 and 180/-180 are accepted."""
+    resp = api_client.post("/api/orders", json={
+        "customerName": "Biên giới",
+        "items": [{"productName": "Bánh", "quantity": 1, "unitPrice": 100}],
+        "dueDate": "2026-03-25",
+        "latitude": -90.0,
+        "longitude": -180.0,
+    })
+    assert resp.status_code == 201
+    assert resp.json()["latitude"] == -90.0
+    assert resp.json()["longitude"] == -180.0
+
+
+def test_edit_order_updates_gps_and_schedule_fields(api_client):
+    """FR4: editing an order persists the new fields."""
+    order = _create_order(api_client, deliveryType="delivery")
+    ref = order["orderRef"]
+    resp = api_client.patch(f"/api/orders/{ref}", json={
+        "latitude": 11.0,
+        "longitude": 107.0,
+        "googleMapsUrl": "https://maps.google.com/?q=11,107",
+        "deliveryTimeSlot": "15:00",
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["latitude"] == 11.0
+    assert body["longitude"] == 107.0
+    assert body["googleMapsUrl"] == "https://maps.google.com/?q=11,107"
+    assert body["deliveryTimeSlot"] == "15:00"
+
+
+def test_edit_order_rejects_invalid_latitude(api_client):
+    """NFR2: edit with out-of-range latitude returns 422."""
+    order = _create_order(api_client)
+    resp = api_client.patch(f"/api/orders/{order['orderRef']}", json={"latitude": 200.0})
+    assert resp.status_code == 422
+
+
+def test_existing_orders_retain_null_new_fields(api_client):
+    """AC7: an order created without the new fields stays null after edits to others."""
+    order = _create_order(api_client, notes="ban đầu")
+    ref = order["orderRef"]
+    resp = api_client.patch(f"/api/orders/{ref}", json={"notes": "đã đổi"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["latitude"] is None
+    assert body["longitude"] is None
+    assert body["googleMapsUrl"] is None
+    assert body["deliveryTimeSlot"] is None

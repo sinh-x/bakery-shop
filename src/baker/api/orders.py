@@ -264,6 +264,13 @@ class OrderCreate(BaseModel):
     shippingFee: float = 0.0
     status: Optional[str] = None
     paymentMethod: Optional[str] = None
+    # DG-303 Phase 4.2 (FR1/FR2/FR3/NFR2): door delivery GPS + schedule.
+    # Pydantic Field bounds produce HTTP 422 on out-of-range values (NFR2).
+    # None is allowed so bus/pickup orders leave these unset.
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    googleMapsUrl: Optional[str] = None
+    deliveryTimeSlot: Optional[str] = None
 
 
 class OrderEdit(BaseModel):
@@ -282,6 +289,11 @@ class OrderEdit(BaseModel):
     changedBy: str = ""
     workTicketPrintedAt: Optional[str] = None
     publicCodeDateChangeDecision: Optional[str] = None
+    # DG-303 Phase 4.2 (FR1/FR2/FR3/NFR2): door delivery GPS + schedule.
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    googleMapsUrl: Optional[str] = None
+    deliveryTimeSlot: Optional[str] = None
 
 
 class StatusTransition(BaseModel):
@@ -607,6 +619,10 @@ def create_order(body: OrderCreate, request: Request):
             created_staff_name=created_staff_name,
             shipping_fee=body.shippingFee,
             public_order_code=public_order_code,
+            latitude=body.latitude,
+            longitude=body.longitude,
+            google_maps_url=body.googleMapsUrl,
+            delivery_time_slot=body.deliveryTimeSlot,
         )
         order.calculate_total()
         order.save(conn)
@@ -810,6 +826,10 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
             "source": "source",
             "shippingFee": "shipping_fee",
             "workTicketPrintedAt": "work_ticket_printed_at",
+            "latitude": "latitude",
+            "longitude": "longitude",
+            "googleMapsUrl": "google_maps_url",
+            "deliveryTimeSlot": "delivery_time_slot",
         }
 
         new_due_date = data.get("dueDate", row["due_date"])
