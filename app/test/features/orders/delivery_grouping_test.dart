@@ -441,4 +441,166 @@ void main() {
       expect(grouped, isEmpty);
     });
   });
+
+  group('groupDeliveryOrdersByDayAndSlot', () {
+    test('groups orders by dueDate + derived slot (AC1)', () {
+      final orders = [
+        _order(
+            id: 1,
+            ref: 'ORD-A',
+            status: 'new',
+            dueDate: '2026-07-28',
+            dueTime: '14:30'),
+        _order(
+            id: 2,
+            ref: 'ORD-B',
+            status: 'new',
+            dueDate: '2026-07-28',
+            dueTime: '14:00'),
+        _order(
+            id: 3,
+            ref: 'ORD-C',
+            status: 'new',
+            dueDate: '2026-07-29',
+            dueTime: '09:15'),
+      ];
+      final grouped = groupDeliveryOrdersByDayAndSlot(orders);
+
+      expect(grouped[(day: '2026-07-28', slot: '14:00')]!.length, 2);
+      expect(grouped[(day: '2026-07-29', slot: '9:00')]!.length, 1);
+    });
+
+    test('orders without dueTime fall into unscheduled slot for their day', () {
+      final orders = [
+        _order(
+            id: 1,
+            ref: 'ORD-NO-TIME',
+            status: 'new',
+            dueDate: '2026-07-28',
+            dueTime: null),
+      ];
+      final grouped = groupDeliveryOrdersByDayAndSlot(orders);
+
+      expect(
+        grouped[(day: '2026-07-28', slot: OrdersLabels.deliveryCalendarNoSlot)]!
+            .length,
+        1,
+      );
+    });
+
+    test('orders with dueTime outside 6:00-21:00 are unscheduled', () {
+      final orders = [
+        _order(
+            id: 1,
+            ref: 'ORD-EARLY',
+            status: 'new',
+            dueDate: '2026-07-28',
+            dueTime: '05:30'),
+        _order(
+            id: 2,
+            ref: 'ORD-LATE',
+            status: 'new',
+            dueDate: '2026-07-28',
+            dueTime: '22:00'),
+      ];
+      final grouped = groupDeliveryOrdersByDayAndSlot(orders);
+
+      expect(
+        grouped[(day: '2026-07-28', slot: OrdersLabels.deliveryCalendarNoSlot)]!
+            .length,
+        2,
+      );
+    });
+
+    test('orders without dueDate are dropped (calendar is date-aware)', () {
+      final orders = [
+        _order(id: 1, ref: 'ORD-NO-DATE', status: 'new', dueTime: '14:30'),
+      ];
+      final grouped = groupDeliveryOrdersByDayAndSlot(orders);
+
+      expect(grouped, isEmpty);
+    });
+
+    test('orders within a cell sort by dueTime then orderRef', () {
+      final orders = [
+        _order(
+            id: 1,
+            ref: 'ORD-B',
+            status: 'new',
+            dueDate: '2026-07-28',
+            dueTime: '14:30'),
+        _order(
+            id: 2,
+            ref: 'ORD-A',
+            status: 'new',
+            dueDate: '2026-07-28',
+            dueTime: '14:30'),
+        _order(
+            id: 3,
+            ref: 'ORD-C',
+            status: 'new',
+            dueDate: '2026-07-28',
+            dueTime: '14:00'),
+      ];
+      final grouped = groupDeliveryOrdersByDayAndSlot(orders);
+      final cell = grouped[(day: '2026-07-28', slot: '14:00')]!;
+
+      expect(cell.map((o) => o.orderRef).toList(), ['ORD-C', 'ORD-A', 'ORD-B']);
+    });
+
+    test('derives slot ignoring the stored deliveryTimeSlot DB column', () {
+      final orders = [
+        Order(
+          id: '1',
+          orderRef: 'ORD-STORED',
+          status: 'new',
+          deliveryType: 'door',
+          customerName: 'Test',
+          items: const [],
+          totalPrice: 0,
+          dueDate: today,
+          dueTime: '14:30',
+          deliveryTimeSlot: '09:00', // stale stored value, must be ignored
+          createdAt: DateTime(2026, 1, 1),
+          updatedAt: DateTime(2026, 1, 1),
+        ),
+      ];
+      final grouped = groupDeliveryOrdersByDayAndSlot(orders);
+
+      expect(grouped[(day: today, slot: '14:00')]!.length, 1);
+      expect(grouped.containsKey((day: today, slot: '9:00')), isFalse);
+    });
+
+    test('empty list produces empty map', () {
+      expect(groupDeliveryOrdersByDayAndSlot([]), isEmpty);
+    });
+  });
+
+  group('startOfWeek', () {
+    test('returns Monday for a Wednesday', () {
+      final wed = DateTime(2026, 7, 29); // 2026-07-29 is a Wednesday
+      final mon = startOfWeek(wed);
+      expect(mon, DateTime(2026, 7, 27));
+    });
+
+    test('returns same date when given a Monday', () {
+      final mon = DateTime(2026, 7, 27);
+      expect(startOfWeek(mon), DateTime(2026, 7, 27));
+    });
+
+    test('returns Monday for a Sunday', () {
+      final sun = DateTime(2026, 8, 2); // 2026-08-02 is a Sunday
+      expect(startOfWeek(sun), DateTime(2026, 7, 27));
+    });
+  });
+
+  group('daysOfWeek', () {
+    test('returns 7 days Mon..Sun starting at weekStart', () {
+      final days = daysOfWeek(DateTime(2026, 7, 27));
+      expect(days.length, 7);
+      expect(days.first, DateTime(2026, 7, 27)); // Monday
+      expect(days.last, DateTime(2026, 8, 2)); // Sunday
+      expect(days.map((d) => d.weekday), [1, 2, 3, 4, 5, 6, 7]);
+    });
+  });
 }

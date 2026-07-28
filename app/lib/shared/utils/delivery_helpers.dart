@@ -113,3 +113,62 @@ Map<String, List<Order>> groupDeliveryOrdersByTimeSlot(List<Order> orders) {
   }
   return result;
 }
+
+/// The week-grid layout key: a day column ("yyyy-MM-dd") plus the auto-derived
+/// time-slot label ("6:00" … "21:00") or the unscheduled marker
+/// [OrdersLabels.deliveryCalendarNoSlot] ("Chưa có giờ") when an order has no
+/// `dueTime` (or its hour falls outside the 6:00–21:00 range).
+typedef DaySlotKey = ({String day, String slot});
+
+/// Groups delivery orders into week-grid cells keyed by day (`dueDate`,
+/// `yyyy-MM-dd`) + auto-derived time slot (`dueTime` hour). Orders without a
+/// `dueDate` are dropped — the calendar only renders dated orders (they remain
+/// visible in the list view, which has no date constraint). Within each cell,
+/// orders sort by `dueTime` ascending then by `orderRef` for stability.
+///
+/// The unscheduled marker [OrdersLabels.deliveryCalendarNoSlot] is used as the
+/// `slot` for orders whose `dueTime` is null/empty/out-of-range, so each day
+/// column can render a sticky "Chưa có giờ" row at the top (FR4/AC1).
+Map<DaySlotKey, List<Order>> groupDeliveryOrdersByDayAndSlot(
+  List<Order> orders,
+) {
+  final result = <DaySlotKey, List<Order>>{};
+
+  int compareOrders(Order a, Order b) {
+    final c = (a.dueTime ?? '').compareTo(b.dueTime ?? '');
+    if (c != 0) return c;
+    return a.orderRef.compareTo(b.orderRef);
+  }
+
+  for (final o in orders) {
+    if (o.dueDate == null || o.dueDate!.isEmpty) continue;
+    final slot = deriveTimeSlot(o.dueTime);
+    final key = (
+      day: o.dueDate!,
+      slot: (slot != null && OrdersLabels.deliveryTimeSlots.contains(slot))
+          ? slot
+          : OrdersLabels.deliveryCalendarNoSlot,
+    );
+    result.putIfAbsent(key, () => <Order>[]).add(o);
+  }
+
+  for (final list in result.values) {
+    list.sort(compareOrders);
+  }
+  return result;
+}
+
+/// Returns the Monday-anchored [DateTime] of the week containing [date]
+/// (time-of-day stripped). Week starts Monday per the calendar grid layout
+/// (Mon–Sun columns, FR3).
+DateTime startOfWeek(DateTime date) {
+  final d = DateTime(date.year, date.month, date.day);
+  // DateTime.weekday: Mon=1..Sun=7 → offset to Monday.
+  return d.subtract(Duration(days: d.weekday - 1));
+}
+
+/// Returns the 7 day-of-week Dates (Mon..Sun) for the week anchored at
+/// [weekStart] (a Monday). Index 0 = Monday … 6 = Sunday.
+List<DateTime> daysOfWeek(DateTime weekStart) {
+  return List.generate(7, (i) => weekStart.add(Duration(days: i)));
+}

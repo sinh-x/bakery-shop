@@ -224,4 +224,29 @@ class OrdersLabels {
   static String deliveryCalendarSlotCount(int count) => '$count đơn';
   static String deliveryCalendarSlotTotal(int count) => 'Tổng: $count đơn';
   static const deliveryCalendarEmpty = 'Không có đơn giao theo lịch';
+
+  // Delivery week calendar view (DG-306 Phase 2) — FR3, FR5, AC1–AC3.
+  static const deliveryWeekToday = 'Hôm nay';
+  static const deliveryWeekPrevTooltip = 'Tuần trước';
+  static const deliveryWeekNextTooltip = 'Tuần sau';
+  static const deliveryWeekUnscheduled = 'Chưa có giờ';
+
+  /// Short Vietnamese weekday headers (Mon–Sun), aligned to DateTime.weekday
+  /// (Mon=1..Sun=7 → index 0..6).
+  static const deliveryWeekdayHeaders = <String>[
+    'T2',
+    'T3',
+    'T4',
+    'T5',
+    'T6',
+    'T7',
+    'CN',
+  ];
+
+  /// Formats a week range as `dd/MM – dd/MM` (the visible week label).
+  static String deliveryWeekRangeLabel(DateTime start, DateTime end) {
+    String fmt(DateTime d) =>
+        '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+    return '${fmt(start)} – ${fmt(end)}';
+  }
 }

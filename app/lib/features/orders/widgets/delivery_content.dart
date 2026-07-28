@@ -7,8 +7,8 @@ import '../../../providers/order_providers.dart';
 import '../../../shared/theme/bakery_theme.dart';
 import '../../../shared/utils/delivery_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
-import 'delivery_calendar_view.dart';
 import 'delivery_order_card.dart';
+import 'delivery_week_calendar_view.dart';
 
 class DeliveryContent extends ConsumerStatefulWidget {
   const DeliveryContent({super.key});
@@ -48,8 +48,15 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
         ),
       ),
       data: (orders) {
-        final deliveryOrders = filterDeliveryOrders(orders, todayOnly: _showToday);
         final isCalendar = _viewMode == 'calendar';
+        // The week grid spans a full week with its own "Hôm nay" navigation
+        // (FR5/AC2/AC3), so it always receives all non-terminal delivery
+        // orders regardless of the Today/All filter. The Today/All filter
+        // only applies to the list view.
+        final calendarOrders =
+            filterDeliveryOrders(orders, todayOnly: false);
+        final listOrders =
+            filterDeliveryOrders(orders, todayOnly: _showToday);
 
         return Column(
           children: [
@@ -57,17 +64,19 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
               child: Row(
                 children: [
-                  FilterChip(
-                    label: const Text(OrdersLabels.deliveryFilterToday),
-                    selected: _showToday,
-                    onSelected: (v) => setState(() => _showToday = v),
-                  ),
-                  const SizedBox(width: 8),
-                  FilterChip(
-                    label: const Text(OrdersLabels.deliveryFilterAll),
-                    selected: !_showToday,
-                    onSelected: (v) => setState(() => _showToday = !v),
-                  ),
+                  if (!isCalendar) ...[
+                    FilterChip(
+                      label: const Text(OrdersLabels.deliveryFilterToday),
+                      selected: _showToday,
+                      onSelected: (v) => setState(() => _showToday = v),
+                    ),
+                    const SizedBox(width: 8),
+                    FilterChip(
+                      label: const Text(OrdersLabels.deliveryFilterAll),
+                      selected: !_showToday,
+                      onSelected: (v) => setState(() => _showToday = !v),
+                    ),
+                  ],
                   const Spacer(),
                   _ViewModeToggle(
                     viewMode: _viewMode,
@@ -77,25 +86,23 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
               ),
             ),
             Expanded(
-              child: deliveryOrders.isEmpty
-                  ? Center(
-                      child: Text(
-                        isCalendar
-                            ? OrdersLabels.deliveryCalendarEmpty
-                            : (_showToday
-                                ? OrdersLabels.deliveryEmptyToday
-                                : OrdersLabels.deliveryEmptyAll),
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.outline,
-                        ),
-                      ),
+              child: isCalendar
+                  ? DeliveryWeekCalendarView(
+                      orders: calendarOrders,
+                      onRefresh: _onRefresh,
                     )
-                  : isCalendar
-                      ? DeliveryCalendarView(
-                          orders: deliveryOrders,
-                          onRefresh: _onRefresh,
+                  : listOrders.isEmpty
+                      ? Center(
+                          child: Text(
+                            _showToday
+                                ? OrdersLabels.deliveryEmptyToday
+                                : OrdersLabels.deliveryEmptyAll,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.outline,
+                            ),
+                          ),
                         )
-                      : _buildGroupedList(deliveryOrders),
+                      : _buildGroupedList(listOrders),
             ),
           ],
         );
