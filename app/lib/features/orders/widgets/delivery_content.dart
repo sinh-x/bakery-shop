@@ -7,6 +7,7 @@ import '../../../providers/order_providers.dart';
 import '../../../shared/theme/bakery_theme.dart';
 import '../../../shared/utils/delivery_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'delivery_calendar_view.dart';
 import 'delivery_order_card.dart';
 
 class DeliveryContent extends ConsumerStatefulWidget {
@@ -18,6 +19,9 @@ class DeliveryContent extends ConsumerStatefulWidget {
 
 class _DeliveryContentState extends ConsumerState<DeliveryContent> {
   bool _showToday = true;
+
+  /// View mode for the delivery tab: 'list' (default) or 'calendar' (FR5).
+  String _viewMode = 'list';
 
   Future<void> _onRefresh() async {
     await ref.read(orderListProvider.notifier).refresh();
@@ -45,6 +49,7 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
       ),
       data: (orders) {
         final deliveryOrders = filterDeliveryOrders(orders, todayOnly: _showToday);
+        final isCalendar = _viewMode == 'calendar';
 
         return Column(
           children: [
@@ -63,6 +68,11 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
                     selected: !_showToday,
                     onSelected: (v) => setState(() => _showToday = !v),
                   ),
+                  const Spacer(),
+                  _ViewModeToggle(
+                    viewMode: _viewMode,
+                    onChanged: (mode) => setState(() => _viewMode = mode),
+                  ),
                 ],
               ),
             ),
@@ -70,15 +80,22 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
               child: deliveryOrders.isEmpty
                   ? Center(
                       child: Text(
-                        _showToday
-                            ? OrdersLabels.deliveryEmptyToday
-                            : OrdersLabels.deliveryEmptyAll,
+                        isCalendar
+                            ? OrdersLabels.deliveryCalendarEmpty
+                            : (_showToday
+                                ? OrdersLabels.deliveryEmptyToday
+                                : OrdersLabels.deliveryEmptyAll),
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.outline,
                         ),
                       ),
                     )
-                  : _buildGroupedList(deliveryOrders),
+                  : isCalendar
+                      ? DeliveryCalendarView(
+                          orders: deliveryOrders,
+                          onRefresh: _onRefresh,
+                        )
+                      : _buildGroupedList(deliveryOrders),
             ),
           ],
         );
@@ -157,6 +174,27 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
           );
         },
       ),
+    );
+  }
+}
+
+/// Segmented list/calendar toggle for the delivery tab (FR5).
+/// Mirrors the order list/kanban toggle pattern from [OrderListScreen].
+class _ViewModeToggle extends StatelessWidget {
+  const _ViewModeToggle({required this.viewMode, required this.onChanged});
+
+  final String viewMode;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCalendar = viewMode == 'calendar';
+    return IconButton(
+      icon: Icon(isCalendar ? Icons.view_list : Icons.calendar_month_outlined),
+      tooltip: isCalendar
+          ? OrdersLabels.deliverySwitchToList
+          : OrdersLabels.deliverySwitchToCalendar,
+      onPressed: () => onChanged(isCalendar ? 'list' : 'calendar'),
     );
   }
 }

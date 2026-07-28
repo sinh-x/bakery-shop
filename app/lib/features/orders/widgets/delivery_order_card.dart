@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../data/api/api_client.dart';
 import '../../../data/models/order.dart';
@@ -151,6 +152,31 @@ class DeliveryOrderCard extends ConsumerWidget {
                   ),
                 ),
               ],
+              if (_hasGpsOrMap(order)) ...[
+                const SizedBox(height: 4),
+                _buildGpsMapRow(context, theme),
+              ],
+              if (order.deliveryTimeSlot != null &&
+                  order.deliveryTimeSlot!.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.schedule,
+                      size: 14,
+                      color: theme.colorScheme.outline,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${OrdersLabels.deliveryTimeSlotLabel} ${order.deliveryTimeSlot}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               if (order.dueDate != null) ...[
                 const SizedBox(height: 4),
                 Row(
@@ -226,5 +252,94 @@ class DeliveryOrderCard extends ConsumerWidget {
   String _formatDue(String? dueDate, String? dueTime) {
     if (dueDate == null) return '';
     return dueTime != null ? '$dueDate $dueTime' : dueDate;
+  }
+
+  /// Whether the order exposes any GPS/map data worth rendering (AC3).
+  bool _hasGpsOrMap(Order order) {
+    final hasCoords = order.latitude != null && order.longitude != null;
+    final hasMapUrl =
+        order.googleMapsUrl != null && order.googleMapsUrl!.trim().isNotEmpty;
+    return hasCoords || hasMapUrl;
+  }
+
+  /// GPS coordinates + tappable map link row (AC3). Reuses the
+  /// `url_launcher` + `canLaunchUrl` + snackbar-on-failure pattern from
+  /// `order_detail_screen.dart::_launchMapUrl`.
+  Widget _buildGpsMapRow(BuildContext context, ThemeData theme) {
+    final coords = (order.latitude != null && order.longitude != null)
+        ? '${order.latitude!.toStringAsFixed(5)}, ${order.longitude!.toStringAsFixed(5)}'
+        : null;
+    final mapUrl = order.googleMapsUrl;
+    final hasMapUrl = mapUrl != null && mapUrl.trim().isNotEmpty;
+
+    return Row(
+      children: [
+        Icon(
+          Icons.location_on_outlined,
+          size: 14,
+          color: theme.colorScheme.tertiary,
+        ),
+        const SizedBox(width: 4),
+        if (coords != null)
+          Expanded(
+            child: Text(
+              coords,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: Text(
+              OrdersLabels.googleMapsUrlLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ),
+        if (hasMapUrl) ...[
+          const SizedBox(width: 8),
+          InkWell(
+            onTap: () => _launchMap(context, mapUrl),
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Text(
+                OrdersLabels.openMap,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.tertiary,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _launchMap(BuildContext context, String? url) async {
+    final trimmed = url?.trim() ?? '';
+    if (trimmed.isEmpty) return;
+    final uri = Uri.parse(trimmed);
+    if (!await canLaunchUrl(uri)) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(OrdersLabels.cannotOpenMap)),
+      );
+      return;
+    }
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(OrdersLabels.cannotOpenMap)),
+      );
+    }
   }
 }

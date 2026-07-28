@@ -209,4 +209,15 @@ class OrdersLabels {
     '19:00',
     '20:00',
   ];
+
+  // Delivery tab calendar view toggle + grouping (DG-303 Phase 5) — FR5, AC6.
+  static const deliveryViewList = 'Danh sách';
+  static const deliveryViewCalendar = 'Lịch';
+  static const deliverySwitchToList = 'Chuyển sang danh sách';
+  static const deliverySwitchToCalendar = 'Chuyển sang lịch';
+  static const deliveryCalendarSlotLabel = 'Giờ giao';
+  static const deliveryCalendarNoSlot = 'Chưa có giờ';
+  static String deliveryCalendarSlotCount(int count) => '$count đơn';
+  static String deliveryCalendarSlotTotal(int count) => 'Tổng: $count đơn';
+  static const deliveryCalendarEmpty = 'Không có đơn giao theo lịch';
 }
