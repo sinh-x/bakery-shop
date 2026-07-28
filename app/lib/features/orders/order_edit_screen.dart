@@ -11,7 +11,6 @@ import '../../providers/order_providers.dart';
 import '../../shared/utils/date_formatting.dart';
 import '../../shared/utils/api_error.dart';
 import '../../shared/utils/delivery_helpers.dart';
-import '../../shared/utils/launch_external_url.dart';
 import '../../shared/utils/phone_formatter.dart';
 import '../../shared/widgets/app_bar_overflow_menu.dart';
 import 'package:bakery_app/shared/labels/customers.dart';
@@ -54,9 +53,13 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
   // DG-303 Phase 4 / DG-306 Phase 1: GPS fields (door delivery only). The
   // manual `deliveryTimeSlot` state was removed (DG-306 Phase 1 / FR2) — the
   // slot is auto-derived from `_dueTime` at submit time via `deriveTimeSlot`.
+  // DG-306 Phase 3 / FR7: the Google Maps URL field was removed from the
+  // edit form — the URL is now managed via the Google Maps modal on the
+  // order detail screen. The existing URL is preserved at save time by
+  // passing the loaded order's `googleMapsUrl` back to the backend.
   final _latitudeCtrl = TextEditingController();
   final _longitudeCtrl = TextEditingController();
-  final _googleMapsUrlCtrl = TextEditingController();
+  String? _existingGoogleMapsUrl;
   // FR9: single-state customer model (was tri-state: _selectedCustomer +
   // _linkedCustomerId + _customerTouched). The existing linked customer is
   // loaded from `order.customerId` into `_selectedCustomer` on open.
@@ -99,7 +102,6 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
     _notesCtrl.dispose();
     _latitudeCtrl.dispose();
     _longitudeCtrl.dispose();
-    _googleMapsUrlCtrl.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -162,7 +164,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         order.latitude != null ? order.latitude.toString() : '';
     _longitudeCtrl.text =
         order.longitude != null ? order.longitude.toString() : '';
-    _googleMapsUrlCtrl.text = order.googleMapsUrl ?? '';
+    _existingGoogleMapsUrl = order.googleMapsUrl;
     _initializing = false;
   }
 
@@ -284,9 +286,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
             publicCodeDateChangeDecision: publicCodeDateChangeDecision,
             latitude: double.tryParse(_latitudeCtrl.text.trim()),
             longitude: double.tryParse(_longitudeCtrl.text.trim()),
-            googleMapsUrl: _googleMapsUrlCtrl.text.trim().isEmpty
-                ? null
-                : _googleMapsUrlCtrl.text.trim(),
+            googleMapsUrl: _existingGoogleMapsUrl,
             // DG-306 Phase 1 / FR1: auto-derive the slot from `_dueTime`.
             deliveryTimeSlot: _dueTime != null
                 ? deriveTimeSlot(_formatTime(_dueTime!))
@@ -330,9 +330,7 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
         source: _source,
         latitude: double.tryParse(_latitudeCtrl.text.trim()),
         longitude: double.tryParse(_longitudeCtrl.text.trim()),
-        googleMapsUrl: _googleMapsUrlCtrl.text.trim().isEmpty
-            ? null
-            : _googleMapsUrlCtrl.text.trim(),
+        googleMapsUrl: _existingGoogleMapsUrl,
       );
 
   void _onCustomerSelected(Customer? c) {
@@ -447,9 +445,6 @@ class _OrderEditScreenState extends ConsumerState<OrderEditScreen> {
                         onContinue: () => _goToStage(4),
                         latitudeCtrl: _latitudeCtrl,
                         longitudeCtrl: _longitudeCtrl,
-                        googleMapsUrlCtrl: _googleMapsUrlCtrl,
-                        onLaunchMap: () =>
-                            launchExternalUrl(context, _googleMapsUrlCtrl.text),
                       ),
                       EditStage4Review(
                         orderRef: widget.orderRef,

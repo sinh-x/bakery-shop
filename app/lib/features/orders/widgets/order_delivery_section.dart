@@ -47,7 +47,6 @@ class OrderDeliverySection extends StatelessWidget {
     this.googleMapsUrl,
     this.latitudeCtrl,
     this.longitudeCtrl,
-    this.googleMapsUrlCtrl,
     this.onLaunchMap,
   });
 
@@ -82,12 +81,15 @@ class OrderDeliverySection extends StatelessWidget {
   // the parent provider/state. The manual `deliveryTimeSlot` dropdown was
   // removed (DG-306 Phase 1 / FR2/AC5) — the slot is now auto-derived from
   // `dueTime` by `deriveTimeSlot()` in `delivery_helpers.dart`.
+  // DG-306 Phase 3 / FR7: the Google Maps URL text field was removed from
+  // create/edit forms — the URL is now managed via the Google Maps modal on
+  // the order detail screen (`google_maps_modal.dart`). The `googleMapsUrl`
+  // field is kept for read-only display.
   final double? latitude;
   final double? longitude;
   final String? googleMapsUrl;
   final TextEditingController? latitudeCtrl;
   final TextEditingController? longitudeCtrl;
-  final TextEditingController? googleMapsUrlCtrl;
   final VoidCallback? onLaunchMap;
 
   bool get _needsAddress => deliveryType == 'bus' || deliveryType == 'door';
@@ -243,9 +245,7 @@ class OrderDeliverySection extends StatelessWidget {
             onShippingFeeChanged != null)
           _buildShippingFeeSection(context),
         if (_isDoorDelivery) ...[
-          if (latitudeCtrl != null &&
-              longitudeCtrl != null &&
-              googleMapsUrlCtrl != null) ...[
+          if (latitudeCtrl != null && longitudeCtrl != null) ...[
             const SizedBox(height: 16),
             _buildGpsFieldsSection(context),
           ],
@@ -405,7 +405,7 @@ class OrderDeliverySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionHeader(OrdersLabels.googleMapsUrlLabel),
+        const SectionHeader(OrdersLabels.gpsCoordinatesLabel),
         Row(
           children: [
             Expanded(
@@ -434,15 +434,6 @@ class OrderDeliverySection extends StatelessWidget {
               ),
             ),
           ],
-        ),
-        const SizedBox(height: 12),
-        TextFormField(
-          controller: googleMapsUrlCtrl,
-          decoration: const InputDecoration(
-            labelText: OrdersLabels.googleMapsUrlLabel,
-            border: OutlineInputBorder(),
-          ),
-          keyboardType: TextInputType.url,
         ),
       ],
     );

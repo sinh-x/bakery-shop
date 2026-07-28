@@ -27,6 +27,7 @@ import '../../shared/widgets/app_bar_overflow_menu.dart';
 import '../../shared/widgets/target_account_dropdown.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
 import 'widgets/enum_attribute_display.dart';
+import 'widgets/google_maps_modal.dart';
 import 'widgets/order_customer_section.dart';
 import 'widgets/order_delivery_section.dart';
 import 'widgets/order_item_markup_line.dart';
@@ -270,6 +271,10 @@ class OrderDetailScreen extends ConsumerWidget {
                       value: 'addIncident',
                       child: Text(VN.addOrderIncident),
                     ),
+                    const PopupMenuItem<String>(
+                      value: 'googleMaps',
+                      child: Text(OrdersLabels.googleMapsContextMenuLabel),
+                    ),
                   ]
                 : [],
             onSelected: (value) {
@@ -279,6 +284,16 @@ class OrderDetailScreen extends ConsumerWidget {
                 context.push(
                   '/orders/$orderRef/incident/new',
                   extra: orderId,
+                );
+              } else if (value == 'googleMaps') {
+                final order = orderAsync.asData!.value;
+                showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => GoogleMapsModal(
+                    orderRef: order.orderRef,
+                    initialUrl: order.googleMapsUrl,
+                  ),
                 );
               }
             },

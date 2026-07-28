@@ -39,8 +39,6 @@ class EditStage3Delivery extends ConsumerWidget {
     required this.onContinue,
     this.latitudeCtrl,
     this.longitudeCtrl,
-    this.googleMapsUrlCtrl,
-    this.onLaunchMap,
   });
 
   final String deliveryType;
@@ -65,10 +63,11 @@ class EditStage3Delivery extends ConsumerWidget {
   // DG-303 Phase 4 / DG-306 Phase 1: GPS fields (door delivery only). The
   // manual `deliveryTimeSlot` dropdown was removed (DG-306 Phase 1 / FR2) —
   // the slot is now auto-derived from `dueTime` by `deriveTimeSlot()`.
+  // DG-306 Phase 3 / FR7: the Google Maps URL text field was removed from
+  // the edit form — the URL is now managed via the Google Maps modal on
+  // the order detail screen.
   final TextEditingController? latitudeCtrl;
   final TextEditingController? longitudeCtrl;
-  final TextEditingController? googleMapsUrlCtrl;
-  final VoidCallback? onLaunchMap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -105,8 +104,6 @@ class EditStage3Delivery extends ConsumerWidget {
               dueDateTimeSlot: _buildEditDueDateTime(context),
               latitudeCtrl: latitudeCtrl,
               longitudeCtrl: longitudeCtrl,
-              googleMapsUrlCtrl: googleMapsUrlCtrl,
-              onLaunchMap: onLaunchMap,
               summaryCardSlots: [
                 ProductSummaryCard(items: summaryItems),
                 CustomerSummaryCard(

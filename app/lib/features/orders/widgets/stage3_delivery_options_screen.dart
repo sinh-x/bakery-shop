@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/config_provider.dart';
 import '../../../providers/order/order_create_state_provider.dart';
 import '../../../shared/utils/config_parsers.dart';
-import '../../../shared/utils/launch_external_url.dart';
 import 'order_delivery_section.dart';
 import 'stage_summary_card.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
@@ -33,7 +32,6 @@ class _Stage3DeliveryOptionsScreenState
   final _notesCtrl = TextEditingController();
   final _latitudeCtrl = TextEditingController();
   final _longitudeCtrl = TextEditingController();
-  final _googleMapsUrlCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -44,13 +42,11 @@ class _Stage3DeliveryOptionsScreenState
     _notesCtrl.text = state.wizardData.notes;
     _latitudeCtrl.text = state.latitude?.toString() ?? '';
     _longitudeCtrl.text = state.longitude?.toString() ?? '';
-    _googleMapsUrlCtrl.text = state.googleMapsUrl ?? '';
     _addressCtrl.addListener(_syncToState);
     _deliveryPhoneCtrl.addListener(_syncToState);
     _notesCtrl.addListener(_syncToState);
     _latitudeCtrl.addListener(_syncGpsToState);
     _longitudeCtrl.addListener(_syncGpsToState);
-    _googleMapsUrlCtrl.addListener(_syncGpsToState);
     // CQ-1: deferring the prefill to the next frame avoids synchronously
     // mutating the provider during widget build (initState), which broke
     // 3 tests that assert the build phase does not update wizard state.
@@ -68,13 +64,11 @@ class _Stage3DeliveryOptionsScreenState
     _notesCtrl.removeListener(_syncToState);
     _latitudeCtrl.removeListener(_syncGpsToState);
     _longitudeCtrl.removeListener(_syncGpsToState);
-    _googleMapsUrlCtrl.removeListener(_syncGpsToState);
     _addressCtrl.dispose();
     _deliveryPhoneCtrl.dispose();
     _notesCtrl.dispose();
     _latitudeCtrl.dispose();
     _longitudeCtrl.dispose();
-    _googleMapsUrlCtrl.dispose();
     super.dispose();
   }
 
@@ -90,20 +84,19 @@ class _Stage3DeliveryOptionsScreenState
     );
   }
 
-  /// DG-303 Phase 4 / DG-306 Phase 1: sync GPS coordinate + map URL text fields
-  /// back to `OrderCreateState`. Latitude/longitude are parsed to `double?` so
-  /// the backend receives numeric values; invalid input is left as `null` and
+  /// DG-303 Phase 4 / DG-306 Phase 1: sync GPS coordinate text fields back to
+  /// `OrderCreateState`. Latitude/longitude are parsed to `double?` so the
+  /// backend receives numeric values; invalid input is left as `null` and
   /// the field validator surfaces the error to the user. The manual
-  /// `deliveryTimeSlot` dropdown was removed (DG-306 Phase 1 / FR2) — the slot
-  /// is auto-derived from `dueTime` by `deriveTimeSlot()`.
+  /// `deliveryTimeSlot` dropdown was removed (DG-306 Phase 1 / FR2) — the
+  /// slot is auto-derived from `dueTime`. DG-306 Phase 3 / FR7: the Google
+  /// Maps URL field was removed from the create form — the URL is now
+  /// managed via the Google Maps modal on the order detail screen.
   void _syncGpsToState() {
     final notifier = ref.read(widget.orderStateProvider.notifier);
     notifier.updateGpsFields(
       latitude: double.tryParse(_latitudeCtrl.text.trim()),
       longitude: double.tryParse(_longitudeCtrl.text.trim()),
-      googleMapsUrl: _googleMapsUrlCtrl.text.trim().isEmpty
-          ? null
-          : _googleMapsUrlCtrl.text.trim(),
     );
   }
 
@@ -223,9 +216,6 @@ class _Stage3DeliveryOptionsScreenState
                   _retryShippingFeeConfig(data.deliveryType),
               latitudeCtrl: _latitudeCtrl,
               longitudeCtrl: _longitudeCtrl,
-              googleMapsUrlCtrl: _googleMapsUrlCtrl,
-              onLaunchMap: () =>
-                  launchExternalUrl(context, _googleMapsUrlCtrl.text),
               summaryCardSlots: [
                 ProductSummaryCard(items: state.items),
                 CustomerSummaryCard(

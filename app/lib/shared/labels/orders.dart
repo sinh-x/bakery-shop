@@ -231,6 +231,18 @@ class OrdersLabels {
   static const deliveryWeekNextTooltip = 'Tuần sau';
   static const deliveryWeekUnscheduled = 'Chưa có giờ';
 
+  // Google Maps modal (DG-306 Phase 3) — FR6, AC6.
+  static const googleMapsContextMenuLabel = 'Google Maps';
+  static const googleMapsModalTitle = 'Liên kết Google Maps';
+  static const googleMapsModalHint =
+      'Dán liên kết Google Maps cho địa chỉ giao hàng.';
+  static const googleMapsModalEmpty = 'Chưa có liên kết Google Maps.';
+  static const googleMapsModalOpenMap = 'Mở bản đồ';
+  static const googleMapsModalSave = 'Lưu';
+  static const googleMapsModalClear = 'Xoá liên kết';
+  static const googleMapsModalSaved = 'Đã lưu liên kết Google Maps.';
+  static const googleMapsModalCleared = 'Đã xoá liên kết Google Maps.';
+
   /// Short Vietnamese weekday headers (Mon–Sun), aligned to DateTime.weekday
   /// (Mon=1..Sun=7 → index 0..6).
   static const deliveryWeekdayHeaders = <String>[
