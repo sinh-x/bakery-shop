@@ -95,7 +95,9 @@ class OrderDeliverySection extends StatelessWidget {
   bool get _needsAddress => deliveryType == 'bus' || deliveryType == 'door';
 
   /// GPS/map fields are only relevant for door delivery (FR1/FR2/AC1).
-  bool get _isDoorDelivery => deliveryType == 'door';
+  /// Includes legacy `'delivery'` type which behaves like `'door'` for
+  /// time slot and GPS display (FR8/AC8, DG-306 Phase 4).
+  bool get _isDoorDelivery => deliveryType == 'door' || deliveryType == 'delivery';
 
   /// Whether the customer phone should be shown in read-only mode.
   ///
