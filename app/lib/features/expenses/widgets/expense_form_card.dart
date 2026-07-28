@@ -115,6 +115,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
 
   @override
   Widget build(BuildContext context) {
+    final subcategoryOptions = _subcategoryOptions;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -150,7 +151,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                     (value == null || value.isEmpty) ? VN.fieldRequired : null,
               ),
               const SizedBox(height: 8),
-              if (_subcategoryOptions.isNotEmpty)
+              if (subcategoryOptions.isNotEmpty)
                 DropdownButtonFormField<String>(
                   initialValue: widget.subcategory,
                   decoration: const InputDecoration(
@@ -158,7 +159,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                     hintText: VN.expenseSubcategoryHint,
                     border: OutlineInputBorder(),
                   ),
-                  items: _subcategoryOptions
+                  items: subcategoryOptions
                       .map(
                         (item) =>
                             DropdownMenuItem(value: item, child: Text(item)),
@@ -168,7 +169,7 @@ class _ExpenseFormCardState extends State<ExpenseFormCard> {
                   validator: (value) =>
                       (value == null || value.isEmpty) ? VN.fieldRequired : null,
                 ),
-              if (_subcategoryOptions.isNotEmpty) const SizedBox(height: 8),
+              if (subcategoryOptions.isNotEmpty) const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 initialValue: widget.paymentMethod,
                 decoration: const InputDecoration(

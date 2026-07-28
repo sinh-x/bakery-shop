@@ -22,6 +22,30 @@ String expenseDebtStatusFilterLabel(ExpenseDebtStatusFilter status) {
   }
 }
 
+/// Returns the VN display label for a subcategory DB name.
+/// Uses the label constants from [VN] so that user-facing copy stays
+/// centralised (DG-302 Phase 3 — Mn2).
+String expenseSubcategoryLabel(String name) {
+  switch (name) {
+    case 'Trứng':
+      return VN.expenseSubcategoryEggs;
+    case 'Kem':
+      return VN.expenseSubcategoryCream;
+    case 'Bột':
+      return VN.expenseSubcategoryFlour;
+    case 'Phụ gia khác':
+      return VN.expenseSubcategoryOtherAdditives;
+    case 'Hộp & đế':
+      return VN.expenseSubcategoryBoxAndBase;
+    case 'Phụ kiện':
+      return VN.expenseSubcategoryAccessories;
+    case 'Bọc nilon':
+      return VN.expenseSubcategoryWrap;
+    default:
+      return name;
+  }
+}
+
 /// Backend ``debt_status`` value for [status] (``all``/``unpaid``/``paid``/
 /// ``partial``). Returns an empty string for [ExpenseDebtStatusFilter.all] so
 /// callers can pass it directly to the API without sending a redundant
@@ -132,7 +156,7 @@ class ExpenseFilterCard extends StatelessWidget {
       ),
       ...subs.map(
         (sub) => FilterChip(
-          label: Text(sub.name),
+          label: Text(expenseSubcategoryLabel(sub.name)),
           selected: filterSubcategory == sub.name,
           onSelected: (_) => onFilterSubcategoryChanged!(sub.name),
           visualDensity: VisualDensity.compact,
