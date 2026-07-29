@@ -49,6 +49,10 @@ class _DeliveryWeekCalendarViewState
     final today = DateTime.now();
     final todayKey = _formatDayKey(today);
 
+    final timeLineOffset = currentTimeGridOffset();
+    final showTimeLine =
+        timeLineOffset != null && isTodayInWeek(days);
+
     return Column(
       children: [
         WeekCalendarNav(
@@ -67,22 +71,30 @@ class _DeliveryWeekCalendarViewState
                 width: _gridWidth(context),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.vertical,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Stack(
                     children: [
-                      WeekHourLabelColumn(theme: theme),
-                      ...days.map((d) {
-                        final dayKey = _formatDayKey(d);
-                        return Expanded(
-                          child: WeekDayColumn(
-                            date: d,
-                            dayKey: dayKey,
-                            isToday: dayKey == todayKey,
-                            ordersBySlot: _ordersForDay(grouped, dayKey),
-                            theme: theme,
-                          ),
-                        );
-                      }),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          WeekHourLabelColumn(theme: theme),
+                          ...days.map((d) {
+                            final dayKey = _formatDayKey(d);
+                            return Expanded(
+                              child: WeekDayColumn(
+                                date: d,
+                                dayKey: dayKey,
+                                isToday: dayKey == todayKey,
+                                ordersBySlot: _ordersForDay(grouped, dayKey),
+                                theme: theme,
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                      CurrentTimeLine(
+                        visible: showTimeLine,
+                        topOffset: timeLineOffset ?? 0,
+                      ),
                     ],
                   ),
                 ),

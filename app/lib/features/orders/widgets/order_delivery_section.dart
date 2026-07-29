@@ -12,7 +12,9 @@ import '../../../shared/utils/order_helpers.dart';
 import '../../../shared/utils/phone_formatter.dart';
 import '../../../shared/widgets/phone_text_field.dart';
 import 'due_date_time_picker_row.dart';
+import 'order_delivery_gps_section.dart';
 import 'section_header.dart';
+import 'shipping_fee_section.dart';
 import 'stage1_responsive_content.dart';
 
 class OrderDeliverySection extends StatelessWidget {
@@ -178,7 +180,10 @@ class OrderDeliverySection extends StatelessWidget {
         if (_isDoorDelivery &&
             googleMapsUrl != null &&
             googleMapsUrl!.isNotEmpty)
-          _buildMapLinkRow(context, googleMapsUrl!),
+          MapLinkRow(
+            url: googleMapsUrl!,
+            onTap: onLaunchMap,
+          ),
         if (shippingFee != null && shippingFee! > 0)
           _buildInfoRow(context, Icons.monetization_on_outlined, VN.shippingFee, formatVND(shippingFee!)),
         if (notes != null && notes!.isNotEmpty)
@@ -244,12 +249,24 @@ class OrderDeliverySection extends StatelessWidget {
           ),
         ],
         if ((deliveryType == 'bus' || deliveryType == 'door') &&
-            onShippingFeeChanged != null)
-          _buildShippingFeeSection(context),
+            onShippingFeeChanged != null) ...[
+          const SizedBox(height: 20),
+          const SectionHeader(VN.shippingFee),
+          ShippingFeeSection(
+            shippingFee: shippingFee,
+            onChanged: onShippingFeeChanged!,
+            loading: shippingFeeConfigLoading,
+            error: shippingFeeConfigError,
+            onRetry: onRetryShippingFeeConfig,
+          ),
+        ],
         if (_isDoorDelivery) ...[
           if (latitudeCtrl != null && longitudeCtrl != null) ...[
             const SizedBox(height: 16),
-            _buildGpsFieldsSection(context),
+            GpsFieldsSection(
+              latitudeCtrl: latitudeCtrl!,
+              longitudeCtrl: longitudeCtrl!,
+            ),
           ],
         ],
         if (notesCtrl != null) ...[
@@ -270,191 +287,6 @@ class OrderDeliverySection extends StatelessWidget {
         ],
       ],
     );
-  }
-
-  Widget _buildShippingFeeSection(BuildContext context) {
-    return Column(
-      children: [
-        const SizedBox(height: 20),
-        const SectionHeader(VN.shippingFee),
-        if (shippingFeeConfigLoading)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: SizedBox(
-              height: 24,
-              width: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          )
-        else if (shippingFeeConfigError != null)
-          _buildShippingFeeError(context)
-        else
-          _buildShippingFeeStepper(context),
-      ],
-    );
-  }
-
-  Widget _buildShippingFeeError(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Flexible(
-            child: Text(
-              VN.errorLoading,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          if (onRetryShippingFeeConfig != null) ...[
-            const SizedBox(width: 8),
-            TextButton.icon(
-              onPressed: onRetryShippingFeeConfig,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text(VN.retry),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildShippingFeeStepper(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        IconButton.filled(
-          onPressed: (shippingFee ?? 0) >= 5000
-              ? () => onShippingFeeChanged!((shippingFee ?? 0) - 5000.0)
-              : null,
-          icon: const Icon(Icons.remove),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            (shippingFee ?? 0) == 0
-                ? VN.shippingFree
-                : formatVND(shippingFee!),
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-        ),
-        IconButton.filled(
-          onPressed: () => onShippingFeeChanged!((shippingFee ?? 0) + 5000.0),
-          icon: const Icon(Icons.add),
-        ),
-      ],
-    );
-  }
-
-  /// Read-only tappable Google Maps link row (AC2/AC4). Falls back to a plain
-  /// info row when `onLaunchMap` is null or the URL cannot be opened.
-  Widget _buildMapLinkRow(BuildContext context, String url) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.map_outlined, size: 16, color: Colors.grey),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 80,
-            child: Text(
-              '${OrdersLabels.googleMapsUrlLabel}:',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.grey),
-            ),
-          ),
-          Expanded(
-            child: InkWell(
-              onTap: onLaunchMap,
-              borderRadius: BorderRadius.circular(4),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        OrdersLabels.openMap,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Icon(
-                      Icons.open_in_new,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// GPS coordinate + Google Maps URL fields for door delivery (FR1/FR2/AC1).
-  /// Latitude is validated to [-90, 90], longitude to [-180, 180] (NFR2).
-  Widget _buildGpsFieldsSection(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SectionHeader(OrdersLabels.gpsCoordinatesLabel),
-        Row(
-          children: [
-            Expanded(
-              child: TextFormField(
-                controller: latitudeCtrl,
-                decoration: const InputDecoration(
-                  labelText: OrdersLabels.latitudeLabel,
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true, signed: true),
-                validator: _validateLatitude,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: TextFormField(
-                controller: longitudeCtrl,
-                decoration: const InputDecoration(
-                  labelText: OrdersLabels.longitudeLabel,
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true, signed: true),
-                validator: _validateLongitude,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  String? _validateLatitude(String? v) {
-    if (v == null || v.trim().isEmpty) return null;
-    final n = double.tryParse(v.trim());
-    if (n == null) return VN.invalidPrice;
-    if (n < -90 || n > 90) return OrdersLabels.latitudeInvalid;
-    return null;
-  }
-
-  String? _validateLongitude(String? v) {
-    if (v == null || v.trim().isEmpty) return null;
-    final n = double.tryParse(v.trim());
-    if (n == null) return VN.invalidPrice;
-    if (n < -180 || n > 180) return OrdersLabels.longitudeInvalid;
-    return null;
   }
 
   Widget _buildInfoRow(BuildContext context, IconData icon, String label, String value) {

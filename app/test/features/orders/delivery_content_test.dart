@@ -269,12 +269,15 @@ void main() {
       expect(find.text('ORD-NEW'), findsOneWidget);
       expect(find.text('ORD-READY'), findsOneWidget);
 
-      // Toggle to calendar view (week grid).
-      await tester.tap(find.byTooltip(OrdersLabels.deliverySwitchToCalendar));
+      // Toggle to week calendar view.
+      await tester.tap(find.byTooltip(OrdersLabels.deliverySwitchToWeek));
       await tester.pumpAndSettle();
       expect(find.byType(DeliveryContent), findsOneWidget);
 
-      // Toggle back to list view — the status-grouped list still renders.
+      // Toggle to day view then back to list — the status-grouped list
+      // still renders.
+      await tester.tap(find.byTooltip(OrdersLabels.deliverySwitchToDay));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip(OrdersLabels.deliverySwitchToList));
       await tester.pumpAndSettle();
 

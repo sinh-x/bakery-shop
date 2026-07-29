@@ -7,6 +7,7 @@ import '../../../providers/order_providers.dart';
 import '../../../shared/theme/bakery_theme.dart';
 import '../../../shared/utils/delivery_helpers.dart';
 import 'package:bakery_app/shared/labels/orders.dart';
+import 'delivery_day_calendar_view.dart';
 import 'delivery_order_card.dart';
 import 'delivery_week_calendar_view.dart';
 
@@ -20,7 +21,7 @@ class DeliveryContent extends ConsumerStatefulWidget {
 class _DeliveryContentState extends ConsumerState<DeliveryContent> {
   bool _showToday = true;
 
-  /// View mode for the delivery tab: 'list' (default) or 'calendar' (FR5).
+  /// View mode for the delivery tab: 'list' (default), 'week', or 'day'.
   String _viewMode = 'list';
 
   Future<void> _onRefresh() async {
@@ -30,7 +31,6 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
   @override
   Widget build(BuildContext context) {
     final ordersAsync = ref.watch(orderListProvider);
-    final theme = Theme.of(context);
 
     return ordersAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -48,11 +48,11 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
         ),
       ),
       data: (orders) {
-        final isCalendar = _viewMode == 'calendar';
-        // The week grid spans a full week with its own "Hôm nay" navigation
-        // (FR5/AC2/AC3), so it always receives all non-terminal delivery
-        // orders regardless of the Today/All filter. The Today/All filter
-        // only applies to the list view.
+        final isCalendar = _viewMode != 'list';
+        // The week/day grid has its own "Hôm nay" navigation (FR5/AC2/AC3),
+        // so it always receives all non-terminal delivery orders regardless
+        // of the Today/All filter. The Today/All filter only applies to the
+        // list view.
         final calendarOrders =
             filterDeliveryOrders(orders, todayOnly: false);
         final listOrders =
@@ -80,34 +80,48 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
                   const Spacer(),
                   _ViewModeToggle(
                     viewMode: _viewMode,
-                    onChanged: (mode) => setState(() => _viewMode = mode),
+                    onChanged: (mode) =>
+                        setState(() => _viewMode = mode),
                   ),
                 ],
               ),
             ),
             Expanded(
-              child: isCalendar
-                  ? DeliveryWeekCalendarView(
-                      orders: calendarOrders,
-                      onRefresh: _onRefresh,
-                    )
-                  : listOrders.isEmpty
-                      ? Center(
-                          child: Text(
-                            _showToday
-                                ? OrdersLabels.deliveryEmptyToday
-                                : OrdersLabels.deliveryEmptyAll,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.outline,
-                            ),
-                          ),
-                        )
-                      : _buildGroupedList(listOrders),
+              child: _buildView(calendarOrders, listOrders),
             ),
           ],
         );
       },
     );
+  }
+
+  Widget _buildView(List<Order> calendarOrders, List<Order> listOrders) {
+    switch (_viewMode) {
+      case 'week':
+        return DeliveryWeekCalendarView(
+          orders: calendarOrders,
+          onRefresh: _onRefresh,
+        );
+      case 'day':
+        return DeliveryDayCalendarView(
+          orders: calendarOrders,
+          onRefresh: _onRefresh,
+        );
+      default:
+        if (listOrders.isEmpty) {
+          return Center(
+            child: Text(
+              _showToday
+                  ? OrdersLabels.deliveryEmptyToday
+                  : OrdersLabels.deliveryEmptyAll,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+            ),
+          );
+        }
+        return _buildGroupedList(listOrders);
+    }
   }
 
   Widget _buildGroupedList(List<Order> orders) {
@@ -185,23 +199,54 @@ class _DeliveryContentState extends ConsumerState<DeliveryContent> {
   }
 }
 
-/// Segmented list/calendar toggle for the delivery tab (FR5).
-/// Mirrors the order list/kanban toggle pattern from [OrderListScreen].
+/// Cycle button that toggles between list → week → day → list views.
 class _ViewModeToggle extends StatelessWidget {
   const _ViewModeToggle({required this.viewMode, required this.onChanged});
 
   final String viewMode;
   final ValueChanged<String> onChanged;
 
+  IconData _icon() {
+    switch (viewMode) {
+      case 'list':
+        return Icons.calendar_month_outlined;
+      case 'week':
+        return Icons.view_day_outlined;
+      case 'day':
+        return Icons.view_list;
+      default:
+        return Icons.calendar_month_outlined;
+    }
+  }
+
+  String _tooltip() {
+    switch (viewMode) {
+      case 'list':
+        return OrdersLabels.deliverySwitchToWeek;
+      case 'week':
+        return OrdersLabels.deliverySwitchToDay;
+      case 'day':
+        return OrdersLabels.deliverySwitchToList;
+      default:
+        return OrdersLabels.deliverySwitchToWeek;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isCalendar = viewMode == 'calendar';
     return IconButton(
-      icon: Icon(isCalendar ? Icons.view_list : Icons.calendar_month_outlined),
-      tooltip: isCalendar
-          ? OrdersLabels.deliverySwitchToList
-          : OrdersLabels.deliverySwitchToCalendar,
-      onPressed: () => onChanged(isCalendar ? 'list' : 'calendar'),
+      icon: Icon(_icon()),
+      tooltip: _tooltip(),
+      onPressed: () {
+        switch (viewMode) {
+          case 'list':
+            onChanged('week');
+          case 'week':
+            onChanged('day');
+          case 'day':
+            onChanged('list');
+        }
+      },
     );
   }
 }

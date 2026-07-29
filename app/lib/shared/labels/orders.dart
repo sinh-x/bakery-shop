@@ -215,7 +215,8 @@ class OrdersLabels {
 
   // Delivery tab calendar view toggle + grouping (DG-303 Phase 5) — FR5, AC6.
   static const deliverySwitchToList = 'Chuyển sang danh sách';
-  static const deliverySwitchToCalendar = 'Chuyển sang lịch';
+  static const deliverySwitchToWeek = 'Chuyển sang tuần';
+  static const deliverySwitchToDay = 'Chuyển sang ngày';
   static const deliveryCalendarNoSlot = 'Chưa có khung giờ';
 
   // Delivery week calendar view (DG-306 Phase 2) — FR3, FR5, AC1–AC3.
@@ -223,6 +224,19 @@ class OrdersLabels {
   static const deliveryWeekPrevTooltip = 'Tuần trước';
   static const deliveryWeekNextTooltip = 'Tuần sau';
   static const deliveryWeekUnscheduled = 'Chưa có giờ';
+
+  // Delivery day calendar view — day navigation.
+  static const deliveryDayToday = 'Hôm nay';
+  static const deliveryDayPrevTooltip = 'Ngày trước';
+  static const deliveryDayNextTooltip = 'Ngày sau';
+
+  /// Formats a single day label as "T2, 29/07".
+  static String deliveryDayLabel(DateTime d) {
+    final weekday = deliveryWeekdayHeaders[d.weekday - 1];
+    final day = d.day.toString().padLeft(2, '0');
+    final month = d.month.toString().padLeft(2, '0');
+    return '$weekday, $day/$month';
+  }
 
   // Google Maps modal (DG-306 Phase 3) — FR6, AC6.
   static const googleMapsContextMenuLabel = 'Google Maps';

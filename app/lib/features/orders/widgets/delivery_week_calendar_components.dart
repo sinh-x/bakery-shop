@@ -78,6 +78,7 @@ class WeekHourLabelColumn extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: WeekDayColumn.headerHeight),
+          const SizedBox(height: WeekDayColumn.unscheduledRowHeight),
           ...OrdersLabels.deliveryTimeSlots.map((slot) => SizedBox(
                 height: WeekDayColumn.hourRowHeight,
                 child: Align(
@@ -313,4 +314,80 @@ class _MiniOrderCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Horizontal line marking the current time position within the time grid.
+/// Only renders when [visible] is true (current time is within the grid
+/// range and the displayed day/week contains today).
+class CurrentTimeLine extends StatelessWidget {
+  const CurrentTimeLine({
+    super.key,
+    required this.visible,
+    required this.topOffset,
+  });
+  final bool visible;
+  final double topOffset;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!visible) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.error;
+    return Positioned(
+      top: topOffset,
+      left: 0,
+      right: 0,
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Container(height: 2, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Calculates the Y offset of the current time within the grid, or null if
+/// the current time falls outside the 6:00–21:00 range.
+///
+/// Grid layout: header (44px) + unscheduled row (72px) + hour rows (64px
+/// each, 16 slots from 6:00 to 21:00).
+double? currentTimeGridOffset() {
+  final now = DateTime.now();
+  final hour = now.hour;
+  final minute = now.minute;
+  if (hour < 6 || hour >= 21) return null;
+  final slotIndex = hour - 6;
+  final fraction = minute / 60.0;
+  return WeekDayColumn.headerHeight +
+      WeekDayColumn.unscheduledRowHeight +
+      (slotIndex + fraction) * WeekDayColumn.hourRowHeight;
+}
+
+/// Whether today falls within the given list of week [days].
+bool isTodayInWeek(List<DateTime> days) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  return days.any((d) =>
+      d.year == today.year &&
+      d.month == today.month &&
+      d.day == today.day);
+}
+
+/// Whether [date] is today.
+bool isTodayDate(DateTime date) {
+  final now = DateTime.now();
+  return date.year == now.year &&
+      date.month == now.month &&
+      date.day == now.day;
 }
