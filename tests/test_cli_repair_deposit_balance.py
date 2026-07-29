@@ -1082,7 +1082,7 @@ def test_repair_cancelled_order_journal_sync_failure():
         )
         conn.commit()
 
-    with patch("baker.commands.repair._sync_cancelled_order_journal") as mock_sync:
+    with patch("baker.commands.repair.cancelled_orders._sync_cancelled_order_journal") as mock_sync:
         mock_sync.side_effect = RuntimeError("simulated journal sync failure")
         result = _invoke_cancelled(["--order-id", str(oid)])
 
