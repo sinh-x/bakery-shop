@@ -4,12 +4,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from baker.db.schema import EXPENSE_DEBT_PAYMENT_METHOD
-
-_BS = "\\"
-
-
-def _escape_like(value: str) -> str:
-    return value.replace("%", _BS + "%").replace("_", _BS + "_")
+from baker.utils.db import escape_like as _escape_like
 
 
 def _has_order_items_column(conn, col_name: str) -> bool:

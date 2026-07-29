@@ -4,14 +4,10 @@ from fastapi import APIRouter
 
 from baker.db.connection import get_db
 from baker.db.queries import fetch_staff
+from baker.utils.db import row_to_dict as _row_to_dict
 
 
 router = APIRouter(prefix="/api/staff", tags=["staff"])
-
-
-def _row_to_dict(row) -> dict:
-    """Convert a sqlite3.Row to a dict."""
-    return dict(row)
 
 
 @router.get("")

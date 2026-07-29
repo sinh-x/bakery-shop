@@ -9,6 +9,7 @@ from pydantic import BaseModel
 import baker.config
 from baker.api.photos import read_image_upload, save_photo
 from baker.db.connection import get_db
+from baker.utils.db import row_to_dict as _row_to_dict
 from baker.utils.time import now_utc
 
 
@@ -91,10 +92,6 @@ class CatalogPhotoUpdate(BaseModel):
     caption: str | None = None
     tags: str | None = None
     position: int | None = None
-
-
-def _row_to_dict(row) -> dict:
-    return dict(row)
 
 
 def _sync_catalog_photo_tags(conn, photo_id: int, tags: str):

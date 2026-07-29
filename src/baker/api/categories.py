@@ -7,6 +7,7 @@ from pydantic import BaseModel, field_validator
 
 from baker.api.auth import RequireRole, record_audit_log
 from baker.db.connection import get_db
+from baker.utils.db import row_to_dict as _row_to_dict
 
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
@@ -56,10 +57,6 @@ class CategoryUpdate(BaseModel):
 
 class CategoryReorderItem(BaseModel):
     id: int
-
-
-def _row_to_dict(row) -> dict:
-    return dict(row)
 
 
 @router.get("")

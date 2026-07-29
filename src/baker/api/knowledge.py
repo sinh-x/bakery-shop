@@ -8,13 +8,8 @@ from pydantic import BaseModel
 
 from baker.db.connection import get_db
 from baker.models.knowledge import Knowledge
-
-_BS = "\\"
-
-
-def _escape_like(value: str) -> str:
-    return value.replace("%", _BS + "%").replace("_", _BS + "_")
 from baker.api.photos import read_image_upload, save_photo
+from baker.utils.db import escape_like as _escape_like
 from baker.utils.time import now_utc
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
