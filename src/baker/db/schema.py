@@ -5006,6 +5006,15 @@ MIGRATIONS = {
         "sql": "",
         "callable": _migrate_v87_order_delivery_schedule_gps,
     },
+    88: {
+        "description": "Add composite indexes on orders(status, due_date) and orders(customer_id, created_at) for common query patterns (DG-308 Phase 4.4)",
+        "sql": (
+            "CREATE INDEX IF NOT EXISTS idx_orders_status_due_date "
+            "ON orders(status, due_date);\n"
+            "CREATE INDEX IF NOT EXISTS idx_orders_customer_id_created_at "
+            "ON orders(customer_id, created_at);"
+        ),
+    },
 }
 
 

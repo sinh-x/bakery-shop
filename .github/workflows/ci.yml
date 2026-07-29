@@ -235,9 +235,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check dependency health
+        # Phase 4.4 (FR-CI-2) — enforce Flutter dependency freshness. Fails
+        # the job when any direct dependency has a newer compatible version,
+        # prompting maintainers to keep packages up to date.
         run: flutter pub outdated --no-color
         working-directory: app
-        continue-on-error: true
 
       - name: Check code generation freshness
         run: |
@@ -253,8 +255,83 @@ jobs:
     needs: filter
     if: needs.filter.outputs.docker == '1'
     runs-on: ubuntu-latest
+    # Phase 4.4 (FR-CI-4) — bound the build to avoid unbounded runner time.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
       - name: Build Docker image
         run: docker build .
+
+  python-security:
+    # Phase 4.4 (FR-CI-1) — Python SAST (Bandit) + dependency vulnerability
+    # audit (pip-audit). Runs whenever the Python stack is exercised.
+    needs: filter
+    if: needs.filter.outputs.python == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache Python dependencies (uv/pip)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.cache/pip
+          key: python-deps-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            python-deps-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pip install -e ".[dev,web]" bandit pip-audit
+
+      - name: Bandit SAST scan
+        # Phase 4.4 (FR-CI-1) — static security analysis of the Python source.
+        # `-ll` restricts to medium+high severity; `-q` suppresses noise.
+        run: bandit -r src -ll -q
+
+      - name: pip-audit dependency vulnerability scan
+        # Phase 4.4 (FR-CI-1/FR-CI-2) — audit installed dependencies against
+        # the PyPA advisory database. Fails the job on known vulnerabilities.
+        run: pip-audit --strict
+
+  python-coverage:
+    # Phase 4.4 (FR-CI-3) — enforce a minimum Python test coverage threshold.
+    # Runs alongside the full python-tests job; gates on the coverage report.
+    needs: filter
+    if: needs.filter.outputs.python == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache Python dependencies (uv/pip)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.cache/pip
+          key: python-deps-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            python-deps-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pip install -e ".[dev,web]" ruff pytest-xdist pytest-cov
+
+      - name: Run tests with coverage
+        # Phase 4.4 (FR-CI-3) — generate coverage report and enforce a
+        # minimum line coverage threshold of 70%. `--cov-fail-under` makes
+        # pytest exit non-zero when coverage drops below the threshold.
+        timeout-minutes: 12
+        env:
+          BAKER_BCRYPT_ROUNDS: "4"
+        run: python -m pytest tests -n auto --cov=baker --cov-report=term --cov-report=xml --cov-fail-under=70
