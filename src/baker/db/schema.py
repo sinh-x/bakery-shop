@@ -1672,6 +1672,11 @@ SEED_CHART_OF_ACCOUNTS = [
     ("5230", "Bọc nilon (Plastic Wrap)", "expense", "5200"),
     # COGS
     ("5900", "Giá vốn hàng bán (COGS)", "expense", "5000"),
+    # DG-297 Phase 1: Promotional Expense account for gifted extras (is_gift=1).
+    # Used as the debit account in the order_gift_cogs journal entry. Sub-account
+    # of 5000 (Chi phí), sibling of the COGS account 5900. Inserted via
+    # INSERT OR IGNORE so re-seeding on existing DBs is idempotent.
+    ("5910", "Chi phí khuyến mãi (Promotional Expense)", "expense", "5000"),
 ]
 
 # Map expense category (stored in events.data JSON) → expense account code.
@@ -1794,6 +1799,9 @@ PAYMENT_TIEN_RUT_TYPES = {"tien_rut"}
 CUSTOMER_DEPOSITS_CODE = "2100"
 ORDER_REVENUE_CODE = "4100"
 COGS_CODE = "5900"
+# DG-297 Phase 1: Promotional Expense account debited for gifted extras
+# (is_gift=1) in the order_gift_cogs journal entry. Sibling of COGS_CODE.
+PROMO_EXPENSE_CODE = "5910"
 INVENTORY_CODE = "1300"
 STAFF_PAYABLES_CODE = "2300"
 ACCOUNTS_RECEIVABLE_CODE = "1500"
@@ -2927,6 +2935,11 @@ def _backfill_order_items_cost_at_sale(conn) -> None:
     Idempotent: only updates order_items whose cost_at_sale is 0. Cost_history
     is not consulted at backfill time because historical cost records do not
     exist before this migration; the baseline rule is the documented estimate.
+
+    DG-297 Phase 1: the ``is_extra = 0`` filter was removed so sold extras
+    (is_extra=1, is_gift=0) receive the baseline cost backfill (phụ kiện =
+    100% base_price). Gifted items (is_gift=1) are still excluded — their
+    cost is handled by the order_gift_cogs journal entry at delivery time.
     """
     rows = conn.execute(
         """
@@ -2936,7 +2949,6 @@ def _backfill_order_items_cost_at_sale(conn) -> None:
         JOIN orders o ON o.id = oi.order_id
         LEFT JOIN products p ON CAST(oi.product_id AS INTEGER) = p.id
         WHERE o.status IN ('delivered', 'completed')
-          AND oi.is_extra = 0
           AND oi.is_gift = 0
           AND (oi.cost_at_sale IS NULL OR oi.cost_at_sale = 0)
         """

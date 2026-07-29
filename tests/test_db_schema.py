@@ -1652,12 +1652,16 @@ def test_v45_backfill_skips_non_delivered_orders():
         assert float(cost) == 0.0
 
 
-def test_v45_backfill_skips_extra_and_gift_items():
+def test_v45_backfill_includes_extras_skips_gifts():
+    """DG-297 Phase 1: _backfill_order_items_cost_at_sale() no longer excludes
+    extras (is_extra=1, is_gift=0). Phụ kiện extras get the 100% base_price
+    baseline; gift items (is_gift=1) are still skipped."""
     with get_db() as conn:
         _migrate_to_version(conn, 44)
         _, _, extra_item_id = _seed_order_with_item(
             conn,
             product_cost=5000,
+            product_category="phu_kien",
             base_price=10000,
             qty=1,
             status="delivered",
@@ -1681,7 +1685,10 @@ def test_v45_backfill_skips_extra_and_gift_items():
         gift_cost = conn.execute(
             "SELECT cost_at_sale FROM order_items WHERE id = ?", (gift_item_id,)
         ).fetchone()["cost_at_sale"]
-        assert float(extra_cost) == 0.0
+        # Phụ kiện baseline = 100% base_price = 10000 (extras now included).
+        assert float(extra_cost) == 10000.0
+        # Gifted items are still excluded (is_gift=1 filter retained) — their
+        # cost is handled by the order_gift_cogs journal entry at delivery time.
         assert float(gift_cost) == 0.0
 
 
