@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/accounting.dart';
 
 /// Builds the confirmation [AlertDialog] for the journal lock action.
 ///

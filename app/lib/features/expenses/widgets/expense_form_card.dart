@@ -1,6 +1,6 @@
 import 'package:bakery_app/data/models/expense_category.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/accounting.dart';
 import 'package:flutter/material.dart';
 
 class ExpenseFormCard extends StatefulWidget {

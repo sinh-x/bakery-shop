@@ -1,5 +1,5 @@
 import 'package:bakery_app/data/mappers/expense_event_mapper.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/accounting.dart';
 import 'package:flutter/material.dart';
 
 /// Shared debt status chip used by the outstanding debts list (DG-212 Phase 4)

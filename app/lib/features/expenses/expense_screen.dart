@@ -8,7 +8,7 @@ import 'package:bakery_app/providers/events_provider.dart';
 import 'package:bakery_app/shared/labels/events.dart';
 import 'package:bakery_app/shared/mixins/auto_refresh_mixin.dart';
 import 'package:bakery_app/shared/utils/date_formatting.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/accounting.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

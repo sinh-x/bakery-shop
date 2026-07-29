@@ -1,7 +1,7 @@
 import '../../data/api/expense_category_service.dart';
 import '../../data/models/expense_category.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:bakery_app/shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/accounting.dart';
 
 /// Hardcoded fallback list of parent expense category names (FR6 backward
 /// compat). Used when the API tree is unavailable so existing screens keep

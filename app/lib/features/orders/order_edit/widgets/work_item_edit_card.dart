@@ -8,7 +8,6 @@ import '../../../../data/models/work_item.dart';
 import '../../../../providers/order_providers.dart';
 import '../../../../providers/products_provider.dart';
 import '../../../../shared/utils/api_error.dart';
-import '../../../../shared/widgets/vietnamese_labels.dart';
 import '../../utils/trung_bay_inventory_extensions.dart';
 import '../../widgets/order_photo_section.dart';
 import 'package:bakery_app/shared/labels/orders.dart';

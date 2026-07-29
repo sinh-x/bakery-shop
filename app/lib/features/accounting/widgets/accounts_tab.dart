@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/accounting_provider.dart';
 import '../../../shared/utils/account_type_helper.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/accounting.dart';
 import '../../../data/models/account.dart';
 import 'empty_state.dart';
 

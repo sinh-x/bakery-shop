@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../data/models/journal_entry.dart';
 import '../../../shared/utils/date_formatting.dart';
-import '../../../shared/widgets/vietnamese_labels.dart';
+import 'package:bakery_app/shared/labels/accounting.dart';
 
 /// Card displaying a single journal entry with an expandable line-item table.
 ///

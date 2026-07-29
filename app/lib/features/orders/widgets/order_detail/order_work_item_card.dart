@@ -1,0 +1,213 @@
+import 'package:flutter/material.dart';
+
+import '../../../../data/models/order_photo.dart';
+import '../../../../data/models/work_item.dart';
+import 'package:bakery_app/shared/labels/orders.dart' hide workItemStatusColors;
+import '../order_item_markup_line.dart';
+import 'order_detail_helpers.dart';
+import 'order_work_item_photo_strip.dart';
+
+/// A card showing a single work item with status, qty/price, photos, and
+/// status-transition chips.
+class OrderWorkItemCard extends StatelessWidget {
+  const OrderWorkItemCard({
+    super.key,
+    required this.item,
+    required this.onTransition,
+    required this.photos,
+    required this.baseUrl,
+    required this.onTap,
+  });
+
+  final WorkItem item;
+  final ValueChanged<String>? onTransition;
+  final List<OrderPhoto> photos;
+  final String baseUrl;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final statusColor = workItemStatusColors[item.status] ?? Colors.grey;
+    final statusLabel = workItemStatusLabel(item.status);
+    const allStatuses = [
+      'pending',
+      'confirmed',
+      'working',
+      'ready',
+      'delivered',
+      'cancelled',
+    ];
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Status badge + product name + chevron
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: statusColor.withAlpha(30),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: statusColor.withAlpha(100)),
+                    ),
+                    child: Text(
+                      statusLabel,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: statusColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  if (item.isExtra) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: item.isGift
+                            ? Colors.green.withValues(alpha: 0.2)
+                            : Colors.grey.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.card_giftcard,
+                            size: 10,
+                            color: item.isGift ? Colors.green : Colors.grey,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            item.isGift ? VN.giftBadge : VN.paymentFee,
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: item.isGift ? Colors.green : Colors.grey,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      item.productName,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: theme.colorScheme.outline,
+                  ),
+                ],
+              ),
+              // Qty × price
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '${item.quantity} × ${formatVND(item.unitPrice)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.outline,
+                  ),
+                ),
+              ),
+              // Markup display for trưng bày work items (DG-296 Phase 5, FR7/AC6).
+              if (item.assignedPrice != null &&
+                  item.assignedPrice! < item.unitPrice)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: OrderItemMarkupLine(
+                    unitPrice: item.unitPrice,
+                    assignedPrice: item.assignedPrice,
+                  ),
+                ),
+              // Birthday badge + age
+              if (item.isBirthday)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    children: [
+                      const Text('🎂', style: TextStyle(fontSize: 13)),
+                      const SizedBox(width: 4),
+                      Text(
+                        item.age != null
+                            ? '${VN.birthdayWithAge} ${item.age} tuổi'
+                            : VN.birthdayWithAge,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.pink.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              // Notes
+              if (item.notes.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    item.notes,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+              // Per-item photos
+              if (photos.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                OrderWorkItemPhotoStrip(photos: photos, baseUrl: baseUrl),
+              ],
+              // Status transition chips
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: allStatuses.map((s) {
+                  final isCurrent = s == item.status;
+                  final color = workItemStatusColors[s] ?? Colors.grey;
+                  return FilterChip(
+                    label: Text(workItemStatusLabel(s)),
+                    selected: isCurrent,
+                    selectedColor: color.withAlpha(40),
+                    checkmarkColor: color,
+                    side: BorderSide(
+                      color: isCurrent ? color : Colors.grey.shade300,
+                    ),
+                    labelStyle: TextStyle(
+                      color: isCurrent ? color : null,
+                      fontWeight: isCurrent ? FontWeight.bold : null,
+                      fontSize: 12,
+                    ),
+                    onSelected: isCurrent || onTransition == null
+                        ? null
+                        : (_) => onTransition!(s),
+                    visualDensity: VisualDensity.compact,
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
