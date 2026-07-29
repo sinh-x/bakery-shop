@@ -12,6 +12,18 @@ def _escape_like(value: str) -> str:
     return value.replace("%", _BS + "%").replace("_", _BS + "_")
 
 
+def _has_order_items_column(conn, col_name: str) -> bool:
+    """Return True when ``col_name`` exists on the ``order_items`` table.
+
+    Uses ``PRAGMA table_info`` so it works at any migration stage, letting
+    callers detect optional columns (e.g. ``assigned_price`` added in v84)
+    and fall back gracefully on older databases (DG-297 Phase 5 review-auto
+    Cycle 1, CQ-1 — deduplicated from journal_sync.py + accounting_validation.py).
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(order_items)").fetchall()}
+    return col_name in cols
+
+
 def today_range():
     """Return (start, end) UTC ISO strings for the current UTC day.
 

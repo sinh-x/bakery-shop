@@ -1624,10 +1624,8 @@ def _resolve_order_cogs_items(
     falls back to ``NULL`` on older databases so the SELECT works at every
     migration stage (FR8 backward compatibility).
     """
-    oi_columns = {
-        r[1] for r in conn.execute("PRAGMA table_info(order_items)").fetchall()
-    }
-    has_assigned_price = "assigned_price" in oi_columns
+    from baker.db.queries import _has_order_items_column
+    has_assigned_price = _has_order_items_column(conn, "assigned_price")
     if gift_filter == "gift":
         gift_clause = "oi.is_gift = 1"
     else:

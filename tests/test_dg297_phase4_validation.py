@@ -22,6 +22,7 @@ from baker.db.connection import get_db
 from baker.db.schema import (
     COGS_CODE,
     INVENTORY_CODE,
+    PROMO_EXPENSE_CODE,
     ensure_schema,
 )
 from baker.services.accounting_validation import run_validation
@@ -439,3 +440,186 @@ def test_phase4_validation_is_read_only_with_extras_present():
     )
     assert pre_cost == post_cost
     assert post_cost == 0, "cost_at_sale should remain 0 (read-only)"
+
+
+# ---------------------------------------------------------------------------
+# Review-auto Cycle 1 (d-af77c0) — source_ledger_totals regression tests
+# OPS-1: sold extras included in order_cogs source-side total
+# OPS-2: order_gift_cogs class reconciles gift cost against 5910 debit
+# ---------------------------------------------------------------------------
+
+
+def _source_ledger_totals_check(report):
+    return next(c for c in report["checks"] if c["check"] == "source_ledger_totals")
+
+
+def test_ops1_source_ledger_totals_includes_sold_extras_in_order_cogs():
+    """OPS-1 (Major): the ``order_cogs`` source-side total must include sold
+    extras (is_extra=1, is_gift=0) so it matches the ``order_cogs`` journal
+    entry scope. Pre-fix the ``is_extra = 0`` filter excluded them, producing
+    a false-positive delta. Going through the real delivery sync (which emits
+    per-item COGS lines including sold extras) yields 0 delta."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        main_pid = _insert_product(conn, category="banh_mi", base_price=100000)
+        extra_pid = _insert_product(
+            conn, category="phu_kien", base_price=5000
+        )
+        # Seed cost_history so resolve_product_cost > 0 for the main item.
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) "
+            "VALUES (?, ?, ?)",
+            (main_pid, 20000.0, "2020-01-01"),
+        )
+        oid = _insert_order(conn, order_ref="ORD-OPS1-SLT", total_price=110000)
+        # Deposit so the order is a paid revenue order.
+        dep_cur = conn.execute(
+            "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+            "VALUES (?, ?, 'deposit', 'cash', '')",
+            (oid, 110000.0),
+        )
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(
+            conn, int(dep_cur.lastrowid), 110000.0, "deposit", "cash",
+            order_id=oid,
+        )
+        _add_item(
+            conn, order_id=oid, product_id=main_pid, product_name="Bánh mì OPS1",
+            qty=2, unit_price=50000,
+        )
+        _add_item(
+            conn, order_id=oid, product_id=extra_pid, product_name="Nến OPS1",
+            qty=3, unit_price=5000, is_extra=1,
+        )
+        conn.execute("UPDATE orders SET status = 'delivered' WHERE id = ?", (oid,))
+        _sync_delivered_order_journal(conn, oid, "ORD-OPS1-SLT")
+        conn.commit()
+        report = run_validation(conn)
+    check = _source_ledger_totals_check(report)
+    cogs_cls = next(
+        (d for d in check["details"] if d["class"] == "order_cogs"), None,
+    )
+    assert check["status"] == "pass", (
+        f"source_ledger_totals failed: {check['details']}"
+    )
+    assert cogs_cls is None, (
+        f"order_cogs class should be in sync including sold extras: {cogs_cls}"
+    )
+
+
+def test_ops2_source_ledger_totals_includes_order_gift_cogs_class():
+    """OPS-2 (Major): the new ``order_gift_cogs`` class reconciles
+    SUM(cost_at_sale × quantity) of gifted items against the journal-side
+    debit to Promotional Expense (5910). A correctly journalled gift entry
+    yields 0 delta."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        main_pid = _insert_product(conn, category="banh_mi", base_price=100000)
+        gift_pid = _insert_product(
+            conn, category="phu_kien", base_price=5000
+        )
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) "
+            "VALUES (?, ?, ?)",
+            (main_pid, 20000.0, "2020-01-01"),
+        )
+        oid = _insert_order(conn, order_ref="ORD-OPS2-SLT", total_price=100000)
+        dep_cur = conn.execute(
+            "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+            "VALUES (?, ?, 'deposit', 'cash', '')",
+            (oid, 100000.0),
+        )
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(
+            conn, int(dep_cur.lastrowid), 100000.0, "deposit", "cash",
+            order_id=oid,
+        )
+        _add_item(
+            conn, order_id=oid, product_id=main_pid, product_name="Bánh mì OPS2",
+            qty=1, unit_price=100000,
+        )
+        _add_item(
+            conn, order_id=oid, product_id=gift_pid, product_name="Nến tặng OPS2",
+            qty=2, unit_price=5000, is_extra=1, is_gift=1,
+        )
+        conn.execute("UPDATE orders SET status = 'delivered' WHERE id = ?", (oid,))
+        _sync_delivered_order_journal(conn, oid, "ORD-OPS2-SLT")
+        conn.commit()
+        # Sanity: a gift entry must have been created and debit 5910.
+        gift_debit = conn.execute(
+            "SELECT COALESCE(SUM(jl.debit), 0) FROM journal_lines jl "
+            "JOIN journal_entries je ON je.id = jl.journal_entry_id "
+            "JOIN accounts a ON a.id = jl.account_id "
+            "WHERE je.source_type = 'order_gift_cogs' AND je.source_id = ? "
+            "AND a.code = ?",
+            (oid, PROMO_EXPENSE_CODE),
+        ).fetchone()[0]
+        assert gift_debit > 0, "expected a non-zero 5910 gift COGS debit"
+        report = run_validation(conn)
+    check = _source_ledger_totals_check(report)
+    gift_cls = next(
+        (d for d in check["details"] if d["class"] == "order_gift_cogs"), None,
+    )
+    assert check["status"] == "pass", (
+        f"source_ledger_totals failed: {check['details']}"
+    )
+    assert gift_cls is None, (
+        f"order_gift_cogs class should be in sync: {gift_cls}"
+    )
+
+
+def test_ops2_source_ledger_totals_flags_order_gift_cogs_gap():
+    """OPS-2 (Major, negative case): when the ``order_gift_cogs`` journal
+    entry is removed (simulating a missing gift entry), the new class flags a
+    non-zero delta — proving the class actually reconciles both sides rather
+    than always passing."""
+    with get_db() as conn:
+        ensure_schema(conn)
+        main_pid = _insert_product(conn, category="banh_mi", base_price=100000)
+        gift_pid = _insert_product(
+            conn, category="phu_kien", base_price=5000
+        )
+        conn.execute(
+            "INSERT INTO cost_history (product_id, cost, effective_from) "
+            "VALUES (?, ?, ?)",
+            (main_pid, 20000.0, "2020-01-01"),
+        )
+        oid = _insert_order(conn, order_ref="ORD-OPS2-GAP", total_price=100000)
+        dep_cur = conn.execute(
+            "INSERT INTO payment_transactions (order_id, amount, type, method, note) "
+            "VALUES (?, ?, 'deposit', 'cash', '')",
+            (oid, 100000.0),
+        )
+        from baker.services.journal_sync import _sync_payment_journal
+        _sync_payment_journal(
+            conn, int(dep_cur.lastrowid), 100000.0, "deposit", "cash",
+            order_id=oid,
+        )
+        _add_item(
+            conn, order_id=oid, product_id=main_pid, product_name="Bánh mì OPS2 GAP",
+            qty=1, unit_price=100000,
+        )
+        _add_item(
+            conn, order_id=oid, product_id=gift_pid, product_name="Nến tặng OPS2 GAP",
+            qty=2, unit_price=5000, is_extra=1, is_gift=1,
+        )
+        conn.execute("UPDATE orders SET status = 'delivered' WHERE id = ?", (oid,))
+        _sync_delivered_order_journal(conn, oid, "ORD-OPS2-GAP")
+        conn.commit()
+        # Remove the gift entry to simulate a missing gift COGS journal.
+        conn.execute(
+            "DELETE FROM journal_entries WHERE source_type = 'order_gift_cogs' "
+            "AND source_id = ?",
+            (oid,),
+        )
+        conn.commit()
+        report = run_validation(conn)
+    check = _source_ledger_totals_check(report)
+    gift_cls = next(
+        (d for d in check["details"] if d["class"] == "order_gift_cogs"), None,
+    )
+    assert gift_cls is not None, (
+        "order_gift_cogs class should flag the missing gift entry"
+    )
+    assert gift_cls["source_total"] > 0
+    assert gift_cls["delta"] > 0
