@@ -7,8 +7,8 @@ and returns a structured report of any anomalies found.
 Checks:
   1. ``double_entry_integrity`` — for every journal entry, SUM(debit) must
      equal SUM(credit) within a small tolerance.
-  2. ``cogs_completeness`` — delivered order_items (non-extra, non-gift)
-     where ``cost_at_sale`` is NULL/0 despite a resolvable cost.
+  2. ``cogs_completeness`` — delivered order_items (non-gift, including sold
+     extras) where ``cost_at_sale`` is NULL/0 despite a resolvable cost.
   3. ``waste_cogs_referential_integrity`` — ``waste_cogs`` journal entries
      whose ``source_id`` has no matching waste ``stock_movements`` row.
   4. ``cost_history_sanity`` — negative costs, duplicate ``effective_from``,
@@ -18,8 +18,8 @@ Checks:
   6. ``source_completeness`` — every expense event, payment_transaction, and
      delivered order has at least one corresponding journal entry.
   7. ``cogs_amount_accuracy`` — for each ``order_cogs`` journal entry, the
-     COGS debit matches SUM(cost_at_sale × quantity) of the order's
-     non-extra, non-gift items.
+      COGS debit matches SUM(cost_at_sale × quantity) of the order's
+      non-gift items (main items + sold extras).
   8. ``cash_flow_integrity`` — net change in cash/asset accounts equals the
      sum of all cash inflows minus outflows across journal entries.
   9. ``lock_integrity`` — journal entries where ``locked_at`` is set but
@@ -142,11 +142,18 @@ def _check_cogs_completeness(conn) -> dict[str, Any]:
 
     A row is flagged when:
       - the parent order status is 'delivered'
-      - the item is neither extra nor a gift
+      - the item is not a gift (sold extras are included)
       - ``cost_at_sale`` is NULL or 0
       - the product has a resolvable cost: an effective cost_history row OR a
         non-zero ``base_price`` (baseline rule yields a non-zero cost for any
         product with base_price > 0).
+
+    DG-297 Phase 4 (FR6): the ``is_extra = 0`` filter was removed so sold
+    extras (is_extra=1, is_gift=0) with a missing ``cost_at_sale`` are now
+    flagged alongside main items — the validator scope matches the
+    ``order_cogs`` journal entry scope from Phase 2. Gifted items
+    (is_gift=1) remain excluded; their cost is recorded by the separate
+    ``order_gift_cogs`` entry.
     """
     rows = conn.execute(
         """
@@ -156,6 +163,7 @@ def _check_cogs_completeness(conn) -> dict[str, Any]:
                oi.product_name AS product_name,
                oi.quantity    AS quantity,
                oi.cost_at_sale AS cost_at_sale,
+               oi.is_extra    AS is_extra,
                o.order_ref    AS order_ref,
                p.base_price   AS base_price,
                p.category     AS category,
@@ -168,7 +176,6 @@ def _check_cogs_completeness(conn) -> dict[str, Any]:
         JOIN orders o ON o.id = oi.order_id
         LEFT JOIN products p ON p.id = CAST(oi.product_id AS INTEGER)
         WHERE o.status = 'delivered'
-          AND oi.is_extra = 0
           AND oi.is_gift = 0
           AND (oi.cost_at_sale IS NULL OR oi.cost_at_sale = 0)
         ORDER BY oi.id
@@ -200,6 +207,7 @@ def _check_cogs_completeness(conn) -> dict[str, Any]:
             "product_name": r["product_name"],
             "quantity": int(r["quantity"] or 0),
             "cost_at_sale": float(r["cost_at_sale"] or 0),
+            "is_extra": int(r["is_extra"] or 0),
             "has_cost_history": has_history,
             "base_price": base_price,
         })
@@ -482,6 +490,13 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
       :func:`_baseline_cost_for_product` with the same anchor precedence
       — exact parity with journal_sync.py._compute_order_cogs_total.
 
+    DG-297 Phase 4 (FR7): the ``is_extra = 0`` filter was removed so sold
+    extras (is_extra=1, is_gift=0) are now included in the expected COGS
+    total — matching the ``order_cogs`` journal entry scope from Phase 2.
+    Gifted items (is_gift=1) remain excluded; their cost is recorded by the
+    separate ``order_gift_cogs`` entry and reconciled by the
+    ``source_ledger_totals`` check.
+
     The validator performs no writes: ``cost_at_sale`` is read but never
     updated (read-only guarantee, FR5/NFR1).
     """
@@ -526,7 +541,6 @@ def _check_cogs_amount_accuracy(conn) -> dict[str, Any]:
             + """
             FROM order_items oi
             WHERE oi.order_id = ?
-              AND oi.is_extra = 0
               AND oi.is_gift = 0
             """,
             (order_id,),
