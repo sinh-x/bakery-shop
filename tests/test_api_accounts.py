@@ -716,16 +716,22 @@ def test_delivered_order_multi_item_cogs_single_entry(api_client):
             f"expected exactly 1 order_cogs entry, got {len(cogs_entries)}"
         )
         lines = _lines_for_entry(conn, cogs_entries[0].id)
-        debit_line = next(l for l in lines if l.debit > 0)
-        credit_line = next(l for l in lines if l.credit > 0)
-        cogs_acc = Account.get_by_id(conn, debit_line.account_id)
-        inv_acc = Account.get_by_id(conn, credit_line.account_id)
-        assert cogs_acc.code == "5900"
-        assert inv_acc.code == "1300"
+        debit_lines = [l for l in lines if l.debit > 0]
+        credit_lines = [l for l in lines if l.credit > 0]
+        # DG-297 Phase 2 (FR2): per-item DR 5900/CR 1300 line pairs — one pair
+        # per cost-bearing item (3 items here), each line describing the item.
+        assert len(debit_lines) == 3
+        assert len(credit_lines) == 3
+        for dl in debit_lines:
+            cogs_acc = Account.get_by_id(conn, dl.account_id)
+            assert cogs_acc.code == "5900"
+        for cl in credit_lines:
+            inv_acc = Account.get_by_id(conn, cl.account_id)
+            assert inv_acc.code == "1300"
         # Accumulated total: (10000×2) + (8000×3) + (6000×4) = 20000 + 24000 + 24000 = 68000
         expected_total = 10000 * 2 + 8000 * 3 + 6000 * 4
-        assert debit_line.debit == pytest.approx(expected_total)
-        assert credit_line.credit == pytest.approx(expected_total)
+        assert sum(l.debit for l in debit_lines) == pytest.approx(expected_total)
+        assert sum(l.credit for l in credit_lines) == pytest.approx(expected_total)
 
 
 def test_delivered_order_journal_idempotent(api_client):
