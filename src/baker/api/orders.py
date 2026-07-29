@@ -28,7 +28,7 @@ from baker.services.customer_resolver import (
     _resolve_customer_id_by_phone,
     _resolve_or_create_customer_id,
 )
-from baker.services.order_stock import auto_decrement_stock, restore_stock_for_order
+from baker.services.order_stock import auto_decrement_stock
 from baker.api.auth import resolve_actor, resolve_staff_name
 from baker.utils.time import now_utc
 
@@ -949,10 +949,13 @@ def edit_order(ref: str, body: OrderEdit, request: Request):
 @router.post("/{ref}/status")
 def transition_status(ref: str, body: StatusTransition, request: Request):
     """Chuyển trạng thái đơn hàng. Lý do bắt buộc khi lùi trạng thái."""
-    # Shared journal-sync helpers used by multiple branches below (DG-269
-    # Phase 5.6-c1 / CQ-4): import once to avoid duplicate imports in each
-    # conditional branch.
-    from baker.services.journal_sync import run_journal_sync, sync_status_to_warning
+    # DG-308 Phase 5 (FR-ARCH-3): status-machine side effects (stock, journal
+    # sync, item cascade, extras sync) are orchestrated by
+    # services.order_lifecycle. The handler keeps HTTP validation/rejection.
+    from baker.services.order_lifecycle import (
+        apply_post_update_side_effects,
+        apply_pre_update_side_effects,
+    )
 
     with get_db() as conn:
         row = conn.execute(
@@ -991,24 +994,11 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
                     rejection_detail=f"Chưa thanh toán đủ để hoàn thành đơn hàng — còn thiếu {remaining:,.0f}đ",
                 )
 
-        # Auto-decrement stock for trưng bày products when order is confirmed
-        # (POS already handles this in create_order for status=delivered)
-        if body.status == "confirmed":
-            auto_decrement_stock(conn, row["id"], row["order_ref"])
-
-        accounting_sync_warning = None
-
-        if body.status == "cancelled":
-            restore_stock_for_order(conn, row["id"], row["order_ref"])
-            from baker.services.journal_sync import _sync_cancelled_order_journal
-            sync_status = run_journal_sync(
-                _sync_cancelled_order_journal,
-                conn, row["id"],
-                log_label=f"cancelled order journal sync for order {row['id']}",
-                source_type="order",
-                source_id=row["id"],
-            )
-            accounting_sync_warning = sync_status_to_warning(sync_status)
+        # Pre-update side effects (stock decrement/restore + cancellation
+        # journal sync) must run before Order.update_status.
+        prior_warning = apply_pre_update_side_effects(
+            conn, row["id"], row["order_ref"], body.status
+        )
 
         success = Order.update_status(conn, row["order_ref"], body.status, body.reason)
         if not success:
@@ -1022,67 +1012,11 @@ def transition_status(ref: str, body: StatusTransition, request: Request):
 
         _log_order_history(conn, row["id"], "status_change", "status", row["status"], body.status, resolve_actor(request, body.changedBy))
 
-        # When transitioning TO delivered, generate revenue conversion + COGS journal (DG-175).
-        if body.status == "delivered" and row["status"] != "delivered":
-            from baker.services.journal_sync import _sync_delivered_order_journal
-            sync_status = run_journal_sync(
-                _sync_delivered_order_journal,
-                conn, row["id"], row["order_ref"],
-                log_label=f"delivered order journal sync for order {row['id']}",
-                source_type="order",
-                source_id=row["id"],
-            )
-            accounting_sync_warning = sync_status_to_warning(sync_status)
-
-        # When transitioning TO completed, reconcile 2100 deposits into revenue
-        # and clear 1500 AR (DG-269 Phase 3).
-        if body.status == "completed" and row["status"] != "completed":
-            from baker.services.journal_sync import _sync_completed_order_journal
-            sync_status = run_journal_sync(
-                _sync_completed_order_journal,
-                conn, row["id"], row["order_ref"],
-                log_label=f"completed order journal sync for order {row['id']}",
-                source_type="order",
-                source_id=row["id"],
-            )
-            accounting_sync_warning = sync_status_to_warning(sync_status)
-
-        # Auto-cascade confirmed order status to main items (non-extra, non-gift) at pending (F5)
-        if body.status == "confirmed":
-            conn.execute(
-                "UPDATE order_items SET status = 'confirmed' WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 AND status = 'pending'",
-                (row["id"],),
-            )
-
-        # Auto-sync main items (non-extra, non-gift) on terminal order transitions (DG-280 Phase 1).
-        # Skip cancelled items so they remain cancelled (AC5) and skip items already at the target
-        # status to avoid redundant updates (AC4). WorkItemStatus has no 'completed' value, so a
-        # completed order maps main items to 'delivered' (FR2).
-        if body.status == "delivered":
-            conn.execute(
-                "UPDATE order_items SET status = 'delivered' "
-                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
-                "AND status != 'cancelled' AND status != 'delivered'",
-                (row["id"],),
-            )
-        elif body.status == "completed":
-            conn.execute(
-                "UPDATE order_items SET status = 'delivered' "
-                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
-                "AND status != 'cancelled' AND status != 'delivered'",
-                (row["id"],),
-            )
-        elif body.status == "cancelled":
-            conn.execute(
-                "UPDATE order_items SET status = 'cancelled' "
-                "WHERE order_id = ? AND is_extra = 0 AND is_gift = 0 "
-                "AND status != 'cancelled'",
-                (row["id"],),
-            )
-
-        # Auto-sync extras/gifts to match the new order status (F4, F5)
-        from baker.api.work_items import sync_extras_to_order_status
-        sync_extras_to_order_status(conn, row["id"], body.status)
+        # Post-update side effects (delivered/completed journal sync, item
+        # cascade, extras sync) run after the status row is updated.
+        accounting_sync_warning = apply_post_update_side_effects(
+            conn, row["id"], row["order_ref"], row["status"], body.status, prior_warning
+        )
 
         updated = conn.execute("SELECT * FROM orders WHERE id = ?", (row["id"],)).fetchone()
         response = _order_detail(conn, updated, threshold_minutes=get_delivery_critical_threshold(conn))
