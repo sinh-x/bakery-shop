@@ -208,7 +208,7 @@ def _mark_product_display(conn, product_id: int, value: str = "true"):
 
 
 def _set_stock(conn, product_id: int, quantity: int):
-    from baker.api.inventory_fifo import create_lot_with_items
+    from baker.services.inventory_fifo import create_lot_with_items
 
     conn.execute(
         "DELETE FROM inventory_items WHERE lot_id IN (SELECT id FROM stock_lots WHERE product_id = ?)",

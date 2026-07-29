@@ -1586,7 +1586,7 @@ def _submit_reconciliation_with_sale(api_client):
     simulate a past reconciliation order created before the fix.
     """
     from baker.db.connection import get_db
-    from baker.api.inventory_fifo import create_lot_with_items
+    from baker.services.inventory_fifo import create_lot_with_items
 
     with get_db() as conn:
         conn.execute(

@@ -1,7 +1,7 @@
 import pytest
 from baker.db.connection import get_db
 from baker.db.schema import MIGRATIONS
-from baker.api.inventory_fifo import create_lot_with_items
+from baker.services.inventory_fifo import create_lot_with_items
 
 pytestmark = pytest.mark.critical
 

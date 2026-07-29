@@ -4,7 +4,7 @@ import json
 
 from fastapi import HTTPException
 
-from baker.api.inventory_fifo import (
+from baker.services.inventory_fifo import (
     consume_fifo_items,
     create_lot_with_items,
     normalize_price_value,
@@ -194,11 +194,11 @@ def auto_decrement_stock(conn, order_id: int, order_ref: str) -> None:
             # the primary sale operation (NFR1).
             #
             # Inline import (not module-level) is intentional: journal_sync
-            # imports from baker.api.inventory_fifo, which would create a
-            # circular dependency if imported at module load time here.
-            # Deferring the import to call-site avoids the cycle while keeping
-            # the accounting coupling local to the operation that needs it
-            # (DG-200 Phase 5.6-c1-fix, Mn-1).
+            # imports from baker.services.inventory_fifo (formerly under
+            # baker.api), which would create a circular dependency if imported
+            # at module load time here. Deferring the import to call-site
+            # avoids the cycle while keeping the accounting coupling local to
+            # the operation that needs it (DG-200 Phase 5.6-c1-fix, Mn-1).
             from baker.services.journal_sync import (
                 _sync_negative_sale_cogs_journal,
                 run_journal_sync,
